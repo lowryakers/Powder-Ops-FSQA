@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, UserPlus } from 'lucide-react';
 
 const FREQ_COLORS = {
   daily: 'bg-blue-500',
@@ -18,7 +18,7 @@ const FREQ_BG = {
   annual: 'border-rose-200',
 };
 
-function TaskItem({ task, onComplete }) {
+function TaskItem({ task, onComplete, onAssign, technicians }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [name, setName] = useState('');
@@ -79,11 +79,25 @@ function TaskItem({ task, onComplete }) {
             <span className="font-medium">{task.equipment_name}</span>
             {task.location && <span className="text-gray-400"> — {task.location}</span>}
           </p>
-          <p className="text-sm text-gray-400 mt-1">
-            <Clock size={12} className="inline mr-1" />
-            Due {task.due_date}
-            {task.assigned_to && <span> · {task.assigned_to}</span>}
-          </p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-sm text-gray-400">
+              <Clock size={12} className="inline mr-1" />
+              Due {task.due_date}
+              {task.assigned_to && <span> · {task.assigned_to}</span>}
+            </p>
+            {technicians && technicians.length > 0 && (
+              <select
+                value={task.assigned_to || ''}
+                onChange={e => onAssign(task.id, e.target.value || null)}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 bg-white"
+              >
+                <option value="">Assign to...</option>
+                {technicians.map(t => (
+                  <option key={t.id} value={t.name}>{t.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
 
           {/* Expandable task steps */}
           {steps.length > 0 && (
@@ -140,10 +154,16 @@ function TaskItem({ task, onComplete }) {
 
 export default function OperatorView() {
   const { data: tasks, loading, refresh } = useApiGet('/pm/operator-tasks');
+  const { data: technicians } = useApiGet('/users/technicians');
   const [freqFilter, setFreqFilter] = useState('all');
 
   const handleComplete = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
+    refresh();
+  };
+
+  const handleAssign = async (woId, assignedTo) => {
+    await apiPut(`/pm/work-orders/${woId}`, { assigned_to: assignedTo });
     refresh();
   };
 
@@ -193,7 +213,7 @@ export default function OperatorView() {
       ) : (
         <div className="space-y-3">
           {filtered.map(task => (
-            <TaskItem key={task.id} task={task} onComplete={handleComplete} />
+            <TaskItem key={task.id} task={task} onComplete={handleComplete} onAssign={handleAssign} technicians={technicians || []} />
           ))}
         </div>
       )}

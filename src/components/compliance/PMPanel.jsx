@@ -74,7 +74,7 @@ function CompleteForm({ wo, onComplete, onCancel }) {
   );
 }
 
-function WOForm({ equipment, onSave, onCancel }) {
+function WOForm({ equipment, technicians, onSave, onCancel }) {
   const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', assigned_to: '', due_date: '' });
   const [saving, setSaving] = useState(false);
   const handleSubmit = async (e) => {
@@ -117,8 +117,11 @@ function WOForm({ equipment, onSave, onCancel }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Assigned To</label>
-          <input value={form.assigned_to} onChange={e => setForm({ ...form, assigned_to: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Technician name" />
+          <select value={form.assigned_to} onChange={e => setForm({ ...form, assigned_to: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">Unassigned</option>
+            {(technicians || []).map(t => <option key={t.id} value={t.name}>{t.name} ({t.role})</option>)}
+          </select>
         </div>
       </div>
       <div className="flex gap-2">
@@ -188,6 +191,7 @@ export default function PMPanel() {
   const { data: metrics, loading: metricsLoading } = useApiGet('/pm/metrics');
   const { data: grouped, loading: taskLoading, refresh: refreshTasks } = useApiGet('/pm/by-frequency');
   const { data: equipment } = useApiGet('/equipment');
+  const { data: technicians } = useApiGet('/users/technicians');
   const [freqFilter, setFreqFilter] = useState('all');
   const [showWOForm, setShowWOForm] = useState(false);
   const [completing, setCompleting] = useState(null);
@@ -290,7 +294,7 @@ export default function PMPanel() {
         </div>
       )}
 
-      {showWOForm && <WOForm equipment={equipment} onSave={handleCreateWO} onCancel={() => setShowWOForm(false)} />}
+      {showWOForm && <WOForm equipment={equipment} technicians={technicians} onSave={handleCreateWO} onCancel={() => setShowWOForm(false)} />}
 
       {/* View Toggle + Frequency Filter */}
       <div className="space-y-2">

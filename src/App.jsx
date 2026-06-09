@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { Shield, Wrench, ClipboardCheck, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat } from 'lucide-react';
+import { Shield, Wrench, ClipboardCheck, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut } from 'lucide-react';
+import { useAuth } from './hooks/useAuth';
+import LoginScreen from './components/LoginScreen.jsx';
+import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
 import EquipmentPanel from './components/compliance/EquipmentPanel.jsx';
 import PMPanel from './components/compliance/PMPanel.jsx';
@@ -9,6 +12,7 @@ import SanitationPanel from './components/compliance/SanitationPanel.jsx';
 import LOTOPanel from './components/compliance/LOTOPanel.jsx';
 import AuditLogPanel from './components/compliance/AuditLogPanel.jsx';
 import OperatorView from './components/compliance/OperatorView.jsx';
+import SettingsPanel from './components/compliance/SettingsPanel.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -20,10 +24,57 @@ const TABS = [
   { id: 'loto', label: 'LOTO', icon: Lock },
   { id: 'equipment', label: 'Equipment', icon: Shield },
   { id: 'audit', label: 'Audit Log', icon: ScrollText },
+  { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
 ];
 
 function App() {
+  const { user, loading, login, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const path = window.location.pathname;
+
+  if (path === '/submit') {
+    return <SubmitWorkOrder />;
+  }
+
+  if (path === '/operator') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+            <div className="h-9 w-9 bg-powder-600 rounded-lg flex items-center justify-center">
+              <Wrench size={20} className="text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-gray-900">Powder Ops</h1>
+              <p className="text-xs text-gray-500">Maintenance Tasks</p>
+            </div>
+          </div>
+        </header>
+        <main className="max-w-3xl mx-auto px-4 py-6">
+          <OperatorView />
+        </main>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="h-12 w-12 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3 animate-pulse">
+            <Shield size={24} className="text-white" />
+          </div>
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen onLogin={login} />;
+  }
+
+  const visibleTabs = TABS.filter(t => !t.adminOnly || user.role === 'admin');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -39,26 +90,34 @@ function App() {
                 <p className="text-xs text-gray-500">Compliance & Preventive Maintenance</p>
               </div>
             </div>
-            <nav className="hidden md:flex gap-1 bg-gray-100 rounded-lg p-1">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    activeTab === tab.id
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  <tab.icon size={15} />
-                  <span className="hidden lg:inline">{tab.label}</span>
+            <div className="flex items-center gap-3">
+              <nav className="hidden md:flex gap-1 bg-gray-100 rounded-lg p-1">
+                {visibleTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      activeTab === tab.id
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <tab.icon size={15} />
+                    <span className="hidden lg:inline">{tab.label}</span>
+                  </button>
+                ))}
+              </nav>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 hidden sm:inline">{user.name}</span>
+                <button onClick={logout} className="text-gray-400 hover:text-gray-600" title="Sign Out">
+                  <LogOut size={18} />
                 </button>
-              ))}
-            </nav>
+              </div>
+            </div>
           </div>
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-1 mt-2 overflow-x-auto pb-1">
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -86,6 +145,7 @@ function App() {
         {activeTab === 'loto' && <LOTOPanel />}
         {activeTab === 'equipment' && <EquipmentPanel />}
         {activeTab === 'audit' && <AuditLogPanel />}
+        {activeTab === 'settings' && <SettingsPanel />}
       </main>
     </div>
   );
