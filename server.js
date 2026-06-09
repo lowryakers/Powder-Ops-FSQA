@@ -22,13 +22,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('[FATAL] Unhandled rejection:', err);
+});
+
 app.use(compression());
 app.use(cors());
 app.use(express.json());
 
 // Initialize database on startup
-const db = getDb();
-console.log('[db] SQLite database initialized');
+let db;
+try {
+  db = getDb();
+  console.log('[db] SQLite database initialized');
+} catch (err) {
+  console.error('[db] FATAL: Failed to initialize database:', err.message);
+  process.exit(1);
+}
 
 // Auto-seed equipment if table is empty
 const eqCount = db.prepare('SELECT COUNT(*) as c FROM equipment').get().c;
