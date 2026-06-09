@@ -3,7 +3,9 @@ import compression from 'compression';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getDb } from './server/db.js';
+import { readFileSync } from 'fs';
+import { v4 as uuid } from 'uuid';
+import { getDb, logAudit } from './server/db.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
 import pmRoutes from './server/api/pm.js';
@@ -23,8 +25,31 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize database on startup
-getDb();
+const db = getDb();
 console.log('[db] SQLite database initialized');
+
+// Auto-seed equipment if table is empty
+const eqCount = db.prepare('SELECT COUNT(*) as c FROM equipment').get().c;
+if (eqCount === 0) {
+  try {
+    const seedPath = path.join(__dirname, 'server', 'seed-data.json');
+    const data = JSON.parse(readFileSync(seedPath, 'utf-8'));
+    const insert = db.prepare(`
+      INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, status, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const tx = db.transaction(() => {
+      for (const eq of data) {
+        const id = uuid();
+        insert.run(id, eq.name, eq.type, eq.location, eq.room || null, eq.asset_id, eq.manufacturer, eq.model_number, eq.serial_number, eq.vendor, eq.pm_frequency, eq.is_food_contact ? 1 : 0, null, eq.status, eq.notes);
+      }
+    });
+    tx();
+    console.log(`[seed] Auto-seeded ${data.length} equipment items`);
+  } catch (e) {
+    console.warn('[seed] Could not auto-seed:', e.message);
+  }
+}
 
 // --- API Routes ---
 app.use('/api/equipment', equipmentRoutes);
