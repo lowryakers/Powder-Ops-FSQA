@@ -1,0 +1,429 @@
+[
+  {
+    "id": "mq6vhmb9",
+    "fingerprint": "2026-06-01|15|MO76716|MO76716 202832 TP Hydration Stick Pack, Lemonade\n2026-06-01|1|null|Bernardo Encisco Batching crew cleaning mixers and sifters Schedule this and currently No batching this week\n2026-06-01|5|MO76716|MO76716\n202832 TP Hydration Stick Pack, Lemonade Non-Allergen\n2026-06-01|6|MO76716|MO76716\n202832 TP Hydration Stick Pack, Lemonade \n Non-Allergen\n2026-06-01|7|MO76716|MO76716\n202832 TP Hydration Stick Pack, Lemonade \n Non-Allergen\n2026-06-01|Room|null|Monday 6/1\n2026-06-01|Room|null|Monday 6/1\n2026-06-02|15|MO76716|MO76716 202832 TP Hydration Stick Pack, Lemonade\n2026-06-02|5|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-02|6|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-02|7|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-02|Room|null|Tuesday 6/2\n2026-06-02|Room|null|Tuesday 6/2\n2026-06-03|15|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n2026-06-03|5|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-03|6|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-03|7|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-03|Room|null|Wednesday 6/3\n2026-06-03|Room|null|Wednesday 6/3\n2026-06-04|15|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n2026-06-04|5|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-04|6|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-04|7|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-04|Room|null|Thursday 6/4\n2026-06-04|Room|null|Thursday 6/4\n2026-06-05|Room|null|Friday 6/5\n2026-06-05|Room|null|Friday 6/5\n2026-06-08|15|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n2026-06-08|15|MO76719|MO76719  TP Hydration Stick Pack, Cotton Candy\n2026-06-08|15|null|11am pack 6 pouches of pancake into 96 boxes (12 x 9 x 4)\n2026-06-08|5|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-08|6|MO76719|MO76719  TP Hydration Stick Pack, Cotton Candy\n Non-Allergen\n2026-06-08|7|MO76719|MO76719  TP Hydration Stick Pack, Cotton Candy\n Non-Allergen\n2026-06-08|Room|null|Monday 6/8\n2026-06-08|Room|null|Monday 6/8\n2026-06-09|15|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n2026-06-09|1|null|Taking down and moving equipment\n2026-06-09|2|null|Taking down and moving equipment\n2026-06-09|3|null|Taking down and moving equipment\n2026-06-09|4|null|Taking down and moving equipment\n2026-06-09|5|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-09|6|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-09|7|MO76718|MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen\n2026-06-09|Room|null|Tuesday 6/9\n2026-06-09|Room|null|Tuesday 6/9\n2026-06-10|5|null|Taking down and moving equipment\n2026-06-10|Room|null|Wednesday 6/10\n2026-06-10|Room|null|Wednesday 6/10\n2026-06-11|Room|null|Thursday 6/11\n2026-06-11|Room|null|Thursday 6/11\n2026-06-12|Room|null|Friday 6/12\n2026-06-12|Room|null|Friday 6/12",
+    "weekLabel": "Jun 1 – Jun 12, 2026",
+    "weekStart": "2026-06-01",
+    "weekEnd": "2026-06-12",
+    "capturedAt": "2026-06-09T16:47:18.069Z",
+    "entryCount": 52,
+    "entries": [
+      {
+        "room": "5",
+        "dayLabel": "Monday 6/1",
+        "date": "2026-06-01",
+        "mo": "MO76716",
+        "product": "TP Hydration Stick Pack, Lemonade Non-Allergen",
+        "raw": "MO76716\n202832 TP Hydration Stick Pack, Lemonade Non-Allergen"
+      },
+      {
+        "room": "5",
+        "dayLabel": "Tuesday 6/2",
+        "date": "2026-06-02",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "5",
+        "dayLabel": "Wednesday 6/3",
+        "date": "2026-06-03",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "5",
+        "dayLabel": "Thursday 6/4",
+        "date": "2026-06-04",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "6",
+        "dayLabel": "Monday 6/1",
+        "date": "2026-06-01",
+        "mo": "MO76716",
+        "product": "TP Hydration Stick Pack, Lemonade \n Non-Allergen",
+        "raw": "MO76716\n202832 TP Hydration Stick Pack, Lemonade \n Non-Allergen"
+      },
+      {
+        "room": "6",
+        "dayLabel": "Tuesday 6/2",
+        "date": "2026-06-02",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "6",
+        "dayLabel": "Wednesday 6/3",
+        "date": "2026-06-03",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "6",
+        "dayLabel": "Thursday 6/4",
+        "date": "2026-06-04",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "7",
+        "dayLabel": "Monday 6/1",
+        "date": "2026-06-01",
+        "mo": "MO76716",
+        "product": "TP Hydration Stick Pack, Lemonade \n Non-Allergen",
+        "raw": "MO76716\n202832 TP Hydration Stick Pack, Lemonade \n Non-Allergen"
+      },
+      {
+        "room": "7",
+        "dayLabel": "Tuesday 6/2",
+        "date": "2026-06-02",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "7",
+        "dayLabel": "Wednesday 6/3",
+        "date": "2026-06-03",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "7",
+        "dayLabel": "Thursday 6/4",
+        "date": "2026-06-04",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Monday 6/1",
+        "date": "2026-06-01",
+        "mo": null,
+        "product": "Monday 6/1",
+        "raw": "Monday 6/1"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Tuesday 6/2",
+        "date": "2026-06-02",
+        "mo": null,
+        "product": "Tuesday 6/2",
+        "raw": "Tuesday 6/2"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Wednesday 6/3",
+        "date": "2026-06-03",
+        "mo": null,
+        "product": "Wednesday 6/3",
+        "raw": "Wednesday 6/3"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Thursday 6/4",
+        "date": "2026-06-04",
+        "mo": null,
+        "product": "Thursday 6/4",
+        "raw": "Thursday 6/4"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Friday 6/5",
+        "date": "2026-06-05",
+        "mo": null,
+        "product": "Friday 6/5",
+        "raw": "Friday 6/5"
+      },
+      {
+        "room": "15",
+        "dayLabel": "Monday 6/1",
+        "date": "2026-06-01",
+        "mo": "MO76716",
+        "product": "TP Hydration Stick Pack, Lemonade",
+        "raw": "MO76716 202832 TP Hydration Stick Pack, Lemonade"
+      },
+      {
+        "room": "15",
+        "dayLabel": "Tuesday 6/2",
+        "date": "2026-06-02",
+        "mo": "MO76716",
+        "product": "TP Hydration Stick Pack, Lemonade",
+        "raw": "MO76716 202832 TP Hydration Stick Pack, Lemonade"
+      },
+      {
+        "room": "15",
+        "dayLabel": "Wednesday 6/3",
+        "date": "2026-06-03",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade"
+      },
+      {
+        "room": "15",
+        "dayLabel": "Thursday 6/4",
+        "date": "2026-06-04",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Monday 6/1",
+        "date": "2026-06-01",
+        "mo": null,
+        "product": "Monday 6/1",
+        "raw": "Monday 6/1"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Tuesday 6/2",
+        "date": "2026-06-02",
+        "mo": null,
+        "product": "Tuesday 6/2",
+        "raw": "Tuesday 6/2"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Wednesday 6/3",
+        "date": "2026-06-03",
+        "mo": null,
+        "product": "Wednesday 6/3",
+        "raw": "Wednesday 6/3"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Thursday 6/4",
+        "date": "2026-06-04",
+        "mo": null,
+        "product": "Thursday 6/4",
+        "raw": "Thursday 6/4"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Friday 6/5",
+        "date": "2026-06-05",
+        "mo": null,
+        "product": "Friday 6/5",
+        "raw": "Friday 6/5"
+      },
+      {
+        "room": "1",
+        "dayLabel": "Monday 6/1",
+        "date": "2026-06-01",
+        "mo": null,
+        "product": "Bernardo Encisco Batching crew cleaning mixers and sifters Schedule this and currently No batching this week",
+        "raw": "Bernardo Encisco Batching crew cleaning mixers and sifters Schedule this and currently No batching this week"
+      },
+      {
+        "room": "3",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": null,
+        "product": "Taking down and moving equipment",
+        "raw": "Taking down and moving equipment"
+      },
+      {
+        "room": "4",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": null,
+        "product": "Taking down and moving equipment",
+        "raw": "Taking down and moving equipment"
+      },
+      {
+        "room": "5",
+        "dayLabel": "Monday 6/8",
+        "date": "2026-06-08",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "5",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "5",
+        "dayLabel": "Wednesday 6/10",
+        "date": "2026-06-10",
+        "mo": null,
+        "product": "Taking down and moving equipment",
+        "raw": "Taking down and moving equipment"
+      },
+      {
+        "room": "6",
+        "dayLabel": "Monday 6/8",
+        "date": "2026-06-08",
+        "mo": "MO76719",
+        "product": "TP Hydration Stick Pack, Cotton Candy\n Non-Allergen",
+        "raw": "MO76719  TP Hydration Stick Pack, Cotton Candy\n Non-Allergen"
+      },
+      {
+        "room": "6",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "7",
+        "dayLabel": "Monday 6/8",
+        "date": "2026-06-08",
+        "mo": "MO76719",
+        "product": "TP Hydration Stick Pack, Cotton Candy\n Non-Allergen",
+        "raw": "MO76719  TP Hydration Stick Pack, Cotton Candy\n Non-Allergen"
+      },
+      {
+        "room": "7",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade\n Non-Allergen"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Monday 6/8",
+        "date": "2026-06-08",
+        "mo": null,
+        "product": "Monday 6/8",
+        "raw": "Monday 6/8"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": null,
+        "product": "Tuesday 6/9",
+        "raw": "Tuesday 6/9"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Wednesday 6/10",
+        "date": "2026-06-10",
+        "mo": null,
+        "product": "Wednesday 6/10",
+        "raw": "Wednesday 6/10"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Thursday 6/11",
+        "date": "2026-06-11",
+        "mo": null,
+        "product": "Thursday 6/11",
+        "raw": "Thursday 6/11"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Friday 6/12",
+        "date": "2026-06-12",
+        "mo": null,
+        "product": "Friday 6/12",
+        "raw": "Friday 6/12"
+      },
+      {
+        "room": "15",
+        "dayLabel": "Monday 6/8",
+        "date": "2026-06-08",
+        "mo": null,
+        "product": "am pack 6 pouches of pancake into 96 boxes (12 x 9 x 4)",
+        "raw": "11am pack 6 pouches of pancake into 96 boxes (12 x 9 x 4)"
+      },
+      {
+        "room": "15",
+        "dayLabel": "Monday 6/8",
+        "date": "2026-06-08",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade"
+      },
+      {
+        "room": "15",
+        "dayLabel": "Monday 6/8",
+        "date": "2026-06-08",
+        "mo": "MO76719",
+        "product": "TP Hydration Stick Pack, Cotton Candy",
+        "raw": "MO76719  TP Hydration Stick Pack, Cotton Candy"
+      },
+      {
+        "room": "15",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": "MO76718",
+        "product": "TP Hydration Stick Pack, Strawberry Lemonade",
+        "raw": "MO76718 TP Hydration Stick Pack, Strawberry Lemonade"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Monday 6/8",
+        "date": "2026-06-08",
+        "mo": null,
+        "product": "Monday 6/8",
+        "raw": "Monday 6/8"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": null,
+        "product": "Tuesday 6/9",
+        "raw": "Tuesday 6/9"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Wednesday 6/10",
+        "date": "2026-06-10",
+        "mo": null,
+        "product": "Wednesday 6/10",
+        "raw": "Wednesday 6/10"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Thursday 6/11",
+        "date": "2026-06-11",
+        "mo": null,
+        "product": "Thursday 6/11",
+        "raw": "Thursday 6/11"
+      },
+      {
+        "room": "Room",
+        "dayLabel": "Friday 6/12",
+        "date": "2026-06-12",
+        "mo": null,
+        "product": "Friday 6/12",
+        "raw": "Friday 6/12"
+      },
+      {
+        "room": "1",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": null,
+        "product": "Taking down and moving equipment",
+        "raw": "Taking down and moving equipment"
+      },
+      {
+        "room": "2",
+        "dayLabel": "Tuesday 6/9",
+        "date": "2026-06-09",
+        "mo": null,
+        "product": "Taking down and moving equipment",
+        "raw": "Taking down and moving equipment"
+      }
+    ]
+  }
+]

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 260" width="200" height="260">
+  <rect x="4" y="4" width="192" height="252" rx="2" fill="white" stroke="#3a3a3a" stroke-width="8"/>
+  <text x="100" y="85" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-weight="900" font-size="62" fill="#3a3a3a" letter-spacing="-1">POW</text>
+  <text x="100" y="148" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-weight="900" font-size="62" fill="#3a3a3a" letter-spacing="-1">DER</text>
+  <text x="100" y="218" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-weight="900" font-size="68" fill="#c65d35" letter-spacing="-1">OPS</text>
+</svg>
