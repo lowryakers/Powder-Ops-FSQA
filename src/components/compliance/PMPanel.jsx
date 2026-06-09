@@ -1,26 +1,78 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, CheckCircle, AlertTriangle, Clock, Wrench, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 
-const FREQ_OPTIONS = [
+const FREQ_TABS = [
+  { value: 'all', label: 'All' },
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
-  { value: 'biweekly', label: 'Bi-Weekly' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
-  { value: 'semi_annual', label: 'Semi-Annual' },
   { value: 'annual', label: 'Annual' },
 ];
+
+const FREQ_COLORS = {
+  daily: 'bg-blue-100 text-blue-800',
+  weekly: 'bg-purple-100 text-purple-800',
+  monthly: 'bg-amber-100 text-amber-800',
+  quarterly: 'bg-emerald-100 text-emerald-800',
+  semi_annual: 'bg-cyan-100 text-cyan-800',
+  annual: 'bg-rose-100 text-rose-800',
+  unscheduled: 'bg-gray-100 text-gray-600',
+};
 
 const STATUS_COLORS = {
   open: 'bg-yellow-100 text-yellow-800',
   in_progress: 'bg-blue-100 text-blue-800',
   completed: 'bg-green-100 text-green-800',
   overdue: 'bg-red-100 text-red-800',
-  missed: 'bg-gray-100 text-gray-600',
-  cancelled: 'bg-gray-100 text-gray-400',
 };
+
+function CompleteForm({ wo, onComplete, onCancel }) {
+  const [form, setForm] = useState({ notes: '', lubricant_used: '', lubricant_is_food_grade: true, _actor: '' });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try { await onComplete(wo.id, form); } finally { setSaving(false); }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-green-50 rounded-lg border border-green-200 p-3 mt-2 space-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Completed By *</label>
+          <input required value={form._actor} onChange={e => setForm({ ...form, _actor: e.target.value })}
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="Your name" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Lubricant Used</label>
+          <input value={form.lubricant_used} onChange={e => setForm({ ...form, lubricant_used: e.target.value })}
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. NSF H1 Grease" />
+        </div>
+      </div>
+      {form.lubricant_used && (
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={form.lubricant_is_food_grade} onChange={e => setForm({ ...form, lubricant_is_food_grade: e.target.checked })} />
+          <span className="text-xs text-gray-700">Food-grade lubricant (NSF H1/H2)</span>
+        </label>
+      )}
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
+        <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" rows={2} />
+      </div>
+      <div className="flex gap-2">
+        <button type="submit" disabled={saving} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+          {saving ? 'Saving...' : 'Complete & Generate Next'}
+        </button>
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs hover:bg-gray-200">Cancel</button>
+      </div>
+    </form>
+  );
+}
 
 function WOForm({ equipment, onSave, onCancel }) {
   const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', assigned_to: '', due_date: '' });
@@ -40,7 +92,7 @@ function WOForm({ equipment, onSave, onCancel }) {
           <select required value={form.equipment_id} onChange={e => setForm({ ...form, equipment_id: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             <option value="">Select...</option>
-            {(equipment || []).map(eq => <option key={eq.id} value={eq.id}>{eq.name} ({eq.room || 'No room'})</option>)}
+            {(equipment || []).map(eq => <option key={eq.id} value={eq.id}>{eq.name} ({eq.location || 'No location'})</option>)}
           </select>
         </div>
         <div>
@@ -79,94 +131,117 @@ function WOForm({ equipment, onSave, onCancel }) {
   );
 }
 
-function CompleteWOForm({ wo, onSave, onCancel }) {
-  const [form, setForm] = useState({ notes: '', lubricant_used: '', lubricant_is_food_grade: true, _actor: '' });
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await onSave({
-        status: 'completed',
-        notes: form.notes,
-        lubricant_used: form.lubricant_used || null,
-        lubricant_is_food_grade: form.lubricant_used ? form.lubricant_is_food_grade : null,
-        _actor: form._actor,
-      });
-    } finally { setSaving(false); }
-  };
+function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete }) {
+  const steps = wo.procedure_steps || [];
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <form onSubmit={handleSubmit} className="bg-green-50 rounded-lg border border-green-200 p-3 mt-2 space-y-2">
-      <p className="text-sm font-medium text-green-800">Complete: {wo.title}</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Completed By *</label>
-          <input required value={form._actor} onChange={e => setForm({ ...form, _actor: e.target.value })}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="Your name" />
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${FREQ_COLORS[wo.frequency_type] || FREQ_COLORS.unscheduled}`}>
+              {wo.frequency_type || 'ad-hoc'}
+            </span>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[wo.status]}`}>{wo.status}</span>
+            {wo.priority === 'critical' && <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs">Critical</span>}
+            {wo.priority === 'high' && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
+          </div>
+          <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
+          <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}</p>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Lubricant Used</label>
-          <input value={form.lubricant_used} onChange={e => setForm({ ...form, lubricant_used: e.target.value })}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. NSF H1 Grease" />
+        <div className="flex gap-1 ml-2 shrink-0">
+          {wo.status === 'open' && (
+            <button onClick={() => onStartComplete(wo.id, 'start')}
+              className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100">Start</button>
+          )}
+          <button onClick={() => onStartComplete(wo.id, 'complete')}
+            className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs hover:bg-green-100 flex items-center gap-1">
+            <CheckCircle size={12} /> Done
+          </button>
         </div>
       </div>
-      {form.lubricant_used && (
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={form.lubricant_is_food_grade} onChange={e => setForm({ ...form, lubricant_is_food_grade: e.target.checked })} />
-          <span className="text-xs text-gray-700">Food-grade lubricant (NSF H1/H2 certified)</span>
-        </label>
+
+      {steps.length > 0 && (
+        <div className="mt-2">
+          <button onClick={() => setExpanded(!expanded)} className="text-xs text-powder-600 hover:text-powder-700 flex items-center gap-1">
+            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {steps.length} task{steps.length > 1 ? 's' : ''}
+          </button>
+          {expanded && (
+            <ul className="mt-1 space-y-1 text-xs text-gray-600 pl-4">
+              {steps.map((s, i) => <li key={i} className="flex items-start gap-1.5"><span className="text-gray-400 mt-0.5">•</span><span>{s}</span></li>)}
+            </ul>
+          )}
+        </div>
       )}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
-        <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
-          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" rows={2} />
-      </div>
-      <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
-          {saving ? 'Saving...' : 'Mark Completed'}
-        </button>
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs hover:bg-gray-200">Cancel</button>
-      </div>
-    </form>
+
+      {completing === wo.id && (
+        <CompleteForm wo={wo} onComplete={onComplete} onCancel={onCancelComplete} />
+      )}
+    </div>
   );
 }
 
 export default function PMPanel() {
   const { data: metrics, loading: metricsLoading } = useApiGet('/pm/metrics');
-  const { data: workOrders, loading: woLoading, refresh: refreshWOs } = useApiGet('/pm/work-orders');
+  const { data: grouped, loading: taskLoading, refresh: refreshTasks } = useApiGet('/pm/by-frequency');
   const { data: equipment } = useApiGet('/equipment');
+  const [freqFilter, setFreqFilter] = useState('all');
   const [showWOForm, setShowWOForm] = useState(false);
   const [completing, setCompleting] = useState(null);
   const [view, setView] = useState('active');
+  const [archiveData, setArchiveData] = useState(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
 
   const handleCreateWO = async (form) => {
     await apiPost('/pm/work-orders', form);
     setShowWOForm(false);
-    refreshWOs();
+    refreshTasks();
   };
 
-  const handleCompleteWO = async (woId, form) => {
-    await apiPut(`/pm/work-orders/${woId}`, form);
+  const handleStartWO = async (woId, action) => {
+    if (action === 'start') {
+      await apiPut(`/pm/work-orders/${woId}`, { status: 'in_progress' });
+      refreshTasks();
+    } else {
+      setCompleting(completing === woId ? null : woId);
+    }
+  };
+
+  const handleComplete = async (woId, form) => {
+    await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
     setCompleting(null);
-    refreshWOs();
+    refreshTasks();
   };
 
-  const handleStartWO = async (woId) => {
-    await apiPut(`/pm/work-orders/${woId}`, { status: 'in_progress' });
-    refreshWOs();
+  const loadArchive = async (freq) => {
+    setArchiveLoading(true);
+    try {
+      const url = freq && freq !== 'all' ? `/pm/completed-history?frequency=${freq}&limit=50` : '/pm/completed-history?limit=50';
+      const res = await fetch(`/api${url}`);
+      const data = await res.json();
+      setArchiveData(data);
+    } finally { setArchiveLoading(false); }
   };
 
-  const filteredWOs = (workOrders || []).filter(wo => {
-    if (view === 'active') return ['open', 'in_progress', 'overdue'].includes(wo.status);
-    if (view === 'completed') return wo.status === 'completed';
-    return true;
-  });
+  const handleViewChange = (v) => {
+    setView(v);
+    if (v === 'completed') loadArchive(freqFilter);
+  };
+
+  const freqOrder = ['daily', 'weekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'unscheduled'];
+  const filteredGroups = grouped ? freqOrder
+    .filter(f => grouped[f]?.length > 0)
+    .filter(f => freqFilter === 'all' || f === freqFilter)
+    .map(f => ({ freq: f, items: grouped[f] })) : [];
+
+  const totalActive = filteredGroups.reduce((sum, g) => sum + g.items.length, 0);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-gray-900">Preventive Maintenance</h2>
         <button onClick={() => setShowWOForm(true)}
           className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
@@ -174,7 +249,7 @@ export default function PMPanel() {
         </button>
       </div>
 
-      {/* PM Metrics */}
+      {/* Metrics */}
       {!metricsLoading && metrics && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className={`rounded-xl border p-4 ${metrics.meets_sqf_target ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
@@ -185,7 +260,6 @@ export default function PMPanel() {
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <p className="text-xs text-gray-600 mb-1">Total WOs</p>
             <p className="text-2xl font-bold">{metrics.total}</p>
-            <p className="text-xs text-gray-500 mt-1">{metrics.period.from} to {metrics.period.to}</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <p className="text-xs text-gray-600 mb-1">Open</p>
@@ -198,7 +272,7 @@ export default function PMPanel() {
         </div>
       )}
 
-      {/* Monthly Trend Chart */}
+      {/* Trend Chart */}
       {metrics?.monthly_trend?.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Monthly PM Completion Trend</h3>
@@ -218,64 +292,90 @@ export default function PMPanel() {
 
       {showWOForm && <WOForm equipment={equipment} onSave={handleCreateWO} onCancel={() => setShowWOForm(false)} />}
 
-      {/* Filter Tabs */}
-      <div className="flex gap-2">
-        {['active', 'completed', 'all'].map(v => (
-          <button key={v} onClick={() => setView(v)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${view === v ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            {v.charAt(0).toUpperCase() + v.slice(1)}
+      {/* View Toggle + Frequency Filter */}
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <button onClick={() => handleViewChange('active')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'active' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            <Wrench size={14} /> Active ({totalActive})
           </button>
-        ))}
+          <button onClick={() => handleViewChange('completed')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'completed' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            <Archive size={14} /> Completed
+          </button>
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {FREQ_TABS.map(f => {
+            const count = f.value === 'all'
+              ? Object.values(grouped || {}).reduce((s, arr) => s + arr.length, 0)
+              : (grouped?.[f.value]?.length || 0);
+            return (
+              <button key={f.value} onClick={() => { setFreqFilter(f.value); if (view === 'completed') loadArchive(f.value); }}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium ${freqFilter === f.value ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {f.label} {view === 'active' && count > 0 ? `(${count})` : ''}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Work Orders List */}
-      <div className="space-y-2">
-        {woLoading ? (
-          <div className="text-center py-8 text-gray-500">Loading work orders...</div>
-        ) : filteredWOs.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">No work orders found</div>
-        ) : filteredWOs.map(wo => (
-          <div key={wo.id} className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[wo.status]}`}>{wo.status}</span>
-                  {wo.priority === 'critical' && <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs">Critical</span>}
-                  {wo.priority === 'high' && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
-                </div>
-                <h4 className="font-medium text-gray-900">{wo.title}</h4>
-                <p className="text-sm text-gray-500">{wo.equipment_name} {wo.room ? `(${wo.room})` : ''}</p>
-                <div className="flex gap-4 mt-1 text-xs text-gray-500">
-                  <span>Due: {wo.due_date}</span>
-                  {wo.assigned_to && <span>Assigned: {wo.assigned_to}</span>}
-                  {wo.pm_title && <span>PM: {wo.pm_title} ({wo.frequency_type})</span>}
-                </div>
-                {wo.completed_at && (
-                  <p className="text-xs text-green-600 mt-1">Completed {new Date(wo.completed_at).toLocaleString()} by {wo.completed_by}</p>
-                )}
-                {wo.lubricant_used && (
-                  <p className="text-xs mt-1">
-                    Lubricant: {wo.lubricant_used} {wo.lubricant_is_food_grade ? '(Food-Grade)' : '(NOT food-grade)'}
-                  </p>
-                )}
+      {/* Active Tasks by Frequency */}
+      {view === 'active' && (
+        <div className="space-y-6">
+          {taskLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading PM tasks...</div>
+          ) : filteredGroups.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">No active PM tasks{freqFilter !== 'all' ? ` for ${freqFilter}` : ''}</div>
+          ) : filteredGroups.map(({ freq, items }) => (
+            <div key={freq}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`px-3 py-1 rounded-full text-sm font-semibold ${FREQ_COLORS[freq]}`}>
+                  {freq.charAt(0).toUpperCase() + freq.slice(1).replace('_', '-')}
+                </span>
+                <span className="text-sm text-gray-500">{items.length} task{items.length > 1 ? 's' : ''}</span>
               </div>
-              {wo.status !== 'completed' && wo.status !== 'cancelled' && (
-                <div className="flex gap-1">
-                  {wo.status === 'open' && (
-                    <button onClick={() => handleStartWO(wo.id)}
-                      className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100">Start</button>
-                  )}
-                  <button onClick={() => setCompleting(completing === wo.id ? null : wo.id)}
-                    className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs hover:bg-green-100">Complete</button>
-                </div>
-              )}
+              <div className="space-y-2">
+                {items.map(wo => (
+                  <TaskCard key={wo.id} wo={wo} completing={completing}
+                    onStartComplete={handleStartWO} onComplete={handleComplete}
+                    onCancelComplete={() => setCompleting(null)} />
+                ))}
+              </div>
             </div>
-            {completing === wo.id && (
-              <CompleteWOForm wo={wo} onSave={(form) => handleCompleteWO(wo.id, form)} onCancel={() => setCompleting(null)} />
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {/* Completed Archive */}
+      {view === 'completed' && (
+        <div className="space-y-2">
+          {archiveLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading completed tasks...</div>
+          ) : !archiveData?.items?.length ? (
+            <div className="text-center py-8 text-gray-500">No completed tasks yet</div>
+          ) : (
+            <>
+              <p className="text-sm text-gray-500">{archiveData.total} completed task{archiveData.total !== 1 ? 's' : ''}</p>
+              {archiveData.items.map(wo => (
+                <div key={wo.id} className="bg-white rounded-xl border border-gray-200 p-4 opacity-80">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CheckCircle size={14} className="text-green-600" />
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${FREQ_COLORS[wo.frequency_type] || FREQ_COLORS.unscheduled}`}>
+                      {wo.frequency_type || 'ad-hoc'}
+                    </span>
+                  </div>
+                  <h4 className="font-medium text-gray-700">{wo.title || wo.pm_title}</h4>
+                  <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location}</p>
+                  <p className="text-xs text-green-600 mt-1">
+                    Completed {new Date(wo.completed_at).toLocaleString()} by {wo.completed_by}
+                  </p>
+                  {wo.notes && <p className="text-xs text-gray-500 mt-1">Notes: {wo.notes}</p>}
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Edit2, X } from 'lucide-react';
+import { Plus, Edit2, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 
 const TYPES = [
   'A/C', 'Auger', 'Coder', 'Compressor', 'Conveyor', 'Cooler', 'Dehumidifier',
@@ -18,11 +18,7 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try {
-      await onSave(form);
-    } finally {
-      setSaving(false);
-    }
+    try { await onSave(form); } finally { setSaving(false); }
   };
 
   return (
@@ -111,62 +107,157 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
   );
 }
 
+function SortHeader({ label, field, sortField, sortDir, onSort, className }) {
+  const active = sortField === field;
+  return (
+    <th className={`text-left px-4 py-3 font-medium text-gray-600 cursor-pointer select-none hover:text-gray-900 ${className || ''}`}
+      onClick={() => onSort(field)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className="inline-flex flex-col leading-none">
+          <ChevronUp size={10} className={active && sortDir === 'asc' ? 'text-powder-600' : 'text-gray-300'} />
+          <ChevronDown size={10} className={active && sortDir === 'desc' ? 'text-powder-600' : 'text-gray-300'} />
+        </span>
+      </span>
+    </th>
+  );
+}
+
 export default function EquipmentPanel() {
   const { data: equipment, loading, refresh } = useApiGet('/equipment');
   const { data: ccps } = useApiGet('/haccp');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
 
-  const handleCreate = async (form) => {
-    await apiPost('/equipment', form);
-    setShowForm(false);
-    refresh();
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('');
+  const [filterLocation, setFilterLocation] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [sortField, setSortField] = useState('name');
+  const [sortDir, setSortDir] = useState('asc');
+
+  const locations = useMemo(() => {
+    if (!equipment) return [];
+    return [...new Set(equipment.map(e => e.location).filter(Boolean))].sort();
+  }, [equipment]);
+
+  const statuses = useMemo(() => {
+    if (!equipment) return [];
+    return [...new Set(equipment.map(e => e.status).filter(Boolean))].sort();
+  }, [equipment]);
+
+  const typesInUse = useMemo(() => {
+    if (!equipment) return [];
+    return [...new Set(equipment.map(e => e.type).filter(Boolean))].sort();
+  }, [equipment]);
+
+  const filtered = useMemo(() => {
+    if (!equipment) return [];
+    let list = [...equipment];
+
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(e =>
+        (e.name || '').toLowerCase().includes(q) ||
+        (e.asset_id || '').toLowerCase().includes(q) ||
+        (e.manufacturer || '').toLowerCase().includes(q) ||
+        (e.serial_number || '').toLowerCase().includes(q) ||
+        (e.model_number || '').toLowerCase().includes(q)
+      );
+    }
+    if (filterType) list = list.filter(e => e.type === filterType);
+    if (filterLocation) list = list.filter(e => e.location === filterLocation);
+    if (filterStatus) list = list.filter(e => e.status === filterStatus);
+
+    list.sort((a, b) => {
+      const av = (a[sortField] || '').toString().toLowerCase();
+      const bv = (b[sortField] || '').toString().toLowerCase();
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    return list;
+  }, [equipment, search, filterType, filterLocation, filterStatus, sortField, sortDir]);
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
   };
 
-  const handleUpdate = async (form) => {
-    await apiPut(`/equipment/${editing.id}`, form);
-    setEditing(null);
-    refresh();
-  };
+  const handleCreate = async (form) => { await apiPost('/equipment', form); setShowForm(false); refresh(); };
+  const handleUpdate = async (form) => { await apiPut(`/equipment/${editing.id}`, form); setEditing(null); refresh(); };
+  const hasFilters = search || filterType || filterLocation || filterStatus;
+  const clearFilters = () => { setSearch(''); setFilterType(''); setFilterLocation(''); setFilterStatus(''); };
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading equipment...</div>;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-gray-900">Equipment Registry</h2>
-        <button onClick={() => { setShowForm(true); setEditing(null); }}
-          className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
-          <Plus size={16} /> Add Equipment
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500">{filtered.length} of {(equipment || []).length}</span>
+          <button onClick={() => { setShowForm(true); setEditing(null); }}
+            className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+            <Plus size={16} /> Add Equipment
+          </button>
+        </div>
       </div>
 
-      {(showForm && !editing) && (
-        <EquipmentForm ccps={ccps} onSave={handleCreate} onCancel={() => setShowForm(false)} />
-      )}
+      {/* Search and Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Search name, asset ID, manufacturer, serial..." />
+        </div>
+        <select value={filterType} onChange={e => setFilterType(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+          <option value="">All Types</option>
+          {typesInUse.map(t => <option key={t}>{t}</option>)}
+        </select>
+        <select value={filterLocation} onChange={e => setFilterLocation(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+          <option value="">All Locations</option>
+          {locations.map(l => <option key={l}>{l}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+          <option value="">All Statuses</option>
+          {statuses.map(s => <option key={s}>{s}</option>)}
+        </select>
+        {hasFilters && (
+          <button onClick={clearFilters} className="px-2 py-2 text-gray-500 hover:text-gray-700" title="Clear filters">
+            <X size={16} />
+          </button>
+        )}
+      </div>
 
-      {editing && (
-        <EquipmentForm initial={editing} ccps={ccps} onSave={handleUpdate} onCancel={() => setEditing(null)} />
-      )}
+      {(showForm && !editing) && <EquipmentForm ccps={ccps} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
+      {editing && <EquipmentForm initial={editing} ccps={ccps} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Asset #</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Location</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Manufacturer</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 hidden xl:table-cell">Model</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Food Contact</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                <SortHeader label="Asset #" field="asset_id" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader label="Name" field="name" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader label="Type" field="type" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader label="Location" field="location" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader label="Manufacturer" field="manufacturer" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="hidden lg:table-cell" />
+                <SortHeader label="Model" field="model_number" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="hidden xl:table-cell" />
+                <SortHeader label="Food Contact" field="is_food_contact" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader label="Status" field="status" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {(equipment || []).map(eq => (
+              {filtered.map(eq => (
                 <tr key={eq.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-500 font-mono text-xs">{eq.asset_id || '—'}</td>
                   <td className="px-4 py-3 font-medium text-gray-900">{eq.name}</td>
@@ -189,8 +280,10 @@ export default function EquipmentPanel() {
                   </td>
                 </tr>
               ))}
-              {(!equipment || equipment.length === 0) && (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No equipment registered yet</td></tr>
+              {filtered.length === 0 && (
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                  {hasFilters ? 'No equipment matches your filters' : 'No equipment registered yet'}
+                </td></tr>
               )}
             </tbody>
           </table>

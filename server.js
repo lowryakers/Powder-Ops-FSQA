@@ -34,18 +34,57 @@ if (eqCount === 0) {
   try {
     const seedPath = path.join(__dirname, 'server', 'seed-data.json');
     const data = JSON.parse(readFileSync(seedPath, 'utf-8'));
-    const insert = db.prepare(`
+    const insertEq = db.prepare(`
       INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, status, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+    const eqIdMap = {};
     const tx = db.transaction(() => {
       for (const eq of data) {
         const id = uuid();
-        insert.run(id, eq.name, eq.type, eq.location, eq.room || null, eq.asset_id, eq.manufacturer, eq.model_number, eq.serial_number, eq.vendor, eq.pm_frequency, eq.is_food_contact ? 1 : 0, null, eq.status, eq.notes);
+        insertEq.run(id, eq.name, eq.type, eq.location, eq.room || null, eq.asset_id, eq.manufacturer, eq.model_number, eq.serial_number, eq.vendor, eq.pm_frequency, eq.is_food_contact ? 1 : 0, null, eq.status, eq.notes);
+        if (eq.asset_id) eqIdMap[eq.asset_id] = id;
       }
     });
     tx();
     console.log(`[seed] Auto-seeded ${data.length} equipment items`);
+
+    // Auto-seed PM schedules
+    try {
+      const pmPath = path.join(__dirname, 'server', 'pm-seed-data.json');
+      const pmData = JSON.parse(readFileSync(pmPath, 'utf-8'));
+      const insertPM = db.prepare(`
+        INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active)
+        VALUES (?, ?, ?, ?, ?, 1, ?, 1)
+      `);
+      const freqDays = { daily: 1, weekly: 7, monthly: 30, quarterly: 90, annual: 365 };
+      const insertWO = db.prepare(`
+        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'open')
+      `);
+      const today = new Date().toISOString().split('T')[0];
+      let pmCount = 0;
+      let woCount = 0;
+      const pmTx = db.transaction(() => {
+        for (const pm of pmData) {
+          const equipId = eqIdMap[pm.equipment_asset_id];
+          if (!equipId) continue;
+          const pmId = uuid();
+          const steps = JSON.stringify(pm.tasks);
+          insertPM.run(pmId, equipId, pm.title, null, pm.frequency, steps);
+          pmCount++;
+          const woId = uuid();
+          const dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + (freqDays[pm.frequency] || 30));
+          insertWO.run(woId, pmId, equipId, pm.title, dueDate.toISOString().split('T')[0], steps, );
+          woCount++;
+        }
+      });
+      pmTx();
+      console.log(`[seed] Auto-seeded ${pmCount} PM schedules and ${woCount} work orders`);
+    } catch (e) {
+      console.warn('[seed] Could not seed PM schedules:', e.message);
+    }
   } catch (e) {
     console.warn('[seed] Could not auto-seed:', e.message);
   }

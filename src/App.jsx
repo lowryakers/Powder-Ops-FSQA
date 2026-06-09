@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, Wrench, ClipboardCheck, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock } from 'lucide-react';
+import { Shield, Wrench, ClipboardCheck, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat } from 'lucide-react';
 import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
 import EquipmentPanel from './components/compliance/EquipmentPanel.jsx';
 import PMPanel from './components/compliance/PMPanel.jsx';
@@ -8,9 +8,11 @@ import CalibrationPanel from './components/compliance/CalibrationPanel.jsx';
 import SanitationPanel from './components/compliance/SanitationPanel.jsx';
 import LOTOPanel from './components/compliance/LOTOPanel.jsx';
 import AuditLogPanel from './components/compliance/AuditLogPanel.jsx';
+import OperatorView from './components/compliance/OperatorView.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'operator', label: 'Operator', icon: HardHat },
   { id: 'pm', label: 'PM', icon: Wrench },
   { id: 'checklists', label: 'Checklists', icon: ClipboardCheck },
   { id: 'calibration', label: 'Calibration', icon: Thermometer },
@@ -76,6 +78,7 @@ function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {activeTab === 'dashboard' && <ComplianceDashboard />}
+        {activeTab === 'operator' && <OperatorView />}
         {activeTab === 'pm' && <PMPanel />}
         {activeTab === 'checklists' && <ChecklistPanel />}
         {activeTab === 'calibration' && <CalibrationPanel />}
