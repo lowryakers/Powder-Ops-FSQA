@@ -264,6 +264,23 @@ function initSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+    CREATE TABLE IF NOT EXISTS checklist_instances (
+      id TEXT PRIMARY KEY,
+      checklist_id TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','completed','overdue','skipped')),
+      submission_id TEXT,
+      completed_by TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (checklist_id) REFERENCES checklist_templates(id),
+      FOREIGN KEY (submission_id) REFERENCES checklist_submissions(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_checklist_instances_due ON checklist_instances(due_date);
+    CREATE INDEX IF NOT EXISTS idx_checklist_instances_status ON checklist_instances(status);
+    CREATE INDEX IF NOT EXISTS idx_checklist_instances_checklist ON checklist_instances(checklist_id);
   `);
 }
 
