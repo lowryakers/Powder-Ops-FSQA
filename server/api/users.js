@@ -24,6 +24,26 @@ router.get('/technicians', (_req, res) => {
   res.json(techs);
 });
 
+router.get('/me', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  const db = getDb();
+  const session = db.prepare("SELECT s.*, u.id as uid, u.name, u.email, u.role FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > datetime('now')").get(token);
+  if (!session) return res.status(401).json({ error: 'Session expired' });
+
+  res.json({ id: session.uid, name: session.name, email: session.email, role: session.role });
+});
+
+router.post('/logout', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (token) {
+    const db = getDb();
+    db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  }
+  res.json({ ok: true });
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT id, name, email, role, is_active, created_at FROM users WHERE id = ?').get(req.params.id);
@@ -79,26 +99,6 @@ router.post('/login', (req, res) => {
 
   logAudit(user.name, 'login', 'user', user.id, null, null, null);
   res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
-});
-
-router.get('/me', (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
-  const db = getDb();
-  const session = db.prepare("SELECT s.*, u.id as uid, u.name, u.email, u.role FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > datetime('now')").get(token);
-  if (!session) return res.status(401).json({ error: 'Session expired' });
-
-  res.json({ id: session.uid, name: session.name, email: session.email, role: session.role });
-});
-
-router.post('/logout', (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (token) {
-    const db = getDb();
-    db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
-  }
-  res.json({ ok: true });
 });
 
 export default router;
