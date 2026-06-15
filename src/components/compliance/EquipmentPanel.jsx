@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download } from 'lucide-react';
+import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 
 const TYPES = [
@@ -122,6 +122,12 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+      <div className="flex items-center gap-3 mb-1">
+        <button type="button" onClick={onCancel} className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900">
+          <ArrowLeft size={16} /> Back
+        </button>
+        <h3 className="text-base font-semibold text-gray-900">{initial?.id ? `Edit: ${initial.name}` : 'Add Equipment'}</h3>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Name *</label>
@@ -442,57 +448,55 @@ export default function EquipmentPanel() {
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {filtered.map(eq => {
-                const isExpanded = expandedId === eq.id;
-                const tasks = parseTasks(eq);
-                const taskCount = Object.values(tasks).reduce((s, arr) => s + arr.length, 0);
-                return (
-                  <tbody key={eq.id}>
-                    <tr className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`}
-                      onClick={() => toggleExpand(eq.id)}>
-                      <td className="px-2 text-gray-400">
-                        <ChevronRight size={14} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 font-mono text-xs">{eq.asset_id || '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className="font-medium text-gray-900">{eq.name}</span>
-                        {taskCount > 0 && (
-                          <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-gray-500">
-                            <ClipboardList size={10} />{taskCount}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{eq.type}</td>
-                      <td className="px-4 py-3 text-gray-600">{eq.location || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">{eq.manufacturer || '—'}</td>
-                      <td className="px-4 py-3">
-                        {eq.is_food_contact ? <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">Yes</span> : <span className="text-gray-400">No</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs ${eq.status === 'active' ? 'bg-green-100 text-green-800' : eq.status === 'partial' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                          {eq.status}
+            {filtered.map(eq => {
+              const isExpanded = expandedId === eq.id;
+              const tasks = parseTasks(eq);
+              const taskCount = Object.values(tasks).reduce((s, arr) => s + arr.length, 0);
+              return (
+                <tbody key={eq.id}>
+                  <tr className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`}
+                    onClick={() => toggleExpand(eq.id)}>
+                    <td className="px-2 text-gray-400">
+                      <ChevronRight size={14} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">{eq.asset_id || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className="font-medium text-gray-900">{eq.name}</span>
+                      {taskCount > 0 && (
+                        <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-gray-500">
+                          <ClipboardList size={10} />{taskCount}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => { setEditing(eq); setShowForm(false); }} className="text-gray-400 hover:text-powder-600">
-                          <Edit2 size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <EquipmentDetailRow eq={eq} colSpan={COL_COUNT}
-                        onEdit={() => { setEditing(eq); setShowForm(false); }} />
-                    )}
-                  </tbody>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr><td colSpan={COL_COUNT} className="px-4 py-8 text-center text-gray-500">
-                  {hasFilters ? 'No equipment matches your filters' : 'No equipment registered yet'}
-                </td></tr>
-              )}
-            </tbody>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{eq.type}</td>
+                    <td className="px-4 py-3 text-gray-600">{eq.location || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">{eq.manufacturer || '—'}</td>
+                    <td className="px-4 py-3">
+                      {eq.is_food_contact ? <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">Yes</span> : <span className="text-gray-400">No</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs ${eq.status === 'active' ? 'bg-green-100 text-green-800' : eq.status === 'partial' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                        {eq.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => { setEditing(eq); setShowForm(false); }} className="text-gray-400 hover:text-powder-600">
+                        <Edit2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <EquipmentDetailRow eq={eq} colSpan={COL_COUNT}
+                      onEdit={() => { setEditing(eq); setShowForm(false); }} />
+                  )}
+                </tbody>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tbody><tr><td colSpan={COL_COUNT} className="px-4 py-8 text-center text-gray-500">
+                {hasFilters ? 'No equipment matches your filters' : 'No equipment registered yet'}
+              </td></tr></tbody>
+            )}
           </table>
         </div>
       </div>

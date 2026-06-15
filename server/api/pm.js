@@ -12,11 +12,41 @@ function nextWeekday(date) {
 
 function markMissedWorkOrders(db) {
   const today = new Date().toISOString().split('T')[0];
-  const result = db.prepare(`
-    UPDATE work_orders SET status = 'missed', updated_at = datetime('now')
-    WHERE status IN ('open', 'overdue') AND due_date < ?
-  `).run(today);
-  return result.changes;
+  const missed = db.prepare(`
+    SELECT wo.id, wo.pm_schedule_id, wo.equipment_id, wo.title, wo.due_date
+    FROM work_orders wo
+    WHERE wo.status IN ('open', 'overdue') AND wo.due_date < ?
+  `).all(today);
+
+  if (missed.length === 0) return 0;
+
+  const markMissed = db.prepare(`UPDATE work_orders SET status = 'missed', updated_at = datetime('now') WHERE id = ?`);
+  const existsOpen = db.prepare(`SELECT COUNT(*) as c FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open', 'in_progress')`);
+  const getSched = db.prepare(`SELECT * FROM pm_schedules WHERE id = ? AND is_active = 1`);
+  const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, status) VALUES (?, ?, ?, ?, ?, ?, 'open')`);
+  const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
+
+  const tx = db.transaction(() => {
+    for (const wo of missed) {
+      markMissed.run(wo.id);
+
+      if (wo.pm_schedule_id) {
+        const hasOpen = existsOpen.get(wo.pm_schedule_id).c;
+        if (hasOpen === 0) {
+          const sched = getSched.get(wo.pm_schedule_id);
+          if (sched) {
+            const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
+            const raw = new Date();
+            raw.setDate(raw.getDate() + interval);
+            const nextDue = nextWeekday(raw);
+            insertWO.run(uuid(), sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps);
+          }
+        }
+      }
+    }
+  });
+  tx();
+  return missed.length;
 }
 
 // --- PM Schedules ---
