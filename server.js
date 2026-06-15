@@ -136,6 +136,70 @@ if (calCount === 0) {
   }
 }
 
+// Seed LOTO procedures for all equipment if none exist
+const lotoCount = db.prepare('SELECT COUNT(*) as c FROM loto_procedures').get().c;
+if (lotoCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c > 0) {
+  try {
+    const allEquip = db.prepare('SELECT id, name FROM equipment').all();
+    const lotoSteps = [
+      { section: 'Preparation: Identify Energy Sources', items: [
+        'Review equipment manuals and maintenance records',
+        'Identify all energy sources: electrical, mechanical, hydraulic, pneumatic, chemical, or thermal',
+        'Note down potential hazards associated with each energy source',
+      ]},
+      { section: 'Notification: Inform Affected Employees', items: [
+        'Inform employees who work on or near the equipment about scheduled maintenance',
+        'Explain what maintenance will be performed and the expected duration',
+        'Clearly communicate that the equipment will be shut down and locked out, and employees must not attempt to operate it',
+        'Address questions or concerns to prevent confusion or accidents',
+      ]},
+      { section: 'Shutdown: Power Down Equipment', items: [
+        "Follow the manufacturer's recommended shutdown procedure",
+        'Use normal operating controls',
+        'Wait until all moving parts come to a complete stop',
+        'Double-check that no secondary systems are still running',
+      ]},
+      { section: 'Isolation: Disconnect Energy Sources', items: [
+        'Locate all primary and secondary energy sources, such as electrical switches, valves, breakers, etc.',
+        'Disconnect or block each source to stop energy from flowing back into the system',
+        'Use energy isolating devices such as circuit breakers and valve covers',
+        'Confirm that all energy sources have been fully cut off — many machines have multiple sources',
+      ]},
+      { section: 'Lockout/Tagout: Apply Devices', items: [
+        'Apply locks to energy control devices (switches, breakers, etc.) to prevent accidental reactivation',
+        'Place tags indicating that maintenance is in progress and equipment must not be operated',
+        'Use individually identifiable locks. Only the employee who applied the device removes it, except under a documented, employer-directed process',
+        'Double-check that all devices are secure and visible',
+      ]},
+      { section: 'Release Stored Energy: Ensure Zero Energy State', items: [
+        'Release or relieve stored energy in springs, capacitors, hydraulic systems, or pneumatic lines',
+        'Bleed off pressure, drain fluids, or discharge residual electrical energy as needed',
+        'Confirm that all moving parts are fully stopped and cannot restart unexpectedly',
+        'Lock or block components that could move due to stored energy',
+      ]},
+      { section: 'Verification: Confirm Isolation', items: [
+        "Attempt to start the equipment using normal controls to confirm it doesn't operate",
+        'Test each energy source individually if possible',
+        'Check that all locks, tags, and isolation devices are securely and properly placed',
+        'Verify with a second qualified person when required by your safety procedures',
+        'Only begin maintenance once you are 100% confident the equipment is safe',
+      ]},
+    ];
+    const energySources = ['electrical', 'mechanical', 'hydraulic', 'pneumatic', 'chemical', 'thermal'];
+    const flatSteps = lotoSteps.flatMap(s => [s.section + ':', ...s.items.map(i => '  ' + i)]);
+    const insertLoto = db.prepare(`INSERT INTO loto_procedures (id, equipment_id, title, description, energy_sources, steps, required_locks, required_tags, verification_method) VALUES (?, ?, ?, ?, ?, ?, 1, 1, 'try_start')`);
+    const lotoTx = db.transaction(() => {
+      for (const eq of allEquip) {
+        insertLoto.run(uuid(), eq.id, `LOTO — ${eq.name}`, 'Standard Lockout/Tagout Procedure Checklist', JSON.stringify(energySources), JSON.stringify(flatSteps));
+      }
+    });
+    lotoTx();
+    console.log(`[seed] Created LOTO procedures for ${allEquip.length} equipment items`);
+  } catch (e) {
+    console.warn('[seed] Could not seed LOTO procedures:', e.message);
+  }
+}
+
 // Seed default admin user if no users exist
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
 if (userCount === 0) {
