@@ -28,13 +28,13 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes } = req.body;
+  const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks } = req.body;
   if (!name || !type) return res.status(400).json({ error: 'name and type are required' });
 
   db.prepare(`
-    INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, type, location || null, room || null, asset_id || null, manufacturer || null, model_number || null, serial_number || null, vendor || null, pm_frequency || null, is_food_contact ? 1 : 0, haccp_ccp_id || null, notes || null);
+    INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, type, location || null, room || null, asset_id || null, manufacturer || null, model_number || null, serial_number || null, vendor || null, pm_frequency || null, is_food_contact ? 1 : 0, haccp_ccp_id || null, notes || null, maintenance_tasks ? JSON.stringify(maintenance_tasks) : '{}');
 
   const created = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);
   logAudit(req.body._actor || 'system', 'create', 'equipment', id, { name, type }, null, created);
@@ -46,18 +46,19 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Equipment not found' });
 
-  const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, status, notes } = req.body;
+  const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, status, notes, maintenance_tasks } = req.body;
   db.prepare(`
     UPDATE equipment SET name = ?, type = ?, location = ?, room = ?, asset_id = ?, manufacturer = ?,
     model_number = ?, serial_number = ?, vendor = ?, pm_frequency = ?, is_food_contact = ?,
-    haccp_ccp_id = ?, status = ?, notes = ?, updated_at = datetime('now') WHERE id = ?
+    haccp_ccp_id = ?, status = ?, notes = ?, maintenance_tasks = ?, updated_at = datetime('now') WHERE id = ?
   `).run(
     name || existing.name, type || existing.type, location ?? existing.location,
     room ?? existing.room, asset_id ?? existing.asset_id, manufacturer ?? existing.manufacturer,
     model_number ?? existing.model_number, serial_number ?? existing.serial_number,
     vendor ?? existing.vendor, pm_frequency ?? existing.pm_frequency,
     is_food_contact !== undefined ? (is_food_contact ? 1 : 0) : existing.is_food_contact,
-    haccp_ccp_id ?? existing.haccp_ccp_id, status || existing.status, notes ?? existing.notes, req.params.id
+    haccp_ccp_id ?? existing.haccp_ccp_id, status || existing.status, notes ?? existing.notes,
+    maintenance_tasks !== undefined ? JSON.stringify(maintenance_tasks) : (existing.maintenance_tasks || '{}'), req.params.id
   );
 
   const updated = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);

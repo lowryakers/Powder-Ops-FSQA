@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
+import { exportToCsv } from '../../utils/exportCsv';
 
 const FREQ_TABS = [
   { value: 'all', label: 'All' },
@@ -400,6 +401,26 @@ export default function PMPanel() {
               <button onClick={() => { setDateFrom(''); setDateTo(''); loadArchive(freqFilter, '', ''); }}
                 className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-900 bg-gray-100 rounded-lg">Clear dates</button>
             )}
+            <div className="ml-auto">
+              <button onClick={() => {
+                if (!archiveData?.items?.length) return;
+                exportToCsv(`pm-history-${new Date().toISOString().split('T')[0]}.csv`, [
+                  { label: 'Status', value: r => r.status },
+                  { label: 'Title', value: r => r.title || r.pm_title },
+                  { label: 'Equipment', value: r => r.equipment_name },
+                  { label: 'Location', value: r => r.location },
+                  { label: 'Frequency', value: r => r.frequency_type || 'ad-hoc' },
+                  { label: 'Due Date', value: r => r.due_date },
+                  { label: 'Completed At', value: r => r.completed_at || '' },
+                  { label: 'Completed By', value: r => r.completed_by || '' },
+                  { label: 'Assigned To', value: r => r.assigned_to || '' },
+                  { label: 'Priority', value: r => r.priority },
+                  { label: 'Notes', value: r => r.notes || '' },
+                ], archiveData.items);
+              }} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+                <Download size={14} /> Export CSV
+              </button>
+            </div>
           </div>
 
           {archiveLoading ? (

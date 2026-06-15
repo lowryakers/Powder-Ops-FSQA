@@ -308,6 +308,52 @@ function runMigrations() {
   addColumnIfMissing('calibration_instruments', 'department', 'TEXT');
   addColumnIfMissing('calibration_instruments', 'notes', 'TEXT');
   addColumnIfMissing('work_orders', 'attachments', "TEXT DEFAULT '[]'");
+  addColumnIfMissing('equipment', 'maintenance_tasks', "TEXT DEFAULT '{}'");
+
+  migrateEquipmentNotes();
+}
+
+function parseNotesIntoTasks(notes) {
+  if (!notes) return null;
+  const freqPattern = /\b(Daily|Weekly|Bi-weekly|Biweekly|Monthly|Quarterly|Semi-Annual|Semi Annual|Annual|Annually|As Needed)\s*[-–—:]\s*/gi;
+  const freqNormalize = {
+    'daily': 'Daily', 'weekly': 'Weekly', 'bi-weekly': 'Bi-weekly', 'biweekly': 'Bi-weekly',
+    'monthly': 'Monthly', 'quarterly': 'Quarterly', 'semi-annual': 'Semi-Annual',
+    'semi annual': 'Semi-Annual', 'annual': 'Annual', 'annually': 'Annual', 'as needed': 'As Needed',
+  };
+  const parts = notes.split(freqPattern);
+  if (parts.length <= 1) return null;
+
+  const tasks = {};
+  for (let i = 1; i < parts.length; i += 2) {
+    const freq = freqNormalize[parts[i].toLowerCase()] || parts[i];
+    const raw = (parts[i + 1] || '').trim().replace(/,\s*$/, '');
+    const items = raw.split(/,\s*/).map(s => s.trim()).filter(s => s.length > 0);
+    if (items.length > 0) {
+      if (!tasks[freq]) tasks[freq] = [];
+      tasks[freq].push(...items);
+    }
+  }
+  return Object.keys(tasks).length > 0 ? tasks : null;
+}
+
+function migrateEquipmentNotes() {
+  const rows = db.prepare("SELECT id, notes, maintenance_tasks FROM equipment WHERE notes IS NOT NULL AND notes != '' AND (maintenance_tasks IS NULL OR maintenance_tasks = '{}')").all();
+  if (rows.length === 0) return;
+
+  const update = db.prepare("UPDATE equipment SET maintenance_tasks = ?, notes = '' WHERE id = ?");
+  let migrated = 0;
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const tasks = parseNotesIntoTasks(row.notes);
+      if (tasks) {
+        update.run(JSON.stringify(tasks), row.id);
+        migrated++;
+      }
+    }
+  });
+  tx();
+  if (migrated > 0) console.log(`[migrate] Parsed ${migrated} equipment notes into structured maintenance tasks`);
 }
 
 export function logAudit(actor, action, entityType, entityId, details, previousState, newState) {
