@@ -1,0 +1,145 @@
+[
+  {
+    "asset_number": "73",
+    "serial_number": null,
+    "manufacturer": "Scale-Light",
+    "model": "EG5001",
+    "room": "Room #6",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": "500g x 0.01g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "75",
+    "serial_number": null,
+    "manufacturer": "Scale-Light",
+    "model": "EG5001",
+    "room": "Room #5",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": "500g x 0.01g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "82",
+    "serial_number": null,
+    "manufacturer": "Scale-Light",
+    "model": "EG5001",
+    "room": "Room #4",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": "500g x 0.01g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "74",
+    "serial_number": null,
+    "manufacturer": "Scale-Light",
+    "model": "EG5001",
+    "room": "Room #4",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": "500g x 0.01g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "87",
+    "serial_number": "240115720650208",
+    "manufacturer": "Scale-Light",
+    "model": "KF-H2C/H2D",
+    "room": "KITTING #15",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": "15kg",
+    "department": "Production"
+  },
+  {
+    "asset_number": "83",
+    "serial_number": "24011572065232",
+    "manufacturer": "Scale-Light",
+    "model": "KF-H2C/H2D",
+    "room": "KITTING #15",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": "15kg",
+    "department": "Production"
+  },
+  {
+    "asset_number": null,
+    "serial_number": "MAQ2202IN0801",
+    "manufacturer": "INSCALE",
+    "model": "LP7510",
+    "room": "NEXT TO BATCHING ROOM #1",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": null,
+    "department": "Production"
+  },
+  {
+    "asset_number": "WR2009126",
+    "serial_number": "WR2009126",
+    "manufacturer": "EAGLE",
+    "model": "PALLET WRAPPER",
+    "room": null,
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": null,
+    "department": "Warehouse"
+  },
+  {
+    "asset_number": "162",
+    "serial_number": "202101040",
+    "manufacturer": "Scale-Light",
+    "model": "METAL DETECTOR CHECKWEIGHER",
+    "room": "KITTING #15",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": null,
+    "department": "KITTING"
+  },
+  {
+    "asset_number": "228",
+    "serial_number": "2021-1399",
+    "manufacturer": "Scale-Light",
+    "model": "METAL DETECTOR CHECKWEIGHER",
+    "room": "KITTING #15",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": null,
+    "department": "KITTING"
+  },
+  {
+    "asset_number": "ULINE82",
+    "serial_number": "F22101908",
+    "manufacturer": "Scale-Light",
+    "model": "H-4593",
+    "room": "BATCHING ROOM #2",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": null,
+    "department": "Production"
+  },
+  {
+    "asset_number": "80",
+    "serial_number": "F22101932",
+    "manufacturer": "Scale-Light",
+    "model": "H-4593",
+    "room": "BATCHING ROOM #2",
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": null,
+    "department": "Production"
+  },
+  {
+    "asset_number": "C051746402",
+    "serial_number": "C051746402",
+    "manufacturer": "Scale-Light",
+    "model": "T32XW",
+    "room": null,
+    "last_calibrated": "2025-07-31",
+    "next_due": "2026-07-31",
+    "max_capacity": null,
+    "department": null
+  }
+]

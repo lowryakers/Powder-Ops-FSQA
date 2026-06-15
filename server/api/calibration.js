@@ -8,7 +8,7 @@ const router = Router();
 
 router.get('/instruments', (req, res) => {
   const db = getDb();
-  const { status, critical_only } = req.query;
+  const { status, critical_only, department } = req.query;
   let sql = `SELECT ci.*, e.name as equipment_name, c.name as ccp_name
     FROM calibration_instruments ci
     LEFT JOIN equipment e ON ci.equipment_id = e.id
@@ -17,9 +17,21 @@ router.get('/instruments', (req, res) => {
 
   if (status) { sql += ' AND ci.status = ?'; params.push(status); }
   if (critical_only === 'true') { sql += ' AND ci.is_critical_control = 1'; }
+  if (department) { sql += ' AND ci.department = ?'; params.push(department); }
 
   sql += ' ORDER BY ci.next_due ASC';
-  res.json(db.prepare(sql).all(...params));
+
+  const rows = db.prepare(sql).all(...params);
+
+  const today = new Date().toISOString().split('T')[0];
+  for (const r of rows) {
+    if (r.status !== 'retired' && r.status !== 'out_of_service' && r.next_due && r.next_due < today) {
+      db.prepare("UPDATE calibration_instruments SET status = 'overdue' WHERE id = ? AND status != 'overdue'").run(r.id);
+      r.status = 'overdue';
+    }
+  }
+
+  res.json(rows);
 });
 
 router.get('/instruments/:id', (req, res) => {
@@ -39,16 +51,18 @@ router.get('/instruments/:id', (req, res) => {
 router.post('/instruments', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { name, type, serial_number, manufacturer, model, location, equipment_id, calibration_frequency, tolerance, unit_of_measure, is_critical_control, haccp_ccp_id } = req.body;
+  const { name, type, serial_number, manufacturer, model, location, room, asset_number, max_capacity, equipment_id, calibration_frequency, tolerance, unit_of_measure, is_critical_control, haccp_ccp_id, department, notes } = req.body;
 
   if (!name || !type) return res.status(400).json({ error: 'name and type are required' });
 
   db.prepare(`
-    INSERT INTO calibration_instruments (id, name, type, serial_number, manufacturer, model, location, equipment_id, calibration_frequency, tolerance, unit_of_measure, is_critical_control, haccp_ccp_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO calibration_instruments (id, name, type, serial_number, manufacturer, model, location, room, asset_number, max_capacity, equipment_id, calibration_frequency, tolerance, unit_of_measure, is_critical_control, haccp_ccp_id, department, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, name, type, serial_number || null, manufacturer || null, model || null,
-    location || null, equipment_id || null, calibration_frequency || 'monthly',
-    tolerance || null, unit_of_measure || null, is_critical_control ? 1 : 0, haccp_ccp_id || null);
+    location || null, room || null, asset_number || null, max_capacity || null,
+    equipment_id || null, calibration_frequency || 'annual',
+    tolerance || null, unit_of_measure || null, is_critical_control ? 1 : 0, haccp_ccp_id || null,
+    department || null, notes || null);
 
   const created = db.prepare('SELECT * FROM calibration_instruments WHERE id = ?').get(id);
   logAudit(req.body._actor || 'system', 'create', 'calibration_instrument', id, { name, type }, null, created);
@@ -60,7 +74,7 @@ router.put('/instruments/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM calibration_instruments WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Instrument not found' });
 
-  const fields = ['name', 'type', 'serial_number', 'manufacturer', 'model', 'location', 'equipment_id', 'calibration_frequency', 'tolerance', 'unit_of_measure', 'status', 'is_critical_control', 'haccp_ccp_id'];
+  const fields = ['name', 'type', 'serial_number', 'manufacturer', 'model', 'location', 'room', 'asset_number', 'max_capacity', 'equipment_id', 'calibration_frequency', 'tolerance', 'unit_of_measure', 'status', 'is_critical_control', 'haccp_ccp_id', 'department', 'notes'];
   const vals = fields.map(f => {
     if (f === 'is_critical_control') return req.body[f] !== undefined ? (req.body[f] ? 1 : 0) : existing[f];
     return req.body[f] ?? existing[f];
@@ -68,8 +82,9 @@ router.put('/instruments/:id', (req, res) => {
 
   db.prepare(`
     UPDATE calibration_instruments SET name=?, type=?, serial_number=?, manufacturer=?, model=?,
-    location=?, equipment_id=?, calibration_frequency=?, tolerance=?, unit_of_measure=?,
-    status=?, is_critical_control=?, haccp_ccp_id=?, updated_at=datetime('now') WHERE id=?
+    location=?, room=?, asset_number=?, max_capacity=?, equipment_id=?, calibration_frequency=?,
+    tolerance=?, unit_of_measure=?, status=?, is_critical_control=?, haccp_ccp_id=?,
+    department=?, notes=?, updated_at=datetime('now') WHERE id=?
   `).run(...vals, req.params.id);
 
   const updated = db.prepare('SELECT * FROM calibration_instruments WHERE id = ?').get(req.params.id);
@@ -122,6 +137,30 @@ router.post('/records', (req, res) => {
   const created = db.prepare('SELECT * FROM calibration_records WHERE id = ?').get(id);
   logAudit(calibrated_by, 'calibrate', 'calibration_record', id, { instrument_id, result }, null, created);
   res.status(201).json(created);
+});
+
+// --- Summary / Dashboard ---
+
+router.get('/summary', (_req, res) => {
+  const db = getDb();
+  const today = new Date().toISOString().split('T')[0];
+  const thirtyDays = new Date();
+  thirtyDays.setDate(thirtyDays.getDate() + 30);
+  const thirtyStr = thirtyDays.toISOString().split('T')[0];
+
+  const total = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments WHERE status != ?').get('retired').c;
+  const overdue = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due < ? AND status NOT IN ('retired','out_of_service')").get(today).c;
+  const dueSoon = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due BETWEEN ? AND ? AND status NOT IN ('retired','out_of_service')").get(today, thirtyStr).c;
+  const current = total - overdue - dueSoon;
+
+  const byDepartment = db.prepare(`
+    SELECT department, COUNT(*) as total,
+      SUM(CASE WHEN next_due < ? THEN 1 ELSE 0 END) as overdue
+    FROM calibration_instruments WHERE status != 'retired' AND department IS NOT NULL
+    GROUP BY department
+  `).all(today);
+
+  res.json({ total, current, overdue, due_soon: dueSoon, by_department: byDepartment });
 });
 
 export default router;

@@ -110,6 +110,32 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   }
 }
 
+// Auto-seed calibration instruments if empty
+const calCount = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c;
+if (calCount === 0) {
+  try {
+    const calPath = path.join(__dirname, 'server', 'calibration-seed-data.json');
+    const calData = JSON.parse(readFileSync(calPath, 'utf-8'));
+    const insertCal = db.prepare(`
+      INSERT INTO calibration_instruments (id, name, type, serial_number, manufacturer, model, location, room, asset_number, max_capacity, calibration_frequency, last_calibrated, next_due, status, department)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const calTx = db.transaction(() => {
+      for (const s of calData) {
+        const id = uuid();
+        const name = `${s.manufacturer} ${s.model}${s.asset_number ? ' #' + s.asset_number : ''}`;
+        const location = [s.room, s.department].filter(Boolean).join(' — ') || null;
+        const status = s.next_due && new Date(s.next_due) < new Date() ? 'overdue' : 'active';
+        insertCal.run(id, name, 'scale', s.serial_number, s.manufacturer, s.model, location, s.room, s.asset_number, s.max_capacity, 'annual', s.last_calibrated, s.next_due, status, s.department);
+      }
+    });
+    calTx();
+    console.log(`[seed] Auto-seeded ${calData.length} calibration instruments`);
+  } catch (e) {
+    console.warn('[seed] Could not seed calibration:', e.message);
+  }
+}
+
 // Seed default admin user if no users exist
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
 if (userCount === 0) {
