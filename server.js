@@ -213,7 +213,7 @@ if (userCount === 0) {
 const completedCount = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE status = 'completed'").get().c;
 if (completedCount === 0 && db.prepare("SELECT COUNT(*) as c FROM work_orders").get().c > 0) {
   try {
-    const TECHS = ['Adam B.', 'Carlos M.', 'Derek W.', 'James R.', 'Luis T.'];
+    const TECHS = ['Adam B.', 'Ricardo A.', 'Spencer R.'];
     const pickOne = arr => arr[Math.floor(Math.random() * arr.length)];
     const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
     const startDate = new Date();
@@ -249,6 +249,22 @@ if (completedCount === 0 && db.prepare("SELECT COUNT(*) as c FROM work_orders").
   } catch (e) {
     console.warn('[seed] Could not backfill history:', e.message);
   }
+}
+
+// Fix technician names on completed work orders
+const oldNames = ['Carlos M.', 'Derek W.', 'James R.', 'Luis T.'];
+const newNames = ['Adam B.', 'Ricardo A.', 'Spencer R.'];
+const hasOld = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE assigned_to IN ('Carlos M.','Derek W.','James R.','Luis T.') AND status = 'completed'").get().c;
+if (hasOld > 0) {
+  const reassign = db.transaction(() => {
+    for (const old of oldNames) {
+      const replacement = newNames[Math.floor(Math.random() * newNames.length)];
+      db.prepare("UPDATE work_orders SET assigned_to = ?, completed_by = ? WHERE assigned_to = ? AND status = 'completed'").run(replacement, replacement, old);
+      db.prepare("UPDATE audit_log SET actor = ? WHERE actor = ?").run(replacement, old);
+    }
+  });
+  reassign();
+  console.log(`[migrate] Reassigned ${hasOld} completed WOs to correct technician names`);
 }
 
 // --- File Uploads ---
