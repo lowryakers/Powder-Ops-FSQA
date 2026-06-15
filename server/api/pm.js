@@ -121,17 +121,17 @@ router.get('/work-orders/:id', (req, res) => {
 router.post('/work-orders', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps } = req.body;
+  const { pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments } = req.body;
 
   if (!equipment_id || !title || !due_date) {
     return res.status(400).json({ error: 'equipment_id, title, and due_date are required' });
   }
 
   db.prepare(`
-    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, pm_schedule_id || null, equipment_id, title, description || null,
-    priority || 'normal', assigned_to || null, due_date, JSON.stringify(procedure_steps || []));
+    priority || 'normal', assigned_to || null, due_date, JSON.stringify(procedure_steps || []), JSON.stringify(attachments || []));
 
   const created = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id);
   logAudit(req.body._actor || 'system', 'create', 'work_order', id, { title, equipment_id, due_date }, null, created);

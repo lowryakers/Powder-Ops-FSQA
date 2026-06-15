@@ -307,6 +307,7 @@ function runMigrations() {
   addColumnIfMissing('calibration_instruments', 'max_capacity', 'TEXT');
   addColumnIfMissing('calibration_instruments', 'department', 'TEXT');
   addColumnIfMissing('calibration_instruments', 'notes', 'TEXT');
+  addColumnIfMissing('work_orders', 'attachments', "TEXT DEFAULT '[]'");
 }
 
 export function logAudit(actor, action, entityType, entityId, details, previousState, newState) {

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Shield, CheckCircle, AlertTriangle } from 'lucide-react';
+import FileUpload from './FileUpload';
 
 export default function SubmitWorkOrder() {
   const [equipment, setEquipment] = useState([]);
-  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', submitted_by: '' });
+  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', submitted_by: '', attachments: [] });
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -41,7 +42,7 @@ export default function SubmitWorkOrder() {
           <CheckCircle size={64} className="mx-auto text-green-500 mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Work Order Submitted</h1>
           <p className="text-gray-600 mb-6">Your request has been logged. The maintenance team will review it shortly.</p>
-          <button onClick={() => { setSuccess(false); setForm({ equipment_id: '', title: '', description: '', priority: 'normal', submitted_by: '' }); }}
+          <button onClick={() => { setSuccess(false); setForm({ equipment_id: '', title: '', description: '', priority: 'normal', submitted_by: '', attachments: [] }); }}
             className="px-6 py-3 bg-powder-600 text-white rounded-xl font-bold hover:bg-powder-700">
             Submit Another
           </button>
@@ -90,6 +91,8 @@ export default function SubmitWorkOrder() {
             <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" rows={3} placeholder="Describe the problem in more detail..." />
           </div>
+
+          <FileUpload files={form.attachments} onChange={attachments => setForm({ ...form, attachments })} />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">How urgent?</label>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip } from 'lucide-react';
+import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 
 const FREQ_TABS = [
@@ -75,7 +76,7 @@ function CompleteForm({ wo, onComplete, onCancel }) {
 }
 
 function WOForm({ equipment, technicians, onSave, onCancel }) {
-  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', assigned_to: '', due_date: '' });
+  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', assigned_to: '', due_date: '', attachments: [] });
   const [saving, setSaving] = useState(false);
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -124,6 +125,7 @@ function WOForm({ equipment, technicians, onSave, onCancel }) {
           </select>
         </div>
       </div>
+      <FileUpload files={form.attachments} onChange={attachments => setForm({ ...form, attachments })} />
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
           {saving ? 'Creating...' : 'Create Work Order'}
@@ -136,6 +138,7 @@ function WOForm({ equipment, technicians, onSave, onCancel }) {
 
 function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete }) {
   const steps = wo.procedure_steps || [];
+  const attachments = (() => { try { return JSON.parse(wo.attachments || '[]'); } catch { return []; } })();
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -149,6 +152,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[wo.status]}`}>{wo.status}</span>
             {wo.priority === 'critical' && <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs">Critical</span>}
             {wo.priority === 'high' && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
+            {attachments.length > 0 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs"><Paperclip size={10} />{attachments.length}</span>}
           </div>
           <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
@@ -177,6 +181,23 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
               {steps.map((s, i) => <li key={i} className="flex items-start gap-1.5"><span className="text-gray-400 mt-0.5">•</span><span>{s}</span></li>)}
             </ul>
           )}
+        </div>
+      )}
+
+      {attachments.length > 0 && expanded && (
+        <div className="mt-2 flex gap-2 flex-wrap">
+          {attachments.map((a, i) => (
+            <a key={i} href={a.url} target="_blank" rel="noopener noreferrer">
+              {/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(a.originalName || a.filename) ? (
+                <img src={a.url} alt={a.originalName} className="h-20 w-20 object-cover rounded-lg border border-gray-200 hover:ring-2 hover:ring-powder-400" />
+              ) : (
+                <div className="h-20 w-20 rounded-lg border border-gray-200 flex flex-col items-center justify-center bg-gray-50 hover:ring-2 hover:ring-powder-400">
+                  <Paperclip size={16} className="text-gray-400" />
+                  <span className="text-[9px] text-gray-500 truncate w-16 text-center mt-1">{a.originalName || a.filename}</span>
+                </div>
+              )}
+            </a>
+          ))}
         </div>
       )}
 

@@ -3,8 +3,9 @@ import compression from 'compression';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { readFileSync } from 'fs';
+import { readFileSync, mkdirSync } from 'fs';
 import { v4 as uuid } from 'uuid';
+import multer from 'multer';
 import { getDb, logAudit } from './server/db.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
@@ -249,6 +250,40 @@ if (completedCount === 0 && db.prepare("SELECT COUNT(*) as c FROM work_orders").
     console.warn('[seed] Could not backfill history:', e.message);
   }
 }
+
+// --- File Uploads ---
+const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');
+mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${uuid()}${ext}`);
+  },
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = /\.(jpg|jpeg|png|gif|webp|heic|pdf|mp4|mov)$/i;
+    if (allowed.test(path.extname(file.originalname))) cb(null, true);
+    else cb(new Error('File type not allowed'));
+  },
+});
+
+app.post('/api/uploads', upload.array('files', 5), (req, res) => {
+  if (!req.files?.length) return res.status(400).json({ error: 'No files uploaded' });
+  const results = req.files.map(f => ({
+    filename: f.filename,
+    originalName: f.originalname,
+    size: f.size,
+    url: `/uploads/${f.filename}`,
+  }));
+  res.json(results);
+});
+
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // --- API Routes ---
 app.use('/api/equipment', equipmentRoutes);
