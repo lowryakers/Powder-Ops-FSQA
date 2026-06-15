@@ -4,6 +4,21 @@ import { getDb, logAudit } from '../db.js';
 
 const router = Router();
 
+function nextWeekday(date) {
+  const d = new Date(date);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+function markMissedWorkOrders(db) {
+  const today = new Date().toISOString().split('T')[0];
+  const result = db.prepare(`
+    UPDATE work_orders SET status = 'missed', updated_at = datetime('now')
+    WHERE status IN ('open', 'overdue') AND due_date < ?
+  `).run(today);
+  return result.changes;
+}
+
 // --- PM Schedules ---
 
 router.get('/schedules', (req, res) => {
@@ -87,6 +102,7 @@ router.put('/schedules/:id', (req, res) => {
 
 router.get('/work-orders', (req, res) => {
   const db = getDb();
+  markMissedWorkOrders(db);
   const { status, equipment_id, from, to, assigned_to } = req.query;
   let sql = `SELECT wo.*, e.name as equipment_name, e.room, ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
@@ -172,6 +188,7 @@ router.put('/work-orders/:id', (req, res) => {
 
 router.get('/metrics', (req, res) => {
   const db = getDb();
+  markMissedWorkOrders(db);
   const { from, to } = req.query;
   const now = new Date();
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
@@ -181,6 +198,7 @@ router.get('/metrics', (req, res) => {
 
   const total = db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ?').get(start, end);
   const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'completed'").get(start, end);
+  const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'").get(start, end);
   const overdue = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')").get(end);
   const open = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status IN ('open','in_progress')").get();
 
@@ -197,7 +215,8 @@ router.get('/metrics', (req, res) => {
   const monthlyTrend = db.prepare(`
     SELECT strftime('%Y-%m', due_date) as month,
       COUNT(*) as total,
-      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) as missed
     FROM work_orders GROUP BY strftime('%Y-%m', due_date) ORDER BY month DESC LIMIT 12
   `).all();
 
@@ -205,6 +224,7 @@ router.get('/metrics', (req, res) => {
     period: { from: start, to: end },
     total: total.count,
     completed: completed.count,
+    missed: missed.count,
     overdue: overdue.count,
     open: open.count,
     completion_rate: parseFloat(completionRate),
@@ -239,8 +259,9 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     if (sched && sched.is_active) {
       const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
       const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
-      const nextDue = new Date();
-      nextDue.setDate(nextDue.getDate() + interval);
+      const raw = new Date();
+      raw.setDate(raw.getDate() + interval);
+      const nextDue = nextWeekday(raw);
       const woId = uuid();
       db.prepare(`
         INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, status)
@@ -258,6 +279,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
 
 router.get('/by-frequency', (req, res) => {
   const db = getDb();
+  markMissedWorkOrders(db);
   const { frequency, equipment_id } = req.query;
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
@@ -289,28 +311,35 @@ router.get('/by-frequency', (req, res) => {
 
 router.get('/completed-history', (req, res) => {
   const db = getDb();
-  const { limit = 50, offset = 0, frequency, from, to } = req.query;
+  markMissedWorkOrders(db);
+  const { limit = 50, offset = 0, frequency, from, to, include_missed } = req.query;
+  const showMissed = include_missed !== 'false';
+
+  const statusFilter = showMissed ? "wo.status IN ('completed','missed')" : "wo.status = 'completed'";
+  const dateCol = 'COALESCE(wo.completed_at, wo.due_date)';
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
     e.asset_id, ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
     JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
-    WHERE wo.status = 'completed'`;
+    WHERE ${statusFilter}`;
   const params = [];
-  let countWhere = "wo.status = 'completed'";
 
-  if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); countWhere += ` AND ps.frequency_type = '${frequency}'`; }
-  if (from) { sql += ' AND wo.completed_at >= ?'; params.push(from); countWhere += ` AND wo.completed_at >= '${from}'`; }
-  if (to) { sql += ' AND wo.completed_at <= ?'; params.push(to + 'T23:59:59'); countWhere += ` AND wo.completed_at <= '${to}T23:59:59'`; }
+  if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
+  if (from) { sql += ` AND ${dateCol} >= ?`; params.push(from); }
+  if (to) { sql += ` AND ${dateCol} <= ?`; params.push(to + 'T23:59:59'); }
 
-  sql += ' ORDER BY wo.completed_at DESC LIMIT ? OFFSET ?';
+  const countSql = sql.replace(/SELECT wo\.\*.*?FROM/, 'SELECT COUNT(*) as c FROM');
+  sql += ` ORDER BY ${dateCol} DESC LIMIT ? OFFSET ?`;
   params.push(parseInt(limit), parseInt(offset));
 
   const rows = db.prepare(sql).all(...params);
-  const total = db.prepare(`SELECT COUNT(*) as c FROM work_orders wo LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id WHERE ${countWhere}`).get();
+  const total = db.prepare(countSql).get(...params.slice(0, -2));
 
-  res.json({ items: rows, total: total.c });
+  const missedCount = db.prepare(`SELECT COUNT(*) as c FROM work_orders WHERE status = 'missed'`).get().c;
+
+  res.json({ items: rows, total: total.c, missed_count: missedCount });
 });
 
 // --- Generate Work Orders from PM Schedules ---
@@ -330,8 +359,9 @@ router.post('/generate', (_req, res) => {
     const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
 
     const lastDate = lastWO ? new Date(lastWO.due_date) : new Date();
-    const nextDue = new Date(lastDate);
-    nextDue.setDate(nextDue.getDate() + interval);
+    const rawNext = new Date(lastDate);
+    rawNext.setDate(rawNext.getDate() + interval);
+    const nextDue = nextWeekday(rawNext);
 
     const horizon = new Date();
     horizon.setDate(horizon.getDate() + 30);
@@ -356,6 +386,7 @@ router.post('/generate', (_req, res) => {
 
 router.get('/operator-tasks', (req, res) => {
   const db = getDb();
+  markMissedWorkOrders(db);
   const { assigned_to } = req.query;
 
   let sql = `SELECT wo.id, wo.title, wo.status, wo.priority, wo.due_date, wo.assigned_to,

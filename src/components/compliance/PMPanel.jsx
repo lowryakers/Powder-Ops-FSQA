@@ -28,6 +28,7 @@ const STATUS_COLORS = {
   in_progress: 'bg-blue-100 text-blue-800',
   completed: 'bg-green-100 text-green-800',
   overdue: 'bg-red-100 text-red-800',
+  missed: 'bg-gray-200 text-gray-700',
 };
 
 function CompleteForm({ wo, onComplete, onCancel }) {
@@ -281,7 +282,7 @@ export default function PMPanel() {
 
       {/* Metrics */}
       {!metricsLoading && metrics && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className={`rounded-xl border p-4 ${metrics.meets_sqf_target ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
             <p className="text-xs text-gray-600 mb-1">Completion Rate</p>
             <p className="text-2xl font-bold">{metrics.completion_rate}%</p>
@@ -294,6 +295,10 @@ export default function PMPanel() {
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <p className="text-xs text-gray-600 mb-1">Open</p>
             <p className="text-2xl font-bold text-yellow-600">{metrics.open}</p>
+          </div>
+          <div className={`rounded-xl border p-4 ${metrics.missed > 0 ? 'border-gray-300 bg-gray-50' : 'border-gray-200 bg-white'}`}>
+            <p className="text-xs text-gray-600 mb-1">Missed</p>
+            <p className="text-2xl font-bold text-gray-600">{metrics.missed}</p>
           </div>
           <div className={`rounded-xl border p-4 ${metrics.overdue > 0 ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
             <p className="text-xs text-gray-600 mb-1">Overdue</p>
@@ -314,6 +319,7 @@ export default function PMPanel() {
               <Tooltip />
               <ReferenceLine y={95} stroke="#e03131" strokeDasharray="3 3" label={{ value: '95% SQF', position: 'right', fontSize: 10 }} />
               <Bar dataKey="completed" name="Completed" fill="#40c057" />
+              <Bar dataKey="missed" name="Missed" fill="#868e96" />
               <Bar dataKey="total" name="Total" fill="#dee2e6" />
             </BarChart>
           </ResponsiveContainer>
@@ -402,23 +408,39 @@ export default function PMPanel() {
             <div className="text-center py-8 text-gray-500">No completed tasks{dateFrom || dateTo ? ' in selected date range' : ' yet'}</div>
           ) : (
             <>
-              <p className="text-sm text-gray-500">{archiveData.total} completed task{archiveData.total !== 1 ? 's' : ''}{dateFrom || dateTo ? ` (filtered)` : ''}</p>
-              {archiveData.items.map(wo => (
-                <div key={wo.id} className="bg-white rounded-xl border border-gray-200 p-4 opacity-80">
-                  <div className="flex items-center gap-2 mb-1">
-                    <CheckCircle size={14} className="text-green-600" />
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${FREQ_COLORS[wo.frequency_type] || FREQ_COLORS.unscheduled}`}>
-                      {wo.frequency_type || 'ad-hoc'}
-                    </span>
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-sm text-gray-500">{archiveData.total} task{archiveData.total !== 1 ? 's' : ''}{dateFrom || dateTo ? ' (filtered)' : ''}</p>
+                {archiveData.missed_count > 0 && (
+                  <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full font-medium">{archiveData.missed_count} missed total</span>
+                )}
+              </div>
+              {archiveData.items.map(wo => {
+                const isMissed = wo.status === 'missed';
+                return (
+                  <div key={wo.id} className={`rounded-xl border p-4 ${isMissed ? 'bg-gray-50 border-gray-300' : 'bg-white border-gray-200 opacity-80'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      {isMissed ? (
+                        <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full text-xs font-semibold">MISSED</span>
+                      ) : (
+                        <CheckCircle size={14} className="text-green-600" />
+                      )}
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${FREQ_COLORS[wo.frequency_type] || FREQ_COLORS.unscheduled}`}>
+                        {wo.frequency_type || 'ad-hoc'}
+                      </span>
+                    </div>
+                    <h4 className={`font-medium ${isMissed ? 'text-gray-600' : 'text-gray-700'}`}>{wo.title || wo.pm_title}</h4>
+                    <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location}</p>
+                    {isMissed ? (
+                      <p className="text-xs text-gray-500 mt-1">Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}</p>
+                    ) : (
+                      <p className="text-xs text-green-600 mt-1">
+                        Completed {new Date(wo.completed_at).toLocaleString()} by {wo.completed_by}
+                      </p>
+                    )}
+                    {wo.notes && <p className="text-xs text-gray-500 mt-1">Notes: {wo.notes}</p>}
                   </div>
-                  <h4 className="font-medium text-gray-700">{wo.title || wo.pm_title}</h4>
-                  <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location}</p>
-                  <p className="text-xs text-green-600 mt-1">
-                    Completed {new Date(wo.completed_at).toLocaleString()} by {wo.completed_by}
-                  </p>
-                  {wo.notes && <p className="text-xs text-gray-500 mt-1">Notes: {wo.notes}</p>}
-                </div>
-              ))}
+                );
+              })}
             </>
           )}
         </div>
