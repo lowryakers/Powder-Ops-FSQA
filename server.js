@@ -325,7 +325,11 @@ app.get('/api/health', (_req, res) => {
     calibration_instruments: db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c,
     audit_log_entries: db.prepare('SELECT COUNT(*) as c FROM audit_log').get().c,
   };
-  res.json({ status: 'ok', database: 'connected', counts });
+  const woByStatus = db.prepare("SELECT status, COUNT(*) as c FROM work_orders GROUP BY status").all();
+  const activeSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE is_active = 1").get().c;
+  const schedulesWithOpenWO = db.prepare("SELECT COUNT(DISTINCT pm_schedule_id) as c FROM work_orders WHERE pm_schedule_id IS NOT NULL AND status IN ('open','in_progress')").get().c;
+  const schedulesWithoutOpenWO = activeSchedules - schedulesWithOpenWO;
+  res.json({ status: 'ok', database: 'connected', counts, work_orders_by_status: woByStatus, active_schedules: activeSchedules, schedules_with_open_wo: schedulesWithOpenWO, schedules_missing_open_wo: schedulesWithoutOpenWO });
 });
 
 // Serve static React build
