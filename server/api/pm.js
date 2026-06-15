@@ -289,7 +289,7 @@ router.get('/by-frequency', (req, res) => {
 
 router.get('/completed-history', (req, res) => {
   const db = getDb();
-  const { limit = 50, offset = 0, frequency } = req.query;
+  const { limit = 50, offset = 0, frequency, from, to } = req.query;
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
     e.asset_id, ps.title as pm_title, ps.frequency_type
@@ -298,14 +298,17 @@ router.get('/completed-history', (req, res) => {
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
     WHERE wo.status = 'completed'`;
   const params = [];
+  let countWhere = "wo.status = 'completed'";
 
-  if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
+  if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); countWhere += ` AND ps.frequency_type = '${frequency}'`; }
+  if (from) { sql += ' AND wo.completed_at >= ?'; params.push(from); countWhere += ` AND wo.completed_at >= '${from}'`; }
+  if (to) { sql += ' AND wo.completed_at <= ?'; params.push(to + 'T23:59:59'); countWhere += ` AND wo.completed_at <= '${to}T23:59:59'`; }
 
   sql += ' ORDER BY wo.completed_at DESC LIMIT ? OFFSET ?';
   params.push(parseInt(limit), parseInt(offset));
 
   const rows = db.prepare(sql).all(...params);
-  const total = db.prepare(`SELECT COUNT(*) as c FROM work_orders wo LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id WHERE wo.status = 'completed'${frequency ? ' AND ps.frequency_type = ?' : ''}`).get(...(frequency ? [frequency] : []));
+  const total = db.prepare(`SELECT COUNT(*) as c FROM work_orders wo LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id WHERE ${countWhere}`).get();
 
   res.json({ items: rows, total: total.c });
 });

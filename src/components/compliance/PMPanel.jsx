@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 
@@ -219,6 +219,8 @@ export default function PMPanel() {
   const [view, setView] = useState('active');
   const [archiveData, setArchiveData] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const handleCreateWO = async (form) => {
     await apiPost('/pm/work-orders', form);
@@ -241,11 +243,14 @@ export default function PMPanel() {
     refreshTasks();
   };
 
-  const loadArchive = async (freq) => {
+  const loadArchive = async (freq, from, to) => {
     setArchiveLoading(true);
     try {
-      const url = freq && freq !== 'all' ? `/pm/completed-history?frequency=${freq}&limit=50` : '/pm/completed-history?limit=50';
-      const res = await fetch(`/api${url}`);
+      const params = new URLSearchParams({ limit: '50' });
+      if (freq && freq !== 'all') params.set('frequency', freq);
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      const res = await fetch(`/api/pm/completed-history?${params}`);
       const data = await res.json();
       setArchiveData(data);
     } finally { setArchiveLoading(false); }
@@ -253,7 +258,7 @@ export default function PMPanel() {
 
   const handleViewChange = (v) => {
     setView(v);
-    if (v === 'completed') loadArchive(freqFilter);
+    if (v === 'completed') loadArchive(freqFilter, dateFrom, dateTo);
   };
 
   const freqOrder = ['daily', 'weekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'unscheduled'];
@@ -335,7 +340,7 @@ export default function PMPanel() {
               ? Object.values(grouped || {}).reduce((s, arr) => s + arr.length, 0)
               : (grouped?.[f.value]?.length || 0);
             return (
-              <button key={f.value} onClick={() => { setFreqFilter(f.value); if (view === 'completed') loadArchive(f.value); }}
+              <button key={f.value} onClick={() => { setFreqFilter(f.value); if (view === 'completed') loadArchive(f.value, dateFrom, dateTo); }}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium ${freqFilter === f.value ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                 {f.label} {view === 'active' && count > 0 ? `(${count})` : ''}
               </button>
@@ -373,14 +378,31 @@ export default function PMPanel() {
 
       {/* Completed Archive */}
       {view === 'completed' && (
-        <div className="space-y-2">
+        <div className="space-y-3">
+          <div className="flex items-end gap-3 flex-wrap bg-white rounded-xl border border-gray-200 p-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
+              <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); loadArchive(freqFilter, e.target.value, dateTo); }}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
+              <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); loadArchive(freqFilter, dateFrom, e.target.value); }}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            {(dateFrom || dateTo) && (
+              <button onClick={() => { setDateFrom(''); setDateTo(''); loadArchive(freqFilter, '', ''); }}
+                className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-900 bg-gray-100 rounded-lg">Clear dates</button>
+            )}
+          </div>
+
           {archiveLoading ? (
             <div className="text-center py-8 text-gray-500">Loading completed tasks...</div>
           ) : !archiveData?.items?.length ? (
-            <div className="text-center py-8 text-gray-500">No completed tasks yet</div>
+            <div className="text-center py-8 text-gray-500">No completed tasks{dateFrom || dateTo ? ' in selected date range' : ' yet'}</div>
           ) : (
             <>
-              <p className="text-sm text-gray-500">{archiveData.total} completed task{archiveData.total !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-gray-500">{archiveData.total} completed task{archiveData.total !== 1 ? 's' : ''}{dateFrom || dateTo ? ` (filtered)` : ''}</p>
               {archiveData.items.map(wo => (
                 <div key={wo.id} className="bg-white rounded-xl border border-gray-200 p-4 opacity-80">
                   <div className="flex items-center gap-2 mb-1">
