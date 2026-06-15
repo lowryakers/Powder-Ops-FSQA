@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search } from 'lucide-react';
 
 const FREQ_COLORS = {
   daily: 'bg-blue-500',
@@ -187,6 +187,7 @@ export default function OperatorView() {
   const { data: technicians } = useApiGet('/users/technicians');
   const [freqFilter, setFreqFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [search, setSearch] = useState('');
 
   const handleComplete = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
@@ -199,8 +200,13 @@ export default function OperatorView() {
   };
 
   const filtered = useMemo(() => {
-    return (tasks || []).filter(t => freqFilter === 'all' || t.frequency_type === freqFilter);
-  }, [tasks, freqFilter]);
+    const q = search.toLowerCase().trim();
+    return (tasks || []).filter(t => {
+      if (freqFilter !== 'all' && t.frequency_type !== freqFilter) return false;
+      if (q && ![t.title, t.equipment_name, t.location, t.assigned_to].some(v => v && v.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [tasks, freqFilter, search]);
 
   const { overdue, today, thisWeek, upcoming } = useMemo(() => {
     const now = new Date();
@@ -260,6 +266,23 @@ export default function OperatorView() {
           className={`w-9 h-9 rounded-lg flex items-center justify-center border transition-colors ${showFilters ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
           <Filter size={16} />
         </button>
+      </div>
+
+      {/* Search bar */}
+      <div className="relative">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search tasks, equipment, location..."
+          className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-powder-500 focus:border-transparent"
+        />
+        {search && (
+          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-medium">
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Quick stats bar */}

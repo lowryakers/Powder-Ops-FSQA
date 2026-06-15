@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
@@ -223,6 +223,7 @@ export default function PMPanel() {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [search, setSearch] = useState('');
 
   const handleCreateWO = async (form) => {
     await apiPost('/pm/work-orders', form);
@@ -264,10 +265,15 @@ export default function PMPanel() {
   };
 
   const freqOrder = ['daily', 'weekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'unscheduled'];
+  const q = search.toLowerCase().trim();
   const filteredGroups = grouped ? freqOrder
     .filter(f => grouped[f]?.length > 0)
     .filter(f => freqFilter === 'all' || f === freqFilter)
-    .map(f => ({ freq: f, items: grouped[f] })) : [];
+    .map(f => ({
+      freq: f,
+      items: q ? grouped[f].filter(wo => [wo.title, wo.equipment_name, wo.location, wo.assigned_to].some(v => v && v.toLowerCase().includes(q))) : grouped[f],
+    }))
+    .filter(g => g.items.length > 0) : [];
 
   const totalActive = filteredGroups.reduce((sum, g) => sum + g.items.length, 0);
 
@@ -340,6 +346,21 @@ export default function PMPanel() {
             className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'completed' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
             <Archive size={14} /> Completed
           </button>
+        </div>
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search tasks, equipment, location..."
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-powder-500 focus:border-transparent"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-medium">
+              Clear
+            </button>
+          )}
         </div>
         <div className="flex gap-1 flex-wrap">
           {FREQ_TABS.map(f => {
