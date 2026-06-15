@@ -311,6 +311,25 @@ function runMigrations() {
   addColumnIfMissing('equipment', 'maintenance_tasks', "TEXT DEFAULT '{}'");
 
   migrateEquipmentNotes();
+  cleanEquipmentNames();
+}
+
+function cleanEquipmentNames() {
+  const rows = db.prepare("SELECT id, name, asset_id FROM equipment WHERE name GLOB '[0-9][0-9][0-9]*'").all();
+  if (rows.length === 0) return;
+  const update = db.prepare("UPDATE equipment SET name = ?, updated_at = datetime('now') WHERE id = ?");
+  let cleaned = 0;
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const newName = row.name.replace(/^0*\d+\s+/, '').trim();
+      if (newName && newName !== row.name) {
+        update.run(newName, row.id);
+        cleaned++;
+      }
+    }
+  });
+  tx();
+  if (cleaned > 0) console.log(`[migrate] Cleaned ${cleaned} equipment names (removed asset # prefix)`);
 }
 
 function parseNotesIntoTasks(notes) {
