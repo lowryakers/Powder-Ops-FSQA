@@ -289,6 +289,24 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_checklist_instances_status ON checklist_instances(status);
     CREATE INDEX IF NOT EXISTS idx_checklist_instances_checklist ON checklist_instances(checklist_id);
   `);
+
+  runMigrations();
+}
+
+function addColumnIfMissing(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.find(c => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    console.log(`[migrate] Added ${table}.${column}`);
+  }
+}
+
+function runMigrations() {
+  addColumnIfMissing('calibration_instruments', 'room', 'TEXT');
+  addColumnIfMissing('calibration_instruments', 'asset_number', 'TEXT');
+  addColumnIfMissing('calibration_instruments', 'max_capacity', 'TEXT');
+  addColumnIfMissing('calibration_instruments', 'department', 'TEXT');
+  addColumnIfMissing('calibration_instruments', 'notes', 'TEXT');
 }
 
 export function logAudit(actor, action, entityType, entityId, details, previousState, newState) {
