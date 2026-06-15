@@ -315,21 +315,25 @@ function runMigrations() {
 }
 
 function cleanEquipmentNames() {
-  const rows = db.prepare("SELECT id, name, asset_id FROM equipment WHERE name GLOB '[0-9][0-9][0-9]*'").all();
+  const rows = db.prepare("SELECT id, name, asset_id FROM equipment WHERE name GLOB '[0-9]*'").all();
   if (rows.length === 0) return;
-  const update = db.prepare("UPDATE equipment SET name = ?, updated_at = datetime('now') WHERE id = ?");
+  const update = db.prepare("UPDATE equipment SET name = ?, asset_id = ?, updated_at = datetime('now') WHERE id = ?");
   let cleaned = 0;
   const tx = db.transaction(() => {
     for (const row of rows) {
-      const newName = row.name.replace(/^0*\d+\s+/, '').trim();
-      if (newName && newName !== row.name) {
-        update.run(newName, row.id);
-        cleaned++;
+      const match = row.name.match(/^(\d{1,4})\s+(.+)/);
+      if (match) {
+        const assetNum = match[1];
+        const newName = match[2].trim();
+        if (newName) {
+          update.run(newName, assetNum, row.id);
+          cleaned++;
+        }
       }
     }
   });
   tx();
-  if (cleaned > 0) console.log(`[migrate] Cleaned ${cleaned} equipment names (removed asset # prefix)`);
+  if (cleaned > 0) console.log(`[migrate] Cleaned ${cleaned} equipment names (moved # prefix to asset_id)`);
 }
 
 function parseNotesIntoTasks(notes) {
