@@ -144,6 +144,48 @@ if (userCount === 0) {
   console.log('[seed] Created default admin user (pin: 1234)');
 }
 
+// Backfill 4 months of completed work order history if none exist
+const completedCount = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE status = 'completed'").get().c;
+if (completedCount === 0 && db.prepare("SELECT COUNT(*) as c FROM work_orders").get().c > 0) {
+  try {
+    const TECHS = ['Adam B.', 'Carlos M.', 'Derek W.', 'James R.', 'Luis T.'];
+    const pickOne = arr => arr[Math.floor(Math.random() * arr.length)];
+    const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 4);
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() - 1);
+
+    const schedules = db.prepare('SELECT ps.*, e.name as eq_name FROM pm_schedules ps JOIN equipment e ON ps.equipment_id = e.id WHERE ps.is_active = 1').all();
+    const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, status, priority, assigned_to, started_at, completed_at, completed_by, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'completed', 'normal', ?, ?, ?, ?, ?, ?, ?)`);
+    const NOTES = ['No issues found', 'Minor wear noted', 'Cleaned and lubricated', 'All readings within spec', 'Topped off lubricant', null, null, null, null, null];
+    let count = 0;
+    const seedTx = db.transaction(() => {
+      for (const s of schedules) {
+        const interval = freqDays[s.frequency_type] || 30;
+        const cursor = new Date(startDate);
+        while (cursor <= endDate) {
+          const dueDate = cursor.toISOString().split('T')[0];
+          const delay = Math.floor(Math.random() * Math.min(interval, 3));
+          const done = new Date(cursor); done.setDate(done.getDate() + delay);
+          done.setHours(6 + Math.floor(Math.random() * 10), Math.floor(Math.random() * 60));
+          if (done > endDate) break;
+          const tech = pickOne(TECHS);
+          const started = new Date(done.getTime() - (15 + Math.random() * 45) * 60000).toISOString();
+          const created = new Date(cursor); created.setDate(created.getDate() - Math.min(interval, 7));
+          insertWO.run(uuid(), s.id, s.equipment_id, s.title, dueDate, s.procedure_steps, tech, started, done.toISOString(), tech, pickOne(NOTES), created.toISOString(), done.toISOString());
+          count++;
+          cursor.setDate(cursor.getDate() + interval);
+        }
+      }
+    });
+    seedTx();
+    console.log(`[seed] Backfilled ${count} completed work orders (4 months of history)`);
+  } catch (e) {
+    console.warn('[seed] Could not backfill history:', e.message);
+  }
+}
+
 // --- API Routes ---
 app.use('/api/equipment', equipmentRoutes);
 app.use('/api/haccp', haccpRoutes);
