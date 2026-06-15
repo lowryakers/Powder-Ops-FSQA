@@ -4,6 +4,27 @@ import { getDb, logAudit } from '../db.js';
 
 const router = Router();
 
+function syncMaintenanceTasksToPM(db, equipmentId) {
+  const eq = db.prepare('SELECT maintenance_tasks FROM equipment WHERE id = ?').get(equipmentId);
+  if (!eq) return;
+  const tasks = JSON.parse(eq.maintenance_tasks || '{}');
+  const flatSteps = [];
+  const freqOrder = ['Daily', 'Bi-weekly', 'Weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Annual', 'As Needed'];
+  for (const freq of freqOrder) {
+    if (tasks[freq]?.length) {
+      flatSteps.push(`${freq}:`);
+      tasks[freq].forEach(t => flatSteps.push(`  ${t}`));
+    }
+  }
+  const stepsJson = JSON.stringify(flatSteps);
+
+  const schedules = db.prepare("SELECT id FROM pm_schedules WHERE equipment_id = ? AND is_active = 1").all(equipmentId);
+  for (const s of schedules) {
+    db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?").run(stepsJson, s.id);
+    db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress')").run(stepsJson, s.id);
+  }
+}
+
 router.get('/', (req, res) => {
   const db = getDb();
   const { status, type, food_contact } = req.query;
@@ -41,6 +62,44 @@ router.post('/', (req, res) => {
   res.status(201).json(created);
 });
 
+// Bulk update - POST to avoid /:id conflict
+router.post('/bulk-update', (req, res) => {
+  const db = getDb();
+  const { ids, changes } = req.body;
+  if (!ids?.length || !changes) return res.status(400).json({ error: 'ids and changes are required' });
+
+  const fields = [];
+  const vals = [];
+  const allowed = ['type', 'location', 'room', 'manufacturer', 'model_number', 'vendor', 'pm_frequency', 'is_food_contact', 'haccp_ccp_id', 'status', 'notes', 'maintenance_tasks'];
+
+  for (const [key, value] of Object.entries(changes)) {
+    if (!allowed.includes(key)) continue;
+    if (key === 'is_food_contact') {
+      fields.push(`${key} = ?`);
+      vals.push(value ? 1 : 0);
+    } else if (key === 'maintenance_tasks') {
+      fields.push(`${key} = ?`);
+      vals.push(JSON.stringify(value));
+    } else {
+      fields.push(`${key} = ?`);
+      vals.push(value);
+    }
+  }
+
+  if (fields.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+  fields.push("updated_at = datetime('now')");
+
+  const placeholders = ids.map(() => '?').join(',');
+  db.prepare(`UPDATE equipment SET ${fields.join(', ')} WHERE id IN (${placeholders})`).run(...vals, ...ids);
+
+  if (changes.maintenance_tasks !== undefined) {
+    for (const id of ids) syncMaintenanceTasksToPM(db, id);
+  }
+
+  logAudit(req.body._actor || 'system', 'bulk_update', 'equipment', null, { ids, fields: Object.keys(changes) }, null, null);
+  res.json({ updated: ids.length });
+});
+
 router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
@@ -60,6 +119,10 @@ router.put('/:id', (req, res) => {
     haccp_ccp_id ?? existing.haccp_ccp_id, status || existing.status, notes ?? existing.notes,
     maintenance_tasks !== undefined ? JSON.stringify(maintenance_tasks) : (existing.maintenance_tasks || '{}'), req.params.id
   );
+
+  if (maintenance_tasks !== undefined) {
+    syncMaintenanceTasksToPM(db, req.params.id);
+  }
 
   const updated = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
   logAudit(req.body._actor || 'system', 'update', 'equipment', req.params.id, null, existing, updated);

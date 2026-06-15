@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft } from 'lucide-react';
+import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 
 const TYPES = [
@@ -281,12 +281,155 @@ function EquipmentDetailRow({ eq, colSpan, onEdit }) {
   );
 }
 
+const BULK_FIELDS = [
+  { key: 'type', label: 'Type', type: 'select', options: TYPES },
+  { key: 'location', label: 'Location', type: 'text' },
+  { key: 'room', label: 'Room', type: 'text' },
+  { key: 'manufacturer', label: 'Manufacturer', type: 'text' },
+  { key: 'vendor', label: 'Vendor', type: 'text' },
+  { key: 'pm_frequency', label: 'PM Frequency', type: 'text' },
+  { key: 'status', label: 'Status', type: 'select', options: ['active', 'partial', 'out_of_service'] },
+  { key: 'is_food_contact', label: 'Food Contact', type: 'toggle' },
+  { key: 'maintenance_tasks', label: 'Maintenance Tasks', type: 'tasks' },
+  { key: 'notes', label: 'Notes', type: 'textarea' },
+];
+
+function BulkEditBar({ selected, equipment, onApply, onCancel }) {
+  const [field, setField] = useState('');
+  const [value, setValue] = useState('');
+  const [tasks, setTasks] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [copyFrom, setCopyFrom] = useState('');
+
+  const fieldDef = BULK_FIELDS.find(f => f.key === field);
+
+  const handleCopyTasks = (eqId) => {
+    setCopyFrom(eqId);
+    const eq = equipment.find(e => e.id === eqId);
+    if (eq) setTasks(parseTasks(eq));
+  };
+
+  const handleApply = async () => {
+    setSaving(true);
+    try {
+      const changes = {};
+      if (field === 'maintenance_tasks') changes[field] = tasks;
+      else if (field === 'is_food_contact') changes[field] = value === 'true';
+      else changes[field] = value;
+      await onApply(changes);
+    } finally { setSaving(false); }
+  };
+
+  const selectedNames = equipment.filter(e => selected.has(e.id)).map(e => e.name);
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-powder-500 shadow-2xl z-50 p-4">
+      <div className="max-w-6xl mx-auto space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CheckSquare size={18} className="text-powder-600" />
+            <span className="text-sm font-semibold text-gray-900">{selected.size} item{selected.size !== 1 ? 's' : ''} selected</span>
+            <div className="flex gap-1 flex-wrap max-w-lg">
+              {selectedNames.slice(0, 5).map((n, i) => (
+                <span key={i} className="px-2 py-0.5 bg-powder-50 text-powder-700 rounded text-xs">{n}</span>
+              ))}
+              {selectedNames.length > 5 && <span className="text-xs text-gray-500">+{selectedNames.length - 5} more</span>}
+            </div>
+          </div>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="flex items-end gap-3 flex-wrap">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Field to update</label>
+            <select value={field} onChange={e => { setField(e.target.value); setValue(''); setTasks({}); setCopyFrom(''); }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-[180px]">
+              <option value="">Choose field...</option>
+              {BULK_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+            </select>
+          </div>
+
+          {fieldDef?.type === 'text' && (
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-xs font-medium text-gray-600 mb-1">New value</label>
+              <input value={value} onChange={e => setValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={`Enter ${fieldDef.label.toLowerCase()}...`} />
+            </div>
+          )}
+
+          {fieldDef?.type === 'textarea' && (
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-xs font-medium text-gray-600 mb-1">New value</label>
+              <textarea value={value} onChange={e => setValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={2} />
+            </div>
+          )}
+
+          {fieldDef?.type === 'select' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">New value</label>
+              <select value={value} onChange={e => setValue(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="">Select...</option>
+                {fieldDef.options.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          )}
+
+          {fieldDef?.type === 'toggle' && (
+            <div className="flex items-center gap-3 py-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="bulk-fc" value="true" checked={value === 'true'} onChange={() => setValue('true')} />
+                <span className="text-sm">Yes</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="bulk-fc" value="false" checked={value === 'false'} onChange={() => setValue('false')} />
+                <span className="text-sm">No</span>
+              </label>
+            </div>
+          )}
+
+          {fieldDef?.type === 'tasks' && (
+            <div className="flex-1 min-w-[300px]">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Copy tasks from existing equipment</label>
+              <select value={copyFrom} onChange={e => handleCopyTasks(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2">
+                <option value="">Select source equipment...</option>
+                {equipment.filter(e => {
+                  const t = parseTasks(e);
+                  return Object.keys(t).length > 0;
+                }).map(e => <option key={e.id} value={e.id}>{e.name} ({e.type})</option>)}
+              </select>
+              {Object.keys(tasks).length > 0 && (
+                <div className="flex gap-1 flex-wrap">
+                  {FREQ_ORDER.filter(f => tasks[f]?.length).map(f => (
+                    <span key={f} className={`px-2 py-0.5 rounded text-xs font-medium ${FREQ_BADGE[f] || 'bg-gray-100'}`}>
+                      {f}: {tasks[f].length} tasks
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <button onClick={handleApply}
+            disabled={saving || !field || (fieldDef?.type !== 'tasks' && fieldDef?.type !== 'toggle' && !value) || (fieldDef?.type === 'tasks' && Object.keys(tasks).length === 0) || (fieldDef?.type === 'toggle' && !value)}
+            className="px-5 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap">
+            {saving ? 'Applying...' : `Apply to ${selected.size} item${selected.size !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EquipmentPanel() {
   const { data: equipment, loading, refresh } = useApiGet('/equipment');
   const { data: ccps } = useApiGet('/haccp');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [selected, setSelected] = useState(new Set());
 
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -353,15 +496,36 @@ export default function EquipmentPanel() {
   const clearFilters = () => { setSearch(''); setFilterType(''); setFilterLocation(''); setFilterStatus(''); };
 
   const toggleExpand = (id) => {
+    if (selected.size > 0) return;
     setExpandedId(expandedId === id ? null : id);
+  };
+
+  const toggleSelect = (id) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === filtered.length) setSelected(new Set());
+    else setSelected(new Set(filtered.map(e => e.id)));
+  };
+
+  const handleBulkApply = async (changes) => {
+    await apiPost('/equipment/bulk-update', { ids: [...selected], changes });
+    setSelected(new Set());
+    refresh();
   };
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading equipment...</div>;
 
-  const COL_COUNT = 9;
+  const COL_COUNT = 10;
+  const allSelected = filtered.length > 0 && selected.size === filtered.length;
+  const someSelected = selected.size > 0;
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${someSelected ? 'pb-40' : ''}`}>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-gray-900">Equipment Registry</h2>
         <div className="flex items-center gap-2">
@@ -437,7 +601,12 @@ export default function EquipmentPanel() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="w-8 px-2"></th>
+                <th className="w-10 px-3 py-3">
+                  <button onClick={toggleSelectAll} className="text-gray-400 hover:text-powder-600">
+                    {allSelected ? <CheckSquare size={16} className="text-powder-600" /> : someSelected ? <CheckSquare size={16} className="text-powder-400" /> : <Square size={16} />}
+                  </button>
+                </th>
+                <th className="w-8 px-1"></th>
                 <SortHeader label="Asset #" field="asset_id" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Name" field="name" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Type" field="type" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
@@ -449,15 +618,19 @@ export default function EquipmentPanel() {
               </tr>
             </thead>
             {filtered.map(eq => {
-              const isExpanded = expandedId === eq.id;
+              const isExpanded = expandedId === eq.id && !someSelected;
+              const isSelected = selected.has(eq.id);
               const tasks = parseTasks(eq);
               const taskCount = Object.values(tasks).reduce((s, arr) => s + arr.length, 0);
               return (
                 <tbody key={eq.id}>
-                  <tr className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`}
+                  <tr className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${isExpanded ? 'bg-gray-50' : ''} ${isSelected ? 'bg-powder-50' : ''}`}
                     onClick={() => toggleExpand(eq.id)}>
-                    <td className="px-2 text-gray-400">
-                      <ChevronRight size={14} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    <td className="px-3" onClick={e => { e.stopPropagation(); toggleSelect(eq.id); }}>
+                      {isSelected ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} className="text-gray-300 hover:text-gray-500" />}
+                    </td>
+                    <td className="px-1 text-gray-400">
+                      {!someSelected && <ChevronRight size={14} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />}
                     </td>
                     <td className="px-4 py-3 text-gray-500 font-mono text-xs">{eq.asset_id || '—'}</td>
                     <td className="px-4 py-3">
@@ -500,6 +673,15 @@ export default function EquipmentPanel() {
           </table>
         </div>
       </div>
+
+      {someSelected && (
+        <BulkEditBar
+          selected={selected}
+          equipment={equipment}
+          onApply={handleBulkApply}
+          onCancel={() => setSelected(new Set())}
+        />
+      )}
     </div>
   );
 }
