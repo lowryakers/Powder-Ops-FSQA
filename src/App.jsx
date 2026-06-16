@@ -37,6 +37,23 @@ function App() {
   }
 
   if (path === '/operator') {
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="h-10 w-10 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3 animate-pulse">
+              <Wrench size={20} className="text-white" />
+            </div>
+            <p className="text-gray-500 text-sm">Loading...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!user) {
+      return <LoginScreen onLogin={login} />;
+    }
+
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
@@ -44,9 +61,15 @@ function App() {
             <div className="h-9 w-9 bg-powder-600 rounded-lg flex items-center justify-center">
               <Wrench size={20} className="text-white" />
             </div>
-            <div>
+            <div className="flex-1">
               <h1 className="text-lg font-bold text-gray-900">Powder Ops</h1>
               <p className="text-xs text-gray-500">Maintenance Tasks</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">{user.name}</span>
+              <button onClick={logout} className="text-gray-400 hover:text-gray-600" title="Sign Out">
+                <LogOut size={18} />
+              </button>
             </div>
           </div>
         </header>
