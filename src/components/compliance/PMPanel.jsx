@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search, Users } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
@@ -155,6 +156,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             {wo.priority === 'critical' && <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs">Critical</span>}
             {wo.priority === 'high' && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
             {attachments.length > 0 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs"><Paperclip size={10} />{attachments.length}</span>}
+            {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : 'WH'}</span>}
           </div>
           <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
@@ -210,9 +212,24 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
   );
 }
 
+const GROUP_TABS = [
+  { value: 'all', label: 'All Groups', color: 'bg-gray-800' },
+  { value: 'warehouse', label: 'Warehouse', color: 'bg-indigo-600' },
+  { value: 'qa', label: 'QA', color: 'bg-teal-600' },
+];
+
+const GROUP_BADGE = {
+  warehouse: 'bg-indigo-100 text-indigo-700',
+  qa: 'bg-teal-100 text-teal-700',
+};
+
 export default function PMPanel() {
-  const { data: metrics, loading: metricsLoading } = useApiGet('/pm/metrics');
-  const { data: grouped, loading: taskLoading, refresh: refreshTasks } = useApiGet('/pm/by-frequency');
+  const { user } = useAuth() || {};
+  const isAdmin = user?.role === 'admin';
+  const [groupFilter, setGroupFilter] = useState('all');
+  const gp = groupFilter !== 'all' ? `?group=${groupFilter}` : '';
+  const { data: metrics, loading: metricsLoading } = useApiGet(`/pm/metrics${gp}`);
+  const { data: grouped, loading: taskLoading, refresh: refreshTasks } = useApiGet(`/pm/by-frequency${gp}`);
   const { data: equipment } = useApiGet('/equipment');
   const { data: technicians } = useApiGet('/users/technicians');
   const [freqFilter, setFreqFilter] = useState('all');
@@ -246,13 +263,15 @@ export default function PMPanel() {
     refreshTasks();
   };
 
-  const loadArchive = async (freq, from, to) => {
+  const loadArchive = async (freq, from, to, grp) => {
     setArchiveLoading(true);
     try {
       const params = new URLSearchParams({ limit: '50' });
       if (freq && freq !== 'all') params.set('frequency', freq);
       if (from) params.set('from', from);
       if (to) params.set('to', to);
+      const g = grp !== undefined ? grp : groupFilter;
+      if (g && g !== 'all') params.set('group', g);
       const res = await fetch(`/api/pm/completed-history?${params}`);
       const data = await res.json();
       setArchiveData(data);
@@ -335,8 +354,21 @@ export default function PMPanel() {
 
       {showWOForm && <WOForm equipment={equipment} technicians={technicians} onSave={handleCreateWO} onCancel={() => setShowWOForm(false)} />}
 
-      {/* View Toggle + Frequency Filter */}
+      {/* Group Filter (Admin) + View Toggle + Frequency Filter */}
       <div className="space-y-2">
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            <Users size={14} className="text-gray-500" />
+            <div className="flex gap-1">
+              {GROUP_TABS.map(g => (
+                <button key={g.value} onClick={() => { setGroupFilter(g.value); if (view === 'completed') loadArchive(freqFilter, dateFrom, dateTo, g.value); }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${groupFilter === g.value ? `${g.color} text-white` : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex gap-2">
           <button onClick={() => handleViewChange('active')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'active' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
@@ -426,6 +458,7 @@ export default function PMPanel() {
               <button onClick={() => {
                 if (!archiveData?.items?.length) return;
                 exportToCsv(`pm-history-${new Date().toISOString().split('T')[0]}.csv`, [
+                  { label: 'Group', value: r => (r.task_group || 'warehouse').toUpperCase() },
                   { label: 'Status', value: r => r.status },
                   { label: 'Title', value: r => r.title || r.pm_title },
                   { label: 'Equipment', value: r => r.equipment_name },
@@ -469,6 +502,7 @@ export default function PMPanel() {
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${FREQ_COLORS[wo.frequency_type] || FREQ_COLORS.unscheduled}`}>
                         {wo.frequency_type || 'ad-hoc'}
                       </span>
+                      {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : 'WH'}</span>}
                     </div>
                     <h4 className={`font-medium ${isMissed ? 'text-gray-600' : 'text-gray-700'}`}>{wo.title || wo.pm_title}</h4>
                     <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location}</p>

@@ -309,6 +309,9 @@ function runMigrations() {
   addColumnIfMissing('calibration_instruments', 'notes', 'TEXT');
   addColumnIfMissing('work_orders', 'attachments', "TEXT DEFAULT '[]'");
   addColumnIfMissing('equipment', 'maintenance_tasks', "TEXT DEFAULT '{}'");
+  addColumnIfMissing('users', 'department', "TEXT DEFAULT 'warehouse'");
+  addColumnIfMissing('pm_schedules', 'task_group', "TEXT DEFAULT 'warehouse'");
+  addColumnIfMissing('work_orders', 'task_group', "TEXT DEFAULT 'warehouse'");
 
   migrateEquipmentNotes();
   cleanEquipmentNames();

@@ -111,6 +111,57 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   }
 }
 
+// Auto-seed QA equipment and schedules if none exist
+const qaEqCount = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE asset_id LIKE 'QA-%'").get().c;
+if (qaEqCount === 0) {
+  try {
+    const qaPath = path.join(__dirname, 'server', 'qa-seed-data.json');
+    const qaData = JSON.parse(readFileSync(qaPath, 'utf-8'));
+    const qaAssetMap = {};
+
+    const insertQaEq = db.prepare(`
+      INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+    `);
+    const insertQaPM = db.prepare(`
+      INSERT INTO pm_schedules (id, equipment_id, title, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+      VALUES (?, ?, ?, ?, 1, ?, 1, 'qa')
+    `);
+    const freqDays = { daily: 1, weekly: 7, monthly: 30, quarterly: 90, annual: 365 };
+    const insertQaWO = db.prepare(`
+      INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
+    `);
+
+    let eqCount2 = 0, pmCount2 = 0, woCount2 = 0;
+    const qaTx = db.transaction(() => {
+      for (const eq of qaData.equipment) {
+        const eqId = uuid();
+        insertQaEq.run(eqId, eq.name, eq.type, eq.location, eq.room || null, eq.asset_id);
+        qaAssetMap[eq.asset_id] = eqId;
+        eqCount2++;
+      }
+      for (const sched of qaData.schedules) {
+        const equipId = qaAssetMap[sched.equipment_asset];
+        if (!equipId) continue;
+        const pmId = uuid();
+        const steps = JSON.stringify(sched.tasks);
+        insertQaPM.run(pmId, equipId, sched.title, sched.frequency, steps);
+        pmCount2++;
+        const woId = uuid();
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + (freqDays[sched.frequency] || 30));
+        insertQaWO.run(woId, pmId, equipId, sched.title, dueDate.toISOString().split('T')[0], steps);
+        woCount2++;
+      }
+    });
+    qaTx();
+    console.log(`[seed] Auto-seeded QA: ${eqCount2} equipment, ${pmCount2} PM schedules, ${woCount2} work orders`);
+  } catch (e) {
+    console.warn('[seed] Could not seed QA data:', e.message);
+  }
+}
+
 // Auto-seed calibration instruments if empty
 const calCount = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c;
 if (calCount === 0) {
@@ -204,9 +255,15 @@ if (lotoCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c
 // Seed default admin user if no users exist
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
 if (userCount === 0) {
-  const adminId = uuid();
-  db.prepare(`INSERT INTO users (id, name, email, pin, role) VALUES (?, ?, ?, ?, ?)`).run(adminId, 'Admin', 'lowry@powder-ops.com', '1234', 'admin');
-  console.log('[seed] Created default admin user (pin: 1234)');
+  const seedUsers = db.transaction(() => {
+    db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Admin', 'lowry@powder-ops.com', '1234', 'admin', 'warehouse');
+    db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Adam B.', 'adam@powder-ops.com', '1111', 'operator', 'warehouse');
+    db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Ricardo A.', 'ricardo@powder-ops.com', '2222', 'operator', 'warehouse');
+    db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Spencer R.', 'spencer@powder-ops.com', '3333', 'operator', 'warehouse');
+    db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'QA Tech', 'qa@powder-ops.com', '4444', 'operator', 'qa');
+  });
+  seedUsers();
+  console.log('[seed] Created default users (admin + operators)');
 }
 
 // Backfill 4 months of completed work order history if none exist

@@ -9,8 +9,13 @@ const ROLES = [
   { value: 'operator', label: 'Operator', desc: 'Operator view only' },
 ];
 
+const DEPARTMENTS = [
+  { value: 'warehouse', label: 'Warehouse' },
+  { value: 'qa', label: 'QA' },
+];
+
 function UserForm({ initial, onSave, onCancel }) {
-  const [form, setForm] = useState(initial || { name: '', email: '', pin: '', role: 'operator' });
+  const [form, setForm] = useState(initial || { name: '', email: '', pin: '', role: 'operator', department: 'warehouse' });
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -44,6 +49,13 @@ function UserForm({ initial, onSave, onCancel }) {
           <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             {ROLES.map(r => <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Department *</label>
+          <select value={form.department || 'warehouse'} onChange={e => setForm({ ...form, department: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
           </select>
         </div>
       </div>
@@ -117,6 +129,7 @@ export default function SettingsPanel() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Dept</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
               </tr>
@@ -129,6 +142,11 @@ export default function SettingsPanel() {
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.role === 'admin' ? 'bg-red-100 text-red-800' : u.role === 'supervisor' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
                       {u.role}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.department === 'qa' ? 'bg-teal-100 text-teal-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                      {u.department === 'qa' ? 'QA' : 'Warehouse'}
                     </span>
                   </td>
                   <td className="px-4 py-3">

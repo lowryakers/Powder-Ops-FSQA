@@ -1,0 +1,94 @@
+{
+  "equipment": [
+    { "name": "Dry Storage Thermometer/Hygrometer", "type": "Monitoring", "location": "Dry Storage", "room": "Warehouse", "asset_id": "QA-TH-001" },
+    { "name": "Cold Storage Thermometer", "type": "Monitoring", "location": "Walk-in Cooler", "room": "Warehouse", "asset_id": "QA-TH-002" },
+    { "name": "Freezer Thermometer", "type": "Monitoring", "location": "Walk-in Freezer", "room": "Warehouse", "asset_id": "QA-TH-003" },
+    { "name": "Production Floor Thermometer/Hygrometer", "type": "Monitoring", "location": "Production Floor", "room": "Production", "asset_id": "QA-TH-004" },
+    { "name": "Staging Area Thermometer/Hygrometer", "type": "Monitoring", "location": "Staging Area", "room": "Staging", "asset_id": "QA-TH-005" },
+    { "name": "Production Floor Lighting", "type": "Light Fixture", "location": "Production Floor", "room": "Production", "asset_id": "QA-LG-001" },
+    { "name": "Packaging Area Lighting", "type": "Light Fixture", "location": "Packaging Area", "room": "Packaging", "asset_id": "QA-LG-002" },
+    { "name": "Warehouse Lighting", "type": "Light Fixture", "location": "Warehouse", "room": "Warehouse", "asset_id": "QA-LG-003" },
+    { "name": "Production Floor — Zone A", "type": "Cleaning Zone", "location": "Production Floor", "room": "Production", "asset_id": "QA-CZ-001" },
+    { "name": "Production Floor — Zone B", "type": "Cleaning Zone", "location": "Production Floor", "room": "Production", "asset_id": "QA-CZ-002" },
+    { "name": "Packaging Area", "type": "Cleaning Zone", "location": "Packaging Area", "room": "Packaging", "asset_id": "QA-CZ-003" },
+    { "name": "Restrooms & Break Room", "type": "Cleaning Zone", "location": "Common Areas", "room": "Facility", "asset_id": "QA-CZ-004" },
+    { "name": "Loading Dock", "type": "Cleaning Zone", "location": "Loading Dock", "room": "Warehouse", "asset_id": "QA-CZ-005" }
+  ],
+  "schedules": [
+    {
+      "equipment_asset": "QA-TH-001", "title": "Dry Storage Temp & Humidity Check",
+      "frequency": "daily",
+      "tasks": ["Record temperature (must be 50–70°F)", "Record humidity (must be <60%)", "Check for condensation or moisture", "Log any out-of-range readings and notify supervisor"]
+    },
+    {
+      "equipment_asset": "QA-TH-002", "title": "Cold Storage Temperature Check",
+      "frequency": "daily",
+      "tasks": ["Record temperature (must be 33–41°F)", "Check door seals for damage", "Verify alarm system is functional", "Log any out-of-range readings and take corrective action"]
+    },
+    {
+      "equipment_asset": "QA-TH-003", "title": "Freezer Temperature Check",
+      "frequency": "daily",
+      "tasks": ["Record temperature (must be 0°F or below)", "Check for ice buildup on coils", "Verify door seals are intact", "Log any out-of-range readings and take corrective action"]
+    },
+    {
+      "equipment_asset": "QA-TH-004", "title": "Production Floor Temp & Humidity Check",
+      "frequency": "daily",
+      "tasks": ["Record temperature", "Record humidity", "Note any HVAC issues", "Log any out-of-range readings"]
+    },
+    {
+      "equipment_asset": "QA-TH-005", "title": "Staging Area Temp & Humidity Check",
+      "frequency": "daily",
+      "tasks": ["Record temperature", "Record humidity", "Check for condensation or moisture"]
+    },
+    {
+      "equipment_asset": "QA-LG-001", "title": "Production Floor Light & Glass Inspection",
+      "frequency": "daily",
+      "tasks": ["Inspect all light fixtures for damage or missing covers", "Check for cracked or broken bulbs/tubes", "Verify shatter-proof covers are intact", "Inspect glass windows, gauges, and panels for cracks", "Document any findings and replace damaged items immediately"]
+    },
+    {
+      "equipment_asset": "QA-LG-002", "title": "Packaging Area Light & Glass Inspection",
+      "frequency": "daily",
+      "tasks": ["Inspect all light fixtures for damage or missing covers", "Check for cracked or broken bulbs/tubes", "Verify shatter-proof covers are intact", "Inspect clear panels and viewing windows for cracks", "Document any findings and replace damaged items immediately"]
+    },
+    {
+      "equipment_asset": "QA-LG-003", "title": "Warehouse Light & Glass Inspection",
+      "frequency": "weekly",
+      "tasks": ["Inspect all overhead light fixtures", "Check for cracked or broken bulbs/tubes", "Verify high-bay fixture covers are intact", "Check loading dock door windows for damage", "Document any findings"]
+    },
+    {
+      "equipment_asset": "QA-CZ-001", "title": "Zone A Pre-Op Cleaning Verification",
+      "frequency": "daily",
+      "tasks": ["Verify all food contact surfaces are clean and sanitized", "Check floors for debris and standing water", "Inspect walls and ceilings for contamination", "Verify cleaning chemicals are at proper concentration", "Check waste receptacles are empty and lined", "Confirm sanitizer contact time was met"]
+    },
+    {
+      "equipment_asset": "QA-CZ-002", "title": "Zone B Pre-Op Cleaning Verification",
+      "frequency": "daily",
+      "tasks": ["Verify all food contact surfaces are clean and sanitized", "Check floors for debris and standing water", "Inspect walls and ceilings for contamination", "Verify cleaning chemicals are at proper concentration", "Check waste receptacles are empty and lined", "Confirm sanitizer contact time was met"]
+    },
+    {
+      "equipment_asset": "QA-CZ-003", "title": "Packaging Area Cleaning Verification",
+      "frequency": "daily",
+      "tasks": ["Verify packaging surfaces are free of debris", "Check scales and labelers are clean", "Inspect conveyor belts for residue", "Verify waste has been removed", "Check sanitizer stations are stocked"]
+    },
+    {
+      "equipment_asset": "QA-CZ-004", "title": "Restroom & Break Room Sanitation Check",
+      "frequency": "daily",
+      "tasks": ["Verify restrooms are clean and stocked", "Check hand wash stations have soap, towels, and sanitizer", "Inspect break room for cleanliness", "Verify GMP signage is posted and visible"]
+    },
+    {
+      "equipment_asset": "QA-CZ-005", "title": "Loading Dock Cleaning Inspection",
+      "frequency": "weekly",
+      "tasks": ["Inspect dock area for debris and contamination", "Check pest control devices around dock doors", "Verify dock plates and bumpers are clean", "Check receiving area is organized and clean", "Inspect waste/recycling area"]
+    },
+    {
+      "equipment_asset": "QA-CZ-001", "title": "Zone A Deep Clean",
+      "frequency": "weekly",
+      "tasks": ["Deep clean all equipment surfaces", "Scrub floors with approved cleaner", "Clean ceiling vents and light covers", "Sanitize drain covers", "Detail-clean hard-to-reach areas", "ATP swab verification on 3+ surfaces"]
+    },
+    {
+      "equipment_asset": "QA-CZ-002", "title": "Zone B Deep Clean",
+      "frequency": "weekly",
+      "tasks": ["Deep clean all equipment surfaces", "Scrub floors with approved cleaner", "Clean ceiling vents and light covers", "Sanitize drain covers", "Detail-clean hard-to-reach areas", "ATP swab verification on 3+ surfaces"]
+    }
+  ]
+}

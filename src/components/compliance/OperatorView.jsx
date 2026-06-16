@@ -183,7 +183,9 @@ function SectionHeader({ icon: Icon, title, count, color, defaultOpen = true, ch
 
 export default function OperatorView() {
   const { user } = useAuth() || {};
-  const { data: tasks, loading, refresh } = useApiGet('/pm/operator-tasks');
+  const dept = user?.role === 'admin' ? null : (user?.department || 'warehouse');
+  const groupParam = dept ? `?group=${dept}` : '';
+  const { data: tasks, loading, refresh } = useApiGet(`/pm/operator-tasks${groupParam}`);
   const { data: technicians } = useApiGet('/users/technicians');
   const [freqFilter, setFreqFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);

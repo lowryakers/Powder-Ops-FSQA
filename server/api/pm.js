@@ -31,12 +31,12 @@ function markMissedWorkOrders(db) {
   `).all();
 
   if (orphaned.length > 0) {
-    const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, status) VALUES (?, ?, ?, ?, ?, ?, 'open')`);
+    const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')`);
     const tx = db.transaction(() => {
       for (const sched of orphaned) {
         const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
         const dueDate = nextWeekday(interval <= 1 ? new Date() : new Date(Date.now() + interval * 86400000));
-        insertWO.run(uuid(), sched.id, sched.equipment_id, sched.title, dueDate.toISOString().split('T')[0], sched.procedure_steps);
+        insertWO.run(uuid(), sched.id, sched.equipment_id, sched.title, dueDate.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
       }
     });
     tx();
@@ -78,18 +78,18 @@ router.get('/schedules/:id', (req, res) => {
 router.post('/schedules', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id } = req.body;
+  const { equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group } = req.body;
 
   if (!equipment_id || !title || !frequency_type) {
     return res.status(400).json({ error: 'equipment_id, title, and frequency_type are required' });
   }
 
   db.prepare(`
-    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, equipment_id, title, description || null, frequency_type, frequency_value || 1,
     JSON.stringify(procedure_steps || []), lubricant_type || null,
-    is_food_grade_lubricant ? 1 : 0, estimated_minutes || null, haccp_ccp_id || null);
+    is_food_grade_lubricant ? 1 : 0, estimated_minutes || null, haccp_ccp_id || null, task_group || 'warehouse');
 
   const created = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(id);
   logAudit(req.body._actor || 'system', 'create', 'pm_schedule', id, { title, equipment_id }, null, created);
@@ -161,17 +161,17 @@ router.get('/work-orders/:id', (req, res) => {
 router.post('/work-orders', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments } = req.body;
+  const { pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments, task_group } = req.body;
 
   if (!equipment_id || !title || !due_date) {
     return res.status(400).json({ error: 'equipment_id, title, and due_date are required' });
   }
 
   db.prepare(`
-    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments, task_group)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, pm_schedule_id || null, equipment_id, title, description || null,
-    priority || 'normal', assigned_to || null, due_date, JSON.stringify(procedure_steps || []), JSON.stringify(attachments || []));
+    priority || 'normal', assigned_to || null, due_date, JSON.stringify(procedure_steps || []), JSON.stringify(attachments || []), task_group || 'warehouse');
 
   const created = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id);
   logAudit(req.body._actor || 'system', 'create', 'work_order', id, { title, equipment_id, due_date }, null, created);
@@ -213,18 +213,20 @@ router.put('/work-orders/:id', (req, res) => {
 router.get('/metrics', (req, res) => {
   const db = getDb();
   markMissedWorkOrders(db);
-  const { from, to } = req.query;
+  const { from, to, group } = req.query;
   const now = new Date();
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   const defaultTo = now.toISOString().split('T')[0];
   const start = from || defaultFrom;
   const end = to || defaultTo;
 
-  const total = db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ?').get(start, end);
-  const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'completed'").get(start, end);
-  const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'").get(start, end);
-  const overdue = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')").get(end);
-  const open = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status IN ('open','in_progress')").get();
+  const gf = group ? ' AND task_group = ?' : '';
+  const gp = group ? [group] : [];
+  const total = db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ?' + gf).get(start, end, ...gp);
+  const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'completed'" + gf).get(start, end, ...gp);
+  const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, end, ...gp);
+  const overdue = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')" + gf).get(end, ...gp);
+  const open = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status IN ('open','in_progress')" + gf).get(...gp);
 
   const completionRate = total.count > 0 ? ((completed.count / total.count) * 100).toFixed(1) : 0;
 
@@ -232,17 +234,17 @@ router.get('/metrics', (req, res) => {
     SELECT e.name, e.room, COUNT(*) as total,
       SUM(CASE WHEN wo.status = 'completed' THEN 1 ELSE 0 END) as completed
     FROM work_orders wo JOIN equipment e ON wo.equipment_id = e.id
-    WHERE wo.due_date BETWEEN ? AND ?
+    WHERE wo.due_date BETWEEN ? AND ?${group ? ' AND wo.task_group = ?' : ''}
     GROUP BY wo.equipment_id ORDER BY e.name
-  `).all(start, end);
+  `).all(start, end, ...gp);
 
   const monthlyTrend = db.prepare(`
     SELECT strftime('%Y-%m', due_date) as month,
       COUNT(*) as total,
       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
       SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) as missed
-    FROM work_orders GROUP BY strftime('%Y-%m', due_date) ORDER BY month DESC LIMIT 12
-  `).all();
+    FROM work_orders${group ? ' WHERE task_group = ?' : ''} GROUP BY strftime('%Y-%m', due_date) ORDER BY month DESC LIMIT 12
+  `).all(...gp);
 
   res.json({
     period: { from: start, to: end },
@@ -288,9 +290,9 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
       const nextDue = nextWeekday(raw);
       const woId = uuid();
       db.prepare(`
-        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'open')
-      `).run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps);
+        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+      `).run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
       logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id, triggered_by: req.params.id }, null, null);
       nextWO = { id: woId, title: sched.title, due_date: nextDue.toISOString().split('T')[0] };
     }
@@ -304,7 +306,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
 router.get('/by-frequency', (req, res) => {
   const db = getDb();
   markMissedWorkOrders(db);
-  const { frequency, equipment_id } = req.query;
+  const { frequency, equipment_id, group } = req.query;
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
     e.asset_id, ps.title as pm_title, ps.frequency_type, ps.procedure_steps as pm_steps
@@ -316,6 +318,7 @@ router.get('/by-frequency', (req, res) => {
 
   if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
   if (equipment_id) { sql += ' AND wo.equipment_id = ?'; params.push(equipment_id); }
+  if (group) { sql += ' AND wo.task_group = ?'; params.push(group); }
 
   sql += ' ORDER BY ps.frequency_type, e.name';
 
@@ -336,7 +339,7 @@ router.get('/by-frequency', (req, res) => {
 router.get('/completed-history', (req, res) => {
   const db = getDb();
   markMissedWorkOrders(db);
-  const { limit = 50, offset = 0, frequency, from, to, include_missed } = req.query;
+  const { limit = 50, offset = 0, frequency, from, to, include_missed, group } = req.query;
   const showMissed = include_missed !== 'false';
 
   const statusFilter = showMissed ? "wo.status IN ('completed','missed')" : "wo.status = 'completed'";
@@ -351,6 +354,7 @@ router.get('/completed-history', (req, res) => {
   const params = [];
 
   if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
+  if (group) { sql += ' AND wo.task_group = ?'; params.push(group); }
   if (from) { sql += ` AND ${dateCol} >= ?`; params.push(from); }
   if (to) { sql += ` AND ${dateCol} <= ?`; params.push(to + 'T23:59:59'); }
 
@@ -393,10 +397,10 @@ router.post('/generate', (_req, res) => {
     if (nextDue <= horizon) {
       const woId = uuid();
       db.prepare(`
-        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, due_date, procedure_steps)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, due_date, procedure_steps, task_group)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(woId, sched.id, sched.equipment_id, sched.title,
-        sched.description, nextDue.toISOString().split('T')[0], sched.procedure_steps);
+        sched.description, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
 
       generated.push({ id: woId, title: sched.title, due_date: nextDue.toISOString().split('T')[0] });
       logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id }, null, null);
@@ -411,10 +415,10 @@ router.post('/generate', (_req, res) => {
 router.get('/operator-tasks', (req, res) => {
   const db = getDb();
   markMissedWorkOrders(db);
-  const { assigned_to } = req.query;
+  const { assigned_to, group } = req.query;
 
   let sql = `SELECT wo.id, wo.title, wo.status, wo.priority, wo.due_date, wo.assigned_to,
-    wo.procedure_steps, wo.pm_schedule_id,
+    wo.procedure_steps, wo.pm_schedule_id, wo.task_group,
     e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id,
     ps.frequency_type
     FROM work_orders wo
@@ -424,6 +428,7 @@ router.get('/operator-tasks', (req, res) => {
   const params = [];
 
   if (assigned_to) { sql += ' AND wo.assigned_to = ?'; params.push(assigned_to); }
+  if (group) { sql += ' AND wo.task_group = ?'; params.push(group); }
 
   sql += ` ORDER BY
     CASE wo.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
