@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { Shield, Wrench, ClipboardCheck, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
 import EquipmentPanel from './components/compliance/EquipmentPanel.jsx';
 import PMPanel from './components/compliance/PMPanel.jsx';
-import ChecklistPanel from './components/compliance/ChecklistPanel.jsx';
 import CalibrationPanel from './components/compliance/CalibrationPanel.jsx';
 import SanitationPanel from './components/compliance/SanitationPanel.jsx';
 import LOTOPanel from './components/compliance/LOTOPanel.jsx';
@@ -18,7 +17,6 @@ const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'operator', label: 'Operator', icon: HardHat },
   { id: 'pm', label: 'PM', icon: Wrench },
-  { id: 'checklists', label: 'Checklists', icon: ClipboardCheck },
   { id: 'calibration', label: 'Calibration', icon: Thermometer },
   { id: 'sanitation', label: 'Sanitation', icon: Droplets },
   { id: 'loto', label: 'LOTO', icon: Lock },
@@ -165,7 +163,6 @@ function App() {
         {activeTab === 'dashboard' && <ComplianceDashboard />}
         {activeTab === 'operator' && <OperatorView />}
         {activeTab === 'pm' && <PMPanel />}
-        {activeTab === 'checklists' && <ChecklistPanel />}
         {activeTab === 'calibration' && <CalibrationPanel />}
         {activeTab === 'sanitation' && <SanitationPanel />}
         {activeTab === 'loto' && <LOTOPanel />}
