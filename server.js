@@ -18,7 +18,7 @@ import complianceRoutes from './server/api/compliance.js';
 import lotoRoutes from './server/api/loto.js';
 import userRoutes from './server/api/users.js';
 import submitRoutes from './server/api/submit.js';
-import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules } from './server/cleaning-seed.js';
+import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules } from './server/cleaning-seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -112,56 +112,7 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   }
 }
 
-// Auto-seed QA equipment and schedules if none exist
-const qaEqCount = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE asset_id LIKE 'QA-%'").get().c;
-if (qaEqCount === 0) {
-  try {
-    const qaPath = path.join(__dirname, 'server', 'qa-seed-data.json');
-    const qaData = JSON.parse(readFileSync(qaPath, 'utf-8'));
-    const qaAssetMap = {};
-
-    const insertQaEq = db.prepare(`
-      INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
-      VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
-    `);
-    const insertQaPM = db.prepare(`
-      INSERT INTO pm_schedules (id, equipment_id, title, frequency_type, frequency_value, procedure_steps, is_active, task_group)
-      VALUES (?, ?, ?, ?, 1, ?, 1, 'qa')
-    `);
-    const freqDays = { daily: 1, weekly: 7, monthly: 30, quarterly: 90, annual: 365 };
-    const insertQaWO = db.prepare(`
-      INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
-    `);
-
-    let eqCount2 = 0, pmCount2 = 0, woCount2 = 0;
-    const qaTx = db.transaction(() => {
-      for (const eq of qaData.equipment) {
-        const eqId = uuid();
-        insertQaEq.run(eqId, eq.name, eq.type, eq.location, eq.room || null, eq.asset_id);
-        qaAssetMap[eq.asset_id] = eqId;
-        eqCount2++;
-      }
-      for (const sched of qaData.schedules) {
-        const equipId = qaAssetMap[sched.equipment_asset];
-        if (!equipId) continue;
-        const pmId = uuid();
-        const steps = JSON.stringify(sched.tasks);
-        insertQaPM.run(pmId, equipId, sched.title, sched.frequency, steps);
-        pmCount2++;
-        const woId = uuid();
-        const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + (freqDays[sched.frequency] || 30));
-        insertQaWO.run(woId, pmId, equipId, sched.title, dueDate.toISOString().split('T')[0], steps);
-        woCount2++;
-      }
-    });
-    qaTx();
-    console.log(`[seed] Auto-seeded QA: ${eqCount2} equipment, ${pmCount2} PM schedules, ${woCount2} work orders`);
-  } catch (e) {
-    console.warn('[seed] Could not seed QA data:', e.message);
-  }
-}
+// Old generic QA seed (qa-seed-data.json) removed — replaced by form-based seeds in cleaning-seed.js
 
 // Auto-seed calibration instruments if empty
 const calCount = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c;
@@ -331,6 +282,10 @@ seedCleaningChecklists(db);
 seedCleaningPMSchedules(db);
 seedTempHumidityRecords(db);
 seedTempHumidityPMSchedules(db);
+seedGlassPlasticRecords(db);
+seedGlassPlasticPMSchedules(db);
+seedLightInspectionRecords(db);
+seedLightInspectionPMSchedules(db);
 
 // --- File Uploads ---
 const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');

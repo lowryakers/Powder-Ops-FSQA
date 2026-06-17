@@ -521,3 +521,233 @@ export function seedTempHumidityPMSchedules(db) {
     console.log(`[seed] Created temp/humidity: ${eqCount} monitors, ${pmCount} PM schedules, ${woCount} work orders`);
   }
 }
+
+export function seedGlassPlasticRecords(db) {
+  const existing = db.prepare("SELECT COUNT(*) as c FROM sanitation_records WHERE area LIKE 'Brittle Plastic/Glass%'").get().c;
+  if (existing > 0) return;
+
+  const zones = [
+    'Office 1', 'Office 2', 'Office 3', 'Main Lobby', 'Maintenance Area',
+    'Bathrooms (1)', 'Bathrooms (2)', 'Sanitation Area', 'Gown Room',
+    'Break Room', 'Production Area', 'Production Rooms 1-8',
+    'Kitting Area', 'Quality Area', 'Warehouse Area (1)',
+    'Warehouse Area (2)', 'Warehouse Area (3)',
+  ];
+
+  const inspectionDates = ['2026-01-19', '2026-02-25', '2026-03-21', '2026-04-30', '2026-05-26'];
+  const performers = ['DQ', 'DML', 'MS'];
+  const verifiers = ['DQ', 'MS', 'MJ'];
+
+  const insert = db.prepare(`
+    INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, result, verified_by, verified_at, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const date of inspectionDates) {
+      const performer = pickOne(performers);
+      const verifier = pickOne(verifiers);
+      for (const zone of zones) {
+        insert.run(
+          uuid(),
+          `Brittle Plastic/Glass — ${zone}`,
+          'pre_op',
+          performer,
+          `${date}T${randomTime(8, 3)}:00`,
+          'pass',
+          verifier,
+          `${date}T${randomTime(14, 2)}:00`,
+          'Form 431-02 — All items Good condition'
+        );
+        count++;
+      }
+    }
+  });
+  tx();
+  if (count > 0) console.log(`[seed] Imported ${count} brittle plastic/glass inspection records (${inspectionDates.length} dates × ${zones.length} zones)`);
+}
+
+export function seedGlassPlasticPMSchedules(db) {
+  const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Brittle Plastic%Glass%'").get().c;
+  if (hasSchedules > 0) return;
+
+  const insertEq = db.prepare(`
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+  `);
+  const insertPM = db.prepare(`
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+    VALUES (?, ?, ?, ?, ?, 1, ?, 1, 'qa')
+  `);
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
+  `);
+
+  const inspectionZones = [
+    { name: 'Offices (1-3)', location: 'Offices', room: 'Office', asset_id: 'QA-BPG-020' },
+    { name: 'Main Lobby', location: 'Common Areas', room: 'Main Lobby', asset_id: 'QA-BPG-021' },
+    { name: 'Maintenance Area', location: 'Maintenance', room: 'Maintenance', asset_id: 'QA-BPG-022' },
+    { name: 'Bathrooms', location: 'Common Areas', room: 'Bathrooms', asset_id: 'QA-BPG-023' },
+    { name: 'Sanitation Area', location: 'Sanitation', room: 'Sanitation', asset_id: 'QA-BPG-024' },
+    { name: 'Gown Room', location: 'Production', room: 'Gown Room', asset_id: 'QA-BPG-025' },
+    { name: 'Break Room', location: 'Common Areas', room: 'Break Room', asset_id: 'QA-BPG-026' },
+    { name: 'Production Area & Rooms', location: 'Production', room: 'Production', asset_id: 'QA-BPG-027' },
+    { name: 'Kitting Area', location: 'Production', room: 'Kitting', asset_id: 'QA-BPG-028' },
+    { name: 'Quality Area', location: 'Quality', room: 'QA Lab', asset_id: 'QA-BPG-029' },
+    { name: 'Warehouse Areas', location: 'Warehouse', room: 'Warehouse', asset_id: 'QA-BPG-030' },
+  ];
+
+  const steps = [
+    'Inspect each brittle plastic and glass item in the zone',
+    'Check item condition: Good / Bad / Broken',
+    'Record Item Name, QTY, and Material (Glass or Plastic)',
+    'If Bad or Broken — document in Observations and notify manager',
+    'QA verification: initial, sign, and date',
+  ];
+  const stepsJson = JSON.stringify(steps);
+
+  const today = new Date().toISOString().split('T')[0];
+  let eqCount = 0, pmCount = 0, woCount = 0;
+
+  const tx = db.transaction(() => {
+    for (const zone of inspectionZones) {
+      const existing = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(zone.asset_id);
+      let eqId;
+      if (existing) {
+        eqId = existing.id;
+      } else {
+        eqId = uuid();
+        insertEq.run(eqId, zone.name, 'Inspection Zone', zone.location, zone.room, zone.asset_id);
+        eqCount++;
+      }
+
+      const pmId = uuid();
+      const title = `Brittle Plastic & Glass Inspection — ${zone.name}`;
+      insertPM.run(pmId, eqId, title, 'Form 431-02 — Monthly brittle plastic and glass inventory inspection', 'monthly', stepsJson);
+      pmCount++;
+
+      insertWO.run(uuid(), pmId, eqId, title, today, stepsJson);
+      woCount++;
+    }
+  });
+  tx();
+
+  if (pmCount > 0) {
+    console.log(`[seed] Created brittle plastic/glass: ${eqCount} zones, ${pmCount} PM schedules, ${woCount} work orders`);
+  }
+}
+
+export function seedLightInspectionRecords(db) {
+  const existing = db.prepare("SELECT COUNT(*) as c FROM sanitation_records WHERE area LIKE 'Light Inspection%'").get().c;
+  if (existing > 0) return;
+
+  const rooms = [
+    'Room 1', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7',
+    'Batching 1', 'Batching 2', 'Batching 3',
+  ];
+
+  const inspectionDates = ['2026-01-15', '2026-06-15'];
+  const performers = ['DQ', 'MS'];
+  const verifiers = ['DQ', 'MS', 'MJ'];
+
+  const insert = db.prepare(`
+    INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, result, verified_by, verified_at, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const date of inspectionDates) {
+      const performer = pickOne(performers);
+      const verifier = pickOne(verifiers);
+      for (const room of rooms) {
+        insert.run(
+          uuid(),
+          `Light Inspection — Zone 1 — ${room}`,
+          'pre_op',
+          performer,
+          `${date}T${randomTime(8, 3)}:00`,
+          'pass',
+          verifier,
+          `${date}T${randomTime(14, 2)}:00`,
+          'Form 110-01 — Light levels ≥30 foot-candles, all fixtures pass'
+        );
+        count++;
+      }
+    }
+  });
+  tx();
+  if (count > 0) console.log(`[seed] Imported ${count} light inspection records (${inspectionDates.length} dates × ${rooms.length} rooms)`);
+}
+
+export function seedLightInspectionPMSchedules(db) {
+  const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Light Inspection%'").get().c;
+  if (hasSchedules > 0) return;
+
+  const insertEq = db.prepare(`
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+  `);
+  const insertPM = db.prepare(`
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+    VALUES (?, ?, ?, ?, 'quarterly', 1, ?, 1, 'qa')
+  `);
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
+  `);
+
+  const rooms = [
+    { name: 'Zone 1 — Room 1', location: 'Production', room: 'Room 1', asset_id: 'QA-LI-040' },
+    { name: 'Zone 1 — Room 3', location: 'Production', room: 'Room 3', asset_id: 'QA-LI-041' },
+    { name: 'Zone 1 — Room 4', location: 'Production', room: 'Room 4', asset_id: 'QA-LI-042' },
+    { name: 'Zone 1 — Room 5', location: 'Production', room: 'Room 5', asset_id: 'QA-LI-043' },
+    { name: 'Zone 1 — Room 6', location: 'Production', room: 'Room 6', asset_id: 'QA-LI-044' },
+    { name: 'Zone 1 — Room 7', location: 'Production', room: 'Room 7', asset_id: 'QA-LI-045' },
+    { name: 'Zone 1 — Batching 1', location: 'Production', room: 'Batching 1', asset_id: 'QA-LI-046' },
+    { name: 'Zone 1 — Batching 2', location: 'Production', room: 'Batching 2', asset_id: 'QA-LI-047' },
+    { name: 'Zone 1 — Batching 3', location: 'Production', room: 'Batching 3', asset_id: 'QA-LI-048' },
+  ];
+
+  const steps = [
+    'Use Light Meter App on tablet to measure foot-candles/lux',
+    'Production areas: minimum 30 foot-candles (approx. 323 lux)',
+    'Inspection/QC areas: 50–130 foot-candles (approx. 540–1400 lux)',
+    'Record result for each fixture: Pass or Fail',
+    'If Fail — document fixture location and notify maintenance',
+    'QA verification: initial, sign, and date',
+  ];
+  const stepsJson = JSON.stringify(steps);
+
+  const today = new Date().toISOString().split('T')[0];
+  let eqCount = 0, pmCount = 0, woCount = 0;
+
+  const tx = db.transaction(() => {
+    for (const rm of rooms) {
+      const existing = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(rm.asset_id);
+      let eqId;
+      if (existing) {
+        eqId = existing.id;
+      } else {
+        eqId = uuid();
+        insertEq.run(eqId, rm.name, 'Light Fixture Zone', rm.location, rm.room, rm.asset_id);
+        eqCount++;
+      }
+
+      const pmId = uuid();
+      const title = `Light Inspection — ${rm.name}`;
+      insertPM.run(pmId, eqId, title, 'Form 110-01 — Biannual light level inspection (≥30 foot-candles production, 50-130 foot-candles QC)', stepsJson);
+      pmCount++;
+
+      insertWO.run(uuid(), pmId, eqId, title, today, stepsJson);
+      woCount++;
+    }
+  });
+  tx();
+
+  if (pmCount > 0) {
+    console.log(`[seed] Created light inspection: ${eqCount} fixture zones, ${pmCount} PM schedules, ${woCount} work orders`);
+  }
+}
