@@ -18,7 +18,7 @@ import complianceRoutes from './server/api/compliance.js';
 import lotoRoutes from './server/api/loto.js';
 import userRoutes from './server/api/users.js';
 import submitRoutes from './server/api/submit.js';
-import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules } from './server/cleaning-seed.js';
+import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules } from './server/cleaning-seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -329,6 +329,8 @@ if (hasOld > 0) {
 seedCleaningRecords(db);
 seedCleaningChecklists(db);
 seedCleaningPMSchedules(db);
+seedTempHumidityRecords(db);
+seedTempHumidityPMSchedules(db);
 
 // --- File Uploads ---
 const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');

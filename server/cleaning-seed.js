@@ -400,3 +400,124 @@ export function seedCleaningPMSchedules(db) {
     console.log(`[seed] Created QA cleaning: ${eqCount} equipment areas, ${pmCount} PM schedules, ${woCount} work orders`);
   }
 }
+
+export function seedTempHumidityRecords(db) {
+  const existing = db.prepare("SELECT COUNT(*) as c FROM sanitation_records WHERE area LIKE 'Temp/Humidity%'").get().c;
+  if (existing > 0) return;
+
+  const locations = ['Warehouse', 'Production 1', 'Production 2'];
+  const performers = ['MS', 'MJ', 'MN', 'JS'];
+  const dateRanges = [
+    ['2026-01-05', '2026-01-21'],
+    ['2026-01-22', '2026-02-02'],
+    ['2026-02-03', '2026-02-09'],
+    ['2026-02-10', '2026-02-17'],
+    ['2026-02-18', '2026-02-25'],
+    ['2026-03-02', '2026-03-31'],
+    ['2026-04-01', '2026-04-30'],
+    ['2026-05-01', '2026-05-29'],
+  ];
+
+  const allDates = [];
+  for (const [s, e] of dateRanges) allDates.push(...weekdaysBetween(s, e));
+  const uniqueDates = [...new Set(allDates)].sort();
+
+  const insert = db.prepare(`
+    INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, chemicals_used, concentration, result, verified_by, verified_at, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const date of uniqueDates) {
+      for (const loc of locations) {
+        const performer = pickOne(performers);
+        const baseTemp = loc === 'Warehouse' ? 64 : 66;
+        const temp = (baseTemp + (Math.random() * 6 - 3)).toFixed(1);
+        const humidity = (28 + Math.random() * 10).toFixed(1);
+        const time = randomTime(6, 2);
+
+        insert.run(
+          uuid(),
+          `Temp/Humidity — ${loc}`,
+          'pre_op',
+          performer,
+          `${date}T${time}:00`,
+          null,
+          null,
+          'pass',
+          performer,
+          `${date}T${time}:00`,
+          `Temp: ${temp}°F, Humidity: ${humidity}%, Rolling doors closed`
+        );
+        count++;
+      }
+    }
+  });
+  tx();
+  if (count > 0) console.log(`[seed] Imported ${count} temp/humidity records (${uniqueDates.length} days × 3 locations)`);
+}
+
+export function seedTempHumidityPMSchedules(db) {
+  const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Temp%Humidity%'").get().c;
+  if (hasSchedules > 0) return;
+
+  const insertEq = db.prepare(`
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+  `);
+  const insertPM = db.prepare(`
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+    VALUES (?, ?, ?, ?, 'daily', 1, ?, 1, 'qa')
+  `);
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
+  `);
+
+  const monitoringPoints = [
+    { name: 'Warehouse Temp/Humidity Monitor', location: 'Warehouse', room: 'Warehouse', asset_id: 'QA-TH-010' },
+    { name: 'Production 1 Temp/Humidity Monitor', location: 'Production 1', room: 'Production', asset_id: 'QA-TH-011' },
+    { name: 'Production 2 Temp/Humidity Monitor', location: 'Production 2', room: 'Production', asset_id: 'QA-TH-012' },
+  ];
+
+  const steps = [
+    'Record temperature (°F)',
+    'Record humidity (%) — must be less than 40%',
+    'If humidity >40%: report to manager immediately',
+    'Corrections: Check dehumidifiers (in good working condition)',
+    'Corrections: Check A/C units (in good working condition)',
+    'Verify rolling doors are closed',
+  ];
+  const stepsJson = JSON.stringify(steps);
+
+  const today = new Date().toISOString().split('T')[0];
+  let eqCount = 0, pmCount = 0, woCount = 0;
+
+  const tx = db.transaction(() => {
+    for (const mp of monitoringPoints) {
+      const existing = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(mp.asset_id);
+      let eqId;
+      if (existing) {
+        eqId = existing.id;
+      } else {
+        eqId = uuid();
+        insertEq.run(eqId, mp.name, 'Monitoring', mp.location, mp.room, mp.asset_id);
+        eqCount++;
+      }
+
+      const pmId = uuid();
+      const title = `Temp & Humidity Check — ${mp.location}`;
+      insertPM.run(pmId, eqId, title, 'Form 110-04 — Daily temperature and humidity controls', stepsJson);
+      pmCount++;
+
+      insertWO.run(uuid(), pmId, eqId, title, today, stepsJson);
+      woCount++;
+    }
+  });
+  tx();
+
+  if (pmCount > 0) {
+    console.log(`[seed] Created temp/humidity: ${eqCount} monitors, ${pmCount} PM schedules, ${woCount} work orders`);
+  }
+}
