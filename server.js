@@ -112,7 +112,28 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   }
 }
 
-// Old generic QA seed (qa-seed-data.json) removed — replaced by form-based seeds in cleaning-seed.js
+// Remove old generic QA seed data (qa-seed-data.json) if it exists in the DB
+{
+  const oldAssetPatterns = ['QA-TH-00%', 'QA-LG-00%', 'QA-CZ-00%'];
+  const oldEq = db.prepare("SELECT id FROM equipment WHERE asset_id LIKE 'QA-TH-00%' OR asset_id LIKE 'QA-LG-00%' OR asset_id LIKE 'QA-CZ-00%'").all();
+  if (oldEq.length > 0) {
+    const oldIds = oldEq.map(e => e.id);
+    const ph = oldIds.map(() => '?').join(',');
+    const schedIds = db.prepare(`SELECT id FROM pm_schedules WHERE equipment_id IN (${ph})`).all(...oldIds).map(s => s.id);
+    const cleanTx = db.transaction(() => {
+      if (schedIds.length > 0) {
+        const sph = schedIds.map(() => '?').join(',');
+        db.prepare(`DELETE FROM work_orders WHERE pm_schedule_id IN (${sph})`).run(...schedIds);
+        db.prepare(`DELETE FROM pm_schedules WHERE id IN (${sph})`).run(...schedIds);
+      }
+      db.prepare(`DELETE FROM work_orders WHERE equipment_id IN (${ph})`).run(...oldIds);
+      db.prepare(`DELETE FROM loto_procedures WHERE equipment_id IN (${ph})`).run(...oldIds);
+      db.prepare(`DELETE FROM equipment WHERE id IN (${ph})`).run(...oldIds);
+    });
+    cleanTx();
+    console.log(`[seed] Removed ${oldEq.length} old generic QA equipment and related schedules/work orders`);
+  }
+}
 
 // Auto-seed calibration instruments if empty
 const calCount = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c;
