@@ -12,6 +12,7 @@ const ROLES = [
 const DEPARTMENTS = [
   { value: 'warehouse', label: 'Warehouse' },
   { value: 'qa', label: 'QA' },
+  { value: 'cleaning', label: 'Cleaning' },
 ];
 
 function UserForm({ initial, onSave, onCancel }) {
@@ -145,8 +146,8 @@ export default function SettingsPanel() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.department === 'qa' ? 'bg-teal-100 text-teal-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                      {u.department === 'qa' ? 'QA' : 'Warehouse'}
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.department === 'qa' ? 'bg-teal-100 text-teal-700' : u.department === 'cleaning' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                      {u.department === 'qa' ? 'QA' : u.department === 'cleaning' ? 'Cleaning' : 'Warehouse'}
                     </span>
                   </td>
                   <td className="px-4 py-3">

@@ -135,6 +135,19 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   }
 }
 
+// Migrate cleaning tasks from 'qa' to 'cleaning' group
+{
+  const cleaningEqIds = db.prepare("SELECT id FROM equipment WHERE asset_id LIKE 'QA-CL-%'").all().map(e => e.id);
+  if (cleaningEqIds.length > 0) {
+    const ph = cleaningEqIds.map(() => '?').join(',');
+    const updated = db.prepare(`UPDATE pm_schedules SET task_group = 'cleaning' WHERE task_group = 'qa' AND equipment_id IN (${ph})`).run(...cleaningEqIds);
+    const updatedWO = db.prepare(`UPDATE work_orders SET task_group = 'cleaning' WHERE task_group = 'qa' AND equipment_id IN (${ph})`).run(...cleaningEqIds);
+    if (updated.changes > 0) {
+      console.log(`[migrate] Re-tagged ${updated.changes} cleaning PM schedules and ${updatedWO.changes} work orders from 'qa' to 'cleaning'`);
+    }
+  }
+}
+
 // Auto-seed calibration instruments if empty
 const calCount = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c;
 if (calCount === 0) {
@@ -234,6 +247,7 @@ if (userCount === 0) {
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Ricardo A.', 'ricardo@powder-ops.com', '2222', 'operator', 'warehouse');
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Spencer R.', 'spencer@powder-ops.com', '3333', 'operator', 'warehouse');
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'QA Tech', 'qa@powder-ops.com', '4444', 'operator', 'qa');
+    db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Cleaning Tech', 'cleaning@powder-ops.com', '5555', 'operator', 'cleaning');
   });
   seedUsers();
   console.log('[seed] Created default users (admin + operators)');

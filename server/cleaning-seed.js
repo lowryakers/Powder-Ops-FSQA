@@ -242,8 +242,8 @@ export function seedCleaningChecklists(db) {
 }
 
 export function seedCleaningPMSchedules(db) {
-  const hasQaSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE task_group = 'qa'").get().c;
-  if (hasQaSchedules > 0) return;
+  const hasCleaningSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE task_group = 'cleaning'").get().c;
+  if (hasCleaningSchedules > 0) return;
 
   const insertEq = db.prepare(`
     INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
@@ -251,11 +251,11 @@ export function seedCleaningPMSchedules(db) {
   `);
   const insertPM = db.prepare(`
     INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
-    VALUES (?, ?, ?, ?, ?, 1, ?, 1, 'qa')
+    VALUES (?, ?, ?, ?, ?, 1, ?, 1, 'cleaning')
   `);
   const insertWO = db.prepare(`
     INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
-    VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
+    VALUES (?, ?, ?, ?, ?, ?, 'cleaning', 'open')
   `);
 
   const areas = [

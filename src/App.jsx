@@ -63,11 +63,11 @@ function App() {
             </div>
             <div className="flex-1">
               <h1 className="text-lg font-bold text-gray-900">Powder Ops</h1>
-              <p className="text-xs text-gray-500">{user.department === 'qa' ? 'QA Tasks' : 'Maintenance Tasks'}</p>
+              <p className="text-xs text-gray-500">{user.department === 'qa' ? 'QA Tasks' : user.department === 'cleaning' ? 'Cleaning Tasks' : 'Maintenance Tasks'}</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${user.department === 'qa' ? 'bg-teal-100 text-teal-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                {user.department === 'qa' ? 'QA' : 'WH'}
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${user.department === 'qa' ? 'bg-teal-100 text-teal-700' : user.department === 'cleaning' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                {user.department === 'qa' ? 'QA' : user.department === 'cleaning' ? 'CLN' : 'WH'}
               </span>
               <span className="text-xs text-gray-500">{user.name}</span>
               <button onClick={logout} className="text-gray-400 hover:text-gray-600" title="Sign Out">

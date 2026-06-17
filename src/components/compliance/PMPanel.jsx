@@ -156,7 +156,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             {wo.priority === 'critical' && <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs">Critical</span>}
             {wo.priority === 'high' && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
             {attachments.length > 0 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs"><Paperclip size={10} />{attachments.length}</span>}
-            {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : 'WH'}</span>}
+            {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : wo.task_group === 'cleaning' ? 'CLN' : 'WH'}</span>}
           </div>
           <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
@@ -216,11 +216,13 @@ const GROUP_TABS = [
   { value: 'all', label: 'All Groups', color: 'bg-gray-800' },
   { value: 'warehouse', label: 'Warehouse', color: 'bg-indigo-600' },
   { value: 'qa', label: 'QA', color: 'bg-teal-600' },
+  { value: 'cleaning', label: 'Cleaning', color: 'bg-amber-600' },
 ];
 
 const GROUP_BADGE = {
   warehouse: 'bg-indigo-100 text-indigo-700',
   qa: 'bg-teal-100 text-teal-700',
+  cleaning: 'bg-amber-100 text-amber-700',
 };
 
 export default function PMPanel() {
@@ -502,7 +504,7 @@ export default function PMPanel() {
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${FREQ_COLORS[wo.frequency_type] || FREQ_COLORS.unscheduled}`}>
                         {wo.frequency_type || 'ad-hoc'}
                       </span>
-                      {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : 'WH'}</span>}
+                      {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : wo.task_group === 'cleaning' ? 'CLN' : 'WH'}</span>}
                     </div>
                     <h4 className={`font-medium ${isMissed ? 'text-gray-600' : 'text-gray-700'}`}>{wo.title || wo.pm_title}</h4>
                     <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location}</p>
