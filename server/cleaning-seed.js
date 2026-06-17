@@ -240,3 +240,163 @@ export function seedCleaningChecklists(db) {
   tx();
   if (count > 0) console.log(`[seed] Created ${count} cleaning checklist templates`);
 }
+
+export function seedCleaningPMSchedules(db) {
+  const hasQaSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE task_group = 'qa'").get().c;
+  if (hasQaSchedules > 0) return;
+
+  const insertEq = db.prepare(`
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+  `);
+  const insertPM = db.prepare(`
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+    VALUES (?, ?, ?, ?, ?, 1, ?, 1, 'qa')
+  `);
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
+  `);
+
+  const areas = [
+    {
+      name: 'Warehouse & Grounds', type: 'Cleaning Zone', location: 'Warehouse', room: 'Warehouse', asset_id: 'QA-CL-001',
+      schedules: [
+        {
+          title: 'Warehouse/Grounds Daily Cleaning',
+          desc: 'Form 202-1 — Daily warehouse cleaning and grounds maintenance inspection',
+          freq: 'daily',
+          steps: [
+            'Section 1: Daily Warehouse Cleaning',
+            '  Sweep up all loose debris (dirt, product, wood chips) in warehouse including docking station',
+            '  Mop floor',
+            '  Empty all trash containers',
+            '  Place new garbage bag in trash container',
+            '  Check floors, wall corners, window edges, electrical conduit for cobwebs/spiders/bugs',
+            'Section 2: Daily Grounds Maintenance Inspection',
+            '  Verify grounds are free of litter and waste',
+            '  Verify adjacent areas of building are free of weeds',
+            '  Check pest baits set correctly at every entrance',
+            '  Verify dumpster surrounding is free of litter and debris',
+            '  Verify dumpster doors are closed',
+            'Section 3: Docking / Entry Gaps',
+            '  Check docking plate for visible gaps',
+            '  Check main doors for visible gaps',
+            '  If gaps found — note location and inform facility manager',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Restrooms', type: 'Cleaning Zone', location: 'Common Areas', room: 'Facility', asset_id: 'QA-CL-002',
+      schedules: [
+        {
+          title: 'Restroom Daily Cleaning',
+          desc: 'Form 108 — Daily restroom cleaning verification',
+          freq: 'daily',
+          steps: [
+            'Clean and sanitize toilet bowls (Inodoros)',
+            'Clean and sanitize sinks (Lavamanos)',
+            'Refill toiletries / toilet paper',
+            'Clean mirrors (Espejos)',
+            'Mop and sanitize floors (Pisos)',
+            'Empty trash (Vaciar la Basura)',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Breakroom, Lobby & Office', type: 'Cleaning Zone', location: 'Common Areas', room: 'Facility', asset_id: 'QA-CL-003',
+      schedules: [
+        {
+          title: 'Breakroom/Lobby/Office Daily Cleaning',
+          desc: 'Form 108 — Daily breakroom, lobby and office area cleaning',
+          freq: 'daily',
+          steps: [
+            'Clean refrigerator and tables (Limpiar refrigerator y mesas)',
+            'Clean sink and lockers (Lavaplatos y casilleros)',
+            'Dusting (Sacudir)',
+            'Clean windows (Ventanas)',
+            'Clean floors (Pisos)',
+            'Empty trash (Vaciar la Basura)',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Chemical Station', type: 'Cleaning Zone', location: 'Production', room: 'Production', asset_id: 'QA-CL-004',
+      schedules: [
+        {
+          title: 'Chemical Dilution Verification',
+          desc: 'Form 106.01 — Daily chemical dilution test strip verification',
+          freq: 'daily',
+          steps: [
+            'Test Sanitizer (Sani-512) — verify 200-250 ppm — record Pass/Fail',
+            'Test Chlorine (Cloro) — verify 100-200 ppm — record Pass/Fail',
+            'Dawn Heavy Duty — verify 1 tsp to 2.5 gal water',
+            'Simple Green — verify dilution ratio 1:10 to 1:30',
+            'Record dilution or test strip lot number and expiration date',
+            'QA verification signature',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Production Line Cleaning', type: 'Cleaning Zone', location: 'Production Floor', room: 'Production', asset_id: 'QA-CL-005',
+      schedules: [
+        {
+          title: 'Production Line Pre-Op / Changeover Clean',
+          desc: 'Form 117.21 — Pre-production cleaning verification with ATP and allergen testing',
+          freq: 'daily',
+          steps: [
+            'Record room #, product name, W.O./Lot #, allergens present',
+            'Identify: Partial clean #1 or Full clean #2',
+            'Remove all materials and packaging from previous run',
+            'Visual inspection of all knives (no snap off blades)',
+            'Visual inspection of glass, plastic, light covers, totes, machine doors, elbow joints, pallets',
+            'Record machine asset tag # and condition (Good/Poor)',
+            'Wipe down all equipment/product-contact surfaces to remove powder/residue',
+            'Clean all surfaces with sanitizer — let sit 60+ seconds',
+            'Verify cleaning passes inspection',
+            'ATP Test — swab surface, record location, swab #, and result',
+            'Allergen Test — swab surface, record location, swab #, and result',
+            'QA sign-off',
+          ],
+        },
+      ],
+    },
+  ];
+
+  const today = new Date().toISOString().split('T')[0];
+  let eqCount = 0, pmCount = 0, woCount = 0;
+
+  const tx = db.transaction(() => {
+    for (const area of areas) {
+      const existing = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(area.asset_id);
+      let eqId;
+      if (existing) {
+        eqId = existing.id;
+      } else {
+        eqId = uuid();
+        insertEq.run(eqId, area.name, area.type, area.location, area.room, area.asset_id);
+        eqCount++;
+      }
+
+      for (const sched of area.schedules) {
+        const pmId = uuid();
+        const stepsJson = JSON.stringify(sched.steps);
+        insertPM.run(pmId, eqId, sched.title, sched.desc, sched.freq, stepsJson);
+        pmCount++;
+
+        const woId = uuid();
+        insertWO.run(woId, pmId, eqId, sched.title, today, stepsJson);
+        woCount++;
+      }
+    }
+  });
+  tx();
+
+  if (pmCount > 0) {
+    console.log(`[seed] Created QA cleaning: ${eqCount} equipment areas, ${pmCount} PM schedules, ${woCount} work orders`);
+  }
+}
