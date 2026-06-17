@@ -148,6 +148,32 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   }
 }
 
+// Fix PM schedule and work order titles to match cleaned equipment names
+{
+  const FREQ_LABEL = { daily: 'Daily', weekly: 'Weekly', biweekly: 'Bi-Weekly', monthly: 'Monthly', quarterly: 'Quarterly', semi_annual: 'Semi-Annual', annual: 'Annual' };
+  const scheds = db.prepare(`
+    SELECT ps.id, ps.title, ps.frequency_type, e.name as eq_name, e.asset_id
+    FROM pm_schedules ps JOIN equipment e ON ps.equipment_id = e.id
+    WHERE ps.task_group = 'warehouse'
+  `).all();
+  const updatePM = db.prepare('UPDATE pm_schedules SET title = ? WHERE id = ?');
+  const updateWO = db.prepare('UPDATE work_orders SET title = ? WHERE pm_schedule_id = ?');
+  let fixed = 0;
+  const tx = db.transaction(() => {
+    for (const s of scheds) {
+      const freqLabel = FREQ_LABEL[s.frequency_type] || s.frequency_type;
+      const expected = `${freqLabel} PM — ${s.asset_id} ${s.eq_name}`;
+      if (s.title !== expected) {
+        updateWO.run(expected, s.id);
+        updatePM.run(expected, s.id);
+        fixed++;
+      }
+    }
+  });
+  tx();
+  if (fixed > 0) console.log(`[migrate] Fixed ${fixed} PM schedule/work order titles to match equipment names`);
+}
+
 // Auto-seed calibration instruments if empty
 const calCount = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c;
 if (calCount === 0) {
