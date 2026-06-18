@@ -148,6 +148,12 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   }
 }
 
+// Fix light inspection frequency from quarterly to semi_annual (biannual)
+{
+  const updated = db.prepare("UPDATE pm_schedules SET frequency_type = 'semi_annual' WHERE title LIKE 'Light Inspection%' AND frequency_type = 'quarterly'").run();
+  if (updated.changes > 0) console.log(`[migrate] Updated ${updated.changes} light inspection schedules from quarterly to semi_annual (biannual)`);
+}
+
 // Fix PM schedule and work order titles to match cleaned equipment names
 {
   const FREQ_LABEL = { daily: 'Daily', weekly: 'Weekly', biweekly: 'Bi-Weekly', monthly: 'Monthly', quarterly: 'Quarterly', semi_annual: 'Semi-Annual', annual: 'Annual' };

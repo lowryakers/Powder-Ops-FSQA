@@ -643,43 +643,48 @@ export function seedLightInspectionRecords(db) {
   const existing = db.prepare("SELECT COUNT(*) as c FROM sanitation_records WHERE area LIKE 'Light Inspection%'").get().c;
   if (existing > 0) return;
 
-  const rooms = [
-    'Room 1', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7',
-    'Batching 1', 'Batching 2', 'Batching 3',
-  ];
-
-  const inspectionDates = ['2026-01-15', '2026-06-15'];
-  const performers = ['DQ', 'MS'];
-  const verifiers = ['DQ', 'MS', 'MJ'];
-
   const insert = db.prepare(`
     INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, result, verified_by, verified_at, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  const inspections = [
+    { zone: 'Zone 1', room: 'Room 1', date: '2026-06-01', performer: 'RF', readings: [220, 224], verifier: 'MS', comments: 'Room #10 Old Room #0 MS 06/11' },
+    { zone: 'Zone 1', room: 'Room 3', date: '2026-06-11', performer: 'JM', readings: [211, 220], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Room 4', date: '2026-06-11', performer: 'JM', readings: [305, 370], verifier: 'MS', comments: 'MS 06/11/26' },
+    { zone: 'Zone 1', room: 'Room 5', date: '2026-06-11', performer: 'JM', readings: [250, 283], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Room 6', date: '2026-06-11', performer: 'JM', readings: [340, 358], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Room 7', date: '2026-06-11', performer: 'JM', readings: [362, 350], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Room 8', date: '2026-06-01', performer: 'RF', readings: [375, 330], verifier: 'MS', comments: 'Besides Room #6, there is a QA inspection room. Need to consider. MS 06/11/26' },
+    { zone: 'Zone 1', room: 'Batching 1', date: '2026-06-01', performer: 'BE', readings: [380, 230], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Batching 2', date: '2026-06-01', performer: 'BE', readings: [360, 304], verifier: 'MS', comments: null },
+    { zone: 'Zone 2', room: 'Sanitation Room', date: '2026-06-01', performer: 'ZN', readings: [620, 729], verifier: 'MS', comments: 'Need to add indication column MS 06/11/2026' },
+    { zone: 'Zone 2', room: 'Kitting Area', date: '2026-06-01', performer: 'UN', readings: [212, 224], verifier: 'MS', comments: 'MS 6/11/26' },
+    { zone: 'Zone 2', room: 'Warehouse Area', date: '2026-06-01', performer: 'Jh', readings: [186, 170], verifier: 'MS', comments: null },
+    { zone: 'Zone 2', room: 'Maintenance Area', date: '2026-06-01', performer: 'RA', readings: [146, 187], verifier: 'MS', comments: null },
+  ];
+
   let count = 0;
   const tx = db.transaction(() => {
-    for (const date of inspectionDates) {
-      const performer = pickOne(performers);
-      const verifier = pickOne(verifiers);
-      for (const room of rooms) {
-        insert.run(
-          uuid(),
-          `Light Inspection — Zone 1 — ${room}`,
-          'pre_op',
-          performer,
-          `${date}T${randomTime(8, 3)}:00`,
-          'pass',
-          verifier,
-          `${date}T${randomTime(14, 2)}:00`,
-          'Form 110-01 — Light levels ≥30 foot-candles, all fixtures pass'
-        );
-        count++;
-      }
+    for (const insp of inspections) {
+      const readingsStr = insp.readings.join(', ');
+      const notes = `Form 110-01 — Readings: ${readingsStr} foot-candles — Pass${insp.comments ? '. ' + insp.comments : ''}`;
+      insert.run(
+        uuid(),
+        `Light Inspection — ${insp.zone} — ${insp.room}`,
+        'pre_op',
+        insp.performer,
+        `${insp.date}T09:00:00`,
+        'pass',
+        insp.verifier,
+        `${insp.date}T14:00:00`,
+        notes
+      );
+      count++;
     }
   });
   tx();
-  if (count > 0) console.log(`[seed] Imported ${count} light inspection records (${inspectionDates.length} dates × ${rooms.length} rooms)`);
+  if (count > 0) console.log(`[seed] Imported ${count} light inspection records (June 2026 biannual inspection)`);
 }
 
 export function seedLightInspectionPMSchedules(db) {
@@ -692,7 +697,7 @@ export function seedLightInspectionPMSchedules(db) {
   `);
   const insertPM = db.prepare(`
     INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
-    VALUES (?, ?, ?, ?, 'quarterly', 1, ?, 1, 'qa')
+    VALUES (?, ?, ?, ?, 'semi_annual', 1, ?, 1, 'qa')
   `);
   const insertWO = db.prepare(`
     INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
@@ -706,9 +711,14 @@ export function seedLightInspectionPMSchedules(db) {
     { name: 'Zone 1 — Room 5', location: 'Production', room: 'Room 5', asset_id: 'QA-LI-043' },
     { name: 'Zone 1 — Room 6', location: 'Production', room: 'Room 6', asset_id: 'QA-LI-044' },
     { name: 'Zone 1 — Room 7', location: 'Production', room: 'Room 7', asset_id: 'QA-LI-045' },
+    { name: 'Zone 1 — Room 8', location: 'Production', room: 'Room 8', asset_id: 'QA-LI-049' },
     { name: 'Zone 1 — Batching 1', location: 'Production', room: 'Batching 1', asset_id: 'QA-LI-046' },
     { name: 'Zone 1 — Batching 2', location: 'Production', room: 'Batching 2', asset_id: 'QA-LI-047' },
     { name: 'Zone 1 — Batching 3', location: 'Production', room: 'Batching 3', asset_id: 'QA-LI-048' },
+    { name: 'Zone 2 — Sanitation Room', location: 'Sanitation', room: 'Sanitation Room', asset_id: 'QA-LI-050' },
+    { name: 'Zone 2 — Kitting Area', location: 'Production', room: 'Kitting', asset_id: 'QA-LI-051' },
+    { name: 'Zone 2 — Warehouse Area', location: 'Warehouse', room: 'Warehouse', asset_id: 'QA-LI-052' },
+    { name: 'Zone 2 — Maintenance Area', location: 'Maintenance', room: 'Maintenance', asset_id: 'QA-LI-053' },
   ];
 
   const steps = [
@@ -738,7 +748,8 @@ export function seedLightInspectionPMSchedules(db) {
 
       const pmId = uuid();
       const title = `Light Inspection — ${rm.name}`;
-      insertPM.run(pmId, eqId, title, 'Form 110-01 — Biannual light level inspection (≥30 foot-candles production, 50-130 foot-candles QC)', stepsJson);
+      const desc = rm.name.startsWith('Zone 2') ? 'Form 110-02 — Biannual light level inspection (10-20 fc storage, 20+ fc handwashing, 30+ fc production, 50-130 fc QC)' : 'Form 110-01 — Biannual light level inspection (≥30 foot-candles production, 50-130 foot-candles QC)';
+      insertPM.run(pmId, eqId, title, desc, stepsJson);
       pmCount++;
 
       insertWO.run(uuid(), pmId, eqId, title, today, stepsJson);
