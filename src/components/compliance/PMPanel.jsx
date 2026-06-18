@@ -33,9 +33,21 @@ const STATUS_COLORS = {
   missed: 'bg-gray-200 text-gray-700',
 };
 
-function CompleteForm({ wo, onComplete, onCancel }) {
-  const [form, setForm] = useState({ notes: '', lubricant_used: '', lubricant_is_food_grade: true, _actor: '' });
+function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
+  const [form, setForm] = useState({ notes: '', lubricant_used: '', lubricant_is_food_grade: true, chemical_id: '', _actor: '' });
   const [saving, setSaving] = useState(false);
+
+  const lubricants = (chemicals || []).filter(c => c.category === 'lubricant');
+
+  const handleLubricantSelect = (chemId) => {
+    const chem = lubricants.find(c => c.id === chemId);
+    setForm({
+      ...form,
+      chemical_id: chemId,
+      lubricant_used: chem ? chem.name : '',
+      lubricant_is_food_grade: chem ? !!chem.is_food_grade : form.lubricant_is_food_grade,
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -53,8 +65,18 @@ function CompleteForm({ wo, onComplete, onCancel }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Lubricant Used</label>
-          <input value={form.lubricant_used} onChange={e => setForm({ ...form, lubricant_used: e.target.value })}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. NSF H1 Grease" />
+          <select value={form.chemical_id} onChange={e => handleLubricantSelect(e.target.value)}
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+            <option value="">None</option>
+            {lubricants.map(c => (
+              <option key={c.id} value={c.id}>{c.name}{c.is_food_grade ? ' (Food Grade)' : ''}{c.nsf_rating ? ` — ${c.nsf_rating}` : ''}</option>
+            ))}
+            <option value="__other">Other (type manually)</option>
+          </select>
+          {form.chemical_id === '__other' && (
+            <input value={form.lubricant_used} onChange={e => setForm({ ...form, lubricant_used: e.target.value })}
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm mt-1" placeholder="Lubricant name" />
+          )}
         </div>
       </div>
       {form.lubricant_used && (
@@ -139,7 +161,7 @@ function WOForm({ equipment, technicians, onSave, onCancel }) {
   );
 }
 
-function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete }) {
+function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete, chemicals }) {
   const steps = wo.procedure_steps || [];
   const attachments = (() => { try { return JSON.parse(wo.attachments || '[]'); } catch { return []; } })();
   const [expanded, setExpanded] = useState(false);
@@ -206,7 +228,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
       )}
 
       {completing === wo.id && (
-        <CompleteForm wo={wo} onComplete={onComplete} onCancel={onCancelComplete} />
+        <CompleteForm wo={wo} chemicals={chemicals} onComplete={onComplete} onCancel={onCancelComplete} />
       )}
     </div>
   );
@@ -316,6 +338,7 @@ export default function PMPanel() {
   const { data: clearancePending, refresh: refreshClearance } = useApiGet('/pm/clearance-pending');
   const { data: equipment } = useApiGet('/equipment');
   const { data: technicians } = useApiGet('/users/technicians');
+  const { data: chemicals } = useApiGet('/chemicals');
   const [freqFilter, setFreqFilter] = useState('all');
   const [showWOForm, setShowWOForm] = useState(false);
   const [completing, setCompleting] = useState(null);
@@ -518,7 +541,7 @@ export default function PMPanel() {
                 {items.map(wo => (
                   <TaskCard key={wo.id} wo={wo} completing={completing}
                     onStartComplete={handleStartWO} onComplete={handleComplete}
-                    onCancelComplete={() => setCompleting(null)} />
+                    onCancelComplete={() => setCompleting(null)} chemicals={chemicals} />
                 ))}
               </div>
             </div>

@@ -6,12 +6,23 @@ const TYPE_LABELS = { pre_op: 'Pre-Op', post_op: 'Post-Op', mid_shift: 'Mid-Shif
 const TYPE_COLORS = { pre_op: 'bg-blue-100 text-blue-800', post_op: 'bg-purple-100 text-purple-800', mid_shift: 'bg-yellow-100 text-yellow-800', deep_clean: 'bg-teal-100 text-teal-800', emergency: 'bg-red-100 text-red-800' };
 const RESULT_COLORS = { pass: 'bg-green-100 text-green-800', fail: 'bg-red-100 text-red-800', reclean: 'bg-yellow-100 text-yellow-800' };
 
-function RecordForm({ equipment, onSave, onCancel }) {
+function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   const [form, setForm] = useState({
     area: '', type: 'pre_op', equipment_id: '', performed_by: '',
-    chemicals_used: '', concentration: '', contact_time_minutes: '',
+    chemical_id: '', chemicals_used: '', concentration: '', contact_time_minutes: '',
     rinse_verified: false, result: 'pass', atp_reading: '', notes: '',
   });
+
+  const handleChemicalSelect = (chemId) => {
+    const chem = (chemicals || []).find(c => c.id === chemId);
+    setForm({
+      ...form,
+      chemical_id: chemId,
+      chemicals_used: chem ? chem.name : '',
+      concentration: chem?.max_concentration || form.concentration,
+      contact_time_minutes: chem?.required_contact_time_minutes || form.contact_time_minutes,
+    });
+  };
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -50,9 +61,19 @@ function RecordForm({ equipment, onSave, onCancel }) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Chemicals Used</label>
-          <input value={form.chemicals_used} onChange={e => setForm({ ...form, chemicals_used: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Chlorinated Alkaline" />
+          <label className="block text-xs font-medium text-gray-700 mb-1">Chemical Used</label>
+          <select value={form.chemical_id} onChange={e => handleChemicalSelect(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">Select chemical...</option>
+            {(chemicals || []).filter(c => ['sanitizer', 'cleaner', 'degreaser'].includes(c.category)).map(c => (
+              <option key={c.id} value={c.id}>{c.name}{c.is_food_grade ? ' (Food Grade)' : ''}</option>
+            ))}
+            <option value="__other">Other (type manually)</option>
+          </select>
+          {form.chemical_id === '__other' && (
+            <input value={form.chemicals_used} onChange={e => setForm({ ...form, chemicals_used: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mt-1" placeholder="Chemical name" />
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Concentration</label>
@@ -101,6 +122,7 @@ function RecordForm({ equipment, onSave, onCancel }) {
 export default function SanitationPanel() {
   const { data: records, loading, refresh } = useApiGet('/sanitation');
   const { data: equipment } = useApiGet('/equipment');
+  const { data: chemicals } = useApiGet('/chemicals');
   const [showForm, setShowForm] = useState(false);
 
   const handleCreate = async (form) => {
@@ -128,7 +150,7 @@ export default function SanitationPanel() {
         </button>
       </div>
 
-      {showForm && <RecordForm equipment={equipment} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
+      {showForm && <RecordForm equipment={equipment} chemicals={chemicals} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
