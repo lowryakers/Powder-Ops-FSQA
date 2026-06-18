@@ -376,6 +376,9 @@ function runMigrations() {
   addColumnIfMissing('work_orders', 'chemical_id', 'TEXT');
   addColumnIfMissing('sanitation_records', 'chemical_id', 'TEXT');
 
+  // Chemical location tracking
+  addColumnIfMissing('approved_chemicals', 'location_for_use', 'TEXT');
+
   migrateEquipmentNotes();
   cleanEquipmentNames();
 }

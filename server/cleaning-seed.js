@@ -762,3 +762,65 @@ export function seedLightInspectionPMSchedules(db) {
     console.log(`[seed] Created light inspection: ${eqCount} fixture zones, ${pmCount} PM schedules, ${woCount} work orders`);
   }
 }
+
+export function seedApprovedChemicals(db) {
+  const existing = db.prepare('SELECT COUNT(*) as c FROM approved_chemicals').get().c;
+  if (existing > 0) return;
+
+  const chemicals = [
+    // Maintenance chemicals
+    { name: 'US Air Compressor Star 9001FG Coolant', category: 'lubricant', manufacturer: 'US Air Compressor', is_food_grade: 1, nsf_rating: 'H1', location_for_use: 'Maintenance', notes: 'Air compressor coolant' },
+    { name: 'Hydraulic Oil Power Care AW ISO 32', category: 'lubricant', manufacturer: 'Power Care', is_food_grade: 0, location_for_use: 'Maintenance', notes: 'Hydraulic oil for equipment' },
+    { name: 'White Paint and Primer', category: 'other', manufacturer: 'Behr', is_food_grade: 0, location_for_use: 'Maintenance', notes: 'Facility maintenance paint' },
+    { name: 'BX-303 FM Grease White NSF H1', category: 'lubricant', manufacturer: null, is_food_grade: 1, nsf_rating: 'H1', location_for_use: 'Maintenance — Food Contact', notes: 'Food-grade grease for food contact equipment' },
+    { name: 'Titebond Fast Grab FRP Adhesive', category: 'other', manufacturer: 'Titebond', is_food_grade: 0, location_for_use: 'Maintenance', notes: 'FRP panel adhesive' },
+    { name: 'DAP All Purpose Spackling Paste', category: 'other', manufacturer: 'DAP', is_food_grade: 0, location_for_use: 'Maintenance', notes: 'Wall repair' },
+    { name: 'GE Kitchen & Bath Tub and Tile Silicone', category: 'other', manufacturer: 'GE', is_food_grade: 0, location_for_use: 'Maintenance', notes: 'Sealant for facility maintenance' },
+    { name: 'Super Lube Synthetic Gear Oil ISO 150 NSF', category: 'lubricant', manufacturer: 'Super Lube', is_food_grade: 1, nsf_rating: 'H1', location_for_use: 'Maintenance — Food Contact', notes: 'Synthetic gear oil for food contact equipment' },
+
+    // Production/Cleaning chemicals
+    { name: 'Noble Chemical Sani 512', category: 'sanitizer', manufacturer: 'Noble Chemical', is_food_grade: 1, location_for_use: 'Production — Food Contact', notes: 'Quaternary sanitizer for food contact surfaces' },
+    { name: 'Lysol Power Clean', category: 'cleaner', manufacturer: 'Lysol', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact' },
+    { name: 'HE & Standard Washers Bleach', category: 'sanitizer', manufacturer: null, is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Laundry/general bleach' },
+    { name: 'Comet with Bleach', category: 'cleaner', manufacturer: 'Comet', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact' },
+    { name: 'Ultra Dawn', category: 'cleaner', manufacturer: 'Dawn', is_food_grade: 0, location_for_use: 'Production — Food Contact', notes: 'Dish soap for food contact surfaces' },
+    { name: 'Simple Green', category: 'degreaser', manufacturer: 'Simple Green', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact' },
+    { name: 'Windex Original', category: 'cleaner', manufacturer: 'Windex', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Glass cleaner' },
+    { name: 'PB Pure Bright', category: 'sanitizer', manufacturer: 'Pure Bright', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Bleach' },
+    { name: 'Lysol Disinfecting Wipes', category: 'sanitizer', manufacturer: 'Lysol', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact' },
+    { name: 'Goo Gone Spray Gel', category: 'degreaser', manufacturer: 'Goo Gone', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Adhesive remover' },
+    { name: 'Soft Soap Advanced Clean', category: 'other', manufacturer: 'Soft Soap', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Hand soap' },
+    { name: 'CLR Original', category: 'cleaner', manufacturer: 'CLR', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Calcium, lime, rust remover' },
+    { name: 'Dawn Professional Heavy Duty', category: 'degreaser', manufacturer: 'Dawn', is_food_grade: 0, location_for_use: 'Production — Food Contact', notes: 'Heavy duty degreaser for food contact' },
+    { name: 'Purell Healthy Soap', category: 'other', manufacturer: 'Purell', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Hand soap' },
+    { name: 'Micro Fusion 3000 Fragrance Spray', category: 'other', manufacturer: 'Micro Fusion', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Air freshener' },
+    { name: 'Summit 367 Soap', category: 'other', manufacturer: 'Summit', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Soap dispenser' },
+    { name: 'Summit 375 Gel Alcohol Hand Sanitizer', category: 'sanitizer', manufacturer: 'Summit', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Alcohol hand sanitizer' },
+    { name: 'Lysol Power Toilet Bowl Cleaner Gel', category: 'cleaner', manufacturer: 'Lysol', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Restroom cleaner' },
+    { name: 'Acetone', category: 'degreaser', manufacturer: null, is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Solvent' },
+    { name: 'Brother Ink Cartridge', category: 'other', manufacturer: 'Brother', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact', notes: 'Printer ink' },
+    { name: 'Amazon Disinfecting Wipes', category: 'sanitizer', manufacturer: 'Amazon Basics', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact' },
+    { name: 'Amazon Basic Moisturizing Hand Sanitizer', category: 'sanitizer', manufacturer: 'Amazon Basics', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact' },
+    { name: 'Distilled Vinegar', category: 'cleaner', manufacturer: null, is_food_grade: 1, location_for_use: 'Production — Food Contact', notes: 'Natural cleaning agent' },
+    { name: 'SCJ Professional Instant Foam Non-Alcohol Hand Sanitizer', category: 'sanitizer', manufacturer: 'SC Johnson', is_food_grade: 0, location_for_use: 'Production — Non-Food Contact' },
+    { name: 'QD Electronic Cleaner', category: 'cleaner', manufacturer: null, is_food_grade: 0, location_for_use: 'Maintenance', notes: 'Electronics cleaning spray' },
+    { name: 'HH-66 Vinyl Cement', category: 'other', manufacturer: 'HH-66', is_food_grade: 0, location_for_use: 'Maintenance', notes: 'Vinyl repair adhesive' },
+    { name: 'CRC Food Silicone Multipurpose', category: 'lubricant', manufacturer: 'CRC', is_food_grade: 1, nsf_rating: 'H1', location_for_use: 'Production — Food Contact', notes: 'Food-grade silicone spray' },
+    { name: 'Sinopec L-CKD 320 Heavy Duty Gear Oil', category: 'lubricant', manufacturer: 'Sinopec', is_food_grade: 0, location_for_use: 'Maintenance', notes: 'Industrial gear oil' },
+  ];
+
+  const insert = db.prepare(`
+    INSERT INTO approved_chemicals (id, name, category, manufacturer, is_food_grade, nsf_rating, location_for_use, notes, approved_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'system')
+  `);
+
+  const tx = db.transaction(() => {
+    for (const c of chemicals) {
+      insert.run(uuid(), c.name, c.category, c.manufacturer || null, c.is_food_grade, c.nsf_rating || null, c.location_for_use || null, c.notes || null);
+    }
+  });
+  tx();
+
+  const missingSds = chemicals.length;
+  console.log(`[seed] Imported ${chemicals.length} approved chemicals (${missingSds} flagged — all missing SDS, to be added manually)`);
+}

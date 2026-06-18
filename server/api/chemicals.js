@@ -25,13 +25,13 @@ router.get('/:id', (req, res) => {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, category, manufacturer, product_code, sds_number, is_food_grade, nsf_rating, approved_applications, max_concentration, required_contact_time_minutes, review_due, notes, _actor } = req.body;
+  const { name, category, manufacturer, product_code, sds_number, is_food_grade, nsf_rating, approved_applications, max_concentration, required_contact_time_minutes, review_due, notes, location_for_use, _actor } = req.body;
   if (!name || !category) return res.status(400).json({ error: 'Name and category required' });
   const id = uuid();
   db.prepare(`
-    INSERT INTO approved_chemicals (id, name, category, manufacturer, product_code, sds_number, is_food_grade, nsf_rating, approved_applications, max_concentration, required_contact_time_minutes, approved_by, review_due, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, category, manufacturer || null, product_code || null, sds_number || null, is_food_grade ? 1 : 0, nsf_rating || null, JSON.stringify(approved_applications || []), max_concentration || null, required_contact_time_minutes || null, _actor || 'system', review_due || null, notes || null);
+    INSERT INTO approved_chemicals (id, name, category, manufacturer, product_code, sds_number, is_food_grade, nsf_rating, approved_applications, max_concentration, required_contact_time_minutes, approved_by, review_due, notes, location_for_use)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, category, manufacturer || null, product_code || null, sds_number || null, is_food_grade ? 1 : 0, nsf_rating || null, JSON.stringify(approved_applications || []), max_concentration || null, required_contact_time_minutes || null, _actor || 'system', review_due || null, notes || null, location_for_use || null);
   logAudit(_actor || 'system', 'chemical_approved', 'chemical', id, `Approved: ${name} (${category})`);
   res.status(201).json({ id });
 });
@@ -40,9 +40,9 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM approved_chemicals WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { name, category, manufacturer, product_code, sds_number, is_food_grade, nsf_rating, approved_applications, max_concentration, required_contact_time_minutes, is_active, review_due, notes, _actor } = req.body;
+  const { name, category, manufacturer, product_code, sds_number, is_food_grade, nsf_rating, approved_applications, max_concentration, required_contact_time_minutes, is_active, review_due, notes, location_for_use, _actor } = req.body;
   db.prepare(`
-    UPDATE approved_chemicals SET name=?, category=?, manufacturer=?, product_code=?, sds_number=?, is_food_grade=?, nsf_rating=?, approved_applications=?, max_concentration=?, required_contact_time_minutes=?, is_active=?, review_due=?, notes=?, updated_at=datetime('now')
+    UPDATE approved_chemicals SET name=?, category=?, manufacturer=?, product_code=?, sds_number=?, is_food_grade=?, nsf_rating=?, approved_applications=?, max_concentration=?, required_contact_time_minutes=?, is_active=?, review_due=?, notes=?, location_for_use=?, updated_at=datetime('now')
     WHERE id=?
   `).run(
     name || existing.name, category || existing.category, manufacturer ?? existing.manufacturer, product_code ?? existing.product_code, sds_number ?? existing.sds_number,
@@ -50,7 +50,7 @@ router.put('/:id', (req, res) => {
     nsf_rating ?? existing.nsf_rating, JSON.stringify(approved_applications || JSON.parse(existing.approved_applications || '[]')),
     max_concentration ?? existing.max_concentration, required_contact_time_minutes ?? existing.required_contact_time_minutes,
     is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
-    review_due ?? existing.review_due, notes ?? existing.notes, req.params.id
+    review_due ?? existing.review_due, notes ?? existing.notes, location_for_use ?? existing.location_for_use, req.params.id
   );
   logAudit(_actor || 'system', 'chemical_updated', 'chemical', req.params.id, `Updated: ${name || existing.name}`);
   res.json({ success: true });

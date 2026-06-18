@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, Edit2, FlaskConical, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, FlaskConical, ShieldCheck, AlertTriangle, Search, ChevronUp, ChevronDown } from 'lucide-react';
 
 const CATEGORIES = [
   { value: 'lubricant', label: 'Lubricant', color: 'bg-blue-100 text-blue-800' },
@@ -17,7 +17,7 @@ function ChemicalForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState(initial || {
     name: '', category: 'sanitizer', manufacturer: '', product_code: '', sds_number: '',
     is_food_grade: false, nsf_rating: '', max_concentration: '', required_contact_time_minutes: '',
-    review_due: '', notes: '',
+    review_due: '', notes: '', location_for_use: '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -80,6 +80,11 @@ function ChemicalForm({ initial, onSave, onCancel }) {
           <input type="date" value={form.review_due || ''} onChange={e => set('review_due', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Location for Use</label>
+          <input value={form.location_for_use || ''} onChange={e => set('location_for_use', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Production, Maintenance" />
+        </div>
       </div>
       <div className="flex items-center gap-4">
         <label className="flex items-center gap-2 text-sm">
@@ -110,6 +115,18 @@ export default function ChemicalsPanel() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [catFilter, setCatFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
+      setSortDir('asc');
+    }
+  };
 
   const handleCreate = async (form) => {
     await apiPost('/chemicals', { ...form, _actor: user?.name });
@@ -128,7 +145,47 @@ export default function ChemicalsPanel() {
     refresh();
   };
 
-  const filtered = (chemicals || []).filter(c => catFilter === 'all' || c.category === catFilter);
+  const filtered = useMemo(() => {
+    let result = (chemicals || []);
+
+    // Category filter
+    if (catFilter !== 'all') {
+      result = result.filter(c => c.category === catFilter);
+    }
+
+    // Text search
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      result = result.filter(c =>
+        (c.name || '').toLowerCase().includes(q) ||
+        (c.manufacturer || '').toLowerCase().includes(q) ||
+        (c.product_code || '').toLowerCase().includes(q) ||
+        (c.sds_number || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Sorting
+    if (sortCol) {
+      result = [...result].sort((a, b) => {
+        let aVal = a[sortCol];
+        let bVal = b[sortCol];
+        // Booleans / numbers
+        if (sortCol === 'is_food_grade' || sortCol === 'is_active') {
+          aVal = aVal ? 1 : 0;
+          bVal = bVal ? 1 : 0;
+          return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+        // Strings
+        aVal = (aVal || '').toString().toLowerCase();
+        bVal = (bVal || '').toString().toLowerCase();
+        const cmp = aVal.localeCompare(bVal);
+        return sortDir === 'asc' ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [chemicals, catFilter, search, sortCol, sortDir]);
+
   const today = new Date().toISOString().split('T')[0];
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
@@ -167,16 +224,46 @@ export default function ChemicalsPanel() {
       {(showForm && !editing) && <ChemicalForm onSave={handleCreate} onCancel={() => setShowForm(false)} />}
       {editing && <ChemicalForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
 
+      <div className="relative">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name, manufacturer, product code, SDS #..."
+          className="w-full pl-9 pr-16 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-powder-500 focus:border-transparent"
+        />
+        {search && (
+          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-medium">
+            Clear
+          </button>
+        )}
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Chemical</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">SDS #</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Food Grade</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Concentration</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+              {[
+                { key: 'name', label: 'Chemical', sortable: true },
+                { key: 'category', label: 'Category', sortable: true },
+                { key: 'sds_number', label: 'SDS #', sortable: true },
+                { key: 'is_food_grade', label: 'Food Grade', sortable: true },
+                { key: 'max_concentration', label: 'Concentration', sortable: false },
+                { key: 'is_active', label: 'Status', sortable: true },
+              ].map(col => (
+                <th key={col.key}
+                  className={`text-left px-4 py-3 font-medium text-gray-600 ${col.sortable ? 'cursor-pointer select-none hover:text-gray-900' : ''}`}
+                  onClick={col.sortable ? () => handleSort(col.key) : undefined}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {col.label}
+                    {col.sortable && sortCol === col.key && (
+                      sortDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                    )}
+                  </span>
+                </th>
+              ))}
               {isAdmin && <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>}
             </tr>
           </thead>
@@ -186,11 +273,17 @@ export default function ChemicalsPanel() {
                 <td className="px-4 py-3">
                   <div className="font-medium text-gray-900">{c.name}</div>
                   {c.manufacturer && <div className="text-xs text-gray-500">{c.manufacturer}{c.product_code ? ` — ${c.product_code}` : ''}</div>}
+                  {c.location_for_use && <div className="text-xs text-gray-400">{c.location_for_use}</div>}
                 </td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${catColor(c.category)}`}>{c.category}</span>
                 </td>
-                <td className="px-4 py-3 text-gray-600 font-mono text-xs">{c.sds_number || '—'}</td>
+                <td className="px-4 py-3 text-gray-600 font-mono text-xs">
+                  {c.sds_number
+                    ? c.sds_number
+                    : <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium"><AlertTriangle size={10} /> Missing SDS</span>
+                  }
+                </td>
                 <td className="px-4 py-3">
                   {c.is_food_grade ? (
                     <span className="flex items-center gap-1 text-green-700"><ShieldCheck size={14} /> Yes{c.nsf_rating ? ` (${c.nsf_rating})` : ''}</span>

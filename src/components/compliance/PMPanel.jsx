@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search, Users } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search, Users, AlertTriangle, ShieldCheck } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
@@ -225,6 +225,87 @@ const GROUP_BADGE = {
   cleaning: 'bg-amber-100 text-amber-700',
 };
 
+const CLEARANCE_METHODS = [
+  'Visual Inspection',
+  'ATP Swab Test',
+  'Allergen Swab',
+  'Full Sanitation Cycle',
+];
+
+function ClearanceCard({ wo, onClear, user }) {
+  const [method, setMethod] = useState(CLEARANCE_METHODS[0]);
+  const [notes, setNotes] = useState('');
+  const [status, setStatus] = useState('cleared');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await onClear({ clearance_status: status, clearance_method: method, clearance_notes: notes });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-amber-200 p-4 space-y-3">
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold">
+              <ShieldCheck size={12} /> Food-Contact Equipment
+            </span>
+          </div>
+          <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
+          <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Due: {wo.due_date} · Completed {wo.completed_at ? new Date(wo.completed_at).toLocaleString() : '—'} by {wo.completed_by || '—'}
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="bg-amber-50 rounded-lg border border-amber-200 p-3 space-y-2">
+        <h5 className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Hygiene Sign-Off</h5>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Method *</label>
+            <select required value={method} onChange={e => setMethod(e.target.value)}
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+              {CLEARANCE_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Status *</label>
+            <div className="flex gap-2 mt-1">
+              <button type="button" onClick={() => setStatus('cleared')}
+                className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${status === 'cleared' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-green-50'}`}>
+                Cleared
+              </button>
+              <button type="button" onClick={() => setStatus('failed')}
+                className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${status === 'failed' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-red-50'}`}>
+                Failed
+              </button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)}
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" rows={2}
+            placeholder="Observations, test results, follow-up actions..." />
+        </div>
+        <div className="flex gap-2">
+          <button type="submit" disabled={saving}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 ${status === 'cleared' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-red-600 text-white hover:bg-red-700'}`}>
+            {saving ? 'Submitting...' : status === 'cleared' ? 'Submit Clearance' : 'Submit Failure'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function PMPanel() {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin';
@@ -232,6 +313,7 @@ export default function PMPanel() {
   const gp = groupFilter !== 'all' ? `?group=${groupFilter}` : '';
   const { data: metrics, loading: metricsLoading } = useApiGet(`/pm/metrics${gp}`);
   const { data: grouped, loading: taskLoading, refresh: refreshTasks } = useApiGet(`/pm/by-frequency${gp}`);
+  const { data: clearancePending, refresh: refreshClearance } = useApiGet('/pm/clearance-pending');
   const { data: equipment } = useApiGet('/equipment');
   const { data: technicians } = useApiGet('/users/technicians');
   const [freqFilter, setFreqFilter] = useState('all');
@@ -380,6 +462,12 @@ export default function PMPanel() {
             className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'completed' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
             <Archive size={14} /> Completed
           </button>
+          {(clearancePending?.length > 0) && (
+            <button onClick={() => setView('clearance')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'clearance' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'}`}>
+              <AlertTriangle size={14} /> Clearance ({clearancePending.length})
+            </button>
+          )}
         </div>
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -521,6 +609,25 @@ export default function PMPanel() {
               })}
             </>
           )}
+        </div>
+      )}
+
+      {/* Clearance Pending */}
+      {view === 'clearance' && (
+        <div className="space-y-3">
+          <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <AlertTriangle size={18} className="text-amber-600" /> Pending Hygiene Clearance
+          </h3>
+          <p className="text-sm text-gray-500">These completed work orders on food-contact equipment require hygiene sign-off before restart.</p>
+          {(clearancePending || []).length === 0 ? (
+            <div className="text-center py-8 text-gray-400">No work orders pending clearance</div>
+          ) : (clearancePending || []).map(wo => (
+            <ClearanceCard key={wo.id} wo={wo} onClear={async (form) => {
+              await apiPut(`/pm/work-orders/${wo.id}/clearance`, { ...form, _actor: user?.name });
+              refreshClearance();
+              refreshTasks();
+            }} user={user} />
+          ))}
         </div>
       )}
     </div>
