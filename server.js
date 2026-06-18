@@ -346,16 +346,20 @@ if (hasOld > 0) {
 }
 
 // Seed cleaning/sanitation records and checklist templates
-seedCleaningRecords(db);
-seedCleaningChecklists(db);
-seedCleaningPMSchedules(db);
-seedTempHumidityRecords(db);
-seedTempHumidityPMSchedules(db);
-seedGlassPlasticRecords(db);
-seedGlassPlasticPMSchedules(db);
-seedLightInspectionRecords(db);
-seedLightInspectionPMSchedules(db);
-seedApprovedChemicals(db);
+try {
+  seedCleaningRecords(db);
+  seedCleaningChecklists(db);
+  seedCleaningPMSchedules(db);
+  seedTempHumidityRecords(db);
+  seedTempHumidityPMSchedules(db);
+  seedGlassPlasticRecords(db);
+  seedGlassPlasticPMSchedules(db);
+  seedLightInspectionRecords(db);
+  seedLightInspectionPMSchedules(db);
+  seedApprovedChemicals(db);
+} catch (err) {
+  console.error('[seed] Error seeding data (non-fatal):', err.message);
+}
 
 // --- File Uploads ---
 const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');

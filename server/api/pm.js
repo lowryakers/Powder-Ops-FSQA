@@ -32,9 +32,11 @@ function markMissedWorkOrders(db) {
 
   if (orphaned.length > 0) {
     const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')`);
+    const checkExisting = db.prepare(`SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open', 'in_progress') LIMIT 1`);
     const tx = db.transaction(() => {
       for (const sched of orphaned) {
-        const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
+        if (checkExisting.get(sched.id)) continue;
+        const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value ?? 1);
         const dueDate = nextWeekday(interval <= 1 ? new Date() : new Date(Date.now() + interval * 86400000));
         insertWO.run(uuid(), sched.id, sched.equipment_id, sched.title, dueDate.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
       }
@@ -87,9 +89,9 @@ router.post('/schedules', (req, res) => {
   db.prepare(`
     INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, equipment_id, title, description || null, frequency_type, frequency_value || 1,
+  `).run(id, equipment_id, title, description || null, frequency_type, frequency_value ?? 1,
     JSON.stringify(procedure_steps || []), lubricant_type || null,
-    is_food_grade_lubricant ? 1 : 0, estimated_minutes || null, haccp_ccp_id || null, task_group || 'warehouse');
+    is_food_grade_lubricant ? 1 : 0, estimated_minutes ?? null, haccp_ccp_id || null, task_group || 'warehouse');
 
   const created = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(id);
   logAudit(req.body._actor || 'system', 'create', 'pm_schedule', id, { title, equipment_id }, null, created);
@@ -323,6 +325,7 @@ router.put('/work-orders/:id/clearance', (req, res) => {
 
   const { status, cleared_by, notes, method, _actor } = req.body;
   if (!status || !cleared_by) return res.status(400).json({ error: 'status and cleared_by required' });
+  if (!['cleared', 'failed'].includes(status)) return res.status(400).json({ error: 'status must be "cleared" or "failed"' });
 
   db.prepare(`
     UPDATE work_orders SET clearance_status=?, clearance_by=?, clearance_at=datetime('now'),
@@ -337,7 +340,7 @@ router.put('/work-orders/:id/clearance', (req, res) => {
 router.get('/clearance-pending', (req, res) => {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT wo.*, e.name as equipment_name, e.location, e.asset_id
+    SELECT wo.*, e.name as equipment_name, e.location, e.asset_id, e.room
     FROM work_orders wo
     JOIN equipment e ON wo.equipment_id = e.id
     WHERE wo.clearance_required = 1 AND wo.clearance_status = 'pending'
@@ -403,7 +406,7 @@ router.get('/completed-history', (req, res) => {
   if (from) { sql += ` AND ${dateCol} >= ?`; params.push(from); }
   if (to) { sql += ` AND ${dateCol} <= ?`; params.push(to + 'T23:59:59'); }
 
-  const countSql = sql.replace(/SELECT wo\.\*.*?FROM/, 'SELECT COUNT(*) as c FROM');
+  const countSql = sql.replace(/SELECT wo\.\*[\s\S]*?FROM/, 'SELECT COUNT(*) as c FROM');
   sql += ` ORDER BY ${dateCol} DESC LIMIT ? OFFSET ?`;
   params.push(parseInt(limit), parseInt(offset));
 

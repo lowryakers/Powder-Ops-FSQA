@@ -31,9 +31,10 @@ router.post('/', (req, res) => {
   db.prepare(`
     INSERT INTO approved_chemicals (id, name, category, manufacturer, product_code, sds_number, is_food_grade, nsf_rating, approved_applications, max_concentration, required_contact_time_minutes, approved_by, review_due, notes, location_for_use)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, category, manufacturer || null, product_code || null, sds_number || null, is_food_grade ? 1 : 0, nsf_rating || null, JSON.stringify(approved_applications || []), max_concentration || null, required_contact_time_minutes || null, _actor || 'system', review_due || null, notes || null, location_for_use || null);
-  logAudit(_actor || 'system', 'chemical_approved', 'chemical', id, `Approved: ${name} (${category})`);
-  res.status(201).json({ id });
+  `).run(id, name, category, manufacturer || null, product_code || null, sds_number || null, is_food_grade ? 1 : 0, nsf_rating || null, JSON.stringify(approved_applications || []), max_concentration || null, required_contact_time_minutes ?? null, _actor || 'system', review_due || null, notes || null, location_for_use || null);
+  logAudit(_actor || 'system', 'chemical_approved', 'chemical', id, { name, category });
+  const created = db.prepare('SELECT * FROM approved_chemicals WHERE id = ?').get(id);
+  res.status(201).json(created);
 });
 
 router.put('/:id', (req, res) => {
@@ -52,8 +53,9 @@ router.put('/:id', (req, res) => {
     is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
     review_due ?? existing.review_due, notes ?? existing.notes, location_for_use ?? existing.location_for_use, req.params.id
   );
-  logAudit(_actor || 'system', 'chemical_updated', 'chemical', req.params.id, `Updated: ${name || existing.name}`);
-  res.json({ success: true });
+  const updated = db.prepare('SELECT * FROM approved_chemicals WHERE id = ?').get(req.params.id);
+  logAudit(_actor || 'system', 'chemical_updated', 'chemical', req.params.id, { name: updated.name }, existing, updated);
+  res.json(updated);
 });
 
 export default router;

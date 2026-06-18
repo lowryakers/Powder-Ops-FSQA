@@ -14,8 +14,8 @@ router.post('/work-order', (req, res) => {
   const db = getDb();
   const { equipment_id, title, description, priority, submitted_by, attachments } = req.body;
 
-  if (!title || !submitted_by) {
-    return res.status(400).json({ error: 'title and submitted_by are required' });
+  if (!title || !submitted_by || !equipment_id) {
+    return res.status(400).json({ error: 'title, submitted_by, and equipment are required' });
   }
 
   const id = uuid();
@@ -25,7 +25,7 @@ router.post('/work-order', (req, res) => {
   db.prepare(`
     INSERT INTO work_orders (id, equipment_id, title, description, priority, assigned_to, due_date, attachments)
     VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
-  `).run(id, equipment_id || null, title, description || null, priority || 'normal', due_date.toISOString().split('T')[0], JSON.stringify(attachments || []));
+  `).run(id, equipment_id, title, description || null, priority || 'normal', due_date.toISOString().split('T')[0], JSON.stringify(attachments || []));
 
   logAudit(submitted_by, 'submit_public', 'work_order', id, { title, submitted_by }, null, null);
   res.status(201).json({ id, message: 'Work order submitted successfully' });

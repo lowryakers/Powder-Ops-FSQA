@@ -76,8 +76,8 @@ export default function SubmitWorkOrder() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Equipment (optional)</label>
-            <select value={form.equipment_id} onChange={e => setForm({ ...form, equipment_id: e.target.value })}
+            <label className="block text-sm font-medium text-gray-700 mb-1">Equipment *</label>
+            <select required value={form.equipment_id} onChange={e => setForm({ ...form, equipment_id: e.target.value })}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base">
               <option value="">Select equipment...</option>
               {equipment.map(eq => (

@@ -106,7 +106,7 @@ export default function SettingsPanel() {
   const { data: users, loading, refresh } = useApiGet('/users');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(null);
 
   const operatorUrl = `${window.location.origin}/operator`;
   const submitUrl = `${window.location.origin}/submit`;
@@ -130,8 +130,8 @@ export default function SettingsPanel() {
 
   const copyUrl = (url) => {
     navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedUrl(url);
+    setTimeout(() => setCopiedUrl(null), 2000);
   };
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
@@ -219,7 +219,7 @@ export default function SettingsPanel() {
                 <code className="text-xs text-powder-600 mt-1 block">{operatorUrl}</code>
               </div>
               <button onClick={() => copyUrl(operatorUrl)} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center gap-1">
-                <Copy size={14} /> {copied ? 'Copied!' : 'Copy'}
+                <Copy size={14} /> {copiedUrl === operatorUrl ? 'Copied!' : 'Copy'}
               </button>
             </div>
           </div>
@@ -232,7 +232,7 @@ export default function SettingsPanel() {
                 <code className="text-xs text-powder-600 mt-1 block">{submitUrl}</code>
               </div>
               <button onClick={() => copyUrl(submitUrl)} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center gap-1">
-                <Copy size={14} /> {copied ? 'Copied!' : 'Copy'}
+                <Copy size={14} /> {copiedUrl === submitUrl ? 'Copied!' : 'Copy'}
               </button>
             </div>
           </div>

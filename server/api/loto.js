@@ -39,7 +39,7 @@ router.post('/procedures', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, equipment_id, title, description || null,
     JSON.stringify(energy_sources), JSON.stringify(steps),
-    required_locks || 1, required_tags || 1, verification_method || 'try_start');
+    required_locks ?? 1, required_tags ?? 1, verification_method || 'try_start');
 
   const created = db.prepare('SELECT * FROM loto_procedures WHERE id = ?').get(id);
   logAudit(req.body._actor || 'system', 'create', 'loto_procedure', id, { title, equipment_id }, null, created);

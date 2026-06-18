@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search, Users, AlertTriangle, ShieldCheck } from 'lucide-react';
 import FileUpload from '../FileUpload';
@@ -379,8 +379,7 @@ export default function PMPanel() {
       if (to) params.set('to', to);
       const g = grp !== undefined ? grp : groupFilter;
       if (g && g !== 'all') params.set('group', g);
-      const res = await fetch(`/api/pm/completed-history?${params}`);
-      const data = await res.json();
+      const data = await apiFetch(`/pm/completed-history?${params}`);
       setArchiveData(data);
     } finally { setArchiveLoading(false); }
   };

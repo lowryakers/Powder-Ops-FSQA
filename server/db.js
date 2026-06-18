@@ -386,7 +386,8 @@ function runMigrations() {
 function cleanEquipmentNames() {
   const rows = db.prepare("SELECT id, name, asset_id FROM equipment WHERE name GLOB '[0-9]*'").all();
   if (rows.length === 0) return;
-  const update = db.prepare("UPDATE equipment SET name = ?, asset_id = ?, updated_at = datetime('now') WHERE id = ?");
+  const updateBoth = db.prepare("UPDATE equipment SET name = ?, asset_id = ?, updated_at = datetime('now') WHERE id = ?");
+  const updateName = db.prepare("UPDATE equipment SET name = ?, updated_at = datetime('now') WHERE id = ?");
   let cleaned = 0;
   const tx = db.transaction(() => {
     for (const row of rows) {
@@ -395,7 +396,11 @@ function cleanEquipmentNames() {
         const assetNum = match[1];
         const newName = match[2].trim();
         if (newName) {
-          update.run(newName, assetNum, row.id);
+          if (row.asset_id) {
+            updateName.run(newName, row.id);
+          } else {
+            updateBoth.run(newName, assetNum, row.id);
+          }
           cleaned++;
         }
       }

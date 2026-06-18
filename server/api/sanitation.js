@@ -43,8 +43,8 @@ router.post('/', (req, res) => {
     INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, area, type, equipment_id || null, performed_by, chemicals_used || null,
-    concentration || null, contact_time_minutes || null, rinse_verified ? 1 : 0,
-    result, atp_reading || null, notes || null, chemical_id || null);
+    concentration || null, contact_time_minutes ?? null, rinse_verified ? 1 : 0,
+    result, atp_reading ?? null, notes || null, chemical_id || null);
 
   const created = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
   logAudit(performed_by, 'create', 'sanitation_record', id, { area, type, result }, null, created);
