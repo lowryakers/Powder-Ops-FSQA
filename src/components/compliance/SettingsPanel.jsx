@@ -60,6 +60,37 @@ function UserForm({ initial, onSave, onCancel }) {
           </select>
         </div>
       </div>
+      <div className="flex items-center gap-4 mt-1">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={!!form.is_contractor} onChange={e => setForm({ ...form, is_contractor: e.target.checked })}
+            className="rounded border-gray-300" />
+          <span className="font-medium text-gray-700">External Contractor</span>
+        </label>
+      </div>
+      {form.is_contractor && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Company *</label>
+            <input value={form.contractor_company || ''} onChange={e => setForm({ ...form, contractor_company: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Company name" required />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">License #</label>
+            <input value={form.contractor_license || ''} onChange={e => setForm({ ...form, contractor_license: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Insurance Expiry</label>
+            <input type="date" value={form.contractor_insurance_expiry || ''} onChange={e => setForm({ ...form, contractor_insurance_expiry: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Authorized Scope</label>
+            <input value={form.contractor_scope || ''} onChange={e => setForm({ ...form, contractor_scope: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. HVAC, electrical" />
+          </div>
+        </div>
+      )}
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
           {saving ? 'Saving...' : initial?.id ? 'Update' : 'Add User'}
@@ -138,7 +169,13 @@ export default function SettingsPanel() {
             <tbody>
               {(users || []).map(u => (
                 <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
+                  <td className="px-4 py-3">
+                    <span className="font-medium text-gray-900">{u.name}</span>
+                    {u.is_contractor ? (
+                      <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
+                    ) : null}
+                    {u.contractor_company && <div className="text-[10px] text-gray-400">{u.contractor_company}</div>}
+                  </td>
                   <td className="px-4 py-3 text-gray-600">{u.email || '—'}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.role === 'admin' ? 'bg-red-100 text-red-800' : u.role === 'supervisor' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>

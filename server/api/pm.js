@@ -271,13 +271,25 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   const completedAt = new Date().toISOString();
   const completedBy = _actor || 'system';
 
+  const eq = db.prepare('SELECT is_food_contact FROM equipment WHERE id = ?').get(existing.equipment_id);
+  const needsClearance = eq && eq.is_food_contact === 1 ? 1 : 0;
+
   db.prepare(`
     UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
-    notes=?, lubricant_used=?, lubricant_is_food_grade=?, updated_at=datetime('now') WHERE id=?
+    notes=?, lubricant_used=?, lubricant_is_food_grade=?,
+    clearance_required=?, clearance_status=?,
+    chemical_id=?,
+    updated_at=datetime('now') WHERE id=?
   `).run(completedAt, completedBy, notes || null, lubricant_used || null,
-    lubricant_is_food_grade ? 1 : 0, req.params.id);
+    lubricant_is_food_grade ? 1 : 0,
+    needsClearance, needsClearance ? 'pending' : null,
+    req.body.chemical_id || null,
+    req.params.id);
 
   logAudit(completedBy, 'complete', 'work_order', req.params.id, { notes }, null, null);
+  if (needsClearance) {
+    logAudit('system', 'clearance_required', 'work_order', req.params.id, 'Food-contact equipment — hygiene clearance pending');
+  }
 
   let nextWO = null;
   if (existing.pm_schedule_id) {
@@ -299,6 +311,39 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   }
 
   res.json({ completed: req.params.id, next_work_order: nextWO });
+});
+
+// --- Hygiene Clearance ---
+
+router.put('/work-orders/:id/clearance', (req, res) => {
+  const db = getDb();
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+  if (!wo.clearance_required) return res.status(400).json({ error: 'This work order does not require clearance' });
+
+  const { status, cleared_by, notes, method, _actor } = req.body;
+  if (!status || !cleared_by) return res.status(400).json({ error: 'status and cleared_by required' });
+
+  db.prepare(`
+    UPDATE work_orders SET clearance_status=?, clearance_by=?, clearance_at=datetime('now'),
+    clearance_notes=?, clearance_method=?, updated_at=datetime('now') WHERE id=?
+  `).run(status, cleared_by, notes || null, method || null, req.params.id);
+
+  logAudit(_actor || cleared_by, `clearance_${status}`, 'work_order', req.params.id,
+    `Method: ${method || 'visual'}, Notes: ${notes || 'none'}`);
+  res.json({ success: true });
+});
+
+router.get('/clearance-pending', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT wo.*, e.name as equipment_name, e.location, e.asset_id
+    FROM work_orders wo
+    JOIN equipment e ON wo.equipment_id = e.id
+    WHERE wo.clearance_required = 1 AND wo.clearance_status = 'pending'
+    ORDER BY wo.completed_at DESC
+  `).all();
+  res.json(rows);
 });
 
 // --- PM Schedules grouped by frequency ---

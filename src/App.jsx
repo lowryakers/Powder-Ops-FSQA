@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
@@ -12,6 +12,8 @@ import LOTOPanel from './components/compliance/LOTOPanel.jsx';
 import AuditLogPanel from './components/compliance/AuditLogPanel.jsx';
 import OperatorView from './components/compliance/OperatorView.jsx';
 import SettingsPanel from './components/compliance/SettingsPanel.jsx';
+import ChemicalsPanel from './components/compliance/ChemicalsPanel.jsx';
+import HygienicDesignPanel from './components/compliance/HygienicDesignPanel.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -19,8 +21,10 @@ const TABS = [
   { id: 'pm', label: 'PM', icon: Wrench },
   { id: 'calibration', label: 'Calibration', icon: Thermometer },
   { id: 'sanitation', label: 'Sanitation', icon: Droplets },
+  { id: 'chemicals', label: 'Chemicals', icon: FlaskConical },
   { id: 'loto', label: 'LOTO', icon: Lock },
   { id: 'equipment', label: 'Equipment', icon: Shield },
+  { id: 'hygienic', label: 'Design', icon: ClipboardCheck },
   { id: 'audit', label: 'Audit Log', icon: ScrollText },
   { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
 ];
@@ -165,8 +169,10 @@ function App() {
         {activeTab === 'pm' && <PMPanel />}
         {activeTab === 'calibration' && <CalibrationPanel />}
         {activeTab === 'sanitation' && <SanitationPanel />}
+        {activeTab === 'chemicals' && <ChemicalsPanel />}
         {activeTab === 'loto' && <LOTOPanel />}
         {activeTab === 'equipment' && <EquipmentPanel />}
+        {activeTab === 'hygienic' && <HygienicDesignPanel />}
         {activeTab === 'audit' && <AuditLogPanel />}
         {activeTab === 'settings' && <SettingsPanel />}
       </main>

@@ -18,6 +18,8 @@ import complianceRoutes from './server/api/compliance.js';
 import lotoRoutes from './server/api/loto.js';
 import userRoutes from './server/api/users.js';
 import submitRoutes from './server/api/submit.js';
+import chemicalRoutes from './server/api/chemicals.js';
+import hygienicDesignRoutes from './server/api/hygienic-design.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules } from './server/cleaning-seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -400,6 +402,8 @@ app.use('/api/compliance', complianceRoutes);
 app.use('/api/loto', lotoRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/submit', submitRoutes);
+app.use('/api/chemicals', chemicalRoutes);
+app.use('/api/hygienic-design', hygienicDesignRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

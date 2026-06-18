@@ -249,6 +249,50 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_loto_executions_status ON loto_executions(status);
     CREATE INDEX IF NOT EXISTS idx_loto_executions_procedure ON loto_executions(procedure_id);
 
+    CREATE TABLE IF NOT EXISTS approved_chemicals (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL CHECK (category IN ('lubricant','sanitizer','cleaner','degreaser','other')),
+      manufacturer TEXT,
+      product_code TEXT,
+      sds_number TEXT,
+      is_food_grade INTEGER NOT NULL DEFAULT 0,
+      nsf_rating TEXT,
+      approved_applications TEXT DEFAULT '[]',
+      max_concentration TEXT,
+      required_contact_time_minutes INTEGER,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      approved_by TEXT,
+      approved_at TEXT NOT NULL DEFAULT (datetime('now')),
+      review_due TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_approved_chemicals_category ON approved_chemicals(category);
+
+    CREATE TABLE IF NOT EXISTS design_verifications (
+      id TEXT PRIMARY KEY,
+      equipment_id TEXT NOT NULL,
+      trigger_reason TEXT NOT NULL CHECK (trigger_reason IN ('new_install','modification','relocation','repair','periodic_review')),
+      description TEXT,
+      checklist_responses TEXT NOT NULL DEFAULT '[]',
+      overall_result TEXT NOT NULL DEFAULT 'pending' CHECK (overall_result IN ('pending','approved','conditional','rejected')),
+      conditions TEXT,
+      performed_by TEXT NOT NULL,
+      performed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      approved_by TEXT,
+      approved_at TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (equipment_id) REFERENCES equipment(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_design_verifications_equipment ON design_verifications(equipment_id);
+    CREATE INDEX IF NOT EXISTS idx_design_verifications_result ON design_verifications(overall_result);
+
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -312,6 +356,25 @@ function runMigrations() {
   addColumnIfMissing('users', 'department', "TEXT DEFAULT 'warehouse'");
   addColumnIfMissing('pm_schedules', 'task_group', "TEXT DEFAULT 'warehouse'");
   addColumnIfMissing('work_orders', 'task_group', "TEXT DEFAULT 'warehouse'");
+
+  // Post-repair hygiene clearance
+  addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('work_orders', 'clearance_status', 'TEXT');
+  addColumnIfMissing('work_orders', 'clearance_by', 'TEXT');
+  addColumnIfMissing('work_orders', 'clearance_at', 'TEXT');
+  addColumnIfMissing('work_orders', 'clearance_notes', 'TEXT');
+  addColumnIfMissing('work_orders', 'clearance_method', 'TEXT');
+
+  // Contractor tracking
+  addColumnIfMissing('users', 'is_contractor', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('users', 'contractor_company', 'TEXT');
+  addColumnIfMissing('users', 'contractor_license', 'TEXT');
+  addColumnIfMissing('users', 'contractor_insurance_expiry', 'TEXT');
+  addColumnIfMissing('users', 'contractor_scope', 'TEXT');
+
+  // Chemical FK links
+  addColumnIfMissing('work_orders', 'chemical_id', 'TEXT');
+  addColumnIfMissing('sanitation_records', 'chemical_id', 'TEXT');
 
   migrateEquipmentNotes();
   cleanEquipmentNames();
