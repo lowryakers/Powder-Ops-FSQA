@@ -15,7 +15,7 @@ const catColor = (cat) => CATEGORIES.find(c => c.value === cat)?.color || 'bg-gr
 
 function ChemicalForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState(initial || {
-    name: '', category: 'sanitizer', manufacturer: '', product_code: '', sds_number: '',
+    name: '', category: 'sanitizer', manufacturer: '', product_code: '', sds_number: '', sds_url: '',
     is_food_grade: false, nsf_rating: '', max_concentration: '', required_contact_time_minutes: '',
     review_due: '', notes: '', location_for_use: '',
   });
@@ -59,6 +59,11 @@ function ChemicalForm({ initial, onSave, onCancel }) {
           <label className="block text-xs font-medium text-gray-700 mb-1">SDS Number</label>
           <input value={form.sds_number || ''} onChange={e => set('sds_number', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Safety Data Sheet #" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">SDS Link (URL)</label>
+          <input type="url" value={form.sds_url || ''} onChange={e => set('sds_url', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="https://..." />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">NSF Rating</label>
@@ -278,10 +283,13 @@ export default function ChemicalsPanel() {
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${catColor(c.category)}`}>{c.category}</span>
                 </td>
-                <td className="px-4 py-3 text-gray-600 font-mono text-xs">
-                  {c.sds_number
-                    ? c.sds_number
-                    : <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium"><AlertTriangle size={10} /> Missing SDS</span>
+                <td className="px-4 py-3 text-gray-600 text-xs">
+                  {c.sds_number || c.sds_url ? (
+                    <div className="space-y-0.5">
+                      {c.sds_number && <span className="font-mono">{c.sds_number}</span>}
+                      {c.sds_url && <a href={c.sds_url} target="_blank" rel="noopener noreferrer" className="block text-powder-600 hover:text-powder-700 underline">{c.sds_number ? 'View SDS' : 'SDS Link'}</a>}
+                    </div>
+                  ) : <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium"><AlertTriangle size={10} /> Missing SDS</span>
                   }
                 </td>
                 <td className="px-4 py-3">

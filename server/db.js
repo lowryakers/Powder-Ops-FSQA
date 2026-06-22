@@ -378,6 +378,7 @@ function runMigrations() {
 
   // Chemical location tracking
   addColumnIfMissing('approved_chemicals', 'location_for_use', 'TEXT');
+  addColumnIfMissing('approved_chemicals', 'sds_url', 'TEXT');
 
   migrateEquipmentNotes();
   cleanEquipmentNames();
