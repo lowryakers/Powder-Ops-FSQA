@@ -182,29 +182,47 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   if (fixed > 0) console.log(`[migrate] Fixed ${fixed} PM schedule/work order titles to match equipment names`);
 }
 
-// Auto-seed calibration instruments if empty
-const calCount = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c;
-if (calCount === 0) {
-  try {
-    const calPath = path.join(__dirname, 'server', 'calibration-seed-data.json');
-    const calData = JSON.parse(readFileSync(calPath, 'utf-8'));
-    const insertCal = db.prepare(`
-      INSERT INTO calibration_instruments (id, name, type, serial_number, manufacturer, model, location, room, asset_number, max_capacity, calibration_frequency, last_calibrated, next_due, status, department)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    const calTx = db.transaction(() => {
-      for (const s of calData) {
-        const id = uuid();
-        const name = `${s.manufacturer} ${s.model}${s.asset_number ? ' #' + s.asset_number : ''}`;
-        const location = [s.room, s.department].filter(Boolean).join(' — ') || null;
-        const status = s.next_due && new Date(s.next_due) < new Date() ? 'overdue' : 'active';
-        insertCal.run(id, name, 'scale', s.serial_number, s.manufacturer, s.model, location, s.room, s.asset_number, s.max_capacity, 'annual', s.last_calibrated, s.next_due, status, s.department);
+// Auto-seed calibration instruments (V2: Scale Number Log with 21 instruments)
+{
+  const calCount = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c;
+  const hasV2Marker = calCount > 0 ? db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE asset_number = '0157'").get().c : 0;
+  const needsSeed = calCount === 0 || (calCount > 0 && !hasV2Marker);
+  if (needsSeed) {
+    try {
+      if (calCount > 0) {
+        const hasCalRecords = db.prepare("SELECT COUNT(*) as c FROM calibration_records").get().c;
+        if (hasCalRecords === 0) {
+          db.prepare("DELETE FROM calibration_instruments").run();
+          console.log('[seed] Cleared V1 calibration instruments for V2 re-seed');
+        } else {
+          console.log('[seed] Skipping calibration re-seed: existing calibration records would be orphaned');
+        }
       }
-    });
-    calTx();
-    console.log(`[seed] Auto-seeded ${calData.length} calibration instruments`);
-  } catch (e) {
-    console.warn('[seed] Could not seed calibration:', e.message);
+      const currentCount = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments').get().c;
+      if (currentCount === 0) {
+        const calPath = path.join(__dirname, 'server', 'calibration-seed-data.json');
+        const calData = JSON.parse(readFileSync(calPath, 'utf-8'));
+        const insertCal = db.prepare(`
+          INSERT INTO calibration_instruments (id, name, type, serial_number, manufacturer, model, location, room, asset_number, max_capacity, calibration_frequency, last_calibrated, next_due, status, department, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const calTx = db.transaction(() => {
+          for (const s of calData) {
+            const id = uuid();
+            const mfr = s.manufacturer || 'Unknown';
+            const mdl = s.model || 'Scale';
+            const name = `${mfr} ${mdl}${s.asset_number ? ' #' + s.asset_number : ''}`;
+            const location = [s.room, s.department].filter(Boolean).join(' — ') || null;
+            const status = s.next_due && new Date(s.next_due) < new Date() ? 'overdue' : 'active';
+            insertCal.run(id, name, 'scale', s.serial_number || null, mfr, mdl, location, s.room || null, s.asset_number || null, s.max_capacity || null, 'annual', s.last_calibrated, s.next_due, status, s.department || null, s.notes || null);
+          }
+        });
+        calTx();
+        console.log(`[seed] Auto-seeded ${calData.length} calibration instruments (V2 Scale Number Log)`);
+      }
+    } catch (e) {
+      console.warn('[seed] Could not seed calibration:', e.message);
+    }
   }
 }
 
