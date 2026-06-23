@@ -81,7 +81,7 @@ export default function SubmitWorkOrder() {
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base">
               <option value="">Select equipment...</option>
               {equipment.map(eq => (
-                <option key={eq.id} value={eq.id}>{eq.name} — {eq.location || eq.type}</option>
+                <option key={eq.id} value={eq.id}>{eq.asset_id ? `${eq.asset_id} — ` : ''}{eq.name} — {eq.location || eq.type}</option>
               ))}
             </select>
           </div>
