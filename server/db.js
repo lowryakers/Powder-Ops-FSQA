@@ -332,6 +332,127 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_checklist_instances_due ON checklist_instances(due_date);
     CREATE INDEX IF NOT EXISTS idx_checklist_instances_status ON checklist_instances(status);
     CREATE INDEX IF NOT EXISTS idx_checklist_instances_checklist ON checklist_instances(checklist_id);
+
+    -- CAPA / Complaints / NCR tracking
+    CREATE TABLE IF NOT EXISTS complaints (
+      id TEXT PRIMARY KEY,
+      complaint_number TEXT NOT NULL UNIQUE,
+      date_received TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      lot_number TEXT,
+      item_number TEXT,
+      complaint_text TEXT NOT NULL,
+      person_responsible TEXT,
+      investigation TEXT,
+      corrective_action TEXT,
+      resolved INTEGER NOT NULL DEFAULT 0,
+      date_resolved TEXT,
+      capa_needed INTEGER NOT NULL DEFAULT 0,
+      capa_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS capas (
+      id TEXT PRIMARY KEY,
+      capa_number TEXT NOT NULL UNIQUE,
+      complaint_id TEXT,
+      title TEXT NOT NULL,
+      description TEXT,
+      root_cause TEXT,
+      corrective_action TEXT,
+      preventive_action TEXT,
+      assigned_to TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','implemented','verified','closed')),
+      priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high','critical')),
+      due_date TEXT,
+      closed_at TEXT,
+      closed_by TEXT,
+      verification_notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (complaint_id) REFERENCES complaints(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_complaints_number ON complaints(complaint_number);
+    CREATE INDEX IF NOT EXISTS idx_complaints_date ON complaints(date_received);
+    CREATE INDEX IF NOT EXISTS idx_capas_status ON capas(status);
+    CREATE INDEX IF NOT EXISTS idx_capas_complaint ON capas(complaint_id);
+
+    -- SOP Document Registry
+    CREATE TABLE IF NOT EXISTS sop_documents (
+      id TEXT PRIMARY KEY,
+      doc_number TEXT NOT NULL,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL CHECK (category IN ('production','quality','sanitation','maintenance','safety','haccp','training','admin','other')),
+      revision TEXT NOT NULL DEFAULT '1.0',
+      effective_date TEXT,
+      review_due TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft','active','under_review','superseded','archived')),
+      owner TEXT,
+      gdrive_url TEXT,
+      gdrive_folder TEXT,
+      description TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sop_category ON sop_documents(category);
+    CREATE INDEX IF NOT EXISTS idx_sop_status ON sop_documents(status);
+
+    -- Training Records
+    CREATE TABLE IF NOT EXISTS training_records (
+      id TEXT PRIMARY KEY,
+      employee_name TEXT NOT NULL,
+      employee_id TEXT,
+      training_topic TEXT NOT NULL,
+      sop_id TEXT,
+      trainer TEXT,
+      training_date TEXT NOT NULL,
+      completion_date TEXT,
+      status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','in_progress','completed','overdue','failed')),
+      score REAL,
+      certificate_url TEXT,
+      gdrive_url TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (sop_id) REFERENCES sop_documents(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_training_employee ON training_records(employee_name);
+    CREATE INDEX IF NOT EXISTS idx_training_date ON training_records(training_date);
+    CREATE INDEX IF NOT EXISTS idx_training_status ON training_records(status);
+
+    -- Mock Recall Log
+    CREATE TABLE IF NOT EXISTS mock_recalls (
+      id TEXT PRIMARY KEY,
+      recall_number TEXT NOT NULL UNIQUE,
+      date_initiated TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      lot_number TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      initiated_by TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'internal' CHECK (scope IN ('internal','customer','public')),
+      quantity_produced TEXT,
+      quantity_distributed TEXT,
+      quantity_recovered TEXT,
+      distribution_list TEXT,
+      time_to_notify_minutes INTEGER,
+      time_to_complete_minutes INTEGER,
+      accounts_contacted INTEGER,
+      accounts_responded INTEGER,
+      effectiveness_pct REAL,
+      result TEXT DEFAULT 'pending' CHECK (result IN ('pending','pass','fail','conditional')),
+      corrective_actions TEXT,
+      notes TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mock_recalls_date ON mock_recalls(date_initiated);
+    CREATE INDEX IF NOT EXISTS idx_mock_recalls_result ON mock_recalls(result);
   `);
 
   runMigrations();

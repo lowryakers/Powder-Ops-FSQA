@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
@@ -15,6 +15,10 @@ import SettingsPanel from './components/compliance/SettingsPanel.jsx';
 import ChemicalsPanel from './components/compliance/ChemicalsPanel.jsx';
 import HygienicDesignPanel from './components/compliance/HygienicDesignPanel.jsx';
 import AuditorView from './components/compliance/AuditorView.jsx';
+import CAPAPanel from './components/compliance/CAPAPanel.jsx';
+import SOPPanel from './components/compliance/SOPPanel.jsx';
+import TrainingPanel from './components/compliance/TrainingPanel.jsx';
+import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 
 const TABS = [
@@ -27,6 +31,10 @@ const TABS = [
   { id: 'loto', label: 'LOTO', icon: Lock },
   { id: 'equipment', label: 'Equipment', icon: Shield },
   { id: 'hygienic', label: 'Design', icon: ClipboardCheck },
+  { id: 'capa', label: 'CAPA', icon: FileWarning },
+  { id: 'sops', label: 'SOPs', icon: FileText },
+  { id: 'training', label: 'Training', icon: GraduationCap },
+  { id: 'recall', label: 'Recall', icon: Package },
   { id: 'audit', label: 'Audit Log', icon: ScrollText },
   { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
 ];
@@ -193,6 +201,10 @@ function App() {
         {activeTab === 'loto' && <LOTOPanel />}
         {activeTab === 'equipment' && <EquipmentPanel />}
         {activeTab === 'hygienic' && <HygienicDesignPanel />}
+        {activeTab === 'capa' && <CAPAPanel />}
+        {activeTab === 'sops' && <SOPPanel />}
+        {activeTab === 'training' && <TrainingPanel />}
+        {activeTab === 'recall' && <MockRecallPanel />}
         {activeTab === 'audit' && <AuditLogPanel />}
         {activeTab === 'settings' && <SettingsPanel />}
       </main>

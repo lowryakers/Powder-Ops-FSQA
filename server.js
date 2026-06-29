@@ -21,6 +21,10 @@ import userRoutes from './server/api/users.js';
 import submitRoutes from './server/api/submit.js';
 import chemicalRoutes from './server/api/chemicals.js';
 import hygienicDesignRoutes from './server/api/hygienic-design.js';
+import complaintRoutes from './server/api/complaints.js';
+import sopRoutes from './server/api/sops.js';
+import trainingRoutes from './server/api/training.js';
+import mockRecallRoutes from './server/api/mock-recalls.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -423,6 +427,29 @@ try {
   console.error('[seed] Error seeding data (non-fatal):', err.message);
 }
 
+// Seed complaint log if empty
+{
+  const complaintCount = db.prepare('SELECT COUNT(*) as c FROM complaints').get().c;
+  if (complaintCount === 0) {
+    try {
+      const complaintPath = path.join(__dirname, 'server', 'complaint-seed-data.json');
+      if (existsSync(complaintPath)) {
+        const complaints = JSON.parse(readFileSync(complaintPath, 'utf-8'));
+        const insertComplaint = db.prepare(`INSERT INTO complaints (id, complaint_number, date_received, customer_name, lot_number, item_number, complaint_text, person_responsible, investigation, corrective_action, resolved, date_resolved, capa_needed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        const tx = db.transaction(() => {
+          for (const c of complaints) {
+            insertComplaint.run(uuid(), c.complaint_number, c.date_received, c.customer_name, c.lot_number || null, c.item_number || null, c.complaint_text, c.person_responsible || null, c.investigation || null, c.corrective_action || null, c.resolved ? 1 : 0, c.date_resolved || null, c.capa_needed ? 1 : 0);
+          }
+        });
+        tx();
+        console.log(`[seed] Seeded ${complaints.length} complaint records`);
+      }
+    } catch (e) {
+      console.warn('[seed] Could not seed complaints:', e.message);
+    }
+  }
+}
+
 // --- File Uploads ---
 const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');
 mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -471,6 +498,10 @@ app.use('/api/users', userRoutes);
 app.use('/api/submit', submitRoutes);
 app.use('/api/chemicals', chemicalRoutes);
 app.use('/api/hygienic-design', hygienicDesignRoutes);
+app.use('/api/complaints', complaintRoutes);
+app.use('/api/sops', sopRoutes);
+app.use('/api/training', trainingRoutes);
+app.use('/api/mock-recalls', mockRecallRoutes);
 
 // Version check (used by client to detect updates)
 app.get('/api/version', (_req, res) => {
