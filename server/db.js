@@ -298,7 +298,7 @@ function initSchema() {
       name TEXT NOT NULL,
       email TEXT UNIQUE,
       pin TEXT,
-      role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('admin','supervisor','operator')),
+      role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('admin','supervisor','operator','auditor')),
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -386,6 +386,39 @@ function runMigrations() {
   addColumnIfMissing('work_orders', 'issue_attachments', "TEXT DEFAULT '[]'");
   addColumnIfMissing('work_orders', 'issue_flagged_by', 'TEXT');
   addColumnIfMissing('work_orders', 'issue_flagged_at', 'TEXT');
+
+  // Widen users.role CHECK constraint to include 'auditor'
+  try {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
+    if (tableInfo && tableInfo.sql && !tableInfo.sql.includes("'auditor'")) {
+      const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+      const colList = cols.join(', ');
+      db.exec(`
+        CREATE TABLE users_new (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          email TEXT UNIQUE,
+          pin TEXT,
+          role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('admin','supervisor','operator','auditor')),
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          department TEXT DEFAULT 'warehouse',
+          is_contractor INTEGER DEFAULT 0,
+          contractor_company TEXT,
+          contractor_license TEXT,
+          contractor_insurance_expiry TEXT,
+          contractor_scope TEXT
+        );
+        INSERT INTO users_new (${colList}) SELECT ${colList} FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+      `);
+      console.log('[migrate] Widened users.role CHECK to include auditor');
+    }
+  } catch (e) {
+    console.warn('[migrate] Could not migrate users table for auditor role:', e.message);
+  }
 
   migrateEquipmentNotes();
   cleanEquipmentNames();

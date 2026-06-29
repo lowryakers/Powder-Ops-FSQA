@@ -14,6 +14,7 @@ import OperatorView from './components/compliance/OperatorView.jsx';
 import SettingsPanel from './components/compliance/SettingsPanel.jsx';
 import ChemicalsPanel from './components/compliance/ChemicalsPanel.jsx';
 import HygienicDesignPanel from './components/compliance/HygienicDesignPanel.jsx';
+import AuditorView from './components/compliance/AuditorView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 
 const TABS = [
@@ -37,6 +38,23 @@ function App() {
 
   if (path === '/submit') {
     return <><SubmitWorkOrder /><UpdateBanner /></>;
+  }
+
+  if (path === '/auditor') {
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="h-10 w-10 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3 animate-pulse">
+              <Shield size={20} className="text-white" />
+            </div>
+            <p className="text-gray-500 text-sm">Loading...</p>
+          </div>
+        </div>
+      );
+    }
+    if (!user) return <LoginScreen onLogin={login} />;
+    return <><AuditorView /><UpdateBanner /></>;
   }
 
   if (path === '/operator') {

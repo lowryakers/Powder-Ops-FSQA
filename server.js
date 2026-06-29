@@ -329,9 +329,24 @@ if (userCount === 0) {
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Spencer R.', 'spencer@powder-ops.com', '3333', 'operator', 'warehouse');
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'QA Tech', 'qa@powder-ops.com', '4444', 'operator', 'qa');
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Cleaning Tech', 'cleaning@powder-ops.com', '5555', 'operator', 'cleaning');
+    db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Auditor', 'auditor@powder-ops.com', '9999', 'auditor', 'warehouse');
   });
   seedUsers();
-  console.log('[seed] Created default users (admin + operators)');
+  console.log('[seed] Created default users (admin + operators + auditor)');
+}
+
+// Ensure auditor user exists (for existing databases)
+{
+  const hasAuditor = db.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'auditor'").get().c;
+  if (!hasAuditor) {
+    try {
+      db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(uuid(), 'Auditor', 'auditor@powder-ops.com', '9999', 'auditor', 'warehouse');
+      console.log('[seed] Created auditor user');
+    } catch (e) {
+      console.warn('[seed] Could not create auditor user:', e.message);
+    }
+  }
 }
 
 // Backfill 4 months of completed work order history if none exist

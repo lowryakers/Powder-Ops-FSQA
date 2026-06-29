@@ -110,6 +110,7 @@ export default function SettingsPanel() {
 
   const operatorUrl = `${window.location.origin}/operator`;
   const submitUrl = `${window.location.origin}/submit`;
+  const auditorUrl = `${window.location.origin}/auditor`;
 
   const handleCreate = async (form) => {
     await apiPost('/users', { ...form, _actor: currentUser?.name });
@@ -233,6 +234,20 @@ export default function SettingsPanel() {
               </div>
               <button onClick={() => copyUrl(submitUrl)} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center gap-1">
                 <Copy size={14} /> {copiedUrl === submitUrl ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-purple-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-gray-900">Auditor Portal</h3>
+                <p className="text-sm text-gray-500">Read-only compliance view with export functionality. Give this link to auditors.</p>
+                <code className="text-xs text-purple-600 mt-1 block">{auditorUrl}</code>
+                <p className="text-xs text-gray-400 mt-1">Login: auditor@powder-ops.com / PIN: 9999</p>
+              </div>
+              <button onClick={() => copyUrl(auditorUrl)} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center gap-1">
+                <Copy size={14} /> {copiedUrl === auditorUrl ? 'Copied!' : 'Copy'}
               </button>
             </div>
           </div>
