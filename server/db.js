@@ -380,6 +380,13 @@ function runMigrations() {
   addColumnIfMissing('approved_chemicals', 'location_for_use', 'TEXT');
   addColumnIfMissing('approved_chemicals', 'sds_url', 'TEXT');
 
+  // Issue flagging on work orders
+  addColumnIfMissing('work_orders', 'issue_flagged', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('work_orders', 'issue_notes', 'TEXT');
+  addColumnIfMissing('work_orders', 'issue_attachments', "TEXT DEFAULT '[]'");
+  addColumnIfMissing('work_orders', 'issue_flagged_by', 'TEXT');
+  addColumnIfMissing('work_orders', 'issue_flagged_at', 'TEXT');
+
   migrateEquipmentNotes();
   cleanEquipmentNames();
 }

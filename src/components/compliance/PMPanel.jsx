@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search, Users, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search, Users, AlertTriangle, ShieldCheck, Flag } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
@@ -100,6 +100,43 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
   );
 }
 
+function IssueForm({ wo, onFlag, onCancel }) {
+  const [form, setForm] = useState({ notes: '', attachments: [], _actor: '' });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try { await onFlag(wo.id, form); } finally { setSaving(false); }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-red-50 rounded-lg border border-red-200 p-3 mt-2 space-y-2">
+      <h5 className="text-xs font-semibold text-red-800 uppercase tracking-wide flex items-center gap-1">
+        <Flag size={12} /> Flag an Issue
+      </h5>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Your Name *</label>
+        <input required value={form._actor} onChange={e => setForm({ ...form, _actor: e.target.value })}
+          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="Your name" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">What's the issue? *</label>
+        <textarea required value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" rows={3}
+          placeholder="Describe the problem, what you observed, any safety concerns..." />
+      </div>
+      <FileUpload files={form.attachments} onChange={attachments => setForm({ ...form, attachments })} />
+      <div className="flex gap-2">
+        <button type="submit" disabled={saving} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-50">
+          {saving ? 'Saving...' : 'Flag Issue'}
+        </button>
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs hover:bg-gray-200">Cancel</button>
+      </div>
+    </form>
+  );
+}
+
 function WOForm({ equipment, technicians, onSave, onCancel }) {
   const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', assigned_to: '', due_date: '', attachments: [] });
   const [saving, setSaving] = useState(false);
@@ -161,13 +198,14 @@ function WOForm({ equipment, technicians, onSave, onCancel }) {
   );
 }
 
-function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete, chemicals }) {
+function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete, chemicals, flagging, onStartFlag, onFlag, onCancelFlag }) {
   const steps = wo.procedure_steps || [];
   const attachments = (() => { try { return JSON.parse(wo.attachments || '[]'); } catch { return []; } })();
+  const issueAttachments = (() => { try { return JSON.parse(wo.issue_attachments || '[]'); } catch { return []; } })();
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
+    <div className={`bg-white rounded-xl border p-4 ${wo.issue_flagged ? 'border-red-300 ring-1 ring-red-100' : 'border-gray-200'}`}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -175,8 +213,9 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
               {wo.frequency_type || 'ad-hoc'}
             </span>
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[wo.status]}`}>{wo.status}</span>
+            {wo.issue_flagged === 1 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs font-semibold"><Flag size={10} /> Issue</span>}
             {wo.priority === 'critical' && <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs">Critical</span>}
-            {wo.priority === 'high' && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
+            {wo.priority === 'high' && !wo.issue_flagged && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
             {attachments.length > 0 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs"><Paperclip size={10} />{attachments.length}</span>}
             {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : wo.task_group === 'cleaning' ? 'CLN' : 'WH'}</span>}
           </div>
@@ -189,12 +228,42 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             <button onClick={() => onStartComplete(wo.id, 'start')}
               className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100">Start</button>
           )}
+          <button onClick={() => onStartFlag(wo.id)}
+            className="px-2 py-1 bg-red-50 text-red-700 rounded text-xs hover:bg-red-100 flex items-center gap-1">
+            <Flag size={12} /> Issue
+          </button>
           <button onClick={() => onStartComplete(wo.id, 'complete')}
             className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs hover:bg-green-100 flex items-center gap-1">
             <CheckCircle size={12} /> Done
           </button>
         </div>
       </div>
+
+      {wo.issue_flagged === 1 && (
+        <div className="mt-2 bg-red-50 rounded-lg border border-red-200 p-2.5">
+          <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> Issue Reported</p>
+          <p className="text-sm text-red-900">{wo.issue_notes}</p>
+          <p className="text-xs text-red-600 mt-1">
+            Flagged by {wo.issue_flagged_by} · {wo.issue_flagged_at ? new Date(wo.issue_flagged_at).toLocaleString() : ''}
+          </p>
+          {issueAttachments.length > 0 && (
+            <div className="mt-2 flex gap-2 flex-wrap">
+              {issueAttachments.map((a, i) => (
+                <a key={i} href={a.url} target="_blank" rel="noopener noreferrer">
+                  {/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(a.originalName || a.filename) ? (
+                    <img src={a.url} alt={a.originalName} className="h-16 w-16 object-cover rounded-lg border border-red-200 hover:ring-2 hover:ring-red-400" />
+                  ) : (
+                    <div className="h-16 w-16 rounded-lg border border-red-200 flex flex-col items-center justify-center bg-white hover:ring-2 hover:ring-red-400">
+                      <Paperclip size={14} className="text-red-400" />
+                      <span className="text-[9px] text-red-500 truncate w-14 text-center mt-0.5">{a.originalName || a.filename}</span>
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {steps.length > 0 && (
         <div className="mt-2">
@@ -225,6 +294,10 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             </a>
           ))}
         </div>
+      )}
+
+      {flagging === wo.id && (
+        <IssueForm wo={wo} onFlag={onFlag} onCancel={onCancelFlag} />
       )}
 
       {completing === wo.id && (
@@ -342,6 +415,7 @@ export default function PMPanel() {
   const [freqFilter, setFreqFilter] = useState('all');
   const [showWOForm, setShowWOForm] = useState(false);
   const [completing, setCompleting] = useState(null);
+  const [flagging, setFlagging] = useState(null);
   const [view, setView] = useState('active');
   const [archiveData, setArchiveData] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -361,12 +435,19 @@ export default function PMPanel() {
       refreshTasks();
     } else {
       setCompleting(completing === woId ? null : woId);
+      setFlagging(null);
     }
   };
 
   const handleComplete = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
     setCompleting(null);
+    refreshTasks();
+  };
+
+  const handleFlagIssue = async (woId, form) => {
+    await apiPost(`/pm/work-orders/${woId}/flag-issue`, form);
+    setFlagging(null);
     refreshTasks();
   };
 
@@ -540,7 +621,9 @@ export default function PMPanel() {
                 {items.map(wo => (
                   <TaskCard key={wo.id} wo={wo} completing={completing}
                     onStartComplete={handleStartWO} onComplete={handleComplete}
-                    onCancelComplete={() => setCompleting(null)} chemicals={chemicals} />
+                    onCancelComplete={() => setCompleting(null)} chemicals={chemicals}
+                    flagging={flagging} onStartFlag={(id) => { setFlagging(flagging === id ? null : id); setCompleting(null); }}
+                    onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)} />
                 ))}
               </div>
             </div>

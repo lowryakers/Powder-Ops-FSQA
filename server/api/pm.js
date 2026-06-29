@@ -315,6 +315,27 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   res.json({ completed: req.params.id, next_work_order: nextWO });
 });
 
+// --- Flag Issue on Work Order ---
+
+router.post('/work-orders/:id/flag-issue', (req, res) => {
+  const db = getDb();
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+
+  const { notes, attachments, _actor } = req.body;
+  if (!notes) return res.status(400).json({ error: 'Issue notes are required' });
+
+  db.prepare(`
+    UPDATE work_orders SET issue_flagged=1, issue_notes=?, issue_attachments=?,
+    issue_flagged_by=?, issue_flagged_at=datetime('now'), priority='high',
+    updated_at=datetime('now') WHERE id=?
+  `).run(notes, JSON.stringify(attachments || []), _actor || 'system', req.params.id);
+
+  logAudit(_actor || 'system', 'issue_flagged', 'work_order', req.params.id, { notes });
+  const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  res.json(updated);
+});
+
 // --- Hygiene Clearance ---
 
 router.put('/work-orders/:id/clearance', (req, res) => {
