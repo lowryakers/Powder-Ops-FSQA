@@ -40,6 +40,36 @@ router.get('/dashboard', (_req, res) => {
     ORDER BY wo.due_date ASC LIMIT 10
   `).all(to, sevenDaysOut.toISOString().split('T')[0]);
 
+  // Audit readiness extras
+  const chemTotal = db.prepare("SELECT COUNT(*) as c FROM approved_chemicals WHERE is_active = 1").get().c;
+  const chemMissingSDS = db.prepare("SELECT COUNT(*) as c FROM approved_chemicals WHERE is_active = 1 AND sds_url IS NULL AND sds_number IS NULL").get().c;
+
+  const calByStatus = db.prepare("SELECT status, COUNT(*) as c FROM calibration_instruments WHERE status != 'retired' GROUP BY status").all();
+
+  const lotoTotal = db.prepare("SELECT COUNT(*) as c FROM loto_procedures").get().c;
+  const lotoEquipWithoutProc = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE status = 'active' AND id NOT IN (SELECT equipment_id FROM loto_procedures)").get().c;
+
+  const flaggedIssues = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE issue_flagged = 1 AND status IN ('open','in_progress','overdue')").get().c;
+
+  const monthlyPM = db.prepare(`
+    SELECT strftime('%Y-%m', due_date) as month,
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) as missed
+    FROM work_orders WHERE due_date BETWEEN ? AND ?
+    GROUP BY strftime('%Y-%m', due_date) ORDER BY month
+  `).all(from, to);
+
+  const sanitationTrend = db.prepare(`
+    SELECT strftime('%Y-%m', performed_at) as month,
+      COUNT(*) as total,
+      SUM(CASE WHEN result = 'pass' THEN 1 ELSE 0 END) as passed
+    FROM sanitation_records WHERE performed_at >= ?
+    GROUP BY strftime('%Y-%m', performed_at) ORDER BY month
+  `).all(from);
+
+  const totalAuditRecords = db.prepare('SELECT COUNT(*) as c FROM audit_log WHERE timestamp >= ?').get(from).c;
+
   res.json({
     period: { from, to },
     pm: {
@@ -53,6 +83,7 @@ router.get('/dashboard', (_req, res) => {
       total_instruments: calTotal,
       overdue: calOverdue,
       due_within_7_days: calDueSoon,
+      by_status: calByStatus,
     },
     checklists: {
       submissions_30d: checklistSubmissions,
@@ -63,10 +94,22 @@ router.get('/dashboard', (_req, res) => {
       records_30d: sanitationTotal,
       failures_30d: sanitationFails,
       pass_rate: sanitationTotal > 0 ? parseFloat(((1 - sanitationFails / sanitationTotal) * 100).toFixed(1)) : 100,
+      monthly_trend: sanitationTrend,
     },
+    chemicals: {
+      total_approved: chemTotal,
+      missing_sds: chemMissingSDS,
+    },
+    loto: {
+      total_procedures: lotoTotal,
+      equipment_without_procedure: lotoEquipWithoutProc,
+    },
+    flagged_issues: flaggedIssues,
     food_contact_equipment: foodContactEquipment,
     upcoming_work_orders: upcomingWOs,
     recent_activity: recentActivity,
+    monthly_pm: monthlyPM,
+    total_audit_records: totalAuditRecords,
   });
 });
 
