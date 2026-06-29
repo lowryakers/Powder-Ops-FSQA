@@ -3,7 +3,8 @@ import compression from 'compression';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { readFileSync, mkdirSync } from 'fs';
+import { readFileSync, mkdirSync, existsSync } from 'fs';
+import { execSync } from 'child_process';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import { getDb, logAudit } from './server/db.js';
@@ -26,6 +27,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Build version: git commit hash or build timestamp
+let BUILD_VERSION;
+try {
+  BUILD_VERSION = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+} catch {
+  BUILD_VERSION = Date.now().toString(36);
+}
+
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err);
   process.exit(1);
@@ -33,6 +42,26 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('[FATAL] Unhandled rejection:', err);
 });
+
+// Graceful shutdown: let in-flight requests finish before exiting
+let server;
+function gracefulShutdown(signal) {
+  console.log(`[server] ${signal} received — draining connections...`);
+  if (server) {
+    server.close(() => {
+      console.log('[server] All connections drained. Exiting.');
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.warn('[server] Forced exit after 10s drain timeout');
+      process.exit(1);
+    }, 10000);
+  } else {
+    process.exit(0);
+  }
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 app.use(compression());
 app.use(cors());
@@ -428,6 +457,11 @@ app.use('/api/submit', submitRoutes);
 app.use('/api/chemicals', chemicalRoutes);
 app.use('/api/hygienic-design', hygienicDesignRoutes);
 
+// Version check (used by client to detect updates)
+app.get('/api/version', (_req, res) => {
+  res.json({ version: BUILD_VERSION });
+});
+
 // Health check
 app.get('/api/health', (_req, res) => {
   const db = getDb();
@@ -452,6 +486,6 @@ app.get('/{*splat}', (_req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[server] FSQA Compliance Platform running on port ${PORT}`);
+server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[server] FSQA Compliance Platform running on port ${PORT} (build ${BUILD_VERSION})`);
 });

@@ -14,6 +14,7 @@ import OperatorView from './components/compliance/OperatorView.jsx';
 import SettingsPanel from './components/compliance/SettingsPanel.jsx';
 import ChemicalsPanel from './components/compliance/ChemicalsPanel.jsx';
 import HygienicDesignPanel from './components/compliance/HygienicDesignPanel.jsx';
+import UpdateBanner from './components/UpdateBanner.jsx';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -35,7 +36,7 @@ function App() {
   const path = window.location.pathname;
 
   if (path === '/submit') {
-    return <SubmitWorkOrder />;
+    return <><SubmitWorkOrder /><UpdateBanner /></>;
   }
 
   if (path === '/operator') {
@@ -81,6 +82,7 @@ function App() {
         <main className="max-w-3xl mx-auto px-4 py-6">
           <OperatorView />
         </main>
+        <UpdateBanner />
       </div>
     );
   }
@@ -176,6 +178,7 @@ function App() {
         {activeTab === 'audit' && <AuditLogPanel />}
         {activeTab === 'settings' && <SettingsPanel />}
       </main>
+      <UpdateBanner />
     </div>
   );
 }

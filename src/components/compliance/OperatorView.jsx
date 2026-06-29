@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera } from 'lucide-react';
+import FileUpload from '../FileUpload';
 
 const FREQ_COLORS = {
   daily: 'bg-blue-500',
@@ -31,13 +32,17 @@ function formatDueLabel(dueDate) {
   return `Due ${dueDate}`;
 }
 
-function TaskCard({ task, onComplete, onAssign, technicians, userName }) {
+function TaskCard({ task, onComplete, onFlagIssue, onAssign, technicians, userName }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [flagging, setFlagging] = useState(false);
   const [notes, setNotes] = useState('');
+  const [issueNotes, setIssueNotes] = useState('');
+  const [issueAttachments, setIssueAttachments] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const steps = task.procedure_steps || [];
+  const issuePhotos = (() => { try { return JSON.parse(task.issue_attachments || '[]'); } catch { return []; } })();
   const today = new Date().toISOString().split('T')[0];
   const isOverdue = task.due_date < today;
   const isDueToday = task.due_date === today;
@@ -52,8 +57,19 @@ function TaskCard({ task, onComplete, onAssign, technicians, userName }) {
     } finally { setSaving(false); }
   };
 
+  const handleFlagSubmit = async () => {
+    setSaving(true);
+    try {
+      await onFlagIssue(task.id, { _actor: userName || 'Operator', notes: issueNotes, attachments: issueAttachments });
+      setFlagging(false);
+      setIssueNotes('');
+      setIssueAttachments([]);
+    } finally { setSaving(false); }
+  };
+
   return (
     <div className={`bg-white rounded-2xl border-2 transition-all ${
+      task.issue_flagged ? 'border-red-400 bg-red-50/30' :
       isOverdue ? 'border-red-400 bg-red-50/30' :
       isCritical ? (PRIORITY_RING[task.priority] || 'border-gray-200') :
       isDueToday ? 'border-powder-400' :
@@ -62,17 +78,30 @@ function TaskCard({ task, onComplete, onAssign, technicians, userName }) {
       {/* Main card content */}
       <div className="p-4">
         <div className="flex items-start gap-3">
-          {/* Complete button */}
-          {!completing ? (
-            <button onClick={() => setCompleting(true)}
-              className="shrink-0 w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-500 hover:bg-green-50 transition-all active:scale-90 mt-0.5">
-              <CheckCircle size={22} />
-            </button>
-          ) : (
-            <div className="shrink-0 w-11 h-11 rounded-full bg-green-500 flex items-center justify-center mt-0.5">
-              <CheckCircle size={22} className="text-white" />
-            </div>
-          )}
+          {/* Action buttons column */}
+          <div className="shrink-0 flex flex-col gap-1.5 mt-0.5">
+            {!completing && !flagging ? (
+              <>
+                <button onClick={() => { setCompleting(true); setFlagging(false); }}
+                  className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-500 hover:bg-green-50 transition-all active:scale-90">
+                  <CheckCircle size={22} />
+                </button>
+                <button onClick={() => { setFlagging(true); setCompleting(false); }}
+                  className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-red-500 hover:text-red-500 hover:bg-red-50 transition-all active:scale-90"
+                  title="Flag an issue">
+                  <Flag size={18} />
+                </button>
+              </>
+            ) : completing ? (
+              <div className="w-11 h-11 rounded-full bg-green-500 flex items-center justify-center">
+                <CheckCircle size={22} className="text-white" />
+              </div>
+            ) : (
+              <div className="w-11 h-11 rounded-full bg-red-500 flex items-center justify-center">
+                <Flag size={18} className="text-white" />
+              </div>
+            )}
+          </div>
 
           <div className="flex-1 min-w-0">
             {/* Title row */}
@@ -86,6 +115,12 @@ function TaskCard({ task, onComplete, onAssign, technicians, userName }) {
 
             {/* Meta row: badges + due */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {task.issue_flagged === 1 && (
+                <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold text-white uppercase tracking-wide bg-red-500">
+                  <Flag size={9} /> Issue
+                </span>
+              )}
+
               {task.frequency_type && (
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold text-white uppercase tracking-wide ${FREQ_COLORS[task.frequency_type] || 'bg-gray-400'}`}>
                   {task.frequency_type}
@@ -106,13 +141,40 @@ function TaskCard({ task, onComplete, onAssign, technicians, userName }) {
           </div>
 
           {/* Expand chevron if steps exist */}
-          {steps.length > 0 && !completing && (
+          {steps.length > 0 && !completing && !flagging && (
             <button onClick={() => setExpanded(!expanded)}
               className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 mt-0.5">
               {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </button>
           )}
         </div>
+
+        {/* Existing issue display */}
+        {task.issue_flagged === 1 && !flagging && (
+          <div className="mt-3 ml-14 bg-red-50 rounded-xl p-3 border border-red-200">
+            <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> Issue Reported</p>
+            <p className="text-sm text-red-900">{task.issue_notes}</p>
+            <p className="text-xs text-red-600 mt-1">
+              Flagged by {task.issue_flagged_by} &middot; {task.issue_flagged_at ? new Date(task.issue_flagged_at).toLocaleString() : ''}
+            </p>
+            {issuePhotos.length > 0 && (
+              <div className="mt-2 flex gap-2 flex-wrap">
+                {issuePhotos.map((a, i) => (
+                  <a key={i} href={a.url} target="_blank" rel="noopener noreferrer">
+                    {/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(a.originalName || a.filename) ? (
+                      <img src={a.url} alt={a.originalName} className="h-16 w-16 object-cover rounded-lg border border-red-200 hover:ring-2 hover:ring-red-400" />
+                    ) : (
+                      <div className="h-16 w-16 rounded-lg border border-red-200 flex flex-col items-center justify-center bg-white hover:ring-2 hover:ring-red-400">
+                        <Paperclip size={14} className="text-red-400" />
+                        <span className="text-[9px] text-red-500 truncate w-14 text-center mt-0.5">{a.originalName || a.filename}</span>
+                      </div>
+                    )}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Steps accordion */}
         {expanded && steps.length > 0 && (
@@ -125,6 +187,30 @@ function TaskCard({ task, onComplete, onAssign, technicians, userName }) {
                 </li>
               ))}
             </ol>
+          </div>
+        )}
+
+        {/* Inline issue flagging */}
+        {flagging && (
+          <div className="mt-3 ml-14 bg-red-50 rounded-xl p-3 space-y-2 border border-red-200">
+            <h4 className="text-xs font-bold text-red-800 uppercase tracking-wide flex items-center gap-1"><Flag size={11} /> Report an Issue</h4>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">What's the issue? *</label>
+              <textarea required value={issueNotes} onChange={e => setIssueNotes(e.target.value)} autoFocus
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={3}
+                placeholder="Describe the problem, what you observed, any safety concerns..." />
+            </div>
+            <FileUpload files={issueAttachments} onChange={setIssueAttachments} />
+            <div className="flex gap-2">
+              <button onClick={handleFlagSubmit} disabled={saving || !issueNotes.trim()}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
+                {saving ? 'Saving...' : 'Flag Issue'}
+              </button>
+              <button onClick={() => { setFlagging(false); setIssueNotes(''); setIssueAttachments([]); }}
+                className="px-4 py-2.5 bg-white text-gray-600 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 
@@ -193,6 +279,11 @@ export default function OperatorView() {
 
   const handleComplete = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
+    refresh();
+  };
+
+  const handleFlagIssue = async (woId, form) => {
+    await apiPost(`/pm/work-orders/${woId}/flag-issue`, form);
     refresh();
   };
 
@@ -335,7 +426,7 @@ export default function OperatorView() {
           {overdue.length > 0 && (
             <SectionHeader icon={AlertTriangle} title="Overdue" count={overdue.length} color="bg-red-500" defaultOpen={true}>
               {overdue.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
               ))}
             </SectionHeader>
           )}
@@ -343,7 +434,7 @@ export default function OperatorView() {
           {today.length > 0 && (
             <SectionHeader icon={CircleDot} title="Due Today" count={today.length} color="bg-powder-600" defaultOpen={true}>
               {today.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
               ))}
             </SectionHeader>
           )}
@@ -351,7 +442,7 @@ export default function OperatorView() {
           {thisWeek.length > 0 && (
             <SectionHeader icon={CalendarDays} title="This Week" count={thisWeek.length} color="bg-gray-500" defaultOpen={overdue.length + today.length < 10}>
               {thisWeek.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
               ))}
             </SectionHeader>
           )}
@@ -359,7 +450,7 @@ export default function OperatorView() {
           {upcoming.length > 0 && (
             <SectionHeader icon={Clock} title="Upcoming" count={upcoming.length} color="bg-gray-400" defaultOpen={overdue.length + today.length + thisWeek.length < 5}>
               {upcoming.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
               ))}
             </SectionHeader>
           )}
