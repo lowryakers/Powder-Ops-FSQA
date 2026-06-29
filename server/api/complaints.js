@@ -59,31 +59,39 @@ router.put('/:id', (req, res) => {
 // --- CAPA routes ---
 router.get('/capas/all', (_req, res) => {
   const db = getDb();
-  res.json(db.prepare(`SELECT ca.*, c.complaint_number, c.customer_name FROM capas ca LEFT JOIN complaints c ON ca.complaint_id = c.id ORDER BY ca.created_at DESC`).all());
+  res.json(db.prepare(`SELECT ca.*, c.complaint_number, c.customer_name FROM capas ca LEFT JOIN complaints c ON ca.complaint_id = c.id ORDER BY ca.capa_number DESC`).all());
 });
 
 router.post('/capas', (req, res) => {
   const db = getDb();
-  const { complaint_id, title, description, root_cause, corrective_action, preventive_action, assigned_to, priority, due_date, _actor } = req.body;
+  const { capa_number, complaint_id, title, description, root_cause, corrective_action, preventive_action, proposed_solution, assigned_to, priority, due_date, status, date_issued, item_lot, item_number, item_description, work_order_number, po_number, source_type, immediate_correction, series_of_document, mgmt_verification_date, mgmt_verification_by, nc_number, linked_complaint_number, is_preventive_action, _actor } = req.body;
   if (!title) return res.status(400).json({ error: 'Title is required' });
 
-  const existing = db.prepare("SELECT capa_number FROM capas ORDER BY capa_number DESC LIMIT 1").get();
-  let nextNum = 'CAPA-001';
-  if (existing) {
-    const num = parseInt(existing.capa_number.replace('CAPA-', ''), 10);
-    nextNum = `CAPA-${String(num + 1).padStart(3, '0')}`;
+  let nextNum = capa_number;
+  if (!nextNum) {
+    const existing = db.prepare("SELECT capa_number FROM capas ORDER BY capa_number DESC LIMIT 1").get();
+    nextNum = 'CAPA-001';
+    if (existing) {
+      const match = existing.capa_number.match(/(\d+)/);
+      if (match) nextNum = `CAPA-${String(parseInt(match[1], 10) + 1).padStart(3, '0')}`;
+    }
   }
 
   const id = uuid();
-  db.prepare(`INSERT INTO capas (id, capa_number, complaint_id, title, description, root_cause, corrective_action, preventive_action, assigned_to, priority, due_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO capas (id, capa_number, complaint_id, title, description, root_cause, corrective_action, preventive_action, proposed_solution, assigned_to, priority, due_date, status, date_issued, item_lot, item_number, item_description, work_order_number, po_number, source_type, immediate_correction, series_of_document, mgmt_verification_date, mgmt_verification_by, nc_number, linked_complaint_number, is_preventive_action)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, nextNum, complaint_id || null, title, description || null,
-    root_cause || null, corrective_action || null, preventive_action || null,
-    assigned_to || null, priority || 'normal', due_date || null
+    root_cause || null, corrective_action || null, preventive_action || null, proposed_solution || null,
+    assigned_to || null, priority || 'normal', due_date || null, status || 'open',
+    date_issued || null, item_lot || null, item_number || null, item_description || null,
+    work_order_number || null, po_number || null, source_type || null,
+    immediate_correction || null, series_of_document || null,
+    mgmt_verification_date || null, mgmt_verification_by || null,
+    nc_number || null, linked_complaint_number || null, is_preventive_action ? 1 : 0
   );
 
   if (complaint_id) {
-    db.prepare('UPDATE complaints SET capa_id = ?, capa_needed = 1, updated_at = datetime(\'now\') WHERE id = ?').run(id, complaint_id);
+    db.prepare("UPDATE complaints SET capa_id = ?, capa_needed = 1, updated_at = datetime('now') WHERE id = ?").run(id, complaint_id);
   }
 
   logAudit(_actor || 'system', 'capa_created', 'capa', id, { capa_number: nextNum, title });
@@ -94,17 +102,27 @@ router.put('/capas/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM capas WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { title, description, root_cause, corrective_action, preventive_action, assigned_to, status, priority, due_date, verification_notes, _actor } = req.body;
+  const { title, description, root_cause, corrective_action, preventive_action, proposed_solution, assigned_to, status, priority, due_date, verification_notes, date_issued, item_lot, item_number, item_description, work_order_number, po_number, source_type, immediate_correction, series_of_document, mgmt_verification_date, mgmt_verification_by, nc_number, linked_complaint_number, is_preventive_action, _actor } = req.body;
 
   const newStatus = status || existing.status;
   const closedAt = newStatus === 'closed' && existing.status !== 'closed' ? new Date().toISOString() : existing.closed_at;
   const closedBy = newStatus === 'closed' && existing.status !== 'closed' ? (_actor || 'system') : existing.closed_by;
 
-  db.prepare(`UPDATE capas SET title=?, description=?, root_cause=?, corrective_action=?, preventive_action=?, assigned_to=?, status=?, priority=?, due_date=?, closed_at=?, closed_by=?, verification_notes=?, updated_at=datetime('now') WHERE id=?`).run(
+  db.prepare(`UPDATE capas SET title=?, description=?, root_cause=?, corrective_action=?, preventive_action=?, proposed_solution=?, assigned_to=?, status=?, priority=?, due_date=?, closed_at=?, closed_by=?, verification_notes=?, date_issued=?, item_lot=?, item_number=?, item_description=?, work_order_number=?, po_number=?, source_type=?, immediate_correction=?, series_of_document=?, mgmt_verification_date=?, mgmt_verification_by=?, nc_number=?, linked_complaint_number=?, is_preventive_action=?, updated_at=datetime('now') WHERE id=?`).run(
     title || existing.title, description ?? existing.description, root_cause ?? existing.root_cause,
     corrective_action ?? existing.corrective_action, preventive_action ?? existing.preventive_action,
+    proposed_solution ?? existing.proposed_solution,
     assigned_to ?? existing.assigned_to, newStatus, priority || existing.priority,
-    due_date ?? existing.due_date, closedAt, closedBy, verification_notes ?? existing.verification_notes, req.params.id
+    due_date ?? existing.due_date, closedAt, closedBy, verification_notes ?? existing.verification_notes,
+    date_issued ?? existing.date_issued, item_lot ?? existing.item_lot,
+    item_number ?? existing.item_number, item_description ?? existing.item_description,
+    work_order_number ?? existing.work_order_number, po_number ?? existing.po_number,
+    source_type ?? existing.source_type, immediate_correction ?? existing.immediate_correction,
+    series_of_document ?? existing.series_of_document,
+    mgmt_verification_date ?? existing.mgmt_verification_date, mgmt_verification_by ?? existing.mgmt_verification_by,
+    nc_number ?? existing.nc_number, linked_complaint_number ?? existing.linked_complaint_number,
+    is_preventive_action !== undefined ? (is_preventive_action ? 1 : 0) : existing.is_preventive_action,
+    req.params.id
   );
   logAudit(_actor || 'system', 'capa_updated', 'capa', req.params.id, { status: newStatus });
   res.json(db.prepare('SELECT * FROM capas WHERE id = ?').get(req.params.id));

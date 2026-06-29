@@ -508,6 +508,23 @@ function runMigrations() {
   addColumnIfMissing('work_orders', 'issue_flagged_by', 'TEXT');
   addColumnIfMissing('work_orders', 'issue_flagged_at', 'TEXT');
 
+  // CAPA extended fields matching Form 408-2
+  addColumnIfMissing('capas', 'date_issued', 'TEXT');
+  addColumnIfMissing('capas', 'item_lot', 'TEXT');
+  addColumnIfMissing('capas', 'item_number', 'TEXT');
+  addColumnIfMissing('capas', 'item_description', 'TEXT');
+  addColumnIfMissing('capas', 'work_order_number', 'TEXT');
+  addColumnIfMissing('capas', 'po_number', 'TEXT');
+  addColumnIfMissing('capas', 'source_type', 'TEXT');
+  addColumnIfMissing('capas', 'immediate_correction', 'TEXT');
+  addColumnIfMissing('capas', 'series_of_document', 'TEXT');
+  addColumnIfMissing('capas', 'proposed_solution', 'TEXT');
+  addColumnIfMissing('capas', 'mgmt_verification_date', 'TEXT');
+  addColumnIfMissing('capas', 'mgmt_verification_by', 'TEXT');
+  addColumnIfMissing('capas', 'nc_number', 'TEXT');
+  addColumnIfMissing('capas', 'linked_complaint_number', 'TEXT');
+  addColumnIfMissing('capas', 'is_preventive_action', 'INTEGER DEFAULT 0');
+
   // Widen users.role CHECK constraint to include 'auditor'
   try {
     const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();

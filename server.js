@@ -450,6 +450,77 @@ try {
   }
 }
 
+// Seed CAPA records if empty
+{
+  const capaCount = db.prepare('SELECT COUNT(*) as c FROM capas').get().c;
+  if (capaCount === 0) {
+    try {
+      const cc25005 = db.prepare("SELECT id FROM complaints WHERE complaint_number = 'CC25-005'").get();
+      const insertCAPA = db.prepare(`INSERT INTO capas (id, capa_number, complaint_id, title, description, root_cause, corrective_action, preventive_action, proposed_solution, assigned_to, status, priority, date_issued, item_lot, item_number, item_description, work_order_number, po_number, source_type, immediate_correction, series_of_document, mgmt_verification_date, mgmt_verification_by, nc_number, linked_complaint_number, is_preventive_action) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const capas = [
+        {
+          capa_number: 'CAPA-001', title: 'Wrong expiration date format on printed carton',
+          description: 'The format was not correct and approved from the start. BB 07/2027, wrong format (156) correct format would be 07/31/2027 (BB MM/DD/YYYY)',
+          root_cause: 'Unfortunately the final product had two different expiration formats, even though the customer approved it. We will work harder to ensure this doesn\'t happen again.',
+          proposed_solution: 'A meeting was held with the work team where they were informed of the inconsistencies and feedback was given. After that, the room leaders and the quality department were trained again to remind them of the importance of comparing the information in the specifications and the final product.',
+          assigned_to: 'Maria Servin', status: 'closed', priority: 'normal',
+          date_issued: '2025-07-31', item_lot: 'L00922', item_number: '202513',
+          item_description: 'JIN Electrolyte 20ct Printed Carton (Lemonade)',
+          source_type: 'deviation', immediate_correction: 'Re-train',
+          series_of_document: '25-001', mgmt_verification_date: '2026-03-17', mgmt_verification_by: 'MS',
+        },
+        {
+          capa_number: 'CAPA-002', title: 'Incomplete BPR documentation during production run',
+          description: 'Upon completion of the work with W.O MO01292, all the information was gathered, but it was incomplete; some cleaning sheets, packaging options, observations, and sample sticks were missing.',
+          root_cause: 'Not having complete documents affects traceability, and at the time of closing the order, the information was not clear, making it more difficult to obtain the final order results.',
+          proposed_solution: 'We were to make feedback, about the importance of finishing the production with the pagans completed, in our reports. Additionally, we make the training for the leaders and operations for more information.',
+          assigned_to: 'Johana Gonzalez', status: 'closed', priority: 'normal',
+          date_issued: '2025-10-01', item_lot: '100135', item_number: 'MO001292',
+          item_description: 'Alkify 30ct Finished Good',
+          work_order_number: 'MO01292', source_type: 'deviation',
+          immediate_correction: 'Re-train', is_preventive_action: true,
+          series_of_document: '25-002', mgmt_verification_date: '2026-03-17', mgmt_verification_by: 'MS',
+        },
+        {
+          capa_number: 'CAPA-003', title: 'Customer found ladybug on protein pouch',
+          description: 'A Customer found a Ladybug on their protein Pouch and due to that quality department initiated a CAPA. Lab test results from the provided batch were found and results came back passing at the time of the production run. X-ray log was inspected and we did not find any abnormalities throughout the run. QA verified that pest control has come to do consecutive inspections.',
+          root_cause: 'N/A',
+          proposed_solution: 'Removing cleaning towels from production rooms after they fall on the floor, they need to change gloves and grab a clean towel to bring inside of the room. Everything needs to be sifted before the batch is released to production. Any abnormality that shows on the X-Ray will be opened, re-sifted and re-bagged.',
+          assigned_to: 'Maria Servin', status: 'closed', priority: 'high',
+          date_issued: '2026-03-17', item_lot: '101025-1', item_number: 'FG0984',
+          item_description: 'Coconut Cream Whey Protein Pouch',
+          work_order_number: 'MO01467', source_type: 'customer_complaint',
+          immediate_correction: 'N/A', is_preventive_action: true,
+          nc_number: 'NC#003', linked_complaint_number: 'CC25-005',
+          complaint_id_ref: cc25005?.id,
+          series_of_document: '25-003', mgmt_verification_date: '2026-03-17', mgmt_verification_by: 'MS',
+        },
+      ];
+      const tx = db.transaction(() => {
+        for (const c of capas) {
+          const id = uuid();
+          insertCAPA.run(id, c.capa_number, c.complaint_id_ref || null, c.title, c.description, c.root_cause,
+            c.corrective_action || null, c.preventive_action || null, c.proposed_solution || null,
+            c.assigned_to, c.status, c.priority, c.date_issued,
+            c.item_lot || null, c.item_number || null, c.item_description || null,
+            c.work_order_number || null, c.po_number || null, c.source_type || null,
+            c.immediate_correction || null, c.series_of_document || null,
+            c.mgmt_verification_date || null, c.mgmt_verification_by || null,
+            c.nc_number || null, c.linked_complaint_number || null, c.is_preventive_action ? 1 : 0
+          );
+          if (c.complaint_id_ref) {
+            db.prepare("UPDATE complaints SET capa_id = ?, updated_at = datetime('now') WHERE id = ?").run(id, c.complaint_id_ref);
+          }
+        }
+      });
+      tx();
+      console.log(`[seed] Seeded ${capas.length} CAPA records`);
+    } catch (e) {
+      console.warn('[seed] Could not seed CAPAs:', e.message);
+    }
+  }
+}
+
 // --- File Uploads ---
 const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');
 mkdirSync(UPLOAD_DIR, { recursive: true });
