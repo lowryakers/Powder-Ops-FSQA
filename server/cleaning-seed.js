@@ -568,10 +568,81 @@ export function seedGlassPlasticRecords(db) {
   if (count > 0) console.log(`[seed] Imported ${count} brittle plastic/glass inspection records (${inspectionDates.length} dates × ${zones.length} zones)`);
 }
 
-export function seedGlassPlasticPMSchedules(db) {
-  const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Brittle Plastic%Glass%'").get().c;
-  if (hasSchedules > 0) return;
+const BPG_ZONE_ITEMS = {
+  'Office 1': [
+    'Mini Fridge (door)|1|Glass', 'Window|1|Glass', 'Mirror|1|Glass',
+    'Lights|6|Plastic', 'Lamp Bulbs|2|Plastic', 'Monitors|1|Plastic',
+    'AC|1|Plastic', 'Picture Frame|2|Glass',
+  ],
+  'Office 2': [
+    'Lights|7|Plastic', 'Window|1|Glass', 'Desks|3|Glass',
+    'White Board|1|Glass', 'Monitors|6|Plastic', 'AC|1|Plastic',
+    'Printer|1|Plastic', 'Label Printer|1|Plastic',
+  ],
+  'Office 3': [
+    'Window|2|Glass', 'Lights|7|Plastic', 'Monitor|2|Plastic', 'AC|1|Plastic',
+  ],
+  'Main Lobby': [
+    'Windows|1|Glass', 'Doors|2|Glass', 'Exit Signs|2|Plastic',
+    'Lights|8|Plastic', 'Lamp Bulbs|2|Plastic', 'LED PowderOps Sign|1|Plastic',
+  ],
+  'Maintenance Area': [
+    'Lights|1|Plastic', 'Windows|1|Glass',
+  ],
+  'Bathrooms (1)': [
+    'Disposal Soap|1|Plastic', 'Light|1|Plastic', 'Mirrors|1|Glass',
+    'Air Freshener Dispenser|1|Plastic', 'Paper Disposal Machine|1|Plastic',
+  ],
+  'Bathrooms (2)': [
+    'Disposal Soap|1|Plastic', 'Light|1|Plastic', 'Mirrors|1|Glass',
+    'Air Freshener Dispenser|1|Plastic', 'Paper Disposal Machine|1|Plastic',
+  ],
+  'Sanitation Area': [
+    'Paper Disposal Machine|1|Plastic', 'Soap Disposal Machine|1|Plastic',
+    'Lights|4|Plastic', 'Exit Sign|1|Plastic',
+  ],
+  'Gown Room': [
+    'Printer|1|Plastic', 'Desk|1|Glass', 'Monitor|1|Plastic',
+    'Lights|6|Plastic', 'Walkie Talkies|12|Plastic', 'Mirror|1|Glass',
+    'Thermal Printer|1|Plastic',
+  ],
+  'Break Room': [
+    'Time Clock|1|Plastic', 'Lights|11|Plastic', 'Windows|2|Glass',
+    'Oven|1|Glass', 'Microwaves|4|Glass', 'Soap Dispenser|1|Plastic',
+    'Air Fryer|1|Plastic', 'Paper Dispenser|1|Plastic',
+    'Coffee Machine (Keurig)|1|Plastic', 'Electric Kettle|1|Glass',
+  ],
+  'Production Area': [
+    'Exterior Lights|9|Plastic', 'Sky Lights|2|Plastic', 'Thermometers|2|Plastic',
+    'Clock|1|Plastic', 'Plastic Pallets|N/A|Plastic',
+    'Room 1 Light|1|Plastic', 'Room 3 Light|1|Plastic', 'Room 4 Light|1|Plastic',
+    'Room 5 Light|1|Plastic', 'Room 6 Light|1|Plastic', 'Room 7 Light|1|Plastic',
+    'Room 8 Light|1|Plastic',
+    'Batching 1 Lights|2|Plastic', 'Batching 2 Lights|2|Plastic',
+  ],
+  'Kitting Area': [
+    'N/A|N/A|N/A',
+  ],
+  'Quality Area': [
+    'Lights|4|Plastic', 'Exit Signs|2|Plastic', 'Monitor|1|Plastic',
+    'Printer|1|Plastic', 'Label Printers|2|Plastic', 'Windows|8|Glass',
+  ],
+  'Warehouse Area (1)': [
+    'Desks|2|Glass', 'Monitors|2|Plastic', 'Thermal Printer|1|Plastic', 'Printer|1|Plastic',
+  ],
+  'Warehouse Area (2)': [
+    'Swing Lights|1|Plastic', 'Exit Signs|1|Plastic',
+  ],
+  'Warehouse Area (3)': [
+    'Swing Lights|1|Plastic', 'Exit Signs|1|Plastic',
+  ],
+  'Warehouse Area (Main)': [
+    'Lights|27|Plastic', 'Sky Lights|2|Plastic', 'Thermometer|1|Plastic',
+    'Plastic Pallets|N/A|Plastic',
+  ],
+};
 
+export function seedGlassPlasticPMSchedules(db) {
   const insertEq = db.prepare(`
     INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
     VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
@@ -586,37 +657,78 @@ export function seedGlassPlasticPMSchedules(db) {
   `);
 
   const inspectionZones = [
-    { name: 'Offices (1-3)', location: 'Offices', room: 'Office', asset_id: 'QA-BPG-020' },
+    { name: 'Office 1', location: 'Offices', room: 'Office 1', asset_id: 'QA-BPG-031' },
+    { name: 'Office 2', location: 'Offices', room: 'Office 2', asset_id: 'QA-BPG-032' },
+    { name: 'Office 3', location: 'Offices', room: 'Office 3', asset_id: 'QA-BPG-033' },
     { name: 'Main Lobby', location: 'Common Areas', room: 'Main Lobby', asset_id: 'QA-BPG-021' },
     { name: 'Maintenance Area', location: 'Maintenance', room: 'Maintenance', asset_id: 'QA-BPG-022' },
-    { name: 'Bathrooms', location: 'Common Areas', room: 'Bathrooms', asset_id: 'QA-BPG-023' },
+    { name: 'Bathrooms (1)', location: 'Common Areas', room: 'Bathroom 1', asset_id: 'QA-BPG-034' },
+    { name: 'Bathrooms (2)', location: 'Common Areas', room: 'Bathroom 2', asset_id: 'QA-BPG-035' },
     { name: 'Sanitation Area', location: 'Sanitation', room: 'Sanitation', asset_id: 'QA-BPG-024' },
     { name: 'Gown Room', location: 'Production', room: 'Gown Room', asset_id: 'QA-BPG-025' },
     { name: 'Break Room', location: 'Common Areas', room: 'Break Room', asset_id: 'QA-BPG-026' },
-    { name: 'Production Area & Rooms', location: 'Production', room: 'Production', asset_id: 'QA-BPG-027' },
+    { name: 'Production Area', location: 'Production', room: 'Production', asset_id: 'QA-BPG-027' },
     { name: 'Kitting Area', location: 'Production', room: 'Kitting', asset_id: 'QA-BPG-028' },
     { name: 'Quality Area', location: 'Quality', room: 'QA Lab', asset_id: 'QA-BPG-029' },
-    { name: 'Warehouse Areas', location: 'Warehouse', room: 'Warehouse', asset_id: 'QA-BPG-030' },
+    { name: 'Warehouse Area (1)', location: 'Warehouse', room: 'Warehouse Office', asset_id: 'QA-BPG-036' },
+    { name: 'Warehouse Area (2)', location: 'Warehouse', room: 'Warehouse Zone 2', asset_id: 'QA-BPG-037' },
+    { name: 'Warehouse Area (3)', location: 'Warehouse', room: 'Warehouse Zone 3', asset_id: 'QA-BPG-038' },
+    { name: 'Warehouse Area (Main)', location: 'Warehouse', room: 'Warehouse Main', asset_id: 'QA-BPG-030' },
   ];
 
-  const steps = [
-    'Inspect each brittle plastic and glass item in the zone',
-    'Check item condition: Good / Bad / Broken',
-    'Record Item Name, QTY, and Material (Glass or Plastic)',
-    'If Bad or Broken — document in Observations and notify manager',
-    'QA verification: initial, sign, and date',
-  ];
-  const stepsJson = JSON.stringify(steps);
+  const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Brittle Plastic%Glass%'").get().c;
+
+  if (hasSchedules > 0) {
+    const oldConsolidated = ['Offices (1-3)', 'Bathrooms', 'Warehouse Areas'];
+    for (const oldName of oldConsolidated) {
+      const old = db.prepare("SELECT id FROM pm_schedules WHERE title = ?").get(`Brittle Plastic & Glass Inspection — ${oldName}`);
+      if (old) {
+        db.prepare("DELETE FROM work_orders WHERE pm_schedule_id = ?").run(old.id);
+        db.prepare("DELETE FROM pm_schedules WHERE id = ?").run(old.id);
+        console.log(`[seed] Removed consolidated zone '${oldName}' — replaced with granular zones`);
+      }
+    }
+
+    let updated = 0;
+    for (const zone of inspectionZones) {
+      const items = BPG_ZONE_ITEMS[zone.name];
+      if (!items) continue;
+      const stepsJson = JSON.stringify(items);
+      const title = `Brittle Plastic & Glass Inspection — ${zone.name}`;
+      const existing = db.prepare("SELECT id FROM pm_schedules WHERE title = ?").get(title);
+      if (existing) {
+        db.prepare("UPDATE pm_schedules SET procedure_steps = ? WHERE id = ?").run(stepsJson, existing.id);
+        db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')")
+          .run(stepsJson, existing.id);
+        updated++;
+      }
+    }
+    if (updated > 0) console.log(`[seed] Updated ${updated} brittle plastic/glass PM schedules with Form 431-02 item inventories`);
+
+    const currentCount = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Brittle Plastic%Glass%'").get().c;
+    if (currentCount < inspectionZones.length) {
+      // fall through to create missing zones
+    } else {
+      return;
+    }
+  }
 
   const today = new Date().toISOString().split('T')[0];
   let eqCount = 0, pmCount = 0, woCount = 0;
 
   const tx = db.transaction(() => {
     for (const zone of inspectionZones) {
-      const existing = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(zone.asset_id);
+      const title = `Brittle Plastic & Glass Inspection — ${zone.name}`;
+      const existingPM = db.prepare("SELECT id FROM pm_schedules WHERE title = ?").get(title);
+      if (existingPM) continue;
+
+      const items = BPG_ZONE_ITEMS[zone.name] || ['N/A|N/A|N/A'];
+      const stepsJson = JSON.stringify(items);
+
+      const existingEq = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(zone.asset_id);
       let eqId;
-      if (existing) {
-        eqId = existing.id;
+      if (existingEq) {
+        eqId = existingEq.id;
       } else {
         eqId = uuid();
         insertEq.run(eqId, zone.name, 'Inspection Zone', zone.location, zone.room, zone.asset_id);
@@ -624,7 +736,6 @@ export function seedGlassPlasticPMSchedules(db) {
       }
 
       const pmId = uuid();
-      const title = `Brittle Plastic & Glass Inspection — ${zone.name}`;
       insertPM.run(pmId, eqId, title, 'Form 431-02 — Monthly brittle plastic and glass inventory inspection', 'monthly', stepsJson);
       pmCount++;
 

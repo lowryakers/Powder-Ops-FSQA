@@ -95,7 +95,14 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, technicians, userNa
     if (taskType === 'temp_humidity') return readings.temperature && readings.humidity;
     if (taskType === 'chemical_dilution') return readings.chemical_name && readings.ppm_reading && readings.dilution_pass;
     if (taskType === 'light_inspection') return readings.foot_candles && readings.light_pass;
-    if (taskType === 'glass_plastic') return readings.items_inspected && readings.condition;
+    if (taskType === 'glass_plastic') {
+      const bpgItems = steps.filter(s => s.includes('|'));
+      if (bpgItems.length > 0 && bpgItems[0] !== 'N/A|N/A|N/A') {
+        const ic = readings.item_conditions || {};
+        return Object.keys(ic).length === bpgItems.length;
+      }
+      return true;
+    }
     if (taskType === 'production_clean') return readings.visual_pass;
     return true;
   };
@@ -363,45 +370,61 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, technicians, userNa
               </>
             )}
 
-            {taskType === 'glass_plastic' && (
-              <>
-                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Brittle Plastic & Glass Inspection</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Items Inspected *</label>
-                    <input type="number" value={readings.items_inspected || ''} onChange={e => updateReading('items_inspected', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Total count" autoFocus />
+            {taskType === 'glass_plastic' && (() => {
+              const bpgItems = steps.filter(s => s.includes('|')).map(s => {
+                const [name, qty, material] = s.split('|');
+                return { name: name.trim(), qty: qty.trim(), material: (material || '').trim() };
+              });
+              const hasParsedItems = bpgItems.length > 0 && bpgItems[0].name !== 'N/A';
+              const itemConditions = readings.item_conditions || {};
+              const setItemCondition = (idx, val) => {
+                const next = { ...itemConditions, [idx]: val };
+                updateReading('item_conditions', next);
+                const allGood = Object.keys(next).length === bpgItems.length && Object.values(next).every(v => v === 'good');
+                const anyBad = Object.values(next).some(v => v === 'bad' || v === 'broken');
+                updateReading('condition', anyBad ? 'fail' : allGood ? 'good' : 'good');
+              };
+              const checkedCount = Object.keys(itemConditions).length;
+
+              return hasParsedItems ? (
+                <>
+                  <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1 mb-1"><ClipboardCheck size={12} /> Form 431-02 — Item Inspection</h4>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-[1fr_40px_52px_auto] gap-0 bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 uppercase">
+                      <span>Item</span><span>Qty</span><span>Type</span><span className="text-center">Condition</span>
+                    </div>
+                    <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+                      {bpgItems.map((item, i) => (
+                        <div key={i} className={`grid grid-cols-[1fr_40px_52px_auto] gap-0 px-2 py-1.5 items-center ${itemConditions[i] === 'bad' || itemConditions[i] === 'broken' ? 'bg-red-50' : itemConditions[i] === 'good' ? 'bg-green-50/30' : ''}`}>
+                          <span className="text-sm text-gray-800 truncate">{item.name}</span>
+                          <span className="text-xs text-gray-500">{item.qty}</span>
+                          <span className={`text-[10px] font-medium ${item.material === 'Glass' ? 'text-blue-600' : 'text-gray-500'}`}>{item.material}</span>
+                          <div className="flex gap-0.5">
+                            <button onClick={() => setItemCondition(i, 'good')}
+                              className={`px-1.5 py-1 rounded text-[10px] font-bold transition-all ${itemConditions[i] === 'good' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-green-100'}`}>G</button>
+                            <button onClick={() => setItemCondition(i, 'bad')}
+                              className={`px-1.5 py-1 rounded text-[10px] font-bold transition-all ${itemConditions[i] === 'bad' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-amber-100'}`}>B</button>
+                            <button onClick={() => setItemCondition(i, 'broken')}
+                              className={`px-1.5 py-1 rounded text-[10px] font-bold transition-all ${itemConditions[i] === 'broken' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-red-100'}`}>X</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Items Damaged</label>
-                    <input type="number" value={readings.items_damaged || ''} onChange={e => updateReading('items_damaged', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="0" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Overall Condition *</label>
-                  <div className="flex gap-2">
-                    <button onClick={() => updateReading('condition', 'good')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.condition === 'good' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      All Good
-                    </button>
-                    <button onClick={() => updateReading('condition', 'needs_attention')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.condition === 'needs_attention' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      Needs Attention
-                    </button>
-                    <button onClick={() => updateReading('condition', 'broken')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.condition === 'broken' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      Broken
-                    </button>
-                  </div>
-                </div>
-                {readings.condition && readings.condition !== 'good' && (
-                  <div className="bg-amber-50 border border-amber-300 rounded-lg p-2 text-xs text-amber-800 font-medium">
-                    Document damaged/broken items in the notes below and notify your manager.
-                  </div>
-                )}
-              </>
-            )}
+                  <p className="text-[10px] text-gray-500 text-center">{checkedCount} / {bpgItems.length} items inspected — G = Good, B = Bad, X = Broken</p>
+                  {Object.values(itemConditions).some(v => v === 'bad' || v === 'broken') && (
+                    <div className="bg-red-50 border border-red-300 rounded-lg p-2 text-xs text-red-800 font-medium">
+                      Damaged/broken items detected — document details in notes below and notify your manager.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Brittle Plastic & Glass Inspection</h4>
+                  <p className="text-xs text-gray-500">No brittle plastic or glass items in this zone.</p>
+                </>
+              );
+            })()}
 
             {taskType === 'light_inspection' && (
               <>
