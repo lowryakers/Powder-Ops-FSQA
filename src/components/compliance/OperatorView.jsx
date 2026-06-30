@@ -267,10 +267,18 @@ function SectionHeader({ icon: Icon, title, count, color, defaultOpen = true, ch
   );
 }
 
+const DEPT_OPTIONS = [
+  { id: 'all', label: 'All Teams' },
+  { id: 'warehouse', label: 'Warehouse' },
+  { id: 'qa', label: 'QA' },
+  { id: 'cleaning', label: 'Cleaning' },
+];
+
 export default function OperatorView() {
   const { user } = useAuth() || {};
-  const dept = user?.role === 'admin' ? null : (user?.department || 'warehouse');
-  const groupParam = dept ? `?group=${dept}` : '';
+  const isAdmin = user?.role === 'admin' || user?.role === 'supervisor';
+  const [viewDept, setViewDept] = useState(isAdmin ? 'all' : (user?.department || 'warehouse'));
+  const groupParam = viewDept === 'all' ? '' : `?group=${viewDept}`;
   const { data: tasks, loading, refresh } = useApiGet(`/pm/operator-tasks${groupParam}`);
   const { data: technicians } = useApiGet('/users/technicians');
   const [freqFilter, setFreqFilter] = useState('all');
@@ -360,6 +368,25 @@ export default function OperatorView() {
           <Filter size={16} />
         </button>
       </div>
+
+      {/* Admin department toggle */}
+      {isAdmin && (
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+          {DEPT_OPTIONS.map(d => (
+            <button
+              key={d.id}
+              onClick={() => setViewDept(d.id)}
+              className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                viewDept === d.id
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Search bar */}
       <div className="relative">
