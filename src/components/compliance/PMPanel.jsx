@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search, Users, AlertTriangle, ShieldCheck, Flag } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
@@ -195,6 +195,228 @@ function WOForm({ equipment, technicians, onSave, onCancel }) {
         <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
       </div>
     </form>
+  );
+}
+
+function safeParseFe(val, fallback = []) {
+  if (Array.isArray(val) || (typeof val === 'object' && val !== null)) return val;
+  try { return JSON.parse(val || JSON.stringify(fallback)); } catch { return fallback; }
+}
+
+function CompletedTaskDetail({ wo, onClose }) {
+  const steps = safeParseFe(wo.procedure_steps, []);
+  const stepResults = safeParseFe(wo.step_results, []);
+  const readings = safeParseFe(wo.readings, {});
+  const attachments = safeParseFe(wo.attachments, []);
+  const issueAttachments = safeParseFe(wo.issue_attachments, []);
+  const isNA = wo.status === 'not_applicable';
+  const isMissed = wo.status === 'missed';
+
+  const hasReadings = Object.keys(readings).length > 0;
+  const hasSteps = steps.length > 0;
+
+  return (
+    <div className="bg-white rounded-xl border-2 border-powder-200 shadow-lg p-5 space-y-4">
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            {isMissed ? (
+              <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full text-xs font-semibold">MISSED</span>
+            ) : isNA ? (
+              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold">N/A</span>
+            ) : (
+              <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-semibold flex items-center gap-1"><CheckCircle size={10} /> COMPLETED</span>
+            )}
+            {wo.frequency_type && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${FREQ_COLORS[wo.frequency_type] || FREQ_COLORS.unscheduled}`}>{wo.frequency_type}</span>}
+            {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : wo.task_group === 'cleaning' ? 'CLN' : 'WH'}</span>}
+            {wo.priority === 'critical' && <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs">Critical</span>}
+            {wo.priority === 'high' && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
+            {wo.reading_result && (
+              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${wo.reading_result === 'pass' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {wo.reading_result.toUpperCase()}
+              </span>
+            )}
+          </div>
+          <h4 className="font-semibold text-gray-900 text-lg">{wo.title || wo.pm_title}</h4>
+          <p className="text-sm text-gray-600">{wo.equipment_name} — {wo.location || 'No location'}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+          <X size={18} />
+        </button>
+      </div>
+
+      {/* Timestamps */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50 rounded-lg p-3">
+        <div>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Due Date</p>
+          <p className="text-sm font-medium text-gray-900">{wo.due_date}</p>
+        </div>
+        {wo.completed_at && (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Completed</p>
+            <p className="text-sm font-medium text-green-700">{new Date(wo.completed_at).toLocaleString()}</p>
+          </div>
+        )}
+        {wo.completed_by && (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Completed By</p>
+            <p className="text-sm font-medium text-gray-900">{wo.completed_by}</p>
+          </div>
+        )}
+        {wo.assigned_to && (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Assigned To</p>
+            <p className="text-sm text-gray-700">{wo.assigned_to}</p>
+          </div>
+        )}
+        {wo.created_at && (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Created</p>
+            <p className="text-sm text-gray-600">{new Date(wo.created_at).toLocaleString()}</p>
+          </div>
+        )}
+        {wo.started_at && (
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Started</p>
+            <p className="text-sm text-gray-600">{new Date(wo.started_at).toLocaleString()}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Procedure Steps */}
+      {hasSteps && (
+        <div>
+          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <CheckCircle size={12} /> Procedure Steps ({steps.length})
+          </h5>
+          <ul className="space-y-1 text-sm">
+            {steps.map((step, i) => {
+              const isHeader = typeof step === 'string' && step.endsWith(':');
+              const result = stepResults[i];
+              const done = result === true || result === 'done' || result === 'pass';
+              return (
+                <li key={i} className={`flex items-start gap-2 ${isHeader ? 'font-semibold text-gray-800 mt-2' : 'text-gray-600 pl-3'}`}>
+                  {!isHeader && (
+                    <span className={`mt-0.5 shrink-0 ${done ? 'text-green-500' : 'text-gray-300'}`}>
+                      {done ? <CheckCircle size={14} /> : <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-gray-300" />}
+                    </span>
+                  )}
+                  <span>{step}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* Readings / Inspection Data */}
+      {hasReadings && (
+        <div>
+          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <Thermometer size={12} /> Readings & Inspection Data
+          </h5>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {Object.entries(readings).map(([key, val]) => (
+              <div key={key} className="bg-gray-50 rounded-lg px-3 py-2">
+                <p className="text-xs text-gray-500 capitalize">{key.replace(/_/g, ' ')}</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Lubricant Info */}
+      {wo.lubricant_used && (
+        <div className="flex items-center gap-3 bg-blue-50 rounded-lg p-3">
+          <Droplets size={16} className="text-blue-600 shrink-0" />
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Lubricant Used</p>
+            <p className="text-sm font-medium text-gray-900">
+              {wo.lubricant_used}
+              {wo.lubricant_is_food_grade ? <span className="ml-2 text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">Food-Grade</span> : ''}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Clearance Info */}
+      {wo.clearance_required === 1 && (
+        <div className={`rounded-lg p-3 ${wo.clearance_status === 'cleared' ? 'bg-green-50' : wo.clearance_status === 'failed' ? 'bg-red-50' : 'bg-amber-50'}`}>
+          <div className="flex items-center gap-2 mb-1">
+            <ShieldCheck size={14} className={wo.clearance_status === 'cleared' ? 'text-green-600' : wo.clearance_status === 'failed' ? 'text-red-600' : 'text-amber-600'} />
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-700">Hygiene Clearance</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div><span className="text-xs text-gray-500">Status:</span> <span className="font-medium capitalize">{wo.clearance_status || 'pending'}</span></div>
+            {wo.clearance_method && <div><span className="text-xs text-gray-500">Method:</span> <span className="font-medium">{wo.clearance_method}</span></div>}
+            {wo.clearance_by && <div><span className="text-xs text-gray-500">By:</span> <span className="font-medium">{wo.clearance_by}</span></div>}
+            {wo.clearance_at && <div><span className="text-xs text-gray-500">At:</span> <span className="font-medium">{new Date(wo.clearance_at).toLocaleString()}</span></div>}
+            {wo.clearance_notes && <div className="col-span-2"><span className="text-xs text-gray-500">Notes:</span> <span>{wo.clearance_notes}</span></div>}
+          </div>
+        </div>
+      )}
+
+      {/* Notes */}
+      {wo.notes && (
+        <div>
+          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Notes</h5>
+          <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-3">{wo.notes}</p>
+        </div>
+      )}
+
+      {/* Issue Flags */}
+      {wo.issue_flagged === 1 && (
+        <div className="bg-red-50 rounded-lg border border-red-200 p-3">
+          <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> Issue Reported</p>
+          <p className="text-sm text-red-900">{wo.issue_notes}</p>
+          <p className="text-xs text-red-600 mt-1">
+            Flagged by {wo.issue_flagged_by} · {wo.issue_flagged_at ? new Date(wo.issue_flagged_at).toLocaleString() : ''}
+          </p>
+          {issueAttachments.length > 0 && (
+            <div className="mt-2 flex gap-2 flex-wrap">
+              {issueAttachments.map((a, i) => (
+                <a key={i} href={a.url} target="_blank" rel="noopener noreferrer">
+                  {/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(a.originalName || a.filename) ? (
+                    <img src={a.url} alt={a.originalName} className="h-16 w-16 object-cover rounded-lg border border-red-200 hover:ring-2 hover:ring-red-400" />
+                  ) : (
+                    <div className="h-16 w-16 rounded-lg border border-red-200 flex flex-col items-center justify-center bg-white hover:ring-2 hover:ring-red-400">
+                      <Paperclip size={14} className="text-red-400" />
+                      <span className="text-[9px] text-red-500 truncate w-14 text-center mt-0.5">{a.originalName || a.filename}</span>
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Attachments */}
+      {attachments.length > 0 && (
+        <div>
+          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <Paperclip size={12} /> Attachments ({attachments.length})
+          </h5>
+          <div className="flex gap-2 flex-wrap">
+            {attachments.map((a, i) => (
+              <a key={i} href={a.url} target="_blank" rel="noopener noreferrer">
+                {/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(a.originalName || a.filename) ? (
+                  <img src={a.url} alt={a.originalName} className="h-20 w-20 object-cover rounded-lg border border-gray-200 hover:ring-2 hover:ring-powder-400" />
+                ) : (
+                  <div className="h-20 w-20 rounded-lg border border-gray-200 flex flex-col items-center justify-center bg-gray-50 hover:ring-2 hover:ring-powder-400">
+                    <Paperclip size={16} className="text-gray-400" />
+                    <span className="text-[9px] text-gray-500 truncate w-16 text-center mt-1">{a.originalName || a.filename}</span>
+                  </div>
+                )}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -422,6 +644,7 @@ export default function PMPanel() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
+  const [expandedArchive, setExpandedArchive] = useState(null);
 
   const handleCreateWO = async (form) => {
     await apiPost('/pm/work-orders', form);
@@ -686,29 +909,53 @@ export default function PMPanel() {
               </div>
               {archiveData.items.map(wo => {
                 const isMissed = wo.status === 'missed';
+                const isNA = wo.status === 'not_applicable';
+                const isExpanded = expandedArchive === wo.id;
+
+                if (isExpanded) {
+                  return <CompletedTaskDetail key={wo.id} wo={wo} onClose={() => setExpandedArchive(null)} />;
+                }
+
                 return (
-                  <div key={wo.id} className={`rounded-xl border p-4 ${isMissed ? 'bg-gray-50 border-gray-300' : 'bg-white border-gray-200 opacity-80'}`}>
-                    <div className="flex items-center gap-2 mb-1">
-                      {isMissed ? (
-                        <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full text-xs font-semibold">MISSED</span>
-                      ) : (
-                        <CheckCircle size={14} className="text-green-600" />
-                      )}
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${FREQ_COLORS[wo.frequency_type] || FREQ_COLORS.unscheduled}`}>
-                        {wo.frequency_type || 'ad-hoc'}
-                      </span>
-                      {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : wo.task_group === 'cleaning' ? 'CLN' : 'WH'}</span>}
+                  <div key={wo.id}
+                    onClick={() => setExpandedArchive(wo.id)}
+                    className={`rounded-xl border p-4 cursor-pointer transition-all hover:shadow-md hover:border-powder-300 ${isMissed ? 'bg-gray-50 border-gray-300' : 'bg-white border-gray-200'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          {isMissed ? (
+                            <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full text-xs font-semibold">MISSED</span>
+                          ) : isNA ? (
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold">N/A</span>
+                          ) : (
+                            <CheckCircle size={14} className="text-green-600" />
+                          )}
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${FREQ_COLORS[wo.frequency_type] || FREQ_COLORS.unscheduled}`}>
+                            {wo.frequency_type || 'ad-hoc'}
+                          </span>
+                          {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{wo.task_group === 'qa' ? 'QA' : wo.task_group === 'cleaning' ? 'CLN' : 'WH'}</span>}
+                          {wo.issue_flagged === 1 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs font-semibold"><Flag size={10} /> Issue</span>}
+                          {wo.reading_result && (
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${wo.reading_result === 'pass' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {wo.reading_result.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className={`font-medium ${isMissed ? 'text-gray-600' : 'text-gray-800'}`}>{wo.title || wo.pm_title}</h4>
+                        <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location}</p>
+                        {isMissed ? (
+                          <p className="text-xs text-gray-500 mt-1">Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}</p>
+                        ) : (
+                          <p className="text-xs text-green-600 mt-1">
+                            Completed {new Date(wo.completed_at).toLocaleString()} by {wo.completed_by}
+                          </p>
+                        )}
+                        {wo.notes && <p className="text-xs text-gray-500 mt-1 truncate max-w-md">Notes: {wo.notes}</p>}
+                      </div>
+                      <div className="ml-2 shrink-0 text-gray-400 hover:text-powder-600">
+                        <Eye size={16} />
+                      </div>
                     </div>
-                    <h4 className={`font-medium ${isMissed ? 'text-gray-600' : 'text-gray-700'}`}>{wo.title || wo.pm_title}</h4>
-                    <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location}</p>
-                    {isMissed ? (
-                      <p className="text-xs text-gray-500 mt-1">Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}</p>
-                    ) : (
-                      <p className="text-xs text-green-600 mt-1">
-                        Completed {new Date(wo.completed_at).toLocaleString()} by {wo.completed_by}
-                      </p>
-                    )}
-                    {wo.notes && <p className="text-xs text-gray-500 mt-1">Notes: {wo.notes}</p>}
                   </div>
                 );
               })}
