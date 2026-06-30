@@ -507,6 +507,9 @@ function runMigrations() {
   addColumnIfMissing('work_orders', 'issue_attachments', "TEXT DEFAULT '[]'");
   addColumnIfMissing('work_orders', 'issue_flagged_by', 'TEXT');
   addColumnIfMissing('work_orders', 'issue_flagged_at', 'TEXT');
+  addColumnIfMissing('work_orders', 'readings', "TEXT DEFAULT '{}'");
+  addColumnIfMissing('work_orders', 'step_results', "TEXT DEFAULT '[]'");
+  addColumnIfMissing('work_orders', 'reading_result', 'TEXT');
 
   // CAPA extended fields matching Form 408-2
   addColumnIfMissing('capas', 'date_issued', 'TEXT');

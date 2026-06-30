@@ -1,8 +1,20 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square } from 'lucide-react';
 import FileUpload from '../FileUpload';
+
+function detectTaskType(task) {
+  const t = (task.title || '').toLowerCase();
+  const g = task.task_group || '';
+  if (t.includes('temp') && t.includes('humid')) return 'temp_humidity';
+  if (t.includes('chemical dilution')) return 'chemical_dilution';
+  if (t.includes('brittle') || (t.includes('glass') && t.includes('plastic'))) return 'glass_plastic';
+  if (t.includes('light') && (t.includes('inspection') || t.includes('fixture'))) return 'light_inspection';
+  if (t.includes('pre-op') || t.includes('changeover') || t.includes('production line')) return 'production_clean';
+  if (g === 'cleaning') return 'cleaning';
+  return 'equipment_pm';
+}
 
 const FREQ_COLORS = {
   daily: 'bg-blue-500',
@@ -37,23 +49,71 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, technicians, userNa
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
   const [notes, setNotes] = useState('');
+  const [readings, setReadings] = useState({});
+  const [stepChecks, setStepChecks] = useState([]);
   const [issueNotes, setIssueNotes] = useState('');
   const [issueAttachments, setIssueAttachments] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const steps = task.procedure_steps || [];
+  const taskType = detectTaskType(task);
   const issuePhotos = (() => { try { return JSON.parse(task.issue_attachments || '[]'); } catch { return []; } })();
   const today = new Date().toISOString().split('T')[0];
   const isOverdue = task.due_date < today;
   const isDueToday = task.due_date === today;
   const isCritical = task.priority === 'critical' || task.priority === 'high';
 
+  const updateReading = (key, val) => setReadings(prev => ({ ...prev, [key]: val }));
+  const toggleStep = (i) => setStepChecks(prev => {
+    const next = [...prev];
+    next[i] = !next[i];
+    return next;
+  });
+
+  const getReadingResult = () => {
+    if (taskType === 'temp_humidity') {
+      const h = parseFloat(readings.humidity);
+      if (isNaN(h)) return null;
+      return h <= 40 ? 'pass' : 'fail';
+    }
+    if (taskType === 'chemical_dilution') {
+      return readings.dilution_pass === 'yes' ? 'pass' : readings.dilution_pass === 'no' ? 'fail' : null;
+    }
+    if (taskType === 'light_inspection') {
+      return readings.light_pass === 'yes' ? 'pass' : readings.light_pass === 'no' ? 'fail' : null;
+    }
+    if (taskType === 'glass_plastic') {
+      return readings.condition === 'good' ? 'pass' : readings.condition ? 'fail' : null;
+    }
+    if (taskType === 'production_clean') {
+      return readings.visual_pass === 'yes' ? 'pass' : readings.visual_pass === 'no' ? 'fail' : null;
+    }
+    return null;
+  };
+
+  const canSubmit = () => {
+    if (taskType === 'temp_humidity') return readings.temperature && readings.humidity;
+    if (taskType === 'chemical_dilution') return readings.chemical_name && readings.ppm_reading && readings.dilution_pass;
+    if (taskType === 'light_inspection') return readings.foot_candles && readings.light_pass;
+    if (taskType === 'glass_plastic') return readings.items_inspected && readings.condition;
+    if (taskType === 'production_clean') return readings.visual_pass;
+    return true;
+  };
+
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      await onComplete(task.id, { _actor: userName || 'Operator', notes: notes || null });
+      await onComplete(task.id, {
+        _actor: userName || 'Operator',
+        notes: notes || null,
+        readings: Object.keys(readings).length > 0 ? readings : undefined,
+        step_results: stepChecks.length > 0 ? stepChecks : undefined,
+        reading_result: getReadingResult(),
+      });
       setCompleting(false);
       setNotes('');
+      setReadings({});
+      setStepChecks([]);
     } finally { setSaving(false); }
   };
 
@@ -216,11 +276,229 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, technicians, userNa
 
         {/* Inline completion */}
         {completing && (
-          <div className="mt-3 ml-14 bg-green-50 rounded-xl p-3 space-y-2 border border-green-200">
+          <div className="mt-3 ml-14 bg-green-50 rounded-xl p-3 space-y-3 border border-green-200">
+            {/* Type-specific fields */}
+            {taskType === 'temp_humidity' && (
+              <>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Thermometer size={12} /> Record Readings</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Temperature (°F) *</label>
+                    <input type="number" step="0.1" value={readings.temperature || ''} onChange={e => updateReading('temperature', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 68.5" autoFocus />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Humidity (%) *</label>
+                    <input type="number" step="0.1" value={readings.humidity || ''} onChange={e => updateReading('humidity', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 35.2" />
+                  </div>
+                </div>
+                {readings.humidity && parseFloat(readings.humidity) > 40 && (
+                  <div className="bg-red-100 border border-red-300 rounded-lg p-2 text-xs text-red-800 font-medium">
+                    Humidity exceeds 40% — notify manager and check dehumidifiers/A/C units.
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <button onClick={() => updateReading('rolling_doors_closed', !readings.rolling_doors_closed)}
+                    className="text-gray-500 hover:text-green-600">
+                    {readings.rolling_doors_closed ? <SquareCheck size={18} className="text-green-600" /> : <Square size={18} />}
+                  </button>
+                  <span className="text-sm text-gray-700">Rolling doors verified closed</span>
+                </div>
+                {readings.temperature && readings.humidity && (
+                  <div className={`rounded-lg p-2 text-xs font-bold text-center ${parseFloat(readings.humidity) <= 40 ? 'bg-green-200 text-green-900' : 'bg-red-200 text-red-900'}`}>
+                    {parseFloat(readings.humidity) <= 40 ? 'PASS — Within acceptable range' : 'FAIL — Humidity above 40% threshold'}
+                  </div>
+                )}
+              </>
+            )}
+
+            {taskType === 'chemical_dilution' && (
+              <>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><FlaskConical size={12} /> Chemical Verification</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Chemical *</label>
+                    <select value={readings.chemical_name || ''} onChange={e => updateReading('chemical_name', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus>
+                      <option value="">Select chemical</option>
+                      <option value="Sani-512">Sani-512 (200-250 ppm)</option>
+                      <option value="Chlorine">Chlorine (100-200 ppm)</option>
+                      <option value="Dawn">Dawn Dish Soap</option>
+                      <option value="Simple Green">Simple Green</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">PPM Reading *</label>
+                    <input type="number" value={readings.ppm_reading || ''} onChange={e => updateReading('ppm_reading', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 225" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Lot Number</label>
+                    <input type="text" value={readings.lot_number || ''} onChange={e => updateReading('lot_number', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Lot #" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Expiration Date</label>
+                    <input type="date" value={readings.expiration_date || ''} onChange={e => updateReading('expiration_date', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Within acceptable range? *</label>
+                  <div className="flex gap-2">
+                    <button onClick={() => updateReading('dilution_pass', 'yes')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.dilution_pass === 'yes' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      Pass
+                    </button>
+                    <button onClick={() => updateReading('dilution_pass', 'no')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.dilution_pass === 'no' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      Fail
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {taskType === 'glass_plastic' && (
+              <>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Brittle Plastic & Glass Inspection</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Items Inspected *</label>
+                    <input type="number" value={readings.items_inspected || ''} onChange={e => updateReading('items_inspected', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Total count" autoFocus />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Items Damaged</label>
+                    <input type="number" value={readings.items_damaged || ''} onChange={e => updateReading('items_damaged', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="0" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Overall Condition *</label>
+                  <div className="flex gap-2">
+                    <button onClick={() => updateReading('condition', 'good')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.condition === 'good' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      All Good
+                    </button>
+                    <button onClick={() => updateReading('condition', 'needs_attention')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.condition === 'needs_attention' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      Needs Attention
+                    </button>
+                    <button onClick={() => updateReading('condition', 'broken')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.condition === 'broken' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      Broken
+                    </button>
+                  </div>
+                </div>
+                {readings.condition && readings.condition !== 'good' && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-lg p-2 text-xs text-amber-800 font-medium">
+                    Document damaged/broken items in the notes below and notify your manager.
+                  </div>
+                )}
+              </>
+            )}
+
+            {taskType === 'light_inspection' && (
+              <>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Lightbulb size={12} /> Light Inspection</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Reading (foot-candles) *</label>
+                    <input type="number" value={readings.foot_candles || ''} onChange={e => updateReading('foot_candles', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 220" autoFocus />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Fixtures Checked</label>
+                    <input type="number" value={readings.fixtures_checked || ''} onChange={e => updateReading('fixtures_checked', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Count" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-500">Production: min 30 fc | Inspection/QC: 50-130 fc</p>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">All fixtures pass? *</label>
+                  <div className="flex gap-2">
+                    <button onClick={() => updateReading('light_pass', 'yes')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.light_pass === 'yes' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      Pass
+                    </button>
+                    <button onClick={() => updateReading('light_pass', 'no')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.light_pass === 'no' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      Fail
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {taskType === 'production_clean' && (
+              <>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Droplets size={12} /> Production Line Verification</h4>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => updateReading('allergen_check', !readings.allergen_check)} className="text-gray-500 hover:text-green-600">
+                    {readings.allergen_check ? <SquareCheck size={18} className="text-green-600" /> : <Square size={18} />}
+                  </button>
+                  <span className="text-sm text-gray-700">Allergen verification complete</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">ATP Reading (RLU)</label>
+                    <input type="number" value={readings.atp_reading || ''} onChange={e => updateReading('atp_reading', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 10" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Sanitizer Contact (min)</label>
+                    <input type="number" value={readings.contact_time || ''} onChange={e => updateReading('contact_time', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Minutes" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Visual inspection pass? *</label>
+                  <div className="flex gap-2">
+                    <button onClick={() => updateReading('visual_pass', 'yes')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.visual_pass === 'yes' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      Pass
+                    </button>
+                    <button onClick={() => updateReading('visual_pass', 'no')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.visual_pass === 'no' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      Fail
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Step-by-step checkoff for cleaning and equipment PM */}
+            {(taskType === 'cleaning' || taskType === 'equipment_pm') && steps.length > 0 && (
+              <>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Checklist</h4>
+                <div className="space-y-1">
+                  {steps.map((step, i) => (
+                    <button key={i} onClick={() => toggleStep(i)}
+                      className="w-full flex items-start gap-2 text-left py-1.5 px-1 rounded-lg hover:bg-green-100/50 transition-colors">
+                      {stepChecks[i] ? <SquareCheck size={18} className="text-green-600 shrink-0 mt-0.5" /> : <Square size={18} className="text-gray-400 shrink-0 mt-0.5" />}
+                      <span className={`text-sm leading-snug ${stepChecks[i] ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{step}</span>
+                    </button>
+                  ))}
+                </div>
+                {steps.length > 0 && (
+                  <p className="text-[10px] text-gray-500 text-center">{stepChecks.filter(Boolean).length} / {steps.length} steps complete</p>
+                )}
+              </>
+            )}
+
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
-              <textarea value={notes} onChange={e => setNotes(e.target.value)} autoFocus
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={2} placeholder="Any issues or observations..." />
+              <label className="block text-xs font-medium text-gray-600 mb-1">Notes {(taskType === 'cleaning' || taskType === 'equipment_pm') ? '(optional)' : ''}</label>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={2}
+                placeholder={taskType === 'temp_humidity' ? 'Corrective actions taken, dehumidifier status...' :
+                  taskType === 'glass_plastic' ? 'Describe damaged items, locations...' :
+                  taskType === 'chemical_dilution' ? 'Dilution adjustments made...' :
+                  'Any issues or observations...'} />
             </div>
             {technicians && technicians.length > 0 && !task.assigned_to && (
               <div>
@@ -233,11 +511,11 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, technicians, userNa
               </div>
             )}
             <div className="flex gap-2">
-              <button onClick={handleSubmit} disabled={saving}
+              <button onClick={handleSubmit} disabled={saving || !canSubmit()}
                 className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
                 {saving ? 'Saving...' : 'Mark Complete'}
               </button>
-              <button onClick={() => { setCompleting(false); setNotes(''); }}
+              <button onClick={() => { setCompleting(false); setNotes(''); setReadings({}); setStepChecks([]); }}
                 className="px-4 py-2.5 bg-white text-gray-600 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
                 Cancel
               </button>

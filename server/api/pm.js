@@ -269,7 +269,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   const existing = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Work order not found' });
 
-  const { notes, lubricant_used, lubricant_is_food_grade, _actor } = req.body;
+  const { notes, lubricant_used, lubricant_is_food_grade, readings, step_results, reading_result, _actor } = req.body;
   const completedAt = new Date().toISOString();
   const completedBy = _actor || 'system';
 
@@ -279,16 +279,18 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   db.prepare(`
     UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
     notes=?, lubricant_used=?, lubricant_is_food_grade=?,
+    readings=?, step_results=?, reading_result=?,
     clearance_required=?, clearance_status=?,
     chemical_id=?,
     updated_at=datetime('now') WHERE id=?
   `).run(completedAt, completedBy, notes || null, lubricant_used || null,
     lubricant_is_food_grade ? 1 : 0,
+    JSON.stringify(readings || {}), JSON.stringify(step_results || []), reading_result || null,
     needsClearance, needsClearance ? 'pending' : null,
     req.body.chemical_id || null,
     req.params.id);
 
-  logAudit(completedBy, 'complete', 'work_order', req.params.id, { notes }, null, null);
+  logAudit(completedBy, 'complete', 'work_order', req.params.id, { notes, readings, reading_result }, null, null);
   if (needsClearance) {
     logAudit('system', 'clearance_required', 'work_order', req.params.id, 'Food-contact equipment — hygiene clearance pending');
   }
@@ -488,8 +490,9 @@ router.get('/operator-tasks', (req, res) => {
 
   let sql = `SELECT wo.id, wo.title, wo.status, wo.priority, wo.due_date, wo.assigned_to,
     wo.procedure_steps, wo.pm_schedule_id, wo.task_group,
+    wo.issue_flagged, wo.issue_notes, wo.issue_attachments, wo.issue_flagged_by, wo.issue_flagged_at,
     e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id,
-    ps.frequency_type
+    ps.frequency_type, ps.title as schedule_title
     FROM work_orders wo
     JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
