@@ -224,9 +224,10 @@ router.get('/metrics', (req, res) => {
 
   const gf = group ? ' AND task_group = ?' : '';
   const gp = group ? [group] : [];
-  const total = db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ?' + gf).get(start, end, ...gp);
-  const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'completed'" + gf).get(start, end, ...gp);
+  const total = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status != 'not_applicable'" + gf).get(start, end, ...gp);
+  const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')" + gf).get(start, end, ...gp);
   const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, end, ...gp);
+  const naCount = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'not_applicable'" + gf).get(start, end, ...gp);
   const overdue = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')" + gf).get(end, ...gp);
   const open = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status IN ('open','in_progress')" + gf).get(...gp);
 
@@ -234,7 +235,7 @@ router.get('/metrics', (req, res) => {
 
   const byEquipment = db.prepare(`
     SELECT e.name, e.room, COUNT(*) as total,
-      SUM(CASE WHEN wo.status = 'completed' THEN 1 ELSE 0 END) as completed
+      SUM(CASE WHEN wo.status IN ('completed','not_applicable') THEN 1 ELSE 0 END) as completed
     FROM work_orders wo JOIN equipment e ON wo.equipment_id = e.id
     WHERE wo.due_date BETWEEN ? AND ?${group ? ' AND wo.task_group = ?' : ''}
     GROUP BY wo.equipment_id ORDER BY e.name
@@ -243,8 +244,9 @@ router.get('/metrics', (req, res) => {
   const monthlyTrend = db.prepare(`
     SELECT strftime('%Y-%m', due_date) as month,
       COUNT(*) as total,
-      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-      SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) as missed
+      SUM(CASE WHEN status IN ('completed','not_applicable') THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) as missed,
+      SUM(CASE WHEN status = 'not_applicable' THEN 1 ELSE 0 END) as not_applicable
     FROM work_orders${group ? ' WHERE task_group = ?' : ''} GROUP BY strftime('%Y-%m', due_date) ORDER BY month DESC LIMIT 12
   `).all(...gp);
 
@@ -253,6 +255,7 @@ router.get('/metrics', (req, res) => {
     total: total.count,
     completed: completed.count,
     missed: missed.count,
+    not_applicable: naCount.count,
     overdue: overdue.count,
     open: open.count,
     completion_rate: parseFloat(completionRate),
@@ -315,6 +318,44 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   }
 
   res.json({ completed: req.params.id, next_work_order: nextWO });
+});
+
+// --- Mark Work Order Not Applicable ---
+
+router.post('/work-orders/:id/not-applicable', (req, res) => {
+  const db = getDb();
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+
+  const { reason, _actor } = req.body;
+  const actor = _actor || 'system';
+
+  db.prepare(`
+    UPDATE work_orders SET status='not_applicable', completed_at=datetime('now'), completed_by=?,
+    notes=?, updated_at=datetime('now') WHERE id=?
+  `).run(actor, reason || 'Equipment not in use', req.params.id);
+
+  logAudit(actor, 'not_applicable', 'work_order', req.params.id, { reason: reason || 'Equipment not in use' });
+
+  let nextWO = null;
+  if (wo.pm_schedule_id) {
+    const sched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(wo.pm_schedule_id);
+    if (sched && sched.is_active) {
+      const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
+      const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
+      const raw = new Date();
+      raw.setDate(raw.getDate() + interval);
+      const nextDue = nextWeekday(raw);
+      const woId = uuid();
+      db.prepare(`
+        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+      `).run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
+      nextWO = { id: woId, title: sched.title, due_date: nextDue.toISOString().split('T')[0] };
+    }
+  }
+
+  res.json({ skipped: req.params.id, next_work_order: nextWO });
 });
 
 // --- Flag Issue on Work Order ---
@@ -413,7 +454,7 @@ router.get('/completed-history', (req, res) => {
   const { limit = 50, offset = 0, frequency, from, to, include_missed, group } = req.query;
   const showMissed = include_missed !== 'false';
 
-  const statusFilter = showMissed ? "wo.status IN ('completed','missed')" : "wo.status = 'completed'";
+  const statusFilter = showMissed ? "wo.status IN ('completed','missed','not_applicable')" : "wo.status IN ('completed','not_applicable')";
   const dateCol = 'COALESCE(wo.completed_at, wo.due_date)';
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,

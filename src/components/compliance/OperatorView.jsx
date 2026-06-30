@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, Ban } from 'lucide-react';
 import FileUpload from '../FileUpload';
 
 function detectTaskType(task) {
@@ -44,10 +44,11 @@ function formatDueLabel(dueDate) {
   return `Due ${dueDate}`;
 }
 
-function TaskCard({ task, onComplete, onFlagIssue, onAssign, onUpdateItems, technicians, userName, isAdmin }) {
+function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, userName, isAdmin }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
+  const [skippingNA, setSkippingNA] = useState(false);
   const [editingItems, setEditingItems] = useState(false);
   const [editItems, setEditItems] = useState([]);
   const [notes, setNotes] = useState('');
@@ -136,6 +137,16 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, onUpdateItems, tech
     } finally { setSaving(false); }
   };
 
+  const [naReason, setNaReason] = useState('');
+  const handleNASubmit = async () => {
+    setSaving(true);
+    try {
+      await onSkipNA(task.id, { _actor: userName || 'Operator', reason: naReason || 'Equipment not in use' });
+      setSkippingNA(false);
+      setNaReason('');
+    } finally { setSaving(false); }
+  };
+
   return (
     <div className={`bg-white rounded-2xl border-2 transition-all ${
       task.issue_flagged ? 'border-red-400 bg-red-50/30' :
@@ -149,21 +160,30 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, onUpdateItems, tech
         <div className="flex items-start gap-3">
           {/* Action buttons column */}
           <div className="shrink-0 flex flex-col gap-1.5 mt-0.5">
-            {!completing && !flagging ? (
+            {!completing && !flagging && !skippingNA ? (
               <>
-                <button onClick={() => { setCompleting(true); setFlagging(false); }}
+                <button onClick={() => { setCompleting(true); setFlagging(false); setSkippingNA(false); }}
                   className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-500 hover:bg-green-50 transition-all active:scale-90">
                   <CheckCircle size={22} />
                 </button>
-                <button onClick={() => { setFlagging(true); setCompleting(false); }}
+                <button onClick={() => { setFlagging(true); setCompleting(false); setSkippingNA(false); }}
                   className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-red-500 hover:text-red-500 hover:bg-red-50 transition-all active:scale-90"
                   title="Flag an issue">
                   <Flag size={18} />
+                </button>
+                <button onClick={() => { setSkippingNA(true); setCompleting(false); setFlagging(false); }}
+                  className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-amber-500 hover:text-amber-500 hover:bg-amber-50 transition-all active:scale-90"
+                  title="Not applicable / Not in use">
+                  <Ban size={18} />
                 </button>
               </>
             ) : completing ? (
               <div className="w-11 h-11 rounded-full bg-green-500 flex items-center justify-center">
                 <CheckCircle size={22} className="text-white" />
+              </div>
+            ) : skippingNA ? (
+              <div className="w-11 h-11 rounded-full bg-amber-500 flex items-center justify-center">
+                <Ban size={18} className="text-white" />
               </div>
             ) : (
               <div className="w-11 h-11 rounded-full bg-red-500 flex items-center justify-center">
@@ -210,7 +230,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, onUpdateItems, tech
           </div>
 
           {/* Expand chevron if steps exist */}
-          {steps.length > 0 && !completing && !flagging && (
+          {steps.length > 0 && !completing && !flagging && !skippingNA && (
             <button onClick={() => setExpanded(!expanded)}
               className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 mt-0.5">
               {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -276,6 +296,35 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, onUpdateItems, tech
                 {saving ? 'Saving...' : 'Flag Issue'}
               </button>
               <button onClick={() => { setFlagging(false); setIssueNotes(''); setIssueAttachments([]); }}
+                className="px-4 py-2.5 bg-white text-gray-600 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Inline N/A skip */}
+        {skippingNA && (
+          <div className="mt-3 ml-14 bg-amber-50 rounded-xl p-3 space-y-2 border border-amber-200">
+            <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1"><Ban size={11} /> Not Applicable / Not In Use</h4>
+            <p className="text-xs text-amber-700">This task will be skipped and will not count as missed. The next occurrence will still be generated on schedule.</p>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Reason (optional)</label>
+              <select value={naReason} onChange={e => setNaReason(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="">Equipment not in use</option>
+                <option value="Production schedule change">Production schedule change</option>
+                <option value="Equipment decommissioned">Equipment decommissioned</option>
+                <option value="Seasonal shutdown">Seasonal shutdown</option>
+                <option value="Duplicate task">Duplicate task</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleNASubmit} disabled={saving}
+                className="flex-1 py-2.5 bg-amber-600 text-white rounded-lg text-sm font-bold hover:bg-amber-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
+                {saving ? 'Saving...' : 'Skip — Not Applicable'}
+              </button>
+              <button onClick={() => { setSkippingNA(false); setNaReason(''); }}
                 className="px-4 py-2.5 bg-white text-gray-600 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
                 Cancel
               </button>
@@ -642,6 +691,11 @@ export default function OperatorView() {
     refresh();
   };
 
+  const handleSkipNA = async (woId, form) => {
+    await apiPost(`/pm/work-orders/${woId}/not-applicable`, form);
+    refresh();
+  };
+
   const handleAssign = async (woId, assignedTo) => {
     await apiPut(`/pm/work-orders/${woId}`, { assigned_to: assignedTo });
     refresh();
@@ -805,7 +859,7 @@ export default function OperatorView() {
           {overdue.length > 0 && (
             <SectionHeader icon={AlertTriangle} title="Overdue" count={overdue.length} color="bg-red-500" defaultOpen={true}>
               {overdue.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
               ))}
             </SectionHeader>
           )}
@@ -813,7 +867,7 @@ export default function OperatorView() {
           {today.length > 0 && (
             <SectionHeader icon={CircleDot} title="Due Today" count={today.length} color="bg-powder-600" defaultOpen={true}>
               {today.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
               ))}
             </SectionHeader>
           )}
@@ -821,7 +875,7 @@ export default function OperatorView() {
           {thisWeek.length > 0 && (
             <SectionHeader icon={CalendarDays} title="This Week" count={thisWeek.length} color="bg-gray-500" defaultOpen={overdue.length + today.length < 10}>
               {thisWeek.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
               ))}
             </SectionHeader>
           )}
@@ -829,7 +883,7 @@ export default function OperatorView() {
           {upcoming.length > 0 && (
             <SectionHeader icon={Clock} title="Upcoming" count={upcoming.length} color="bg-gray-400" defaultOpen={overdue.length + today.length + thisWeek.length < 5}>
               {upcoming.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
               ))}
             </SectionHeader>
           )}
