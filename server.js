@@ -696,3 +696,11 @@ app.get('/{*splat}', (_req, res) => {
 server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[server] FSQA Compliance Platform running on port ${PORT} (build ${BUILD_VERSION})`);
 });
+
+process.on('SIGTERM', () => {
+  console.log('[server] SIGTERM received — shutting down gracefully');
+  server.close(() => process.exit(0));
+});
+process.on('SIGINT', () => {
+  server.close(() => process.exit(0));
+});
