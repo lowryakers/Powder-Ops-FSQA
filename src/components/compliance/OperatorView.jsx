@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2 } from 'lucide-react';
 import FileUpload from '../FileUpload';
 
 function detectTaskType(task) {
@@ -44,10 +44,12 @@ function formatDueLabel(dueDate) {
   return `Due ${dueDate}`;
 }
 
-function TaskCard({ task, onComplete, onFlagIssue, onAssign, technicians, userName }) {
+function TaskCard({ task, onComplete, onFlagIssue, onAssign, onUpdateItems, technicians, userName, isAdmin }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
+  const [editingItems, setEditingItems] = useState(false);
+  const [editItems, setEditItems] = useState([]);
   const [notes, setNotes] = useState('');
   const [readings, setReadings] = useState({});
   const [stepChecks, setStepChecks] = useState([]);
@@ -386,9 +388,51 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, technicians, userNa
               };
               const checkedCount = Object.keys(itemConditions).length;
 
+              const startEditing = () => { setEditItems(bpgItems.map(i => ({ ...i }))); setEditingItems(true); };
+              const saveItems = async () => {
+                const newSteps = editItems.filter(i => i.name.trim()).map(i => `${i.name}|${i.qty}|${i.material}`);
+                await onUpdateItems(task.pm_schedule_id, newSteps);
+                setEditingItems(false);
+              };
+
               return hasParsedItems ? (
                 <>
-                  <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1 mb-1"><ClipboardCheck size={12} /> Form 431-02 — Item Inspection</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Form 431-02 — Item Inspection</h4>
+                    {isAdmin && !editingItems && (
+                      <button onClick={startEditing} className="text-[10px] text-gray-400 hover:text-powder-600 flex items-center gap-0.5">
+                        <Pencil size={10} /> Edit Items
+                      </button>
+                    )}
+                  </div>
+                  {editingItems ? (
+                    <div className="border border-powder-200 rounded-lg p-2 bg-powder-50/30 space-y-1.5">
+                      {editItems.map((item, i) => (
+                        <div key={i} className="grid grid-cols-[1fr_50px_70px_24px] gap-1 items-center">
+                          <input value={item.name} onChange={e => { const n = [...editItems]; n[i] = { ...n[i], name: e.target.value }; setEditItems(n); }}
+                            className="px-2 py-1 border border-gray-300 rounded text-sm" placeholder="Item name" />
+                          <input value={item.qty} onChange={e => { const n = [...editItems]; n[i] = { ...n[i], qty: e.target.value }; setEditItems(n); }}
+                            className="px-2 py-1 border border-gray-300 rounded text-sm text-center" placeholder="Qty" />
+                          <select value={item.material} onChange={e => { const n = [...editItems]; n[i] = { ...n[i], material: e.target.value }; setEditItems(n); }}
+                            className="px-1 py-1 border border-gray-300 rounded text-xs">
+                            <option value="Plastic">Plastic</option><option value="Glass">Glass</option>
+                          </select>
+                          <button onClick={() => setEditItems(editItems.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      <button onClick={() => setEditItems([...editItems, { name: '', qty: '1', material: 'Plastic' }])}
+                        className="w-full py-1.5 text-xs text-powder-600 hover:bg-powder-50 rounded border border-dashed border-powder-300 flex items-center justify-center gap-1">
+                        <Plus size={12} /> Add Item
+                      </button>
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={saveItems} className="flex-1 py-1.5 bg-powder-600 text-white rounded text-xs font-bold hover:bg-powder-700">Save Changes</button>
+                        <button onClick={() => setEditingItems(false)} className="px-3 py-1.5 bg-white text-gray-600 rounded text-xs border border-gray-200">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                  <>
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <div className="grid grid-cols-[1fr_40px_52px_auto] gap-0 bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 uppercase">
                       <span>Item</span><span>Qty</span><span>Type</span><span className="text-center">Condition</span>
@@ -416,6 +460,8 @@ function TaskCard({ task, onComplete, onFlagIssue, onAssign, technicians, userNa
                     <div className="bg-red-50 border border-red-300 rounded-lg p-2 text-xs text-red-800 font-medium">
                       Damaged/broken items detected — document details in notes below and notify your manager.
                     </div>
+                  )}
+                  </>
                   )}
                 </>
               ) : (
@@ -601,6 +647,11 @@ export default function OperatorView() {
     refresh();
   };
 
+  const handleUpdateItems = async (schedId, items) => {
+    await apiPut(`/pm/schedules/${schedId}/items`, { items, _actor: userName || 'Admin' });
+    refresh();
+  };
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return (tasks || []).filter(t => {
@@ -754,7 +805,7 @@ export default function OperatorView() {
           {overdue.length > 0 && (
             <SectionHeader icon={AlertTriangle} title="Overdue" count={overdue.length} color="bg-red-500" defaultOpen={true}>
               {overdue.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
               ))}
             </SectionHeader>
           )}
@@ -762,7 +813,7 @@ export default function OperatorView() {
           {today.length > 0 && (
             <SectionHeader icon={CircleDot} title="Due Today" count={today.length} color="bg-powder-600" defaultOpen={true}>
               {today.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
               ))}
             </SectionHeader>
           )}
@@ -770,7 +821,7 @@ export default function OperatorView() {
           {thisWeek.length > 0 && (
             <SectionHeader icon={CalendarDays} title="This Week" count={thisWeek.length} color="bg-gray-500" defaultOpen={overdue.length + today.length < 10}>
               {thisWeek.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
               ))}
             </SectionHeader>
           )}
@@ -778,7 +829,7 @@ export default function OperatorView() {
           {upcoming.length > 0 && (
             <SectionHeader icon={Clock} title="Upcoming" count={upcoming.length} color="bg-gray-400" defaultOpen={overdue.length + today.length + thisWeek.length < 5}>
               {upcoming.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} technicians={technicians || []} userName={userName} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
               ))}
             </SectionHeader>
           )}

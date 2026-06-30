@@ -185,7 +185,7 @@ router.put('/work-orders/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Work order not found' });
 
-  const { status, assigned_to, notes, lubricant_used, lubricant_is_food_grade, step_completions, priority } = req.body;
+  const { status, assigned_to, notes, lubricant_used, lubricant_is_food_grade, step_completions, priority, due_date } = req.body;
 
   const newStatus = status || existing.status;
   const completedAt = (newStatus === 'completed' && existing.status !== 'completed') ? new Date().toISOString() : existing.completed_at;
@@ -195,14 +195,14 @@ router.put('/work-orders/:id', (req, res) => {
   db.prepare(`
     UPDATE work_orders SET status=?, priority=?, assigned_to=?, started_at=?, completed_at=?,
     completed_by=?, notes=?, lubricant_used=?, lubricant_is_food_grade=?,
-    step_completions=?, updated_at=datetime('now') WHERE id=?
+    step_completions=?, due_date=?, updated_at=datetime('now') WHERE id=?
   `).run(
     newStatus, priority || existing.priority, assigned_to ?? existing.assigned_to,
     startedAt, completedAt, completedBy,
     notes ?? existing.notes, lubricant_used ?? existing.lubricant_used,
     lubricant_is_food_grade !== undefined ? (lubricant_is_food_grade ? 1 : 0) : existing.lubricant_is_food_grade,
     step_completions ? JSON.stringify(step_completions) : existing.step_completions,
-    req.params.id
+    due_date || existing.due_date, req.params.id
   );
 
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
@@ -509,6 +509,21 @@ router.get('/operator-tasks', (req, res) => {
 
   const rows = db.prepare(sql).all(...params);
   res.json(rows.map(r => ({ ...r, procedure_steps: JSON.parse(r.procedure_steps || '[]') })));
+});
+
+router.put('/schedules/:id/items', (req, res) => {
+  const db = getDb();
+  const sched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
+  if (!sched) return res.status(404).json({ error: 'PM schedule not found' });
+  const { items, _actor } = req.body;
+  if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'items array required' });
+  const stepsJson = JSON.stringify(items);
+  db.prepare('UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime(?) WHERE id = ?')
+    .run(stepsJson, new Date().toISOString(), req.params.id);
+  db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')")
+    .run(stepsJson, req.params.id);
+  logAudit(_actor || 'system', 'items_updated', 'pm_schedule', req.params.id, { item_count: items.length });
+  res.json(db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id));
 });
 
 export default router;
