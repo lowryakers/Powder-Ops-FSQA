@@ -195,7 +195,7 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   const scheds = db.prepare(`
     SELECT ps.id, ps.title, ps.frequency_type, e.name as eq_name, e.asset_id
     FROM pm_schedules ps JOIN equipment e ON ps.equipment_id = e.id
-    WHERE ps.task_group = 'warehouse'
+    WHERE ps.task_group IN ('warehouse', 'maintenance')
   `).all();
   const updatePM = db.prepare('UPDATE pm_schedules SET title = ? WHERE id = ?');
   const updateWO = db.prepare('UPDATE work_orders SET title = ? WHERE pm_schedule_id = ?');
@@ -213,6 +213,96 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
   });
   tx();
   if (fixed > 0) console.log(`[migrate] Fixed ${fixed} PM schedule/work order titles to match equipment names`);
+}
+
+// Separate "maintenance" group from "warehouse" — production equipment moves to maintenance
+{
+  const maintenanceTypes = ['Auger', 'Coder', 'Compressor', 'Conveyor', 'Dehumidifier', 'Dust Collector',
+    'Fan', 'Feeder', 'Filler', 'HEPA Filter', 'Hand Tool',
+    'Heat Tunnel', 'Hydraulic Lift', 'Mixer', 'Scissor Lift', 'Sealer',
+    'Shop Vac', 'Sifter', 'Tape Machine', 'Turn Table', 'X-Ray', 'A/C', 'Cooler'];
+  const ph = maintenanceTypes.map(() => '?').join(',');
+  const maintEqIds = db.prepare(`SELECT id FROM equipment WHERE type IN (${ph})`).all(...maintenanceTypes).map(e => e.id);
+  if (maintEqIds.length > 0) {
+    const eqPh = maintEqIds.map(() => '?').join(',');
+    const u1 = db.prepare(`UPDATE pm_schedules SET task_group = 'maintenance' WHERE task_group = 'warehouse' AND equipment_id IN (${eqPh})`).run(...maintEqIds);
+    const u2 = db.prepare(`UPDATE work_orders SET task_group = 'maintenance' WHERE task_group = 'warehouse' AND equipment_id IN (${eqPh})`).run(...maintEqIds);
+    if (u1.changes > 0) console.log(`[migrate] Moved ${u1.changes} PM schedules and ${u2.changes} work orders from 'warehouse' to 'maintenance'`);
+  }
+}
+
+// Update forklift daily inspection steps to structured G/B/X format
+{
+  const FORKLIFT_DAILY_STEPS = [
+    'Check the Safety light housing|check|KEY OFF Procedures',
+    'Overhead Light|check|KEY OFF Procedures',
+    'Overhead Fan|check|KEY OFF Procedures',
+    'Dash plastic|check|KEY OFF Procedures',
+    'Head lights (Glass)|check|KEY OFF Procedures',
+    'The vehicle inspection|check|KEY OFF Procedures',
+    'Overhead guard|check|KEY OFF Procedures',
+    'Hydraulic cylinders|check|KEY OFF Procedures',
+    'Mast assembly|check|KEY OFF Procedures',
+    'Lift chains and rollers|check|KEY OFF Procedures',
+    'Forks|check|KEY OFF Procedures',
+    'Tires|check|KEY OFF Procedures',
+    'Examine the battery (any fluids on top? Acid?)|check|KEY OFF Procedures',
+    'Water level (If added, how much?)|input|Fluid Checks',
+    'Check the hydraulic fluid level|check|Fluid Checks',
+    'Brake fluid level|check|Fluid Checks',
+    'Grease Bearings (If need, notify Maintenance)|check|Fluid Checks',
+    'KEY ON Procedures|check|KEY ON Procedures',
+    'Check the gauges|check|KEY ON Procedures',
+    'Hour meter (write the hours)|input|KEY ON Procedures',
+    'Battery Level|check|KEY ON Procedures',
+    'Test the standard equipment|check|KEY ON Procedures',
+    'Steering|check|KEY ON Procedures',
+    'Brakes|check|KEY ON Procedures',
+    'Horn|check|KEY ON Procedures',
+    'Safety seat (if equipped)|check|KEY ON Procedures',
+  ];
+
+  const PALLET_JACK_DAILY_STEPS = [
+    'Forks condition (cracks, bends)|check|Visual Inspection',
+    'Wheels and rollers|check|Visual Inspection',
+    'Handle grip and controls|check|Visual Inspection',
+    'Hydraulic jack/pump|check|Visual Inspection',
+    'Lowering mechanism|check|Functional Check',
+    'Lifting mechanism|check|Functional Check',
+    'Steering operation|check|Functional Check',
+    'Battery charge level (if electric)|check|Functional Check',
+    'Charger and cord condition (if electric)|check|Functional Check',
+    'Leaks (hydraulic fluid)|check|Functional Check',
+    'Horn/alert (if equipped)|check|Functional Check',
+    'Overall cleanliness|check|General',
+  ];
+
+  const CHARGER_DAILY_STEPS = [
+    'Power cord condition|check|Inspection',
+    'Connector/plug condition|check|Inspection',
+    'Indicator lights functioning|check|Inspection',
+    'Ventilation clear and unobstructed|check|Inspection',
+    'No unusual smell or heat|check|Inspection',
+    'Area around charger clean and dry|check|Inspection',
+  ];
+
+  const forkliftEq = db.prepare("SELECT id, name, type FROM equipment WHERE type IN ('Forklift', 'Forklift Charger', 'Pallet Jack')").all();
+  let updatedCount = 0;
+  for (const eq of forkliftEq) {
+    let dailySteps;
+    if (eq.type === 'Forklift') dailySteps = FORKLIFT_DAILY_STEPS;
+    else if (eq.type === 'Pallet Jack') dailySteps = PALLET_JACK_DAILY_STEPS;
+    else dailySteps = CHARGER_DAILY_STEPS;
+
+    const stepsJson = JSON.stringify(dailySteps);
+    const dailyScheds = db.prepare("SELECT id FROM pm_schedules WHERE equipment_id = ? AND frequency_type = 'daily'").all(eq.id);
+    for (const s of dailyScheds) {
+      db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?").run(stepsJson, s.id);
+      db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress')").run(stepsJson, s.id);
+      updatedCount++;
+    }
+  }
+  if (updatedCount > 0) console.log(`[migrate] Updated ${updatedCount} forklift/pallet jack daily PM schedules with G/B/X inspection format`);
 }
 
 // Auto-seed calibration instruments (V2: Scale Number Log with 21 instruments)

@@ -11,6 +11,7 @@ function detectTaskType(task) {
   if (t.includes('chemical dilution')) return 'chemical_dilution';
   if (t.includes('brittle') || (t.includes('glass') && t.includes('plastic'))) return 'glass_plastic';
   if (t.includes('light') && (t.includes('inspection') || t.includes('fixture'))) return 'light_inspection';
+  if (t.includes('forklift') || t.includes('pallet jack') || t.includes('pallet jake')) return 'forklift_inspection';
   if (t.includes('pre-op') || t.includes('changeover') || t.includes('production line')) return 'production_clean';
   if (g === 'cleaning') return 'cleaning';
   return 'equipment_pm';
@@ -88,6 +89,12 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
     if (taskType === 'glass_plastic') {
       return readings.condition === 'good' ? 'pass' : readings.condition ? 'fail' : null;
     }
+    if (taskType === 'forklift_inspection') {
+      const ic = readings.item_conditions || {};
+      if (Object.keys(ic).length === 0) return null;
+      const anyBad = Object.values(ic).some(v => v === 'bad' || v === 'broken');
+      return anyBad ? 'fail' : 'pass';
+    }
     if (taskType === 'production_clean') {
       return readings.visual_pass === 'yes' ? 'pass' : readings.visual_pass === 'no' ? 'fail' : null;
     }
@@ -103,6 +110,14 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
       if (bpgItems.length > 0 && bpgItems[0] !== 'N/A|N/A|N/A') {
         const ic = readings.item_conditions || {};
         return Object.keys(ic).length === bpgItems.length;
+      }
+      return true;
+    }
+    if (taskType === 'forklift_inspection') {
+      const forkItems = steps.filter(s => s.includes('|'));
+      if (forkItems.length > 0) {
+        const ic = readings.item_conditions || {};
+        return Object.keys(ic).length === forkItems.length;
       }
       return true;
     }
@@ -521,6 +536,80 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
               );
             })()}
 
+            {taskType === 'forklift_inspection' && (() => {
+              const forkItems = steps.filter(s => s.includes('|')).map(s => {
+                const parts = s.split('|');
+                return { name: parts[0].trim(), type: (parts[1] || 'check').trim(), section: (parts[2] || '').trim() };
+              });
+              const hasParsedItems = forkItems.length > 0;
+              const itemConditions = readings.item_conditions || {};
+              const setItemCondition = (idx, val) => {
+                const next = { ...itemConditions, [idx]: val };
+                updateReading('item_conditions', next);
+              };
+              const checkedCount = Object.keys(itemConditions).length;
+              let currentSection = '';
+
+              return hasParsedItems ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-indigo-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Daily Inspection Checklist</h4>
+                  </div>
+                  {readings.hour_meter !== undefined && (
+                    <div className="bg-indigo-50 rounded-lg px-3 py-2 text-sm">
+                      <span className="text-xs text-gray-500">Hour Meter: </span>
+                      <span className="font-semibold text-indigo-800">{readings.hour_meter}</span>
+                    </div>
+                  )}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-[1fr_auto] gap-0 bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 uppercase">
+                      <span>Inspection Item</span><span className="text-center">Condition</span>
+                    </div>
+                    <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                      {forkItems.map((item, i) => {
+                        const showSection = item.section && item.section !== currentSection;
+                        if (showSection) currentSection = item.section;
+                        return (
+                          <div key={i}>
+                            {showSection && (
+                              <div className="bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700 uppercase tracking-wide">{item.section}</div>
+                            )}
+                            <div className={`grid grid-cols-[1fr_auto] gap-0 px-2 py-1.5 items-center ${itemConditions[i] === 'bad' ? 'bg-amber-50' : itemConditions[i] === 'broken' ? 'bg-red-50' : itemConditions[i] === 'good' ? 'bg-green-50/30' : ''}`}>
+                              <span className="text-sm text-gray-800">{item.name}</span>
+                              <div className="flex gap-0.5">
+                                {item.type === 'input' ? (
+                                  <input type="text" placeholder={item.name.includes('Hour') ? 'Hours' : item.name.includes('Water') ? 'Full / Need' : 'Value'}
+                                    value={readings['input_' + i] || ''}
+                                    onChange={e => { updateReading('input_' + i, e.target.value); setItemCondition(i, e.target.value ? 'good' : undefined); }}
+                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-xs"
+                                  />
+                                ) : (
+                                  <>
+                                    <button onClick={() => setItemCondition(i, 'good')}
+                                      className={`px-1.5 py-1 rounded text-[10px] font-bold transition-all ${itemConditions[i] === 'good' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-green-100'}`}>G</button>
+                                    <button onClick={() => setItemCondition(i, 'bad')}
+                                      className={`px-1.5 py-1 rounded text-[10px] font-bold transition-all ${itemConditions[i] === 'bad' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-amber-100'}`}>B</button>
+                                    <button onClick={() => setItemCondition(i, 'broken')}
+                                      className={`px-1.5 py-1 rounded text-[10px] font-bold transition-all ${itemConditions[i] === 'broken' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-red-100'}`}>X</button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-500 text-center">{checkedCount} / {forkItems.length} items inspected — G = Good, B = Bad/Poor, X = Broken/Unsafe</p>
+                  {Object.values(itemConditions).some(v => v === 'bad' || v === 'broken') && (
+                    <div className="bg-red-50 border border-red-300 rounded-lg p-2 text-xs text-red-800 font-medium">
+                      Issue detected — document details in notes below. Do NOT operate equipment until cleared.
+                    </div>
+                  )}
+                </>
+              ) : null;
+            })()}
+
             {taskType === 'light_inspection' && (
               <>
                 <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Lightbulb size={12} /> Light Inspection</h4>
@@ -665,6 +754,7 @@ function SectionHeader({ icon: Icon, title, count, color, defaultOpen = true, ch
 
 const DEPT_OPTIONS = [
   { id: 'all', label: 'All Teams' },
+  { id: 'maintenance', label: 'Maintenance' },
   { id: 'warehouse', label: 'Warehouse' },
   { id: 'qa', label: 'QA' },
   { id: 'cleaning', label: 'Cleaning' },
