@@ -53,7 +53,7 @@ router.get('/templates/:id', (req, res) => {
   const db = getDb();
   const tmpl = db.prepare('SELECT * FROM checklist_templates WHERE id = ?').get(req.params.id);
   if (!tmpl) return res.status(404).json({ error: 'Template not found' });
-  res.json({ ...tmpl, items: JSON.parse(tmpl.items || '[]') });
+  try { res.json({ ...tmpl, items: JSON.parse(tmpl.items || '[]') }); } catch { res.json({ ...tmpl, items: [] }); }
 });
 
 router.post('/templates', (req, res) => {
@@ -125,7 +125,7 @@ router.get('/due', (req, res) => {
 
   sql += ' ORDER BY ci.due_date ASC, ct.type, ct.name';
   const rows = db.prepare(sql).all(...params);
-  res.json(rows.map(r => ({ ...r, items: JSON.parse(r.items || '[]') })));
+  res.json(rows.map(r => { try { return { ...r, items: JSON.parse(r.items || '[]') }; } catch { return { ...r, items: [] }; } }));
 });
 
 router.get('/history', (req, res) => {

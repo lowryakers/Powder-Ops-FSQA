@@ -22,7 +22,7 @@ router.get('/procedures/:id', (req, res) => {
   const proc = db.prepare(`SELECT lp.*, e.name as equipment_name, e.room
     FROM loto_procedures lp JOIN equipment e ON lp.equipment_id = e.id WHERE lp.id = ?`).get(req.params.id);
   if (!proc) return res.status(404).json({ error: 'LOTO procedure not found' });
-  res.json({ ...proc, energy_sources: JSON.parse(proc.energy_sources || '[]'), steps: JSON.parse(proc.steps || '[]') });
+  try { res.json({ ...proc, energy_sources: JSON.parse(proc.energy_sources || '[]'), steps: JSON.parse(proc.steps || '[]') }); } catch { res.json({ ...proc, energy_sources: [], steps: [] }); }
 });
 
 router.post('/procedures', (req, res) => {

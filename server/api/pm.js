@@ -4,6 +4,10 @@ import { getDb, logAudit } from '../db.js';
 
 const router = Router();
 
+function safeParse(val, fallback = []) {
+  try { return JSON.parse(val || JSON.stringify(fallback)); } catch { return fallback; }
+}
+
 function nextWeekday(date) {
   const d = new Date(date);
   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
@@ -74,7 +78,7 @@ router.get('/schedules/:id', (req, res) => {
     'SELECT id, status, due_date, completed_at, completed_by FROM work_orders WHERE pm_schedule_id = ? ORDER BY due_date DESC LIMIT 10'
   ).all(req.params.id);
 
-  res.json({ ...sched, procedure_steps: JSON.parse(sched.procedure_steps || '[]'), recent_work_orders: recentWOs });
+  res.json({ ...sched, procedure_steps: safeParse(sched.procedure_steps), recent_work_orders: recentWOs });
 });
 
 router.post('/schedules', (req, res) => {
@@ -157,7 +161,7 @@ router.get('/work-orders/:id', (req, res) => {
     "SELECT * FROM audit_log WHERE entity_type = 'work_order' AND entity_id = ? ORDER BY timestamp ASC"
   ).all(req.params.id);
 
-  res.json({ ...wo, procedure_steps: JSON.parse(wo.procedure_steps || '[]'), step_completions: JSON.parse(wo.step_completions || '[]'), history });
+  res.json({ ...wo, procedure_steps: safeParse(wo.procedure_steps), step_completions: safeParse(wo.step_completions), history });
 });
 
 router.post('/work-orders', (req, res) => {
@@ -440,7 +444,7 @@ router.get('/by-frequency', (req, res) => {
   for (const r of rows) {
     const freq = r.frequency_type || 'unscheduled';
     if (!grouped[freq]) grouped[freq] = [];
-    grouped[freq].push({ ...r, procedure_steps: JSON.parse(r.pm_steps || r.procedure_steps || '[]') });
+    grouped[freq].push({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) });
   }
 
   res.json(grouped);
@@ -549,7 +553,7 @@ router.get('/operator-tasks', (req, res) => {
     wo.due_date ASC`;
 
   const rows = db.prepare(sql).all(...params);
-  res.json(rows.map(r => ({ ...r, procedure_steps: JSON.parse(r.procedure_steps || '[]') })));
+  res.json(rows.map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
 });
 
 router.put('/schedules/:id/items', (req, res) => {
@@ -559,8 +563,8 @@ router.put('/schedules/:id/items', (req, res) => {
   const { items, _actor } = req.body;
   if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'items array required' });
   const stepsJson = JSON.stringify(items);
-  db.prepare('UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime(?) WHERE id = ?')
-    .run(stepsJson, new Date().toISOString(), req.params.id);
+  db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(stepsJson, req.params.id);
   db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')")
     .run(stepsJson, req.params.id);
   logAudit(_actor || 'system', 'items_updated', 'pm_schedule', req.params.id, { item_count: items.length });

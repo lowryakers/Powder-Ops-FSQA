@@ -530,11 +530,12 @@ function runMigrations() {
 
   // Widen users.role CHECK constraint to include 'auditor'
   try {
-    db.exec('DROP TABLE IF EXISTS users_new');
     const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
     if (tableInfo && tableInfo.sql && !tableInfo.sql.includes("'auditor'")) {
       const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
       const colList = cols.join(', ');
+      db.pragma('foreign_keys = OFF');
+      db.exec('DROP TABLE IF EXISTS users_new');
       db.exec(`
         CREATE TABLE users_new (
           id TEXT PRIMARY KEY,
@@ -555,10 +556,13 @@ function runMigrations() {
         INSERT INTO users_new (${colList}) SELECT ${colList} FROM users;
         DROP TABLE users;
         ALTER TABLE users_new RENAME TO users;
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
       `);
+      db.pragma('foreign_keys = ON');
       console.log('[migrate] Widened users.role CHECK to include auditor');
     }
   } catch (e) {
+    db.pragma('foreign_keys = ON');
     console.warn('[migrate] Could not migrate users table for auditor role:', e.message);
   }
 

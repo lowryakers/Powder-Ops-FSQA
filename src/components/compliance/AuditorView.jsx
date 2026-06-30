@@ -50,7 +50,7 @@ function PMSection({ dateRange }) {
       { label: 'Food Grade Lubricant', value: r => r.lubricant_is_food_grade ? 'Yes' : '' },
       { label: 'Issue Flagged', value: r => r.issue_flagged ? 'Yes' : 'No' },
       { label: 'Issue Notes', value: r => r.issue_notes || '' },
-    ], history.items);
+    ], history?.items || []);
   };
 
   return (
@@ -94,7 +94,7 @@ function PMSection({ dateRange }) {
               </tr>
             </thead>
             <tbody>
-              {history.items.slice(0, 100).map(wo => (
+              {(history?.items || []).slice(0, 100).map(wo => (
                 <tr key={wo.id} className="border-b border-gray-100">
                   <td className="py-1.5 px-2">
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${wo.status === 'completed' ? 'bg-green-100 text-green-800' : wo.status === 'missed' ? 'bg-gray-200 text-gray-700' : 'bg-yellow-100 text-yellow-800'}`}>
@@ -110,7 +110,7 @@ function PMSection({ dateRange }) {
               ))}
             </tbody>
           </table>
-          {history.items.length > 100 && <p className="text-xs text-gray-400 mt-2">Showing 100 of {history.items.length}. Export CSV for full data.</p>}
+          {history?.items?.length > 100 && <p className="text-xs text-gray-400 mt-2">Showing 100 of {history.items.length}. Export CSV for full data.</p>}
         </div>
       )}
     </div>

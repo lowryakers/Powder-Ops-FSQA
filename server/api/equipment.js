@@ -7,7 +7,8 @@ const router = Router();
 function syncMaintenanceTasksToPM(db, equipmentId) {
   const eq = db.prepare('SELECT maintenance_tasks FROM equipment WHERE id = ?').get(equipmentId);
   if (!eq) return;
-  const tasks = JSON.parse(eq.maintenance_tasks || '{}');
+  let tasks;
+  try { tasks = JSON.parse(eq.maintenance_tasks || '{}'); } catch { tasks = {}; }
   const flatSteps = [];
   const freqOrder = ['Daily', 'Bi-weekly', 'Weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Annual', 'As Needed'];
   for (const freq of freqOrder) {
