@@ -34,7 +34,7 @@ const PORT = process.env.PORT || 3000;
 // Build version: git commit hash or build timestamp
 let BUILD_VERSION;
 try {
-  BUILD_VERSION = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+  BUILD_VERSION = execSync('git rev-parse --short HEAD', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 } catch {
   BUILD_VERSION = Date.now().toString(36);
 }

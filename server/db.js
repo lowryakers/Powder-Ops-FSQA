@@ -530,6 +530,7 @@ function runMigrations() {
 
   // Widen users.role CHECK constraint to include 'auditor'
   try {
+    db.exec('DROP TABLE IF EXISTS users_new');
     const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
     if (tableInfo && tableInfo.sql && !tableInfo.sql.includes("'auditor'")) {
       const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
