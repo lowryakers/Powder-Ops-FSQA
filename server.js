@@ -523,7 +523,7 @@ try {
   if (hasFSP === 0) {
     try {
       db.prepare(`INSERT INTO sop_documents (id, doc_number, title, category, revision, effective_date, review_due, owner, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(uuid(), 'POLICY 002', 'Food Safety Policy Statement', 'safety', 'V2', '2025-11-05', '2026-11-05', 'Danny Augustyn',
+        .run(uuid(), 'POLICY 002', 'Food Safety Policy Statement', 'safety', 'V2', '2025-11-05', '2026-11-05', 'Daniela Servin',
           `At Powder Ops, we are committed to producing safe, high-quality food products that meet or exceed customer expectations and comply with all applicable regulatory and statutory requirements. As part of our dedication to continuous improvement and food safety excellence, we have implemented a robust Food Safety Management System based on the SQF Food Safety Code.
 
 We pledge to:
@@ -538,7 +538,7 @@ We pledge to:
 This policy is communicated to all employees, stakeholders, and visitors, and is prominently displayed throughout our facility. It reflects our unwavering commitment to food safety and quality at every level of our organization.
 
 Signed,
-Danny Augustyn
+Daniela Servin
 CEO
 11/05/2025`);
       console.log('[seed] Created SOP: POLICY 002 — Food Safety Policy Statement');

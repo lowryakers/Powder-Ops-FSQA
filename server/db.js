@@ -400,6 +400,19 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_sop_category ON sop_documents(category);
     CREATE INDEX IF NOT EXISTS idx_sop_status ON sop_documents(status);
 
+    CREATE TABLE IF NOT EXISTS sop_versions (
+      id TEXT PRIMARY KEY,
+      sop_id TEXT NOT NULL,
+      revision TEXT NOT NULL,
+      changed_by TEXT,
+      change_summary TEXT,
+      snapshot TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (sop_id) REFERENCES sop_documents(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sop_versions_sop ON sop_versions(sop_id);
+
     -- Training Records
     CREATE TABLE IF NOT EXISTS training_records (
       id TEXT PRIMARY KEY,
