@@ -258,6 +258,7 @@ export default function LOTOPanel() {
   const { data: procedures, loading, refresh: refreshProcs } = useApiGet('/loto/procedures');
   const { data: executions, refresh: refreshExecs } = useApiGet('/loto/executions');
   const { data: equipment } = useApiGet('/equipment');
+  const { data: uncovered, refresh: refreshUncovered } = useApiGet('/loto/uncovered-equipment');
   const [showForm, setShowForm] = useState(false);
   const [executing, setExecuting] = useState(null);
   const [tab, setTab] = useState('procedures');
@@ -267,6 +268,7 @@ export default function LOTOPanel() {
     await apiPost('/loto/procedures', form);
     setShowForm(false);
     refreshProcs();
+    refreshUncovered();
   };
 
   const handleExecute = async (formOrProc, isSubmit) => {
@@ -343,6 +345,31 @@ export default function LOTOPanel() {
                     </button>
                   )}
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Uncovered Equipment Banner */}
+      {(uncovered || []).length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle size={18} className="text-amber-600" />
+            <h3 className="font-semibold text-amber-800">{uncovered.length} Equipment Without LOTO Procedure</h3>
+          </div>
+          <p className="text-sm text-amber-700 mb-3">The following active equipment has no lockout/tagout procedure on file. Create one to pass the audit readiness check.</p>
+          <div className="space-y-1.5">
+            {uncovered.map(eq => (
+              <div key={eq.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-amber-100">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{eq.name}</p>
+                  <p className="text-xs text-gray-500">{eq.room || eq.location || 'No location'}{eq.asset_id ? ` · ${eq.asset_id}` : ''}</p>
+                </div>
+                <button onClick={() => { setShowForm(true); }}
+                  className="px-2.5 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-xs font-medium hover:bg-amber-200 flex items-center gap-1">
+                  <Plus size={12} /> Add Procedure
+                </button>
               </div>
             ))}
           </div>

@@ -556,12 +556,19 @@ function ClearanceCard({ wo, onClear, user }) {
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState('cleared');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const isQA = user?.department === 'qa';
+  const isSamePerson = user?.name === wo.completed_by;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     setSaving(true);
     try {
       await onClear({ clearance_status: status, clearance_method: method, clearance_notes: notes });
+    } catch (err) {
+      setError(err.message || 'Clearance failed');
     } finally {
       setSaving(false);
     }
@@ -575,6 +582,7 @@ function ClearanceCard({ wo, onClear, user }) {
             <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold">
               <ShieldCheck size={12} /> Food-Contact Equipment
             </span>
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">Assigned to: QA</span>
           </div>
           <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
@@ -584,6 +592,23 @@ function ClearanceCard({ wo, onClear, user }) {
         </div>
       </div>
 
+      {!isQA ? (
+        <div className="bg-blue-50 rounded-lg border border-blue-200 p-3 flex items-start gap-2">
+          <ShieldCheck size={16} className="text-blue-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-blue-800">QA Sign-Off Required</p>
+            <p className="text-xs text-blue-600 mt-0.5">Only QA department users can perform hygiene clearance. Please have a QA technician sign in to complete this step.</p>
+          </div>
+        </div>
+      ) : isSamePerson ? (
+        <div className="bg-red-50 rounded-lg border border-red-200 p-3 flex items-start gap-2">
+          <AlertTriangle size={16} className="text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-red-800">Cannot Self-Clear</p>
+            <p className="text-xs text-red-600 mt-0.5">Clearance must be performed by someone other than the person who completed the work order.</p>
+          </div>
+        </div>
+      ) : (
       <form onSubmit={handleSubmit} className="bg-amber-50 rounded-lg border border-amber-200 p-3 space-y-2">
         <h5 className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Hygiene Sign-Off</h5>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -614,6 +639,7 @@ function ClearanceCard({ wo, onClear, user }) {
             className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" rows={2}
             placeholder="Observations, test results, follow-up actions..." />
         </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
         <div className="flex gap-2">
           <button type="submit" disabled={saving}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 ${status === 'cleared' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-red-600 text-white hover:bg-red-700'}`}>
@@ -621,6 +647,7 @@ function ClearanceCard({ wo, onClear, user }) {
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }
@@ -991,7 +1018,7 @@ export default function PMPanel() {
             <div className="text-center py-8 text-gray-400">No work orders pending clearance</div>
           ) : (clearancePending || []).map(wo => (
             <ClearanceCard key={wo.id} wo={wo} onClear={async (form) => {
-              await apiPut(`/pm/work-orders/${wo.id}/clearance`, { ...form, _actor: user?.name });
+              await apiPut(`/pm/work-orders/${wo.id}/clearance`, { ...form, _actor: user?.name, _actor_department: user?.department });
               refreshClearance();
               refreshTasks();
             }} user={user} />

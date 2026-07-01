@@ -146,4 +146,16 @@ router.put('/executions/:id/release', (req, res) => {
   res.json(updated);
 });
 
+router.get('/uncovered-equipment', (_req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT e.id, e.name, e.room, e.location, e.asset_id
+    FROM equipment e
+    WHERE e.status = 'active'
+      AND e.id NOT IN (SELECT equipment_id FROM loto_procedures)
+    ORDER BY e.name
+  `).all();
+  res.json(rows);
+});
+
 export default router;

@@ -444,9 +444,16 @@ router.put('/work-orders/:id/clearance', (req, res) => {
   if (!wo) return res.status(404).json({ error: 'Work order not found' });
   if (!wo.clearance_required) return res.status(400).json({ error: 'This work order does not require clearance' });
 
-  const { status, cleared_by, notes, method, _actor } = req.body;
+  const { status, cleared_by, notes, method, _actor, _actor_department } = req.body;
   if (!status || !cleared_by) return res.status(400).json({ error: 'status and cleared_by required' });
   if (!['cleared', 'failed'].includes(status)) return res.status(400).json({ error: 'status must be "cleared" or "failed"' });
+
+  if (_actor_department && _actor_department !== 'qa') {
+    return res.status(403).json({ error: 'Only QA department users can perform hygiene clearance' });
+  }
+  if (cleared_by === wo.completed_by) {
+    return res.status(403).json({ error: 'Clearance must be performed by someone other than the person who completed the work' });
+  }
 
   db.prepare(`
     UPDATE work_orders SET clearance_status=?, clearance_by=?, clearance_at=datetime('now'),
