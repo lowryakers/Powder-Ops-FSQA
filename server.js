@@ -47,25 +47,7 @@ process.on('unhandledRejection', (err) => {
   console.error('[FATAL] Unhandled rejection:', err);
 });
 
-// Graceful shutdown: let in-flight requests finish before exiting
 let server;
-function gracefulShutdown(signal) {
-  console.log(`[server] ${signal} received — draining connections...`);
-  if (server) {
-    server.close(() => {
-      console.log('[server] All connections drained. Exiting.');
-      process.exit(0);
-    });
-    setTimeout(() => {
-      console.warn('[server] Forced exit after 10s drain timeout');
-      process.exit(1);
-    }, 10000);
-  } else {
-    process.exit(0);
-  }
-}
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 app.use(compression());
 app.use(cors());
@@ -146,6 +128,9 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
     console.warn('[seed] Could not seed PM schedules:', e.message);
   }
 }
+
+// Data migrations — wrapped in try/catch to prevent startup crashes on existing DBs
+try {
 
 // Remove old generic QA seed data (qa-seed-data.json) if it exists in the DB
 {
@@ -303,6 +288,10 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
     }
   }
   if (updatedCount > 0) console.log(`[migrate] Updated ${updatedCount} forklift/pallet jack daily PM schedules with G/B/X inspection format`);
+}
+
+} catch (migrationErr) {
+  console.error('[migrate] Non-fatal migration error:', migrationErr.message);
 }
 
 // Auto-seed calibration instruments (V2: Scale Number Log with 21 instruments)
