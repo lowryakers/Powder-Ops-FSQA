@@ -92,7 +92,7 @@ router.post('/login', (req, res) => {
   const { email, pin } = req.body;
   if (!email || !pin) return res.status(400).json({ error: 'email and pin are required' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email);
+  const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND is_active = 1').get(email);
   if (!user || user.pin !== pin) return res.status(401).json({ error: 'Invalid credentials' });
 
   const token = crypto.randomBytes(32).toString('hex');
