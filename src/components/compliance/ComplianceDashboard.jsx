@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { useApiGet } from '../../hooks/useApi';
-import { Shield, Wrench, Thermometer, Droplets, AlertTriangle, CheckCircle, Clock, FlaskConical, Lock, Flag, FileText, ScrollText, Download } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, AlertTriangle, CheckCircle, Clock, FlaskConical, Lock, Flag, FileText, ScrollText, Download, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, LineChart, Line } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
 
-function ReadinessItem({ label, status, detail }) {
+const goTo = (tab) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab } }));
+
+function ReadinessItem({ label, status, detail, tab }) {
   const colors = {
     good: 'bg-green-500',
     warning: 'bg-amber-500',
@@ -11,18 +14,21 @@ function ReadinessItem({ label, status, detail }) {
     info: 'bg-gray-400',
   };
   return (
-    <div className="flex items-center gap-3 py-2">
+    <div className={`flex items-center gap-3 py-2 ${tab ? 'cursor-pointer hover:bg-gray-50 -mx-2 px-2 rounded-lg transition-colors' : ''}`}
+      onClick={tab ? () => goTo(tab) : undefined}>
       <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${colors[status]}`} />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900">{label}</p>
         {detail && <p className="text-xs text-gray-500">{detail}</p>}
       </div>
+      {tab && status !== 'good' && <ChevronRight size={14} className="text-gray-400 shrink-0" />}
     </div>
   );
 }
 
 export default function ComplianceDashboard() {
   const { data, loading, error } = useApiGet('/compliance/dashboard');
+  const [showOnlyFailing, setShowOnlyFailing] = useState(false);
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading compliance dashboard...</div>;
   if (error) return <div className="text-center py-12 text-danger-600">{error}</div>;
@@ -35,36 +41,43 @@ export default function ComplianceDashboard() {
       label: `PM Completion Rate: ${data.pm.completion_rate}%`,
       status: data.pm.meets_sqf_target ? 'good' : data.pm.completion_rate >= 80 ? 'warning' : 'critical',
       detail: `${data.pm.completed}/${data.pm.total} WOs completed (target ≥ 95%). ${data.pm.overdue} overdue.`,
+      tab: 'pm',
     },
     {
       label: `Calibration: ${data.calibration.overdue} overdue`,
       status: data.calibration.overdue === 0 ? 'good' : 'critical',
       detail: `${data.calibration.total_instruments} instruments total. ${data.calibration.due_within_7_days} due within 7 days.`,
+      tab: 'calibration',
     },
     {
       label: `Sanitation Pass Rate: ${data.sanitation.pass_rate}%`,
       status: data.sanitation.pass_rate >= 95 ? 'good' : data.sanitation.pass_rate >= 80 ? 'warning' : 'critical',
       detail: `${data.sanitation.records_30d} records in the last 30 days. ${data.sanitation.failures_30d} failures.`,
+      tab: 'sanitation',
     },
     {
       label: `Chemical SDS Coverage: ${data.chemicals.total_approved - data.chemicals.missing_sds}/${data.chemicals.total_approved}`,
       status: data.chemicals.missing_sds === 0 ? 'good' : data.chemicals.missing_sds <= 3 ? 'warning' : 'critical',
       detail: data.chemicals.missing_sds > 0 ? `${data.chemicals.missing_sds} approved chemicals missing SDS documentation.` : 'All approved chemicals have SDS documentation.',
+      tab: 'chemicals',
     },
     {
       label: `LOTO Procedures: ${data.loto.total_procedures} on file`,
       status: data.loto.equipment_without_procedure === 0 ? 'good' : 'warning',
       detail: data.loto.equipment_without_procedure > 0 ? `${data.loto.equipment_without_procedure} equipment without LOTO procedures.` : 'All equipment has LOTO procedures.',
+      tab: 'loto',
     },
     {
       label: `Flagged Issues: ${data.flagged_issues}`,
       status: data.flagged_issues === 0 ? 'good' : data.flagged_issues <= 2 ? 'warning' : 'critical',
       detail: data.flagged_issues > 0 ? `${data.flagged_issues} open work orders with flagged issues requiring attention.` : 'No open issues flagged.',
+      tab: 'pm',
     },
     {
       label: `Audit Trail: ${(data.total_audit_records || 0).toLocaleString()} records (12 months)`,
       status: 'good',
       detail: 'All system actions are logged with actor, timestamp, and entity.',
+      tab: 'audit',
     },
   ];
 
@@ -95,11 +108,14 @@ export default function ComplianceDashboard() {
       </div>
 
       {/* Overall Readiness Banner */}
-      <div className={`rounded-xl p-5 flex items-center gap-4 ${overallReady ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
+      <div
+        onClick={!overallReady ? () => setShowOnlyFailing(prev => !prev) : undefined}
+        className={`rounded-xl p-5 flex items-center gap-4 ${!overallReady ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} ${overallReady ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}
+      >
         <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 ${overallReady ? 'bg-green-500' : 'bg-amber-500'}`}>
           {overallReady ? <CheckCircle size={32} className="text-white" /> : <AlertTriangle size={32} className="text-white" />}
         </div>
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="text-lg font-bold text-gray-900">
             {overallReady ? 'Audit Ready' : `${readyCount} of ${totalChecks} Checks Passing`}
           </p>
@@ -108,6 +124,9 @@ export default function ComplianceDashboard() {
               ? 'All compliance areas are meeting targets. Your documentation is up to date.'
               : `${totalChecks - readyCount} area${totalChecks - readyCount > 1 ? 's' : ''} need${totalChecks - readyCount === 1 ? 's' : ''} attention before your next audit.`}
           </p>
+          {!overallReady && (
+            <p className="text-xs text-amber-700 mt-1">{showOnlyFailing ? 'Showing failing checks only — tap to show all' : 'Tap to see only failing checks'}</p>
+          )}
           <div className="mt-2 w-full max-w-xs bg-gray-200 rounded-full h-2.5">
             <div className={`h-2.5 rounded-full transition-all ${overallReady ? 'bg-green-500' : readinessPercent >= 70 ? 'bg-amber-500' : 'bg-red-500'}`}
               style={{ width: `${readinessPercent}%` }} />
@@ -123,7 +142,7 @@ export default function ComplianceDashboard() {
             <FileText size={16} /> Readiness Checklist
           </h3>
           <div className="divide-y divide-gray-100">
-            {readinessChecks.map((check, i) => (
+            {(showOnlyFailing ? readinessChecks.filter(c => c.status !== 'good') : readinessChecks).map((check, i) => (
               <ReadinessItem key={i} {...check} />
             ))}
           </div>
@@ -131,7 +150,7 @@ export default function ComplianceDashboard() {
 
         {/* KPI Cards Grid */}
         <div className="md:col-span-2 grid grid-cols-2 gap-3 content-start">
-          <div className={`rounded-xl border p-4 ${data.pm.meets_sqf_target ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+          <div onClick={() => goTo('pm')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.pm.meets_sqf_target ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
             <div className="flex items-center gap-2 mb-1">
               <Wrench size={15} className={data.pm.meets_sqf_target ? 'text-green-600' : 'text-red-600'} />
               <span className="text-xs text-gray-600">PM Completion</span>
@@ -140,7 +159,7 @@ export default function ComplianceDashboard() {
             <p className="text-xs text-gray-500">{data.pm.completed}/{data.pm.total} · {data.pm.overdue} overdue</p>
           </div>
 
-          <div className={`rounded-xl border p-4 ${data.calibration.overdue > 0 ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>
+          <div onClick={() => goTo('calibration')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.calibration.overdue > 0 ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>
             <div className="flex items-center gap-2 mb-1">
               <Thermometer size={15} className={data.calibration.overdue > 0 ? 'text-red-600' : 'text-green-600'} />
               <span className="text-xs text-gray-600">Calibration</span>
@@ -149,7 +168,7 @@ export default function ComplianceDashboard() {
             <p className="text-xs text-gray-500">{data.calibration.overdue} overdue · {data.calibration.due_within_7_days} due soon</p>
           </div>
 
-          <div className={`rounded-xl border p-4 ${data.sanitation.pass_rate >= 95 ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+          <div onClick={() => goTo('sanitation')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.sanitation.pass_rate >= 95 ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
             <div className="flex items-center gap-2 mb-1">
               <Droplets size={15} className={data.sanitation.pass_rate >= 95 ? 'text-green-600' : 'text-amber-600'} />
               <span className="text-xs text-gray-600">Sanitation Pass Rate</span>
@@ -158,7 +177,7 @@ export default function ComplianceDashboard() {
             <p className="text-xs text-gray-500">{data.sanitation.records_30d} records · {data.sanitation.failures_30d} failures</p>
           </div>
 
-          <div className={`rounded-xl border p-4 ${data.chemicals.missing_sds === 0 ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+          <div onClick={() => goTo('chemicals')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.chemicals.missing_sds === 0 ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
             <div className="flex items-center gap-2 mb-1">
               <FlaskConical size={15} className={data.chemicals.missing_sds === 0 ? 'text-green-600' : 'text-amber-600'} />
               <span className="text-xs text-gray-600">Chemical Registry</span>
@@ -167,7 +186,7 @@ export default function ComplianceDashboard() {
             <p className="text-xs text-gray-500">{data.chemicals.missing_sds > 0 ? `${data.chemicals.missing_sds} missing SDS` : 'All SDS on file'}</p>
           </div>
 
-          <div className={`rounded-xl border p-4 ${data.flagged_issues === 0 ? 'border-gray-200 bg-white' : 'border-red-200 bg-red-50'}`}>
+          <div onClick={() => goTo('pm')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.flagged_issues === 0 ? 'border-gray-200 bg-white' : 'border-red-200 bg-red-50'}`}>
             <div className="flex items-center gap-2 mb-1">
               <Flag size={15} className={data.flagged_issues > 0 ? 'text-red-600' : 'text-gray-400'} />
               <span className="text-xs text-gray-600">Open Issues</span>
@@ -176,7 +195,7 @@ export default function ComplianceDashboard() {
             <p className="text-xs text-gray-500">{data.flagged_issues > 0 ? 'Flagged issues need review' : 'No open issues'}</p>
           </div>
 
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div onClick={() => goTo('audit')} className="rounded-xl border border-gray-200 bg-white p-4 cursor-pointer hover:shadow-md transition-shadow">
             <div className="flex items-center gap-2 mb-1">
               <ScrollText size={15} className="text-gray-500" />
               <span className="text-xs text-gray-600">Audit Trail</span>

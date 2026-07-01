@@ -100,24 +100,40 @@ router.post('/pdf', (req, res) => {
 });
 
 function generatePDF(res, docs) {
-  const pdf = new PDFDocument({ size: 'LETTER', margins: { top: 60, bottom: 60, left: 60, right: 60 } });
+  const LEFT = 72;
+  const RIGHT = 540;
+  const BODY_W = RIGHT - LEFT;
+  const BULLET_LEFT = LEFT + 18;
+  const BULLET_W = RIGHT - BULLET_LEFT;
+  const PAGE_BOTTOM = 720;
+
+  const pdf = new PDFDocument({ size: 'LETTER', margins: { top: 72, bottom: 72, left: LEFT, right: 72 } });
   res.setHeader('Content-Type', 'application/pdf');
   const title = docs.length === 1 ? `${docs[0].doc_number || 'SOP'} - ${docs[0].title}` : `SOP_Registry_${docs.length}_docs`;
   res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf"`);
   pdf.pipe(res);
 
+  const footerText = `Generated ${new Date().toLocaleDateString()} — Powder Ops FSQA`;
+
+  const ensureSpace = (needed) => {
+    if (pdf.y > PAGE_BOTTOM - needed) { pdf.addPage(); }
+  };
+
   docs.forEach((doc, idx) => {
     if (idx > 0) pdf.addPage();
 
+    // Title bar
     pdf.save();
-    pdf.rect(60, 40, 492, 40).fill('#1e40af');
-    pdf.fillColor('#ffffff').fontSize(18).font('Helvetica-Bold')
-      .text(doc.title, 70, 50, { width: 472 });
+    pdf.rect(LEFT, 50, BODY_W, 36).fill('#1e40af');
+    pdf.fillColor('#ffffff').fontSize(16).font('Helvetica-Bold')
+      .text(doc.title, LEFT + 12, 59, { width: BODY_W - 24 });
     pdf.restore();
 
-    let y = 100;
+    pdf.y = 104;
+    pdf.x = LEFT;
 
-    pdf.fillColor('#374151').fontSize(9).font('Helvetica');
+    // Metadata
+    pdf.fontSize(9);
     const meta = [
       ['Document #', doc.doc_number || '—'],
       ['Category', (doc.category || '').charAt(0).toUpperCase() + (doc.category || '').slice(1)],
@@ -128,40 +144,46 @@ function generatePDF(res, docs) {
       ['Review Due', doc.review_due || '—'],
     ];
 
-    meta.forEach(([label, value]) => {
-      pdf.font('Helvetica-Bold').text(label + ':', 60, y, { continued: true, width: 120 });
-      pdf.font('Helvetica').text('  ' + value, { width: 370 });
-      y += 16;
-    });
+    for (const [label, value] of meta) {
+      pdf.font('Helvetica-Bold').fillColor('#374151').text(label + ':  ', LEFT, pdf.y, { continued: true });
+      pdf.font('Helvetica').text(value);
+    }
 
-    y += 10;
-    pdf.moveTo(60, y).lineTo(552, y).strokeColor('#d1d5db').stroke();
-    y += 15;
+    pdf.y += 10;
+    pdf.moveTo(LEFT, pdf.y).lineTo(RIGHT, pdf.y).strokeColor('#d1d5db').stroke();
+    pdf.y += 16;
 
+    // Body
     if (doc.description) {
       pdf.fillColor('#111827').fontSize(10).font('Helvetica');
       const lines = doc.description.split('\n');
       for (const line of lines) {
-        if (y > 700) { pdf.addPage(); y = 60; }
         const trimmed = line.trim();
-        if (!trimmed) { y += 8; continue; }
+        if (!trimmed) { pdf.y += 6; continue; }
+
+        ensureSpace(30);
+
         if (trimmed.startsWith('•') || trimmed.startsWith('-')) {
-          pdf.text(trimmed, 70, y, { width: 472, lineGap: 3 });
-        } else if (trimmed === trimmed.toUpperCase() && trimmed.length > 3 && trimmed.length < 80) {
-          pdf.font('Helvetica-Bold').fontSize(11).text(trimmed, 60, y, { width: 482, lineGap: 3 });
+          pdf.text(trimmed, BULLET_LEFT, pdf.y, { width: BULLET_W, lineGap: 2 });
+        } else if (/^[A-Z][A-Z\s,&]{3,}$/.test(trimmed) && trimmed.length < 80) {
+          pdf.y += 4;
+          pdf.font('Helvetica-Bold').fontSize(11).text(trimmed, LEFT, pdf.y, { width: BODY_W, lineGap: 2 });
           pdf.font('Helvetica').fontSize(10);
         } else {
-          pdf.text(trimmed, 60, y, { width: 482, lineGap: 3 });
+          pdf.text(trimmed, LEFT, pdf.y, { width: BODY_W, lineGap: 2 });
         }
-        y += pdf.heightOfString(trimmed || ' ', { width: 482 }) + 4;
       }
     } else {
       pdf.fillColor('#9ca3af').fontSize(10).font('Helvetica-Oblique')
-        .text('No description content available.', 60, y, { width: 482 });
+        .text('No description content available.', LEFT, pdf.y, { width: BODY_W });
     }
 
-    pdf.fillColor('#9ca3af').fontSize(7).font('Helvetica')
-      .text(`Generated ${new Date().toLocaleDateString()} — Powder Ops FSQA`, 60, 730, { width: 492, align: 'center' });
+    // Footer — use save/restore to avoid advancing the cursor
+    pdf.save();
+    pdf.fillColor('#9ca3af').fontSize(7).font('Helvetica');
+    pdf.page.margins.bottom = 0;
+    pdf.text(footerText, LEFT, 745, { width: BODY_W, align: 'center', lineBreak: false });
+    pdf.restore();
   });
 
   pdf.end();

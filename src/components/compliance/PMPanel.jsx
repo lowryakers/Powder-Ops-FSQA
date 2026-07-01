@@ -647,6 +647,7 @@ export default function PMPanel() {
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
   const [expandedArchive, setExpandedArchive] = useState(null);
+  const [statusFilter, setStatusFilter] = useState(null);
 
   const handleCreateWO = async (form) => {
     await apiPost('/pm/work-orders', form);
@@ -697,13 +698,18 @@ export default function PMPanel() {
 
   const freqOrder = ['daily', 'weekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'unscheduled'];
   const q = search.toLowerCase().trim();
+  const today = new Date().toISOString().split('T')[0];
   const filteredGroups = grouped ? freqOrder
     .filter(f => grouped[f]?.length > 0)
     .filter(f => freqFilter === 'all' || f === freqFilter)
-    .map(f => ({
-      freq: f,
-      items: q ? grouped[f].filter(wo => [wo.title, wo.equipment_name, wo.location, wo.assigned_to].some(v => v && v.toLowerCase().includes(q))) : grouped[f],
-    }))
+    .map(f => {
+      let items = grouped[f];
+      if (q) items = items.filter(wo => [wo.title, wo.equipment_name, wo.location, wo.assigned_to].some(v => v && v.toLowerCase().includes(q)));
+      if (statusFilter === 'overdue') items = items.filter(wo => wo.due_date < today && wo.status !== 'completed' && wo.status !== 'missed');
+      else if (statusFilter === 'open') items = items.filter(wo => wo.status === 'open' || wo.status === 'in_progress');
+      else if (statusFilter === 'missed') items = items.filter(wo => wo.status === 'missed');
+      return { freq: f, items };
+    })
     .filter(g => g.items.length > 0) : [];
 
   const totalActive = filteredGroups.reduce((sum, g) => sum + g.items.length, 0);
@@ -721,26 +727,34 @@ export default function PMPanel() {
       {/* Metrics */}
       {!metricsLoading && metrics && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className={`rounded-xl border p-4 ${metrics.meets_sqf_target ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+          <div onClick={() => { setStatusFilter(null); setView('active'); }}
+            className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${metrics.meets_sqf_target ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
             <p className="text-xs text-gray-600 mb-1">Completion Rate</p>
             <p className="text-2xl font-bold">{metrics.completion_rate}%</p>
             <p className="text-xs mt-1">{metrics.meets_sqf_target ? 'SQF Target Met' : 'Below 95% Target'}</p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div onClick={() => { setStatusFilter(null); setView('active'); }}
+            className={`rounded-xl border border-gray-200 bg-white p-4 cursor-pointer hover:shadow-md transition-shadow ${statusFilter === null && view === 'active' ? 'ring-2 ring-powder-500' : ''}`}>
             <p className="text-xs text-gray-600 mb-1">Total WOs</p>
             <p className="text-2xl font-bold">{metrics.total}</p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div onClick={() => { setStatusFilter(statusFilter === 'open' ? null : 'open'); setView('active'); }}
+            className={`rounded-xl border border-gray-200 bg-white p-4 cursor-pointer hover:shadow-md transition-shadow ${statusFilter === 'open' ? 'ring-2 ring-yellow-500' : ''}`}>
             <p className="text-xs text-gray-600 mb-1">Open</p>
             <p className="text-2xl font-bold text-yellow-600">{metrics.open}</p>
+            {statusFilter === 'open' && <p className="text-[10px] text-yellow-600 mt-1">Filtered</p>}
           </div>
-          <div className={`rounded-xl border p-4 ${metrics.missed > 0 ? 'border-gray-300 bg-gray-50' : 'border-gray-200 bg-white'}`}>
+          <div onClick={() => { setStatusFilter(statusFilter === 'missed' ? null : 'missed'); setView('active'); }}
+            className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${statusFilter === 'missed' ? 'ring-2 ring-gray-500' : ''} ${metrics.missed > 0 ? 'border-gray-300 bg-gray-50' : 'border-gray-200 bg-white'}`}>
             <p className="text-xs text-gray-600 mb-1">Missed</p>
             <p className="text-2xl font-bold text-gray-600">{metrics.missed}</p>
+            {statusFilter === 'missed' && <p className="text-[10px] text-gray-600 mt-1">Filtered</p>}
           </div>
-          <div className={`rounded-xl border p-4 ${metrics.overdue > 0 ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
+          <div onClick={() => { setStatusFilter(statusFilter === 'overdue' ? null : 'overdue'); setView('active'); }}
+            className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${statusFilter === 'overdue' ? 'ring-2 ring-red-500' : ''} ${metrics.overdue > 0 ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
             <p className="text-xs text-gray-600 mb-1">Overdue</p>
             <p className="text-2xl font-bold text-red-600">{metrics.overdue}</p>
+            {statusFilter === 'overdue' && <p className="text-[10px] text-red-600 mt-1">Filtered</p>}
           </div>
         </div>
       )}

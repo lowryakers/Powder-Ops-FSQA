@@ -260,6 +260,7 @@ export default function SOPPanel() {
   const [expandedId, setExpandedId] = useState(null);
   const [historyDoc, setHistoryDoc] = useState(null);
   const [selected, setSelected] = useState(new Set());
+  const [reviewDueOnly, setReviewDueOnly] = useState(false);
 
   const handleSort = useCallback((field) => {
     if (sortField === field) {
@@ -278,8 +279,12 @@ export default function SOPPanel() {
     }
     if (catFilter) list = list.filter(d => d.category === catFilter);
     if (statusFilter) list = list.filter(d => d.status === statusFilter);
+    if (reviewDueOnly) {
+      const now = new Date().toISOString().split('T')[0];
+      list = list.filter(d => d.review_due && d.review_due <= now);
+    }
     return list;
-  }, [sops, search, catFilter, statusFilter]);
+  }, [sops, search, catFilter, statusFilter, reviewDueOnly]);
 
   const stats = useMemo(() => {
     const list = sops || [];
@@ -348,17 +353,20 @@ export default function SOPPanel() {
     <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white rounded-xl border p-3 text-center">
+        <div onClick={() => { setStatusFilter(''); setCatFilter(''); setReviewDueOnly(false); }}
+          className="bg-white rounded-xl border p-3 text-center cursor-pointer hover:shadow-md transition-shadow">
           <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
           <div className="text-xs text-gray-500">Total SOPs</div>
         </div>
-        <div className="bg-white rounded-xl border p-3 text-center">
+        <div onClick={() => { setStatusFilter(statusFilter === 'active' ? '' : 'active'); setReviewDueOnly(false); }}
+          className={`bg-white rounded-xl border p-3 text-center cursor-pointer hover:shadow-md transition-shadow ${statusFilter === 'active' ? 'ring-2 ring-green-500' : ''}`}>
           <div className="text-2xl font-bold text-green-600">{stats.active}</div>
           <div className="text-xs text-gray-500">Active</div>
         </div>
-        <div className="bg-white rounded-xl border p-3 text-center">
+        <div onClick={() => setReviewDueOnly(!reviewDueOnly)}
+          className={`bg-white rounded-xl border p-3 text-center cursor-pointer hover:shadow-md transition-shadow ${reviewDueOnly ? 'ring-2 ring-orange-500' : ''}`}>
           <div className={`text-2xl font-bold ${stats.reviewDue > 0 ? 'text-orange-600' : 'text-gray-400'}`}>{stats.reviewDue}</div>
-          <div className="text-xs text-gray-500">Review Due</div>
+          <div className="text-xs text-gray-500">{reviewDueOnly ? 'Showing Review Due' : 'Review Due'}</div>
         </div>
         <div className="bg-white rounded-xl border p-3 text-center">
           <div className="text-2xl font-bold text-blue-600">{stats.withLink}</div>
@@ -406,8 +414,74 @@ export default function SOPPanel() {
       {showForm && !editing && <SOPForm onSave={handleCreate} onCancel={() => setShowForm(false)} />}
       {editing && <SOPForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
 
-      {/* SOP Table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* Mobile SOP Cards */}
+      <div className="md:hidden space-y-3">
+        {filtered.map(doc => {
+          const overdue = doc.review_due && doc.review_due <= new Date().toISOString().split('T')[0];
+          const isExpanded = expandedId === doc.id;
+          return (
+            <div key={doc.id} className={`bg-white rounded-xl border ${overdue ? 'border-orange-200' : 'border-gray-200'} overflow-hidden`}>
+              <div className="p-3" onClick={() => setExpandedId(isExpanded ? null : doc.id)}>
+                <div className="flex items-start gap-2">
+                  <input type="checkbox" checked={selected.has(doc.id)} onChange={() => toggleSelect(doc.id)}
+                    onClick={e => e.stopPropagation()} className="rounded border-gray-300 mt-1 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="font-mono text-xs font-bold text-gray-900">{doc.doc_number}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${catColor(doc.category)}`}>{doc.category}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[doc.status]}`}>{doc.status.replace('_', ' ')}</span>
+                    </div>
+                    <p className="font-medium text-sm text-gray-900">{doc.title}</p>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                      <span>Rev {doc.revision}</span>
+                      <span>{doc.owner || '—'}</span>
+                      {doc.review_due && <span className={overdue ? 'text-orange-700 font-bold' : ''}>Due {doc.review_due}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    <a href={`/api/sops/${doc.id}/pdf`} className="text-gray-400 hover:text-gray-600 p-1.5"><Download size={16} /></a>
+                    <button onClick={() => setHistoryDoc(doc)} className="text-gray-400 hover:text-gray-600 p-1.5"><History size={16} /></button>
+                    <button onClick={() => { setEditing(doc); setShowForm(false); }} className="text-gray-400 hover:text-powder-600 p-1.5"><Edit2 size={16} /></button>
+                  </div>
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="border-t border-gray-200">
+                  <div className="bg-blue-800 text-white px-4 py-3">
+                    <div className="text-sm font-bold">{doc.title}</div>
+                    <div className="text-blue-200 text-xs mt-0.5">{doc.doc_number} · Rev {doc.revision} · {doc.owner || '—'}</div>
+                  </div>
+                  <div className="px-4 py-3 flex flex-wrap gap-2 text-xs text-gray-600 border-b border-gray-100">
+                    <span className={`px-2 py-0.5 rounded-full font-medium ${catColor(doc.category)}`}>{doc.category}</span>
+                    <span className={`px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[doc.status]}`}>{(doc.status || '').replace('_', ' ')}</span>
+                    <span>Effective: {doc.effective_date || '—'}</span>
+                    <span>Review: {doc.review_due || '—'}</span>
+                  </div>
+                  <div className="px-4 py-4 max-h-[400px] overflow-y-auto">
+                    {doc.description ? (
+                      <div className="text-sm text-gray-800 leading-relaxed">
+                        {doc.description.split('\n').map((line, i) => {
+                          const trimmed = line.trim();
+                          if (!trimmed) return <br key={i} />;
+                          if (trimmed.startsWith('•') || trimmed.startsWith('-')) return <div key={i} className="pl-4 py-0.5">{trimmed}</div>;
+                          if (trimmed === trimmed.toUpperCase() && trimmed.length > 3 && trimmed.length < 80) return <div key={i} className="font-bold text-gray-900 mt-3 mb-1">{trimmed}</div>;
+                          return <div key={i} className="py-0.5">{trimmed}</div>;
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-gray-400 italic text-sm">No description content available.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {filtered.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">No SOPs found.</div>}
+      </div>
+
+      {/* Desktop SOP Table */}
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">

@@ -196,6 +196,12 @@ function App() {
     return () => window.removeEventListener('app-logout', handler);
   }, [logout]);
 
+  useEffect(() => {
+    const handler = (e) => setActiveTab(e.detail?.tab || 'dashboard');
+    window.addEventListener('app-navigate', handler);
+    return () => window.removeEventListener('app-navigate', handler);
+  }, []);
+
   if (path === '/submit') {
     return <><SubmitWorkOrder /><UpdateBanner /></>;
   }
