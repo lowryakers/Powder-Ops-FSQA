@@ -174,4 +174,42 @@ router.get('/audit-ready', (_req, res) => {
   });
 });
 
+router.get('/notifications', (_req, res) => {
+  const db = getDb();
+  const today = new Date().toISOString().split('T')[0];
+  const sevenDaysOut = new Date();
+  sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
+  const sevenOut = sevenDaysOut.toISOString().split('T')[0];
+
+  const overdueWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')").get(today).c;
+  const dueSoonWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('open','in_progress')").get(today, sevenOut).c;
+  const clearancePending = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE clearance_required = 1 AND clearance_status = 'pending'").get().c;
+  const calOverdue = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due < ? AND status != 'retired'").get(today).c;
+  const calDueSoon = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due BETWEEN ? AND ? AND status != 'retired'").get(today, sevenOut).c;
+  const lotoUncovered = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE status = 'active' AND id NOT IN (SELECT equipment_id FROM loto_procedures)").get().c;
+  const chemMissingSDS = db.prepare("SELECT COUNT(*) as c FROM approved_chemicals WHERE is_active = 1 AND sds_url IS NULL AND sds_number IS NULL").get().c;
+  const flaggedIssues = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE issue_flagged = 1 AND status IN ('open','in_progress','overdue')").get().c;
+  const sopReviewDue = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE status != 'archived' AND review_due <= ?").get(today).c;
+
+  const items = [];
+  if (overdueWOs > 0) items.push({ id: 'pm-overdue', tab: 'pm', severity: 'critical', label: `${overdueWOs} overdue PM work order${overdueWOs > 1 ? 's' : ''}` });
+  if (dueSoonWOs > 0) items.push({ id: 'pm-due-soon', tab: 'pm', severity: 'warning', label: `${dueSoonWOs} PM work order${dueSoonWOs > 1 ? 's' : ''} due within 7 days` });
+  if (clearancePending > 0) items.push({ id: 'clearance', tab: 'pm', severity: 'warning', label: `${clearancePending} hygiene clearance${clearancePending > 1 ? 's' : ''} awaiting QA sign-off` });
+  if (calOverdue > 0) items.push({ id: 'cal-overdue', tab: 'calibration', severity: 'critical', label: `${calOverdue} calibration${calOverdue > 1 ? 's' : ''} overdue` });
+  if (calDueSoon > 0) items.push({ id: 'cal-due-soon', tab: 'calibration', severity: 'info', label: `${calDueSoon} calibration${calDueSoon > 1 ? 's' : ''} due within 7 days` });
+  if (lotoUncovered > 0) items.push({ id: 'loto-uncovered', tab: 'loto', severity: 'warning', label: `${lotoUncovered} equipment missing LOTO procedure${lotoUncovered > 1 ? 's' : ''}` });
+  if (chemMissingSDS > 0) items.push({ id: 'chem-sds', tab: 'chemicals', severity: 'warning', label: `${chemMissingSDS} chemical${chemMissingSDS > 1 ? 's' : ''} missing SDS documentation` });
+  if (flaggedIssues > 0) items.push({ id: 'flagged', tab: 'pm', severity: 'critical', label: `${flaggedIssues} flagged issue${flaggedIssues > 1 ? 's' : ''} requiring attention` });
+  if (sopReviewDue > 0) items.push({ id: 'sop-review', tab: 'sops', severity: 'info', label: `${sopReviewDue} SOP${sopReviewDue > 1 ? 's' : ''} past review date` });
+
+  const badges = {};
+  for (const item of items) {
+    if (item.severity === 'critical' || item.severity === 'warning') {
+      badges[item.tab] = (badges[item.tab] || 0) + 1;
+    }
+  }
+
+  res.json({ items, badges, total: items.filter(i => i.severity === 'critical' || i.severity === 'warning').length });
+});
+
 export default router;

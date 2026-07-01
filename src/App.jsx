@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
+import { useApiGet } from './hooks/useApi';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
@@ -64,7 +65,7 @@ const NAV_GROUPS = [
   },
 ];
 
-function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose }) {
+function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose, badges, notifications, onNavigate }) {
   const activeGroup = NAV_GROUPS.find(g => g.items.some(i => i.id === activeTab));
   const [openGroups, setOpenGroups] = useState(() => {
     const initial = {};
@@ -86,9 +87,14 @@ function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose }) {
           <h1 className="text-sm font-bold text-gray-900 truncate">Powder Ops FSQA</h1>
           <p className="text-[10px] text-gray-400 truncate">Compliance & PM</p>
         </div>
-        <button onClick={onClose} className="ml-auto md:hidden text-gray-400 hover:text-gray-600">
-          <X size={18} />
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <div className="hidden md:block">
+            <NotificationBell notifications={notifications} onNavigate={(tab) => { onNavigate?.(tab); }} />
+          </div>
+          <button onClick={onClose} className="md:hidden text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 py-2 space-y-0.5">
@@ -122,7 +128,12 @@ function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose }) {
                         }`}
                       >
                         <item.icon size={16} className={isActive ? 'text-powder-600' : 'text-gray-400'} />
-                        {item.label}
+                        <span className="flex-1 text-left">{item.label}</span>
+                        {badges?.[item.id] > 0 && (
+                          <span className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1">
+                            {badges[item.id]}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -148,6 +159,58 @@ function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose }) {
         </div>
       </div>
     </nav>
+  );
+}
+
+function NotificationBell({ notifications, onNavigate }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handleClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const items = notifications?.items || [];
+  const total = notifications?.total || 0;
+  const severityIcon = { critical: 'bg-red-500', warning: 'bg-amber-500', info: 'bg-blue-400' };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(!open)} className="relative text-gray-500 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+        <Bell size={20} />
+        {total > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold px-0.5">
+            {total}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 md:left-0 top-full mt-2 w-80 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-900">Notifications</h3>
+            {total > 0 ? (
+              <span className="text-xs text-gray-500">{total} action{total !== 1 ? 's' : ''} needed</span>
+            ) : (
+              <span className="text-xs text-green-600 font-medium">All clear</span>
+            )}
+          </div>
+          <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+            {items.length === 0 ? (
+              <div className="px-4 py-8 text-center text-gray-400 text-sm">No notifications</div>
+            ) : items.map(item => (
+              <button key={item.id} onClick={() => { onNavigate(item.tab); setOpen(false); }}
+                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 text-left transition-colors">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${severityIcon[item.severity]}`} />
+                <span className="flex-1 text-sm text-gray-700">{item.label}</span>
+                <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -186,6 +249,7 @@ function App() {
   const { user, loading, login, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { data: notifications } = useApiGet('/compliance/notifications', [activeTab]);
   const [opLang, setOpLang] = useState(() => localStorage.getItem('op_lang') || 'en');
   const toggleLang = useCallback((lang) => { setOpLang(lang); localStorage.setItem('op_lang', lang); }, []);
   const path = window.location.pathname;
@@ -300,7 +364,7 @@ function App() {
     <div className="min-h-screen bg-gray-50 flex">
       {/* Desktop sidebar */}
       <aside className="hidden md:block flex-shrink-0 sticky top-0 h-screen">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} />
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} notifications={notifications} onNavigate={setActiveTab} />
       </aside>
 
       {/* Mobile sidebar overlay */}
@@ -308,7 +372,7 @@ function App() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-60 shadow-xl">
-            <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} />
+            <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} notifications={notifications} onNavigate={(tab) => { setActiveTab(tab); setSidebarOpen(false); }} />
           </div>
         </div>
       )}
@@ -324,6 +388,7 @@ function App() {
             <div className="flex-1 min-w-0">
               <h1 className="text-sm font-bold text-gray-900 truncate">{activeItem?.label || 'Dashboard'}</h1>
             </div>
+            <NotificationBell notifications={notifications} onNavigate={setActiveTab} />
             <span className="text-xs text-gray-400">{user.name}</span>
             <button onClick={logout} className="text-gray-400 hover:text-gray-600" title="Sign Out">
               <LogOut size={16} />
