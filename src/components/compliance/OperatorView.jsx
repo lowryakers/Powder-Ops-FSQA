@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
 import FileUpload from '../FileUpload';
 
 function detectTaskType(task) {
@@ -45,7 +45,7 @@ function formatDueLabel(dueDate) {
   return `Due ${dueDate}`;
 }
 
-function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, userName, isAdmin }) {
+function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, userName, isAdmin, batchMode, batchSelected, onBatchToggle }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
@@ -175,7 +175,14 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
         <div className="flex items-start gap-3">
           {/* Action buttons column */}
           <div className="shrink-0 flex flex-col gap-1.5 mt-0.5">
-            {!completing && !flagging && !skippingNA ? (
+            {batchMode && taskType === 'equipment_pm' ? (
+              <button onClick={() => onBatchToggle?.(task.id)}
+                className={`w-11 h-11 rounded-full border-2 flex items-center justify-center transition-all active:scale-90 ${
+                  batchSelected ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300 text-gray-400 hover:border-green-500 hover:text-green-500'
+                }`}>
+                {batchSelected ? <CircleCheck size={22} /> : <Square size={20} />}
+              </button>
+            ) : !completing && !flagging && !skippingNA ? (
               <>
                 <button onClick={() => { setCompleting(true); setFlagging(false); setSkippingNA(false); }}
                   className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-500 hover:bg-green-50 transition-all active:scale-90"
@@ -322,7 +329,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
         {/* Inline N/A skip */}
         {skippingNA && (
           <div className="mt-3 ml-14 bg-amber-50 rounded-xl p-3 space-y-2 border border-amber-200">
-            <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1"><Ban size={11} /> Not Applicable / Not In Use</h4>
+            <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1"><MinusCircle size={11} /> Not Applicable / Not In Use</h4>
             <p className="text-xs text-amber-700">This task will be skipped and will not count as missed. The next occurrence will still be generated on schedule.</p>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Reason (optional)</label>
@@ -773,11 +780,41 @@ export default function OperatorView() {
   const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchSelected, setBatchSelected] = useState(new Set());
+  const [batchSaving, setBatchSaving] = useState(false);
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 2500);
   }, []);
+
+  const toggleBatchItem = useCallback((id) => {
+    setBatchSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBatchComplete = async () => {
+    if (batchSelected.size === 0) return;
+    setBatchSaving(true);
+    try {
+      await apiPost('/pm/work-orders/batch-complete', {
+        ids: [...batchSelected],
+        _actor: userName || 'Operator',
+      });
+      showToast(`${batchSelected.size} tasks completed`);
+      setBatchSelected(new Set());
+      setBatchMode(false);
+      refresh();
+    } catch (e) {
+      showToast('Batch complete failed', 'error');
+    } finally {
+      setBatchSaving(false);
+    }
+  };
 
   const handleComplete = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
@@ -880,10 +917,17 @@ export default function OperatorView() {
             {today.length} due today &middot; {filtered.length} total
           </p>
         </div>
-        <button onClick={() => setShowFilters(!showFilters)}
-          className={`w-9 h-9 rounded-lg flex items-center justify-center border transition-colors ${showFilters ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
-          <Filter size={16} />
-        </button>
+        <div className="flex gap-1.5">
+          <button onClick={() => { setBatchMode(!batchMode); setBatchSelected(new Set()); }}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center border transition-colors ${batchMode ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
+            title="Batch complete">
+            <ListChecks size={16} />
+          </button>
+          <button onClick={() => setShowFilters(!showFilters)}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center border transition-colors ${showFilters ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+            <Filter size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Admin department toggle */}
@@ -970,7 +1014,7 @@ export default function OperatorView() {
           {overdue.length > 0 && (
             <SectionHeader icon={AlertTriangle} title="Overdue" count={overdue.length} color="bg-red-500" defaultOpen={true}>
               {overdue.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(t.id)} onBatchToggle={toggleBatchItem} />
               ))}
             </SectionHeader>
           )}
@@ -978,7 +1022,7 @@ export default function OperatorView() {
           {today.length > 0 && (
             <SectionHeader icon={CircleDot} title="Due Today" count={today.length} color="bg-powder-600" defaultOpen={true}>
               {today.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(t.id)} onBatchToggle={toggleBatchItem} />
               ))}
             </SectionHeader>
           )}
@@ -986,7 +1030,7 @@ export default function OperatorView() {
           {thisWeek.length > 0 && (
             <SectionHeader icon={CalendarDays} title="This Week" count={thisWeek.length} color="bg-gray-500" defaultOpen={overdue.length + today.length < 10}>
               {thisWeek.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(t.id)} onBatchToggle={toggleBatchItem} />
               ))}
             </SectionHeader>
           )}
@@ -994,10 +1038,28 @@ export default function OperatorView() {
           {upcoming.length > 0 && (
             <SectionHeader icon={Clock} title="Upcoming" count={upcoming.length} color="bg-gray-400" defaultOpen={overdue.length + today.length + thisWeek.length < 5}>
               {upcoming.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} />
+                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(t.id)} onBatchToggle={toggleBatchItem} />
               ))}
             </SectionHeader>
           )}
+        </div>
+      )}
+
+      {/* Batch complete floating bar */}
+      {batchMode && batchSelected.size > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg p-4 z-40">
+          <div className="max-w-3xl mx-auto flex items-center gap-3">
+            <p className="text-sm font-semibold text-gray-700 flex-1">{batchSelected.size} task{batchSelected.size > 1 ? 's' : ''} selected</p>
+            <button onClick={() => { setBatchSelected(new Set()); }}
+              className="px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
+              Clear
+            </button>
+            <button onClick={handleBatchComplete} disabled={batchSaving}
+              className="px-5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+              <CircleCheck size={16} />
+              {batchSaving ? 'Completing...' : 'Complete All'}
+            </button>
+          </div>
         </div>
       )}
     </div>

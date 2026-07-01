@@ -324,6 +324,59 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   res.json({ completed: req.params.id, next_work_order: nextWO });
 });
 
+// --- Batch Complete ---
+
+router.post('/work-orders/batch-complete', (req, res) => {
+  const db = getDb();
+  const { ids, _actor } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+
+  const completedAt = new Date().toISOString();
+  const completedBy = _actor || 'system';
+  const results = [];
+
+  const completeStmt = db.prepare(`
+    UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
+    notes='Batch completed', readings='{}', step_results='[]',
+    updated_at=datetime('now') WHERE id=?
+  `);
+  const getWO = db.prepare('SELECT * FROM work_orders WHERE id = ?');
+  const getSched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?');
+  const getEq = db.prepare('SELECT is_food_contact FROM equipment WHERE id = ?');
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+  `);
+
+  const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
+
+  const batchRun = db.transaction(() => {
+    for (const id of ids) {
+      const wo = getWO.get(id);
+      if (!wo || wo.status === 'completed') continue;
+      completeStmt.run(completedAt, completedBy, id);
+      logAudit(completedBy, 'complete', 'work_order', id, { batch: true }, null, null);
+
+      if (wo.pm_schedule_id) {
+        const sched = getSched.get(wo.pm_schedule_id);
+        if (sched && sched.is_active) {
+          const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
+          const raw = new Date();
+          raw.setDate(raw.getDate() + interval);
+          const nextDue = nextWeekday(raw);
+          const woId = uuid();
+          insertWO.run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
+          logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id, triggered_by: id }, null, null);
+        }
+      }
+      results.push(id);
+    }
+  });
+
+  batchRun();
+  res.json({ completed: results.length, ids: results });
+});
+
 // --- Mark Work Order Not Applicable ---
 
 router.post('/work-orders/:id/not-applicable', (req, res) => {
