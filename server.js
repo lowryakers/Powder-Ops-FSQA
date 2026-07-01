@@ -728,10 +728,17 @@ server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[server] FSQA Compliance Platform running on port ${PORT} (build ${BUILD_VERSION})`);
 });
 
-process.on('SIGTERM', () => {
-  console.log('[server] SIGTERM received — shutting down gracefully');
-  server.close(() => process.exit(0));
-});
-process.on('SIGINT', () => {
-  server.close(() => process.exit(0));
-});
+function shutdown(signal) {
+  console.log(`[server] ${signal} received — draining connections...`);
+  server.closeAllConnections();
+  server.close(() => {
+    console.log('[server] All connections drained. Exiting.');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.log('[server] Forced exit after timeout');
+    process.exit(0);
+  }, 5000);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
