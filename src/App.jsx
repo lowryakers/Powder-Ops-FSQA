@@ -65,7 +65,7 @@ const NAV_GROUPS = [
   },
 ];
 
-function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose, badges, notifications, onNavigate }) {
+function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose, badges }) {
   const activeGroup = NAV_GROUPS.find(g => g.items.some(i => i.id === activeTab));
   const [openGroups, setOpenGroups] = useState(() => {
     const initial = {};
@@ -87,14 +87,9 @@ function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose, badges, no
           <h1 className="text-sm font-bold text-gray-900 truncate">Powder Ops FSQA</h1>
           <p className="text-[10px] text-gray-400 truncate">Compliance & PM</p>
         </div>
-        <div className="ml-auto flex items-center gap-1">
-          <div className="hidden md:block">
-            <NotificationBell notifications={notifications} onNavigate={(tab) => { onNavigate?.(tab); }} />
-          </div>
-          <button onClick={onClose} className="md:hidden text-gray-400 hover:text-gray-600">
-            <X size={18} />
-          </button>
-        </div>
+        <button onClick={onClose} className="ml-auto md:hidden text-gray-400 hover:text-gray-600">
+          <X size={18} />
+        </button>
       </div>
 
       <div className="flex-1 py-2 space-y-0.5">
@@ -187,7 +182,7 @@ function NotificationBell({ notifications, onNavigate }) {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 md:left-0 top-full mt-2 w-80 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <h3 className="text-sm font-bold text-gray-900">Notifications</h3>
             {total > 0 ? (
@@ -249,7 +244,7 @@ function App() {
   const { user, loading, login, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { data: notifications } = useApiGet('/compliance/notifications', [activeTab]);
+  const { data: notifications } = useApiGet('/compliance/notifications', [activeTab, user?.id]);
   const [opLang, setOpLang] = useState(() => localStorage.getItem('op_lang') || 'en');
   const toggleLang = useCallback((lang) => { setOpLang(lang); localStorage.setItem('op_lang', lang); }, []);
   const path = window.location.pathname;
@@ -364,7 +359,7 @@ function App() {
     <div className="min-h-screen bg-gray-50 flex">
       {/* Desktop sidebar */}
       <aside className="hidden md:block flex-shrink-0 sticky top-0 h-screen">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} notifications={notifications} onNavigate={setActiveTab} />
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} />
       </aside>
 
       {/* Mobile sidebar overlay */}
@@ -372,13 +367,29 @@ function App() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-60 shadow-xl">
-            <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} notifications={notifications} onNavigate={(tab) => { setActiveTab(tab); setSidebarOpen(false); }} />
+            <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} />
           </div>
         </div>
       )}
 
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col">
+        {/* Desktop top bar */}
+        <header className="hidden md:block bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="px-6 lg:px-8 py-2.5 flex items-center justify-between max-w-7xl mx-auto">
+            <h1 className="text-sm font-semibold text-gray-700">{activeItem?.label || 'Dashboard'}</h1>
+            <div className="flex items-center gap-3">
+              <NotificationBell notifications={notifications} onNavigate={setActiveTab} />
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-full bg-powder-100 flex items-center justify-center text-xs font-bold text-powder-700">
+                  {(user.name || '?')[0]}
+                </div>
+                <span className="text-sm text-gray-600">{user.name}</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
         {/* Mobile top bar */}
         <header className="md:hidden bg-white border-b border-gray-200 sticky top-0 z-30">
           <div className="px-4 py-3 flex items-center gap-3">
