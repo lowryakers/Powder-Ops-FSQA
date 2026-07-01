@@ -228,10 +228,13 @@ router.get('/metrics', (req, res) => {
 
   const gf = group ? ' AND task_group = ?' : '';
   const gp = group ? [group] : [];
-  const total = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status != 'not_applicable'" + gf).get(start, end, ...gp);
-  const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')" + gf).get(start, end, ...gp);
-  const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, end, ...gp);
-  const naCount = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'not_applicable'" + gf).get(start, end, ...gp);
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const rateCutoff = yesterday.toISOString().split('T')[0];
+  const total = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status != 'not_applicable'" + gf).get(start, rateCutoff, ...gp);
+  const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')" + gf).get(start, rateCutoff, ...gp);
+  const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, rateCutoff, ...gp);
+  const naCount = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'not_applicable'" + gf).get(start, rateCutoff, ...gp);
   const overdue = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')" + gf).get(end, ...gp);
   const open = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status IN ('open','in_progress')" + gf).get(...gp);
 

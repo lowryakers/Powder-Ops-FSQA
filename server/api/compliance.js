@@ -13,8 +13,11 @@ router.get('/dashboard', (_req, res) => {
   const sevenDaysOut = new Date(now);
   sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
 
-  const pmTotal = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date BETWEEN ? AND ? AND status != 'not_applicable'").get(from, to).c;
-  const pmCompleted = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')").get(from, to).c;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const pmCutoff = yesterday.toISOString().split('T')[0];
+  const pmTotal = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date BETWEEN ? AND ? AND status != 'not_applicable'").get(from, pmCutoff).c;
+  const pmCompleted = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')").get(from, pmCutoff).c;
   const pmRate = pmTotal > 0 ? ((pmCompleted / pmTotal) * 100) : 0;
 
   const overdueWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')").get(to).c;
