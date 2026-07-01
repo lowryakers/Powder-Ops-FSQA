@@ -44,6 +44,14 @@ router.post('/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+router.get('/lookup', (req, res) => {
+  const db = getDb();
+  const { q } = req.query;
+  if (!q || q.length < 2) return res.json([]);
+  const users = db.prepare("SELECT id, name, department FROM users WHERE is_active = 1 AND LOWER(name) LIKE LOWER(?) ORDER BY name LIMIT 10").all(`%${q}%`);
+  res.json(users);
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT id, name, email, role, department, is_active, created_at FROM users WHERE id = ?').get(req.params.id);
@@ -89,10 +97,19 @@ router.put('/:id', (req, res) => {
 
 router.post('/login', (req, res) => {
   const db = getDb();
-  const { email, pin } = req.body;
-  if (!email || !pin) return res.status(400).json({ error: 'email and pin are required' });
+  const { email, pin, name } = req.body;
 
-  const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND is_active = 1').get(email);
+  let user;
+  if (name) {
+    if (!pin) return res.status(400).json({ error: 'PIN is required' });
+    user = db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?) AND is_active = 1').get(name);
+  } else if (email) {
+    if (!pin) return res.status(400).json({ error: 'PIN is required' });
+    user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND is_active = 1').get(email);
+  } else {
+    return res.status(400).json({ error: 'Name and PIN are required' });
+  }
+
   if (!user || user.pin !== pin) return res.status(401).json({ error: 'Invalid credentials' });
 
   const token = crypto.randomBytes(32).toString('hex');

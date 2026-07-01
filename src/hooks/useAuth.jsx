@@ -16,16 +16,22 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback(async (email, pin) => {
+  const login = useCallback(async (nameOrEmail, pin) => {
+    const isEmail = nameOrEmail.includes('@');
     const res = await fetch('/api/users/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, pin }),
+      body: JSON.stringify(isEmail ? { email: nameOrEmail, pin } : { name: nameOrEmail, pin }),
     });
     if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
     const data = await res.json();
     localStorage.setItem('auth_token', data.token);
     setUser(data.user);
+
+    localStorage.setItem('bio_user_name', data.user.name);
+    localStorage.setItem('bio_user_pin', pin);
+    enrollBiometric(data.user);
+
     return data.user;
   }, []);
 
@@ -43,6 +49,43 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
+}
+
+async function enrollBiometric(user) {
+  try {
+    if (!window.PublicKeyCredential) return;
+    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.();
+    if (!available) return;
+
+    const existing = localStorage.getItem('bio_cred_ids');
+    if (existing) return;
+
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge,
+        rp: { name: 'Powder Ops FSQA', id: window.location.hostname },
+        user: {
+          id: new TextEncoder().encode(user.id),
+          name: user.name,
+          displayName: user.name,
+        },
+        pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+        },
+        timeout: 60000,
+      },
+    });
+
+    if (credential) {
+      const rawId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+      localStorage.setItem('bio_cred_ids', JSON.stringify([rawId]));
+    }
+  } catch {
+    // Biometric enrollment is optional
+  }
 }
 
 export function useAuth() {

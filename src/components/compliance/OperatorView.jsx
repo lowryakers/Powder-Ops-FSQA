@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, Ban } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon } from 'lucide-react';
 import FileUpload from '../FileUpload';
 
 function detectTaskType(task) {
@@ -178,31 +178,32 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
             {!completing && !flagging && !skippingNA ? (
               <>
                 <button onClick={() => { setCompleting(true); setFlagging(false); setSkippingNA(false); }}
-                  className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-500 hover:bg-green-50 transition-all active:scale-90">
-                  <CheckCircle size={22} />
+                  className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-500 hover:bg-green-50 transition-all active:scale-90"
+                  title="Complete task">
+                  <CircleCheck size={22} />
                 </button>
                 <button onClick={() => { setFlagging(true); setCompleting(false); setSkippingNA(false); }}
                   className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-red-500 hover:text-red-500 hover:bg-red-50 transition-all active:scale-90"
-                  title="Flag an issue">
-                  <Flag size={18} />
+                  title="Report an issue">
+                  <AlertOctagon size={18} />
                 </button>
                 <button onClick={() => { setSkippingNA(true); setCompleting(false); setFlagging(false); }}
                   className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-amber-500 hover:text-amber-500 hover:bg-amber-50 transition-all active:scale-90"
-                  title="Not applicable / Not in use">
-                  <Ban size={18} />
+                  title="Skip — not applicable">
+                  <MinusCircle size={18} />
                 </button>
               </>
             ) : completing ? (
               <div className="w-11 h-11 rounded-full bg-green-500 flex items-center justify-center">
-                <CheckCircle size={22} className="text-white" />
+                <CircleCheck size={22} className="text-white" />
               </div>
             ) : skippingNA ? (
               <div className="w-11 h-11 rounded-full bg-amber-500 flex items-center justify-center">
-                <Ban size={18} className="text-white" />
+                <MinusCircle size={18} className="text-white" />
               </div>
             ) : (
               <div className="w-11 h-11 rounded-full bg-red-500 flex items-center justify-center">
-                <Flag size={18} className="text-white" />
+                <AlertOctagon size={18} className="text-white" />
               </div>
             )}
           </div>
@@ -763,26 +764,36 @@ const DEPT_OPTIONS = [
 export default function OperatorView() {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin' || user?.role === 'supervisor';
-  const [viewDept, setViewDept] = useState(isAdmin ? 'all' : (user?.department || 'warehouse'));
+  const userDept = user?.department || 'warehouse';
+  const [viewDept, setViewDept] = useState(isAdmin ? 'all' : userDept);
   const groupParam = viewDept === 'all' ? '' : `?group=${viewDept}`;
   const { data: tasks, loading, refresh } = useApiGet(`/pm/operator-tasks${groupParam}`);
   const { data: technicians } = useApiGet('/users/technicians');
   const [freqFilter, setFreqFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState('');
+  const [toast, setToast] = useState(null);
+
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 2500);
+  }, []);
 
   const handleComplete = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
+    showToast('Task completed');
     refresh();
   };
 
   const handleFlagIssue = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/flag-issue`, form);
+    showToast('Issue reported', 'info');
     refresh();
   };
 
   const handleSkipNA = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/not-applicable`, form);
+    showToast('Marked not applicable', 'info');
     refresh();
   };
 
@@ -848,6 +859,16 @@ export default function OperatorView() {
 
   return (
     <div className="space-y-4">
+      {/* Completion toast */}
+      {toast && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 text-sm font-semibold animate-fade-in ${
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-gray-800 text-white'
+        }`}>
+          <CircleCheck size={18} />
+          {toast.message}
+        </div>
+      )}
+
       {/* Header with summary */}
       <div className="flex items-center justify-between">
         <div>
