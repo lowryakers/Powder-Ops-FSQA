@@ -3,6 +3,7 @@ import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
 import FileUpload from '../FileUpload';
+import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 
 function detectTaskType(task) {
   const t = (task.title || '').toLowerCase();
@@ -45,7 +46,7 @@ function formatDueLabel(dueDate) {
   return `Due ${dueDate}`;
 }
 
-function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, userName, isAdmin, batchMode, batchSelected, onBatchToggle }) {
+function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, userName, isAdmin, batchMode, batchSelected, onBatchToggle, t }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
@@ -186,17 +187,17 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
               <>
                 <button onClick={() => { setCompleting(true); setFlagging(false); setSkippingNA(false); }}
                   className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-500 hover:bg-green-50 transition-all active:scale-90"
-                  title="Complete task">
+                  title={t('complete_task')}>
                   <CircleCheck size={22} />
                 </button>
                 <button onClick={() => { setFlagging(true); setCompleting(false); setSkippingNA(false); }}
                   className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-red-500 hover:text-red-500 hover:bg-red-50 transition-all active:scale-90"
-                  title="Report an issue">
+                  title={t('report_issue')}>
                   <AlertOctagon size={18} />
                 </button>
                 <button onClick={() => { setSkippingNA(true); setCompleting(false); setFlagging(false); }}
                   className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-amber-500 hover:text-amber-500 hover:bg-amber-50 transition-all active:scale-90"
-                  title="Skip — not applicable">
+                  title={t('skip_na')}>
                   <MinusCircle size={18} />
                 </button>
               </>
@@ -229,7 +230,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               {task.issue_flagged === 1 && (
                 <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold text-white uppercase tracking-wide bg-red-500">
-                  <Flag size={9} /> Issue
+                  <Flag size={9} /> {t('issue_badge')}
                 </span>
               )}
 
@@ -243,7 +244,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 isOverdue ? 'text-red-600' : isDueToday ? 'text-powder-600' : 'text-gray-400'
               }`}>
                 {isOverdue ? <AlertTriangle size={11} /> : <Clock size={11} />}
-                {formatDueLabel(task.due_date)}
+                {formatDueLabelI18n(task.due_date, t)}
               </span>
 
               {task.assigned_to && (
@@ -264,10 +265,10 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
         {/* Existing issue display */}
         {task.issue_flagged === 1 && !flagging && (
           <div className="mt-3 ml-14 bg-red-50 rounded-xl p-3 border border-red-200">
-            <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> Issue Reported</p>
+            <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> {t('issue_reported')}</p>
             <p className="text-sm text-red-900">{task.issue_notes}</p>
             <p className="text-xs text-red-600 mt-1">
-              Flagged by {task.issue_flagged_by} &middot; {task.issue_flagged_at ? new Date(task.issue_flagged_at).toLocaleString() : ''}
+              {t('flagged_by')} {task.issue_flagged_by} &middot; {task.issue_flagged_at ? new Date(task.issue_flagged_at).toLocaleString() : ''}
             </p>
             {issuePhotos.length > 0 && (
               <div className="mt-2 flex gap-2 flex-wrap">
@@ -305,22 +306,22 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
         {/* Inline issue flagging */}
         {flagging && (
           <div className="mt-3 ml-14 bg-red-50 rounded-xl p-3 space-y-2 border border-red-200">
-            <h4 className="text-xs font-bold text-red-800 uppercase tracking-wide flex items-center gap-1"><Flag size={11} /> Report an Issue</h4>
+            <h4 className="text-xs font-bold text-red-800 uppercase tracking-wide flex items-center gap-1"><Flag size={11} /> {t('report_an_issue')}</h4>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">What's the issue? *</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t('whats_the_issue')}</label>
               <textarea required value={issueNotes} onChange={e => setIssueNotes(e.target.value)} autoFocus
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={3}
-                placeholder="Describe the problem, what you observed, any safety concerns..." />
+                placeholder={t('issue_placeholder')} />
             </div>
             <FileUpload files={issueAttachments} onChange={setIssueAttachments} />
             <div className="flex gap-2">
               <button onClick={handleFlagSubmit} disabled={saving || !issueNotes.trim()}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
-                {saving ? 'Saving...' : 'Flag Issue'}
+                {saving ? t('saving') : t('flag_issue')}
               </button>
               <button onClick={() => { setFlagging(false); setIssueNotes(''); setIssueAttachments([]); }}
                 className="px-4 py-2.5 bg-white text-gray-600 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
-                Cancel
+                {t('cancel')}
               </button>
             </div>
           </div>
@@ -329,27 +330,27 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
         {/* Inline N/A skip */}
         {skippingNA && (
           <div className="mt-3 ml-14 bg-amber-50 rounded-xl p-3 space-y-2 border border-amber-200">
-            <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1"><MinusCircle size={11} /> Not Applicable / Not In Use</h4>
-            <p className="text-xs text-amber-700">This task will be skipped and will not count as missed. The next occurrence will still be generated on schedule.</p>
+            <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1"><MinusCircle size={11} /> {t('na_title')}</h4>
+            <p className="text-xs text-amber-700">{t('na_description')}</p>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Reason (optional)</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t('na_reason_label')}</label>
               <select value={naReason} onChange={e => setNaReason(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                <option value="">Equipment not in use</option>
-                <option value="Production schedule change">Production schedule change</option>
-                <option value="Equipment decommissioned">Equipment decommissioned</option>
-                <option value="Seasonal shutdown">Seasonal shutdown</option>
-                <option value="Duplicate task">Duplicate task</option>
+                <option value="">{t('na_reason_not_in_use')}</option>
+                <option value="Production schedule change">{t('na_reason_production')}</option>
+                <option value="Equipment decommissioned">{t('na_reason_decommissioned')}</option>
+                <option value="Seasonal shutdown">{t('na_reason_seasonal')}</option>
+                <option value="Duplicate task">{t('na_reason_duplicate')}</option>
               </select>
             </div>
             <div className="flex gap-2">
               <button onClick={handleNASubmit} disabled={saving}
                 className="flex-1 py-2.5 bg-amber-600 text-white rounded-lg text-sm font-bold hover:bg-amber-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
-                {saving ? 'Saving...' : 'Skip — Not Applicable'}
+                {saving ? t('saving') : t('skip_na_button')}
               </button>
               <button onClick={() => { setSkippingNA(false); setNaReason(''); }}
                 className="px-4 py-2.5 bg-white text-gray-600 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
-                Cancel
+                {t('cancel')}
               </button>
             </div>
           </div>
@@ -361,22 +362,22 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
             {/* Type-specific fields */}
             {taskType === 'temp_humidity' && (
               <>
-                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Thermometer size={12} /> Record Readings</h4>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Thermometer size={12} /> {t('record_readings')}</h4>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Temperature (°F) *</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('temperature')}</label>
                     <input type="number" step="0.1" value={readings.temperature || ''} onChange={e => updateReading('temperature', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 68.5" autoFocus />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Humidity (%) *</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('humidity')}</label>
                     <input type="number" step="0.1" value={readings.humidity || ''} onChange={e => updateReading('humidity', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 35.2" />
                   </div>
                 </div>
                 {readings.humidity && parseFloat(readings.humidity) > 40 && (
                   <div className="bg-red-100 border border-red-300 rounded-lg p-2 text-xs text-red-800 font-medium">
-                    Humidity exceeds 40% — notify manager and check dehumidifiers/A/C units.
+                    {t('humidity_warning')}
                   </div>
                 )}
                 <div className="flex items-center gap-2">
@@ -384,11 +385,11 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                     className="text-gray-500 hover:text-green-600">
                     {readings.rolling_doors_closed ? <SquareCheck size={18} className="text-green-600" /> : <Square size={18} />}
                   </button>
-                  <span className="text-sm text-gray-700">Rolling doors verified closed</span>
+                  <span className="text-sm text-gray-700">{t('rolling_doors')}</span>
                 </div>
                 {readings.temperature && readings.humidity && (
                   <div className={`rounded-lg p-2 text-xs font-bold text-center ${parseFloat(readings.humidity) <= 40 ? 'bg-green-200 text-green-900' : 'bg-red-200 text-red-900'}`}>
-                    {parseFloat(readings.humidity) <= 40 ? 'PASS — Within acceptable range' : 'FAIL — Humidity above 40% threshold'}
+                    {parseFloat(readings.humidity) <= 40 ? t('pass_range') : t('fail_humidity')}
                   </div>
                 )}
               </>
@@ -396,13 +397,13 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
 
             {taskType === 'chemical_dilution' && (
               <>
-                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><FlaskConical size={12} /> Chemical Verification</h4>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><FlaskConical size={12} /> {t('chemical_verification')}</h4>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Chemical *</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('chemical_label')}</label>
                     <select value={readings.chemical_name || ''} onChange={e => updateReading('chemical_name', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus>
-                      <option value="">Select chemical</option>
+                      <option value="">{t('select_chemical')}</option>
                       <option value="Sani-512">Sani-512 (200-250 ppm)</option>
                       <option value="Chlorine">Chlorine (100-200 ppm)</option>
                       <option value="Dawn">Dawn Dish Soap</option>
@@ -411,33 +412,33 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">PPM Reading *</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('ppm_reading')}</label>
                     <input type="number" value={readings.ppm_reading || ''} onChange={e => updateReading('ppm_reading', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 225" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Lot Number</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('lot_number')}</label>
                     <input type="text" value={readings.lot_number || ''} onChange={e => updateReading('lot_number', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Lot #" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Expiration Date</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('expiration_date')}</label>
                     <input type="date" value={readings.expiration_date || ''} onChange={e => updateReading('expiration_date', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Within acceptable range? *</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{t('acceptable_range')}</label>
                   <div className="flex gap-2">
                     <button onClick={() => updateReading('dilution_pass', 'yes')}
                       className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.dilution_pass === 'yes' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      Pass
+                      {t('pass')}
                     </button>
                     <button onClick={() => updateReading('dilution_pass', 'no')}
                       className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.dilution_pass === 'no' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      Fail
+                      {t('fail')}
                     </button>
                   </div>
                 </div>
@@ -470,10 +471,10 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
               return hasParsedItems ? (
                 <>
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Form 431-02 — Item Inspection</h4>
+                    <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> {t('item_inspection')}</h4>
                     {isAdmin && !editingItems && (
                       <button onClick={startEditing} className="text-[10px] text-gray-400 hover:text-powder-600 flex items-center gap-0.5">
-                        <Pencil size={10} /> Edit Items
+                        <Pencil size={10} /> {t('edit_items')}
                       </button>
                     )}
                   </div>
@@ -496,18 +497,18 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                       ))}
                       <button onClick={() => setEditItems([...editItems, { name: '', qty: '1', material: 'Plastic' }])}
                         className="w-full py-1.5 text-xs text-powder-600 hover:bg-powder-50 rounded border border-dashed border-powder-300 flex items-center justify-center gap-1">
-                        <Plus size={12} /> Add Item
+                        <Plus size={12} /> {t('add_item')}
                       </button>
                       <div className="flex gap-2 pt-1">
-                        <button onClick={saveItems} className="flex-1 py-1.5 bg-powder-600 text-white rounded text-xs font-bold hover:bg-powder-700">Save Changes</button>
-                        <button onClick={() => setEditingItems(false)} className="px-3 py-1.5 bg-white text-gray-600 rounded text-xs border border-gray-200">Cancel</button>
+                        <button onClick={saveItems} className="flex-1 py-1.5 bg-powder-600 text-white rounded text-xs font-bold hover:bg-powder-700">{t('save_changes')}</button>
+                        <button onClick={() => setEditingItems(false)} className="px-3 py-1.5 bg-white text-gray-600 rounded text-xs border border-gray-200">{t('cancel')}</button>
                       </div>
                     </div>
                   ) : (
                   <>
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <div className="grid grid-cols-[1fr_40px_52px_auto] gap-0 bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 uppercase">
-                      <span>Item</span><span>Qty</span><span>Type</span><span className="text-center">Condition</span>
+                      <span>{t('item')}</span><span>{t('qty')}</span><span>{t('type')}</span><span className="text-center">{t('condition')}</span>
                     </div>
                     <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
                       {bpgItems.map((item, i) => (
@@ -527,10 +528,10 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                       ))}
                     </div>
                   </div>
-                  <p className="text-[10px] text-gray-500 text-center">{checkedCount} / {bpgItems.length} items inspected — G = Good, B = Bad, X = Broken</p>
+                  <p className="text-[10px] text-gray-500 text-center">{checkedCount} / {bpgItems.length} {t('items_inspected')} — {t('gbx_legend')}</p>
                   {Object.values(itemConditions).some(v => v === 'bad' || v === 'broken') && (
                     <div className="bg-red-50 border border-red-300 rounded-lg p-2 text-xs text-red-800 font-medium">
-                      Damaged/broken items detected — document details in notes below and notify your manager.
+                      {t('damaged_warning')}
                     </div>
                   )}
                   </>
@@ -538,8 +539,8 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 </>
               ) : (
                 <>
-                  <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Brittle Plastic & Glass Inspection</h4>
-                  <p className="text-xs text-gray-500">No brittle plastic or glass items in this zone.</p>
+                  <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> {t('brittle_inspection')}</h4>
+                  <p className="text-xs text-gray-500">{t('no_items_zone')}</p>
                 </>
               );
             })()}
@@ -561,17 +562,17 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
               return hasParsedItems ? (
                 <>
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-indigo-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Daily Inspection Checklist</h4>
+                    <h4 className="text-xs font-bold text-indigo-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> {t('daily_inspection')}</h4>
                   </div>
                   {readings.hour_meter !== undefined && (
                     <div className="bg-indigo-50 rounded-lg px-3 py-2 text-sm">
-                      <span className="text-xs text-gray-500">Hour Meter: </span>
+                      <span className="text-xs text-gray-500">{t('hour_meter')}: </span>
                       <span className="font-semibold text-indigo-800">{readings.hour_meter}</span>
                     </div>
                   )}
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <div className="grid grid-cols-[1fr_auto] gap-0 bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500 uppercase">
-                      <span>Inspection Item</span><span className="text-center">Condition</span>
+                      <span>{t('inspection_item')}</span><span className="text-center">{t('condition')}</span>
                     </div>
                     <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
                       {forkItems.map((item, i) => {
@@ -608,10 +609,10 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                       })}
                     </div>
                   </div>
-                  <p className="text-[10px] text-gray-500 text-center">{checkedCount} / {forkItems.length} items inspected — G = Good, B = Bad/Poor, X = Broken/Unsafe</p>
+                  <p className="text-[10px] text-gray-500 text-center">{checkedCount} / {forkItems.length} {t('items_inspected')} — {t('gbx_fork_legend')}</p>
                   {Object.values(itemConditions).some(v => v === 'bad' || v === 'broken') && (
                     <div className="bg-red-50 border border-red-300 rounded-lg p-2 text-xs text-red-800 font-medium">
-                      Issue detected — document details in notes below. Do NOT operate equipment until cleared.
+                      {t('fork_warning')}
                     </div>
                   )}
                 </>
@@ -620,30 +621,30 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
 
             {taskType === 'light_inspection' && (
               <>
-                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Lightbulb size={12} /> Light Inspection</h4>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Lightbulb size={12} /> {t('light_inspection')}</h4>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Reading (foot-candles) *</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('foot_candles')}</label>
                     <input type="number" value={readings.foot_candles || ''} onChange={e => updateReading('foot_candles', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 220" autoFocus />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Fixtures Checked</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('fixtures_checked')}</label>
                     <input type="number" value={readings.fixtures_checked || ''} onChange={e => updateReading('fixtures_checked', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Count" />
                   </div>
                 </div>
-                <p className="text-[10px] text-gray-500">Production: min 30 fc | Inspection/QC: 50-130 fc</p>
+                <p className="text-[10px] text-gray-500">{t('light_spec')}</p>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">All fixtures pass? *</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{t('all_fixtures_pass')}</label>
                   <div className="flex gap-2">
                     <button onClick={() => updateReading('light_pass', 'yes')}
                       className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.light_pass === 'yes' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      Pass
+                      {t('pass')}
                     </button>
                     <button onClick={() => updateReading('light_pass', 'no')}
                       className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.light_pass === 'no' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      Fail
+                      {t('fail')}
                     </button>
                   </div>
                 </div>
@@ -652,35 +653,35 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
 
             {taskType === 'production_clean' && (
               <>
-                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Droplets size={12} /> Production Line Verification</h4>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><Droplets size={12} /> {t('production_verification')}</h4>
                 <div className="flex items-center gap-2">
                   <button onClick={() => updateReading('allergen_check', !readings.allergen_check)} className="text-gray-500 hover:text-green-600">
                     {readings.allergen_check ? <SquareCheck size={18} className="text-green-600" /> : <Square size={18} />}
                   </button>
-                  <span className="text-sm text-gray-700">Allergen verification complete</span>
+                  <span className="text-sm text-gray-700">{t('allergen_check')}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">ATP Reading (RLU)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('atp_reading')}</label>
                     <input type="number" value={readings.atp_reading || ''} onChange={e => updateReading('atp_reading', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 10" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Sanitizer Contact (min)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('sanitizer_contact')}</label>
                     <input type="number" value={readings.contact_time || ''} onChange={e => updateReading('contact_time', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Minutes" />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Visual inspection pass? *</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{t('visual_pass')}</label>
                   <div className="flex gap-2">
                     <button onClick={() => updateReading('visual_pass', 'yes')}
                       className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.visual_pass === 'yes' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      Pass
+                      {t('pass')}
                     </button>
                     <button onClick={() => updateReading('visual_pass', 'no')}
                       className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.visual_pass === 'no' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      Fail
+                      {t('fail')}
                     </button>
                   </div>
                 </div>
@@ -690,7 +691,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
             {/* Step-by-step checkoff for cleaning and equipment PM */}
             {(taskType === 'cleaning' || taskType === 'equipment_pm') && steps.length > 0 && (
               <>
-                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> Checklist</h4>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> {t('checklist')}</h4>
                 <div className="space-y-1">
                   {steps.map((step, i) => (
                     <button key={i} onClick={() => toggleStep(i)}
@@ -701,38 +702,38 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                   ))}
                 </div>
                 {steps.length > 0 && (
-                  <p className="text-[10px] text-gray-500 text-center">{stepChecks.filter(Boolean).length} / {steps.length} steps complete</p>
+                  <p className="text-[10px] text-gray-500 text-center">{stepChecks.filter(Boolean).length} / {steps.length} {t('steps_complete')}</p>
                 )}
               </>
             )}
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Notes {(taskType === 'cleaning' || taskType === 'equipment_pm') ? '(optional)' : ''}</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t('notes')} {(taskType === 'cleaning' || taskType === 'equipment_pm') ? t('notes_optional') : ''}</label>
               <textarea value={notes} onChange={e => setNotes(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={2}
-                placeholder={taskType === 'temp_humidity' ? 'Corrective actions taken, dehumidifier status...' :
-                  taskType === 'glass_plastic' ? 'Describe damaged items, locations...' :
-                  taskType === 'chemical_dilution' ? 'Dilution adjustments made...' :
-                  'Any issues or observations...'} />
+                placeholder={taskType === 'temp_humidity' ? t('notes_temp') :
+                  taskType === 'glass_plastic' ? t('notes_glass') :
+                  taskType === 'chemical_dilution' ? t('notes_chem') :
+                  t('notes_general')} />
             </div>
             {technicians && technicians.length > 0 && !task.assigned_to && (
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Assign to</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">{t('assign_to')}</label>
                 <select onChange={e => { if (e.target.value) onAssign(task.id, e.target.value); }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" defaultValue="">
-                  <option value="">Leave unassigned</option>
-                  {technicians.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                  <option value="">{t('leave_unassigned')}</option>
+                  {technicians.map(tc => <option key={tc.id} value={tc.name}>{tc.name}</option>)}
                 </select>
               </div>
             )}
             <div className="flex gap-2">
               <button onClick={handleSubmit} disabled={saving || !canSubmit()}
                 className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
-                {saving ? 'Saving...' : 'Mark Complete'}
+                {saving ? t('saving') : t('mark_complete')}
               </button>
               <button onClick={() => { setCompleting(false); setNotes(''); setReadings({}); setStepChecks([]); }}
                 className="px-4 py-2.5 bg-white text-gray-600 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
-                Cancel
+                {t('cancel')}
               </button>
             </div>
           </div>
@@ -760,18 +761,19 @@ function SectionHeader({ icon: Icon, title, count, color, defaultOpen = true, ch
   );
 }
 
-const DEPT_OPTIONS = [
-  { id: 'all', label: 'All Teams' },
-  { id: 'maintenance', label: 'Maintenance' },
-  { id: 'warehouse', label: 'Warehouse' },
-  { id: 'qa', label: 'QA' },
-  { id: 'cleaning', label: 'Cleaning' },
+const DEPT_KEYS = [
+  { id: 'all', key: 'all_teams' },
+  { id: 'maintenance', key: 'maintenance' },
+  { id: 'warehouse', key: 'warehouse' },
+  { id: 'qa', key: 'qa' },
+  { id: 'cleaning', key: 'cleaning' },
 ];
 
-export default function OperatorView() {
+export default function OperatorView({ lang = 'en' }) {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin' || user?.role === 'supervisor';
   const userDept = user?.department || 'warehouse';
+  const t = useMemo(() => createTranslator(lang), [lang]);
   const [viewDept, setViewDept] = useState(isAdmin ? 'all' : userDept);
   const groupParam = viewDept === 'all' ? '' : `?group=${viewDept}`;
   const { data: tasks, loading, refresh } = useApiGet(`/pm/operator-tasks${groupParam}`);
@@ -805,12 +807,12 @@ export default function OperatorView() {
         ids: [...batchSelected],
         _actor: userName || 'Operator',
       });
-      showToast(`${batchSelected.size} tasks completed`);
+      showToast(`${batchSelected.size} ${t('toast_batch')}`);
       setBatchSelected(new Set());
       setBatchMode(false);
       refresh();
     } catch (e) {
-      showToast('Batch complete failed', 'error');
+      showToast(t('toast_batch_fail'), 'error');
     } finally {
       setBatchSaving(false);
     }
@@ -818,19 +820,19 @@ export default function OperatorView() {
 
   const handleComplete = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
-    showToast('Task completed');
+    showToast(t('toast_completed'));
     refresh();
   };
 
   const handleFlagIssue = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/flag-issue`, form);
-    showToast('Issue reported', 'info');
+    showToast(t('toast_issue'), 'info');
     refresh();
   };
 
   const handleSkipNA = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/not-applicable`, form);
-    showToast('Marked not applicable', 'info');
+    showToast(t('toast_na'), 'info');
     refresh();
   };
 
@@ -888,7 +890,7 @@ export default function OperatorView() {
           <div className="w-10 h-10 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3 animate-pulse">
             <Wrench size={20} className="text-white" />
           </div>
-          <p className="text-gray-500 text-sm">Loading tasks...</p>
+          <p className="text-gray-500 text-sm">{t('loading_tasks')}</p>
         </div>
       </div>
     );
@@ -910,17 +912,17 @@ export default function OperatorView() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">
-            {userName ? `Hi, ${userName.split(' ')[0]}` : 'My Tasks'}
+            {userName ? `${lang === 'es' ? 'Hola' : 'Hi'}, ${userName.split(' ')[0]}` : t('my_tasks')}
           </h1>
           <p className="text-sm text-gray-500">
-            {overdue.length > 0 && <span className="text-red-600 font-semibold">{overdue.length} overdue &middot; </span>}
-            {today.length} due today &middot; {filtered.length} total
+            {overdue.length > 0 && <span className="text-red-600 font-semibold">{overdue.length} {t('overdue_count')} &middot; </span>}
+            {today.length} {t('due_today_count')} &middot; {filtered.length} {t('total')}
           </p>
         </div>
         <div className="flex gap-1.5">
           <button onClick={() => { setBatchMode(!batchMode); setBatchSelected(new Set()); }}
             className={`w-9 h-9 rounded-lg flex items-center justify-center border transition-colors ${batchMode ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
-            title="Batch complete">
+            title={t('batch_complete')}>
             <ListChecks size={16} />
           </button>
           <button onClick={() => setShowFilters(!showFilters)}
@@ -933,7 +935,7 @@ export default function OperatorView() {
       {/* Admin department toggle */}
       {isAdmin && (
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-          {DEPT_OPTIONS.map(d => (
+          {DEPT_KEYS.map(d => (
             <button
               key={d.id}
               onClick={() => setViewDept(d.id)}
@@ -943,7 +945,7 @@ export default function OperatorView() {
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              {d.label}
+              {t(d.key)}
             </button>
           ))}
         </div>
@@ -956,7 +958,7 @@ export default function OperatorView() {
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search tasks, equipment, location..."
+          placeholder={t('search_placeholder')}
           className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-powder-500 focus:border-transparent"
         />
         {search && (
@@ -970,19 +972,19 @@ export default function OperatorView() {
       <div className="grid grid-cols-4 gap-2">
         <div className={`rounded-xl p-2.5 text-center ${overdue.length > 0 ? 'bg-red-50 border border-red-200' : 'bg-gray-50 border border-gray-100'}`}>
           <p className={`text-lg font-bold ${overdue.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overdue.length}</p>
-          <p className="text-[10px] font-medium text-gray-500 uppercase">Overdue</p>
+          <p className="text-[10px] font-medium text-gray-500 uppercase">{t('overdue_label')}</p>
         </div>
         <div className={`rounded-xl p-2.5 text-center ${today.length > 0 ? 'bg-powder-50 border border-powder-200' : 'bg-gray-50 border border-gray-100'}`}>
           <p className={`text-lg font-bold ${today.length > 0 ? 'text-powder-600' : 'text-gray-400'}`}>{today.length}</p>
-          <p className="text-[10px] font-medium text-gray-500 uppercase">Today</p>
+          <p className="text-[10px] font-medium text-gray-500 uppercase">{t('today_label')}</p>
         </div>
         <div className="rounded-xl p-2.5 text-center bg-gray-50 border border-gray-100">
           <p className="text-lg font-bold text-gray-600">{thisWeek.length}</p>
-          <p className="text-[10px] font-medium text-gray-500 uppercase">This Week</p>
+          <p className="text-[10px] font-medium text-gray-500 uppercase">{t('this_week')}</p>
         </div>
         <div className="rounded-xl p-2.5 text-center bg-gray-50 border border-gray-100">
           <p className="text-lg font-bold text-gray-400">{upcoming.length}</p>
-          <p className="text-[10px] font-medium text-gray-500 uppercase">Later</p>
+          <p className="text-[10px] font-medium text-gray-500 uppercase">{t('later')}</p>
         </div>
       </div>
 
@@ -991,7 +993,7 @@ export default function OperatorView() {
         <div className="flex gap-1.5 flex-wrap bg-white rounded-xl border border-gray-200 p-3">
           <button onClick={() => setFreqFilter('all')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${freqFilter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            All ({(tasks || []).length})
+            {t('all_filter')} ({(tasks || []).length})
           </button>
           {['daily', 'weekly', 'monthly', 'quarterly', 'annual'].map(f => freqCounts[f] ? (
             <button key={f} onClick={() => setFreqFilter(f)}
@@ -1006,39 +1008,39 @@ export default function OperatorView() {
       {filtered.length === 0 ? (
         <div className="text-center py-16">
           <CheckCircle size={48} className="mx-auto text-green-400 mb-3" />
-          <p className="text-lg font-semibold text-gray-700">All caught up!</p>
-          <p className="text-gray-500 text-sm">No {freqFilter !== 'all' ? freqFilter + ' ' : ''}tasks pending.</p>
+          <p className="text-lg font-semibold text-gray-700">{t('all_caught_up')}</p>
+          <p className="text-gray-500 text-sm">{t('no_prefix')} {freqFilter !== 'all' ? t(freqFilter) + ' ' : ''}{t('no_tasks_pending')}</p>
         </div>
       ) : (
         <div className="space-y-2">
           {overdue.length > 0 && (
-            <SectionHeader icon={AlertTriangle} title="Overdue" count={overdue.length} color="bg-red-500" defaultOpen={true}>
-              {overdue.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(t.id)} onBatchToggle={toggleBatchItem} />
+            <SectionHeader icon={AlertTriangle} title={t('section_overdue')} count={overdue.length} color="bg-red-500" defaultOpen={true}>
+              {overdue.map(tk => (
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} />
               ))}
             </SectionHeader>
           )}
 
           {today.length > 0 && (
-            <SectionHeader icon={CircleDot} title="Due Today" count={today.length} color="bg-powder-600" defaultOpen={true}>
-              {today.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(t.id)} onBatchToggle={toggleBatchItem} />
+            <SectionHeader icon={CircleDot} title={t('section_due_today')} count={today.length} color="bg-powder-600" defaultOpen={true}>
+              {today.map(tk => (
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} />
               ))}
             </SectionHeader>
           )}
 
           {thisWeek.length > 0 && (
-            <SectionHeader icon={CalendarDays} title="This Week" count={thisWeek.length} color="bg-gray-500" defaultOpen={overdue.length + today.length < 10}>
-              {thisWeek.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(t.id)} onBatchToggle={toggleBatchItem} />
+            <SectionHeader icon={CalendarDays} title={t('section_this_week')} count={thisWeek.length} color="bg-gray-500" defaultOpen={overdue.length + today.length < 10}>
+              {thisWeek.map(tk => (
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} />
               ))}
             </SectionHeader>
           )}
 
           {upcoming.length > 0 && (
-            <SectionHeader icon={Clock} title="Upcoming" count={upcoming.length} color="bg-gray-400" defaultOpen={overdue.length + today.length + thisWeek.length < 5}>
-              {upcoming.map(t => (
-                <TaskCard key={t.id} task={t} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(t.id)} onBatchToggle={toggleBatchItem} />
+            <SectionHeader icon={Clock} title={t('section_upcoming')} count={upcoming.length} color="bg-gray-400" defaultOpen={overdue.length + today.length + thisWeek.length < 5}>
+              {upcoming.map(tk => (
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} />
               ))}
             </SectionHeader>
           )}
@@ -1049,15 +1051,15 @@ export default function OperatorView() {
       {batchMode && batchSelected.size > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg p-4 z-40">
           <div className="max-w-3xl mx-auto flex items-center gap-3">
-            <p className="text-sm font-semibold text-gray-700 flex-1">{batchSelected.size} task{batchSelected.size > 1 ? 's' : ''} selected</p>
+            <p className="text-sm font-semibold text-gray-700 flex-1">{batchSelected.size} {batchSelected.size > 1 ? t('tasks_word') : t('task_word')} {t('tasks_selected')}</p>
             <button onClick={() => { setBatchSelected(new Set()); }}
               className="px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
-              Clear
+              {t('clear')}
             </button>
             <button onClick={handleBatchComplete} disabled={batchSaving}
               className="px-5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
               <CircleCheck size={16} />
-              {batchSaving ? 'Completing...' : 'Complete All'}
+              {batchSaving ? t('completing_batch') : t('complete_all')}
             </button>
           </div>
         </div>
