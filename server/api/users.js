@@ -60,6 +60,19 @@ router.get('/:id', (req, res) => {
   res.json(user);
 });
 
+router.get('/:id/pin', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  const db = getDb();
+  const session = db.prepare("SELECT u.role FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > datetime('now')").get(token);
+  if (!session || session.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+
+  const user = db.prepare('SELECT id, pin FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ pin: user.pin || null });
+});
+
 router.post('/', (req, res) => {
   const db = getDb();
   const id = uuid();

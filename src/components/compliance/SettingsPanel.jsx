@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Edit2, UserCheck, UserX, Copy, Shield, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Edit2, UserCheck, UserX, Copy, Shield, ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const ROLES = [
@@ -239,9 +239,27 @@ const ROLE_CONFIG = {
   auditor: { label: 'Auditors', color: 'emerald', desc: 'Read-only compliance view' },
 };
 
-function UserRow({ u, onEdit, onToggle }) {
+function UserRow({ u, onEdit, onToggle, isAdmin }) {
   const moduleAccess = u.module_access ? (Array.isArray(u.module_access) ? u.module_access : (() => { try { return JSON.parse(u.module_access); } catch { return null; } })()) : null;
   const moduleCount = moduleAccess ? moduleAccess.length : ALL_MODULE_IDS.length;
+  const [pinVisible, setPinVisible] = useState(false);
+  const [pinValue, setPinValue] = useState(null);
+  const [pinLoading, setPinLoading] = useState(false);
+
+  const togglePin = async () => {
+    if (pinVisible) { setPinVisible(false); return; }
+    if (pinValue !== null) { setPinVisible(true); return; }
+    setPinLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/users/${u.id}/pin`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setPinValue(data.pin);
+        setPinVisible(true);
+      }
+    } finally { setPinLoading(false); }
+  };
 
   return (
     <tr className="border-b border-gray-100 hover:bg-gray-50">
@@ -271,6 +289,21 @@ function UserRow({ u, onEdit, onToggle }) {
         )}
       </td>
       <td className="px-4 py-3">
+        {isAdmin && (
+          <div className="flex items-center gap-1.5">
+            <button onClick={togglePin} disabled={pinLoading}
+              className="text-gray-400 hover:text-powder-600 disabled:opacity-50" title={pinVisible ? 'Hide PIN' : 'View PIN'}>
+              {pinVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+            {pinVisible ? (
+              <span className="font-mono text-xs text-gray-900 tracking-widest">{pinValue || 'Not set'}</span>
+            ) : (
+              <span className="text-xs text-gray-400">••••</span>
+            )}
+          </div>
+        )}
+      </td>
+      <td className="px-4 py-3">
         <span className={`px-2 py-0.5 rounded-full text-xs ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
           {u.is_active ? 'Active' : 'Disabled'}
         </span>
@@ -287,7 +320,7 @@ function UserRow({ u, onEdit, onToggle }) {
   );
 }
 
-function RoleSection({ role, users, config, onEdit, onToggle, defaultOpen }) {
+function RoleSection({ role, users, config, onEdit, onToggle, defaultOpen, isAdmin }) {
   const [open, setOpen] = useState(defaultOpen);
   const activeCount = users.filter(u => u.is_active).length;
 
@@ -314,12 +347,13 @@ function RoleSection({ role, users, config, onEdit, onToggle, defaultOpen }) {
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Name</th>
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Dept</th>
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Access</th>
+              {isAdmin && <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">PIN</th>}
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Status</th>
               <th className="text-right px-4 py-2 font-medium text-gray-500 text-xs">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {users.map(u => <UserRow key={u.id} u={u} onEdit={onEdit} onToggle={onToggle} />)}
+            {users.map(u => <UserRow key={u.id} u={u} onEdit={onEdit} onToggle={onToggle} isAdmin={isAdmin} />)}
           </tbody>
         </table>
       )}
@@ -407,6 +441,7 @@ export default function SettingsPanel() {
               onEdit={handleEdit}
               onToggle={handleToggleActive}
               defaultOpen={role !== 'auditor'}
+              isAdmin={currentUser?.role === 'admin'}
             />
           ))}
         </div>

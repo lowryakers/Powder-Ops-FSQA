@@ -58,7 +58,7 @@ function dayDate(monday, dayIndex) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-function CleaningCell({ value, weekStart, dayIndex, room, userName, onSaved }) {
+function CleaningCell({ value, weekStart, dayIndex, room, userName, onSaved, readOnly }) {
   const [saving, setSaving] = useState(false);
 
   const handleChange = async (e) => {
@@ -84,8 +84,8 @@ function CleaningCell({ value, weekStart, dayIndex, room, userName, onSaved }) {
     <select
       value={value || 'N/A'}
       onChange={handleChange}
-      disabled={saving}
-      className="w-full text-xs px-1 py-0.5 border border-gray-200 rounded bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-300"
+      disabled={saving || readOnly}
+      className="w-full text-xs px-1 py-0.5 border border-gray-200 rounded bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-300 disabled:opacity-60"
     >
       {CLEANING_LEVELS.map(l => (
         <option key={l} value={l}>{l}</option>
@@ -306,6 +306,8 @@ export default function ProductionSchedule({ user }) {
     });
   }, [monday, assignmentMap]);
 
+  const canEdit = user?.role === 'admin';
+
   const renderAssignmentCell = (dayIndex, room, roomType, cellTint) => {
     const key = `${dayIndex}-${room}`;
     const a = assignmentMap[key];
@@ -314,8 +316,8 @@ export default function ProductionSchedule({ user }) {
       return (
         <td
           key={dayIndex}
-          className={`border border-gray-200 px-2 py-1.5 cursor-pointer hover:bg-gray-100 transition-colors ${cellTint}`}
-          onClick={() => setEditCell({ dayIndex, room, roomType, data: a })}
+          className={`border border-gray-200 px-2 py-1.5 ${canEdit ? 'cursor-pointer hover:bg-gray-100' : ''} transition-colors ${cellTint}`}
+          onClick={canEdit ? () => setEditCell({ dayIndex, room, roomType, data: a }) : undefined}
         >
           <div className="text-xs leading-tight space-y-0.5">
             {a.team && <div className="font-semibold text-gray-900">{a.team}</div>}
@@ -335,10 +337,10 @@ export default function ProductionSchedule({ user }) {
     return (
       <td
         key={dayIndex}
-        className="border border-gray-200 px-2 py-3 cursor-pointer hover:bg-gray-50 transition-colors text-center"
-        onClick={() => setEditCell({ dayIndex, room, roomType, data: null })}
+        className={`border border-gray-200 px-2 py-3 ${canEdit ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors text-center`}
+        onClick={canEdit ? () => setEditCell({ dayIndex, room, roomType, data: null }) : undefined}
       >
-        <Plus size={14} className="mx-auto text-gray-300" />
+        {canEdit && <Plus size={14} className="mx-auto text-gray-300" />}
       </td>
     );
   };
@@ -448,6 +450,7 @@ export default function ProductionSchedule({ user }) {
                                   room={room}
                                   userName={user?.name || ''}
                                   onSaved={refresh}
+                                  readOnly={!canEdit}
                                 />
                               </td>
                             ))}
