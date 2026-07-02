@@ -1,10 +1,109 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Droplets, CheckCircle } from 'lucide-react';
+import { Plus, Droplets, CheckCircle, Eye, X, Check, XCircle } from 'lucide-react';
 
 const TYPE_LABELS = { pre_op: 'Pre-Op', post_op: 'Post-Op', mid_shift: 'Mid-Shift', deep_clean: 'Deep Clean', emergency: 'Emergency' };
 const TYPE_COLORS = { pre_op: 'bg-blue-100 text-blue-800', post_op: 'bg-purple-100 text-purple-800', mid_shift: 'bg-yellow-100 text-yellow-800', deep_clean: 'bg-teal-100 text-teal-800', emergency: 'bg-red-100 text-red-800' };
 const RESULT_COLORS = { pass: 'bg-green-100 text-green-800', fail: 'bg-red-100 text-red-800', reclean: 'bg-yellow-100 text-yellow-800' };
+
+function SanitationDetail({ record, onClose }) {
+  return (
+    <tr>
+      <td colSpan={10} className="p-0">
+        <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 m-2 space-y-4">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="font-semibold text-gray-900 text-base">{record.area}</h4>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[record.type]}`}>{TYPE_LABELS[record.type]}</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${RESULT_COLORS[record.result]}`}>{record.result.toUpperCase()}</span>
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-400 hover:text-gray-600">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Area</p>
+              <p className="text-sm font-semibold text-gray-900">{record.area}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Type</p>
+              <p className="text-sm font-semibold text-gray-900">
+                <span className={`px-2 py-0.5 rounded-full text-xs ${TYPE_COLORS[record.type]}`}>{TYPE_LABELS[record.type]}</span>
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Equipment</p>
+              <p className="text-sm font-semibold text-gray-900">{record.equipment_name || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Performed By</p>
+              <p className="text-sm font-semibold text-gray-900">{record.performed_by}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Date / Time</p>
+              <p className="text-sm font-semibold text-gray-900">{new Date(record.performed_at).toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chemical Used</p>
+              <p className="text-sm font-semibold text-gray-900">{record.chemicals_used || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Concentration</p>
+              <p className="text-sm font-semibold text-gray-900">{record.concentration || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Contact Time (min)</p>
+              <p className="text-sm font-semibold text-gray-900">{record.contact_time_minutes != null ? record.contact_time_minutes : '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">ATP Reading (RLU)</p>
+              <p className="text-sm font-semibold text-gray-900">{record.atp_reading != null ? record.atp_reading : '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Result</p>
+              <p className="text-sm font-semibold">
+                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${RESULT_COLORS[record.result]}`}>{record.result.toUpperCase()}</span>
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Rinse Verified</p>
+              <p className="text-sm font-semibold text-gray-900 flex items-center gap-1">
+                {record.rinse_verified ? (
+                  <><Check size={14} className="text-green-600" /> Yes</>
+                ) : (
+                  <><XCircle size={14} className="text-red-500" /> No</>
+                )}
+              </p>
+            </div>
+            {record.verified_by && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Verified By</p>
+                <p className="text-sm font-semibold text-green-700 flex items-center gap-1">
+                  <CheckCircle size={12} /> {record.verified_by}
+                </p>
+              </div>
+            )}
+            {record.verified_at && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Verified At</p>
+                <p className="text-sm font-semibold text-gray-900">{new Date(record.verified_at).toLocaleString()}</p>
+              </div>
+            )}
+          </div>
+
+          {record.notes && (
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Notes</p>
+              <p className="text-sm text-gray-700 bg-white rounded-lg p-3 border border-gray-200">{record.notes}</p>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
 
 function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   const [form, setForm] = useState({
@@ -124,6 +223,7 @@ export default function SanitationPanel() {
   const { data: equipment } = useApiGet('/equipment');
   const { data: chemicals } = useApiGet('/chemicals');
   const [showForm, setShowForm] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
 
   const handleCreate = async (form) => {
     await apiPost('/sanitation', form);
@@ -166,30 +266,43 @@ export default function SanitationPanel() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">ATP</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Result</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Verified</th>
+                <th className="px-4 py-3 w-10"></th>
               </tr>
             </thead>
             <tbody>
-              {(records || []).map(r => (
-                <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{r.area}</td>
-                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs ${TYPE_COLORS[r.type]}`}>{TYPE_LABELS[r.type]}</span></td>
-                  <td className="px-4 py-3 text-gray-600">{r.equipment_name || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{r.performed_by}</td>
-                  <td className="px-4 py-3 text-gray-600">{new Date(r.performed_at).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-gray-600">{r.chemicals_used || '—'}{r.concentration ? ` (${r.concentration})` : ''}</td>
-                  <td className="px-4 py-3 text-gray-600">{r.atp_reading ?? '—'}</td>
-                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_COLORS[r.result]}`}>{r.result}</span></td>
-                  <td className="px-4 py-3">
-                    {r.verified_by ? (
-                      <span className="text-green-600 text-xs"><CheckCircle size={12} className="inline mr-1" />{r.verified_by}</span>
-                    ) : (
-                      <button onClick={() => handleVerify(r.id)} className="text-xs text-powder-600 hover:underline">Verify</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {(records || []).map(r => {
+                const isExpanded = expandedId === r.id;
+                return (
+                  <Fragment key={r.id}>
+                    <tr
+                      onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                      className={`border-b border-gray-100 cursor-pointer transition-colors hover:bg-powder-50 ${isExpanded ? 'bg-powder-50' : ''}`}
+                    >
+                      <td className="px-4 py-3 font-medium">{r.area}</td>
+                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs ${TYPE_COLORS[r.type]}`}>{TYPE_LABELS[r.type]}</span></td>
+                      <td className="px-4 py-3 text-gray-600">{r.equipment_name || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600">{r.performed_by}</td>
+                      <td className="px-4 py-3 text-gray-600">{new Date(r.performed_at).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-gray-600">{r.chemicals_used || '—'}{r.concentration ? ` (${r.concentration})` : ''}</td>
+                      <td className="px-4 py-3 text-gray-600">{r.atp_reading ?? '—'}</td>
+                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_COLORS[r.result]}`}>{r.result}</span></td>
+                      <td className="px-4 py-3">
+                        {r.verified_by ? (
+                          <span className="text-green-600 text-xs"><CheckCircle size={12} className="inline mr-1" />{r.verified_by}</span>
+                        ) : (
+                          <button onClick={(e) => { e.stopPropagation(); handleVerify(r.id); }} className="text-xs text-powder-600 hover:underline">Verify</button>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400">
+                        <Eye size={16} className={isExpanded ? 'text-powder-600' : ''} />
+                      </td>
+                    </tr>
+                    {isExpanded && <SanitationDetail record={r} onClose={() => setExpandedId(null)} />}
+                  </Fragment>
+                );
+              })}
               {(!records || records.length === 0) && (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No sanitation records yet</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">No sanitation records yet</td></tr>
               )}
             </tbody>
           </table>
