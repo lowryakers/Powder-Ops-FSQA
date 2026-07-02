@@ -408,7 +408,56 @@ function App() {
     return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
   }
 
-  const activeItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.id === activeTab);
+  // Determine effective accessible modules for this user
+  const allModuleIds = NAV_GROUPS.flatMap(g => g.items).filter(i => !i.adminOnly || user.role === 'admin').map(i => i.id);
+  const effectiveModules = user.role === 'admin' ? allModuleIds : (user.module_access || allModuleIds);
+  const operatorOnly = effectiveModules.length === 1 && effectiveModules[0] === 'operator';
+
+  // If user only has operator view access, render the standalone operator layout
+  if (operatorOnly) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+            <div className="h-9 w-9 bg-powder-600 rounded-lg flex items-center justify-center">
+              <Wrench size={20} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <h1 className="text-lg font-bold text-gray-900">Powder Ops</h1>
+              <p className="text-xs text-gray-500">{{ qa: 'QA Tasks', cleaning: 'Cleaning Tasks', maintenance: 'Maintenance Tasks', warehouse: 'Warehouse Tasks' }[user.department] || 'My Tasks'}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+                <button onClick={() => toggleLang('en')}
+                  className={`px-2 py-1 text-[10px] font-bold transition-colors ${opLang === 'en' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  EN
+                </button>
+                <button onClick={() => toggleLang('es')}
+                  className={`px-2 py-1 text-[10px] font-bold transition-colors ${opLang === 'es' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  ES
+                </button>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${{ qa: 'bg-teal-100 text-teal-700', cleaning: 'bg-amber-100 text-amber-700', maintenance: 'bg-violet-100 text-violet-700', warehouse: 'bg-indigo-100 text-indigo-700' }[user.department] || 'bg-gray-100 text-gray-700'}`}>
+                {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH' }[user.department] || user.department?.toUpperCase()}
+              </span>
+              <span className="text-xs text-gray-500">{user.name}</span>
+              <button onClick={logout} className="text-gray-400 hover:text-gray-600" title="Sign Out">
+                <LogOut size={18} />
+              </button>
+            </div>
+          </div>
+        </header>
+        <main className="max-w-3xl mx-auto px-4 py-6">
+          <OperatorView lang={opLang} />
+        </main>
+        <UpdateBanner />
+      </div>
+    );
+  }
+
+  // Show first accessible module if current tab isn't accessible
+  const resolvedTab = effectiveModules.includes(activeTab) ? activeTab : (effectiveModules[0] || 'dashboard');
+  const activeItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.id === resolvedTab);
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -463,24 +512,24 @@ function App() {
         </header>
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
-          {activeTab === 'dashboard' && <ComplianceDashboard />}
-          {activeTab === 'operator' && <OperatorView />}
-          {activeTab === 'production-log' && <ProductionLog user={user} />}
-          {activeTab === 'production-schedule' && <ProductionSchedule user={user} />}
-          {activeTab === 'production-dashboard' && <ProductionDashboard />}
-          {activeTab === 'pm' && <PMPanel />}
-          {activeTab === 'calibration' && <CalibrationPanel />}
-          {activeTab === 'sanitation' && <SanitationPanel />}
-          {activeTab === 'chemicals' && <ChemicalsPanel />}
-          {activeTab === 'loto' && <LOTOPanel />}
-          {activeTab === 'equipment' && <EquipmentPanel />}
-          {activeTab === 'hygienic' && <HygienicDesignPanel />}
-          {activeTab === 'capa' && <CAPAPanel />}
-          {activeTab === 'sops' && <SOPPanel />}
-          {activeTab === 'training' && <TrainingPanel />}
-          {activeTab === 'recall' && <MockRecallPanel />}
-          {activeTab === 'audit' && <AuditLogPanel />}
-          {activeTab === 'settings' && <SettingsPanel />}
+          {resolvedTab === 'dashboard' && <ComplianceDashboard />}
+          {resolvedTab === 'operator' && <OperatorView />}
+          {resolvedTab === 'production-log' && <ProductionLog user={user} />}
+          {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}
+          {resolvedTab === 'production-dashboard' && <ProductionDashboard />}
+          {resolvedTab === 'pm' && <PMPanel />}
+          {resolvedTab === 'calibration' && <CalibrationPanel />}
+          {resolvedTab === 'sanitation' && <SanitationPanel />}
+          {resolvedTab === 'chemicals' && <ChemicalsPanel />}
+          {resolvedTab === 'loto' && <LOTOPanel />}
+          {resolvedTab === 'equipment' && <EquipmentPanel />}
+          {resolvedTab === 'hygienic' && <HygienicDesignPanel />}
+          {resolvedTab === 'capa' && <CAPAPanel />}
+          {resolvedTab === 'sops' && <SOPPanel />}
+          {resolvedTab === 'training' && <TrainingPanel />}
+          {resolvedTab === 'recall' && <MockRecallPanel />}
+          {resolvedTab === 'audit' && <AuditLogPanel />}
+          {resolvedTab === 'settings' && <SettingsPanel />}
         </main>
       </div>
 

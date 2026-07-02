@@ -126,7 +126,7 @@ function ModuleAccessEditor({ value, onChange, disabled }) {
   );
 }
 
-function UserForm({ initial, onSave, onCancel }) {
+function UserForm({ initial, onSave, onCancel, canViewPin }) {
   const parseModuleAccess = (val) => {
     if (!val) return null;
     if (Array.isArray(val)) return val;
@@ -140,6 +140,24 @@ function UserForm({ initial, onSave, onCancel }) {
     module_access: parseModuleAccess(initial?.module_access),
   }));
   const [saving, setSaving] = useState(false);
+  const [pinVisible, setPinVisible] = useState(false);
+  const [currentPin, setCurrentPin] = useState(null);
+  const [pinLoading, setPinLoading] = useState(false);
+
+  const viewCurrentPin = async () => {
+    if (pinVisible) { setPinVisible(false); return; }
+    if (currentPin !== null) { setPinVisible(true); return; }
+    setPinLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/users/${initial.id}/pin`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentPin(data.pin);
+        setPinVisible(true);
+      }
+    } finally { setPinLoading(false); }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -164,6 +182,20 @@ function UserForm({ initial, onSave, onCancel }) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono tracking-widest"
             placeholder={initial?.id ? '••••' : 'User sets on first login'} maxLength={8} inputMode="numeric" />
           {!initial?.id && <p className="text-[10px] text-gray-400 mt-0.5">Leave blank — user will create their PIN on first sign-in.</p>}
+          {initial?.id && canViewPin && (
+            <div className="flex items-center gap-2 mt-1.5">
+              <button type="button" onClick={viewCurrentPin} disabled={pinLoading}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-powder-600 disabled:opacity-50">
+                {pinVisible ? <EyeOff size={13} /> : <Eye size={13} />}
+                {pinLoading ? 'Loading...' : pinVisible ? 'Hide current PIN' : 'View current PIN'}
+              </button>
+              {pinVisible && (
+                <span className="font-mono text-sm font-semibold text-gray-900 tracking-widest bg-gray-100 px-2 py-0.5 rounded">
+                  {currentPin || 'Not set'}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Role *</label>
@@ -239,27 +271,9 @@ const ROLE_CONFIG = {
   auditor: { label: 'Auditors', color: 'emerald', desc: 'Read-only compliance view' },
 };
 
-function UserRow({ u, onEdit, onToggle, isAdmin }) {
+function UserRow({ u, onEdit, onToggle }) {
   const moduleAccess = u.module_access ? (Array.isArray(u.module_access) ? u.module_access : (() => { try { return JSON.parse(u.module_access); } catch { return null; } })()) : null;
   const moduleCount = moduleAccess ? moduleAccess.length : ALL_MODULE_IDS.length;
-  const [pinVisible, setPinVisible] = useState(false);
-  const [pinValue, setPinValue] = useState(null);
-  const [pinLoading, setPinLoading] = useState(false);
-
-  const togglePin = async () => {
-    if (pinVisible) { setPinVisible(false); return; }
-    if (pinValue !== null) { setPinVisible(true); return; }
-    setPinLoading(true);
-    try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/users/${u.id}/pin`, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) {
-        const data = await res.json();
-        setPinValue(data.pin);
-        setPinVisible(true);
-      }
-    } finally { setPinLoading(false); }
-  };
 
   return (
     <tr className="border-b border-gray-100 hover:bg-gray-50">
@@ -289,21 +303,6 @@ function UserRow({ u, onEdit, onToggle, isAdmin }) {
         )}
       </td>
       <td className="px-4 py-3">
-        {isAdmin && (
-          <div className="flex items-center gap-1.5">
-            <button onClick={togglePin} disabled={pinLoading}
-              className="text-gray-400 hover:text-powder-600 disabled:opacity-50" title={pinVisible ? 'Hide PIN' : 'View PIN'}>
-              {pinVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
-            {pinVisible ? (
-              <span className="font-mono text-xs text-gray-900 tracking-widest">{pinValue || 'Not set'}</span>
-            ) : (
-              <span className="text-xs text-gray-400">••••</span>
-            )}
-          </div>
-        )}
-      </td>
-      <td className="px-4 py-3">
         <span className={`px-2 py-0.5 rounded-full text-xs ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
           {u.is_active ? 'Active' : 'Disabled'}
         </span>
@@ -320,7 +319,7 @@ function UserRow({ u, onEdit, onToggle, isAdmin }) {
   );
 }
 
-function RoleSection({ role, users, config, onEdit, onToggle, defaultOpen, isAdmin }) {
+function RoleSection({ role, users, config, onEdit, onToggle, defaultOpen }) {
   const [open, setOpen] = useState(defaultOpen);
   const activeCount = users.filter(u => u.is_active).length;
 
@@ -347,13 +346,12 @@ function RoleSection({ role, users, config, onEdit, onToggle, defaultOpen, isAdm
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Name</th>
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Dept</th>
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Access</th>
-              {isAdmin && <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">PIN</th>}
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Status</th>
               <th className="text-right px-4 py-2 font-medium text-gray-500 text-xs">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {users.map(u => <UserRow key={u.id} u={u} onEdit={onEdit} onToggle={onToggle} isAdmin={isAdmin} />)}
+            {users.map(u => <UserRow key={u.id} u={u} onEdit={onEdit} onToggle={onToggle} />)}
           </tbody>
         </table>
       )}
@@ -371,7 +369,6 @@ export default function SettingsPanel() {
   const [editing, setEditing] = useState(null);
   const [copiedUrl, setCopiedUrl] = useState(null);
 
-  const operatorUrl = `${window.location.origin}/operator`;
   const submitUrl = `${window.location.origin}/submit`;
   const productionEntryUrl = `${window.location.origin}/production-entry`;
   const auditorUrl = `${window.location.origin}/auditor`;
@@ -429,7 +426,7 @@ export default function SettingsPanel() {
         </div>
 
         {(showForm && !editing) && <UserForm onSave={handleCreate} onCancel={() => setShowForm(false)} />}
-        {editing && <UserForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
+        {editing && <UserForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} canViewPin={currentUser?.role === 'admin'} />}
 
         <div className="space-y-3">
           {['admin', 'supervisor', 'operator', 'auditor'].map(role => (
@@ -441,7 +438,6 @@ export default function SettingsPanel() {
               onEdit={handleEdit}
               onToggle={handleToggleActive}
               defaultOpen={role !== 'auditor'}
-              isAdmin={currentUser?.role === 'admin'}
             />
           ))}
         </div>
@@ -451,19 +447,6 @@ export default function SettingsPanel() {
       <div className="space-y-4">
         <h2 className="text-xl font-bold text-gray-900">Shareable Links</h2>
         <div className="space-y-3">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">Operator View</h3>
-                <p className="text-sm text-gray-500">Simplified task-only view for technicians. Share this link or set it as the default on shop floor devices.</p>
-                <code className="text-xs text-powder-600 mt-1 block">{operatorUrl}</code>
-              </div>
-              <button onClick={() => copyUrl(operatorUrl)} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center gap-1">
-                <Copy size={14} /> {copiedUrl === operatorUrl ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-          </div>
-
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center justify-between">
               <div>
