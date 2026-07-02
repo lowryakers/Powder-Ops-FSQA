@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X } from 'lucide-react';
+import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown } from 'lucide-react';
 
 const TEAMS = ['Batching', 'Stick Pack', 'Hand Fill', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const ROOMS = ['Batching 1', 'Batching 2', ...Array.from({ length: 16 }, (_, i) => String(i)), 'Other'];
@@ -243,6 +243,23 @@ function SummaryCards({ from, to }) {
 
 /* ── Production Log Table ────────────────────────────────── */
 
+const SORT_COLUMNS = [
+  { label: 'Date', key: 'date', type: 'date' },
+  { label: 'Team', key: 'team', type: 'string' },
+  { label: 'Room', key: 'room', type: 'string' },
+  { label: 'Product', key: 'product_name', type: 'string' },
+  { label: 'MO #', key: 'mo_number', type: 'string' },
+  { label: 'Lot #', key: 'lot_number', type: 'string' },
+  { label: 'Start', key: 'start_time', type: 'string' },
+  { label: 'End', key: 'end_time', type: 'string' },
+  { label: 'Duration', key: 'duration_hours', type: 'number' },
+  { label: 'Qty', key: 'quantity_completed', type: 'number' },
+  { label: 'People', key: 'people_count', type: 'number' },
+  { label: 'Units/Hr', key: 'units_per_hour', type: 'number' },
+  { label: 'Units/Min/Person', key: 'units_per_min_per_person', type: 'number' },
+  { label: 'QA Status', key: 'qa_signoff_by', type: 'boolean' },
+];
+
 function LogTable({ user }) {
   const [from, setFrom] = useState(thirtyDaysAgo());
   const [to, setTo] = useState(todayStr());
@@ -251,6 +268,17 @@ function LogTable({ user }) {
   const [moSearch, setMoSearch] = useState('');
   const [signoffEntry, setSignoffEntry] = useState(null);
   const [expandedNotes, setExpandedNotes] = useState(null);
+  const [sortCol, setSortCol] = useState('date');
+  const [sortDir, setSortDir] = useState('desc');
+
+  const handleSort = (key) => {
+    if (sortCol === key) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(key);
+      setSortDir('asc');
+    }
+  };
 
   const { data: entries, loading, error, refresh } = useApiGet(
     `/production/entries?from=${from}&to=${to}`, [from, to]
@@ -264,10 +292,24 @@ function LogTable({ user }) {
     if (teamFilter) rows = rows.filter(r => r.team === teamFilter);
     if (roomFilter) rows = rows.filter(r => r.room === roomFilter);
     if (moSearch) rows = rows.filter(r => (r.mo_number || '').toLowerCase().includes(moSearch.toLowerCase()));
-    // Sort by date descending
-    rows = [...rows].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const col = SORT_COLUMNS.find(c => c.key === sortCol);
+    const dir = sortDir === 'asc' ? 1 : -1;
+    rows = [...rows].sort((a, b) => {
+      let cmp = 0;
+      if (col?.type === 'date') {
+        cmp = new Date(a[sortCol]) - new Date(b[sortCol]);
+      } else if (col?.type === 'number') {
+        cmp = (Number(a[sortCol]) || 0) - (Number(b[sortCol]) || 0);
+      } else if (col?.type === 'boolean') {
+        cmp = (a[sortCol] ? 1 : 0) - (b[sortCol] ? 1 : 0);
+      } else {
+        cmp = (a[sortCol] || '').toString().toLowerCase().localeCompare((b[sortCol] || '').toString().toLowerCase());
+      }
+      return cmp * dir;
+    });
     return rows;
-  }, [entries, teamFilter, roomFilter, moSearch]);
+  }, [entries, teamFilter, roomFilter, moSearch, sortCol, sortDir]);
 
   return (
     <div className="space-y-4">
@@ -324,8 +366,17 @@ function LogTable({ user }) {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Date', 'Team', 'Room', 'Product', 'MO #', 'Lot #', 'Start', 'End', 'Duration', 'Qty', 'People', 'Units/Hr', 'Units/Min/Person', 'QA Status'].map(h => (
-                    <th key={h} className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  {SORT_COLUMNS.map(col => (
+                    <th key={col.key}
+                      onClick={() => handleSort(col.key)}
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:text-gray-900 hover:bg-gray-100 transition-colors">
+                      <span className="inline-flex items-center gap-1">
+                        {col.label}
+                        {sortCol === col.key && (
+                          sortDir === 'asc' ? <ChevronUp size={14} className="text-blue-600" /> : <ChevronDown size={14} className="text-blue-600" />
+                        )}
+                      </span>
+                    </th>
                   ))}
                 </tr>
               </thead>
