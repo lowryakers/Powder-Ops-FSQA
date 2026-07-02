@@ -411,7 +411,7 @@ if (userCount === 0) {
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Admin', 'lowry@powder-ops.com', '1234', 'admin', 'warehouse');
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Adam B.', 'adam@powder-ops.com', '1111', 'operator', 'warehouse');
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Ricardo A.', 'ricardo@powder-ops.com', '2222', 'operator', 'warehouse');
-    db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Spencer R.', 'spencer@powder-ops.com', '3333', 'operator', 'warehouse');
+    db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Spencer R.', 'spencer@powder-ops.com', '3333', 'supervisor', 'warehouse');
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'QA Tech', 'qa@powder-ops.com', '4444', 'operator', 'qa');
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Cleaning Tech', 'cleaning@powder-ops.com', '5555', 'operator', 'cleaning');
     db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`).run(uuid(), 'Auditor', 'auditor@powder-ops.com', '9999', 'auditor', 'warehouse');
