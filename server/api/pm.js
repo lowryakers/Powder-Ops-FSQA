@@ -358,6 +358,14 @@ router.post('/work-orders/batch-complete', (req, res) => {
       const wo = getWO.get(id);
       if (!wo || wo.status === 'completed') continue;
       completeStmt.run(completedAt, completedBy, id);
+
+      const eq = getEq.get(wo.equipment_id);
+      const needsClearance = eq && eq.is_food_contact === 1 ? 1 : 0;
+      if (needsClearance) {
+        db.prepare("UPDATE work_orders SET clearance_required=1, clearance_status='pending' WHERE id=?").run(id);
+        logAudit('system', 'clearance_required', 'work_order', id, 'Food-contact equipment — hygiene clearance pending');
+      }
+
       logAudit(completedBy, 'complete', 'work_order', id, { batch: true }, null, null);
 
       if (wo.pm_schedule_id) {
@@ -451,7 +459,7 @@ router.put('/work-orders/:id/clearance', (req, res) => {
   if (!status || !cleared_by) return res.status(400).json({ error: 'status and cleared_by required' });
   if (!['cleared', 'failed'].includes(status)) return res.status(400).json({ error: 'status must be "cleared" or "failed"' });
 
-  if (_actor_department && _actor_department !== 'qa') {
+  if (!_actor_department || _actor_department !== 'qa') {
     return res.status(403).json({ error: 'Only QA department users can perform hygiene clearance' });
   }
   if (cleared_by === wo.completed_by) {
@@ -558,7 +566,9 @@ router.post('/generate', (_req, res) => {
 
   const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
 
+  const checkOpen = db.prepare("SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open','in_progress') LIMIT 1");
   for (const sched of schedules) {
+    if (checkOpen.get(sched.id)) continue;
     const lastWO = db.prepare(
       'SELECT due_date FROM work_orders WHERE pm_schedule_id = ? ORDER BY due_date DESC LIMIT 1'
     ).get(sched.id);

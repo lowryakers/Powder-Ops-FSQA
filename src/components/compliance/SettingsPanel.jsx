@@ -7,6 +7,7 @@ const ROLES = [
   { value: 'admin', label: 'Admin', desc: 'Full access to all features' },
   { value: 'supervisor', label: 'Supervisor', desc: 'All features except settings' },
   { value: 'operator', label: 'Operator', desc: 'Operator view only' },
+  { value: 'auditor', label: 'Auditor', desc: 'Read-only compliance view' },
 ];
 
 const DEPARTMENTS = [

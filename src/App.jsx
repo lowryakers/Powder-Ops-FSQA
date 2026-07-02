@@ -162,7 +162,7 @@ function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose, badges }) 
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-gray-900 truncate">{user.name}</div>
-            <div className="text-[10px] text-gray-400 truncate">{user.role} / {user.department === 'qa' ? 'QA' : user.department === 'cleaning' ? 'Cleaning' : 'Warehouse'}</div>
+            <div className="text-[10px] text-gray-400 truncate">{user.role} / {{ qa: 'QA', cleaning: 'Cleaning', warehouse: 'Warehouse', production: 'Production', maintenance: 'Maintenance' }[user.department] || user.department}</div>
           </div>
           <button onClick={() => window.dispatchEvent(new CustomEvent('app-logout'))} className="text-gray-400 hover:text-gray-600" title="Sign Out">
             <LogOut size={16} />
@@ -225,13 +225,13 @@ function NotificationBell({ notifications, onNavigate }) {
   );
 }
 
-function MobileBottomNav({ activeTab, setActiveTab }) {
+function MobileBottomNav({ activeTab, setActiveTab, effectiveModules }) {
   const quickTabs = [
     { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
     { id: 'pm', label: 'PM', icon: Wrench },
     { id: 'capa', label: 'CAPA', icon: FileWarning },
     { id: 'sanitation', label: 'Sanitation', icon: Droplets },
-  ];
+  ].filter(t => !effectiveModules || effectiveModules.includes(t.id));
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-bottom">
@@ -457,13 +457,17 @@ function App() {
 
   // Show first accessible module if current tab isn't accessible
   const resolvedTab = effectiveModules.includes(activeTab) ? activeTab : (effectiveModules[0] || 'dashboard');
+
+  useEffect(() => {
+    if (resolvedTab !== activeTab) setActiveTab(resolvedTab);
+  }, [resolvedTab]);
   const activeItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.id === resolvedTab);
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Desktop sidebar */}
       <aside className="hidden md:block flex-shrink-0 sticky top-0 h-screen">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} />
+        <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} />
       </aside>
 
       {/* Mobile sidebar overlay */}
@@ -471,7 +475,7 @@ function App() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-60 shadow-xl">
-            <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} />
+            <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} />
           </div>
         </div>
       )}
@@ -513,7 +517,7 @@ function App() {
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
           {resolvedTab === 'dashboard' && <ComplianceDashboard />}
-          {resolvedTab === 'operator' && <OperatorView />}
+          {resolvedTab === 'operator' && <OperatorView lang={opLang} />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}
           {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}
           {resolvedTab === 'production-dashboard' && <ProductionDashboard />}
@@ -533,7 +537,7 @@ function App() {
         </main>
       </div>
 
-      <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} effectiveModules={effectiveModules} />
       <UpdateBanner />
     </div>
   );

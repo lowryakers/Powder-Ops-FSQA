@@ -837,8 +837,8 @@ export default function OperatorView({ lang = 'en' }) {
   };
 
   const handleComplete = async (woId, form) => {
-    if (woId.startsWith('qa_')) {
-      const entryId = woId.replace('qa_', '');
+    if (String(woId).startsWith('qa_')) {
+      const entryId = String(woId).replace('qa_', '');
       await apiPut(`/production/entries/${entryId}/qa-signoff`, {
         qa_signoff_by: form._actor || userName || 'QA',
         qa_notes: form.notes || null,
@@ -853,14 +853,14 @@ export default function OperatorView({ lang = 'en' }) {
   };
 
   const handleFlagIssue = async (woId, form) => {
-    if (woId.startsWith('qa_')) return;
+    if (String(woId).startsWith('qa_')) return;
     await apiPost(`/pm/work-orders/${woId}/flag-issue`, form);
     showToast(t('toast_issue'), 'info');
     refresh();
   };
 
   const handleSkipNA = async (woId, form) => {
-    if (woId.startsWith('qa_')) return;
+    if (String(woId).startsWith('qa_')) return;
     await apiPost(`/pm/work-orders/${woId}/not-applicable`, form);
     showToast(t('toast_na'), 'info');
     refresh();

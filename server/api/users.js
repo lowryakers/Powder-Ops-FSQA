@@ -29,7 +29,7 @@ router.get('/me', (req, res) => {
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
 
   const db = getDb();
-  const session = db.prepare("SELECT s.*, u.id as uid, u.name, u.email, u.role, u.department, u.module_access FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > datetime('now')").get(token);
+  const session = db.prepare("SELECT s.*, u.id as uid, u.name, u.email, u.role, u.department, u.module_access FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1").get(token);
   if (!session) return res.status(401).json({ error: 'Session expired' });
 
   const moduleAccess = session.module_access ? JSON.parse(session.module_access) : null;

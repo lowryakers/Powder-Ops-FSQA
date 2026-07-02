@@ -113,7 +113,7 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   });
 
   const handleChemicalSelect = (chemId) => {
-    const chem = (chemicals || []).find(c => c.id === chemId);
+    const chem = (chemicals || []).find(c => String(c.id) === String(chemId));
     setForm({
       ...form,
       chemical_id: chemId,

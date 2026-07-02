@@ -200,7 +200,7 @@ router.delete('/schedule/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Schedule assignment not found' });
 
   db.prepare('DELETE FROM production_schedule WHERE id = ?').run(req.params.id);
-  logAudit(req.body._actor || 'system', 'delete', 'production_schedule', req.params.id, null, existing, null);
+  logAudit(req.query._actor || req.body?._actor || 'system', 'delete', 'production_schedule', req.params.id, null, existing, null);
   res.json({ success: true });
 });
 

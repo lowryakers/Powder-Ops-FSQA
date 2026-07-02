@@ -82,7 +82,7 @@ function initSchema() {
       equipment_id TEXT NOT NULL,
       title TEXT NOT NULL,
       description TEXT,
-      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','completed','overdue','missed','cancelled')),
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','completed','overdue','missed','cancelled','not_applicable')),
       priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high','critical')),
       assigned_to TEXT,
       due_date TEXT NOT NULL,
@@ -628,7 +628,8 @@ function runMigrations() {
           contractor_company TEXT,
           contractor_license TEXT,
           contractor_insurance_expiry TEXT,
-          contractor_scope TEXT
+          contractor_scope TEXT,
+          module_access TEXT
         );
         INSERT INTO users_new (${colList}) SELECT ${colList} FROM users;
         DROP TABLE users;
@@ -641,6 +642,35 @@ function runMigrations() {
   } catch (e) {
     db.pragma('foreign_keys = ON');
     console.warn('[migrate] Could not migrate users table for auditor role:', e.message);
+  }
+
+  // Widen work_orders.status CHECK constraint to include 'not_applicable'
+  try {
+    const woInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='work_orders'").get();
+    if (woInfo && woInfo.sql && !woInfo.sql.includes("'not_applicable'")) {
+      const cols = db.prepare("PRAGMA table_info(work_orders)").all().map(c => c.name);
+      const colList = cols.join(', ');
+      db.pragma('foreign_keys = OFF');
+      db.exec('DROP TABLE IF EXISTS work_orders_new');
+      const createSql = woInfo.sql
+        .replace('work_orders', 'work_orders_new')
+        .replace(
+          "CHECK (status IN ('open','in_progress','completed','overdue','missed','cancelled'))",
+          "CHECK (status IN ('open','in_progress','completed','overdue','missed','cancelled','not_applicable'))"
+        );
+      db.exec(createSql);
+      db.exec(`INSERT INTO work_orders_new (${colList}) SELECT ${colList} FROM work_orders`);
+      db.exec('DROP TABLE work_orders');
+      db.exec('ALTER TABLE work_orders_new RENAME TO work_orders');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_due_date ON work_orders(due_date)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_equipment ON work_orders(equipment_id)');
+      db.pragma('foreign_keys = ON');
+      console.log("[migrate] Widened work_orders.status CHECK to include 'not_applicable'");
+    }
+  } catch (e) {
+    db.pragma('foreign_keys = ON');
+    console.warn('[migrate] Could not migrate work_orders table for not_applicable status:', e.message);
   }
 
   migrateEquipmentNotes();
