@@ -27,6 +27,7 @@ import trainingRoutes from './server/api/training.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
+import { seedProductionEntries } from './server/production-seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -505,6 +506,14 @@ try {
   seedApprovedChemicals(db);
 } catch (err) {
   console.error('[seed] Error seeding data (non-fatal):', err.message);
+}
+
+// Seed production entries
+try {
+  seedProductionEntries(db);
+  console.log('[seed] Production entries seeded');
+} catch (err) {
+  console.error('[seed] Error seeding production entries (non-fatal):', err.message);
 }
 
 // Seed SOP: Food Safety Policy Statement

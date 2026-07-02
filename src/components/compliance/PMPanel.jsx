@@ -13,6 +13,7 @@ const FREQ_TABS = [
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
   { value: 'annual', label: 'Annual' },
+  { value: 'unscheduled', label: 'Submitted' },
 ];
 
 const FREQ_COLORS = {

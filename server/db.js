@@ -602,6 +602,9 @@ function runMigrations() {
   addColumnIfMissing('capas', 'linked_complaint_number', 'TEXT');
   addColumnIfMissing('capas', 'is_preventive_action', 'INTEGER DEFAULT 0');
 
+  // Module access permissions per user (JSON array of module IDs, null = all access)
+  addColumnIfMissing('users', 'module_access', 'TEXT');
+
   // Widen users.role CHECK constraint to include 'auditor'
   try {
     const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();

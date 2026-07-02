@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Edit2, UserCheck, UserX, Copy } from 'lucide-react';
+import { Plus, Edit2, UserCheck, UserX, Copy, Shield, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const ROLES = [
@@ -13,10 +13,132 @@ const DEPARTMENTS = [
   { value: 'warehouse', label: 'Warehouse' },
   { value: 'qa', label: 'QA' },
   { value: 'cleaning', label: 'Cleaning' },
+  { value: 'production', label: 'Production' },
+  { value: 'maintenance', label: 'Maintenance' },
 ];
 
+const MODULE_GROUPS = [
+  {
+    label: 'Overview',
+    modules: [
+      { id: 'dashboard', label: 'Dashboard' },
+      { id: 'operator', label: 'Operator View' },
+    ],
+  },
+  {
+    label: 'Production',
+    modules: [
+      { id: 'production-log', label: 'Production Log' },
+      { id: 'production-schedule', label: 'Schedule' },
+      { id: 'production-dashboard', label: 'Production KPIs' },
+    ],
+  },
+  {
+    label: 'Maintenance',
+    modules: [
+      { id: 'pm', label: 'Preventive Maintenance' },
+      { id: 'equipment', label: 'Equipment' },
+      { id: 'calibration', label: 'Calibration' },
+      { id: 'loto', label: 'Lockout / Tagout' },
+    ],
+  },
+  {
+    label: 'Quality & Safety',
+    modules: [
+      { id: 'sanitation', label: 'Sanitation' },
+      { id: 'chemicals', label: 'Chemicals' },
+      { id: 'hygienic', label: 'Hygienic Design' },
+    ],
+  },
+  {
+    label: 'Compliance',
+    modules: [
+      { id: 'capa', label: 'CAPA / Complaints' },
+      { id: 'sops', label: 'SOP Registry' },
+      { id: 'training', label: 'Training Records' },
+      { id: 'recall', label: 'Mock Recall' },
+    ],
+  },
+];
+
+const ALL_MODULE_IDS = MODULE_GROUPS.flatMap(g => g.modules.map(m => m.id));
+
+function ModuleAccessEditor({ value, onChange, disabled }) {
+  const access = value || ALL_MODULE_IDS;
+  const allSelected = !value || access.length === ALL_MODULE_IDS.length;
+
+  const toggle = (id) => {
+    if (disabled) return;
+    const current = value || [...ALL_MODULE_IDS];
+    const next = current.includes(id) ? current.filter(m => m !== id) : [...current, id];
+    onChange(next.length === ALL_MODULE_IDS.length ? null : next);
+  };
+
+  const toggleAll = () => {
+    if (disabled) return;
+    onChange(allSelected ? [] : null);
+  };
+
+  const toggleGroup = (modules) => {
+    if (disabled) return;
+    const ids = modules.map(m => m.id);
+    const current = value || [...ALL_MODULE_IDS];
+    const allIn = ids.every(id => current.includes(id));
+    const next = allIn ? current.filter(id => !ids.includes(id)) : [...new Set([...current, ...ids])];
+    onChange(next.length === ALL_MODULE_IDS.length ? null : next);
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="block text-xs font-medium text-gray-700">Module Access</label>
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+          <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={disabled}
+            className="rounded border-gray-300 text-powder-600" />
+          All Modules
+        </label>
+      </div>
+      {!allSelected && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-64 overflow-y-auto">
+          {MODULE_GROUPS.map(group => {
+            const groupIds = group.modules.map(m => m.id);
+            const allGroupIn = groupIds.every(id => access.includes(id));
+            return (
+              <div key={group.label} className="space-y-1">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={allGroupIn} onChange={() => toggleGroup(group.modules)} disabled={disabled}
+                    className="rounded border-gray-300 text-powder-600" />
+                  <span className="text-[10px] font-bold uppercase text-gray-500">{group.label}</span>
+                </label>
+                {group.modules.map(mod => (
+                  <label key={mod.id} className="flex items-center gap-1.5 pl-4 cursor-pointer">
+                    <input type="checkbox" checked={access.includes(mod.id)} onChange={() => toggle(mod.id)} disabled={disabled}
+                      className="rounded border-gray-300 text-powder-600" />
+                    <span className="text-xs text-gray-700">{mod.label}</span>
+                  </label>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UserForm({ initial, onSave, onCancel }) {
-  const [form, setForm] = useState(initial || { name: '', email: '', pin: '', role: 'operator', department: 'warehouse' });
+  const parseModuleAccess = (val) => {
+    if (!val) return null;
+    if (Array.isArray(val)) return val;
+    try { return JSON.parse(val); } catch { return null; }
+  };
+
+  const [form, setForm] = useState(() => ({
+    name: '', email: '', pin: '', role: 'operator', department: 'warehouse',
+    module_access: null,
+    ...initial,
+    module_access: parseModuleAccess(initial?.module_access),
+  }));
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -24,6 +146,8 @@ function UserForm({ initial, onSave, onCancel }) {
     setSaving(true);
     try { await onSave(form); } finally { setSaving(false); }
   };
+
+  const isAdmin = form.role === 'admin';
 
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
@@ -47,7 +171,7 @@ function UserForm({ initial, onSave, onCancel }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Role *</label>
-          <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
+          <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value, module_access: e.target.value === 'admin' ? null : form.module_access })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             {ROLES.map(r => <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>)}
           </select>
@@ -60,6 +184,17 @@ function UserForm({ initial, onSave, onCancel }) {
           </select>
         </div>
       </div>
+
+      {!isAdmin && (
+        <ModuleAccessEditor
+          value={form.module_access}
+          onChange={(val) => setForm({ ...form, module_access: val })}
+        />
+      )}
+      {isAdmin && (
+        <p className="text-xs text-gray-400 italic">Admins have full access to all modules.</p>
+      )}
+
       <div className="flex items-center gap-4 mt-1">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={!!form.is_contractor} onChange={e => setForm({ ...form, is_contractor: e.target.checked })}
@@ -67,7 +202,7 @@ function UserForm({ initial, onSave, onCancel }) {
           <span className="font-medium text-gray-700">External Contractor</span>
         </label>
       </div>
-      {form.is_contractor && (
+      {!!form.is_contractor && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Company *</label>
@@ -101,6 +236,106 @@ function UserForm({ initial, onSave, onCancel }) {
   );
 }
 
+const ROLE_CONFIG = {
+  admin: { label: 'Admins', color: 'red', desc: 'Full platform access including settings' },
+  supervisor: { label: 'Supervisors', color: 'purple', desc: 'Can view and manage most modules' },
+  operator: { label: 'Operators', color: 'blue', desc: 'Task-focused access based on assigned modules' },
+  auditor: { label: 'Auditors', color: 'emerald', desc: 'Read-only compliance view' },
+};
+
+function UserRow({ u, onEdit, onToggle }) {
+  const moduleAccess = u.module_access ? (Array.isArray(u.module_access) ? u.module_access : (() => { try { return JSON.parse(u.module_access); } catch { return null; } })()) : null;
+  const moduleCount = moduleAccess ? moduleAccess.length : ALL_MODULE_IDS.length;
+
+  return (
+    <tr className="border-b border-gray-100 hover:bg-gray-50">
+      <td className="px-4 py-3">
+        <span className="font-medium text-gray-900">{u.name}</span>
+        {u.is_contractor ? (
+          <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
+        ) : null}
+        {u.contractor_company && <div className="text-[10px] text-gray-400">{u.contractor_company}</div>}
+      </td>
+      <td className="px-4 py-3 text-gray-600 text-xs">{u.email || '—'}</td>
+      <td className="px-4 py-3">
+        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+          u.department === 'qa' ? 'bg-teal-100 text-teal-700'
+          : u.department === 'cleaning' ? 'bg-amber-100 text-amber-700'
+          : u.department === 'production' ? 'bg-green-100 text-green-700'
+          : u.department === 'maintenance' ? 'bg-orange-100 text-orange-700'
+          : 'bg-indigo-100 text-indigo-700'
+        }`}>
+          {u.department === 'qa' ? 'QA' : (u.department || 'warehouse').charAt(0).toUpperCase() + (u.department || 'warehouse').slice(1)}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        {u.role === 'admin' ? (
+          <span className="text-[10px] text-gray-400">All modules</span>
+        ) : (
+          <span className="text-[10px] text-gray-500">{moduleCount}/{ALL_MODULE_IDS.length} modules</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <span className={`px-2 py-0.5 rounded-full text-xs ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+          {u.is_active ? 'Active' : 'Disabled'}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-right flex gap-1 justify-end">
+        <button onClick={() => onEdit(u)} className="text-gray-400 hover:text-powder-600" title="Edit">
+          <Edit2 size={14} />
+        </button>
+        <button onClick={() => onToggle(u)} className="text-gray-400 hover:text-gray-700" title={u.is_active ? 'Disable' : 'Enable'}>
+          {u.is_active ? <UserX size={14} /> : <UserCheck size={14} />}
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function RoleSection({ role, users, config, onEdit, onToggle, defaultOpen }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const activeCount = users.filter(u => u.is_active).length;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <button onClick={() => setOpen(!open)}
+        className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors`}>
+        <div className={`h-8 w-8 rounded-lg flex items-center justify-center bg-${config.color}-100`}>
+          <Shield size={16} className={`text-${config.color}-600`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-gray-900">{config.label}</h3>
+            <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-bold">{activeCount} active</span>
+          </div>
+          <p className="text-xs text-gray-500">{config.desc}</p>
+        </div>
+        {open ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
+      </button>
+      {open && users.length > 0 && (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-t border-b">
+            <tr>
+              <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Name</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Email</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Dept</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Access</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Status</th>
+              <th className="text-right px-4 py-2 font-medium text-gray-500 text-xs">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(u => <UserRow key={u.id} u={u} onEdit={onEdit} onToggle={onToggle} />)}
+          </tbody>
+        </table>
+      )}
+      {open && users.length === 0 && (
+        <div className="px-4 py-6 text-center text-sm text-gray-400 border-t">No {config.label.toLowerCase()} yet</div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPanel() {
   const { user: currentUser } = useAuth();
   const { data: users, loading, refresh } = useApiGet('/users');
@@ -129,6 +364,11 @@ export default function SettingsPanel() {
     refresh();
   };
 
+  const handleEdit = (user) => {
+    setEditing(user);
+    setShowForm(false);
+  };
+
   const copyUrl = (url) => {
     navigator.clipboard.writeText(url);
     setCopiedUrl(url);
@@ -137,14 +377,21 @@ export default function SettingsPanel() {
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
 
+  const grouped = { admin: [], supervisor: [], operator: [], auditor: [] };
+  (users || []).forEach(u => {
+    const role = u.role || 'operator';
+    if (grouped[role]) grouped[role].push(u);
+    else grouped.operator.push(u);
+  });
+
   return (
     <div className="space-y-8">
-      {/* Technicians Section */}
+      {/* Users Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Technicians & Users</h2>
-            <p className="text-sm text-gray-500">Manage who can access the platform</p>
+            <p className="text-sm text-gray-500">Manage roles, departments, and module access permissions</p>
           </div>
           <button onClick={() => { setShowForm(true); setEditing(null); }}
             className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
@@ -155,56 +402,18 @@ export default function SettingsPanel() {
         {(showForm && !editing) && <UserForm onSave={handleCreate} onCancel={() => setShowForm(false)} />}
         {editing && <UserForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
 
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Dept</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(users || []).map(u => (
-                <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <span className="font-medium text-gray-900">{u.name}</span>
-                    {u.is_contractor ? (
-                      <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
-                    ) : null}
-                    {u.contractor_company && <div className="text-[10px] text-gray-400">{u.contractor_company}</div>}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{u.email || '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.role === 'admin' ? 'bg-red-100 text-red-800' : u.role === 'supervisor' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.department === 'qa' ? 'bg-teal-100 text-teal-700' : u.department === 'cleaning' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                      {u.department === 'qa' ? 'QA' : u.department === 'cleaning' ? 'Cleaning' : 'Warehouse'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-                      {u.is_active ? 'Active' : 'Disabled'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right flex gap-1 justify-end">
-                    <button onClick={() => { setEditing(u); setShowForm(false); }} className="text-gray-400 hover:text-powder-600">
-                      <Edit2 size={14} />
-                    </button>
-                    <button onClick={() => handleToggleActive(u)} className="text-gray-400 hover:text-gray-700" title={u.is_active ? 'Disable' : 'Enable'}>
-                      {u.is_active ? <UserX size={14} /> : <UserCheck size={14} />}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          {['admin', 'supervisor', 'operator', 'auditor'].map(role => (
+            <RoleSection
+              key={role}
+              role={role}
+              users={grouped[role]}
+              config={ROLE_CONFIG[role]}
+              onEdit={handleEdit}
+              onToggle={handleToggleActive}
+              defaultOpen={role !== 'auditor'}
+            />
+          ))}
         </div>
       </div>
 

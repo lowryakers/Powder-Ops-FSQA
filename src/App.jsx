@@ -105,7 +105,12 @@ function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose, badges }) 
 
       <div className="flex-1 py-2 space-y-0.5">
         {NAV_GROUPS.map((group) => {
-          const visibleItems = group.items.filter(i => !i.adminOnly || user.role === 'admin');
+          const visibleItems = group.items.filter(i => {
+            if (i.adminOnly && user.role !== 'admin') return false;
+            if (user.role === 'admin') return true;
+            if (user.module_access && !user.module_access.includes(i.id)) return false;
+            return true;
+          });
           if (visibleItems.length === 0) return null;
           const isOpen = openGroups[group.label];
           const hasActive = visibleItems.some(i => i.id === activeTab);

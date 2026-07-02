@@ -20,11 +20,11 @@ router.post('/work-order', (req, res) => {
 
   const id = uuid();
   const due_date = new Date();
-  due_date.setDate(due_date.getDate() + 1);
+  due_date.setDate(due_date.getDate() + 7);
 
   db.prepare(`
-    INSERT INTO work_orders (id, equipment_id, title, description, priority, assigned_to, due_date, attachments)
-    VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+    INSERT INTO work_orders (id, equipment_id, title, description, priority, assigned_to, due_date, attachments, task_group)
+    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'maintenance')
   `).run(id, equipment_id, title, description || null, priority || 'normal', due_date.toISOString().split('T')[0], JSON.stringify(attachments || []));
 
   logAudit(submitted_by, 'submit_public', 'work_order', id, { title, submitted_by }, null, null);
