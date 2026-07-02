@@ -25,6 +25,7 @@ import complaintRoutes from './server/api/complaints.js';
 import sopRoutes from './server/api/sops.js';
 import trainingRoutes from './server/api/training.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
+import productionRoutes from './server/api/production.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -683,6 +684,7 @@ app.use('/api/complaints', complaintRoutes);
 app.use('/api/sops', sopRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/mock-recalls', mockRecallRoutes);
+app.use('/api/production', productionRoutes);
 
 // Version check (used by client to detect updates)
 app.get('/api/version', (_req, res) => {

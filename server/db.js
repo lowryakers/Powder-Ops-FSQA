@@ -466,6 +466,67 @@ function initSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_mock_recalls_date ON mock_recalls(date_initiated);
     CREATE INDEX IF NOT EXISTS idx_mock_recalls_result ON mock_recalls(result);
+
+    -- Production Entries
+    CREATE TABLE IF NOT EXISTS production_entries (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      team TEXT NOT NULL,
+      room TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      mo_number TEXT NOT NULL,
+      lot_number TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      quantity_completed REAL NOT NULL,
+      people_count INTEGER NOT NULL,
+      notes TEXT,
+      qa_signoff_by TEXT,
+      qa_signoff_at TEXT,
+      qa_notes TEXT,
+      submitted_by TEXT NOT NULL,
+      submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_production_entries_date ON production_entries(date);
+    CREATE INDEX IF NOT EXISTS idx_production_entries_mo ON production_entries(mo_number);
+    CREATE INDEX IF NOT EXISTS idx_production_entries_team ON production_entries(team);
+
+    -- Production Schedule
+    CREATE TABLE IF NOT EXISTS production_schedule (
+      id TEXT PRIMARY KEY,
+      week_start TEXT NOT NULL,
+      day_of_week INTEGER NOT NULL,
+      room TEXT NOT NULL,
+      room_type TEXT NOT NULL DEFAULT 'production',
+      team TEXT,
+      mo_number TEXT,
+      product_name TEXT,
+      start_time TEXT,
+      notes TEXT,
+      created_by TEXT,
+      updated_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_production_schedule_week ON production_schedule(week_start);
+    CREATE INDEX IF NOT EXISTS idx_production_schedule_room ON production_schedule(room);
+
+    -- Production Cleaning Levels
+    CREATE TABLE IF NOT EXISTS production_cleaning_levels (
+      id TEXT PRIMARY KEY,
+      week_start TEXT NOT NULL,
+      day_of_week INTEGER NOT NULL,
+      room TEXT NOT NULL,
+      level TEXT,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_production_cleaning_week ON production_cleaning_levels(week_start);
   `);
 
   runMigrations();
