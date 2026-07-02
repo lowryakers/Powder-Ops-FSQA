@@ -221,9 +221,9 @@ function SummaryCards({ from, to }) {
 
   const cards = [
     { label: 'Total Entries', value: data?.total_entries ?? '--', icon: ClipboardList, color: 'text-blue-600 bg-blue-50' },
-    { label: 'Total Output', value: data?.total_output != null ? Number(data.total_output).toLocaleString() : '--', icon: Package, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Active MOs', value: data?.active_mos ?? '--', icon: Hash, color: 'text-purple-600 bg-purple-50' },
-    { label: 'Pending QA', value: data?.pending_qa ?? '--', icon: AlertCircle, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Total Output', value: data?.total_quantity != null ? Number(data.total_quantity).toLocaleString() : '--', icon: Package, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Active MOs', value: data?.unique_mos ?? '--', icon: Hash, color: 'text-purple-600 bg-purple-50' },
+    { label: 'Pending QA', value: data?.entries_pending_qa ?? '--', icon: AlertCircle, color: 'text-amber-600 bg-amber-50' },
   ];
 
   return (
@@ -351,7 +351,7 @@ function LogTable({ user }) {
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.lot_number}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{formatTime(entry.start_time)}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{formatTime(entry.end_time)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.duration ?? '--'}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.duration_hours != null ? Number(entry.duration_hours).toFixed(1) + 'h' : '--'}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{Number(entry.quantity_completed).toLocaleString()}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.people_count}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.units_per_hour != null ? Number(entry.units_per_hour).toLocaleString(undefined, { maximumFractionDigits: 1 }) : '--'}</td>
