@@ -125,6 +125,32 @@ router.post('/entries/import', (req, res) => {
   }
 });
 
+// PUT /entries/:id — update a production entry field
+router.put('/entries/:id', (req, res) => {
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Production entry not found' });
+
+  const allowed = ['submitted_by', 'notes', 'team', 'room', 'product_name', 'mo_number', 'lot_number'];
+  const updates = [];
+  const values = [];
+  for (const field of allowed) {
+    if (req.body[field] !== undefined) {
+      updates.push(`${field} = ?`);
+      values.push(req.body[field]);
+    }
+  }
+  if (updates.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+
+  updates.push("updated_at = datetime('now')");
+  values.push(req.params.id);
+  db.prepare(`UPDATE production_entries SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+  const updated = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
+  logAudit(req.body._actor || 'system', 'update', 'production_entry', req.params.id, req.body, existing, updated);
+  res.json(computeMetrics(updated));
+});
+
 // GET /schedule — get schedule for a week
 router.get('/schedule', (req, res) => {
   const db = getDb();
