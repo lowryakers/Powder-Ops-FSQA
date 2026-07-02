@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3 } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet } from './hooks/useApi';
 import LoginScreen from './components/LoginScreen.jsx';
@@ -20,6 +20,9 @@ import CAPAPanel from './components/compliance/CAPAPanel.jsx';
 import SOPPanel from './components/compliance/SOPPanel.jsx';
 import TrainingPanel from './components/compliance/TrainingPanel.jsx';
 import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
+import ProductionLog from './components/compliance/ProductionLog.jsx';
+import ProductionSchedule from './components/compliance/ProductionSchedule.jsx';
+import ProductionDashboard from './components/compliance/ProductionDashboard.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 
 const NAV_GROUPS = [
@@ -28,6 +31,14 @@ const NAV_GROUPS = [
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'operator', label: 'Operator View', icon: HardHat },
+    ],
+  },
+  {
+    label: 'Production',
+    items: [
+      { id: 'production-log', label: 'Production Log', icon: Factory },
+      { id: 'production-schedule', label: 'Schedule', icon: CalendarDays },
+      { id: 'production-dashboard', label: 'Production KPIs', icon: BarChart3 },
     ],
   },
   {
@@ -410,6 +421,9 @@ function App() {
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
           {activeTab === 'dashboard' && <ComplianceDashboard />}
           {activeTab === 'operator' && <OperatorView />}
+          {activeTab === 'production-log' && <ProductionLog user={user} />}
+          {activeTab === 'production-schedule' && <ProductionSchedule user={user} />}
+          {activeTab === 'production-dashboard' && <ProductionDashboard />}
           {activeTab === 'pm' && <PMPanel />}
           {activeTab === 'calibration' && <CalibrationPanel />}
           {activeTab === 'sanitation' && <SanitationPanel />}
