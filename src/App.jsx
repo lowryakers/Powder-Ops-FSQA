@@ -457,10 +457,6 @@ function App() {
 
   // Show first accessible module if current tab isn't accessible
   const resolvedTab = effectiveModules.includes(activeTab) ? activeTab : (effectiveModules[0] || 'dashboard');
-
-  useEffect(() => {
-    if (resolvedTab !== activeTab) setActiveTab(resolvedTab);
-  }, [resolvedTab]);
   const activeItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.id === resolvedTab);
 
   return (
