@@ -281,6 +281,45 @@ function App() {
     return <><SubmitWorkOrder /><UpdateBanner /></>;
   }
 
+  if (path === '/production-entry') {
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="h-10 w-10 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3 animate-pulse">
+              <Factory size={20} className="text-white" />
+            </div>
+            <p className="text-gray-500 text-sm">Loading...</p>
+          </div>
+        </div>
+      );
+    }
+    if (!user) return <LoginScreen onLogin={login} />;
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+            <div className="h-9 w-9 bg-green-600 rounded-lg flex items-center justify-center">
+              <Factory size={20} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <h1 className="text-lg font-bold text-gray-900">End of Day Report</h1>
+              <p className="text-xs text-gray-500">SQF Production Entry</p>
+            </div>
+            <div className="text-right">
+              <div className="text-sm font-medium text-gray-900">{user.name}</div>
+              <button onClick={logout} className="text-xs text-gray-400 hover:text-gray-600">Sign Out</button>
+            </div>
+          </div>
+        </header>
+        <div className="max-w-3xl mx-auto px-4 py-6">
+          <ProductionLog user={user} directEntry />
+        </div>
+        <UpdateBanner />
+      </div>
+    );
+  }
+
   if (path === '/auditor') {
     if (loading) {
       return (

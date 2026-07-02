@@ -397,9 +397,13 @@ function LogTable({ user }) {
 
 /* ── Main Component ──────────────────────────────────────── */
 
-export default function ProductionLog({ user }) {
+export default function ProductionLog({ user, directEntry }) {
   const [tab, setTab] = useState('form');
   const [refreshKey, setRefreshKey] = useState(0);
+
+  if (directEntry) {
+    return <EntryForm user={user} onSuccess={() => setRefreshKey(k => k + 1)} />;
+  }
 
   const tabs = [
     { id: 'form', label: 'Entry Form', icon: Plus },

@@ -193,6 +193,8 @@ router.get('/notifications', (_req, res) => {
   const chemMissingSDS = db.prepare("SELECT COUNT(*) as c FROM approved_chemicals WHERE is_active = 1 AND sds_url IS NULL AND sds_number IS NULL").get().c;
   const flaggedIssues = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE issue_flagged = 1 AND status IN ('open','in_progress','overdue')").get().c;
   const sopReviewDue = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE status != 'archived' AND review_due <= ?").get(today).c;
+  let pendingQA = 0;
+  try { pendingQA = db.prepare("SELECT COUNT(*) as c FROM production_entries WHERE qa_signoff_by IS NULL").get().c; } catch {}
 
   const items = [];
   if (overdueWOs > 0) items.push({ id: 'pm-overdue', tab: 'pm', severity: 'critical', label: `${overdueWOs} overdue PM work order${overdueWOs > 1 ? 's' : ''}` });
@@ -204,6 +206,7 @@ router.get('/notifications', (_req, res) => {
   if (chemMissingSDS > 0) items.push({ id: 'chem-sds', tab: 'chemicals', severity: 'warning', label: `${chemMissingSDS} chemical${chemMissingSDS > 1 ? 's' : ''} missing SDS documentation` });
   if (flaggedIssues > 0) items.push({ id: 'flagged', tab: 'pm', severity: 'critical', label: `${flaggedIssues} flagged issue${flaggedIssues > 1 ? 's' : ''} requiring attention` });
   if (sopReviewDue > 0) items.push({ id: 'sop-review', tab: 'sops', severity: 'info', label: `${sopReviewDue} SOP${sopReviewDue > 1 ? 's' : ''} past review date` });
+  if (pendingQA > 0) items.push({ id: 'production-qa', tab: 'production-log', severity: 'warning', label: `${pendingQA} production entr${pendingQA > 1 ? 'ies' : 'y'} pending QA sign-off` });
 
   const badges = {};
   for (const item of items) {

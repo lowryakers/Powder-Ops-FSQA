@@ -345,6 +345,7 @@ export default function SettingsPanel() {
 
   const operatorUrl = `${window.location.origin}/operator`;
   const submitUrl = `${window.location.origin}/submit`;
+  const productionEntryUrl = `${window.location.origin}/production-entry`;
   const auditorUrl = `${window.location.origin}/auditor`;
 
   const handleCreate = async (form) => {
@@ -443,6 +444,19 @@ export default function SettingsPanel() {
               </div>
               <button onClick={() => copyUrl(submitUrl)} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center gap-1">
                 <Copy size={14} /> {copiedUrl === submitUrl ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-green-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-gray-900">End of Day / Production Entry</h3>
+                <p className="text-sm text-gray-500">SQF production report form for supervisors. Requires login — tracks who submitted each entry.</p>
+                <code className="text-xs text-green-600 mt-1 block">{productionEntryUrl}</code>
+              </div>
+              <button onClick={() => copyUrl(productionEntryUrl)} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center gap-1">
+                <Copy size={14} /> {copiedUrl === productionEntryUrl ? 'Copied!' : 'Copy'}
               </button>
             </div>
           </div>
