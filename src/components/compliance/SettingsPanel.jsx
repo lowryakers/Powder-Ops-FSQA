@@ -134,7 +134,7 @@ function UserForm({ initial, onSave, onCancel }) {
   };
 
   const [form, setForm] = useState(() => ({
-    name: '', email: '', pin: '', role: 'operator', department: 'warehouse',
+    name: '', pin: '', role: 'operator', department: 'warehouse',
     module_access: null,
     ...initial,
     module_access: parseModuleAccess(initial?.module_access),
@@ -153,21 +153,17 @@ function UserForm({ initial, onSave, onCancel }) {
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
       <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit User' : 'Add Technician / User'}</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Name *</label>
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-medium text-gray-700 mb-1">Full Name *</label>
           <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Adam Bliss" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
-          <input type="email" value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="adam@powder-ops.com" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">{initial?.id ? 'New PIN (leave blank to keep)' : 'PIN *'}</label>
-          <input value={form.pin || ''} onChange={e => setForm({ ...form, pin: e.target.value })}
+          <label className="block text-xs font-medium text-gray-700 mb-1">{initial?.id ? 'Reset PIN (leave blank to keep)' : 'PIN (optional)'}</label>
+          <input value={form.pin || ''} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, '') })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono tracking-widest"
-            placeholder="e.g. 1234" maxLength={8} required={!initial?.id} />
+            placeholder={initial?.id ? '••••' : 'User sets on first login'} maxLength={8} inputMode="numeric" />
+          {!initial?.id && <p className="text-[10px] text-gray-400 mt-0.5">Leave blank — user will create their PIN on first sign-in.</p>}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Role *</label>
@@ -256,7 +252,6 @@ function UserRow({ u, onEdit, onToggle }) {
         ) : null}
         {u.contractor_company && <div className="text-[10px] text-gray-400">{u.contractor_company}</div>}
       </td>
-      <td className="px-4 py-3 text-gray-600 text-xs">{u.email || '—'}</td>
       <td className="px-4 py-3">
         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
           u.department === 'qa' ? 'bg-teal-100 text-teal-700'
@@ -317,7 +312,6 @@ function RoleSection({ role, users, config, onEdit, onToggle, defaultOpen }) {
           <thead className="bg-gray-50 border-t border-b">
             <tr>
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Name</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Email</th>
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Dept</th>
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Access</th>
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Status</th>

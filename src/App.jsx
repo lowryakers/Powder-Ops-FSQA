@@ -257,7 +257,7 @@ function MobileBottomNav({ activeTab, setActiveTab }) {
 }
 
 function App() {
-  const { user, loading, login, logout } = useAuth();
+  const { user, loading, login, loginWithToken, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { data: notifications } = useApiGet('/compliance/notifications', [activeTab, user?.id]);
@@ -294,7 +294,7 @@ function App() {
         </div>
       );
     }
-    if (!user) return <LoginScreen onLogin={login} />;
+    if (!user) return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
@@ -333,7 +333,7 @@ function App() {
         </div>
       );
     }
-    if (!user) return <LoginScreen onLogin={login} />;
+    if (!user) return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
     return <><AuditorView /><UpdateBanner /></>;
   }
 
@@ -350,7 +350,7 @@ function App() {
         </div>
       );
     }
-    if (!user) return <LoginScreen onLogin={login} />;
+    if (!user) return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
@@ -405,7 +405,7 @@ function App() {
   }
 
   if (!user) {
-    return <LoginScreen onLogin={login} />;
+    return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
   }
 
   const activeItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.id === activeTab);

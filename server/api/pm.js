@@ -616,7 +616,41 @@ router.get('/operator-tasks', (req, res) => {
     wo.due_date ASC`;
 
   const rows = db.prepare(sql).all(...params);
-  res.json(rows.map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
+
+  // Also include pending QA production entries as virtual tasks (for QA dept or admin/all view)
+  const qaGroup = group || '';
+  const includeQA = !qaGroup || qaGroup === 'qa' || qaGroup === 'all' || qaGroup === '';
+  let qaTasks = [];
+  if (includeQA) {
+    qaTasks = db.prepare(`
+      SELECT id, date, team, room, product_name, mo_number, lot_number, submitted_by, created_at
+      FROM production_entries
+      WHERE qa_signoff_by IS NULL
+      ORDER BY date DESC
+    `).all().map(e => ({
+      id: 'qa_' + e.id,
+      _production_entry_id: e.id,
+      title: `QA Sign-off: ${e.product_name} (MO ${e.mo_number})`,
+      status: 'open',
+      priority: 'normal',
+      due_date: e.date,
+      assigned_to: null,
+      procedure_steps: [],
+      pm_schedule_id: null,
+      task_group: 'qa',
+      task_type: 'qa_signoff',
+      issue_flagged: 0,
+      equipment_name: e.room,
+      equipment_type: 'production',
+      location: e.room,
+      asset_id: null,
+      frequency_type: null,
+      schedule_title: null,
+      _qa_meta: { lot_number: e.lot_number, submitted_by: e.submitted_by, team: e.team, date: e.date, mo_number: e.mo_number, product_name: e.product_name },
+    }));
+  }
+
+  res.json([...rows.map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })), ...qaTasks]);
 });
 
 router.put('/schedules/:id/items', (req, res) => {

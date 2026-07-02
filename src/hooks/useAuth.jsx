@@ -16,24 +16,28 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
+  const loginWithToken = useCallback((token, userData, pin) => {
+    localStorage.setItem('auth_token', token);
+    setUser(userData);
+    if (pin) {
+      localStorage.setItem('bio_user_name', userData.name);
+      localStorage.setItem('bio_user_pin', pin);
+      enrollBiometric(userData);
+    }
+  }, []);
+
   const login = useCallback(async (nameOrEmail, pin) => {
-    const isEmail = nameOrEmail.includes('@');
     const res = await fetch('/api/users/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(isEmail ? { email: nameOrEmail, pin } : { name: nameOrEmail, pin }),
+      body: JSON.stringify({ name: nameOrEmail, pin }),
     });
-    if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
     const data = await res.json();
-    localStorage.setItem('auth_token', data.token);
-    setUser(data.user);
-
-    localStorage.setItem('bio_user_name', data.user.name);
-    localStorage.setItem('bio_user_pin', pin);
-    enrollBiometric(data.user);
-
+    if (data.needs_pin_setup) throw new Error('PIN_SETUP_REQUIRED');
+    if (!res.ok) throw new Error(data.error);
+    loginWithToken(data.token, data.user, pin);
     return data.user;
-  }, []);
+  }, [loginWithToken]);
 
   const logout = useCallback(async () => {
     const token = localStorage.getItem('auth_token');
@@ -45,7 +49,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithToken, logout }}>
       {children}
     </AuthContext.Provider>
   );

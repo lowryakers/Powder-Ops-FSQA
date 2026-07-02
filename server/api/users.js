@@ -33,7 +33,7 @@ router.get('/me', (req, res) => {
   if (!session) return res.status(401).json({ error: 'Session expired' });
 
   const moduleAccess = session.module_access ? JSON.parse(session.module_access) : null;
-  res.json({ id: session.uid, name: session.name, email: session.email, role: session.role, department: session.department, module_access: moduleAccess });
+  res.json({ id: session.uid, name: session.name, role: session.role, department: session.department, module_access: moduleAccess });
 });
 
 router.post('/logout', (req, res) => {
@@ -101,20 +101,18 @@ router.put('/:id', (req, res) => {
 
 router.post('/login', (req, res) => {
   const db = getDb();
-  const { email, pin, name } = req.body;
+  const { pin, name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name is required' });
 
-  let user;
-  if (name) {
-    if (!pin) return res.status(400).json({ error: 'PIN is required' });
-    user = db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?) AND is_active = 1').get(name);
-  } else if (email) {
-    if (!pin) return res.status(400).json({ error: 'PIN is required' });
-    user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND is_active = 1').get(email);
-  } else {
-    return res.status(400).json({ error: 'Name and PIN are required' });
+  const user = db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?) AND is_active = 1').get(name);
+  if (!user) return res.status(401).json({ error: 'User not found. Ask your admin to add you.' });
+
+  if (!user.pin) {
+    return res.status(200).json({ needs_pin_setup: true, user_id: user.id, user_name: user.name });
   }
 
-  if (!user || user.pin !== pin) return res.status(401).json({ error: 'Invalid credentials' });
+  if (!pin) return res.status(400).json({ error: 'PIN is required' });
+  if (user.pin !== pin) return res.status(401).json({ error: 'Invalid PIN' });
 
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date();
@@ -125,7 +123,30 @@ router.post('/login', (req, res) => {
 
   logAudit(user.name, 'login', 'user', user.id, null, null, null);
   const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
-  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess } });
+  res.json({ token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess } });
+});
+
+router.post('/set-pin', (req, res) => {
+  const db = getDb();
+  const { user_id, pin } = req.body;
+  if (!user_id || !pin) return res.status(400).json({ error: 'user_id and pin are required' });
+  if (pin.length < 4) return res.status(400).json({ error: 'PIN must be at least 4 digits' });
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(user_id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.pin) return res.status(400).json({ error: 'PIN already set. Use your existing PIN to sign in.' });
+
+  db.prepare("UPDATE users SET pin = ?, updated_at = datetime('now') WHERE id = ?").run(pin, user_id);
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires = new Date();
+  expires.setDate(expires.getDate() + 30);
+  db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)')
+    .run(uuid(), user.id, token, expires.toISOString());
+
+  logAudit(user.name, 'set_pin', 'user', user.id, null, null, null);
+  const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
+  res.json({ token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess } });
 });
 
 export default router;

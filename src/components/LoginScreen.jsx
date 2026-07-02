@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Fingerprint, User, ChevronDown } from 'lucide-react';
+import { Shield, Fingerprint, User, KeyRound } from 'lucide-react';
 
-export default function LoginScreen({ onLogin }) {
+export default function LoginScreen({ onLogin, onLoginWithToken }) {
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -9,8 +9,11 @@ export default function LoginScreen({ onLogin }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [setupMode, setSetupMode] = useState(null);
+  const [confirmPin, setConfirmPin] = useState('');
   const nameRef = useRef(null);
   const suggestionsRef = useRef(null);
+  const pinRef = useRef(null);
 
   useEffect(() => {
     if (window.PublicKeyCredential) {
@@ -53,9 +56,59 @@ export default function LoginScreen({ onLogin }) {
     setError('');
     setLoading(true);
     try {
-      await onLogin(name, pin);
+      const res = await fetch('/api/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, pin: pin || undefined }),
+      });
+      const data = await res.json();
+
+      if (data.needs_pin_setup) {
+        setSetupMode({ user_id: data.user_id, user_name: data.user_name });
+        setPin('');
+        setConfirmPin('');
+        setLoading(false);
+        setTimeout(() => pinRef.current?.focus(), 100);
+        return;
+      }
+
+      if (!res.ok) throw new Error(data.error);
+
+      if (onLoginWithToken) {
+        onLoginWithToken(data.token, data.user, pin);
+      } else {
+        await onLogin(name, pin);
+      }
     } catch (err) {
       setError(err.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetPin = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (pin.length < 4) { setError('PIN must be at least 4 digits'); return; }
+    if (pin !== confirmPin) { setError('PINs do not match'); return; }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/users/set-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: setupMode.user_id, pin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      if (onLoginWithToken) {
+        onLoginWithToken(data.token, data.user, pin);
+      } else {
+        await onLogin(setupMode.user_name, pin);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to set PIN');
     } finally {
       setLoading(false);
     }
@@ -95,6 +148,50 @@ export default function LoginScreen({ onLogin }) {
     }
   };
 
+  if (setupMode) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <div className="h-14 w-14 bg-green-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <KeyRound size={28} className="text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900">Welcome, {setupMode.user_name}!</h1>
+            <p className="text-sm text-gray-500 mt-1">Create your PIN to get started</p>
+          </div>
+
+          <form onSubmit={handleSetPin} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Create PIN</label>
+              <input ref={pinRef} type="password" required value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base tracking-widest text-center"
+                placeholder="Enter 4+ digit PIN" minLength={4} maxLength={8} inputMode="numeric" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm PIN</label>
+              <input type="password" required value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base tracking-widest text-center"
+                placeholder="Re-enter PIN" minLength={4} maxLength={8} inputMode="numeric" />
+            </div>
+
+            {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+
+            <button type="submit" disabled={loading}
+              className="w-full py-3 bg-green-600 text-white rounded-xl text-base font-bold hover:bg-green-700 disabled:opacity-50 transition-colors">
+              {loading ? 'Setting up...' : 'Set PIN & Sign In'}
+            </button>
+
+            <button type="button" onClick={() => { setSetupMode(null); setPin(''); setConfirmPin(''); setError(''); }}
+              className="w-full py-2 text-sm text-gray-500 hover:text-gray-700">
+              Back to sign in
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
@@ -120,7 +217,7 @@ export default function LoginScreen({ onLogin }) {
                 onChange={e => { setName(e.target.value); setShowSuggestions(true); }}
                 onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base"
-                placeholder="Your name"
+                placeholder="Your full name"
               />
             </div>
             {showSuggestions && suggestions.length > 0 && (
@@ -138,8 +235,9 @@ export default function LoginScreen({ onLogin }) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">PIN</label>
-            <input type="password" required value={pin} onChange={e => setPin(e.target.value)}
+            <input type="password" value={pin} onChange={e => setPin(e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base tracking-widest text-center" placeholder="••••" maxLength={8} />
+            <p className="text-[11px] text-gray-400 mt-1 text-center">First time? Just enter your name and click Sign In.</p>
           </div>
 
           {error && <p className="text-sm text-red-600 text-center">{error}</p>}
