@@ -718,9 +718,20 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', database: 'connected', counts, work_orders_by_status: woByStatus, active_schedules: activeSchedules, schedules_with_open_wo: schedulesWithOpenWO, schedules_missing_open_wo: schedulesWithoutOpenWO });
 });
 
-// Serve static React build
-app.use(express.static(path.join(__dirname, 'dist')));
+// Serve static React build — hashed assets get long cache, HTML never caches
+app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), {
+  maxAge: '1y',
+  immutable: true,
+}));
+app.use(express.static(path.join(__dirname, 'dist'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  },
+}));
 app.get('/{*splat}', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
