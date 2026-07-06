@@ -547,7 +547,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
         <div className="flex items-center gap-2">
           <StatusBadge status={detail.status} />
           <button onClick={downloadPdf}
-            className="p-1.5 text-gray-400 hover:text-powder-600 rounded-lg hover:bg-gray-100" title="Export Facility COA PDF">
+            className="p-1.5 text-gray-400 hover:text-powder-600 rounded-lg hover:bg-gray-100" title="Export Powder Ops COA PDF">
             <Download size={14} />
           </button>
           <button onClick={() => setEditing(true)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
@@ -604,7 +604,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           )}
           <button onClick={downloadPdf}
             className="px-3 py-1.5 text-xs font-medium bg-powder-50 text-powder-700 rounded-lg hover:bg-powder-100 flex items-center gap-1">
-            <Download size={12} /> Export Facility COA
+            <Download size={12} /> Export Powder Ops COA
           </button>
         </div>
 
