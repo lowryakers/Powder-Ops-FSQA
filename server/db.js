@@ -771,6 +771,16 @@ function runMigrations() {
   }
 
   // COA extended fields for facility COA export
+  addColumnIfMissing('equipment', 'loto_required', 'INTEGER DEFAULT 1');
+  // Mark area/zone types as not requiring LOTO
+  const areaTypes = ['Inspection Zone', 'Light Fixture Zone', 'Cleaning Zone', 'Monitoring'];
+  const alreadyTagged = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE loto_required = 0").get().c;
+  if (alreadyTagged === 0) {
+    db.prepare(`UPDATE equipment SET loto_required = 0 WHERE type IN (${areaTypes.map(() => '?').join(',')})`).run(...areaTypes);
+    const updated = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE loto_required = 0").get().c;
+    if (updated > 0) console.log(`[migrate] Marked ${updated} area/zone items as not requiring LOTO`);
+  }
+
   addColumnIfMissing('coa_requests', 'origin', 'TEXT');
   addColumnIfMissing('coa_requests', 'supplier', 'TEXT');
   addColumnIfMissing('coa_requests', 'product_code', 'TEXT');

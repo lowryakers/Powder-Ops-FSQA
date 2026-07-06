@@ -5,6 +5,7 @@ import path from 'path';
 import { mkdirSync, existsSync, createReadStream, readFileSync, statSync, unlinkSync } from 'fs';
 import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 
@@ -690,6 +691,209 @@ router.post('/import', requireRole('admin', 'supervisor'), (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+// ──────────────── CTLA COA PDF Parser ────────────────
+
+const coaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, path.extname(file.originalname).toLowerCase() === '.pdf');
+  },
+});
+
+function parseCTLACoa(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const result = {
+    item_description: null,
+    lot_number: null,
+    manufacturer_lot: null,
+    vendor_lot: null,
+    item_number: null,
+    product_code: null,
+    supplier: null,
+    origin: null,
+    product_expiration: null,
+    received_date: null,
+    date_of_results: null,
+    tests_requested: null,
+    status: null,
+    test_results: [],
+  };
+
+  const patterns = {
+    item_description: [/Product\s*(?:Name|Description)\s*[:\-]\s*(.+)/i, /Sample\s*(?:Name|Description|ID)\s*[:\-]\s*(.+)/i, /Material\s*[:\-]\s*(.+)/i],
+    lot_number: [/(?:Lot|Batch)\s*(?:#|No\.?|Number)\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i, /^Lot\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i],
+    manufacturer_lot: [/(?:Manufacturer|Mfg|Mfr)(?:'?s?)?\s*Lot\s*(?:#|No\.?|Number)?\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i],
+    vendor_lot: [/Vendor\s*Lot\s*(?:#|No\.?|Number)?\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i],
+    item_number: [/(?:Item|Product|Part)\s*(?:#|No\.?|Number|Code)\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i, /(?:SKU|UPC|NDC)\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i],
+    supplier: [/(?:Supplier|Manufacturer|Client|Customer)\s*[:\-]\s*(.+)/i, /(?:Submitted|Received)\s*(?:By|From)\s*[:\-]\s*(.+)/i],
+    origin: [/(?:Country\s*of\s*)?Origin\s*[:\-]\s*(.+)/i],
+    product_expiration: [/(?:Expir(?:ation|y)|Exp|Best\s*By|Use\s*By)\s*(?:Date)?\s*[:\-]\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i, /(?:Expir(?:ation|y)|Exp)\s*(?:Date)?\s*[:\-]\s*(\d{4}-\d{2}-\d{2})/i],
+    received_date: [/(?:Date\s*)?Receiv(?:ed|ing)\s*(?:Date)?\s*[:\-]\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i, /(?:Sample|Date)\s*Receiv(?:ed|ing)\s*[:\-]\s*(\d{4}-\d{2}-\d{2})/i],
+    date_of_results: [/(?:Date\s*(?:of\s*)?)?(?:Report|Results?|Analysis|Complet(?:ed|ion))\s*(?:Date)?\s*[:\-]\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i, /(?:Report|Complet(?:ed|ion))\s*(?:Date)?\s*[:\-]\s*(\d{4}-\d{2}-\d{2})/i],
+  };
+
+  // Match against individual lines for clean field extraction
+  for (const line of lines) {
+    for (const [field, pats] of Object.entries(patterns)) {
+      if (result[field]) continue;
+      for (const pat of pats) {
+        const m = line.match(pat);
+        if (m) { result[field] = m[1].trim(); break; }
+      }
+    }
+  }
+
+  // Parse test results from tabular data
+  const testPatterns = [
+    /^(Total\s*Aerobic.*?Count|Total\s*Coliform|E\.?\s*Coli|Salmonella|Staphylococcus|Yeast\s*(?:and|&)\s*Mold|Arsenic|Cadmium|Mercury|Lead|Gluten|FTIR|Potency|Moisture|Bacillus|Allergen)/i,
+    /^(APC|TPC|TVC|Y\s*&\s*M|TAC|TAMC|TYMC)/i,
+  ];
+
+  const passFailRe = /\b(pass(?:ed)?|fail(?:ed)?|comply|complies|does\s*not\s*comply|conform|non[\s-]?conform|detect(?:ed)?|not?\s*detect(?:ed)?|absent|present|positive|negative)\b/i;
+  const numericRe = /([<>]?\s*\d+(?:[.,]\d+)?(?:\s*(?:cfu|ppb|ppm|ppt|mg|ug|ng|%|CFU)(?:\/[gml]+)?)?)/i;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let matched = false;
+    for (const pat of testPatterns) {
+      if (pat.test(line)) { matched = true; break; }
+    }
+    if (!matched) continue;
+
+    const context = line + ' ' + (lines[i + 1] || '');
+    const testName = line.match(/^([A-Za-z][A-Za-z\s\(\)<>&\-\/,\.]+)/)?.[1]?.trim();
+    if (!testName || testName.length < 3) continue;
+
+    const pfMatch = context.match(passFailRe);
+    let pass_fail = null;
+    if (pfMatch) {
+      const v = pfMatch[1].toLowerCase();
+      if (['pass', 'passed', 'comply', 'complies', 'conform', 'not detected', 'absent', 'negative'].some(p => v.includes(p))) pass_fail = 'pass';
+      else pass_fail = 'fail';
+    }
+
+    const numMatch = context.match(numericRe);
+
+    result.test_results.push({
+      test_type: testName.replace(/\s+/g, ' '),
+      result_value: numMatch ? numMatch[1].trim() : (pfMatch ? pfMatch[1].trim() : null),
+      pass_fail,
+      unit: numMatch?.[1]?.match(/(cfu|ppb|ppm|mg|ug|%|CFU)(?:\/[gml]+)?/i)?.[0] || null,
+    });
+  }
+
+  // Determine overall status
+  if (result.test_results.length > 0) {
+    const hasFail = result.test_results.some(t => t.pass_fail === 'fail');
+    const allPass = result.test_results.every(t => t.pass_fail === 'pass' || !t.pass_fail);
+    result.status = hasFail ? 'fail' : allPass && result.test_results.some(t => t.pass_fail === 'pass') ? 'pass' : 'pending';
+  }
+
+  // Build tests_requested summary
+  const testNames = result.test_results.map(t => t.test_type);
+  const hasMicro = testNames.some(t => /aerobic|coliform|coli|salmonella|yeast|mold|staph/i.test(t));
+  const hasHM = testNames.some(t => /arsenic|cadmium|mercury|lead/i.test(t));
+  if (hasMicro && hasHM) result.tests_requested = 'HM & Micro';
+  else if (hasMicro) result.tests_requested = 'Micro';
+  else if (hasHM) result.tests_requested = 'Heavy Metals';
+  else if (testNames.length > 0) result.tests_requested = testNames.slice(0, 3).join(', ');
+
+  return result;
+}
+
+router.post('/parse-coa', coaUpload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'PDF file required' });
+
+  try {
+    const pdfDoc = await getDocument({ data: new Uint8Array(req.file.buffer) }).promise;
+    const textParts = [];
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const content = await page.getTextContent();
+      let lastY = null;
+      const lineTexts = [];
+      for (const item of content.items) {
+        const y = item.transform?.[5];
+        if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) {
+          lineTexts.push('\n');
+        }
+        lineTexts.push(item.str);
+        if (y !== undefined) lastY = y;
+      }
+      textParts.push(lineTexts.join(''));
+    }
+    const parsed = { text: textParts.join('\n'), numpages: pdfDoc.numPages };
+    const extracted = parseCTLACoa(parsed.text);
+
+    // Save uploaded PDF to disk for attachment
+    const filename = `${uuid()}.pdf`;
+    const filePath = path.join(UPLOAD_DIR, filename);
+    const { writeFileSync } = await import('fs');
+    writeFileSync(filePath, req.file.buffer);
+
+    res.json({
+      ...extracted,
+      raw_text: parsed.text,
+      page_count: parsed.numpages,
+      _uploaded_file: {
+        filename,
+        original_name: req.file.originalname,
+        size_bytes: req.file.size,
+      },
+    });
+  } catch (err) {
+    res.status(400).json({ error: 'Failed to parse PDF: ' + err.message });
+  }
+});
+
+router.post('/import-parsed-coa', (req, res) => {
+  const db = getDb();
+  const { parsed, uploaded_file } = req.body;
+
+  if (!parsed?.item_description && !parsed?.lot_number) {
+    return res.status(400).json({ error: 'Parsed data must include at least item_description or lot_number' });
+  }
+
+  let ctlaLab = db.prepare("SELECT id FROM coa_labs WHERE name = 'CTLA'").get();
+  if (!ctlaLab) {
+    const labId = uuid();
+    db.prepare("INSERT INTO coa_labs (id, name) VALUES (?, 'CTLA')").run(labId);
+    ctlaLab = { id: labId };
+  }
+
+  const id = uuid();
+  const status = parsed.status || 'pending';
+
+  db.prepare(`INSERT INTO coa_requests (id, item_number, item_description, lot_number, product_expiration, tests_requested, status, lab_id, lab_name, date_of_results, origin, supplier, product_code, manufacturer_lot, vendor_lot, received_date, source, source_ref, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, parsed.item_number || '', parsed.item_description || 'Unknown', parsed.lot_number || '', parsed.product_expiration || null,
+      parsed.tests_requested || 'Unknown', status, ctlaLab.id, 'CTLA',
+      parsed.date_of_results || null, parsed.origin || null, parsed.supplier || null,
+      parsed.product_code || null, parsed.manufacturer_lot || null, parsed.vendor_lot || null,
+      parsed.received_date || null, 'ctla_coa_upload', `ctla_${parsed.lot_number || Date.now()}`, req.user.name);
+
+  // Insert test results
+  if (parsed.test_results?.length > 0) {
+    const insertResult = db.prepare('INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, pass_fail) VALUES (?, ?, ?, ?, ?, ?)');
+    for (const tr of parsed.test_results) {
+      insertResult.run(uuid(), id, tr.test_type, tr.result_value, tr.unit, tr.pass_fail);
+    }
+  }
+
+  // Attach the uploaded PDF
+  if (uploaded_file) {
+    const fileId = uuid();
+    db.prepare('INSERT INTO coa_files (id, request_id, file_type, filename, original_name, mime_type, size_bytes, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(fileId, id, 'lab_report', uploaded_file.filename, uploaded_file.original_name, 'application/pdf', uploaded_file.size_bytes, req.user.name);
+  }
+
+  const created = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
+  const test_results = db.prepare('SELECT * FROM coa_test_results WHERE request_id = ?').all(id);
+  logAudit(req.user.name, 'import_coa_pdf', 'coa_request', id, { source: 'ctla_upload' }, null, created);
+  res.status(201).json({ ...created, test_results });
 });
 
 // ──────────────── Distinct values for filters ────────────────

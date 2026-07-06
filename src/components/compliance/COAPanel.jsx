@@ -121,6 +121,206 @@ function LotLookup() {
   );
 }
 
+// ──────── COA Upload & Parse ────────
+function COAUploadModal({ labs, onClose, onImported }) {
+  const [step, setStep] = useState('upload'); // upload | review | saving
+  const [file, setFile] = useState(null);
+  const [parsing, setParsing] = useState(false);
+  const [parsed, setParsed] = useState(null);
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [error, setError] = useState(null);
+  const [form, setForm] = useState({});
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setParsing(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/coa/parse-coa', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Parse failed');
+      const data = await res.json();
+      setUploadedFile(data._uploaded_file);
+      const fields = { ...data };
+      delete fields.raw_text;
+      delete fields.page_count;
+      delete fields._uploaded_file;
+      setParsed(data);
+      setForm(fields);
+      setStep('review');
+    } catch (e) { setError(e.message); }
+    finally { setParsing(false); }
+  };
+
+  const handleImport = async () => {
+    setStep('saving');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/coa/import-parsed-coa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ parsed: form, uploaded_file: uploadedFile }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Import failed');
+      onImported();
+    } catch (e) { setError(e.message); setStep('review'); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Upload size={18} /> Upload Lab COA (PDF)
+          </h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X size={18} /></button>
+        </div>
+
+        {step === 'upload' && (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-gray-600">Upload a COA PDF from CTLA or any lab. The system will extract product info, lot numbers, test results, and pass/fail status automatically.</p>
+            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
+              <input type="file" accept=".pdf" onChange={e => setFile(e.target.files[0])} className="hidden" id="coa-upload-input" />
+              <label htmlFor="coa-upload-input" className="cursor-pointer">
+                <Upload size={32} className="mx-auto text-gray-400 mb-2" />
+                <p className="text-sm text-gray-600">{file ? file.name : 'Click to select a PDF file'}</p>
+                <p className="text-xs text-gray-400 mt-1">Supports CTLA and standard lab report formats</p>
+              </label>
+            </div>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={onClose} className="px-3 py-2 text-sm text-gray-600">Cancel</button>
+              <button onClick={handleUpload} disabled={!file || parsing}
+                className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+                {parsing ? 'Parsing PDF...' : 'Parse & Extract'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'review' && (
+          <div className="p-4 space-y-4">
+            <p className="text-sm text-gray-600">Review the extracted data below. Edit any fields before importing into your log.</p>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {[
+                ['item_description', 'Product Name'],
+                ['item_number', 'Item / Product #'],
+                ['lot_number', 'Lot #'],
+                ['manufacturer_lot', 'Manufacturer Lot'],
+                ['vendor_lot', 'Vendor Lot'],
+                ['supplier', 'Supplier'],
+                ['origin', 'Origin'],
+                ['product_code', 'Product Code'],
+                ['received_date', 'Received Date'],
+                ['product_expiration', 'Expiration Date'],
+                ['date_of_results', 'Results Date'],
+                ['tests_requested', 'Tests Requested'],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">{label}</label>
+                  <input value={form[key] || ''} onChange={e => set(key, e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm ${form[key] ? 'border-green-300 bg-green-50' : 'border-gray-300'}`} />
+                </div>
+              ))}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Overall Status</label>
+                <select value={form.status || 'pending'} onChange={e => set('status', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                  {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {form.test_results?.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-900 mb-2">Extracted Test Results ({form.test_results.length})</h4>
+                <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Test</th>
+                        <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Result</th>
+                        <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Unit</th>
+                        <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Pass/Fail</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {form.test_results.map((tr, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-2">
+                            <input value={tr.test_type} onChange={e => {
+                              const updated = [...form.test_results];
+                              updated[i] = { ...updated[i], test_type: e.target.value };
+                              set('test_results', updated);
+                            }} className="w-full px-2 py-1 border border-gray-200 rounded text-xs" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input value={tr.result_value || ''} onChange={e => {
+                              const updated = [...form.test_results];
+                              updated[i] = { ...updated[i], result_value: e.target.value };
+                              set('test_results', updated);
+                            }} className="w-full px-2 py-1 border border-gray-200 rounded text-xs" />
+                          </td>
+                          <td className="px-3 py-2 text-gray-500 text-xs">{tr.unit || '-'}</td>
+                          <td className="px-3 py-2">
+                            <select value={tr.pass_fail || ''} onChange={e => {
+                              const updated = [...form.test_results];
+                              updated[i] = { ...updated[i], pass_fail: e.target.value };
+                              set('test_results', updated);
+                            }} className="px-2 py-1 border border-gray-200 rounded text-xs">
+                              <option value="">-</option>
+                              <option value="pass">Pass</option>
+                              <option value="fail">Fail</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <button onClick={() => {
+                              const updated = form.test_results.filter((_, j) => j !== i);
+                              set('test_results', updated);
+                            }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {parsed?.raw_text && (
+              <details className="text-xs">
+                <summary className="text-gray-500 cursor-pointer">View raw extracted text</summary>
+                <pre className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-600 whitespace-pre-wrap max-h-40 overflow-y-auto">{parsed.raw_text}</pre>
+              </details>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button onClick={() => setStep('upload')} className="px-3 py-2 text-sm text-gray-600">Back</button>
+              <button onClick={handleImport}
+                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700">
+                Import to Log
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'saving' && (
+          <div className="p-8 text-center text-gray-500">Importing to COA log...</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ──────── Request Form ────────
 function RequestForm({ initial, labs, onSave, onCancel }) {
   const [form, setForm] = useState(initial || {
@@ -643,6 +843,7 @@ export default function COAPanel() {
   const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [showUploadCoa, setShowUploadCoa] = useState(false);
 
   const { data: requests, loading: loadingReqs, refresh: refreshReqs } = useApiGet('/coa/requests' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''), [statusFilter]);
   const { data: labs, refresh: refreshLabs } = useApiGet('/coa/labs');
@@ -760,11 +961,20 @@ export default function COAPanel() {
               <option value="all">All Statuses</option>
               {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
+            <button onClick={() => setShowUploadCoa(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700">
+              <Upload size={16} /> Upload COA
+            </button>
             <button onClick={() => { setShowForm(true); setEditItem(null); }}
               className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
               <Plus size={16} /> New Request
             </button>
           </div>
+
+          {showUploadCoa && (
+            <COAUploadModal labs={labs} onClose={() => setShowUploadCoa(false)}
+              onImported={() => { setShowUploadCoa(false); refreshReqs(); refreshSummary(); }} />
+          )}
 
           {showForm && <RequestForm labs={labs} onSave={handleCreateRequest} onCancel={() => setShowForm(false)} />}
 
