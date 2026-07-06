@@ -701,7 +701,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
         {/* Files */}
         <div>
           <h4 className="text-sm font-semibold text-gray-900 mb-2">Files</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
             <div className="border border-dashed border-gray-300 rounded-lg p-3">
               <p className="text-xs font-medium text-gray-700 mb-2">Lab Results (from CTLA)</p>
               {detail.files?.filter(f => f.file_type === 'lab_results').map(f => (
@@ -714,20 +714,6 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
               <label className={`mt-2 inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                 <Upload size={12} /> Upload Lab Results
                 <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'lab_results')} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" />
-              </label>
-            </div>
-            <div className="border border-dashed border-gray-300 rounded-lg p-3">
-              <p className="text-xs font-medium text-gray-700 mb-2">Customer COA</p>
-              {detail.files?.filter(f => f.file_type === 'customer_coa').map(f => (
-                <div key={f.id} className="flex items-center gap-2 text-xs mb-1">
-                  <FileText size={12} className="text-gray-400" />
-                  <a href={`/api/coa/files/${f.id}/download`} className="text-powder-600 hover:underline flex-1 truncate">{f.original_name}</a>
-                  <button onClick={() => handleDeleteFile(f.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button>
-                </div>
-              ))}
-              <label className={`mt-2 inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                <Upload size={12} /> Upload Customer COA
-                <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'customer_coa')} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" />
               </label>
             </div>
           </div>
@@ -1061,12 +1047,8 @@ export default function COAPanel() {
                         <td className="px-3 py-2.5 text-gray-600">{r.lab_name || '-'}</td>
                         <td className="px-3 py-2.5 text-gray-600">{r.date_sent || '-'}</td>
                         <td className="px-3 py-2.5">
-                          {(r.file_counts?.lab_results || r.file_counts?.customer_coa) ? (
-                            <span className="text-xs text-powder-600">
-                              {r.file_counts.lab_results ? `${r.file_counts.lab_results} lab` : ''}
-                              {r.file_counts.lab_results && r.file_counts.customer_coa ? ', ' : ''}
-                              {r.file_counts.customer_coa ? `${r.file_counts.customer_coa} COA` : ''}
-                            </span>
+                          {r.file_counts?.lab_results ? (
+                            <span className="text-xs text-powder-600">{r.file_counts.lab_results} lab</span>
                           ) : <span className="text-gray-400">-</span>}
                         </td>
                       </tr>
