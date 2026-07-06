@@ -157,7 +157,7 @@ router.get('/schedule', (req, res) => {
   const { week_start } = req.query;
   if (!week_start) return res.status(400).json({ error: 'week_start query param is required' });
 
-  const assignments = db.prepare('SELECT * FROM production_schedule WHERE week_start = ? ORDER BY day_of_week, room').all(week_start);
+  const assignments = db.prepare('SELECT * FROM production_schedule WHERE week_start = ? ORDER BY day_of_week, room, slot').all(week_start);
   const cleaning_levels = db.prepare('SELECT * FROM production_cleaning_levels WHERE week_start = ? ORDER BY day_of_week, room').all(week_start);
   res.json({ assignments, cleaning_levels });
 });
@@ -166,12 +166,13 @@ router.get('/schedule', (req, res) => {
 router.post('/schedule', (req, res) => {
   const db = getDb();
   const { week_start, day_of_week, room, room_type, team, mo_number, product_name, start_time, notes, updated_by } = req.body;
+  const slot = Number.isInteger(req.body.slot) ? req.body.slot : 0;
 
   if (!week_start || day_of_week == null || !room) {
     return res.status(400).json({ error: 'week_start, day_of_week, and room are required' });
   }
 
-  const existing = db.prepare('SELECT * FROM production_schedule WHERE week_start = ? AND day_of_week = ? AND room = ?').get(week_start, day_of_week, room);
+  const existing = db.prepare('SELECT * FROM production_schedule WHERE week_start = ? AND day_of_week = ? AND room = ? AND slot = ?').get(week_start, day_of_week, room, slot);
 
   if (existing) {
     db.prepare(`
@@ -184,13 +185,72 @@ router.post('/schedule', (req, res) => {
   } else {
     const id = uuid();
     db.prepare(`
-      INSERT INTO production_schedule (id, week_start, day_of_week, room, room_type, team, mo_number, product_name, start_time, notes, created_by, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, week_start, day_of_week, room, room_type || 'production', team || null, mo_number || null, product_name || null, start_time || null, notes || null, updated_by || null, updated_by || null);
+      INSERT INTO production_schedule (id, week_start, day_of_week, room, slot, room_type, team, mo_number, product_name, start_time, notes, created_by, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, week_start, day_of_week, room, slot, room_type || 'production', team || null, mo_number || null, product_name || null, start_time || null, notes || null, updated_by || null, updated_by || null);
     const created = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(id);
     logAudit(updated_by || 'system', 'create', 'production_schedule', id, req.body, null, created);
     res.status(201).json(created);
   }
+});
+
+// POST /schedule/duplicate-day — copy one day's assignments/cleaning to other days of the same week
+router.post('/schedule/duplicate-day', (req, res) => {
+  const db = getDb();
+  const { week_start, source_day, target_days, updated_by } = req.body;
+  const includeAssignments = req.body.include_assignments !== false;
+  const includeCleaning = req.body.include_cleaning !== false;
+
+  if (!week_start || source_day == null || !Array.isArray(target_days)) {
+    return res.status(400).json({ error: 'week_start, source_day, and target_days are required' });
+  }
+  const targets = [...new Set(target_days.map(Number))].filter(d => Number.isInteger(d) && d >= 0 && d <= 4 && d !== Number(source_day));
+  if (targets.length === 0) {
+    return res.status(400).json({ error: 'target_days must contain at least one weekday (0-4) other than source_day' });
+  }
+  if (!includeAssignments && !includeCleaning) {
+    return res.status(400).json({ error: 'Nothing to copy: enable assignments and/or cleaning' });
+  }
+
+  const assignments = db.prepare('SELECT * FROM production_schedule WHERE week_start = ? AND day_of_week = ?').all(week_start, source_day);
+  const cleaning = db.prepare('SELECT * FROM production_cleaning_levels WHERE week_start = ? AND day_of_week = ?').all(week_start, source_day);
+
+  const deleteAssignments = db.prepare('DELETE FROM production_schedule WHERE week_start = ? AND day_of_week = ?');
+  const deleteCleaning = db.prepare('DELETE FROM production_cleaning_levels WHERE week_start = ? AND day_of_week = ?');
+  const insertAssignment = db.prepare(`
+    INSERT INTO production_schedule (id, week_start, day_of_week, room, slot, room_type, team, mo_number, product_name, start_time, notes, created_by, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertCleaning = db.prepare(`
+    INSERT INTO production_cleaning_levels (id, week_start, day_of_week, room, level, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  const tx = db.transaction(() => {
+    let copied_assignments = 0;
+    let copied_cleaning = 0;
+    for (const day of targets) {
+      if (includeAssignments) {
+        deleteAssignments.run(week_start, day);
+        for (const a of assignments) {
+          insertAssignment.run(uuid(), week_start, day, a.room, a.slot || 0, a.room_type, a.team, a.mo_number, a.product_name, a.start_time, a.notes, updated_by || null, updated_by || null);
+          copied_assignments++;
+        }
+      }
+      if (includeCleaning) {
+        deleteCleaning.run(week_start, day);
+        for (const c of cleaning) {
+          insertCleaning.run(uuid(), week_start, day, c.room, c.level, updated_by || null);
+          copied_cleaning++;
+        }
+      }
+    }
+    return { copied_assignments, copied_cleaning };
+  });
+
+  const result = tx();
+  logAudit(updated_by || 'system', 'duplicate_day', 'production_schedule', week_start, { source_day, target_days: targets, include_assignments: includeAssignments, include_cleaning: includeCleaning, ...result }, null, null);
+  res.json({ success: true, target_days: targets, ...result });
 });
 
 // DELETE /schedule/:id — delete a schedule assignment

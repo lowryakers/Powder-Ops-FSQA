@@ -500,6 +500,7 @@ function initSchema() {
       week_start TEXT NOT NULL,
       day_of_week INTEGER NOT NULL,
       room TEXT NOT NULL,
+      slot INTEGER NOT NULL DEFAULT 0,
       room_type TEXT NOT NULL DEFAULT 'production',
       team TEXT,
       mo_number TEXT,
@@ -789,6 +790,9 @@ function runMigrations() {
   addColumnIfMissing('coa_requests', 'received_date', 'TEXT');
   addColumnIfMissing('coa_requests', 'certificate_number', 'TEXT');
   addColumnIfMissing('coa_requests', 'date_of_issuance', 'TEXT');
+
+  // Multiple schedule lines per room/day (e.g. several Kitting products on the same day)
+  addColumnIfMissing('production_schedule', 'slot', 'INTEGER NOT NULL DEFAULT 0');
 
   migrateEquipmentNotes();
   cleanEquipmentNames();
