@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, Eye, PackageSearch, AlertTriangle } from 'lucide-react';
+import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, Eye, PackageSearch, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
 
 const STATUS_CONFIG = {
   pending: { label: 'Pending', color: 'bg-gray-100 text-gray-700', dot: 'bg-gray-400' },
@@ -27,6 +27,22 @@ function StatusBadge({ status }) {
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
       {cfg.label}
     </span>
+  );
+}
+
+function SortHeader({ label, field, sortField, sortDir, onSort }) {
+  const active = sortField === field;
+  return (
+    <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 cursor-pointer select-none hover:text-gray-900"
+      onClick={() => onSort(field)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className="inline-flex flex-col leading-none">
+          <ChevronUp size={10} className={active && sortDir === 'asc' ? 'text-powder-600' : 'text-gray-300'} />
+          <ChevronDown size={10} className={active && sortDir === 'desc' ? 'text-powder-600' : 'text-gray-300'} />
+        </span>
+      </span>
+    </th>
   );
 }
 
@@ -844,6 +860,8 @@ export default function COAPanel() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showUploadCoa, setShowUploadCoa] = useState(false);
+  const [sortField, setSortField] = useState('date_sent');
+  const [sortDir, setSortDir] = useState('desc');
 
   const { data: requests, loading: loadingReqs, refresh: refreshReqs } = useApiGet('/coa/requests' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''), [statusFilter]);
   const { data: labs, refresh: refreshLabs } = useApiGet('/coa/labs');
@@ -852,17 +870,35 @@ export default function COAPanel() {
 
   const filtered = useMemo(() => {
     if (!requests) return [];
-    if (!search) return requests;
-    const s = search.toLowerCase();
-    return requests.filter(r =>
-      r.item_number?.toLowerCase().includes(s) ||
-      r.item_description?.toLowerCase().includes(s) ||
-      r.lot_number?.toLowerCase().includes(s) ||
-      r.manufacturer_lot?.toLowerCase().includes(s) ||
-      r.vendor_lot?.toLowerCase().includes(s) ||
-      r.supplier?.toLowerCase().includes(s)
-    );
-  }, [requests, search]);
+    let list = requests;
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(r =>
+        r.item_number?.toLowerCase().includes(s) ||
+        r.item_description?.toLowerCase().includes(s) ||
+        r.lot_number?.toLowerCase().includes(s) ||
+        r.manufacturer_lot?.toLowerCase().includes(s) ||
+        r.vendor_lot?.toLowerCase().includes(s) ||
+        r.supplier?.toLowerCase().includes(s)
+      );
+    }
+    list = [...list].sort((a, b) => {
+      const av = (a[sortField] || '').toString().toLowerCase();
+      const bv = (b[sortField] || '').toString().toLowerCase();
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return list;
+  }, [requests, search, sortField, sortDir]);
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
 
   const handleCreateRequest = async (form) => {
     await apiPost('/coa/requests', form);
@@ -988,13 +1024,13 @@ export default function COAPanel() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">Item #</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">Description</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">Lot</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">Tests</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">Status</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">Lab</th>
-                      <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">Date Sent</th>
+                      <SortHeader label="Item #" field="item_number" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Description" field="item_description" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Lot" field="lot_number" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Tests" field="tests_requested" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Status" field="status" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Lab" field="lab_name" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Date Sent" field="date_sent" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">Files</th>
                     </tr>
                   </thead>
