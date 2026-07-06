@@ -466,6 +466,21 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   const [showResults, setShowResults] = useState(false);
   const [resultForm, setResultForm] = useState([{ test_type: '', result_value: '', pass_fail: '', notes: '' }]);
 
+  const downloadPdf = async () => {
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch(`/api/coa/requests/${requestId}/pdf`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `COA-${requestId}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading || !detail) return <div className="p-8 text-center text-gray-400">Loading...</div>;
 
   const handleUpdate = async (form) => {
@@ -531,10 +546,10 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={detail.status} />
-          <a href={`/api/coa/requests/${requestId}/pdf`} target="_blank" rel="noopener noreferrer"
+          <button onClick={downloadPdf}
             className="p-1.5 text-gray-400 hover:text-powder-600 rounded-lg hover:bg-gray-100" title="Export Facility COA PDF">
             <Download size={14} />
-          </a>
+          </button>
           <button onClick={() => setEditing(true)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
             <Edit2 size={14} />
           </button>
@@ -587,10 +602,10 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           {detail.status === 'fail' && (
             <button onClick={() => handleStatusChange('re_test')} className="px-3 py-1.5 text-xs font-medium bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100">Mark Re-Test</button>
           )}
-          <a href={`/api/coa/requests/${requestId}/pdf`} target="_blank" rel="noopener noreferrer"
+          <button onClick={downloadPdf}
             className="px-3 py-1.5 text-xs font-medium bg-powder-50 text-powder-700 rounded-lg hover:bg-powder-100 flex items-center gap-1">
             <Download size={12} /> Export Facility COA
-          </a>
+          </button>
         </div>
 
         {/* Test Results */}
