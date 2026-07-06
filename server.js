@@ -528,6 +528,14 @@ try {
     if (existsSync(seedPath)) {
       const compressed = readFileSync(seedPath);
       const rows = JSON.parse(gunzipSync(compressed).toString());
+      const labIds = new Set(rows.map(r => r.lab_id).filter(Boolean));
+      for (const labId of labIds) {
+        const exists = db.prepare('SELECT COUNT(*) as c FROM coa_labs WHERE id = ?').get(labId).c;
+        if (exists === 0) {
+          const labName = rows.find(r => r.lab_id === labId)?.lab_name || 'Unknown';
+          db.prepare('INSERT INTO coa_labs (id, name) VALUES (?, ?)').run(labId, labName);
+        }
+      }
       const cols = ['id','item_number','item_description','lot_number','product_expiration','tests_requested','status','lab_id','lab_name','date_sent','tat_days','expected_results_date','date_of_results','date_sent_to_customer','requested_by','invoice_amount','retest_required','retest_of','notes','source','source_ref','created_by','created_at','updated_at','origin','supplier','product_code','manufacturer_lot','vendor_lot','received_date','certificate_number','date_of_issuance'];
       const placeholders = cols.map(() => '?').join(',');
       const insert = db.prepare(`INSERT OR IGNORE INTO coa_requests (${cols.join(',')}) VALUES (${placeholders})`);
@@ -535,8 +543,6 @@ try {
         for (const r of data) insert.run(...cols.map(c => r[c] ?? null));
       });
       tx(rows);
-      const hasCtla = db.prepare("SELECT COUNT(*) as c FROM coa_labs WHERE name = 'CTLA'").get().c;
-      if (hasCtla === 0) db.prepare("INSERT INTO coa_labs (id, name) VALUES (?, 'CTLA')").run(uuid(), 'CTLA');
       console.log(`[seed] COA: ${rows.length} historical lab requests imported`);
     } else {
       console.log('[seed] COA seed file not found at:', seedPath);
