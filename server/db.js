@@ -527,6 +527,103 @@ function initSchema() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_production_cleaning_week ON production_cleaning_levels(week_start);
+
+    -- COA / Supplier Quality Module
+    CREATE TABLE IF NOT EXISTS coa_labs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      contact_name TEXT,
+      contact_email TEXT,
+      contact_phone TEXT,
+      address TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS coa_specifications (
+      id TEXT PRIMARY KEY,
+      item_number TEXT NOT NULL,
+      item_description TEXT NOT NULL,
+      test_type TEXT NOT NULL,
+      specification TEXT,
+      unit TEXT,
+      min_value REAL,
+      max_value REAL,
+      method TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_coa_specs_item ON coa_specifications(item_number);
+    CREATE INDEX IF NOT EXISTS idx_coa_specs_test ON coa_specifications(test_type);
+
+    CREATE TABLE IF NOT EXISTS coa_requests (
+      id TEXT PRIMARY KEY,
+      item_number TEXT NOT NULL,
+      item_description TEXT NOT NULL,
+      lot_number TEXT NOT NULL,
+      product_expiration TEXT,
+      tests_requested TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent','pass','fail','hold','re_test','na')),
+      lab_id TEXT,
+      lab_name TEXT,
+      date_sent TEXT,
+      tat_days INTEGER,
+      expected_results_date TEXT,
+      date_of_results TEXT,
+      date_sent_to_customer TEXT,
+      requested_by TEXT,
+      invoice_amount REAL,
+      retest_required INTEGER NOT NULL DEFAULT 0,
+      retest_of TEXT,
+      notes TEXT,
+      source TEXT DEFAULT 'manual',
+      source_ref TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (lab_id) REFERENCES coa_labs(id),
+      FOREIGN KEY (retest_of) REFERENCES coa_requests(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_coa_requests_item ON coa_requests(item_number);
+    CREATE INDEX IF NOT EXISTS idx_coa_requests_lot ON coa_requests(lot_number);
+    CREATE INDEX IF NOT EXISTS idx_coa_requests_status ON coa_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_coa_requests_date_sent ON coa_requests(date_sent);
+
+    CREATE TABLE IF NOT EXISTS coa_files (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      file_type TEXT NOT NULL CHECK(file_type IN ('lab_results','customer_coa','other')),
+      filename TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type TEXT,
+      size_bytes INTEGER,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (request_id) REFERENCES coa_requests(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_coa_files_request ON coa_files(request_id);
+
+    CREATE TABLE IF NOT EXISTS coa_test_results (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      test_type TEXT NOT NULL,
+      result_value TEXT,
+      unit TEXT,
+      specification_id TEXT,
+      pass_fail TEXT CHECK(pass_fail IN ('pass','fail','na')),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (request_id) REFERENCES coa_requests(id),
+      FOREIGN KEY (specification_id) REFERENCES coa_specifications(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_coa_test_results_request ON coa_test_results(request_id);
   `);
 
   runMigrations();

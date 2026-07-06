@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3 } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet } from './hooks/useApi';
 import LoginScreen from './components/LoginScreen.jsx';
@@ -23,6 +23,7 @@ import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
 import ProductionLog from './components/compliance/ProductionLog.jsx';
 import ProductionSchedule from './components/compliance/ProductionSchedule.jsx';
 import ProductionDashboard from './components/compliance/ProductionDashboard.jsx';
+import COAPanel from './components/compliance/COAPanel.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 
 const NAV_GROUPS = [
@@ -56,6 +57,7 @@ const NAV_GROUPS = [
       { id: 'sanitation', label: 'Sanitation', icon: Droplets },
       { id: 'chemicals', label: 'Chemicals', icon: FlaskConical },
       { id: 'hygienic', label: 'Hygienic Design', icon: ClipboardCheck },
+      { id: 'coa', label: 'COA / Lab Testing', icon: TestTubes },
     ],
   },
   {
@@ -524,6 +526,7 @@ function App() {
           {resolvedTab === 'loto' && <LOTOPanel />}
           {resolvedTab === 'equipment' && <EquipmentPanel />}
           {resolvedTab === 'hygienic' && <HygienicDesignPanel />}
+          {resolvedTab === 'coa' && <COAPanel />}
           {resolvedTab === 'capa' && <CAPAPanel />}
           {resolvedTab === 'sops' && <SOPPanel />}
           {resolvedTab === 'training' && <TrainingPanel />}

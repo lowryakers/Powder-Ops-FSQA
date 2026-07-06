@@ -57,4 +57,21 @@ export async function apiDelete(path) {
   return apiFetch(path, { method: 'DELETE' });
 }
 
+export async function apiUpload(path, formData) {
+  const token = localStorage.getItem('auth_token');
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: formData });
+  if (!res.ok) {
+    if (res.status === 401) {
+      localStorage.removeItem('auth_token');
+      window.dispatchEvent(new CustomEvent('app-logout'));
+    }
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `API error ${res.status}`);
+  }
+  return res.json();
+}
+
 export { apiFetch };
