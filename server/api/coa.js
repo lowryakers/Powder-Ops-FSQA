@@ -402,7 +402,8 @@ router.get('/files/:id/download', (req, res) => {
   const stat = statSync(filePath);
   res.setHeader('Content-Length', stat.size);
   res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `attachment; filename="${file.original_name}"`);
+  const safeName = (file.original_name || 'download').replace(/["\r\n]/g, '_');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
   createReadStream(filePath).pipe(res);
 });
 

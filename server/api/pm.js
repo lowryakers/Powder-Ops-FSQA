@@ -15,6 +15,23 @@ function nextWeekday(date) {
   return d;
 }
 
+const FREQ_DAYS = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
+
+// Create the next occurrence WO for a schedule, due one interval from today
+function createNextWorkOrder(db, sched, triggeredBy = null) {
+  const interval = (FREQ_DAYS[sched.frequency_type] || 30) * (sched.frequency_value || 1);
+  const raw = new Date();
+  raw.setDate(raw.getDate() + interval);
+  const dueStr = nextWeekday(raw).toISOString().split('T')[0];
+  const woId = uuid();
+  db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+  `).run(woId, sched.id, sched.equipment_id, sched.title, dueStr, sched.procedure_steps, sched.task_group || 'warehouse');
+  logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id, ...(triggeredBy ? { triggered_by: triggeredBy } : {}) }, null, null);
+  return { id: woId, title: sched.title, due_date: dueStr };
+}
+
 function markMissedWorkOrders(db) {
   const today = new Date().toISOString().split('T')[0];
 
@@ -25,7 +42,6 @@ function markMissedWorkOrders(db) {
   `).run(today);
 
   // Ensure every active PM schedule has at least one open WO
-  const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
   const orphaned = db.prepare(`
     SELECT ps.* FROM pm_schedules ps
     WHERE ps.is_active = 1
@@ -41,7 +57,7 @@ function markMissedWorkOrders(db) {
     const tx = db.transaction(() => {
       for (const sched of orphaned) {
         if (checkExisting.get(sched.id)) continue;
-        const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value ?? 1);
+        const interval = (FREQ_DAYS[sched.frequency_type] || 30) * (sched.frequency_value ?? 1);
         const dueDate = nextWeekday(interval <= 1 ? new Date() : new Date(Date.now() + interval * 86400000));
         insertWO.run(uuid(), sched.id, sched.equipment_id, sched.title, dueDate.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
       }
@@ -232,7 +248,7 @@ router.get('/metrics', (req, res) => {
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const rateCutoff = yesterday.toISOString().split('T')[0];
-  const total = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status != 'not_applicable'" + gf).get(start, rateCutoff, ...gp);
+  const total = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ?" + gf).get(start, rateCutoff, ...gp);
   const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')" + gf).get(start, rateCutoff, ...gp);
   const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, rateCutoff, ...gp);
   const naCount = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'not_applicable'" + gf).get(start, rateCutoff, ...gp);
@@ -279,6 +295,9 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Work order not found' });
+  if (existing.status === 'completed') {
+    return res.status(409).json({ error: 'Work order is already completed' });
+  }
 
   const { notes, lubricant_used, lubricant_is_food_grade, readings, step_results, reading_result } = req.body;
   const completedAt = new Date().toISOString();
@@ -310,18 +329,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   if (existing.pm_schedule_id) {
     const sched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(existing.pm_schedule_id);
     if (sched && sched.is_active) {
-      const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
-      const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
-      const raw = new Date();
-      raw.setDate(raw.getDate() + interval);
-      const nextDue = nextWeekday(raw);
-      const woId = uuid();
-      db.prepare(`
-        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
-      `).run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
-      logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id, triggered_by: req.params.id }, null, null);
-      nextWO = { id: woId, title: sched.title, due_date: nextDue.toISOString().split('T')[0] };
+      nextWO = createNextWorkOrder(db, sched, req.params.id);
     }
   }
 
@@ -347,12 +355,6 @@ router.post('/work-orders/batch-complete', (req, res) => {
   const getWO = db.prepare('SELECT * FROM work_orders WHERE id = ?');
   const getSched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?');
   const getEq = db.prepare('SELECT is_food_contact FROM equipment WHERE id = ?');
-  const insertWO = db.prepare(`
-    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
-  `);
-
-  const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
 
   const batchRun = db.transaction(() => {
     for (const id of ids) {
@@ -372,13 +374,7 @@ router.post('/work-orders/batch-complete', (req, res) => {
       if (wo.pm_schedule_id) {
         const sched = getSched.get(wo.pm_schedule_id);
         if (sched && sched.is_active) {
-          const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
-          const raw = new Date();
-          raw.setDate(raw.getDate() + interval);
-          const nextDue = nextWeekday(raw);
-          const woId = uuid();
-          insertWO.run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
-          logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id, triggered_by: id }, null, null);
+          createNextWorkOrder(db, sched, id);
         }
       }
       results.push(id);
@@ -410,17 +406,7 @@ router.post('/work-orders/:id/not-applicable', (req, res) => {
   if (wo.pm_schedule_id) {
     const sched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(wo.pm_schedule_id);
     if (sched && sched.is_active) {
-      const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
-      const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
-      const raw = new Date();
-      raw.setDate(raw.getDate() + interval);
-      const nextDue = nextWeekday(raw);
-      const woId = uuid();
-      db.prepare(`
-        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
-      `).run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
-      nextWO = { id: woId, title: sched.title, due_date: nextDue.toISOString().split('T')[0] };
+      nextWO = createNextWorkOrder(db, sched, req.params.id);
     }
   }
 
@@ -562,8 +548,6 @@ router.post('/generate', (_req, res) => {
   const schedules = db.prepare('SELECT * FROM pm_schedules WHERE is_active = 1').all();
   const generated = [];
 
-  const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
-
   const checkOpen = db.prepare("SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open','in_progress') LIMIT 1");
   for (const sched of schedules) {
     if (checkOpen.get(sched.id)) continue;
@@ -571,7 +555,7 @@ router.post('/generate', (_req, res) => {
       'SELECT due_date FROM work_orders WHERE pm_schedule_id = ? ORDER BY due_date DESC LIMIT 1'
     ).get(sched.id);
 
-    const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
+    const interval = (FREQ_DAYS[sched.frequency_type] || 30) * (sched.frequency_value || 1);
 
     const lastDate = lastWO ? new Date(lastWO.due_date) : new Date();
     const rawNext = new Date(lastDate);

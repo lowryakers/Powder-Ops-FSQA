@@ -697,7 +697,28 @@ const upload = multer({
   },
 });
 
-app.post('/api/uploads', upload.array('files', 5), (req, res) => {
+// This endpoint stays public (the QR-code submit form uses it pre-login),
+// so cap upload volume per IP to prevent disk-fill abuse.
+const uploadCounts = new Map(); // ip -> { count, windowStart }
+const UPLOAD_LIMIT = 30;
+const UPLOAD_WINDOW_MS = 15 * 60 * 1000;
+
+function uploadRateLimit(req, res, next) {
+  const ip = req.ip || 'unknown';
+  const now = Date.now();
+  const entry = uploadCounts.get(ip);
+  if (!entry || now - entry.windowStart > UPLOAD_WINDOW_MS) {
+    uploadCounts.set(ip, { count: 1, windowStart: now });
+    return next();
+  }
+  if (entry.count >= UPLOAD_LIMIT) {
+    return res.status(429).json({ error: 'Too many uploads. Try again later.' });
+  }
+  entry.count++;
+  next();
+}
+
+app.post('/api/uploads', uploadRateLimit, upload.array('files', 5), (req, res) => {
   if (!req.files?.length) return res.status(400).json({ error: 'No files uploaded' });
   const results = req.files.map(f => ({
     filename: f.filename,
@@ -783,6 +804,18 @@ app.get('/{*splat}', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
+
+// Purge expired sessions on startup and hourly so the table doesn't grow unbounded
+function purgeExpiredSessions() {
+  try {
+    const { changes } = getDb().prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+    if (changes > 0) console.log(`[auth] Purged ${changes} expired session${changes > 1 ? 's' : ''}`);
+  } catch (e) {
+    console.warn('[auth] Session purge failed:', e.message);
+  }
+}
+purgeExpiredSessions();
+setInterval(purgeExpiredSessions, 60 * 60 * 1000).unref();
 
 server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[server] FSQA Compliance Platform running on port ${PORT} (build ${BUILD_VERSION})`);

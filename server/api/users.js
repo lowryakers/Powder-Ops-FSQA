@@ -60,7 +60,7 @@ router.get('/:id/pin', requireRole('admin'), (req, res) => {
   res.json({ pin: user.pin || null });
 });
 
-router.post('/', (req, res) => {
+router.post('/', requireRole('admin'), (req, res) => {
   const db = getDb();
   const id = uuid();
   const { name, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access } = req.body;
@@ -75,7 +75,7 @@ router.post('/', (req, res) => {
   res.status(201).json(created);
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', requireRole('admin'), (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'User not found' });
@@ -99,10 +99,22 @@ router.put('/:id', (req, res) => {
 
 // --- Auth ---
 
+// Basic brute-force protection: lock a name out after repeated bad PINs
+const failedLogins = new Map(); // name(lower) -> { count, lockedUntil }
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 15 * 60 * 1000;
+
 router.post('/login', (req, res) => {
   const db = getDb();
   const { pin, name } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
+
+  const key = name.toLowerCase();
+  const entry = failedLogins.get(key);
+  if (entry?.lockedUntil && entry.lockedUntil > Date.now()) {
+    const mins = Math.ceil((entry.lockedUntil - Date.now()) / 60000);
+    return res.status(429).json({ error: `Too many failed attempts. Try again in ${mins} minute${mins > 1 ? 's' : ''}.` });
+  }
 
   const user = db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?) AND is_active = 1').get(name);
   if (!user) return res.status(401).json({ error: 'User not found. Ask your admin to add you.' });
@@ -112,7 +124,12 @@ router.post('/login', (req, res) => {
   }
 
   if (!pin) return res.status(400).json({ error: 'PIN is required' });
-  if (user.pin !== pin) return res.status(401).json({ error: 'Invalid PIN' });
+  if (user.pin !== pin) {
+    const count = (entry?.count || 0) + 1;
+    failedLogins.set(key, { count, lockedUntil: count >= MAX_ATTEMPTS ? Date.now() + LOCKOUT_MS : null });
+    return res.status(401).json({ error: 'Invalid PIN' });
+  }
+  failedLogins.delete(key);
 
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date();
