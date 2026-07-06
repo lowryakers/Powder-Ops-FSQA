@@ -11,8 +11,8 @@ async function apiFetch(path, options = {}) {
   };
 
   const res = await fetch(`${BASE}${path}`, {
-    headers,
     ...options,
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   if (!res.ok) {
@@ -30,17 +30,22 @@ export function useApiGet(path, deps = []) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [tick, setTick] = useState(0);
+  const depsKey = JSON.stringify(deps);
 
-  const refresh = useCallback(() => {
+  useEffect(() => {
+    let stale = false;
     setLoading(true);
     setError(null);
     apiFetch(path)
-      .then(setData)
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [path, ...deps]);
+      .then(d => { if (!stale) setData(d); })
+      .catch(e => { if (!stale) setError(e.message); })
+      .finally(() => { if (!stale) setLoading(false); });
+    return () => { stale = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, depsKey, tick]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  const refresh = useCallback(() => setTick(t => t + 1), []);
 
   return { data, loading, error, refresh };
 }

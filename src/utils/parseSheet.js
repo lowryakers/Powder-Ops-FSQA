@@ -178,8 +178,6 @@ export async function refreshData() {
 
 function getWeekKey(date) {
   const d = new Date(date);
-  const year = d.getFullYear();
-  const month = d.getMonth();
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);

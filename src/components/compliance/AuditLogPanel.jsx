@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useApiGet } from '../../hooks/useApi';
-import { ScrollText, Shield, Download } from 'lucide-react';
+import { Shield } from 'lucide-react';
 
 export default function AuditLogPanel() {
   const [filters, setFilters] = useState({ entity_type: '', actor: '', from: '', to: '' });
   const query = Object.entries(filters).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-  const { data, loading, refresh } = useApiGet(`/audit?${query}`, [query]);
+  const { data, loading } = useApiGet(`/audit?${query}`, [query]);
   const { data: auditReady, loading: arLoading } = useApiGet('/compliance/audit-ready');
 
   return (

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Shield, Wrench, Thermometer, Droplets, CheckCircle, AlertTriangle, Clock, Download, LogOut, FlaskConical, ScrollText, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, CheckCircle, AlertTriangle, Download, LogOut, FlaskConical, ScrollText, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 
 function Section({ title, icon: Icon, children, defaultOpen = true }) {

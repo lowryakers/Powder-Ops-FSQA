@@ -78,8 +78,7 @@ const NAV_GROUPS = [
   },
 ];
 
-function Sidebar({ activeTab, setActiveTab, user, collapsed, onClose, badges }) {
-  const activeGroup = NAV_GROUPS.find(g => g.items.some(i => i.id === activeTab));
+function Sidebar({ activeTab, setActiveTab, user, onClose, badges }) {
   const [openGroups, setOpenGroups] = useState(() => {
     const initial = {};
     NAV_GROUPS.forEach(g => { initial[g.label] = true; });

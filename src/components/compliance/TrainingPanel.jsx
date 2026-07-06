@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { useAuth } from '../../hooks/useAuth';
-import { Plus, Edit2, Search, ExternalLink, Users, GraduationCap, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Search, ExternalLink, CheckCircle } from 'lucide-react';
 
 const STATUS_COLORS = {
   scheduled: 'bg-blue-100 text-blue-800',
@@ -113,10 +112,9 @@ function TrainingForm({ initial, sops, onSave, onCancel }) {
 }
 
 export default function TrainingPanel() {
-  const { user } = useAuth();
   const { data: records, loading, refresh } = useApiGet('/training');
   const { data: sops } = useApiGet('/sops');
-  const { data: matrix, loading: loadingMatrix, refresh: refreshMatrix } = useApiGet('/training/matrix');
+  const { data: matrix, refresh: refreshMatrix } = useApiGet('/training/matrix');
   const [tab, setTab] = useState('records');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');

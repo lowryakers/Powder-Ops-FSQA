@@ -114,7 +114,10 @@ export default function ScheduleTab({ runs, schedule, snapshots = [] }) {
     });
   }, [selectedWeek]);
 
-  const displayEntries = selectedWeek === 'current' ? schedule : (snapshotEntries || []);
+  const displayEntries = useMemo(
+    () => (selectedWeek === 'current' ? schedule : (snapshotEntries || [])),
+    [selectedWeek, schedule, snapshotEntries]
+  );
 
   const moColorMap = useMemo(() => {
     const mos = displayEntries.map((e) => e.mo).filter(Boolean);

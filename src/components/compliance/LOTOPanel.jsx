@@ -220,7 +220,6 @@ function StepsList({ steps }) {
 function ProcedureCard({ proc, onExecute, executing }) {
   const [expanded, setExpanded] = useState(false);
   const steps = JSON.parse(proc.steps || '[]');
-  const sources = JSON.parse(proc.energy_sources || '[]');
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">

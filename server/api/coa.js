@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import path from 'path';
-import { mkdirSync, existsSync, createReadStream, readFileSync, statSync, unlinkSync } from 'fs';
+import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync } from 'fs';
 import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -597,7 +597,6 @@ router.get('/requests/:id/pdf', (req, res) => {
 
   // ── Date of Issuance ──
   y += 55;
-  const dateBoxW = 180;
   doc.rect(lm, y, 100, 18).fill('#e8e8e8').stroke('#ccc');
   doc.font('Helvetica-Bold').fillColor('#333').fontSize(8).text('Date of Issuance:', lm + 4, y + 4);
   doc.rect(lm + 100, y, 80, 18).stroke('#ccc');
@@ -723,16 +722,16 @@ function parseCTLACoa(text) {
   };
 
   const patterns = {
-    item_description: [/Product\s*(?:Name|Description)\s*[:\-]\s*(.+)/i, /Sample\s*(?:Name|Description|ID)\s*[:\-]\s*(.+)/i, /Material\s*[:\-]\s*(.+)/i],
-    lot_number: [/(?:Lot|Batch)\s*(?:#|No\.?|Number)\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i, /^Lot\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i],
-    manufacturer_lot: [/(?:Manufacturer|Mfg|Mfr)(?:'?s?)?\s*Lot\s*(?:#|No\.?|Number)?\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i],
-    vendor_lot: [/Vendor\s*Lot\s*(?:#|No\.?|Number)?\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i],
-    item_number: [/(?:Item|Product|Part)\s*(?:#|No\.?|Number|Code)\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i, /(?:SKU|UPC|NDC)\s*[:\-]\s*([A-Za-z0-9\-_.]+)/i],
-    supplier: [/(?:Supplier|Manufacturer|Client|Customer)\s*[:\-]\s*(.+)/i, /(?:Submitted|Received)\s*(?:By|From)\s*[:\-]\s*(.+)/i],
-    origin: [/(?:Country\s*of\s*)?Origin\s*[:\-]\s*(.+)/i],
-    product_expiration: [/(?:Expir(?:ation|y)|Exp|Best\s*By|Use\s*By)\s*(?:Date)?\s*[:\-]\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i, /(?:Expir(?:ation|y)|Exp)\s*(?:Date)?\s*[:\-]\s*(\d{4}-\d{2}-\d{2})/i],
-    received_date: [/(?:Date\s*)?Receiv(?:ed|ing)\s*(?:Date)?\s*[:\-]\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i, /(?:Sample|Date)\s*Receiv(?:ed|ing)\s*[:\-]\s*(\d{4}-\d{2}-\d{2})/i],
-    date_of_results: [/(?:Date\s*(?:of\s*)?)?(?:Report|Results?|Analysis|Complet(?:ed|ion))\s*(?:Date)?\s*[:\-]\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i, /(?:Report|Complet(?:ed|ion))\s*(?:Date)?\s*[:\-]\s*(\d{4}-\d{2}-\d{2})/i],
+    item_description: [/Product\s*(?:Name|Description)\s*[:-]\s*(.+)/i, /Sample\s*(?:Name|Description|ID)\s*[:-]\s*(.+)/i, /Material\s*[:-]\s*(.+)/i],
+    lot_number: [/(?:Lot|Batch)\s*(?:#|No\.?|Number)\s*[:-]\s*([A-Za-z0-9_.-]+)/i, /^Lot\s*[:-]\s*([A-Za-z0-9_.-]+)/i],
+    manufacturer_lot: [/(?:Manufacturer|Mfg|Mfr)(?:'?s?)?\s*Lot\s*(?:#|No\.?|Number)?\s*[:-]\s*([A-Za-z0-9_.-]+)/i],
+    vendor_lot: [/Vendor\s*Lot\s*(?:#|No\.?|Number)?\s*[:-]\s*([A-Za-z0-9_.-]+)/i],
+    item_number: [/(?:Item|Product|Part)\s*(?:#|No\.?|Number|Code)\s*[:-]\s*([A-Za-z0-9_.-]+)/i, /(?:SKU|UPC|NDC)\s*[:-]\s*([A-Za-z0-9_.-]+)/i],
+    supplier: [/(?:Supplier|Manufacturer|Client|Customer)\s*[:-]\s*(.+)/i, /(?:Submitted|Received)\s*(?:By|From)\s*[:-]\s*(.+)/i],
+    origin: [/(?:Country\s*of\s*)?Origin\s*[:-]\s*(.+)/i],
+    product_expiration: [/(?:Expir(?:ation|y)|Exp|Best\s*By|Use\s*By)\s*(?:Date)?\s*[:-]\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i, /(?:Expir(?:ation|y)|Exp)\s*(?:Date)?\s*[:-]\s*(\d{4}-\d{2}-\d{2})/i],
+    received_date: [/(?:Date\s*)?Receiv(?:ed|ing)\s*(?:Date)?\s*[:-]\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i, /(?:Sample|Date)\s*Receiv(?:ed|ing)\s*[:-]\s*(\d{4}-\d{2}-\d{2})/i],
+    date_of_results: [/(?:Date\s*(?:of\s*)?)?(?:Report|Results?|Analysis|Complet(?:ed|ion))\s*(?:Date)?\s*[:-]\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i, /(?:Report|Complet(?:ed|ion))\s*(?:Date)?\s*[:-]\s*(\d{4}-\d{2}-\d{2})/i],
   };
 
   // Match against individual lines for clean field extraction
@@ -764,7 +763,7 @@ function parseCTLACoa(text) {
     if (!matched) continue;
 
     const context = line + ' ' + (lines[i + 1] || '');
-    const testName = line.match(/^([A-Za-z][A-Za-z\s\(\)<>&\-\/,\.]+)/)?.[1]?.trim();
+    const testName = line.match(/^([A-Za-z][A-Za-z\s()<>&,./-]+)/)?.[1]?.trim();
     if (!testName || testName.length < 3) continue;
 
     const pfMatch = context.match(passFailRe);

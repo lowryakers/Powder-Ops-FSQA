@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
-import { useAuth } from '../../hooks/useAuth';
-import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, Eye, PackageSearch, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
 
 const STATUS_CONFIG = {
   pending: { label: 'Pending', color: 'bg-gray-100 text-gray-700', dot: 'bg-gray-400' },
@@ -138,7 +137,7 @@ function LotLookup() {
 }
 
 // ──────── COA Upload & Parse ────────
-function COAUploadModal({ labs, onClose, onImported }) {
+function COAUploadModal({ onClose, onImported }) {
   const [step, setStep] = useState('upload'); // upload | review | saving
   const [file, setFile] = useState(null);
   const [parsing, setParsing] = useState(false);
@@ -853,7 +852,6 @@ function LabForm({ initial, onSave, onCancel }) {
 
 // ──────── Main Panel ────────
 export default function COAPanel() {
-  const { user } = useAuth();
   const [subTab, setSubTab] = useState('requests');
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);

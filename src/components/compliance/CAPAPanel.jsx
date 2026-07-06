@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { useAuth } from '../../hooks/useAuth';
 import { Plus, Edit2, Search, ChevronDown, ChevronUp, FileWarning } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -343,7 +342,6 @@ function DetailRow({ label, value }) {
 }
 
 export default function CAPAPanel() {
-  const { user } = useAuth();
   const { data: complaints, loading: loadingC, refresh: refreshC } = useApiGet('/complaints');
   const { data: capas, loading: loadingCA, refresh: refreshCA } = useApiGet('/complaints/capas/all');
   const [tab, setTab] = useState('complaints');

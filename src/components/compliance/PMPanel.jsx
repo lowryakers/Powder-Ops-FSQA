@@ -1,7 +1,7 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, CheckCircle, Clock, Wrench, ChevronDown, ChevronUp, Archive, RotateCcw, Paperclip, Calendar, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X } from 'lucide-react';
+import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';

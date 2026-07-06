@@ -8,7 +8,7 @@ import { gunzipSync } from 'zlib';
 import { execSync } from 'child_process';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
-import { getDb, logAudit } from './server/db.js';
+import { getDb } from './server/db.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
 import pmRoutes from './server/api/pm.js';
@@ -30,7 +30,7 @@ import productionRoutes from './server/api/production.js';
 import coaRoutes from './server/api/coa.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries } from './server/production-seed.js';
-import { authenticate, optionalAuth } from './server/middleware/auth.js';
+import { authenticate } from './server/middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -139,7 +139,6 @@ try {
 
 // Remove old generic QA seed data (qa-seed-data.json) if it exists in the DB
 {
-  const oldAssetPatterns = ['QA-TH-00%', 'QA-LG-00%', 'QA-CZ-00%'];
   const oldEq = db.prepare("SELECT id FROM equipment WHERE asset_id LIKE 'QA-TH-00%' OR asset_id LIKE 'QA-LG-00%' OR asset_id LIKE 'QA-CZ-00%'").all();
   if (oldEq.length > 0) {
     const oldIds = oldEq.map(e => e.id);

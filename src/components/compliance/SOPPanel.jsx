@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
-import { useAuth } from '../../hooks/useAuth';
-import { Plus, Edit2, Search, ExternalLink, FileText, FolderOpen, ChevronDown, ChevronRight, Download, History, ArrowUpDown, ArrowUp, ArrowDown, X, Check } from 'lucide-react';
+import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { Plus, Edit2, Search, ExternalLink, ChevronDown, ChevronRight, Download, History, ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react';
 
 const CATEGORIES = [
   { value: 'production', label: 'Production', color: 'bg-blue-100 text-blue-800' },
@@ -248,7 +247,6 @@ function SortableHeader({ label, field, sortField, sortOrder, onSort }) {
 }
 
 export default function SOPPanel() {
-  const { user } = useAuth();
   const [sortField, setSortField] = useState('category');
   const [sortOrder, setSortOrder] = useState('asc');
   const { data: sops, loading, refresh } = useApiGet(`/sops?sort=${sortField}&order=${sortOrder}`, [sortField, sortOrder]);

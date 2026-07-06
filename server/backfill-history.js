@@ -22,7 +22,6 @@ const freqDays = {
   annual: 365,
 };
 
-const MONTHS_BACK = 4;
 const startDate = new Date('2026-02-15');
 const endDate = new Date('2026-06-14');
 

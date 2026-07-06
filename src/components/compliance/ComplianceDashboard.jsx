@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useApiGet } from '../../hooks/useApi';
-import { Shield, Wrench, Thermometer, Droplets, AlertTriangle, CheckCircle, Clock, FlaskConical, Lock, Flag, FileText, ScrollText, Download, ChevronRight } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, AlertTriangle, CheckCircle, Clock, FlaskConical, Flag, FileText, ScrollText, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, LineChart, Line } from 'recharts';
-import { exportToCsv } from '../../utils/exportCsv';
 
 const goTo = (tab) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab } }));
 
@@ -33,8 +32,6 @@ export default function ComplianceDashboard() {
   if (loading) return <div className="text-center py-12 text-gray-500">Loading compliance dashboard...</div>;
   if (error) return <div className="text-center py-12 text-danger-600">{error}</div>;
   if (!data) return null;
-
-  const pmColor = data.pm.meets_sqf_target ? 'success' : data.pm.completion_rate >= 80 ? 'warning' : 'danger';
 
   const readinessChecks = [
     {

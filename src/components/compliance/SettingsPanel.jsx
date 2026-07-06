@@ -137,7 +137,6 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
 
   const [form, setForm] = useState(() => ({
     name: '', pin: '', role: 'operator', department: 'warehouse',
-    module_access: null,
     ...initial,
     module_access: parseModuleAccess(initial?.module_access),
   }));
@@ -321,7 +320,7 @@ function UserRow({ u, onEdit, onToggle }) {
   );
 }
 
-function RoleSection({ role, users, config, onEdit, onToggle, defaultOpen }) {
+function RoleSection({ users, config, onEdit, onToggle, defaultOpen }) {
   const [open, setOpen] = useState(defaultOpen);
   const activeCount = users.filter(u => u.is_active).length;
 

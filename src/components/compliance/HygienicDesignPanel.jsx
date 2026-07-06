@@ -127,7 +127,7 @@ function VerificationForm({ equipment, onSave, onCancel }) {
   );
 }
 
-function ApprovalForm({ verification, onApprove, onCancel }) {
+function ApprovalForm({ onApprove, onCancel }) {
   const { user } = useAuth() || {};
   const [result, setResult] = useState('approved');
   const [conditions, setConditions] = useState('');

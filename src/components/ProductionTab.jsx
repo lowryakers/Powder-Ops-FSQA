@@ -8,7 +8,6 @@ import { buildMOColorMap, getMOColor } from '../utils/moColors';
 import MOLegend from './MOLegend';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-const DAY_NUMS = [1, 2, 3, 4, 5]; // Mon=1 ... Fri=5
 
 function WeeklyProductionGrid({ runs, selectedWeek, moColorMap }) {
   const weekRuns = useMemo(() => {

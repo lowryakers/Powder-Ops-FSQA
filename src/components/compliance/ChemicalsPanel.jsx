@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, Edit2, FlaskConical, ShieldCheck, AlertTriangle, Search, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Edit2, ShieldCheck, AlertTriangle, Search, ChevronUp, ChevronDown } from 'lucide-react';
 
 const CATEGORIES = [
   { value: 'lubricant', label: 'Lubricant', color: 'bg-blue-100 text-blue-800' },

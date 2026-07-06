@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
-import { requireRole, requireDepartment } from '../middleware/auth.js';
+import { requireDepartment } from '../middleware/auth.js';
 
 const router = Router();
 

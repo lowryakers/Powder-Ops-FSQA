@@ -1,6 +1,6 @@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, ScatterChart, Scatter, ZAxis,
+  ResponsiveContainer, ScatterChart, Scatter, ZAxis,
 } from 'recharts';
 import { getTeamColor } from '../utils/parseSheet';
 

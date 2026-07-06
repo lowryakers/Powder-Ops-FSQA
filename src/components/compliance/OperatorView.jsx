@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Camera, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 
@@ -32,22 +32,7 @@ const PRIORITY_RING = {
   high: 'ring-2 ring-orange-300 border-orange-300',
 };
 
-function daysBetween(a, b) {
-  const msPerDay = 86400000;
-  return Math.floor((new Date(a) - new Date(b)) / msPerDay);
-}
-
-function formatDueLabel(dueDate) {
-  const today = new Date().toISOString().split('T')[0];
-  const diff = daysBetween(dueDate, today);
-  if (diff < 0) return `${Math.abs(diff)}d overdue`;
-  if (diff === 0) return 'Due today';
-  if (diff === 1) return 'Due tomorrow';
-  if (diff <= 7) return `Due in ${diff} days`;
-  return `Due ${dueDate}`;
-}
-
-function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, userName, isAdmin, batchMode, batchSelected, onBatchToggle, t }) {
+function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, isAdmin, batchMode, batchSelected, onBatchToggle, t }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
@@ -827,7 +812,7 @@ export default function OperatorView({ lang = 'en' }) {
       setBatchSelected(new Set());
       setBatchMode(false);
       refresh();
-    } catch (e) {
+    } catch {
       showToast(t('toast_batch_fail'), 'error');
     } finally {
       setBatchSaving(false);

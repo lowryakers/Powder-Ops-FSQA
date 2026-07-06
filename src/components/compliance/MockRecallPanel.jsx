@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { useAuth } from '../../hooks/useAuth';
-import { Plus, Edit2, Search, ChevronDown, ChevronUp, Package, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, ChevronDown, ChevronUp, Package, Clock } from 'lucide-react';
 
 const RESULT_COLORS = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -154,7 +153,6 @@ function RecallForm({ initial, onSave, onCancel }) {
 }
 
 export default function MockRecallPanel() {
-  const { user } = useAuth();
   const { data: recalls, loading, refresh } = useApiGet('/mock-recalls');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);

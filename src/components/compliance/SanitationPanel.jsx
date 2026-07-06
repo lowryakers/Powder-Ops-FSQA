@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Droplets, CheckCircle, Eye, X, Check, XCircle } from 'lucide-react';
+import { Plus, CheckCircle, Eye, X, Check, XCircle } from 'lucide-react';
 
 const TYPE_LABELS = { pre_op: 'Pre-Op', post_op: 'Post-Op', mid_shift: 'Mid-Shift', deep_clean: 'Deep Clean', emergency: 'Emergency' };
 const TYPE_COLORS = { pre_op: 'bg-blue-100 text-blue-800', post_op: 'bg-purple-100 text-purple-800', mid_shift: 'bg-yellow-100 text-yellow-800', deep_clean: 'bg-teal-100 text-teal-800', emergency: 'bg-red-100 text-red-800' };

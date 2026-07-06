@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, AlertTriangle, CheckCircle, Clock, Scale, Edit2, Search } from 'lucide-react';
+import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search } from 'lucide-react';
 
 const STATUS_COLORS = {
   active: 'bg-green-100 text-green-800',
@@ -215,7 +215,6 @@ export default function CalibrationPanel() {
   });
 
   const departments = [...new Set((instruments || []).map(i => i.department).filter(Boolean))];
-  const overdueList = filtered.filter(i => i.status === 'overdue');
   const today = new Date().toISOString().split('T')[0];
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading calibration data...</div>;

@@ -296,7 +296,7 @@ function LogTable({ user }) {
     const col = SORT_COLUMNS.find(c => c.key === sortCol);
     const dir = sortDir === 'asc' ? 1 : -1;
     rows = [...rows].sort((a, b) => {
-      let cmp = 0;
+      let cmp;
       if (col?.type === 'date') {
         cmp = new Date(a[sortCol]) - new Date(b[sortCol]);
       } else if (col?.type === 'number') {
