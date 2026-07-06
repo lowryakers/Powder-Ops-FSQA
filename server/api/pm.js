@@ -1,8 +1,54 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { requireRole, requireDepartment } from '../middleware/auth.js';
 
 const router = Router();
+
+function safeParse(val, fallback = []) {
+  try { return JSON.parse(val || JSON.stringify(fallback)); } catch { return fallback; }
+}
+
+function nextWeekday(date) {
+  const d = new Date(date);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+function markMissedWorkOrders(db) {
+  const today = new Date().toISOString().split('T')[0];
+
+  // Mark past-due open WOs as missed
+  db.prepare(`
+    UPDATE work_orders SET status = 'missed', updated_at = datetime('now')
+    WHERE status IN ('open', 'overdue') AND due_date < ?
+  `).run(today);
+
+  // Ensure every active PM schedule has at least one open WO
+  const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
+  const orphaned = db.prepare(`
+    SELECT ps.* FROM pm_schedules ps
+    WHERE ps.is_active = 1
+    AND NOT EXISTS (
+      SELECT 1 FROM work_orders wo
+      WHERE wo.pm_schedule_id = ps.id AND wo.status IN ('open', 'in_progress')
+    )
+  `).all();
+
+  if (orphaned.length > 0) {
+    const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')`);
+    const checkExisting = db.prepare(`SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open', 'in_progress') LIMIT 1`);
+    const tx = db.transaction(() => {
+      for (const sched of orphaned) {
+        if (checkExisting.get(sched.id)) continue;
+        const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value ?? 1);
+        const dueDate = nextWeekday(interval <= 1 ? new Date() : new Date(Date.now() + interval * 86400000));
+        insertWO.run(uuid(), sched.id, sched.equipment_id, sched.title, dueDate.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
+      }
+    });
+    tx();
+  }
+}
 
 // --- PM Schedules ---
 
@@ -33,27 +79,27 @@ router.get('/schedules/:id', (req, res) => {
     'SELECT id, status, due_date, completed_at, completed_by FROM work_orders WHERE pm_schedule_id = ? ORDER BY due_date DESC LIMIT 10'
   ).all(req.params.id);
 
-  res.json({ ...sched, procedure_steps: JSON.parse(sched.procedure_steps || '[]'), recent_work_orders: recentWOs });
+  res.json({ ...sched, procedure_steps: safeParse(sched.procedure_steps), recent_work_orders: recentWOs });
 });
 
 router.post('/schedules', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id } = req.body;
+  const { equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group } = req.body;
 
   if (!equipment_id || !title || !frequency_type) {
     return res.status(400).json({ error: 'equipment_id, title, and frequency_type are required' });
   }
 
   db.prepare(`
-    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, equipment_id, title, description || null, frequency_type, frequency_value || 1,
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, equipment_id, title, description || null, frequency_type, frequency_value ?? 1,
     JSON.stringify(procedure_steps || []), lubricant_type || null,
-    is_food_grade_lubricant ? 1 : 0, estimated_minutes || null, haccp_ccp_id || null);
+    is_food_grade_lubricant ? 1 : 0, estimated_minutes ?? null, haccp_ccp_id || null, task_group || 'warehouse');
 
   const created = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(id);
-  logAudit(req.body._actor || 'system', 'create', 'pm_schedule', id, { title, equipment_id }, null, created);
+  logAudit(req.user.name, 'create', 'pm_schedule', id, { title, equipment_id }, null, created);
   res.status(201).json(created);
 });
 
@@ -79,7 +125,7 @@ router.put('/schedules/:id', (req, res) => {
   );
 
   const updated = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
-  logAudit(req.body._actor || 'system', 'update', 'pm_schedule', req.params.id, null, existing, updated);
+  logAudit(req.user.name, 'update', 'pm_schedule', req.params.id, null, existing, updated);
   res.json(updated);
 });
 
@@ -87,6 +133,7 @@ router.put('/schedules/:id', (req, res) => {
 
 router.get('/work-orders', (req, res) => {
   const db = getDb();
+  markMissedWorkOrders(db);
   const { status, equipment_id, from, to, assigned_to } = req.query;
   let sql = `SELECT wo.*, e.name as equipment_name, e.room, ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
@@ -115,26 +162,26 @@ router.get('/work-orders/:id', (req, res) => {
     "SELECT * FROM audit_log WHERE entity_type = 'work_order' AND entity_id = ? ORDER BY timestamp ASC"
   ).all(req.params.id);
 
-  res.json({ ...wo, procedure_steps: JSON.parse(wo.procedure_steps || '[]'), step_completions: JSON.parse(wo.step_completions || '[]'), history });
+  res.json({ ...wo, procedure_steps: safeParse(wo.procedure_steps), step_completions: safeParse(wo.step_completions), history });
 });
 
 router.post('/work-orders', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps } = req.body;
+  const { pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments, task_group } = req.body;
 
   if (!equipment_id || !title || !due_date) {
     return res.status(400).json({ error: 'equipment_id, title, and due_date are required' });
   }
 
   db.prepare(`
-    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments, task_group)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, pm_schedule_id || null, equipment_id, title, description || null,
-    priority || 'normal', assigned_to || null, due_date, JSON.stringify(procedure_steps || []));
+    priority || 'normal', assigned_to || null, due_date, JSON.stringify(procedure_steps || []), JSON.stringify(attachments || []), task_group || 'warehouse');
 
   const created = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id);
-  logAudit(req.body._actor || 'system', 'create', 'work_order', id, { title, equipment_id, due_date }, null, created);
+  logAudit(req.user.name, 'create', 'work_order', id, { title, equipment_id, due_date }, null, created);
   res.status(201).json(created);
 });
 
@@ -143,28 +190,28 @@ router.put('/work-orders/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Work order not found' });
 
-  const { status, assigned_to, notes, lubricant_used, lubricant_is_food_grade, step_completions, priority } = req.body;
+  const { status, assigned_to, notes, lubricant_used, lubricant_is_food_grade, step_completions, priority, due_date } = req.body;
 
   const newStatus = status || existing.status;
   const completedAt = (newStatus === 'completed' && existing.status !== 'completed') ? new Date().toISOString() : existing.completed_at;
-  const completedBy = (newStatus === 'completed' && existing.status !== 'completed') ? (req.body._actor || req.body.completed_by || 'system') : existing.completed_by;
+  const completedBy = (newStatus === 'completed' && existing.status !== 'completed') ? req.user.name : existing.completed_by;
   const startedAt = (newStatus === 'in_progress' && !existing.started_at) ? new Date().toISOString() : existing.started_at;
 
   db.prepare(`
     UPDATE work_orders SET status=?, priority=?, assigned_to=?, started_at=?, completed_at=?,
     completed_by=?, notes=?, lubricant_used=?, lubricant_is_food_grade=?,
-    step_completions=?, updated_at=datetime('now') WHERE id=?
+    step_completions=?, due_date=?, updated_at=datetime('now') WHERE id=?
   `).run(
     newStatus, priority || existing.priority, assigned_to ?? existing.assigned_to,
     startedAt, completedAt, completedBy,
     notes ?? existing.notes, lubricant_used ?? existing.lubricant_used,
     lubricant_is_food_grade !== undefined ? (lubricant_is_food_grade ? 1 : 0) : existing.lubricant_is_food_grade,
     step_completions ? JSON.stringify(step_completions) : existing.step_completions,
-    req.params.id
+    due_date || existing.due_date, req.params.id
   );
 
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
-  logAudit(req.body._actor || 'system', 'update', 'work_order', req.params.id, { status: newStatus }, existing, updated);
+  logAudit(req.user.name, 'update', 'work_order', req.params.id, { status: newStatus }, existing, updated);
   res.json(updated);
 });
 
@@ -172,39 +219,51 @@ router.put('/work-orders/:id', (req, res) => {
 
 router.get('/metrics', (req, res) => {
   const db = getDb();
-  const { from, to } = req.query;
+  markMissedWorkOrders(db);
+  const { from, to, group } = req.query;
   const now = new Date();
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   const defaultTo = now.toISOString().split('T')[0];
   const start = from || defaultFrom;
   const end = to || defaultTo;
 
-  const total = db.prepare('SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ?').get(start, end);
-  const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'completed'").get(start, end);
-  const overdue = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')").get(end);
-  const open = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status IN ('open','in_progress')").get();
+  const gf = group ? ' AND task_group = ?' : '';
+  const gp = group ? [group] : [];
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const rateCutoff = yesterday.toISOString().split('T')[0];
+  const total = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status != 'not_applicable'" + gf).get(start, rateCutoff, ...gp);
+  const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')" + gf).get(start, rateCutoff, ...gp);
+  const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, rateCutoff, ...gp);
+  const naCount = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'not_applicable'" + gf).get(start, rateCutoff, ...gp);
+  const overdue = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')" + gf).get(end, ...gp);
+  const open = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status IN ('open','in_progress')" + gf).get(...gp);
 
   const completionRate = total.count > 0 ? ((completed.count / total.count) * 100).toFixed(1) : 0;
 
   const byEquipment = db.prepare(`
     SELECT e.name, e.room, COUNT(*) as total,
-      SUM(CASE WHEN wo.status = 'completed' THEN 1 ELSE 0 END) as completed
+      SUM(CASE WHEN wo.status IN ('completed','not_applicable') THEN 1 ELSE 0 END) as completed
     FROM work_orders wo JOIN equipment e ON wo.equipment_id = e.id
-    WHERE wo.due_date BETWEEN ? AND ?
+    WHERE wo.due_date BETWEEN ? AND ?${group ? ' AND wo.task_group = ?' : ''}
     GROUP BY wo.equipment_id ORDER BY e.name
-  `).all(start, end);
+  `).all(start, end, ...gp);
 
   const monthlyTrend = db.prepare(`
     SELECT strftime('%Y-%m', due_date) as month,
       COUNT(*) as total,
-      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
-    FROM work_orders GROUP BY strftime('%Y-%m', due_date) ORDER BY month DESC LIMIT 12
-  `).all();
+      SUM(CASE WHEN status IN ('completed','not_applicable') THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) as missed,
+      SUM(CASE WHEN status = 'not_applicable' THEN 1 ELSE 0 END) as not_applicable
+    FROM work_orders${group ? ' WHERE task_group = ?' : ''} GROUP BY strftime('%Y-%m', due_date) ORDER BY month DESC LIMIT 12
+  `).all(...gp);
 
   res.json({
     period: { from: start, to: end },
     total: total.count,
     completed: completed.count,
+    missed: missed.count,
+    not_applicable: naCount.count,
     overdue: overdue.count,
     open: open.count,
     completion_rate: parseFloat(completionRate),
@@ -221,17 +280,31 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   const existing = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Work order not found' });
 
-  const { notes, lubricant_used, lubricant_is_food_grade, _actor } = req.body;
+  const { notes, lubricant_used, lubricant_is_food_grade, readings, step_results, reading_result } = req.body;
   const completedAt = new Date().toISOString();
-  const completedBy = _actor || 'system';
+  const completedBy = req.user.name;
+
+  const eq = db.prepare('SELECT is_food_contact FROM equipment WHERE id = ?').get(existing.equipment_id);
+  const needsClearance = eq && eq.is_food_contact === 1 ? 1 : 0;
 
   db.prepare(`
     UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
-    notes=?, lubricant_used=?, lubricant_is_food_grade=?, updated_at=datetime('now') WHERE id=?
+    notes=?, lubricant_used=?, lubricant_is_food_grade=?,
+    readings=?, step_results=?, reading_result=?,
+    clearance_required=?, clearance_status=?,
+    chemical_id=?,
+    updated_at=datetime('now') WHERE id=?
   `).run(completedAt, completedBy, notes || null, lubricant_used || null,
-    lubricant_is_food_grade ? 1 : 0, req.params.id);
+    lubricant_is_food_grade ? 1 : 0,
+    JSON.stringify(readings || {}), JSON.stringify(step_results || []), reading_result || null,
+    needsClearance, needsClearance ? 'pending' : null,
+    req.body.chemical_id || null,
+    req.params.id);
 
-  logAudit(completedBy, 'complete', 'work_order', req.params.id, { notes }, null, null);
+  logAudit(completedBy, 'complete', 'work_order', req.params.id, { notes, readings, reading_result }, null, null);
+  if (needsClearance) {
+    logAudit('system', 'clearance_required', 'work_order', req.params.id, 'Food-contact equipment — hygiene clearance pending');
+  }
 
   let nextWO = null;
   if (existing.pm_schedule_id) {
@@ -239,13 +312,14 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     if (sched && sched.is_active) {
       const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
       const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
-      const nextDue = new Date();
-      nextDue.setDate(nextDue.getDate() + interval);
+      const raw = new Date();
+      raw.setDate(raw.getDate() + interval);
+      const nextDue = nextWeekday(raw);
       const woId = uuid();
       db.prepare(`
-        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'open')
-      `).run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps);
+        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+      `).run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
       logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id, triggered_by: req.params.id }, null, null);
       nextWO = { id: woId, title: sched.title, due_date: nextDue.toISOString().split('T')[0] };
     }
@@ -254,11 +328,170 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   res.json({ completed: req.params.id, next_work_order: nextWO });
 });
 
+// --- Batch Complete ---
+
+router.post('/work-orders/batch-complete', (req, res) => {
+  const db = getDb();
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+
+  const completedAt = new Date().toISOString();
+  const completedBy = req.user.name;
+  const results = [];
+
+  const completeStmt = db.prepare(`
+    UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
+    notes='Batch completed', readings='{}', step_results='[]',
+    updated_at=datetime('now') WHERE id=?
+  `);
+  const getWO = db.prepare('SELECT * FROM work_orders WHERE id = ?');
+  const getSched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?');
+  const getEq = db.prepare('SELECT is_food_contact FROM equipment WHERE id = ?');
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+  `);
+
+  const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
+
+  const batchRun = db.transaction(() => {
+    for (const id of ids) {
+      const wo = getWO.get(id);
+      if (!wo || wo.status === 'completed') continue;
+      completeStmt.run(completedAt, completedBy, id);
+
+      const eq = getEq.get(wo.equipment_id);
+      const needsClearance = eq && eq.is_food_contact === 1 ? 1 : 0;
+      if (needsClearance) {
+        db.prepare("UPDATE work_orders SET clearance_required=1, clearance_status='pending' WHERE id=?").run(id);
+        logAudit('system', 'clearance_required', 'work_order', id, 'Food-contact equipment — hygiene clearance pending');
+      }
+
+      logAudit(completedBy, 'complete', 'work_order', id, { batch: true }, null, null);
+
+      if (wo.pm_schedule_id) {
+        const sched = getSched.get(wo.pm_schedule_id);
+        if (sched && sched.is_active) {
+          const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
+          const raw = new Date();
+          raw.setDate(raw.getDate() + interval);
+          const nextDue = nextWeekday(raw);
+          const woId = uuid();
+          insertWO.run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
+          logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id, triggered_by: id }, null, null);
+        }
+      }
+      results.push(id);
+    }
+  });
+
+  batchRun();
+  res.json({ completed: results.length, ids: results });
+});
+
+// --- Mark Work Order Not Applicable ---
+
+router.post('/work-orders/:id/not-applicable', (req, res) => {
+  const db = getDb();
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+
+  const { reason } = req.body;
+  const actor = req.user.name;
+
+  db.prepare(`
+    UPDATE work_orders SET status='not_applicable', completed_at=datetime('now'), completed_by=?,
+    notes=?, updated_at=datetime('now') WHERE id=?
+  `).run(actor, reason || 'Equipment not in use', req.params.id);
+
+  logAudit(actor, 'not_applicable', 'work_order', req.params.id, { reason: reason || 'Equipment not in use' });
+
+  let nextWO = null;
+  if (wo.pm_schedule_id) {
+    const sched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(wo.pm_schedule_id);
+    if (sched && sched.is_active) {
+      const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
+      const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
+      const raw = new Date();
+      raw.setDate(raw.getDate() + interval);
+      const nextDue = nextWeekday(raw);
+      const woId = uuid();
+      db.prepare(`
+        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+      `).run(woId, sched.id, sched.equipment_id, sched.title, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
+      nextWO = { id: woId, title: sched.title, due_date: nextDue.toISOString().split('T')[0] };
+    }
+  }
+
+  res.json({ skipped: req.params.id, next_work_order: nextWO });
+});
+
+// --- Flag Issue on Work Order ---
+
+router.post('/work-orders/:id/flag-issue', (req, res) => {
+  const db = getDb();
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+
+  const { notes, attachments } = req.body;
+  if (!notes) return res.status(400).json({ error: 'Issue notes are required' });
+
+  db.prepare(`
+    UPDATE work_orders SET issue_flagged=1, issue_notes=?, issue_attachments=?,
+    issue_flagged_by=?, issue_flagged_at=datetime('now'), priority='high',
+    updated_at=datetime('now') WHERE id=?
+  `).run(notes, JSON.stringify(attachments || []), req.user.name, req.params.id);
+
+  logAudit(req.user.name, 'issue_flagged', 'work_order', req.params.id, { notes });
+  const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  res.json(updated);
+});
+
+// --- Hygiene Clearance ---
+
+router.put('/work-orders/:id/clearance', requireDepartment('qa'), (req, res) => {
+  const db = getDb();
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+  if (!wo.clearance_required) return res.status(400).json({ error: 'This work order does not require clearance' });
+
+  const { status, cleared_by, notes, method } = req.body;
+  if (!status || !cleared_by) return res.status(400).json({ error: 'status and cleared_by required' });
+  if (!['cleared', 'failed'].includes(status)) return res.status(400).json({ error: 'status must be "cleared" or "failed"' });
+
+  if (cleared_by === wo.completed_by) {
+    return res.status(403).json({ error: 'Clearance must be performed by someone other than the person who completed the work' });
+  }
+
+  db.prepare(`
+    UPDATE work_orders SET clearance_status=?, clearance_by=?, clearance_at=datetime('now'),
+    clearance_notes=?, clearance_method=?, updated_at=datetime('now') WHERE id=?
+  `).run(status, cleared_by, notes || null, method || null, req.params.id);
+
+  logAudit(req.user.name, `clearance_${status}`, 'work_order', req.params.id,
+    `Method: ${method || 'visual'}, Notes: ${notes || 'none'}`);
+  res.json({ success: true });
+});
+
+router.get('/clearance-pending', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT wo.*, e.name as equipment_name, e.location, e.asset_id, e.room
+    FROM work_orders wo
+    JOIN equipment e ON wo.equipment_id = e.id
+    WHERE wo.clearance_required = 1 AND wo.clearance_status = 'pending'
+    ORDER BY wo.completed_at DESC
+  `).all();
+  res.json(rows);
+});
+
 // --- PM Schedules grouped by frequency ---
 
 router.get('/by-frequency', (req, res) => {
   const db = getDb();
-  const { frequency, equipment_id } = req.query;
+  markMissedWorkOrders(db);
+  const { frequency, equipment_id, group } = req.query;
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
     e.asset_id, ps.title as pm_title, ps.frequency_type, ps.procedure_steps as pm_steps
@@ -270,6 +503,7 @@ router.get('/by-frequency', (req, res) => {
 
   if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
   if (equipment_id) { sql += ' AND wo.equipment_id = ?'; params.push(equipment_id); }
+  if (group) { sql += ' AND wo.task_group = ?'; params.push(group); }
 
   sql += ' ORDER BY ps.frequency_type, e.name';
 
@@ -279,7 +513,7 @@ router.get('/by-frequency', (req, res) => {
   for (const r of rows) {
     const freq = r.frequency_type || 'unscheduled';
     if (!grouped[freq]) grouped[freq] = [];
-    grouped[freq].push({ ...r, procedure_steps: JSON.parse(r.pm_steps || r.procedure_steps || '[]') });
+    grouped[freq].push({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) });
   }
 
   res.json(grouped);
@@ -289,25 +523,36 @@ router.get('/by-frequency', (req, res) => {
 
 router.get('/completed-history', (req, res) => {
   const db = getDb();
-  const { limit = 50, offset = 0, frequency } = req.query;
+  markMissedWorkOrders(db);
+  const { limit = 50, offset = 0, frequency, from, to, include_missed, group } = req.query;
+  const showMissed = include_missed !== 'false';
+
+  const statusFilter = showMissed ? "wo.status IN ('completed','missed','not_applicable')" : "wo.status IN ('completed','not_applicable')";
+  const dateCol = 'COALESCE(wo.completed_at, wo.due_date)';
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
     e.asset_id, ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
     JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
-    WHERE wo.status = 'completed'`;
+    WHERE ${statusFilter}`;
   const params = [];
 
   if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
+  if (group) { sql += ' AND wo.task_group = ?'; params.push(group); }
+  if (from) { sql += ` AND ${dateCol} >= ?`; params.push(from); }
+  if (to) { sql += ` AND ${dateCol} <= ?`; params.push(to + 'T23:59:59'); }
 
-  sql += ' ORDER BY wo.completed_at DESC LIMIT ? OFFSET ?';
+  const countSql = sql.replace(/SELECT wo\.\*[\s\S]*?FROM/, 'SELECT COUNT(*) as c FROM');
+  sql += ` ORDER BY ${dateCol} DESC LIMIT ? OFFSET ?`;
   params.push(parseInt(limit), parseInt(offset));
 
   const rows = db.prepare(sql).all(...params);
-  const total = db.prepare(`SELECT COUNT(*) as c FROM work_orders wo LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id WHERE wo.status = 'completed'${frequency ? ' AND ps.frequency_type = ?' : ''}`).get(...(frequency ? [frequency] : []));
+  const total = db.prepare(countSql).get(...params.slice(0, -2));
 
-  res.json({ items: rows, total: total.c });
+  const missedCount = db.prepare(`SELECT COUNT(*) as c FROM work_orders WHERE status = 'missed'`).get().c;
+
+  res.json({ items: rows, total: total.c, missed_count: missedCount });
 });
 
 // --- Generate Work Orders from PM Schedules ---
@@ -319,7 +564,9 @@ router.post('/generate', (_req, res) => {
 
   const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
 
+  const checkOpen = db.prepare("SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open','in_progress') LIMIT 1");
   for (const sched of schedules) {
+    if (checkOpen.get(sched.id)) continue;
     const lastWO = db.prepare(
       'SELECT due_date FROM work_orders WHERE pm_schedule_id = ? ORDER BY due_date DESC LIMIT 1'
     ).get(sched.id);
@@ -327,8 +574,9 @@ router.post('/generate', (_req, res) => {
     const interval = (freqDays[sched.frequency_type] || 30) * (sched.frequency_value || 1);
 
     const lastDate = lastWO ? new Date(lastWO.due_date) : new Date();
-    const nextDue = new Date(lastDate);
-    nextDue.setDate(nextDue.getDate() + interval);
+    const rawNext = new Date(lastDate);
+    rawNext.setDate(rawNext.getDate() + interval);
+    const nextDue = nextWeekday(rawNext);
 
     const horizon = new Date();
     horizon.setDate(horizon.getDate() + 30);
@@ -336,10 +584,10 @@ router.post('/generate', (_req, res) => {
     if (nextDue <= horizon) {
       const woId = uuid();
       db.prepare(`
-        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, due_date, procedure_steps)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, due_date, procedure_steps, task_group)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(woId, sched.id, sched.equipment_id, sched.title,
-        sched.description, nextDue.toISOString().split('T')[0], sched.procedure_steps);
+        sched.description, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
 
       generated.push({ id: woId, title: sched.title, due_date: nextDue.toISOString().split('T')[0] });
       logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id }, null, null);
@@ -353,12 +601,14 @@ router.post('/generate', (_req, res) => {
 
 router.get('/operator-tasks', (req, res) => {
   const db = getDb();
-  const { assigned_to } = req.query;
+  markMissedWorkOrders(db);
+  const { assigned_to, group } = req.query;
 
   let sql = `SELECT wo.id, wo.title, wo.status, wo.priority, wo.due_date, wo.assigned_to,
-    wo.procedure_steps, wo.pm_schedule_id,
+    wo.procedure_steps, wo.pm_schedule_id, wo.task_group,
+    wo.issue_flagged, wo.issue_notes, wo.issue_attachments, wo.issue_flagged_by, wo.issue_flagged_at,
     e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id,
-    ps.frequency_type
+    ps.frequency_type, ps.title as schedule_title
     FROM work_orders wo
     JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
@@ -366,6 +616,7 @@ router.get('/operator-tasks', (req, res) => {
   const params = [];
 
   if (assigned_to) { sql += ' AND wo.assigned_to = ?'; params.push(assigned_to); }
+  if (group) { sql += ' AND wo.task_group = ?'; params.push(group); }
 
   sql += ` ORDER BY
     CASE wo.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
@@ -373,7 +624,56 @@ router.get('/operator-tasks', (req, res) => {
     wo.due_date ASC`;
 
   const rows = db.prepare(sql).all(...params);
-  res.json(rows.map(r => ({ ...r, procedure_steps: JSON.parse(r.procedure_steps || '[]') })));
+
+  // Also include pending QA production entries as virtual tasks (for QA dept or admin/all view)
+  const qaGroup = group || '';
+  const includeQA = !qaGroup || qaGroup === 'qa' || qaGroup === 'all' || qaGroup === '';
+  let qaTasks = [];
+  if (includeQA) {
+    qaTasks = db.prepare(`
+      SELECT id, date, team, room, product_name, mo_number, lot_number, submitted_by, created_at
+      FROM production_entries
+      WHERE qa_signoff_by IS NULL
+      ORDER BY date DESC
+    `).all().map(e => ({
+      id: 'qa_' + e.id,
+      _production_entry_id: e.id,
+      title: `QA Sign-off: ${e.product_name} (MO ${e.mo_number})`,
+      status: 'open',
+      priority: 'normal',
+      due_date: e.date,
+      assigned_to: null,
+      procedure_steps: [],
+      pm_schedule_id: null,
+      task_group: 'qa',
+      task_type: 'qa_signoff',
+      issue_flagged: 0,
+      equipment_name: e.room,
+      equipment_type: 'production',
+      location: e.room,
+      asset_id: null,
+      frequency_type: null,
+      schedule_title: null,
+      _qa_meta: { lot_number: e.lot_number, submitted_by: e.submitted_by, team: e.team, date: e.date, mo_number: e.mo_number, product_name: e.product_name },
+    }));
+  }
+
+  res.json([...rows.map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })), ...qaTasks]);
+});
+
+router.put('/schedules/:id/items', (req, res) => {
+  const db = getDb();
+  const sched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
+  if (!sched) return res.status(404).json({ error: 'PM schedule not found' });
+  const { items } = req.body;
+  if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'items array required' });
+  const stepsJson = JSON.stringify(items);
+  db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(stepsJson, req.params.id);
+  db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')")
+    .run(stepsJson, req.params.id);
+  logAudit(req.user.name, 'items_updated', 'pm_schedule', req.params.id, { item_count: items.length });
+  res.json(db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id));
 });
 
 export default router;

@@ -82,7 +82,7 @@ function initSchema() {
       equipment_id TEXT NOT NULL,
       title TEXT NOT NULL,
       description TEXT,
-      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','completed','overdue','missed','cancelled')),
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','completed','overdue','missed','cancelled','not_applicable')),
       priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high','critical')),
       assigned_to TEXT,
       due_date TEXT NOT NULL,
@@ -249,12 +249,56 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_loto_executions_status ON loto_executions(status);
     CREATE INDEX IF NOT EXISTS idx_loto_executions_procedure ON loto_executions(procedure_id);
 
+    CREATE TABLE IF NOT EXISTS approved_chemicals (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL CHECK (category IN ('lubricant','sanitizer','cleaner','degreaser','other')),
+      manufacturer TEXT,
+      product_code TEXT,
+      sds_number TEXT,
+      is_food_grade INTEGER NOT NULL DEFAULT 0,
+      nsf_rating TEXT,
+      approved_applications TEXT DEFAULT '[]',
+      max_concentration TEXT,
+      required_contact_time_minutes INTEGER,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      approved_by TEXT,
+      approved_at TEXT NOT NULL DEFAULT (datetime('now')),
+      review_due TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_approved_chemicals_category ON approved_chemicals(category);
+
+    CREATE TABLE IF NOT EXISTS design_verifications (
+      id TEXT PRIMARY KEY,
+      equipment_id TEXT NOT NULL,
+      trigger_reason TEXT NOT NULL CHECK (trigger_reason IN ('new_install','modification','relocation','repair','periodic_review')),
+      description TEXT,
+      checklist_responses TEXT NOT NULL DEFAULT '[]',
+      overall_result TEXT NOT NULL DEFAULT 'pending' CHECK (overall_result IN ('pending','approved','conditional','rejected')),
+      conditions TEXT,
+      performed_by TEXT NOT NULL,
+      performed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      approved_by TEXT,
+      approved_at TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (equipment_id) REFERENCES equipment(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_design_verifications_equipment ON design_verifications(equipment_id);
+    CREATE INDEX IF NOT EXISTS idx_design_verifications_result ON design_verifications(overall_result);
+
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       email TEXT UNIQUE,
       pin TEXT,
-      role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('admin','supervisor','operator')),
+      role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('admin','supervisor','operator','auditor')),
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -288,6 +332,298 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_checklist_instances_due ON checklist_instances(due_date);
     CREATE INDEX IF NOT EXISTS idx_checklist_instances_status ON checklist_instances(status);
     CREATE INDEX IF NOT EXISTS idx_checklist_instances_checklist ON checklist_instances(checklist_id);
+
+    -- CAPA / Complaints / NCR tracking
+    CREATE TABLE IF NOT EXISTS complaints (
+      id TEXT PRIMARY KEY,
+      complaint_number TEXT NOT NULL UNIQUE,
+      date_received TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      lot_number TEXT,
+      item_number TEXT,
+      complaint_text TEXT NOT NULL,
+      person_responsible TEXT,
+      investigation TEXT,
+      corrective_action TEXT,
+      resolved INTEGER NOT NULL DEFAULT 0,
+      date_resolved TEXT,
+      capa_needed INTEGER NOT NULL DEFAULT 0,
+      capa_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS capas (
+      id TEXT PRIMARY KEY,
+      capa_number TEXT NOT NULL UNIQUE,
+      complaint_id TEXT,
+      title TEXT NOT NULL,
+      description TEXT,
+      root_cause TEXT,
+      corrective_action TEXT,
+      preventive_action TEXT,
+      assigned_to TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','implemented','verified','closed')),
+      priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high','critical')),
+      due_date TEXT,
+      closed_at TEXT,
+      closed_by TEXT,
+      verification_notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (complaint_id) REFERENCES complaints(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_complaints_number ON complaints(complaint_number);
+    CREATE INDEX IF NOT EXISTS idx_complaints_date ON complaints(date_received);
+    CREATE INDEX IF NOT EXISTS idx_capas_status ON capas(status);
+    CREATE INDEX IF NOT EXISTS idx_capas_complaint ON capas(complaint_id);
+
+    -- SOP Document Registry
+    CREATE TABLE IF NOT EXISTS sop_documents (
+      id TEXT PRIMARY KEY,
+      doc_number TEXT NOT NULL,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL CHECK (category IN ('production','quality','sanitation','maintenance','safety','haccp','training','admin','other')),
+      revision TEXT NOT NULL DEFAULT '1.0',
+      effective_date TEXT,
+      review_due TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft','active','under_review','superseded','archived')),
+      owner TEXT,
+      gdrive_url TEXT,
+      gdrive_folder TEXT,
+      description TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sop_category ON sop_documents(category);
+    CREATE INDEX IF NOT EXISTS idx_sop_status ON sop_documents(status);
+
+    CREATE TABLE IF NOT EXISTS sop_versions (
+      id TEXT PRIMARY KEY,
+      sop_id TEXT NOT NULL,
+      revision TEXT NOT NULL,
+      changed_by TEXT,
+      change_summary TEXT,
+      snapshot TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (sop_id) REFERENCES sop_documents(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sop_versions_sop ON sop_versions(sop_id);
+
+    -- Training Records
+    CREATE TABLE IF NOT EXISTS training_records (
+      id TEXT PRIMARY KEY,
+      employee_name TEXT NOT NULL,
+      employee_id TEXT,
+      training_topic TEXT NOT NULL,
+      sop_id TEXT,
+      trainer TEXT,
+      training_date TEXT NOT NULL,
+      completion_date TEXT,
+      status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','in_progress','completed','overdue','failed')),
+      score REAL,
+      certificate_url TEXT,
+      gdrive_url TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (sop_id) REFERENCES sop_documents(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_training_employee ON training_records(employee_name);
+    CREATE INDEX IF NOT EXISTS idx_training_date ON training_records(training_date);
+    CREATE INDEX IF NOT EXISTS idx_training_status ON training_records(status);
+
+    -- Mock Recall Log
+    CREATE TABLE IF NOT EXISTS mock_recalls (
+      id TEXT PRIMARY KEY,
+      recall_number TEXT NOT NULL UNIQUE,
+      date_initiated TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      lot_number TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      initiated_by TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'internal' CHECK (scope IN ('internal','customer','public')),
+      quantity_produced TEXT,
+      quantity_distributed TEXT,
+      quantity_recovered TEXT,
+      distribution_list TEXT,
+      time_to_notify_minutes INTEGER,
+      time_to_complete_minutes INTEGER,
+      accounts_contacted INTEGER,
+      accounts_responded INTEGER,
+      effectiveness_pct REAL,
+      result TEXT DEFAULT 'pending' CHECK (result IN ('pending','pass','fail','conditional')),
+      corrective_actions TEXT,
+      notes TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mock_recalls_date ON mock_recalls(date_initiated);
+    CREATE INDEX IF NOT EXISTS idx_mock_recalls_result ON mock_recalls(result);
+
+    -- Production Entries
+    CREATE TABLE IF NOT EXISTS production_entries (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      team TEXT NOT NULL,
+      room TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      mo_number TEXT NOT NULL,
+      lot_number TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      quantity_completed REAL NOT NULL,
+      people_count INTEGER NOT NULL,
+      notes TEXT,
+      qa_signoff_by TEXT,
+      qa_signoff_at TEXT,
+      qa_notes TEXT,
+      submitted_by TEXT NOT NULL,
+      submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_production_entries_date ON production_entries(date);
+    CREATE INDEX IF NOT EXISTS idx_production_entries_mo ON production_entries(mo_number);
+    CREATE INDEX IF NOT EXISTS idx_production_entries_team ON production_entries(team);
+
+    -- Production Schedule
+    CREATE TABLE IF NOT EXISTS production_schedule (
+      id TEXT PRIMARY KEY,
+      week_start TEXT NOT NULL,
+      day_of_week INTEGER NOT NULL,
+      room TEXT NOT NULL,
+      room_type TEXT NOT NULL DEFAULT 'production',
+      team TEXT,
+      mo_number TEXT,
+      product_name TEXT,
+      start_time TEXT,
+      notes TEXT,
+      created_by TEXT,
+      updated_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_production_schedule_week ON production_schedule(week_start);
+    CREATE INDEX IF NOT EXISTS idx_production_schedule_room ON production_schedule(room);
+
+    -- Production Cleaning Levels
+    CREATE TABLE IF NOT EXISTS production_cleaning_levels (
+      id TEXT PRIMARY KEY,
+      week_start TEXT NOT NULL,
+      day_of_week INTEGER NOT NULL,
+      room TEXT NOT NULL,
+      level TEXT,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_production_cleaning_week ON production_cleaning_levels(week_start);
+
+    -- COA / Supplier Quality Module
+    CREATE TABLE IF NOT EXISTS coa_labs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      contact_name TEXT,
+      contact_email TEXT,
+      contact_phone TEXT,
+      address TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS coa_specifications (
+      id TEXT PRIMARY KEY,
+      item_number TEXT NOT NULL,
+      item_description TEXT NOT NULL,
+      test_type TEXT NOT NULL,
+      specification TEXT,
+      unit TEXT,
+      min_value REAL,
+      max_value REAL,
+      method TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_coa_specs_item ON coa_specifications(item_number);
+    CREATE INDEX IF NOT EXISTS idx_coa_specs_test ON coa_specifications(test_type);
+
+    CREATE TABLE IF NOT EXISTS coa_requests (
+      id TEXT PRIMARY KEY,
+      item_number TEXT NOT NULL,
+      item_description TEXT NOT NULL,
+      lot_number TEXT NOT NULL,
+      product_expiration TEXT,
+      tests_requested TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent','pass','fail','hold','re_test','na')),
+      lab_id TEXT,
+      lab_name TEXT,
+      date_sent TEXT,
+      tat_days INTEGER,
+      expected_results_date TEXT,
+      date_of_results TEXT,
+      date_sent_to_customer TEXT,
+      requested_by TEXT,
+      invoice_amount REAL,
+      retest_required INTEGER NOT NULL DEFAULT 0,
+      retest_of TEXT,
+      notes TEXT,
+      source TEXT DEFAULT 'manual',
+      source_ref TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (lab_id) REFERENCES coa_labs(id),
+      FOREIGN KEY (retest_of) REFERENCES coa_requests(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_coa_requests_item ON coa_requests(item_number);
+    CREATE INDEX IF NOT EXISTS idx_coa_requests_lot ON coa_requests(lot_number);
+    CREATE INDEX IF NOT EXISTS idx_coa_requests_status ON coa_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_coa_requests_date_sent ON coa_requests(date_sent);
+
+    CREATE TABLE IF NOT EXISTS coa_files (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      file_type TEXT NOT NULL CHECK(file_type IN ('lab_results','customer_coa','other')),
+      filename TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type TEXT,
+      size_bytes INTEGER,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (request_id) REFERENCES coa_requests(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_coa_files_request ON coa_files(request_id);
+
+    CREATE TABLE IF NOT EXISTS coa_test_results (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      test_type TEXT NOT NULL,
+      result_value TEXT,
+      unit TEXT,
+      specification_id TEXT,
+      pass_fail TEXT CHECK(pass_fail IN ('pass','fail','na')),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (request_id) REFERENCES coa_requests(id),
+      FOREIGN KEY (specification_id) REFERENCES coa_specifications(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_coa_test_results_request ON coa_test_results(request_id);
   `);
 
   runMigrations();
@@ -307,6 +643,225 @@ function runMigrations() {
   addColumnIfMissing('calibration_instruments', 'max_capacity', 'TEXT');
   addColumnIfMissing('calibration_instruments', 'department', 'TEXT');
   addColumnIfMissing('calibration_instruments', 'notes', 'TEXT');
+  addColumnIfMissing('work_orders', 'attachments', "TEXT DEFAULT '[]'");
+  addColumnIfMissing('equipment', 'maintenance_tasks', "TEXT DEFAULT '{}'");
+  addColumnIfMissing('users', 'department', "TEXT DEFAULT 'warehouse'");
+  addColumnIfMissing('pm_schedules', 'task_group', "TEXT DEFAULT 'warehouse'");
+  addColumnIfMissing('work_orders', 'task_group', "TEXT DEFAULT 'warehouse'");
+
+  // Post-repair hygiene clearance
+  addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('work_orders', 'clearance_status', 'TEXT');
+  addColumnIfMissing('work_orders', 'clearance_by', 'TEXT');
+  addColumnIfMissing('work_orders', 'clearance_at', 'TEXT');
+  addColumnIfMissing('work_orders', 'clearance_notes', 'TEXT');
+  addColumnIfMissing('work_orders', 'clearance_method', 'TEXT');
+
+  // Contractor tracking
+  addColumnIfMissing('users', 'is_contractor', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('users', 'contractor_company', 'TEXT');
+  addColumnIfMissing('users', 'contractor_license', 'TEXT');
+  addColumnIfMissing('users', 'contractor_insurance_expiry', 'TEXT');
+  addColumnIfMissing('users', 'contractor_scope', 'TEXT');
+
+  // Chemical FK links
+  addColumnIfMissing('work_orders', 'chemical_id', 'TEXT');
+  addColumnIfMissing('sanitation_records', 'chemical_id', 'TEXT');
+
+  // Chemical location tracking
+  addColumnIfMissing('approved_chemicals', 'location_for_use', 'TEXT');
+  addColumnIfMissing('approved_chemicals', 'sds_url', 'TEXT');
+
+  // Issue flagging on work orders
+  addColumnIfMissing('work_orders', 'issue_flagged', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('work_orders', 'issue_notes', 'TEXT');
+  addColumnIfMissing('work_orders', 'issue_attachments', "TEXT DEFAULT '[]'");
+  addColumnIfMissing('work_orders', 'issue_flagged_by', 'TEXT');
+  addColumnIfMissing('work_orders', 'issue_flagged_at', 'TEXT');
+  addColumnIfMissing('work_orders', 'readings', "TEXT DEFAULT '{}'");
+  addColumnIfMissing('work_orders', 'step_results', "TEXT DEFAULT '[]'");
+  addColumnIfMissing('work_orders', 'reading_result', 'TEXT');
+
+  // CAPA extended fields matching Form 408-2
+  addColumnIfMissing('capas', 'date_issued', 'TEXT');
+  addColumnIfMissing('capas', 'item_lot', 'TEXT');
+  addColumnIfMissing('capas', 'item_number', 'TEXT');
+  addColumnIfMissing('capas', 'item_description', 'TEXT');
+  addColumnIfMissing('capas', 'work_order_number', 'TEXT');
+  addColumnIfMissing('capas', 'po_number', 'TEXT');
+  addColumnIfMissing('capas', 'source_type', 'TEXT');
+  addColumnIfMissing('capas', 'immediate_correction', 'TEXT');
+  addColumnIfMissing('capas', 'series_of_document', 'TEXT');
+  addColumnIfMissing('capas', 'proposed_solution', 'TEXT');
+  addColumnIfMissing('capas', 'mgmt_verification_date', 'TEXT');
+  addColumnIfMissing('capas', 'mgmt_verification_by', 'TEXT');
+  addColumnIfMissing('capas', 'nc_number', 'TEXT');
+  addColumnIfMissing('capas', 'linked_complaint_number', 'TEXT');
+  addColumnIfMissing('capas', 'is_preventive_action', 'INTEGER DEFAULT 0');
+
+  // Module access permissions per user (JSON array of module IDs, null = all access)
+  addColumnIfMissing('users', 'module_access', 'TEXT');
+
+  // Widen users.role CHECK constraint to include 'auditor'
+  try {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
+    if (tableInfo && tableInfo.sql && !tableInfo.sql.includes("'auditor'")) {
+      const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+      const colList = cols.join(', ');
+      db.pragma('foreign_keys = OFF');
+      db.exec('DROP TABLE IF EXISTS users_new');
+      db.exec(`
+        CREATE TABLE users_new (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          email TEXT UNIQUE,
+          pin TEXT,
+          role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('admin','supervisor','operator','auditor')),
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          department TEXT DEFAULT 'warehouse',
+          is_contractor INTEGER DEFAULT 0,
+          contractor_company TEXT,
+          contractor_license TEXT,
+          contractor_insurance_expiry TEXT,
+          contractor_scope TEXT,
+          module_access TEXT
+        );
+        INSERT INTO users_new (${colList}) SELECT ${colList} FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      `);
+      db.pragma('foreign_keys = ON');
+      console.log('[migrate] Widened users.role CHECK to include auditor');
+    }
+  } catch (e) {
+    db.pragma('foreign_keys = ON');
+    console.warn('[migrate] Could not migrate users table for auditor role:', e.message);
+  }
+
+  // Widen work_orders.status CHECK constraint to include 'not_applicable'
+  try {
+    const woInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='work_orders'").get();
+    if (woInfo && woInfo.sql && !woInfo.sql.includes("'not_applicable'")) {
+      const cols = db.prepare("PRAGMA table_info(work_orders)").all().map(c => c.name);
+      const colList = cols.join(', ');
+      db.pragma('foreign_keys = OFF');
+      db.exec('DROP TABLE IF EXISTS work_orders_new');
+      const createSql = woInfo.sql
+        .replace('work_orders', 'work_orders_new')
+        .replace(
+          "CHECK (status IN ('open','in_progress','completed','overdue','missed','cancelled'))",
+          "CHECK (status IN ('open','in_progress','completed','overdue','missed','cancelled','not_applicable'))"
+        );
+      db.exec(createSql);
+      db.exec(`INSERT INTO work_orders_new (${colList}) SELECT ${colList} FROM work_orders`);
+      db.exec('DROP TABLE work_orders');
+      db.exec('ALTER TABLE work_orders_new RENAME TO work_orders');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_due_date ON work_orders(due_date)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_equipment ON work_orders(equipment_id)');
+      db.pragma('foreign_keys = ON');
+      console.log("[migrate] Widened work_orders.status CHECK to include 'not_applicable'");
+    }
+  } catch (e) {
+    db.pragma('foreign_keys = ON');
+    console.warn('[migrate] Could not migrate work_orders table for not_applicable status:', e.message);
+  }
+
+  // COA extended fields for facility COA export
+  addColumnIfMissing('equipment', 'loto_required', 'INTEGER DEFAULT 1');
+  // Mark area/zone types as not requiring LOTO
+  const areaTypes = ['Inspection Zone', 'Light Fixture Zone', 'Cleaning Zone', 'Monitoring'];
+  const alreadyTagged = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE loto_required = 0").get().c;
+  if (alreadyTagged === 0) {
+    db.prepare(`UPDATE equipment SET loto_required = 0 WHERE type IN (${areaTypes.map(() => '?').join(',')})`).run(...areaTypes);
+    const updated = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE loto_required = 0").get().c;
+    if (updated > 0) console.log(`[migrate] Marked ${updated} area/zone items as not requiring LOTO`);
+  }
+
+  addColumnIfMissing('coa_requests', 'origin', 'TEXT');
+  addColumnIfMissing('coa_requests', 'supplier', 'TEXT');
+  addColumnIfMissing('coa_requests', 'product_code', 'TEXT');
+  addColumnIfMissing('coa_requests', 'manufacturer_lot', 'TEXT');
+  addColumnIfMissing('coa_requests', 'vendor_lot', 'TEXT');
+  addColumnIfMissing('coa_requests', 'received_date', 'TEXT');
+  addColumnIfMissing('coa_requests', 'certificate_number', 'TEXT');
+  addColumnIfMissing('coa_requests', 'date_of_issuance', 'TEXT');
+
+  migrateEquipmentNotes();
+  cleanEquipmentNames();
+}
+
+function cleanEquipmentNames() {
+  const rows = db.prepare("SELECT id, name, asset_id FROM equipment WHERE name GLOB '[0-9]*'").all();
+  if (rows.length === 0) return;
+  const updateBoth = db.prepare("UPDATE equipment SET name = ?, asset_id = ?, updated_at = datetime('now') WHERE id = ?");
+  const updateName = db.prepare("UPDATE equipment SET name = ?, updated_at = datetime('now') WHERE id = ?");
+  let cleaned = 0;
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const match = row.name.match(/^(\d{1,4})\s+(.+)/);
+      if (match) {
+        const assetNum = match[1];
+        const newName = match[2].trim();
+        if (newName) {
+          if (row.asset_id) {
+            updateName.run(newName, row.id);
+          } else {
+            updateBoth.run(newName, assetNum, row.id);
+          }
+          cleaned++;
+        }
+      }
+    }
+  });
+  tx();
+  if (cleaned > 0) console.log(`[migrate] Cleaned ${cleaned} equipment names (moved # prefix to asset_id)`);
+}
+
+function parseNotesIntoTasks(notes) {
+  if (!notes) return null;
+  const freqPattern = /\b(Daily|Weekly|Bi-weekly|Biweekly|Monthly|Quarterly|Semi-Annual|Semi Annual|Annual|Annually|As Needed)\s*[-–—:]\s*/gi;
+  const freqNormalize = {
+    'daily': 'Daily', 'weekly': 'Weekly', 'bi-weekly': 'Bi-weekly', 'biweekly': 'Bi-weekly',
+    'monthly': 'Monthly', 'quarterly': 'Quarterly', 'semi-annual': 'Semi-Annual',
+    'semi annual': 'Semi-Annual', 'annual': 'Annual', 'annually': 'Annual', 'as needed': 'As Needed',
+  };
+  const parts = notes.split(freqPattern);
+  if (parts.length <= 1) return null;
+
+  const tasks = {};
+  for (let i = 1; i < parts.length; i += 2) {
+    const freq = freqNormalize[parts[i].toLowerCase()] || parts[i];
+    const raw = (parts[i + 1] || '').trim().replace(/,\s*$/, '');
+    const items = raw.split(/,\s*/).map(s => s.trim()).filter(s => s.length > 0);
+    if (items.length > 0) {
+      if (!tasks[freq]) tasks[freq] = [];
+      tasks[freq].push(...items);
+    }
+  }
+  return Object.keys(tasks).length > 0 ? tasks : null;
+}
+
+function migrateEquipmentNotes() {
+  const rows = db.prepare("SELECT id, notes, maintenance_tasks FROM equipment WHERE notes IS NOT NULL AND notes != '' AND (maintenance_tasks IS NULL OR maintenance_tasks = '{}')").all();
+  if (rows.length === 0) return;
+
+  const update = db.prepare("UPDATE equipment SET maintenance_tasks = ?, notes = '' WHERE id = ?");
+  let migrated = 0;
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const tasks = parseNotesIntoTasks(row.notes);
+      if (tasks) {
+        update.run(JSON.stringify(tasks), row.id);
+        migrated++;
+      }
+    }
+  });
+  tx();
+  if (migrated > 0) console.log(`[migrate] Parsed ${migrated} equipment notes into structured maintenance tasks`);
 }
 
 export function logAudit(actor, action, entityType, entityId, details, previousState, newState) {

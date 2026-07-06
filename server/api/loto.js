@@ -22,7 +22,7 @@ router.get('/procedures/:id', (req, res) => {
   const proc = db.prepare(`SELECT lp.*, e.name as equipment_name, e.room
     FROM loto_procedures lp JOIN equipment e ON lp.equipment_id = e.id WHERE lp.id = ?`).get(req.params.id);
   if (!proc) return res.status(404).json({ error: 'LOTO procedure not found' });
-  res.json({ ...proc, energy_sources: JSON.parse(proc.energy_sources || '[]'), steps: JSON.parse(proc.steps || '[]') });
+  try { res.json({ ...proc, energy_sources: JSON.parse(proc.energy_sources || '[]'), steps: JSON.parse(proc.steps || '[]') }); } catch { res.json({ ...proc, energy_sources: [], steps: [] }); }
 });
 
 router.post('/procedures', (req, res) => {
@@ -39,10 +39,10 @@ router.post('/procedures', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, equipment_id, title, description || null,
     JSON.stringify(energy_sources), JSON.stringify(steps),
-    required_locks || 1, required_tags || 1, verification_method || 'try_start');
+    required_locks ?? 1, required_tags ?? 1, verification_method || 'try_start');
 
   const created = db.prepare('SELECT * FROM loto_procedures WHERE id = ?').get(id);
-  logAudit(req.body._actor || 'system', 'create', 'loto_procedure', id, { title, equipment_id }, null, created);
+  logAudit(req.user.name, 'create', 'loto_procedure', id, { title, equipment_id }, null, created);
   res.status(201).json(created);
 });
 
@@ -67,7 +67,7 @@ router.put('/procedures/:id', (req, res) => {
   );
 
   const updated = db.prepare('SELECT * FROM loto_procedures WHERE id = ?').get(req.params.id);
-  logAudit(req.body._actor || 'system', 'update', 'loto_procedure', req.params.id, null, existing, updated);
+  logAudit(req.user.name, 'update', 'loto_procedure', req.params.id, null, existing, updated);
   res.json(updated);
 });
 
@@ -144,6 +144,19 @@ router.put('/executions/:id/release', (req, res) => {
   const updated = db.prepare('SELECT * FROM loto_executions WHERE id = ?').get(req.params.id);
   logAudit(released_by, 'release_lockout', 'loto_execution', req.params.id, { release_notes }, existing, updated);
   res.json(updated);
+});
+
+router.get('/uncovered-equipment', (_req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT e.id, e.name, e.room, e.location, e.asset_id, e.type
+    FROM equipment e
+    WHERE e.status = 'active'
+      AND e.loto_required = 1
+      AND e.id NOT IN (SELECT equipment_id FROM loto_procedures)
+    ORDER BY e.name
+  `).all();
+  res.json(rows);
 });
 
 export default router;

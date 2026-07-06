@@ -1,47 +1,179 @@
 [
   {
-    "asset_number": "73",
+    "asset_number": null,
     "serial_number": null,
-    "manufacturer": "Scale-Light",
-    "model": "EG5001",
-    "room": "Room #6",
-    "last_calibrated": "2025-07-31",
-    "next_due": "2026-07-31",
-    "max_capacity": "500g x 0.01g",
+    "manufacturer": null,
+    "model": null,
+    "room": "Room #0",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": null,
     "department": "Production"
   },
   {
-    "asset_number": "75",
+    "asset_number": "0157",
     "serial_number": null,
-    "manufacturer": "Scale-Light",
+    "manufacturer": "Touch Scale",
+    "model": "Analytical Balance",
+    "room": "Room #1",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 5000g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "0151",
+    "serial_number": null,
+    "manufacturer": "Touch Scale",
+    "model": "EG5001",
+    "room": "Room #2",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 200g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "149",
+    "serial_number": null,
+    "manufacturer": "Vevor",
+    "model": "EG5001",
+    "room": "Room #3",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 200g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "0155",
+    "serial_number": null,
+    "manufacturer": "Touch Scale",
+    "model": "EG5001",
+    "room": "Room #4",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 200g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "0159",
+    "serial_number": null,
+    "manufacturer": "Touch Scale",
     "model": "EG5001",
     "room": "Room #5",
-    "last_calibrated": "2025-07-31",
-    "next_due": "2026-07-31",
-    "max_capacity": "500g x 0.01g",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 200g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "0075",
+    "serial_number": null,
+    "manufacturer": "Touch Scale",
+    "model": "EG5001",
+    "room": "Room #6",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 200g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "0154",
+    "serial_number": null,
+    "manufacturer": "Touch Scale",
+    "model": "EG5001",
+    "room": "Room #6",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 200g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "0082",
+    "serial_number": null,
+    "manufacturer": "Touch Scale",
+    "model": "EG5001",
+    "room": "Room #7",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 200g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "0083",
+    "serial_number": null,
+    "manufacturer": "Touch Scale",
+    "model": "EG5001",
+    "room": "Room #7",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 200g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "0150",
+    "serial_number": null,
+    "manufacturer": "Vevor",
+    "model": "Analytical Balance",
+    "room": "Room #8",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 5000g",
+    "department": "Production"
+  },
+  {
+    "asset_number": "0158",
+    "serial_number": null,
+    "manufacturer": "Vevor",
+    "model": "Analytical Balance",
+    "room": "Room #8",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 5000g",
     "department": "Production"
   },
   {
     "asset_number": "82",
-    "serial_number": null,
+    "serial_number": "F22101908",
     "manufacturer": "Scale-Light",
-    "model": "EG5001",
-    "room": "Room #4",
-    "last_calibrated": "2025-07-31",
-    "next_due": "2026-07-31",
-    "max_capacity": "500g x 0.01g",
-    "department": "Production"
+    "model": "H-4593",
+    "room": "Batching",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": ".01 lb x 150 lbs",
+    "department": "Batching"
   },
   {
-    "asset_number": "74",
-    "serial_number": null,
+    "asset_number": "80",
+    "serial_number": "F22101932",
     "manufacturer": "Scale-Light",
-    "model": "EG5001",
-    "room": "Room #4",
+    "model": "H-4593",
+    "room": "Batching",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": ".01 lb x 150 lbs",
+    "department": "Batching"
+  },
+  {
+    "asset_number": "0156",
+    "serial_number": null,
+    "manufacturer": "Vevor",
+    "model": "Analytical Balance",
+    "room": "Batching",
+    "last_calibrated": "2026-03-05",
+    "next_due": "2027-03-05",
+    "max_capacity": "0.1g - 5000g",
+    "department": "Batching"
+  },
+  {
+    "asset_number": null,
+    "serial_number": null,
+    "manufacturer": "Inscale",
+    "model": "Inscale LP7510A",
+    "room": "Batching",
     "last_calibrated": "2025-07-31",
     "next_due": "2026-07-31",
-    "max_capacity": "500g x 0.01g",
-    "department": "Production"
+    "max_capacity": "5000 x1 lb / 2268 x 0.5kg",
+    "department": "Batching"
   },
   {
     "asset_number": "87",
@@ -50,7 +182,7 @@
     "model": "KF-H2C/H2D",
     "room": "KITTING #15",
     "last_calibrated": "2025-07-31",
-    "next_due": "2026-07-31",
+    "next_due": "2027-03-05",
     "max_capacity": "15kg",
     "department": "Production"
   },
@@ -61,19 +193,8 @@
     "model": "KF-H2C/H2D",
     "room": "KITTING #15",
     "last_calibrated": "2025-07-31",
-    "next_due": "2026-07-31",
+    "next_due": "2027-03-05",
     "max_capacity": "15kg",
-    "department": "Production"
-  },
-  {
-    "asset_number": null,
-    "serial_number": "MAQ2202IN0801",
-    "manufacturer": "INSCALE",
-    "model": "LP7510",
-    "room": "NEXT TO BATCHING ROOM #1",
-    "last_calibrated": "2025-07-31",
-    "next_due": "2026-07-31",
-    "max_capacity": null,
     "department": "Production"
   },
   {
@@ -96,7 +217,8 @@
     "last_calibrated": "2025-07-31",
     "next_due": "2026-07-31",
     "max_capacity": null,
-    "department": "KITTING"
+    "department": "KITTING",
+    "notes": "LOCK OUT TAG OUT"
   },
   {
     "asset_number": "228",
@@ -107,39 +229,7 @@
     "last_calibrated": "2025-07-31",
     "next_due": "2026-07-31",
     "max_capacity": null,
-    "department": "KITTING"
-  },
-  {
-    "asset_number": "ULINE82",
-    "serial_number": "F22101908",
-    "manufacturer": "Scale-Light",
-    "model": "H-4593",
-    "room": "BATCHING ROOM #2",
-    "last_calibrated": "2025-07-31",
-    "next_due": "2026-07-31",
-    "max_capacity": null,
-    "department": "Production"
-  },
-  {
-    "asset_number": "80",
-    "serial_number": "F22101932",
-    "manufacturer": "Scale-Light",
-    "model": "H-4593",
-    "room": "BATCHING ROOM #2",
-    "last_calibrated": "2025-07-31",
-    "next_due": "2026-07-31",
-    "max_capacity": null,
-    "department": "Production"
-  },
-  {
-    "asset_number": "C051746402",
-    "serial_number": "C051746402",
-    "manufacturer": "Scale-Light",
-    "model": "T32XW",
-    "room": null,
-    "last_calibrated": "2025-07-31",
-    "next_due": "2026-07-31",
-    "max_capacity": null,
-    "department": null
+    "department": "KITTING",
+    "notes": "LOCK OUT TAG OUT"
   }
 ]

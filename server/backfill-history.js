@@ -9,7 +9,7 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'compl
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
-const TECHNICIANS = ['Adam B.', 'Carlos M.', 'Derek W.', 'James R.', 'Luis T.'];
+const TECHNICIANS = ['Adam B.', 'Ricardo A.', 'Spencer R.'];
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 const freqDays = {

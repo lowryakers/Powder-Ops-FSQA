@@ -3,7 +3,7 @@
     "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "91",
+    "asset_id": "0138",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Midea",
@@ -14,10 +14,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0092 A/C",
+    "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "92",
+    "asset_id": "0139",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Midea",
@@ -28,10 +28,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0093 A/C",
+    "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "93",
+    "asset_id": "0140",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Midea",
@@ -42,10 +42,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0094 A/C",
+    "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "94",
+    "asset_id": "0141",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Midea",
@@ -56,10 +56,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0095 A/C",
+    "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "95",
+    "asset_id": "0142",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Midea",
@@ -70,10 +70,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0096 A/C",
+    "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "96",
+    "asset_id": "0143",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Midea",
@@ -84,10 +84,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0119 A/C",
+    "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "63",
+    "asset_id": "0119",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Danby",
@@ -98,10 +98,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0120 A/C",
+    "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "120",
+    "asset_id": "73",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Midea",
@@ -112,10 +112,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0121 A/C",
+    "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "121",
+    "asset_id": "97",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Midea",
@@ -126,10 +126,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0090 A/C",
+    "name": "A/C",
     "type": "A/C",
     "location": "Maintenance Room",
-    "asset_id": "90",
+    "asset_id": "0137",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "LG",
@@ -140,10 +140,10 @@
     "notes": "Daily-Power, airflow, cooling, noise, visible powder buildup, Inspect for powder clogging and reduced airflow, Weekly-Full rinse and deep clean of coils, filters, grille, intake, and housing, Check drain/condensate area, hose, and window seal after cleaning, Monthly-Inspect electrical cord, plug, casters, and overall unit condition, Quarterly- Full inspection and replace worn filters or damaged parts, check seals, fan operation, and replace worn parts as needed"
   },
   {
-    "name": "0112 Impulse Heat Sealer",
+    "name": "Impulse Heat Sealer",
     "type": "Sealer",
     "location": "Maintenance Room",
-    "asset_id": "112",
+    "asset_id": "162",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Uline",
@@ -154,10 +154,10 @@
     "notes": "Daily-Seal quality, heat bar condition, alignment, residue buildup, Check for sticking, weak seals, scorch marks, or misalignment, Weekly-Clean sealing surface, inspect Teflon tape/cloth, pressure, and wiring, Inspect heating element, silicone pad, and release properties, Monthly-Deep inspect timer, switch, cord, plug, and hardware, Replace worn Teflon, damaged heating parts, or worn pads as needed"
   },
   {
-    "name": "0113 Dehumidifier",
+    "name": "Dehumidifier",
     "type": "Dehumidifier",
     "location": "Production",
-    "asset_id": "18",
+    "asset_id": "0113",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Moiswell",
@@ -168,10 +168,10 @@
     "notes": "Daily-Power, airflow, humidity removal, noise, frost on coils, Check for ice/frost buildup and confirm unit is cycling properly, Monthly-Clean filter, intake, exhaust, and exterior, Inspect coils for dust buildup, ice, and restricted airflow, Inspect drain bucket, hose, pump, cord, plug, and housing, Check humidistat/sensor operation and defrost function, Quarterly-Deep clean coils, fan area, and internal dust accumulation, Full inspection for refrigerant or mechanical issues if freezing repeats"
   },
   {
-    "name": "37 Continuous Band sealer",
+    "name": "Continuous Band sealer",
     "type": "Sealer",
     "location": "Production",
-    "asset_id": "21",
+    "asset_id": "34",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "VeVor",
@@ -182,10 +182,10 @@
     "notes": "Daily-Seal quality, belt movement, temperature, noise, residue buildup, Check for slipping, misalignment, weak seals, or scorched film, Weekly-Clean sealing belts, guide belts, conveyor, and rollers, Inspect heating block, cooling block, pressure wheels, and Teflon surfaces, Monthly-Inspect drive gears, motor, wiring, switches, and cord, Check belt tension, seal alignment, and printing/embossing parts if equipped, Quarterly-Deep clean internal components and apply grease if needed, Replace worn sealing belt, guide belt, Teflon tape, or pressure parts as needed"
   },
   {
-    "name": "13 Continuous Band sealer",
+    "name": "Continuous Band sealer",
     "type": "Sealer",
     "location": "Production",
-    "asset_id": "21",
+    "asset_id": "34",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "VeVor",
@@ -196,10 +196,10 @@
     "notes": "Daily-Seal quality, belt movement, temperature, noise, residue buildup, Check for slipping, misalignment, weak seals, or scorched film, Weekly-Clean sealing belts, guide belts, conveyor, and rollers, Inspect heating block, cooling block, pressure wheels, and Teflon surfaces, Monthly-Inspect drive gears, motor, wiring, switches, and cord, Check belt tension, seal alignment, and printing/embossing parts if equipped, Quarterly-Deep clean internal components and apply grease if needed, Replace worn sealing belt, guide belt, Teflon tape, or pressure parts as needed"
   },
   {
-    "name": "34 Continuous Band sealer",
+    "name": "Continuous Band sealer",
     "type": "Sealer",
     "location": "Production",
-    "asset_id": "21",
+    "asset_id": "34",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "VeVor",
@@ -210,10 +210,10 @@
     "notes": "Daily-Seal quality, belt movement, temperature, noise, residue buildup, Check for slipping, misalignment, weak seals, or scorched film, Weekly-Clean sealing belts, guide belts, conveyor, and rollers, Inspect heating block, cooling block, pressure wheels, and Teflon surfaces, Monthly-Inspect drive gears, motor, wiring, switches, and cord, Check belt tension, seal alignment, and printing/embossing parts if equipped, Quarterly-Deep clean internal components and apply grease if needed, Replace worn sealing belt, guide belt, Teflon tape, or pressure parts as needed"
   },
   {
-    "name": "33 Continous Band Sealer",
+    "name": "Continous Band Sealer",
     "type": "Sealer",
     "location": "Production",
-    "asset_id": "77",
+    "asset_id": "33",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "VeVor",
@@ -224,10 +224,10 @@
     "notes": "Daily-Seal quality, belt movement, temperature, noise, residue buildup, Check for slipping, misalignment, weak seals, or scorched film, Weekly-Clean sealing belts, guide belts, conveyor, and rollers, Inspect heating block, cooling block, pressure wheels, and Teflon surfaces, Monthly-Inspect drive gears, motor, wiring, switches, and cord, Check belt tension, seal alignment, and printing/embossing parts if equipped, Quarterly-Deep clean internal components and apply grease if needed, Replace worn sealing belt, guide belt, Teflon tape, or pressure parts as needed"
   },
   {
-    "name": "38 Continuous Band Sealer",
+    "name": "Continuous Band Sealer",
     "type": "Sealer",
     "location": "Production",
-    "asset_id": "22",
+    "asset_id": "38",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "VeVor",
@@ -238,10 +238,10 @@
     "notes": "Daily-Seal quality, belt movement, temperature, noise, residue buildup, Check for slipping, misalignment, weak seals, or scorched film, Weekly-Clean sealing belts, guide belts, conveyor, and rollers, Inspect heating block, cooling block, pressure wheels, and Teflon surfaces, Monthly-Inspect drive gears, motor, wiring, switches, and cord, Check belt tension, seal alignment, and printing/embossing parts if equipped, Quarterly-Deep clean internal components and apply grease if needed, Replace worn sealing belt, guide belt, Teflon tape, or pressure parts as needed"
   },
   {
-    "name": "36 Continuous Band Sealer",
+    "name": "Continuous Band Sealer",
     "type": "Sealer",
     "location": "Production",
-    "asset_id": "23",
+    "asset_id": "36",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "VeVor",
@@ -252,10 +252,10 @@
     "notes": "Daily-Seal quality, belt movement, temperature, noise, residue buildup, Check for slipping, misalignment, weak seals, or scorched film, Weekly-Clean sealing belts, guide belts, conveyor, and rollers, Inspect heating block, cooling block, pressure wheels, and Teflon surfaces, Monthly-Inspect drive gears, motor, wiring, switches, and cord, Check belt tension, seal alignment, and printing/embossing parts if equipped, Quarterly-Deep clean internal components and apply grease if needed, Replace worn sealing belt, guide belt, Teflon tape, or pressure parts as needed"
   },
   {
-    "name": "0010 Continuous Band Sealer",
+    "name": "Continuous Band Sealer",
     "type": "Sealer",
     "location": "Production",
-    "asset_id": "24",
+    "asset_id": "0010",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "VeVor",
@@ -266,10 +266,10 @@
     "notes": "Daily-Seal quality, belt movement, temperature, noise, residue buildup, Check for slipping, misalignment, weak seals, or scorched film, Weekly-Clean sealing belts, guide belts, conveyor, and rollers, Inspect heating block, cooling block, pressure wheels, and Teflon surfaces, Monthly-Inspect drive gears, motor, wiring, switches, and cord, Check belt tension, seal alignment, and printing/embossing parts if equipped, Quarterly-Deep clean internal components and apply grease if needed, Replace worn sealing belt, guide belt, Teflon tape, or pressure parts as needed"
   },
   {
-    "name": "0069 Conveyor Flat Lazor Coder",
+    "name": "Conveyor Flat Lazor Coder",
     "type": "Coder",
     "location": "Kitting",
-    "asset_id": "34",
+    "asset_id": "0069",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -280,10 +280,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage, Check for abnormal vibration, slippage, or unusual wear, Weekly-Clean belt, rollers, frame, and dust buildup, Inspect belt tension, alignment, and roller condition, Monthly-Inspect motor, gearbox, bearings, pulleys, and guards, Lubricate bearings or chain drive if equipped, Deep inspection of belt wear, tracking components, and electricals, Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "0039 High Speed Fly Lazor Coder",
+    "name": "High Speed Fly Lazor Coder",
     "type": "Coder",
     "location": "Kitting",
-    "asset_id": "35",
+    "asset_id": "0039",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -294,10 +294,10 @@
     "notes": "Daily-Code quality, focus, alignment, alarms, cooling status, Check lens/window cleanliness, message accuracy, and product timing, Weekly-\tClean lens/window, inspect encoder, sensors, and cable connections, Verify mark position, fly timing, and code legibility, Monthly-Inspect cooling fan/filter, mounting, and electrical cabinet condition, Check software settings, templates, and communication to line equipment, Quarterly-Deep clean system, inspect wear points, and review alarm history, Annually-Full service, replace wear parts, and verify performance/calibration"
   },
   {
-    "name": "0043 Large Sifter",
+    "name": "Large Sifter",
     "type": "Sifter",
     "location": "Maintenance Room",
-    "asset_id": "36",
+    "asset_id": "0043",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -308,10 +308,10 @@
     "notes": "Daily-Screen condition, noise, vibration, buildup, leaks , Check for torn mesh, loose clamps, or poor flow , Weekly-Clean screen, frame, gaskets, and housing Inspect motor, belt tension, and fasteners , Monthly-Check bearings, vibration parts, and electrical connections Screen condition, noise, vibration, buildup, leaks , Quarterly-Deep clean and inspect all wear parts and screens"
   },
   {
-    "name": "0115 Standing Fan",
+    "name": "Standing Fan",
     "type": "Fan",
     "location": "Maintenance Room",
-    "asset_id": "32",
+    "asset_id": "0115",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -322,10 +322,10 @@
     "notes": "Daily-Operation, airflow, noise, vibration, dust buildup , Weekly-Clean blades, guard, motor housing, and base , Check for loose screws, wobble, or blade damage Inspect cord, plug, switch, and capacitor condition , Check bearing or oil points if the fan is serviceable , Monthly-Deep clean, inspect motor, and verify balance/alignment , Full inspection, replace worn parts, and test performance"
   },
   {
-    "name": "0040 Large Fan",
+    "name": "Large Fan",
     "type": "Fan",
     "location": "Warehouse",
-    "asset_id": "37",
+    "asset_id": "0040",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Ventamatic Ltd",
@@ -336,10 +336,10 @@
     "notes": "Daily-Operation, airflow, noise, vibration, dust buildup , Weekly-Clean blades, guard, motor housing, and base , Check for loose screws, wobble, or blade damage Inspect cord, plug, switch, and capacitor condition , Check bearing or oil points if the fan is serviceable , Monthly-Deep clean, inspect motor, and verify balance/alignment , Full inspection, replace worn parts, and test performance"
   },
   {
-    "name": "0041 Large Fan",
+    "name": "Large Fan",
     "type": "Fan",
     "location": "Warehouse",
-    "asset_id": "38",
+    "asset_id": "0041",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Ventamatic Ltd",
@@ -350,10 +350,10 @@
     "notes": "Daily-Operation, airflow, noise, vibration, dust buildup , Weekly-Clean blades, guard, motor housing, and base , Check for loose screws, wobble, or blade damage Inspect cord, plug, switch, and capacitor condition , Check bearing or oil points if the fan is serviceable , Monthly-Deep clean, inspect motor, and verify balance/alignment , Full inspection, replace worn parts, and test performance"
   },
   {
-    "name": "0044 Large Fan",
+    "name": "Large Fan",
     "type": "Fan",
     "location": "Warehouse",
-    "asset_id": "39",
+    "asset_id": "0044",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Ventamatic Ltd",
@@ -364,10 +364,10 @@
     "notes": "Daily-Operation, airflow, noise, vibration, dust buildup , Weekly-Clean blades, guard, motor housing, and base , Check for loose screws, wobble, or blade damage Inspect cord, plug, switch, and capacitor condition , Check bearing or oil points if the fan is serviceable , Monthly-Deep clean, inspect motor, and verify balance/alignment , Full inspection, replace worn parts, and test performance"
   },
   {
-    "name": "100 Large Fan",
+    "name": "Large Fan",
     "type": "Fan",
     "location": "Warehouse",
-    "asset_id": "40",
+    "asset_id": "100",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Ventamatic Ltd",
@@ -378,10 +378,10 @@
     "notes": "Daily-Operation, airflow, noise, vibration, dust buildup , Weekly-Clean blades, guard, motor housing, and base , Check for loose screws, wobble, or blade damage Inspect cord, plug, switch, and capacitor condition , Check bearing or oil points if the fan is serviceable , Monthly-Deep clean, inspect motor, and verify balance/alignment , Full inspection, replace worn parts, and test performance"
   },
   {
-    "name": "94 DeWalt Fan",
+    "name": "DeWalt Fan",
     "type": "Fan",
     "location": "Maintenance Room",
-    "asset_id": "55",
+    "asset_id": "94",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "DeWalt",
@@ -392,10 +392,10 @@
     "notes": "Daily-Operation, airflow, noise, vibration, dust buildup , Weekly-Clean blades, guard, motor housing, and base , Check for loose screws, wobble, or blade damage Inspect cord, plug, switch, and capacitor condition , Check bearing or oil points if the fan is serviceable , Monthly-Deep clean, inspect motor, and verify balance/alignment , Full inspection, replace worn parts, and test performance"
   },
   {
-    "name": "95 DeWalt Fan",
+    "name": "DeWalt Fan",
     "type": "Fan",
     "location": "Maintenance Room",
-    "asset_id": "56",
+    "asset_id": "95",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "DeWalt",
@@ -406,10 +406,10 @@
     "notes": "Daily-Operation, airflow, noise, vibration, dust buildup , Weekly-Clean blades, guard, motor housing, and base , Check for loose screws, wobble, or blade damage Inspect cord, plug, switch, and capacitor condition , Check bearing or oil points if the fan is serviceable , Monthly-Deep clean, inspect motor, and verify balance/alignment , Full inspection, replace worn parts, and test performance"
   },
   {
-    "name": "96 DeWalt Fan",
+    "name": "DeWalt Fan",
     "type": "Fan",
     "location": "Maintenance Room",
-    "asset_id": "57",
+    "asset_id": "96",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "DeWalt",
@@ -420,10 +420,10 @@
     "notes": "Daily-Operation, airflow, noise, vibration, dust buildup , Weekly-Clean blades, guard, motor housing, and base , Check for loose screws, wobble, or blade damage Inspect cord, plug, switch, and capacitor condition , Check bearing or oil points if the fan is serviceable , Monthly-Deep clean, inspect motor, and verify balance/alignment , Full inspection, replace worn parts, and test performance"
   },
   {
-    "name": "97 DeWalt Fan",
+    "name": "DeWalt Fan",
     "type": "Fan",
     "location": "Maintenance Room",
-    "asset_id": "58",
+    "asset_id": "97",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "DeWalt",
@@ -434,10 +434,10 @@
     "notes": "Daily-Operation, airflow, noise, vibration, dust buildup , Weekly-Clean blades, guard, motor housing, and base , Check for loose screws, wobble, or blade damage Inspect cord, plug, switch, and capacitor condition , Check bearing or oil points if the fan is serviceable , Monthly-Deep clean, inspect motor, and verify balance/alignment , Full inspection, replace worn parts, and test performance"
   },
   {
-    "name": "0026 Scissor Lift",
+    "name": "Scissor Lift",
     "type": "Scissor Lift",
     "location": "Warehouse",
-    "asset_id": "44",
+    "asset_id": "0026",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Sky Jacks",
@@ -448,10 +448,10 @@
     "notes": "Daily-Pre-use inspection, controls, tires/wheels, leaks, alarms, Check platform guardrails, emergency stop, horn, and lowering function, Weekly-Inspect hydraulic hoses, fittings, cylinders, and fluid level, Check batteries/charger or engine components if applicable, Monthly-Inspect scissor arms, pins, bushings, fasteners, and welds, Check drive motors, brakes, tires, and steering components, Quarterly-Lubricate per manufacturer spec and perform functional test, Annually-Full inspection, load test, safety decals, and service record review"
   },
   {
-    "name": "0028 Pallet Wrap Machine Synergy.5",
+    "name": "Pallet Wrap Machine Synergy.5",
     "type": "Pallet Wrapper",
     "location": "Warehouse",
-    "asset_id": "45",
+    "asset_id": "0028",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Highlight Industries",
@@ -476,10 +476,10 @@
     "notes": "Daily-Turntable operation, foot switch, film carriage movement, noise, debris, Check film tension, film load, and load stability, Weekly-Clean under and around unit, remove film scraps and dirt, Inspect rollers, turntable surface, and guide components, Monthly-Inspect power cord, switch, controls, and sensor/photocell if equipped, Quarterly-Check chain, belt, and drive components for wear or tension issues, Grease moving parts per OEM guidance and test full operation, Annually-Full inspection, replace worn rollers/drive parts, review service history"
   },
   {
-    "name": "150 Tape Machine Double Head",
+    "name": "Tape Machine Double Head",
     "type": "Tape Machine",
     "location": "Kitting",
-    "asset_id": "47",
+    "asset_id": "150",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Eagle",
@@ -490,10 +490,10 @@
     "notes": "Daily-Tape head operation, tape alignment, cutting, residue buildup, Check both heads for smooth tape feed, proper tension, and clean cuts, Weekly-Clean tape heads, rollers, guides, and buildup from adhesive/dust, Monthly-Inspect springs, blades, rollers, belts, and fasteners on both heads, Inspect electrical connections, switches, sensors, and drive components, Quarterly-Check alignment, tape pressure, and wear on both tape heads, Deep clean heads, lubricate moving points if allowed, and test full operation, Annnually-Full inspection, replace blades/rollers/springs as needed, review service history"
   },
   {
-    "name": "0014 X-Ray Inspection Machine Mech2",
+    "name": "X-Ray Inspection Machine Mech2",
     "type": "X-Ray",
     "location": "Kitting",
-    "asset_id": "48",
+    "asset_id": "0014",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Vevor",
@@ -504,10 +504,10 @@
     "notes": "Daily-Visual check, safety interlocks, warning lights, conveyor, image quality, Weekly-Check curtains, doors, E-stops, and that the system is clear of buildup, Monthly-Clean exterior, conveyor, curtains, and sensor areas, Inspect conveyor movement, belt condition, rollers, and product transfer, Inspect cables, connectors, cooling fans, and filters, Quarterly-Verify image quality, reject function, and safety system performance, Detailed inspection of motion components, software status, and internal cleanliness, Annually-Full service, calibration verification, and certified inspection"
   },
   {
-    "name": "345 X-Ray Rejection Box Mech2 Swing Arm",
+    "name": "X-Ray Rejection Box Mech2 Swing Arm",
     "type": "X-Ray",
     "location": "Kitting",
-    "asset_id": "50",
+    "asset_id": "345",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Vevor",
@@ -518,10 +518,10 @@
     "notes": "Dailly-Reject box movement, swing arm action, buildup, damage, Weekly-Verify rejected product clears properly and arm returns to home position, Clean box, arm, pivot points, and surrounding area, Monthly-Inspect swing arm for wear, looseness, misalignment, or sticking, Inspect actuator, air cylinder or motor, sensors, and fasteners, Check timing, reject accuracy, and return-to-home function, Quarterly-Deep inspect wear points, pivot bushings, and control response, Annually-Full service, replace worn bushings/seals, and verify complete function"
   },
   {
-    "name": "0029 Meenjet Lot Coder",
+    "name": "Meenjet Lot Coder",
     "type": "Coder",
     "location": "Kitting",
-    "asset_id": "51",
+    "asset_id": "0029",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Meenjet/ Seed Coding Solutions",
@@ -532,10 +532,10 @@
     "notes": "Daily-Print quality, code placement, message accuracy, startup check, Check ink level, nozzle condition, and error messages, Weekly-Clean print head/nozzle, wipe sensors, and inspect cable connections, Verify date/lot changeover settings and test print clarity, Monthly-Inspect mounting, brackets, hoses, wiring, and power supply, Check software settings, backup messages, and overall alignment, Deep clean system, inspect wear parts, and verify print consistency, Quarterly-Full service, replace worn parts, and review code history"
   },
   {
-    "name": "275 Flat Out Feed Conveyor",
+    "name": "Flat Out Feed Conveyor",
     "type": "Conveyor",
     "location": "Kitting",
-    "asset_id": "49",
+    "asset_id": "275",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "VQ",
@@ -546,10 +546,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "0065 Conveyor",
+    "name": "Conveyor",
     "type": "Conveyor",
     "location": "Kitting",
-    "asset_id": "52",
+    "asset_id": "0065",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -560,10 +560,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "0048 Flat Conveyor",
+    "name": "Flat Conveyor",
     "type": "Conveyor",
     "location": "Warehouse",
-    "asset_id": "31",
+    "asset_id": "0048",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -574,10 +574,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage, Check for abnormal vibration, slippage, or unusual wear, Weekly-Clean belt, rollers, frame, and dust buildup, Inspect belt tension, alignment, and roller condition, Monthly-Inspect motor, gearbox, bearings, pulleys, and guards, Lubricate bearings or chain drive if equipped, Deep inspection of belt wear, tracking components, and electricals, Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "50 Flat Out feed Conveyor",
+    "name": "Flat Out feed Conveyor",
     "type": "Conveyor",
     "location": "Warehouse",
-    "asset_id": "42",
+    "asset_id": "50",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -588,10 +588,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "276 Flat Outfeed conveyor",
+    "name": "Flat Outfeed conveyor",
     "type": "Conveyor",
     "location": "Kitting",
-    "asset_id": "53",
+    "asset_id": "276",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Hangzhou Yuqiu Machinery Co",
@@ -602,10 +602,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "49 Flat outfeed conveyor",
+    "name": "Flat outfeed conveyor",
     "type": "Conveyor",
     "location": "Warehouse",
-    "asset_id": "54",
+    "asset_id": "49",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -616,10 +616,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "0047 Roller Conveyor",
+    "name": "Roller Conveyor",
     "type": "Conveyor",
     "location": "Warehouse",
-    "asset_id": "43",
+    "asset_id": "0047",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -630,10 +630,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "0130 Step up conveyor",
+    "name": "Step up conveyor",
     "type": "Conveyor",
     "location": "Production",
-    "asset_id": "78",
+    "asset_id": "0130",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "VTV Motor Manufactor Co",
@@ -644,10 +644,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "0124 Step up conveyor",
+    "name": "Step up conveyor",
     "type": "Conveyor",
     "location": "Production",
-    "asset_id": "70",
+    "asset_id": "0124",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "BAOPACK Auto Packing Machine",
@@ -658,10 +658,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "0128 Step up Conveyor",
+    "name": "Step up Conveyor",
     "type": "Conveyor",
     "location": "Production",
-    "asset_id": "73",
+    "asset_id": "0128",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "VTV",
@@ -672,10 +672,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "0134 Step up Conveyor",
+    "name": "Step up Conveyor",
     "type": "Conveyor",
     "location": "Production",
-    "asset_id": "88",
+    "asset_id": "0134",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "VTV Motor Manufactor Co",
@@ -686,10 +686,10 @@
     "notes": "Daily-Belt condition, tracking, noise, debris, spillage , Check for abnormal vibration, slippage, or unusual wear , Weekly-Clean belt, rollers, frame, and dust buildup Inspect belt tension, alignment, and roller condition Inspect motor, gearbox, bearings, pulleys, and guards , Monthly-Lubricate bearings or chain drive if equipped , Deep inspection of belt wear, tracking components, and electricals , Quarterly-Replace worn belt/rollers and do full safety inspection"
   },
   {
-    "name": "0116 Shop Vac",
+    "name": "Shop Vac",
     "type": "Shop Vac",
     "location": "Maintenance Room",
-    "asset_id": "59",
+    "asset_id": "0116",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Ridgid",
@@ -700,10 +700,10 @@
     "notes": "Daily-Suction, hose condition, canister fill level, unusual noise, Empty canister, clean or tap out filter, inspect hose for blockage, Weekly-Inspect wheels, latches, attachments, and seals, Monthly-Deep clean filter area, inspect motor vents, and check airflow, Inspect cord wrap, casters, and housing for cracks or damage, Quarterly-Full inspection, replace filter if worn, and test performance, Full service, replace worn hose/seals, and review condition"
   },
   {
-    "name": "0117 Heat Shrink Wrapping Machine",
+    "name": "Heat Shrink Wrapping Machine",
     "type": "Heat Tunnel",
     "location": "Warehouse",
-    "asset_id": "60",
+    "asset_id": "0117",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -714,10 +714,10 @@
     "notes": "Daily-Heat level, conveyor movement, shrink quality, unusual noise, Check film feed, tunnel airflow, and product alignment, Weekly-Clean tunnel, conveyor, rollers, and buildup from film residue, Inspect heaters, fans, belts, and guards, Monthly-Inspect wiring, switches, sensors, and temperature controls, Check conveyor tension, roller wear, and airflow balance, Quarterly-Deep clean, inspect internal components, and verify shrink performance, Annually-Full service, replace worn parts, and review temperature calibration"
   },
   {
-    "name": "0089 Heat Tunnel machine",
+    "name": "Heat Tunnel machine",
     "type": "Heat Tunnel",
     "location": "Warehouse",
-    "asset_id": "61",
+    "asset_id": "0089",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -728,10 +728,10 @@
     "notes": "Daily-Tunnel heat, conveyor movement, airflow, shrink quality, unusual noise, Check for film residue, product alignment, and proper temperature, Weekly-Clean tunnel interior, conveyor, rollers, and buildup from film, Inspect heaters, fans, belts, and guards\t, Monthly-Inspect wiring, switches, sensors, and temperature controls, Check conveyor tension, roller wear, and airflow balance, Quarterly-Deep clean, inspect internal components, and verify shrink performance, Annually-Full service, replace worn parts, and review temperature calibration"
   },
   {
-    "name": "0118 Reach In Cooler",
+    "name": "Reach In Cooler",
     "type": "Cooler",
     "location": "Lunch Room",
-    "asset_id": "62",
+    "asset_id": "0118",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Flacon Refrigeration",
@@ -742,10 +742,10 @@
     "notes": "Daily-Temperature, door seal, noise, frost buildup, product condition, Check that doors close fully and no warm air is entering, Weekly-Clean interior, door gaskets, shelves, and exterior surfaces, Monthly-Inspect evaporator area for frost, dust, or blocked airflow, Clean condenser coil, inspect fan operation, and check drain pan, Inspect power cord, plug, thermostat, hinges, and door alignment, Quarterly-Deep clean behind and under unit, verify temperature performance, Annually-Full service, replace worn gaskets or parts, review temp records"
   },
   {
-    "name": "0003 Tray/ Bucket Feeder Conveyor",
+    "name": "Tray/ Bucket Feeder Conveyor",
     "type": "Conveyor",
     "location": "Production",
-    "asset_id": "64",
+    "asset_id": "0003",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "BAOPACK Auto Packing Machine",
@@ -756,10 +756,10 @@
     "notes": "Daily-Tray condition, product carryover, noise, vibration, speed, Check tray loading, discharge into VFFS hopper, and product spillage, Clean trays, frame, guards, and product contact areas, Monthly-Inspect belts/chains, drive components, fasteners, and alignment, Inspect motor, gearbox, bearings, sensors, and electrical connections, Check tray spacing, tray wear, and transfer point into the hopper, Quarterly-Deep clean, inspect wear points, and verify lift/transfer performance, Annually-Full service, replace worn trays/drive parts, and review service history"
   },
   {
-    "name": "31 VFFS Machine",
+    "name": "VFFS Machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "65",
+    "asset_id": "31",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "BAOPACK Auto Packing Machine",
@@ -770,10 +770,10 @@
     "notes": "Daily-Film tracking, seal quality, product fill, noise, alarms, Check forming tube, sealing jaws, and discharge for buildup, Weekly-Clean contact areas, rollers, sensors, and sealing surfaces, Weekly-Check fill accuracy, seal temperature, and print/coding system, Monthly-Inspect belts, chains, pulleys, and alignment, Inspect motor, gearbox, pneumatics, wiring, and controls, Quarterly-Deep clean, inspect wear parts, and verify machine timing, Annually-Full service, replace worn parts, and review service history"
   },
   {
-    "name": "0126 Turn table",
+    "name": "Turn table",
     "type": "Turn Table",
     "location": "Production",
-    "asset_id": "71",
+    "asset_id": "0126",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "BAOPACK Auto Packing Machine",
@@ -784,10 +784,10 @@
     "notes": "Daily-Rotation, film/load stability, noise, vibration, debris, Check controls, stop/start function, and safe operation, Weekly-Clean table surface, chain/belt area, rollers, and frame, Inspect drive components, alignment, and fasteners, Monthly-Inspect motor, gearbox, bearings, sensors, and wiring, Check levelness, speed consistency, and wear on rotating parts, Quarterly-Deep clean, lubricate if required, and test full function, Annually-Full service, replace worn drive parts, and review service history"
   },
   {
-    "name": "0127 JB-520 Sachet machine",
+    "name": "JB-520 Sachet machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "72",
+    "asset_id": "0127",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -798,10 +798,10 @@
     "notes": "Daily-Seal quality, film tracking, product fill, noise, alarms, Check forming tube, sealing jaws, and discharge for buildup, Weekly-Clean film path, rollers, sensors, and sealing surfaces, Check fill accuracy, seal temperature, and coding/printing system, Monthy-Inspect belts, chains, pulleys, and alignment, Quarterly-Inspect motor, gearbox, pneumatics, wiring, and controls, Deep clean, inspect wear parts, and verify machine timing, Annually-Full service, replace worn parts, and review service history"
   },
   {
-    "name": "32 JB-210 Auto pouching machine",
+    "name": "JB-210 Auto pouching machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "74",
+    "asset_id": "32",
     "status": "inactive",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -812,10 +812,10 @@
     "notes": "Daily-Pouch pick-up, open/fill/seal cycle, alarms, noise, product buildup, Check pouch magazine, grippers, transfer path, and discharge\t, Weekly-Clean jaws, grippers, suction cups, sensors, and product contact areas, Check fill accuracy, seal temperature, and pouch positioning, Inspect belts, chains, guides, and alignment, Monthly-Inspect motor, gearbox, pneumatics, wiring, and controls, Deep clean, inspect wear parts, and verify timing/sequence, Annually-Full service, replace worn parts, and review service history"
   },
   {
-    "name": "0131 Auger Stick pack machine",
+    "name": "Auger Stick pack machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "79",
+    "asset_id": "0131",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -826,10 +826,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "21 Volumetric Stick pack machine",
+    "name": "Volumetric Stick pack machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "80",
+    "asset_id": "21",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -840,10 +840,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "23 Volumetric Stick pack machine",
+    "name": "Volumetric Stick pack machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "81",
+    "asset_id": "23",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -854,10 +854,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "24 Volumetric Stick pack machine",
+    "name": "Volumetric Stick pack machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "82",
+    "asset_id": "24",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -868,10 +868,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "22 Volumetric Stick pack machine",
+    "name": "Volumetric Stick pack machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "83",
+    "asset_id": "22",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -882,10 +882,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "19 Volumetric Stick pack machine",
+    "name": "Volumetric Stick pack machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "84",
+    "asset_id": "19",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -896,10 +896,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "20 Volumetric Stick pack machine",
+    "name": "Volumetric Stick pack machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "85",
+    "asset_id": "20",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -910,10 +910,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "0140 Mini volumetric Sachet machine (topping)",
+    "name": "Mini volumetric Sachet machine (topping)",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "93",
+    "asset_id": "0140",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -924,10 +924,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "0109 Matt's Sachet Machine",
+    "name": "Matt's Sachet Machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "86",
+    "asset_id": "0109",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -938,10 +938,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "0132 Auger Stick pack Machine",
+    "name": "Auger Stick pack Machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "87",
+    "asset_id": "0132",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "China",
@@ -952,10 +952,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "0136 Auto Rotary Powder Filling Sealing (Cupping) Machine",
+    "name": "Auto Rotary Powder Filling Sealing (Cupping) Machine",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "89",
+    "asset_id": "0136",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -966,10 +966,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness., Checking Film path, seals, sensors, Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces., Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely., Belts, bearings, fasteners, alignment, guards, Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check, Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors, wear parts and pulleys for wear. , Replace worn parts as needed. , Verify machine calibration and operating condition. , Oil level, gearbox, drive train, motor condition, Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection., Shell/drum wear, liner condition, discharge condition, Verify sanitation and readiness for production., Full drive inspection, belt tension, hardware torque, Major inspection/overhaul; replace high-wear components based on condition and review maintenance history., Annually-Review repeated issues and update the PM schedule., Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "0129 Auger Feeder Conveyor",
+    "name": "Auger Feeder Conveyor",
     "type": "Auger",
     "location": "Production",
-    "asset_id": "75",
+    "asset_id": "0129",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -980,10 +980,10 @@
     "notes": "Daily-Auger rotation, feed consistency, noise, vibration, buildup, Check inlet hopper, discharge, guards, and product transfer, Weekly-Clean hopper, tube/trough, auger flighting, and surrounding area, Maonthly-Inspect drive motor, gearbox, bearings, couplings, and alignment, Inspect fasteners, seals, electrical connections, and sensors, Check auger wear, feed rate consistency, and product bridging, Quarterly-Deep clean and inspect wear points, discharge, and drive train, Annually-Full service, replace worn auger/flighting parts, and review history"
   },
   {
-    "name": "0137 Auger Conveyor",
+    "name": "Auger Conveyor",
     "type": "Auger",
     "location": "Production",
-    "asset_id": "90",
+    "asset_id": "0137",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -994,10 +994,10 @@
     "notes": "Daily-Auger rotation, feed consistency, noise, vibration, buildup, Check inlet hopper, discharge, guards, and product transfer, Weekly-Clean hopper, tube/trough, auger flighting, and surrounding area, Maonthly-Inspect drive motor, gearbox, bearings, couplings, and alignment, Inspect fasteners, seals, electrical connections, and sensors, Check auger wear, feed rate consistency, and product bridging, Quarterly-Deep clean and inspect wear points, discharge, and drive train, Annually-Full service, replace worn auger/flighting parts, and review history"
   },
   {
-    "name": "0138 Auger conveyor",
+    "name": "Auger conveyor",
     "type": "Auger",
     "location": "Production",
-    "asset_id": "91",
+    "asset_id": "0138",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Foshan Guanxing Transmission",
@@ -1008,10 +1008,10 @@
     "notes": "Daily-Auger rotation, feed consistency, noise, vibration, buildup, Check inlet hopper, discharge, guards, and product transfer, Weekly-Clean hopper, tube/trough, auger flighting, and surrounding area, Maonthly-Inspect drive motor, gearbox, bearings, couplings, and alignment, Inspect fasteners, seals, electrical connections, and sensors, Check auger wear, feed rate consistency, and product bridging, Quarterly-Deep clean and inspect wear points, discharge, and drive train, Annually-Full service, replace worn auger/flighting parts, and review history"
   },
   {
-    "name": "0139 Table Top Auger Filler",
+    "name": "Table Top Auger Filler",
     "type": "Filler",
     "location": "Production",
-    "asset_id": "92",
+    "asset_id": "0139",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Delta",
@@ -1022,10 +1022,10 @@
     "notes": "Daily-Powder buildup, moisture, cracks, residue, Binding, unusual noise, wear, Product buildup, blockage, wear, mooth movement, abnormal noise, Weight accuracy and repeatability, Correct readings and stability, Air pressure, leaks, moisture, Buttons, sensors, display, E-stop, Loose hardware, vibration, damage, , Weekly-Worn edges, product inconsistency, Excessive play, noise, wear, Loose bolts or clamps, Proper lubrication level, Loose or damaged parts,, Monthly- Fill consistency and drift, Heat, noise, belt wear, couplings, Cracks, tears, leaks, Loose wires, dust buildup, Quarterly-Corrosion, wear, wobble, Excessive wear or rough movement, Dust buildup, relay wear, Annually-Bearings, belts, seals, augers, Accuracy, repeatability, Trends and recurring issues"
   },
   {
-    "name": "0143 Mixer/ Blender",
+    "name": "Mixer/ Blender",
     "type": "Mixer",
     "location": "Production",
-    "asset_id": "96",
+    "asset_id": "0143",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Jiangyin Baoli Machinery",
@@ -1036,10 +1036,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness. , Checking Film path, seals, sensors Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces. , Monthly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Inspect seals, gaskets, and wear points more closely. , Belts, bearings, fasteners, alignment, guards Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors,  wear parts and pulleys for wear. Replace worn parts as needed. Verify machine calibration and operating condition.  Quarterly-Oil level, gearbox, drive train, motor condition , Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection. Shell/drum wear, liner condition, discharge condition Verify sanitation and readiness for production. , Annually-Full drive inspection, belt tension, hardware torque Major inspection/overhaul; replace high-wear components based on condition and review maintenance history. Review repeated issues and update the PM schedule. Reassess spare parts inventory and lubrication program. Oil change, deep inspection, replace worn belts/parts"
   },
   {
-    "name": "0144 Mixer/ Blender",
+    "name": "Mixer/ Blender",
     "type": "Mixer",
     "location": "Production",
-    "asset_id": "97",
+    "asset_id": "0144",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Jiangyin Baoli Machinery",
@@ -1050,10 +1050,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness. , Checking Film path, seals, sensors Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces. , Monthly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Inspect seals, gaskets, and wear points more closely. , Belts, bearings, fasteners, alignment, guards Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors,  wear parts and pulleys for wear. Replace worn parts as needed. Verify machine calibration and operating condition.  Quarterly-Oil level, gearbox, drive train, motor condition , Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. Remove covers or panels as needed for deeper inspection. Shell/drum wear, liner condition, discharge condition Verify sanitation and readiness for production. , Annually-Full drive inspection, belt tension, hardware torque Major inspection/overhaul; replace high-wear components based on condition and review maintenance history. Review repeated issues and update the PM schedule. Reassess spare parts inventory and lubrication program. Oil change, deep inspection, replace worn belts/parts"
   },
   {
-    "name": "91 Dehumidifier",
+    "name": "Dehumidifier",
     "type": "Dehumidifier",
     "location": "Production",
-    "asset_id": "98",
+    "asset_id": "91",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Moiswell",
@@ -1064,10 +1064,10 @@
     "notes": "Daily-Power, airflow, humidity removal, noise, frost on coils , Check for ice/frost buildup and confirm unit is cycling properly , Weekly-Clean filter, intake, exhaust, and exterior Inspect coils for dust buildup, ice, and restricted airflow Inspect drain bucket, hose, pump, cord, plug, and housing , Monthly-Check humidistat/sensor operation and defrost function , Quarterly-Deep clean coils, fan area, and internal dust accumulation , Annually-Full inspection for refrigerant or mechanical issues if freezing repeats"
   },
   {
-    "name": "90 Dehumidifier",
+    "name": "Dehumidifier",
     "type": "Dehumidifier",
     "location": "Production",
-    "asset_id": "76",
+    "asset_id": "90",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Moiswell",
@@ -1078,10 +1078,10 @@
     "notes": "Daily-Power, airflow, humidity removal, noise, frost on coils , Check for ice/frost buildup and confirm unit is cycling properly , Weekly-Clean filter, intake, exhaust, and exterior Inspect coils for dust buildup, ice, and restricted airflow Inspect drain bucket, hose, pump, cord, plug, and housing , Monthly-Check humidistat/sensor operation and defrost function , Quarterly-Deep clean coils, fan area, and internal dust accumulation , Annually-Full inspection for refrigerant or mechanical issues if freezing repeats"
   },
   {
-    "name": "0145 Portable Dust Collector",
+    "name": "Portable Dust Collector",
     "type": "Dust Collector",
     "location": "Production",
-    "asset_id": "99",
+    "asset_id": "0145",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Central Machinery",
@@ -1095,7 +1095,7 @@
     "name": "? Dust Collector",
     "type": "Dust Collector",
     "location": "Production",
-    "asset_id": "99",
+    "asset_id": "0145",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Central Machinery",
@@ -1106,10 +1106,10 @@
     "notes": "Daily-Dust Collection Drum / Bin Dust level, damage, proper seating Filters Excessive buildup, clogging, tears Hoses / Connections Leaks, loose clamps, cracks Airflow / Suction Reduced suction, abnormal airflow Motor / Fan Unusual noise, vibration, overheating Electrical Cord / Plug Frayed wires, damaged plug Casters / Wheels Wheel damage, locking function General Machine Condition Dust leaks, loose hardware, damage Weekly: Hose Interior Powder accumulation or blockage Fan Housing Dust accumulation on blades or housing Fasteners / Clamps Loose bolts, clamps, latches Monthly: Motor Assembly Bearing noise, overheating, vibration Electrical Controls / Switches Faulty switches, damaged wiring Filter Differential Pressure (if equipped) High pressure drop indicating clogging Grounding / Static Control Loose or damaged grounding wire Quarterly: Fan / Impeller Wear, imbalance, corrosion Internal Housing Dust accumulation inside unit Bearings (if serviceable) Wear, noise, rough movement Annual: Full System Inspection Structural damage, airflow performance Electrical Safety Inspection Grounding, wiring, motor condition Airflow Verification CFM reduction or airflow imbalance Preventive Maintenance Review Recurring failures or trends"
   },
   {
-    "name": "88 Table top sifter",
+    "name": "Table top sifter",
     "type": "Sifter",
     "location": "Production",
-    "asset_id": "100",
+    "asset_id": "88",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": null,
@@ -1120,10 +1120,10 @@
     "notes": "Screen condition, noise, vibration, buildup, leaks Check for torn mesh, loose clamps, or poor flow Clean screen, frame, gaskets, and housing Inspect motor, belt tension, and fasteners Check bearings, vibration parts, and electrical connections Screen condition, noise, vibration, buildup, leaks Check for torn mesh, loose clamps, or poor flow Clean screen, frame, gaskets, and housing Inspect drive mechanism, belt tension, and clamps Check bearings, springs, vibration parts, and electrical connections Deep clean and inspect all wear parts and screens"
   },
   {
-    "name": "0146 hydraulic Lift table",
+    "name": "hydraulic Lift table",
     "type": "Hydraulic Lift",
     "location": "Production",
-    "asset_id": "101",
+    "asset_id": "0146",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -1134,10 +1134,10 @@
     "notes": "Daily: Lift Platform Damage, cracks, debris, uneven surface, Hydraulic System Hydraulic fluid leaks at hoses, fittings, cylinders, Hydraulic Fluid Level Low fluid level or contamination, Controls / Buttons Proper raise/lower function, sticking buttons, Safety Guards / Toe Guards Missing, bent, or damaged guards, Scissor Arms / Pivot Points Binding, unusual noise, visible wear, Casters / Wheels (if mobile) Wheel damage, locking function, General Machine Condition Loose hardware, abnormal vibration, damage, Weekly: Cracks, abrasion, loose fittings, Pivot Pins / Bushings Excessive play or wear, Lubrication Points Dry pivot points or joints, Fasteners / Mounting Hardware Loose bolts, nuts, retaining clips, Safety Labels Missing or damaged labels, Monthly: Hydraulic Cylinder Seal wear, scoring, leaks, Electrical Components (if powered) Wiring damage, faulty switches, loose connections, Lift Capacity Performance Slow lifting, drifting, uneven movement, Structural Welds / Frame Cracks, corrosion, frame damage, Quarterly: Hydraulic Fluid Dirty, milky, or degraded fluid, Hydraulic Pump Noise, overheating, pressure loss, Scissor Mechanism Wear, alignment, structural fatigue, Bearings / Bushings Excessive wear or rough movement , Annual: Full Hydraulic System Inspection Hoses, cylinders, pump, valves, Load Test Proper lifting under load , Preventive Maintenance Review Recurring issues or trends, Load Test"
   },
   {
-    "name": "45 Compressor",
+    "name": "Compressor",
     "type": "Compressor",
     "location": "Warehouse",
-    "asset_id": "102",
+    "asset_id": "45",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -1148,10 +1148,10 @@
     "notes": "Daily- Pressure, temperature, oil level, noise, leaks, Check SmartCom connection, alarms, and service reminders, Weekly- \tDrain condensate, inspect hoses, fittings, and belts, Clean filters, intake area, and cabinet vents, Monthly- Inspect electrical connections, cooler, fan, and safety devices, Verify SmartCom data, run hours, and service history, Quarterly- Inspect oil condition, separators, valves, and drive components, Annual- Full service, oil change, filter change, and detailed inspection"
   },
   {
-    "name": "0099 Refrigerated Compressed Air Dryer",
+    "name": "Refrigerated Compressed Air Dryer",
     "type": "Compressor",
     "location": "Warehouse",
-    "asset_id": "104",
+    "asset_id": "0099",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": null,
@@ -1190,10 +1190,10 @@
     "notes": "Sharpen when needed"
   },
   {
-    "name": "0098 Hepa Air Filter",
+    "name": "Hepa Air Filter",
     "type": "HEPA Filter",
     "location": null,
-    "asset_id": "10",
+    "asset_id": "0098",
     "status": "partial",
     "is_food_contact": false,
     "manufacturer": "Vornado Air",
@@ -1204,10 +1204,10 @@
     "notes": "Daily- \tPower, airflow, noise, indicator lights, dust buildup, Check filter status and confirm the unit is running properly, Weekly- Clean pre-filter, intake grille, and exterior surfaces, Inspect HEPA filter condition and airflow restriction, Monthly-Inspect fan, cord, plug, housing, and any control panels, \tCheck for unusual vibration, odors, or reduced performance, Quarterly- Deep clean unit, inspect internal buildup, and test airflow, Annually- \tReplace HEPA filter as needed and review service history"
   },
   {
-    "name": "0103 Hepa Air Filter",
+    "name": "Hepa Air Filter",
     "type": "HEPA Filter",
     "location": null,
-    "asset_id": "11",
+    "asset_id": "0103",
     "status": "partial",
     "is_food_contact": false,
     "manufacturer": "Vornado Air",
@@ -1218,10 +1218,10 @@
     "notes": "Daily- \tPower, airflow, noise, indicator lights, dust buildup Check filter status and confirm the unit is running properly Weekly- Clean pre-filter, intake grille, and exterior surfaces Inspect HEPA filter condition and airflow restriction Monthly-Inspect fan, cord, plug, housing, and any control panels \tCheck for unusual vibration, odors, or reduced performance Quarterly- Deep clean unit, inspect internal buildup, and test airflow Annually- \tReplace HEPA filter as needed and review service history"
   },
   {
-    "name": "0104 Hepa Air Filter",
+    "name": "Hepa Air Filter",
     "type": "HEPA Filter",
     "location": null,
-    "asset_id": "12",
+    "asset_id": "0104",
     "status": "partial",
     "is_food_contact": false,
     "manufacturer": "Vornado Air",
@@ -1232,10 +1232,10 @@
     "notes": "Daily- \tPower, airflow, noise, indicator lights, dust buildup Check filter status and confirm the unit is running properly Weekly- Clean pre-filter, intake grille, and exterior surfaces Inspect HEPA filter condition and airflow restriction Monthly-Inspect fan, cord, plug, housing, and any control panels \tCheck for unusual vibration, odors, or reduced performance Quarterly- Deep clean unit, inspect internal buildup, and test airflow Annually- \tReplace HEPA filter as needed and review service history"
   },
   {
-    "name": "0106 Hepa Air Filter",
+    "name": "Hepa Air Filter",
     "type": "HEPA Filter",
     "location": null,
-    "asset_id": "13",
+    "asset_id": "0106",
     "status": "partial",
     "is_food_contact": false,
     "manufacturer": "Vornado Air",
@@ -1246,10 +1246,10 @@
     "notes": "Daily- \tPower, airflow, noise, indicator lights, dust buildup Check filter status and confirm the unit is running properly Weekly- Clean pre-filter, intake grille, and exterior surfaces Inspect HEPA filter condition and airflow restriction Monthly-Inspect fan, cord, plug, housing, and any control panels \tCheck for unusual vibration, odors, or reduced performance Quarterly- Deep clean unit, inspect internal buildup, and test airflow Annually- \tReplace HEPA filter as needed and review service history"
   },
   {
-    "name": "0108 Hepa Air Filter",
+    "name": "Hepa Air Filter",
     "type": "HEPA Filter",
     "location": null,
-    "asset_id": "14",
+    "asset_id": "0108",
     "status": "partial",
     "is_food_contact": false,
     "manufacturer": "Vornado Air",
@@ -1260,10 +1260,10 @@
     "notes": "Daily- \tPower, airflow, noise, indicator lights, dust buildup Check filter status and confirm the unit is running properly Weekly- Clean pre-filter, intake grille, and exterior surfaces Inspect HEPA filter condition and airflow restriction Monthly-Inspect fan, cord, plug, housing, and any control panels \tCheck for unusual vibration, odors, or reduced performance Quarterly- Deep clean unit, inspect internal buildup, and test airflow Annually- \tReplace HEPA filter as needed and review service history"
   },
   {
-    "name": "0110 Hepa Air Filter",
+    "name": "Hepa Air Filter",
     "type": "HEPA Filter",
     "location": null,
-    "asset_id": "15",
+    "asset_id": "0110",
     "status": "partial",
     "is_food_contact": false,
     "manufacturer": "Vornado Air",
@@ -1274,10 +1274,10 @@
     "notes": "Daily- \tPower, airflow, noise, indicator lights, dust buildup Check filter status and confirm the unit is running properly Weekly- Clean pre-filter, intake grille, and exterior surfaces Inspect HEPA filter condition and airflow restriction Monthly-Inspect fan, cord, plug, housing, and any control panels \tCheck for unusual vibration, odors, or reduced performance Quarterly- Deep clean unit, inspect internal buildup, and test airflow Annually- \tReplace HEPA filter as needed and review service history"
   },
   {
-    "name": "0111 Hepa Air Filter",
+    "name": "Hepa Air Filter",
     "type": "HEPA Filter",
     "location": null,
-    "asset_id": "16",
+    "asset_id": "0111",
     "status": "partial",
     "is_food_contact": false,
     "manufacturer": "Vornado Air",
@@ -1288,10 +1288,10 @@
     "notes": "Daily- \tPower, airflow, noise, indicator lights, dust buildup Check filter status and confirm the unit is running properly Weekly- Clean pre-filter, intake grille, and exterior surfaces Inspect HEPA filter condition and airflow restriction Monthly-Inspect fan, cord, plug, housing, and any control panels \tCheck for unusual vibration, odors, or reduced performance Quarterly- Deep clean unit, inspect internal buildup, and test airflow Annually- \tReplace HEPA filter as needed and review service history"
   },
   {
-    "name": "0063 Small Turn Table",
+    "name": "Small Turn Table",
     "type": "Turn Table",
     "location": "Warehouse",
-    "asset_id": "27",
+    "asset_id": "0063",
     "status": "partial",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -1302,10 +1302,10 @@
     "notes": "Daily- Check controls, stop/start function, and safe operation, Rotation, load stability, noise, vibration, debris, Weekly- \tClean table surface, chain/belt area, rollers, and frame, \tInspect drive components, alignment, and fasteners, Monthly- \tInspect motor, gearbox, bearings, sensors, and wiring, \tCheck levelness, speed consistency, and wear on rotating parts, Quarterly- Deep clean, lubricate if required, and test full function, Annually- Full service, replace worn drive parts, and review service history"
   },
   {
-    "name": "0064 Small Turn Table",
+    "name": "Small Turn Table",
     "type": "Turn Table",
     "location": "Warehouse",
-    "asset_id": "28",
+    "asset_id": "0064",
     "status": "partial",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -1316,10 +1316,10 @@
     "notes": "Daily- Check controls, stop/start function, and safe operation Rotation, load stability, noise, vibration, debris Weekly- \tClean table surface, chain/belt area, rollers, and frame \tInspect drive components, alignment, and fasteners Monthly- \tInspect motor, gearbox, bearings, sensors, and wiring \tCheck levelness, speed consistency, and wear on rotating parts Quarterly- Deep clean, lubricate if required, and test full function Annually- Full service, replace worn drive parts, and review service history"
   },
   {
-    "name": "0066 Small Turn table",
+    "name": "Small Turn table",
     "type": "Turn Table",
     "location": "Warehouse",
-    "asset_id": "29",
+    "asset_id": "0066",
     "status": "partial",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -1330,10 +1330,10 @@
     "notes": "Daily- Check controls, stop/start function, and safe operation Rotation, load stability, noise, vibration, debris Weekly- \tClean table surface, chain/belt area, rollers, and frame \tInspect drive components, alignment, and fasteners Monthly- \tInspect motor, gearbox, bearings, sensors, and wiring \tCheck levelness, speed consistency, and wear on rotating parts Quarterly- Deep clean, lubricate if required, and test full function Annually- Full service, replace worn drive parts, and review service history"
   },
   {
-    "name": "0067 Small Turn Table",
+    "name": "Small Turn Table",
     "type": "Turn Table",
     "location": "Warehouse",
-    "asset_id": "30",
+    "asset_id": "0067",
     "status": "partial",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -1344,10 +1344,10 @@
     "notes": "Daily- Check controls, stop/start function, and safe operation Rotation, load stability, noise, vibration, debris Weekly- \tClean table surface, chain/belt area, rollers, and frame \tInspect drive components, alignment, and fasteners Monthly- \tInspect motor, gearbox, bearings, sensors, and wiring \tCheck levelness, speed consistency, and wear on rotating parts Quarterly- Deep clean, lubricate if required, and test full function Annually- Full service, replace worn drive parts, and review service history"
   },
   {
-    "name": "0141 Large vaccume Load Call Feeders",
+    "name": "Large vaccume Load Call Feeders",
     "type": "Feeder",
     "location": "Production",
-    "asset_id": "94",
+    "asset_id": "0141",
     "status": "inactive",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -1358,10 +1358,10 @@
     "notes": "Daily- Feed rate, hopper level, unusual noise, vibration, alarms, Check vacuum level, discharge, and material flow consistency, Weekly- \tClean hopper, feed screws/lines, filters, and product contact areas, \tInspect vacuum hoses, fittings, seals, and clamps for leaks, Monthly- Inspect load cells, mounts, cabling, junction box, and connectors, \tVerify calibration, tare stability, and repeatability of feed weight, Quarterly- Deep clean, inspect wear parts, and test vacuum system performance, Annually- \tFull service, recalibration, replace worn seals/filters, review history"
   },
   {
-    "name": "0142 Large vaccume Load Call Feeders",
+    "name": "Large vaccume Load Call Feeders",
     "type": "Feeder",
     "location": "Production",
-    "asset_id": "95",
+    "asset_id": "0142",
     "status": "inactive",
     "is_food_contact": true,
     "manufacturer": "Suzhou Yangbang Machinery CO",
@@ -1372,10 +1372,10 @@
     "notes": "Daily- Feed rate, hopper level, unusual noise, vibration, alarms Check vacuum level, discharge, and material flow consistency Weekly- \tClean hopper, feed screws/lines, filters, and product contact areas \tInspect vacuum hoses, fittings, seals, and clamps for leaks Monthly- Inspect load cells, mounts, cabling, junction box, and connectors \tVerify calibration, tare stability, and repeatability of feed weight Quarterly- Deep clean, inspect wear parts, and test vacuum system performance Annually- \tFull service, recalibration, replace worn seals/filters, review history"
   },
   {
-    "name": "228 Metal Dector",
+    "name": "Metal Dector",
     "type": "Other",
     "location": "Kitting",
-    "asset_id": "111",
+    "asset_id": "228",
     "status": "inactive",
     "is_food_contact": false,
     "manufacturer": null,
@@ -1386,10 +1386,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness. , Checking Film path, seals, sensors Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces. , Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely. Belts, bearings, fasteners, alignment, guards Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors,  wear parts and pulleys for wear. , Replace worn parts as needed. Verify machine calibration and operating condition.  , Oil level, gearbox, drive train, motor condition , Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. , Annually-Remove covers or panels as needed for deeper inspection. , Shell/drum wear, liner condition, discharge condition , Verify sanitation and readiness for production. , Full drive inspection, belt tension, hardware torque Major inspection/overhaul; replace high-wear components based on condition and review maintenance history. Review repeated issues and update the PM schedule. Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "162 Metal Dector",
+    "name": "Metal Dector",
     "type": "Other",
     "location": "Kitting",
-    "asset_id": "112",
+    "asset_id": "162",
     "status": "inactive",
     "is_food_contact": false,
     "manufacturer": null,
@@ -1400,10 +1400,10 @@
     "notes": "Daily-Examine equipment for signs of damage, leaks, loose parts, unusual sounds, vibrations, heat, odors, and cleanliness. , Checking Film path, seals, sensors Verify guards are in place. Record defects and notify supervision immediately. , Clean and sanitize food-contact surfaces. , Weekly-Lubricate moving parts with approved food-grade lubricant; check belts, seals, and alignment, , Monthly-Inspect seals, gaskets, and wear points more closely. Belts, bearings, fasteners, alignment, guards Verify no buildup of dust, product residue, or debris. , Checking Belts, pneumatics, fill check Inspect all critical components more thoroughly. , Tighten loose nuts, bolts, and hardware. , Quarterly-Replace worn belts, seals, gaskets, washers, and similar items as needed. Inspect bearings, gears, motors,  wear parts and pulleys for wear. , Replace worn parts as needed. Verify machine calibration and operating condition.  , Oil level, gearbox, drive train, motor condition , Disassemble as needed or where required, deep clean, calibrate, lubricate, reassemble, verify safety devices, and test operation. , Annually-Remove covers or panels as needed for deeper inspection. , Shell/drum wear, liner condition, discharge condition , Verify sanitation and readiness for production. , Full drive inspection, belt tension, hardware torque Major inspection/overhaul; replace high-wear components based on condition and review maintenance history. Review repeated issues and update the PM schedule. Reassess spare parts inventory and lubrication program."
   },
   {
-    "name": "0009 ForkLift Reach",
+    "name": "ForkLift Reach",
     "type": "Forklift",
     "location": "Warehouse",
-    "asset_id": "126",
+    "asset_id": "0009",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Toyota",
@@ -1414,10 +1414,10 @@
     "notes": "Daily-Battery charge, brakes, steering, horn, lights, leaks, damage, Check mast, forks, carriage, and load backrest for damage or wear, Weekly-Clean battery compartment, inspect cables, connectors, and plugs, Inspect tires, wheels, mast chains, rollers, and hydraulic hoses, Monthly-Check hydraulic fluid, mast lubrication, and drive components, \tInspect seat/stand platform, safety switches, and alarms, Quarterly-Full inspection of mast, forks, steering, braking, and electrical system, Annually-Professional service, load test, and complete safety inspection"
   },
   {
-    "name": "0147 ForkLift Sit down",
+    "name": "ForkLift Sit down",
     "type": "Forklift",
     "location": "Warehouse",
-    "asset_id": "103",
+    "asset_id": "0147",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Toyota",
@@ -1428,10 +1428,10 @@
     "notes": "Daily-Battery charge, brakes, steering, horn, lights, leaks, damage, Check mast, forks, carriage, and load backrest for damage or wear, Weekly-Clean battery compartment, inspect cables, connectors, and plugs, Inspect tires, wheels, mast chains, rollers, and hydraulic hoses, Monthly-Check hydraulic fluid, mast lubrication, and drive components, \tInspect seat/stand platform, safety switches, and alarms, Quarterly-Full inspection of mast, forks, steering, braking, and electrical system, Annually-Professional service, load test, and complete safety inspection"
   },
   {
-    "name": "0015 Forklift Charger",
+    "name": "Forklift Charger",
     "type": "Forklift Charger",
     "location": "Warehouse",
-    "asset_id": "105",
+    "asset_id": "0015",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Hawker",
@@ -1442,10 +1442,10 @@
     "notes": "Daily-Power on, indicator lights, charging cycle, noise, heat, alarms, Check cable, plug, connector, and charging leads for damage, Weekly-Clean charger exterior, vents, and surrounding area, Inspect connectors, terminals, and cables for corrosion or looseness, Monthly-Check fan operation, internal dust buildup, and filter condition, Verify charge output, alarms, and shutdown function, Quarterly-Deep clean and inspect wiring, plugs, and enclosure condition, Annually-Full inspection, test performance, and replace worn cables/connectors"
   },
   {
-    "name": "0016 Forklift Charger",
+    "name": "Forklift Charger",
     "type": "Forklift Charger",
     "location": "Warehouse",
-    "asset_id": "106",
+    "asset_id": "0016",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Hawker",
@@ -1456,10 +1456,10 @@
     "notes": "Daily-Power on, indicator lights, charging cycle, noise, heat, alarms Check cable, plug, connector, and charging leads for damage Weekly-Clean charger exterior, vents, and surrounding area Inspect connectors, terminals, and cables for corrosion or looseness Monthly-Check fan operation, internal dust buildup, and filter condition Verify charge output, alarms, and shutdown function Quarterly-Deep clean and inspect wiring, plugs, and enclosure condition Annually-Full inspection, test performance, and replace worn cables/connectors"
   },
   {
-    "name": "0017 Forklift Charger",
+    "name": "Forklift Charger",
     "type": "Forklift Charger",
     "location": "Warehouse",
-    "asset_id": "107",
+    "asset_id": "0017",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Hawker",
@@ -1470,10 +1470,10 @@
     "notes": "Daily-Power on, indicator lights, charging cycle, noise, heat, alarms Check cable, plug, connector, and charging leads for damage Weekly-Clean charger exterior, vents, and surrounding area Inspect connectors, terminals, and cables for corrosion or looseness Monthly-Check fan operation, internal dust buildup, and filter condition Verify charge output, alarms, and shutdown function Quarterly-Deep clean and inspect wiring, plugs, and enclosure condition Annually-Full inspection, test performance, and replace worn cables/connectors"
   },
   {
-    "name": "0018 Forklift Charger",
+    "name": "Forklift Charger",
     "type": "Forklift Charger",
     "location": "Warehouse",
-    "asset_id": "108",
+    "asset_id": "0018",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Hawker",
@@ -1484,10 +1484,10 @@
     "notes": "Daily-Power on, indicator lights, charging cycle, noise, heat, alarms Check cable, plug, connector, and charging leads for damage Weekly-Clean charger exterior, vents, and surrounding area Inspect connectors, terminals, and cables for corrosion or looseness Monthly-Check fan operation, internal dust buildup, and filter condition Verify charge output, alarms, and shutdown function Quarterly-Deep clean and inspect wiring, plugs, and enclosure condition Annually-Full inspection, test performance, and replace worn cables/connectors"
   },
   {
-    "name": "0019 Electric Pallet Jack",
+    "name": "Electric Pallet Jack",
     "type": "Pallet Jack",
     "location": "Warehouse",
-    "asset_id": "109",
+    "asset_id": "0019",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Raymond",
@@ -1498,10 +1498,10 @@
     "notes": "Daily-Forks, wheels, handle, pump action, leaks, damage , Check for bent forks, worn wheels, loose hardware, hydraulic leaks Weekly-Lubricate moving points, inspect steering and load wheels, check lowering function Inspect hydraulic pump, seals, pins, chain, and handle assembly , Monthly-Full safety inspection and touch-up grease/lube as needed Detailed inspection, repair worn wheels, seals, or hydraulic components"
   },
   {
-    "name": "0024 Electric Pallet Jack",
+    "name": "Electric Pallet Jack",
     "type": "Pallet Jack",
     "location": "Warehouse",
-    "asset_id": "110",
+    "asset_id": "0024",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Raymond",
@@ -1512,10 +1512,10 @@
     "notes": "Daily-Forks, wheels, handle, pump action, leaks, damage , Check for bent forks, worn wheels, loose hardware, hydraulic leaks Weekly-Lubricate moving points, inspect steering and load wheels, check lowering function Inspect hydraulic pump, seals, pins, chain, and handle assembly , Monthly-Full safety inspection and touch-up grease/lube as needed Detailed inspection, repair worn wheels, seals, or hydraulic components"
   },
   {
-    "name": "0135 Pallet jack",
+    "name": "Pallet jack",
     "type": "Pallet Jack",
     "location": "Production",
-    "asset_id": "66",
+    "asset_id": "0135",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Uline",
@@ -1526,10 +1526,10 @@
     "notes": "Daily-Forks, wheels, handle, pump action, leaks, damage , Check for bent forks, worn wheels, loose hardware, hydraulic leaks Weekly-Lubricate moving points, inspect steering and load wheels, check lowering function Inspect hydraulic pump, seals, pins, chain, and handle assembly , Monthly-Full safety inspection and touch-up grease/lube as needed Detailed inspection, repair worn wheels, seals, or hydraulic components"
   },
   {
-    "name": "0133 Pallet jack",
+    "name": "Pallet jack",
     "type": "Pallet Jack",
     "location": "Production",
-    "asset_id": "67",
+    "asset_id": "0133",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Uline",
@@ -1540,10 +1540,10 @@
     "notes": "Daily-Forks, wheels, handle, pump action, leaks, damage , Check for bent forks, worn wheels, loose hardware, hydraulic leaks Weekly-Lubricate moving points, inspect steering and load wheels, check lowering function Inspect hydraulic pump, seals, pins, chain, and handle assembly , Monthly-Full safety inspection and touch-up grease/lube as needed Detailed inspection, repair worn wheels, seals, or hydraulic components"
   },
   {
-    "name": "0122 Pallet jack",
+    "name": "Pallet jack",
     "type": "Pallet Jack",
     "location": "Production",
-    "asset_id": "68",
+    "asset_id": "0122",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Uline",
@@ -1554,10 +1554,10 @@
     "notes": "Daily-Forks, wheels, handle, pump action, leaks, damage , Check for bent forks, worn wheels, loose hardware, hydraulic leaks Weekly-Lubricate moving points, inspect steering and load wheels, check lowering function Inspect hydraulic pump, seals, pins, chain, and handle assembly , Monthly-Full safety inspection and touch-up grease/lube as needed Detailed inspection, repair worn wheels, seals, or hydraulic components"
   },
   {
-    "name": "0123 Pallet jack",
+    "name": "Pallet jack",
     "type": "Pallet Jack",
     "location": "Production",
-    "asset_id": "69",
+    "asset_id": "0123",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Uline",
@@ -1568,10 +1568,10 @@
     "notes": "Forks, wheels, handle, pump action, leaks, damage Check for bent forks, worn wheels, loose hardware, hydraulic leaks Lubricate moving points, inspect steering and load wheels, check lowering function Inspect hydraulic pump, seals, pins, chain, and handle assembly Full safety inspection and touch-up grease/lube as needed Detailed inspection, repair worn wheels, seals, or hydraulic components"
   },
   {
-    "name": "0071 Warehouse Pallet Jake",
+    "name": "Warehouse Pallet Jake",
     "type": "Pallet Jack",
     "location": "Warehouse",
-    "asset_id": "25",
+    "asset_id": "0071",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Uline",
@@ -1582,10 +1582,10 @@
     "notes": "Daily-Forks, wheels, handle, pump action, leaks, damage, Check for bent forks, worn wheels, loose hardware, hydraulic leaks, Weekly-Lubricate moving points, inspect steering and load wheels, check lowering function, Monthly-Inspect hydraulic pump, seals, pins, chain, and handle assembly, Quarterly-Full safety inspection and touch-up grease/lube as needed, Annually-Detailed inspection, repair worn wheels, seals, or hydraulic components"
   },
   {
-    "name": "0070 Warehouse Pallet Jake",
+    "name": "Warehouse Pallet Jake",
     "type": "Pallet Jack",
     "location": "Warehouse",
-    "asset_id": "26",
+    "asset_id": "0070",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Uline",
@@ -1596,10 +1596,10 @@
     "notes": "Daily-Forks, wheels, handle, pump action, leaks, damage, Check for bent forks, worn wheels, loose hardware, hydraulic leaks, Weekly-Lubricate moving points, inspect steering and load wheels, check lowering function, Monthly-Inspect hydraulic pump, seals, pins, chain, and handle assembly, Quarterly-Full safety inspection and touch-up grease/lube as needed, Annually-Detailed inspection, repair worn wheels, seals, or hydraulic components"
   },
   {
-    "name": "0046 Warehouse Pallet Jack",
+    "name": "Warehouse Pallet Jack",
     "type": "Pallet Jack",
     "location": "Warehouse",
-    "asset_id": "41",
+    "asset_id": "0046",
     "status": "active",
     "is_food_contact": false,
     "manufacturer": "Uline",
@@ -1610,10 +1610,10 @@
     "notes": "Daily-Forks, wheels, handle, pump action, leaks, damage, Check for bent forks, worn wheels, loose hardware, hydraulic leaks, Weekly-Lubricate moving points, inspect steering and load wheels, check lowering function, Monthly-Inspect hydraulic pump, seals, pins, chain, and handle assembly, Quarterly-Full safety inspection and touch-up grease/lube as needed, Annually-Detailed inspection, repair worn wheels, seals, or hydraulic components"
   },
   {
-    "name": "81 Uline Scale",
+    "name": "Uline Scale",
     "type": "Scale",
     "location": null,
-    "asset_id": "20",
+    "asset_id": "81",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Uline",
@@ -1624,7 +1624,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check , Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability , Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "24011572065232 Counting Scale",
+    "name": "Counting Scale",
     "type": "Scale",
     "location": "Kitting",
     "asset_id": "114",
@@ -1638,7 +1638,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "240115720650208 Counting Scale",
+    "name": "Counting Scale",
     "type": "Scale",
     "location": "Kitting",
     "asset_id": "115",
@@ -1652,10 +1652,10 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "75 Scale",
+    "name": "Scale",
     "type": "Scale",
     "location": "Production",
-    "asset_id": "116",
+    "asset_id": "75",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Kitchen Tour Digital Touch Scale",
@@ -1666,10 +1666,10 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "27 Scale",
+    "name": "Scale",
     "type": "Scale",
     "location": "Production",
-    "asset_id": "117",
+    "asset_id": "27",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Kitchen Tour Digital Touch Scale",
@@ -1680,10 +1680,10 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "74 Scale",
+    "name": "Scale",
     "type": "Scale",
     "location": "Production",
-    "asset_id": "118",
+    "asset_id": "74",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Kitchen Tour Digital Touch Scale",
@@ -1694,10 +1694,10 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "82 Scale",
+    "name": "Scale",
     "type": "Scale",
     "location": "Production",
-    "asset_id": "119",
+    "asset_id": "82",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Kitchen Tour Digital Touch Scale",
@@ -1708,10 +1708,10 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "73 Scale",
+    "name": "Scale",
     "type": "Scale",
     "location": "Production",
-    "asset_id": "120",
+    "asset_id": "73",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Kitchen Tour Digital Touch Scale",
@@ -1722,10 +1722,10 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "97 Scale",
+    "name": "Scale",
     "type": "Scale",
     "location": "Production",
-    "asset_id": "121",
+    "asset_id": "97",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Kitchen Tour Digital Touch Scale",
@@ -1736,10 +1736,10 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "80 Scale",
+    "name": "Scale",
     "type": "Scale",
     "location": "Production",
-    "asset_id": "122",
+    "asset_id": "80",
     "status": "active",
     "is_food_contact": true,
     "manufacturer": "Uline",
@@ -1792,7 +1792,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "151 Kitchen Tour Scale",
+    "name": "Kitchen Tour Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "151",
@@ -1806,7 +1806,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "152 Kitchen Tour Scale",
+    "name": "Kitchen Tour Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "152",
@@ -1820,7 +1820,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "153 Kitchen Tour Scale",
+    "name": "Kitchen Tour Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "153",
@@ -1834,7 +1834,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "154 Kitchen Tour Scale",
+    "name": "Kitchen Tour Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "154",
@@ -1848,7 +1848,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "155 Kitchen Tour Scale",
+    "name": "Kitchen Tour Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "155",
@@ -1862,7 +1862,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "159 Kitchen Tour Scale",
+    "name": "Kitchen Tour Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "159",
@@ -1876,7 +1876,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "148 Vevor Scale",
+    "name": "Vevor Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "148",
@@ -1890,7 +1890,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "149 Vevor Scale",
+    "name": "Vevor Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "149",
@@ -1904,7 +1904,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "150 Vevor Scale",
+    "name": "Vevor Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "150",
@@ -1918,7 +1918,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "156 Vevor Scale",
+    "name": "Vevor Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "156",
@@ -1932,7 +1932,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "157 Vevor Scale",
+    "name": "Vevor Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "157",
@@ -1946,7 +1946,7 @@
     "notes": "Daily- Power, display, zero/tare, cleanliness, accuracy check \tPower, display, zero/tare, cleanliness, accuracy check Weekly-Clean platform, inspect cord, buttons, and feet Clean platform, inspect cord, buttons, and feet Monthly-Verify calibration, inspect load cell area, and test repeatability Verify calibration, inspect load cell area, and test repeatability Quarterly-\tFull inspection, replace batteries if applicable, review history \tFull inspection, replace batteries if applicable, review history"
   },
   {
-    "name": "158 Vevor Scale",
+    "name": "Vevor Scale",
     "type": "Scale",
     "location": "Production",
     "asset_id": "158",

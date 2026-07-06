@@ -1,27 +1,34 @@
+import { useState } from 'react';
 import { useApiGet } from '../../hooks/useApi';
-import { Shield, Wrench, Thermometer, ClipboardCheck, Droplets, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, AlertTriangle, CheckCircle, Clock, FlaskConical, Lock, Flag, FileText, ScrollText, Download, ChevronRight } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, LineChart, Line } from 'recharts';
+import { exportToCsv } from '../../utils/exportCsv';
 
-function StatCard({ icon: Icon, label, value, sub, color = 'powder', alert }) {
+const goTo = (tab) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab } }));
+
+function ReadinessItem({ label, status, detail, tab }) {
   const colors = {
-    powder: 'bg-powder-50 text-powder-700',
-    success: 'bg-success-50 text-success-700',
-    warning: 'bg-warning-50 text-yellow-700',
-    danger: 'bg-danger-50 text-danger-700',
+    good: 'bg-green-500',
+    warning: 'bg-amber-500',
+    critical: 'bg-red-500',
+    info: 'bg-gray-400',
   };
   return (
-    <div className={`rounded-xl border p-4 ${alert ? 'border-danger-500 bg-danger-50' : 'border-gray-200 bg-white'}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <div className={`p-1.5 rounded-lg ${colors[color]}`}><Icon size={16} /></div>
-        <span className="text-sm text-gray-600">{label}</span>
+    <div className={`flex items-center gap-3 py-2 ${tab ? 'cursor-pointer hover:bg-gray-50 -mx-2 px-2 rounded-lg transition-colors' : ''}`}
+      onClick={tab ? () => goTo(tab) : undefined}>
+      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${colors[status]}`} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900">{label}</p>
+        {detail && <p className="text-xs text-gray-500">{detail}</p>}
       </div>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
-      {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
+      {tab && status !== 'good' && <ChevronRight size={14} className="text-gray-400 shrink-0" />}
     </div>
   );
 }
 
 export default function ComplianceDashboard() {
   const { data, loading, error } = useApiGet('/compliance/dashboard');
+  const [showOnlyFailing, setShowOnlyFailing] = useState(false);
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading compliance dashboard...</div>;
   if (error) return <div className="text-center py-12 text-danger-600">{error}</div>;
@@ -29,40 +36,216 @@ export default function ComplianceDashboard() {
 
   const pmColor = data.pm.meets_sqf_target ? 'success' : data.pm.completion_rate >= 80 ? 'warning' : 'danger';
 
+  const readinessChecks = [
+    {
+      label: `PM Completion Rate: ${data.pm.completion_rate}%`,
+      status: data.pm.meets_sqf_target ? 'good' : data.pm.completion_rate >= 80 ? 'warning' : 'critical',
+      detail: `${data.pm.completed}/${data.pm.total} WOs completed (target ≥ 95%). ${data.pm.overdue} overdue.`,
+      tab: 'pm',
+    },
+    {
+      label: `Calibration: ${data.calibration.overdue} overdue`,
+      status: data.calibration.overdue === 0 ? 'good' : 'critical',
+      detail: `${data.calibration.total_instruments} instruments total. ${data.calibration.due_within_7_days} due within 7 days.`,
+      tab: 'calibration',
+    },
+    {
+      label: `Sanitation Pass Rate: ${data.sanitation.pass_rate}%`,
+      status: data.sanitation.pass_rate >= 95 ? 'good' : data.sanitation.pass_rate >= 80 ? 'warning' : 'critical',
+      detail: `${data.sanitation.records_30d} records in the last 30 days. ${data.sanitation.failures_30d} failures.`,
+      tab: 'sanitation',
+    },
+    {
+      label: `Chemical SDS Coverage: ${data.chemicals.total_approved - data.chemicals.missing_sds}/${data.chemicals.total_approved}`,
+      status: data.chemicals.missing_sds === 0 ? 'good' : data.chemicals.missing_sds <= 3 ? 'warning' : 'critical',
+      detail: data.chemicals.missing_sds > 0 ? `${data.chemicals.missing_sds} approved chemicals missing SDS documentation.` : 'All approved chemicals have SDS documentation.',
+      tab: 'chemicals',
+    },
+    {
+      label: `LOTO Procedures: ${data.loto.total_procedures} on file`,
+      status: data.loto.equipment_without_procedure === 0 ? 'good' : 'warning',
+      detail: data.loto.equipment_without_procedure > 0 ? `${data.loto.equipment_without_procedure} equipment without LOTO procedures.` : 'All equipment has LOTO procedures.',
+      tab: 'loto',
+    },
+    {
+      label: `Flagged Issues: ${data.flagged_issues}`,
+      status: data.flagged_issues === 0 ? 'good' : data.flagged_issues <= 2 ? 'warning' : 'critical',
+      detail: data.flagged_issues > 0 ? `${data.flagged_issues} open work orders with flagged issues requiring attention.` : 'No open issues flagged.',
+      tab: 'pm',
+    },
+    {
+      label: `Audit Trail: ${(data.total_audit_records || 0).toLocaleString()} records (12 months)`,
+      status: 'good',
+      detail: 'All system actions are logged with actor, timestamp, and entity.',
+      tab: 'audit',
+    },
+  ];
+
+  const readyCount = readinessChecks.filter(c => c.status === 'good').length;
+  const totalChecks = readinessChecks.length;
+  const overallReady = readyCount === totalChecks;
+  const readinessPercent = Math.round((readyCount / totalChecks) * 100);
+
+  const chartData = (data.monthly_pm || []).map(m => ({
+    month: m.month.slice(5),
+    completed: m.completed,
+    missed: m.missed || 0,
+    total: m.total,
+    rate: m.total > 0 ? Math.round((m.completed / m.total) * 100) : 0,
+  }));
+
+  const sanTrend = (data.sanitation.monthly_trend || []).map(m => ({
+    month: m.month.slice(5),
+    rate: m.total > 0 ? Math.round((m.passed / m.total) * 100) : 100,
+    total: m.total,
+  }));
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-gray-900">Compliance Dashboard</h2>
-        <span className="text-xs text-gray-500">Last 30 days ({data.period.from} to {data.period.to})</span>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-xl font-bold text-gray-900">Audit Readiness Dashboard</h2>
+        <span className="text-xs text-gray-500">Reporting period: {data.period.from} to {data.period.to}</span>
       </div>
 
-      {/* SQF Target Banner */}
-      <div className={`rounded-xl p-4 flex items-center gap-3 ${data.pm.meets_sqf_target ? 'bg-success-50 border border-green-200' : 'bg-danger-50 border border-red-200'}`}>
-        {data.pm.meets_sqf_target ? <CheckCircle size={24} className="text-success-600" /> : <AlertTriangle size={24} className="text-danger-600" />}
-        <div>
-          <p className="font-semibold text-gray-900">
-            PM Completion Rate: {data.pm.completion_rate}%
-            {data.pm.meets_sqf_target ? ' — SQF Target Met' : ' — Below SQF 95% Target'}
+      {/* Overall Readiness Banner */}
+      <div
+        onClick={!overallReady ? () => setShowOnlyFailing(prev => !prev) : undefined}
+        className={`rounded-xl p-5 flex items-center gap-4 ${!overallReady ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} ${overallReady ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}
+      >
+        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 ${overallReady ? 'bg-green-500' : 'bg-amber-500'}`}>
+          {overallReady ? <CheckCircle size={32} className="text-white" /> : <AlertTriangle size={32} className="text-white" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-lg font-bold text-gray-900">
+            {overallReady ? 'Audit Ready' : `${readyCount} of ${totalChecks} Checks Passing`}
           </p>
           <p className="text-sm text-gray-600">
-            {data.pm.completed} of {data.pm.total} work orders completed | {data.pm.overdue} overdue
+            {overallReady
+              ? 'All compliance areas are meeting targets. Your documentation is up to date.'
+              : `${totalChecks - readyCount} area${totalChecks - readyCount > 1 ? 's' : ''} need${totalChecks - readyCount === 1 ? 's' : ''} attention before your next audit.`}
           </p>
+          {!overallReady && (
+            <p className="text-xs text-amber-700 mt-1">{showOnlyFailing ? 'Showing failing checks only — tap to show all' : 'Tap to see only failing checks'}</p>
+          )}
+          <div className="mt-2 w-full max-w-xs bg-gray-200 rounded-full h-2.5">
+            <div className={`h-2.5 rounded-full transition-all ${overallReady ? 'bg-green-500' : readinessPercent >= 70 ? 'bg-amber-500' : 'bg-red-500'}`}
+              style={{ width: `${readinessPercent}%` }} />
+          </div>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard icon={Wrench} label="PM Completion" value={`${data.pm.completion_rate}%`} sub={`${data.pm.completed}/${data.pm.total} WOs`} color={pmColor} />
-        <StatCard icon={Thermometer} label="Calibrations" value={data.calibration.total_instruments} sub={`${data.calibration.overdue} overdue, ${data.calibration.due_within_7_days} due soon`} color={data.calibration.overdue > 0 ? 'danger' : 'success'} alert={data.calibration.overdue > 0} />
-        <StatCard icon={ClipboardCheck} label="Checklists" value={`${data.checklists.pass_rate}%`} sub={`${data.checklists.submissions_30d} submissions`} color={data.checklists.pass_rate >= 95 ? 'success' : 'warning'} />
-        <StatCard icon={Droplets} label="Sanitation" value={`${data.sanitation.pass_rate}%`} sub={`${data.sanitation.records_30d} records`} color={data.sanitation.pass_rate >= 95 ? 'success' : 'warning'} />
+      {/* Readiness Checklist + KPI Cards */}
+      <div className="grid md:grid-cols-3 gap-4">
+        {/* Readiness Checklist */}
+        <div className="md:col-span-1 bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+            <FileText size={16} /> Readiness Checklist
+          </h3>
+          <div className="divide-y divide-gray-100">
+            {(showOnlyFailing ? readinessChecks.filter(c => c.status !== 'good') : readinessChecks).map((check, i) => (
+              <ReadinessItem key={i} {...check} />
+            ))}
+          </div>
+        </div>
+
+        {/* KPI Cards Grid */}
+        <div className="md:col-span-2 grid grid-cols-2 gap-3 content-start">
+          <div onClick={() => goTo('pm')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.pm.meets_sqf_target ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <Wrench size={15} className={data.pm.meets_sqf_target ? 'text-green-600' : 'text-red-600'} />
+              <span className="text-xs text-gray-600">PM Completion</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{data.pm.completion_rate}%</p>
+            <p className="text-xs text-gray-500">{data.pm.completed}/{data.pm.total} · {data.pm.overdue} overdue</p>
+          </div>
+
+          <div onClick={() => goTo('calibration')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.calibration.overdue > 0 ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <Thermometer size={15} className={data.calibration.overdue > 0 ? 'text-red-600' : 'text-green-600'} />
+              <span className="text-xs text-gray-600">Calibration</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{data.calibration.total_instruments}</p>
+            <p className="text-xs text-gray-500">{data.calibration.overdue} overdue · {data.calibration.due_within_7_days} due soon</p>
+          </div>
+
+          <div onClick={() => goTo('sanitation')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.sanitation.pass_rate >= 95 ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <Droplets size={15} className={data.sanitation.pass_rate >= 95 ? 'text-green-600' : 'text-amber-600'} />
+              <span className="text-xs text-gray-600">Sanitation Pass Rate</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{data.sanitation.pass_rate}%</p>
+            <p className="text-xs text-gray-500">{data.sanitation.records_30d} records · {data.sanitation.failures_30d} failures</p>
+          </div>
+
+          <div onClick={() => goTo('chemicals')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.chemicals.missing_sds === 0 ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <FlaskConical size={15} className={data.chemicals.missing_sds === 0 ? 'text-green-600' : 'text-amber-600'} />
+              <span className="text-xs text-gray-600">Chemical Registry</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{data.chemicals.total_approved}</p>
+            <p className="text-xs text-gray-500">{data.chemicals.missing_sds > 0 ? `${data.chemicals.missing_sds} missing SDS` : 'All SDS on file'}</p>
+          </div>
+
+          <div onClick={() => goTo('pm')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.flagged_issues === 0 ? 'border-gray-200 bg-white' : 'border-red-200 bg-red-50'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <Flag size={15} className={data.flagged_issues > 0 ? 'text-red-600' : 'text-gray-400'} />
+              <span className="text-xs text-gray-600">Open Issues</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{data.flagged_issues}</p>
+            <p className="text-xs text-gray-500">{data.flagged_issues > 0 ? 'Flagged issues need review' : 'No open issues'}</p>
+          </div>
+
+          <div onClick={() => goTo('audit')} className="rounded-xl border border-gray-200 bg-white p-4 cursor-pointer hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-2 mb-1">
+              <ScrollText size={15} className="text-gray-500" />
+              <span className="text-xs text-gray-600">Audit Trail</span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{(data.total_audit_records || 0).toLocaleString()}</p>
+            <p className="text-xs text-gray-500">Records over 12 months</p>
+          </div>
+        </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      {/* PM Completion Trend Chart */}
+      {chartData.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">PM Completion Trend (12 Months)</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <ReferenceLine y={95} stroke="#e03131" strokeDasharray="3 3" label={{ value: '95% SQF', position: 'right', fontSize: 10 }} />
+              <Bar dataKey="completed" name="Completed" fill="#40c057" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="missed" name="Missed" fill="#adb5bd" radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Sanitation Trend Chart */}
+      {sanTrend.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Sanitation Pass Rate Trend</h3>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={sanTrend}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(v) => `${v}%`} />
+              <ReferenceLine y={95} stroke="#e03131" strokeDasharray="3 3" label={{ value: '95%', position: 'right', fontSize: 10 }} />
+              <Line type="monotone" dataKey="rate" stroke="#339af0" strokeWidth={2} dot={{ r: 3 }} name="Pass Rate" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-4">
         {/* Upcoming Work Orders */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Clock size={16} /> Upcoming Work Orders (Next 7 Days)
+            <Clock size={16} /> Upcoming Work Orders (7 Days)
           </h3>
           {data.upcoming_work_orders.length === 0 ? (
             <p className="text-sm text-gray-500">No upcoming work orders</p>
@@ -89,7 +272,7 @@ export default function ComplianceDashboard() {
         {/* Recent Activity */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Shield size={16} /> Recent Audit Trail
+            <ScrollText size={16} /> Recent Audit Trail
           </h3>
           {data.recent_activity.length === 0 ? (
             <p className="text-sm text-gray-500">No activity recorded yet</p>
@@ -111,12 +294,13 @@ export default function ComplianceDashboard() {
         </div>
       </div>
 
-      {/* Food Contact Equipment */}
+      {/* Food Contact Equipment Summary */}
       <div className="bg-powder-50 rounded-xl border border-powder-200 p-4">
         <p className="text-sm text-powder-800">
           <Shield size={14} className="inline mr-1" />
           <strong>{data.food_contact_equipment}</strong> active food-contact equipment units tracked.
-          All PM, calibration, and sanitation records for these assets are linked to your HACCP/PCP plan for audit readiness.
+          {data.loto.total_procedures > 0 && <> · <strong>{data.loto.total_procedures}</strong> LOTO procedures on file.</>}
+          {' '}All PM, calibration, and sanitation records are linked for audit traceability.
         </p>
       </div>
     </div>

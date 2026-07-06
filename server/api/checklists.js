@@ -53,7 +53,7 @@ router.get('/templates/:id', (req, res) => {
   const db = getDb();
   const tmpl = db.prepare('SELECT * FROM checklist_templates WHERE id = ?').get(req.params.id);
   if (!tmpl) return res.status(404).json({ error: 'Template not found' });
-  res.json({ ...tmpl, items: JSON.parse(tmpl.items || '[]') });
+  try { res.json({ ...tmpl, items: JSON.parse(tmpl.items || '[]') }); } catch { res.json({ ...tmpl, items: [] }); }
 });
 
 router.post('/templates', (req, res) => {
@@ -70,7 +70,7 @@ router.post('/templates', (req, res) => {
   ensureInstances(db, id);
 
   const created = db.prepare('SELECT * FROM checklist_templates WHERE id = ?').get(id);
-  logAudit(req.body._actor || 'system', 'create', 'checklist_template', id, { name, type }, null, created);
+  logAudit(req.user.name, 'create', 'checklist_template', id, { name, type }, null, created);
   res.status(201).json(created);
 });
 
@@ -91,7 +91,7 @@ router.put('/templates/:id', (req, res) => {
   if (is_active !== undefined && is_active) ensureInstances(db, req.params.id);
 
   const updated = db.prepare('SELECT * FROM checklist_templates WHERE id = ?').get(req.params.id);
-  logAudit(req.body._actor || 'system', 'update', 'checklist_template', req.params.id, null, existing, updated);
+  logAudit(req.user.name, 'update', 'checklist_template', req.params.id, null, existing, updated);
   res.json(updated);
 });
 
@@ -125,7 +125,7 @@ router.get('/due', (req, res) => {
 
   sql += ' ORDER BY ci.due_date ASC, ct.type, ct.name';
   const rows = db.prepare(sql).all(...params);
-  res.json(rows.map(r => ({ ...r, items: JSON.parse(r.items || '[]') })));
+  res.json(rows.map(r => { try { return { ...r, items: JSON.parse(r.items || '[]') }; } catch { return { ...r, items: [] }; } }));
 });
 
 router.get('/history', (req, res) => {
@@ -194,7 +194,7 @@ router.post('/instances/:id/skip', (req, res) => {
     db.prepare('INSERT INTO checklist_instances (id, checklist_id, due_date) VALUES (?, ?, ?)').run(nextId, instance.checklist_id, nextDue);
   }
 
-  logAudit(req.body._actor || 'system', 'skip', 'checklist_instance', req.params.id, null, null, null);
+  logAudit(req.user.name, 'skip', 'checklist_instance', req.params.id, null, null, null);
   res.json({ skipped: req.params.id });
 });
 

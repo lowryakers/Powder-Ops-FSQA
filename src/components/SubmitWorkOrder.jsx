@@ -1,9 +1,86 @@
-import { useState, useEffect } from 'react';
-import { Shield, CheckCircle, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Shield, CheckCircle, AlertTriangle, Search, X } from 'lucide-react';
+import FileUpload from './FileUpload';
+
+function fuzzyMatch(text, query) {
+  const t = text.toLowerCase();
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  let score = 0;
+  for (const w of words) {
+    const idx = t.indexOf(w);
+    if (idx === -1) return -1;
+    score += (idx === 0 ? 2 : 1) + (w.length / t.length);
+  }
+  return score;
+}
+
+function EquipmentSearch({ equipment, value, onChange }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = equipment.find(e => e.id === value);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const results = useMemo(() => {
+    if (!query.trim()) return equipment.slice(0, 20);
+    return equipment
+      .map(eq => {
+        const label = `${eq.asset_id || ''} ${eq.name} ${eq.location || ''} ${eq.type || ''}`;
+        return { eq, score: fuzzyMatch(label, query) };
+      })
+      .filter(r => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(r => r.eq);
+  }, [equipment, query]);
+
+  const eqLabel = (eq) => `${eq.asset_id ? `${eq.asset_id} — ` : ''}${eq.name} — ${eq.location || eq.type}`;
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-sm font-medium text-gray-700 mb-1">Equipment *</label>
+      {value && selected && !open ? (
+        <div className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base flex items-center justify-between bg-white">
+          <span className="truncate">{eqLabel(selected)}</span>
+          <button type="button" onClick={() => { onChange(''); setQuery(''); setOpen(true); }}
+            className="shrink-0 ml-2 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+      ) : (
+        <div className="relative">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input type="text" value={query} autoComplete="off"
+            onChange={e => { setQuery(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base"
+            placeholder="Search by name, location, or asset ID..." />
+        </div>
+      )}
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+          {results.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-gray-500">No equipment found for "{query}"</div>
+          ) : results.map(eq => (
+            <button key={eq.id} type="button"
+              onClick={() => { onChange(eq.id); setQuery(''); setOpen(false); }}
+              className={`w-full text-left px-4 py-2.5 text-sm hover:bg-powder-50 transition-colors border-b border-gray-50 last:border-0 ${eq.id === value ? 'bg-powder-50 font-medium' : ''}`}>
+              <span className="block font-medium text-gray-900">{eq.name}</span>
+              <span className="block text-xs text-gray-500">{eq.asset_id ? `${eq.asset_id} · ` : ''}{eq.location || eq.type}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <input type="hidden" required value={value} />
+    </div>
+  );
+}
 
 export default function SubmitWorkOrder() {
   const [equipment, setEquipment] = useState([]);
-  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', submitted_by: '' });
+  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', submitted_by: '', attachments: [] });
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -41,7 +118,7 @@ export default function SubmitWorkOrder() {
           <CheckCircle size={64} className="mx-auto text-green-500 mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Work Order Submitted</h1>
           <p className="text-gray-600 mb-6">Your request has been logged. The maintenance team will review it shortly.</p>
-          <button onClick={() => { setSuccess(false); setForm({ equipment_id: '', title: '', description: '', priority: 'normal', submitted_by: '' }); }}
+          <button onClick={() => { setSuccess(false); setForm({ equipment_id: '', title: '', description: '', priority: 'normal', submitted_by: '', attachments: [] }); }}
             className="px-6 py-3 bg-powder-600 text-white rounded-xl font-bold hover:bg-powder-700">
             Submit Another
           </button>
@@ -74,22 +151,16 @@ export default function SubmitWorkOrder() {
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="e.g. Band sealer not heating" />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Equipment (optional)</label>
-            <select value={form.equipment_id} onChange={e => setForm({ ...form, equipment_id: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base">
-              <option value="">Select equipment...</option>
-              {equipment.map(eq => (
-                <option key={eq.id} value={eq.id}>{eq.name} — {eq.location || eq.type}</option>
-              ))}
-            </select>
-          </div>
+          <EquipmentSearch equipment={equipment} value={form.equipment_id}
+            onChange={id => setForm({ ...form, equipment_id: id })} />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Details (optional)</label>
             <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" rows={3} placeholder="Describe the problem in more detail..." />
           </div>
+
+          <FileUpload files={form.attachments} onChange={attachments => setForm({ ...form, attachments })} />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">How urgent?</label>

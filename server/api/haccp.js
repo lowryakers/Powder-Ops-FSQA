@@ -37,7 +37,7 @@ router.post('/', (req, res) => {
   `).run(id, name, description || null, hazard_type || null, critical_limits, monitoring_procedure, monitoring_frequency || null, corrective_action, verification_procedure || null, record_keeping_requirements || null);
 
   const created = db.prepare('SELECT * FROM haccp_ccps WHERE id = ?').get(id);
-  logAudit(req.body._actor || 'system', 'create', 'haccp_ccp', id, { name }, null, created);
+  logAudit(req.user.name, 'create', 'haccp_ccp', id, { name }, null, created);
   res.status(201).json(created);
 });
 
@@ -57,7 +57,7 @@ router.put('/:id', (req, res) => {
   `).run(...fields.map(f => updated[f]), req.params.id);
 
   const result = db.prepare('SELECT * FROM haccp_ccps WHERE id = ?').get(req.params.id);
-  logAudit(req.body._actor || 'system', 'update', 'haccp_ccp', req.params.id, null, existing, result);
+  logAudit(req.user.name, 'update', 'haccp_ccp', req.params.id, null, existing, result);
   res.json(result);
 });
 

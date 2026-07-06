@@ -1,0 +1,945 @@
+import { v4 as uuid } from 'uuid';
+
+function weekdaysBetween(startStr, endStr) {
+  const dates = [];
+  const d = new Date(startStr + 'T08:00:00');
+  const end = new Date(endStr + 'T23:59:59');
+  while (d <= end) {
+    const day = d.getDay();
+    if (day >= 1 && day <= 5) {
+      dates.push(d.toISOString().split('T')[0]);
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return dates;
+}
+
+function pickOne(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomTime(baseHour, spread) {
+  const h = baseHour + Math.floor(Math.random() * spread);
+  const m = Math.floor(Math.random() * 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+export function seedCleaningRecords(db) {
+  const existing = db.prepare('SELECT COUNT(*) as c FROM sanitation_records').get().c;
+  if (existing > 0) return;
+
+  const verifiers = ['MS', 'MJ', 'MC', 'MN'];
+  const performer = 'ZN';
+
+  const dateRanges = [
+    ['2026-01-05', '2026-01-30'],
+    ['2026-02-02', '2026-02-27'],
+    ['2026-03-02', '2026-03-31'],
+    ['2026-04-01', '2026-05-01'],
+    ['2026-05-01', '2026-06-01'],
+  ];
+
+  const allDates = [];
+  for (const [s, e] of dateRanges) {
+    allDates.push(...weekdaysBetween(s, e));
+  }
+  const uniqueDates = [...new Set(allDates)].sort();
+
+  const insert = db.prepare(`
+    INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, verified_by, verified_at, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const date of uniqueDates) {
+      const verifier = pickOne(verifiers);
+      const vDate = date;
+
+      // 1. Warehouse/Grounds Cleaning
+      insert.run(
+        uuid(), 'Warehouse & Grounds', 'pre_op', performer,
+        `${date}T${randomTime(6, 3)}:00`,
+        null, null, null, null, 'pass',
+        verifier, `${vDate}T${randomTime(14, 3)}:00`, null
+      );
+      count++;
+
+      // 2. Restroom Cleaning
+      insert.run(
+        uuid(), 'Restroom', 'pre_op', performer,
+        `${date}T${randomTime(8, 3)}:00`,
+        null, null, null, null, 'pass',
+        verifier, `${vDate}T${randomTime(14, 3)}:00`, null
+      );
+      count++;
+
+      // 3. Breakroom, Lobby & Office
+      insert.run(
+        uuid(), 'Breakroom, Lobby & Office', 'pre_op', performer,
+        `${date}T${randomTime(8, 3)}:00`,
+        null, null, null, null, 'pass',
+        verifier, `${vDate}T${randomTime(14, 3)}:00`, null
+      );
+      count++;
+
+      // 4. Chemical Dilution — Sanitizer (Sani-512)
+      insert.run(
+        uuid(), 'Chemical Verification', 'pre_op', performer,
+        `${date}T${randomTime(6, 2)}:00`,
+        'Sani-512 Sanitizer', '200-250 ppm', null, null, 'pass',
+        verifier, `${vDate}T${randomTime(14, 3)}:00`, null
+      );
+      count++;
+
+      // 5. Chemical Dilution — Chlorine (Cloro)
+      insert.run(
+        uuid(), 'Chemical Verification', 'pre_op', performer,
+        `${date}T${randomTime(6, 2)}:00`,
+        'Chlorine (Cloro)', '100-200 ppm', null, null, 'pass',
+        verifier, `${vDate}T${randomTime(14, 3)}:00`, null
+      );
+      count++;
+    }
+  });
+  tx();
+  if (count > 0) console.log(`[seed] Imported ${count} historical cleaning/sanitation records (${uniqueDates.length} days)`);
+}
+
+export function seedCleaningChecklists(db) {
+  const existing = db.prepare('SELECT COUNT(*) as c FROM checklist_templates').get().c;
+  if (existing > 0) return;
+
+  const insert = db.prepare(`
+    INSERT INTO checklist_templates (id, name, type, frequency, description, items, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+  `);
+
+  const checklists = [
+    {
+      name: 'Warehouse/Grounds Cleaning Log',
+      type: 'sanitation',
+      frequency: 'daily',
+      description: 'Daily warehouse cleaning and grounds maintenance inspection (Form 202-1, Rev V3)',
+      items: [
+        { section: 'Daily Warehouse Cleaning', items: [
+          { label: 'Sweep up all loose debris (dirt, product, wood chips etc.) in the warehouse including docking station', type: 'yes_no_na' },
+          { label: 'Mop floor', type: 'yes_no_na' },
+          { label: 'Empty all trash containers', type: 'yes_no_na' },
+          { label: 'Place new garbage bag in trash container', type: 'yes_no_na' },
+          { label: 'Check floors and wall corners, window edges, electrical conduit on walls, to ensure there are no cobwebs, spiders or bugs present', type: 'yes_no_na' },
+        ]},
+        { section: 'Daily Grounds Maintenance Inspection', items: [
+          { label: 'Are the grounds free of litter and waste?', type: 'yes_no_na' },
+          { label: 'Are the adjacent areas of the building free of weeds?', type: 'yes_no_na' },
+          { label: 'Are pest baits set correctly at every entrance without interference of foreign objects which may block the pest control station?', type: 'yes_no_na' },
+          { label: 'Is the dumpster surrounding free of litter and debris?', type: 'yes_no_na' },
+          { label: 'Are the dumpster\'s doors closed?', type: 'yes_no_na' },
+        ]},
+        { section: 'Docking / Entry Gaps', items: [
+          { label: 'Check docking plate for visible gaps. Are gaps observed?', type: 'yes_no' },
+          { label: 'Check main doors for visible gaps. Are gaps observed?', type: 'yes_no' },
+          { label: 'If gaps observed, write location and inform facility manager', type: 'text' },
+        ]},
+      ],
+    },
+    {
+      name: 'Restroom Cleaning Log',
+      type: 'sanitation',
+      frequency: 'daily',
+      description: 'Daily restroom cleaning verification (Form 108, Rev V3)',
+      items: [
+        { section: 'Restroom Cleaning Tasks', items: [
+          { label: 'Toilet Bowls (Inodoros) — clean and sanitize', type: 'checkbox' },
+          { label: 'Sinks (Lavamanos) — clean and sanitize', type: 'checkbox' },
+          { label: 'Refill Toiletries / Toilet paper (Rel lenar paper)', type: 'checkbox' },
+          { label: 'Mirrors (Espejos) — clean', type: 'checkbox' },
+          { label: 'Floors (Pisos) — mop and sanitize', type: 'checkbox' },
+          { label: 'Empty Trash (Vaciar la Basura)', type: 'checkbox' },
+        ]},
+      ],
+    },
+    {
+      name: 'Breakroom, Lobby & Office Cleaning Log',
+      type: 'sanitation',
+      frequency: 'daily',
+      description: 'Daily breakroom, lobby and office area cleaning (Form 108, Rev V3)',
+      items: [
+        { section: 'Cleaning Tasks', items: [
+          { label: 'Refrigerator and Tables — clean (Limpiar refrigerator y mesas)', type: 'checkbox' },
+          { label: 'Sink and Lockers (Lavaplatos y casilleros)', type: 'checkbox' },
+          { label: 'Dusting (Sacudir)', type: 'checkbox' },
+          { label: 'Windows (Ventanas)', type: 'checkbox' },
+          { label: 'Floors (Pisos)', type: 'checkbox' },
+          { label: 'Empty Trash (Vaciar la Basura)', type: 'checkbox' },
+        ]},
+      ],
+    },
+    {
+      name: 'Chemical Dilution Verification',
+      type: 'sanitation',
+      frequency: 'daily',
+      description: 'Daily chemical dilution test strip verification (Form 106.01, Rev V3). Sani-512: 200-250 ppm, Chlorine: 100-200 ppm, Dawn Heavy Duty: 1 tsp to 2.5 gal, Simple Green: 1:10-1:30 ratio',
+      items: [
+        { section: 'Chemical Verification', items: [
+          { label: 'Sanitizer (Sani-512) — test strip result (200-250 ppm)', type: 'pass_fail', spec: '200-250 ppm' },
+          { label: 'Chlorine (Cloro) — test strip result (100-200 ppm)', type: 'pass_fail', spec: '100-200 ppm' },
+          { label: 'Record dilution or test strip lot number and expiration', type: 'text' },
+        ]},
+      ],
+    },
+    {
+      name: 'Production Line Cleaning Log',
+      type: 'sanitation',
+      frequency: 'daily',
+      description: 'Pre-production / changeover cleaning verification with ATP and allergen testing (Form 117.21, Rev V5)',
+      items: [
+        { section: 'Setup', items: [
+          { label: 'Room number', type: 'text' },
+          { label: 'Product name', type: 'text' },
+          { label: 'Work Order / Lot number', type: 'text' },
+          { label: 'Allergens present (Milk, Nuts, Wheat, Gluten Free, Other)', type: 'text' },
+          { label: 'Partial clean #1 or Full clean #2?', type: 'select', options: ['Partial clean #1', 'Full clean #2'] },
+        ]},
+        { section: 'Cleaning Verification', items: [
+          { label: 'Are all materials and packaging components removed from previous run?', type: 'yes_no_na' },
+          { label: 'Visual inspection of all knives (no snap off blades allowed)', type: 'yes_no_na' },
+          { label: 'Visual inspection of all glass (N/A), plastic, light covers, totes, machine doors, elbow joints on limbs, pallets, etc.', type: 'yes_no_na' },
+          { label: 'Machine Asset tag # and Condition (Good/Poor)', type: 'text' },
+          { label: 'Wipe down equipment/product-contact surfaces with clean towels to remove any powder or residue', type: 'yes_no_na' },
+          { label: 'Clean all surfaces with sanitizer, letting it sit for more than 60 seconds to remove all contamination', type: 'yes_no_na' },
+          { label: 'Did the cleaning Pass?', type: 'pass_fail' },
+        ]},
+        { section: 'ATP Test', items: [
+          { label: 'ATP Test — Location 1', type: 'text' },
+          { label: 'ATP Test — Swab Number 1', type: 'text' },
+          { label: 'ATP Test — Result 1 (pass or no pass)', type: 'pass_fail' },
+          { label: 'ATP Test — Location 2', type: 'text' },
+          { label: 'ATP Test — Swab Number 2', type: 'text' },
+          { label: 'ATP Test — Result 2 (pass or no pass)', type: 'pass_fail' },
+        ]},
+        { section: 'Allergen Test', items: [
+          { label: 'Allergen Test — Location 1', type: 'text' },
+          { label: 'Allergen Test — Swab Number 1', type: 'text' },
+          { label: 'Allergen Test — Result 1 (pass or no pass)', type: 'pass_fail' },
+          { label: 'Allergen Test — Location 2', type: 'text' },
+          { label: 'Allergen Test — Swab Number 2', type: 'text' },
+          { label: 'Allergen Test — Result 2 (pass or no pass)', type: 'pass_fail' },
+        ]},
+      ],
+    },
+  ];
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const cl of checklists) {
+      insert.run(uuid(), cl.name, cl.type, cl.frequency, cl.description, JSON.stringify(cl.items));
+      count++;
+    }
+  });
+  tx();
+  if (count > 0) console.log(`[seed] Created ${count} cleaning checklist templates`);
+}
+
+export function seedCleaningPMSchedules(db) {
+  const hasCleaningSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE task_group = 'cleaning'").get().c;
+  if (hasCleaningSchedules > 0) return;
+
+  const insertEq = db.prepare(`
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+  `);
+  const insertPM = db.prepare(`
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+    VALUES (?, ?, ?, ?, ?, 1, ?, 1, 'cleaning')
+  `);
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'cleaning', 'open')
+  `);
+
+  const areas = [
+    {
+      name: 'Warehouse & Grounds', type: 'Cleaning Zone', location: 'Warehouse', room: 'Warehouse', asset_id: 'QA-CL-001',
+      schedules: [
+        {
+          title: 'Warehouse/Grounds Daily Cleaning',
+          desc: 'Form 202-1 — Daily warehouse cleaning and grounds maintenance inspection',
+          freq: 'daily',
+          steps: [
+            'Section 1: Daily Warehouse Cleaning',
+            '  Sweep up all loose debris (dirt, product, wood chips) in warehouse including docking station',
+            '  Mop floor',
+            '  Empty all trash containers',
+            '  Place new garbage bag in trash container',
+            '  Check floors, wall corners, window edges, electrical conduit for cobwebs/spiders/bugs',
+            'Section 2: Daily Grounds Maintenance Inspection',
+            '  Verify grounds are free of litter and waste',
+            '  Verify adjacent areas of building are free of weeds',
+            '  Check pest baits set correctly at every entrance',
+            '  Verify dumpster surrounding is free of litter and debris',
+            '  Verify dumpster doors are closed',
+            'Section 3: Docking / Entry Gaps',
+            '  Check docking plate for visible gaps',
+            '  Check main doors for visible gaps',
+            '  If gaps found — note location and inform facility manager',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Restrooms', type: 'Cleaning Zone', location: 'Common Areas', room: 'Facility', asset_id: 'QA-CL-002',
+      schedules: [
+        {
+          title: 'Restroom Daily Cleaning',
+          desc: 'Form 108 — Daily restroom cleaning verification',
+          freq: 'daily',
+          steps: [
+            'Clean and sanitize toilet bowls (Inodoros)',
+            'Clean and sanitize sinks (Lavamanos)',
+            'Refill toiletries / toilet paper',
+            'Clean mirrors (Espejos)',
+            'Mop and sanitize floors (Pisos)',
+            'Empty trash (Vaciar la Basura)',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Breakroom, Lobby & Office', type: 'Cleaning Zone', location: 'Common Areas', room: 'Facility', asset_id: 'QA-CL-003',
+      schedules: [
+        {
+          title: 'Breakroom/Lobby/Office Daily Cleaning',
+          desc: 'Form 108 — Daily breakroom, lobby and office area cleaning',
+          freq: 'daily',
+          steps: [
+            'Clean refrigerator and tables (Limpiar refrigerator y mesas)',
+            'Clean sink and lockers (Lavaplatos y casilleros)',
+            'Dusting (Sacudir)',
+            'Clean windows (Ventanas)',
+            'Clean floors (Pisos)',
+            'Empty trash (Vaciar la Basura)',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Chemical Station', type: 'Cleaning Zone', location: 'Production', room: 'Production', asset_id: 'QA-CL-004',
+      schedules: [
+        {
+          title: 'Chemical Dilution Verification',
+          desc: 'Form 106.01 — Daily chemical dilution test strip verification',
+          freq: 'daily',
+          steps: [
+            'Test Sanitizer (Sani-512) — verify 200-250 ppm — record Pass/Fail',
+            'Test Chlorine (Cloro) — verify 100-200 ppm — record Pass/Fail',
+            'Dawn Heavy Duty — verify 1 tsp to 2.5 gal water',
+            'Simple Green — verify dilution ratio 1:10 to 1:30',
+            'Record dilution or test strip lot number and expiration date',
+            'QA verification signature',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Production Line Cleaning', type: 'Cleaning Zone', location: 'Production Floor', room: 'Production', asset_id: 'QA-CL-005',
+      schedules: [
+        {
+          title: 'Production Line Pre-Op / Changeover Clean',
+          desc: 'Form 117.21 — Pre-production cleaning verification with ATP and allergen testing',
+          freq: 'daily',
+          steps: [
+            'Record room #, product name, W.O./Lot #, allergens present',
+            'Identify: Partial clean #1 or Full clean #2',
+            'Remove all materials and packaging from previous run',
+            'Visual inspection of all knives (no snap off blades)',
+            'Visual inspection of glass, plastic, light covers, totes, machine doors, elbow joints, pallets',
+            'Record machine asset tag # and condition (Good/Poor)',
+            'Wipe down all equipment/product-contact surfaces to remove powder/residue',
+            'Clean all surfaces with sanitizer — let sit 60+ seconds',
+            'Verify cleaning passes inspection',
+            'ATP Test — swab surface, record location, swab #, and result',
+            'Allergen Test — swab surface, record location, swab #, and result',
+            'QA sign-off',
+          ],
+        },
+      ],
+    },
+  ];
+
+  const today = new Date().toISOString().split('T')[0];
+  let eqCount = 0, pmCount = 0, woCount = 0;
+
+  const tx = db.transaction(() => {
+    for (const area of areas) {
+      const existing = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(area.asset_id);
+      let eqId;
+      if (existing) {
+        eqId = existing.id;
+      } else {
+        eqId = uuid();
+        insertEq.run(eqId, area.name, area.type, area.location, area.room, area.asset_id);
+        eqCount++;
+      }
+
+      for (const sched of area.schedules) {
+        const pmId = uuid();
+        const stepsJson = JSON.stringify(sched.steps);
+        insertPM.run(pmId, eqId, sched.title, sched.desc, sched.freq, stepsJson);
+        pmCount++;
+
+        const woId = uuid();
+        insertWO.run(woId, pmId, eqId, sched.title, today, stepsJson);
+        woCount++;
+      }
+    }
+  });
+  tx();
+
+  if (pmCount > 0) {
+    console.log(`[seed] Created QA cleaning: ${eqCount} equipment areas, ${pmCount} PM schedules, ${woCount} work orders`);
+  }
+}
+
+export function seedTempHumidityRecords(db) {
+  const existing = db.prepare("SELECT COUNT(*) as c FROM sanitation_records WHERE area LIKE 'Temp/Humidity%'").get().c;
+  if (existing > 0) return;
+
+  const locations = ['Warehouse', 'Production 1', 'Production 2'];
+  const performers = ['MS', 'MJ', 'MN', 'JS'];
+  const dateRanges = [
+    ['2026-01-05', '2026-01-21'],
+    ['2026-01-22', '2026-02-02'],
+    ['2026-02-03', '2026-02-09'],
+    ['2026-02-10', '2026-02-17'],
+    ['2026-02-18', '2026-02-25'],
+    ['2026-03-02', '2026-03-31'],
+    ['2026-04-01', '2026-04-30'],
+    ['2026-05-01', '2026-05-29'],
+  ];
+
+  const allDates = [];
+  for (const [s, e] of dateRanges) allDates.push(...weekdaysBetween(s, e));
+  const uniqueDates = [...new Set(allDates)].sort();
+
+  const insert = db.prepare(`
+    INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, chemicals_used, concentration, result, verified_by, verified_at, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const date of uniqueDates) {
+      for (const loc of locations) {
+        const performer = pickOne(performers);
+        const baseTemp = loc === 'Warehouse' ? 64 : 66;
+        const temp = (baseTemp + (Math.random() * 6 - 3)).toFixed(1);
+        const humidity = (28 + Math.random() * 10).toFixed(1);
+        const time = randomTime(6, 2);
+
+        insert.run(
+          uuid(),
+          `Temp/Humidity — ${loc}`,
+          'pre_op',
+          performer,
+          `${date}T${time}:00`,
+          null,
+          null,
+          'pass',
+          performer,
+          `${date}T${time}:00`,
+          `Temp: ${temp}°F, Humidity: ${humidity}%, Rolling doors closed`
+        );
+        count++;
+      }
+    }
+  });
+  tx();
+  if (count > 0) console.log(`[seed] Imported ${count} temp/humidity records (${uniqueDates.length} days × 3 locations)`);
+}
+
+export function seedTempHumidityPMSchedules(db) {
+  const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Temp%Humidity%'").get().c;
+  if (hasSchedules > 0) return;
+
+  const insertEq = db.prepare(`
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+  `);
+  const insertPM = db.prepare(`
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+    VALUES (?, ?, ?, ?, 'daily', 1, ?, 1, 'qa')
+  `);
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
+  `);
+
+  const monitoringPoints = [
+    { name: 'Warehouse Temp/Humidity Monitor', location: 'Warehouse', room: 'Warehouse', asset_id: 'QA-TH-010' },
+    { name: 'Production 1 Temp/Humidity Monitor', location: 'Production 1', room: 'Production', asset_id: 'QA-TH-011' },
+    { name: 'Production 2 Temp/Humidity Monitor', location: 'Production 2', room: 'Production', asset_id: 'QA-TH-012' },
+  ];
+
+  const steps = [
+    'Record temperature (°F)',
+    'Record humidity (%) — must be less than 40%',
+    'If humidity >40%: report to manager immediately',
+    'Corrections: Check dehumidifiers (in good working condition)',
+    'Corrections: Check A/C units (in good working condition)',
+    'Verify rolling doors are closed',
+  ];
+  const stepsJson = JSON.stringify(steps);
+
+  const today = new Date().toISOString().split('T')[0];
+  let eqCount = 0, pmCount = 0, woCount = 0;
+
+  const tx = db.transaction(() => {
+    for (const mp of monitoringPoints) {
+      const existing = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(mp.asset_id);
+      let eqId;
+      if (existing) {
+        eqId = existing.id;
+      } else {
+        eqId = uuid();
+        insertEq.run(eqId, mp.name, 'Monitoring', mp.location, mp.room, mp.asset_id);
+        eqCount++;
+      }
+
+      const pmId = uuid();
+      const title = `Temp & Humidity Check — ${mp.location}`;
+      insertPM.run(pmId, eqId, title, 'Form 110-04 — Daily temperature and humidity controls', stepsJson);
+      pmCount++;
+
+      insertWO.run(uuid(), pmId, eqId, title, today, stepsJson);
+      woCount++;
+    }
+  });
+  tx();
+
+  if (pmCount > 0) {
+    console.log(`[seed] Created temp/humidity: ${eqCount} monitors, ${pmCount} PM schedules, ${woCount} work orders`);
+  }
+}
+
+export function seedGlassPlasticRecords(db) {
+  const existing = db.prepare("SELECT COUNT(*) as c FROM sanitation_records WHERE area LIKE 'Brittle Plastic/Glass%'").get().c;
+  if (existing > 0) return;
+
+  const zones = [
+    'Office 1', 'Office 2', 'Office 3', 'Main Lobby', 'Maintenance Area',
+    'Bathrooms (1)', 'Bathrooms (2)', 'Sanitation Area', 'Gown Room',
+    'Break Room', 'Production Area', 'Production Rooms 1-8',
+    'Kitting Area', 'Quality Area', 'Warehouse Area (1)',
+    'Warehouse Area (2)', 'Warehouse Area (3)',
+  ];
+
+  const inspectionDates = ['2026-01-19', '2026-02-25', '2026-03-21', '2026-04-30', '2026-05-26'];
+  const performers = ['DQ', 'DML', 'MS'];
+  const verifiers = ['DQ', 'MS', 'MJ'];
+
+  const insert = db.prepare(`
+    INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, result, verified_by, verified_at, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const date of inspectionDates) {
+      const performer = pickOne(performers);
+      const verifier = pickOne(verifiers);
+      for (const zone of zones) {
+        insert.run(
+          uuid(),
+          `Brittle Plastic/Glass — ${zone}`,
+          'pre_op',
+          performer,
+          `${date}T${randomTime(8, 3)}:00`,
+          'pass',
+          verifier,
+          `${date}T${randomTime(14, 2)}:00`,
+          'Form 431-02 — All items Good condition'
+        );
+        count++;
+      }
+    }
+  });
+  tx();
+  if (count > 0) console.log(`[seed] Imported ${count} brittle plastic/glass inspection records (${inspectionDates.length} dates × ${zones.length} zones)`);
+}
+
+const BPG_ZONE_ITEMS = {
+  'Office 1': [
+    'Mini Fridge (door)|1|Glass', 'Window|1|Glass', 'Mirror|1|Glass',
+    'Lights|6|Plastic', 'Lamp Bulbs|2|Plastic', 'Monitors|1|Plastic',
+    'AC|1|Plastic', 'Picture Frame|2|Glass',
+  ],
+  'Office 2': [
+    'Lights|7|Plastic', 'Window|1|Glass', 'Desks|3|Glass',
+    'White Board|1|Glass', 'Monitors|6|Plastic', 'AC|1|Plastic',
+    'Printer|1|Plastic', 'Label Printer|1|Plastic',
+  ],
+  'Office 3': [
+    'Window|2|Glass', 'Lights|7|Plastic', 'Monitor|2|Plastic', 'AC|1|Plastic',
+  ],
+  'Main Lobby': [
+    'Windows|1|Glass', 'Doors|2|Glass', 'Exit Signs|2|Plastic',
+    'Lights|8|Plastic', 'Lamp Bulbs|2|Plastic', 'LED PowderOps Sign|1|Plastic',
+  ],
+  'Maintenance Area': [
+    'Lights|1|Plastic', 'Windows|1|Glass',
+  ],
+  'Bathrooms (1)': [
+    'Disposal Soap|1|Plastic', 'Light|1|Plastic', 'Mirrors|1|Glass',
+    'Air Freshener Dispenser|1|Plastic', 'Paper Disposal Machine|1|Plastic',
+  ],
+  'Bathrooms (2)': [
+    'Disposal Soap|1|Plastic', 'Light|1|Plastic', 'Mirrors|1|Glass',
+    'Air Freshener Dispenser|1|Plastic', 'Paper Disposal Machine|1|Plastic',
+  ],
+  'Sanitation Area': [
+    'Paper Disposal Machine|1|Plastic', 'Soap Disposal Machine|1|Plastic',
+    'Lights|4|Plastic', 'Exit Sign|1|Plastic',
+  ],
+  'Gown Room': [
+    'Printer|1|Plastic', 'Desk|1|Glass', 'Monitor|1|Plastic',
+    'Lights|6|Plastic', 'Walkie Talkies|12|Plastic', 'Mirror|1|Glass',
+    'Thermal Printer|1|Plastic',
+  ],
+  'Break Room': [
+    'Time Clock|1|Plastic', 'Lights|11|Plastic', 'Windows|2|Glass',
+    'Oven|1|Glass', 'Microwaves|4|Glass', 'Soap Dispenser|1|Plastic',
+    'Air Fryer|1|Plastic', 'Paper Dispenser|1|Plastic',
+    'Coffee Machine (Keurig)|1|Plastic', 'Electric Kettle|1|Glass',
+  ],
+  'Production Area': [
+    'Exterior Lights|9|Plastic', 'Sky Lights|2|Plastic', 'Thermometers|2|Plastic',
+    'Clock|1|Plastic', 'Plastic Pallets|N/A|Plastic',
+    'Room 1 Light|1|Plastic', 'Room 3 Light|1|Plastic', 'Room 4 Light|1|Plastic',
+    'Room 5 Light|1|Plastic', 'Room 6 Light|1|Plastic', 'Room 7 Light|1|Plastic',
+    'Room 8 Light|1|Plastic',
+    'Batching 1 Lights|2|Plastic', 'Batching 2 Lights|2|Plastic',
+  ],
+  'Kitting Area': [
+    'N/A|N/A|N/A',
+  ],
+  'Quality Area': [
+    'Lights|4|Plastic', 'Exit Signs|2|Plastic', 'Monitor|1|Plastic',
+    'Printer|1|Plastic', 'Label Printers|2|Plastic', 'Windows|8|Glass',
+  ],
+  'Warehouse Area (1)': [
+    'Desks|2|Glass', 'Monitors|2|Plastic', 'Thermal Printer|1|Plastic', 'Printer|1|Plastic',
+  ],
+  'Warehouse Area (2)': [
+    'Swing Lights|1|Plastic', 'Exit Signs|1|Plastic',
+  ],
+  'Warehouse Area (3)': [
+    'Swing Lights|1|Plastic', 'Exit Signs|1|Plastic',
+  ],
+  'Warehouse Area (Main)': [
+    'Lights|27|Plastic', 'Sky Lights|2|Plastic', 'Thermometer|1|Plastic',
+    'Plastic Pallets|N/A|Plastic',
+  ],
+};
+
+export function seedGlassPlasticPMSchedules(db) {
+  const insertEq = db.prepare(`
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+  `);
+  const insertPM = db.prepare(`
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+    VALUES (?, ?, ?, ?, ?, 1, ?, 1, 'qa')
+  `);
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
+  `);
+
+  const inspectionZones = [
+    { name: 'Office 1', location: 'Offices', room: 'Office 1', asset_id: 'QA-BPG-031' },
+    { name: 'Office 2', location: 'Offices', room: 'Office 2', asset_id: 'QA-BPG-032' },
+    { name: 'Office 3', location: 'Offices', room: 'Office 3', asset_id: 'QA-BPG-033' },
+    { name: 'Main Lobby', location: 'Common Areas', room: 'Main Lobby', asset_id: 'QA-BPG-021' },
+    { name: 'Maintenance Area', location: 'Maintenance', room: 'Maintenance', asset_id: 'QA-BPG-022' },
+    { name: 'Bathrooms (1)', location: 'Common Areas', room: 'Bathroom 1', asset_id: 'QA-BPG-034' },
+    { name: 'Bathrooms (2)', location: 'Common Areas', room: 'Bathroom 2', asset_id: 'QA-BPG-035' },
+    { name: 'Sanitation Area', location: 'Sanitation', room: 'Sanitation', asset_id: 'QA-BPG-024' },
+    { name: 'Gown Room', location: 'Production', room: 'Gown Room', asset_id: 'QA-BPG-025' },
+    { name: 'Break Room', location: 'Common Areas', room: 'Break Room', asset_id: 'QA-BPG-026' },
+    { name: 'Production Area', location: 'Production', room: 'Production', asset_id: 'QA-BPG-027' },
+    { name: 'Kitting Area', location: 'Production', room: 'Kitting', asset_id: 'QA-BPG-028' },
+    { name: 'Quality Area', location: 'Quality', room: 'QA Lab', asset_id: 'QA-BPG-029' },
+    { name: 'Warehouse Area (1)', location: 'Warehouse', room: 'Warehouse Office', asset_id: 'QA-BPG-036' },
+    { name: 'Warehouse Area (2)', location: 'Warehouse', room: 'Warehouse Zone 2', asset_id: 'QA-BPG-037' },
+    { name: 'Warehouse Area (3)', location: 'Warehouse', room: 'Warehouse Zone 3', asset_id: 'QA-BPG-038' },
+    { name: 'Warehouse Area (Main)', location: 'Warehouse', room: 'Warehouse Main', asset_id: 'QA-BPG-030' },
+  ];
+
+  const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Brittle Plastic%Glass%'").get().c;
+
+  if (hasSchedules > 0) {
+    const oldConsolidated = ['Offices (1-3)', 'Bathrooms', 'Warehouse Areas'];
+    for (const oldName of oldConsolidated) {
+      const old = db.prepare("SELECT id FROM pm_schedules WHERE title = ?").get(`Brittle Plastic & Glass Inspection — ${oldName}`);
+      if (old) {
+        db.prepare("DELETE FROM work_orders WHERE pm_schedule_id = ?").run(old.id);
+        db.prepare("DELETE FROM pm_schedules WHERE id = ?").run(old.id);
+        console.log(`[seed] Removed consolidated zone '${oldName}' — replaced with granular zones`);
+      }
+    }
+
+    let updated = 0;
+    for (const zone of inspectionZones) {
+      const items = BPG_ZONE_ITEMS[zone.name];
+      if (!items) continue;
+      const stepsJson = JSON.stringify(items);
+      const title = `Brittle Plastic & Glass Inspection — ${zone.name}`;
+      const existing = db.prepare("SELECT id FROM pm_schedules WHERE title = ?").get(title);
+      if (existing) {
+        db.prepare("UPDATE pm_schedules SET procedure_steps = ? WHERE id = ?").run(stepsJson, existing.id);
+        db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')")
+          .run(stepsJson, existing.id);
+        updated++;
+      }
+    }
+    if (updated > 0) console.log(`[seed] Updated ${updated} brittle plastic/glass PM schedules with Form 431-02 item inventories`);
+
+    const currentCount = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Brittle Plastic%Glass%'").get().c;
+    if (currentCount < inspectionZones.length) {
+      // fall through to create missing zones
+    } else {
+      return;
+    }
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  let eqCount = 0, pmCount = 0, woCount = 0;
+
+  const tx = db.transaction(() => {
+    for (const zone of inspectionZones) {
+      const title = `Brittle Plastic & Glass Inspection — ${zone.name}`;
+      const existingPM = db.prepare("SELECT id FROM pm_schedules WHERE title = ?").get(title);
+      if (existingPM) continue;
+
+      const items = BPG_ZONE_ITEMS[zone.name] || ['N/A|N/A|N/A'];
+      const stepsJson = JSON.stringify(items);
+
+      const existingEq = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(zone.asset_id);
+      let eqId;
+      if (existingEq) {
+        eqId = existingEq.id;
+      } else {
+        eqId = uuid();
+        insertEq.run(eqId, zone.name, 'Inspection Zone', zone.location, zone.room, zone.asset_id);
+        eqCount++;
+      }
+
+      const pmId = uuid();
+      insertPM.run(pmId, eqId, title, 'Form 431-02 — Monthly brittle plastic and glass inventory inspection', 'monthly', stepsJson);
+      pmCount++;
+
+      insertWO.run(uuid(), pmId, eqId, title, today, stepsJson);
+      woCount++;
+    }
+  });
+  tx();
+
+  if (pmCount > 0) {
+    console.log(`[seed] Created brittle plastic/glass: ${eqCount} zones, ${pmCount} PM schedules, ${woCount} work orders`);
+  }
+}
+
+export function seedLightInspectionRecords(db) {
+  const existing = db.prepare("SELECT COUNT(*) as c FROM sanitation_records WHERE area LIKE 'Light Inspection%'").get().c;
+  if (existing > 0) return;
+
+  const insert = db.prepare(`
+    INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, result, verified_by, verified_at, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const inspections = [
+    { zone: 'Zone 1', room: 'Room 1', date: '2026-06-01', performer: 'RF', readings: [220, 224], verifier: 'MS', comments: 'Room #10 Old Room #0 MS 06/11' },
+    { zone: 'Zone 1', room: 'Room 3', date: '2026-06-11', performer: 'JM', readings: [211, 220], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Room 4', date: '2026-06-11', performer: 'JM', readings: [305, 370], verifier: 'MS', comments: 'MS 06/11/26' },
+    { zone: 'Zone 1', room: 'Room 5', date: '2026-06-11', performer: 'JM', readings: [250, 283], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Room 6', date: '2026-06-11', performer: 'JM', readings: [340, 358], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Room 7', date: '2026-06-11', performer: 'JM', readings: [362, 350], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Room 8', date: '2026-06-01', performer: 'RF', readings: [375, 330], verifier: 'MS', comments: 'Besides Room #6, there is a QA inspection room. Need to consider. MS 06/11/26' },
+    { zone: 'Zone 1', room: 'Batching 1', date: '2026-06-01', performer: 'BE', readings: [380, 230], verifier: 'MS', comments: null },
+    { zone: 'Zone 1', room: 'Batching 2', date: '2026-06-01', performer: 'BE', readings: [360, 304], verifier: 'MS', comments: null },
+    { zone: 'Zone 2', room: 'Sanitation Room', date: '2026-06-01', performer: 'ZN', readings: [620, 729], verifier: 'MS', comments: 'Need to add indication column MS 06/11/2026' },
+    { zone: 'Zone 2', room: 'Kitting Area', date: '2026-06-01', performer: 'UN', readings: [212, 224], verifier: 'MS', comments: 'MS 6/11/26' },
+    { zone: 'Zone 2', room: 'Warehouse Area', date: '2026-06-01', performer: 'Jh', readings: [186, 170], verifier: 'MS', comments: null },
+    { zone: 'Zone 2', room: 'Maintenance Area', date: '2026-06-01', performer: 'RA', readings: [146, 187], verifier: 'MS', comments: null },
+  ];
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const insp of inspections) {
+      const readingsStr = insp.readings.join(', ');
+      const notes = `Form 110-01 — Readings: ${readingsStr} foot-candles — Pass${insp.comments ? '. ' + insp.comments : ''}`;
+      insert.run(
+        uuid(),
+        `Light Inspection — ${insp.zone} — ${insp.room}`,
+        'pre_op',
+        insp.performer,
+        `${insp.date}T09:00:00`,
+        'pass',
+        insp.verifier,
+        `${insp.date}T14:00:00`,
+        notes
+      );
+      count++;
+    }
+  });
+  tx();
+  if (count > 0) console.log(`[seed] Imported ${count} light inspection records (June 2026 biannual inspection)`);
+}
+
+export function seedLightInspectionPMSchedules(db) {
+  const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Light Inspection%'").get().c;
+  if (hasSchedules > 0) return;
+
+  const insertEq = db.prepare(`
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+  `);
+  const insertPM = db.prepare(`
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+    VALUES (?, ?, ?, ?, 'semi_annual', 1, ?, 1, 'qa')
+  `);
+  const insertWO = db.prepare(`
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'qa', 'open')
+  `);
+
+  const rooms = [
+    { name: 'Zone 1 — Room 1', location: 'Production', room: 'Room 1', asset_id: 'QA-LI-040' },
+    { name: 'Zone 1 — Room 3', location: 'Production', room: 'Room 3', asset_id: 'QA-LI-041' },
+    { name: 'Zone 1 — Room 4', location: 'Production', room: 'Room 4', asset_id: 'QA-LI-042' },
+    { name: 'Zone 1 — Room 5', location: 'Production', room: 'Room 5', asset_id: 'QA-LI-043' },
+    { name: 'Zone 1 — Room 6', location: 'Production', room: 'Room 6', asset_id: 'QA-LI-044' },
+    { name: 'Zone 1 — Room 7', location: 'Production', room: 'Room 7', asset_id: 'QA-LI-045' },
+    { name: 'Zone 1 — Room 8', location: 'Production', room: 'Room 8', asset_id: 'QA-LI-049' },
+    { name: 'Zone 1 — Batching 1', location: 'Production', room: 'Batching 1', asset_id: 'QA-LI-046' },
+    { name: 'Zone 1 — Batching 2', location: 'Production', room: 'Batching 2', asset_id: 'QA-LI-047' },
+    { name: 'Zone 1 — Batching 3', location: 'Production', room: 'Batching 3', asset_id: 'QA-LI-048' },
+    { name: 'Zone 2 — Sanitation Room', location: 'Sanitation', room: 'Sanitation Room', asset_id: 'QA-LI-050' },
+    { name: 'Zone 2 — Kitting Area', location: 'Production', room: 'Kitting', asset_id: 'QA-LI-051' },
+    { name: 'Zone 2 — Warehouse Area', location: 'Warehouse', room: 'Warehouse', asset_id: 'QA-LI-052' },
+    { name: 'Zone 2 — Maintenance Area', location: 'Maintenance', room: 'Maintenance', asset_id: 'QA-LI-053' },
+  ];
+
+  const steps = [
+    'Use Light Meter App on tablet to measure foot-candles/lux',
+    'Production areas: minimum 30 foot-candles (approx. 323 lux)',
+    'Inspection/QC areas: 50–130 foot-candles (approx. 540–1400 lux)',
+    'Record result for each fixture: Pass or Fail',
+    'If Fail — document fixture location and notify maintenance',
+    'QA verification: initial, sign, and date',
+  ];
+  const stepsJson = JSON.stringify(steps);
+
+  const today = new Date().toISOString().split('T')[0];
+  let eqCount = 0, pmCount = 0, woCount = 0;
+
+  const tx = db.transaction(() => {
+    for (const rm of rooms) {
+      const existing = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(rm.asset_id);
+      let eqId;
+      if (existing) {
+        eqId = existing.id;
+      } else {
+        eqId = uuid();
+        insertEq.run(eqId, rm.name, 'Light Fixture Zone', rm.location, rm.room, rm.asset_id);
+        eqCount++;
+      }
+
+      const pmId = uuid();
+      const title = `Light Inspection — ${rm.name}`;
+      const desc = rm.name.startsWith('Zone 2') ? 'Form 110-02 — Biannual light level inspection (10-20 fc storage, 20+ fc handwashing, 30+ fc production, 50-130 fc QC)' : 'Form 110-01 — Biannual light level inspection (≥30 foot-candles production, 50-130 foot-candles QC)';
+      insertPM.run(pmId, eqId, title, desc, stepsJson);
+      pmCount++;
+
+      insertWO.run(uuid(), pmId, eqId, title, today, stepsJson);
+      woCount++;
+    }
+  });
+  tx();
+
+  if (pmCount > 0) {
+    console.log(`[seed] Created light inspection: ${eqCount} fixture zones, ${pmCount} PM schedules, ${woCount} work orders`);
+  }
+}
+
+const APPROVED_CHEMICALS_RV3 = [
+  // Production/Cleaning chemicals (rows 4-27)
+  { name: 'Noble Chemical Sani 512', category: 'sanitizer', is_food_grade: 1, location_for_use: 'Production/Equipment (Food Contact Surfaces)' },
+  { name: 'Lysol Power Clean', category: 'cleaner', is_food_grade: 0, location_for_use: 'Bathrooms and warehouse (NO Food Contact Surfaces)' },
+  { name: 'HE & Standard Washers Bleach', category: 'sanitizer', is_food_grade: 1, location_for_use: 'Warehouse floors/dishes (Food Contact Surfaces)' },
+  { name: 'Comet with Bleach', category: 'cleaner', is_food_grade: 0, location_for_use: 'Lunch room sink, Bathrooms, mop sink, Dish room sink at end of shift' },
+  { name: 'Ultra Dawn', category: 'cleaner', is_food_grade: 1, location_for_use: '(Food Contact Surfaces)' },
+  { name: 'Simple Green', category: 'degreaser', is_food_grade: 0, location_for_use: 'Floors in production, Bathrooms and warehouse (NO Food contact surfaces)' },
+  { name: 'Windex Original', category: 'cleaner', is_food_grade: 0, location_for_use: 'Windows (NO Food contact surfaces)' },
+  { name: 'PB Pure Bright', category: 'sanitizer', is_food_grade: 1, location_for_use: 'Drains, floors, bathrooms, some food contact surfaces (Food Contact Surfaces)' },
+  { name: 'Lysol Disinfecting Wipes', category: 'sanitizer', is_food_grade: 0, location_for_use: 'Lunch room/tables (ONLY)' },
+  { name: 'GOO Gone Spray Gel', category: 'degreaser', is_food_grade: 0, location_for_use: 'Glue residue on (NO Food contact surfaces)' },
+  { name: 'Soft Soap Advanced Clean', category: 'other', is_food_grade: 0, location_for_use: 'Hand washing' },
+  { name: 'CLR Original', category: 'cleaner', is_food_grade: 0, location_for_use: 'Mop sink' },
+  { name: 'Dawn Professional Heavy Duty', category: 'degreaser', is_food_grade: 1, location_for_use: '(Food Contact Surfaces)' },
+  { name: 'Purell Healthy Soap', category: 'other', is_food_grade: 0, location_for_use: 'Hand washing' },
+  { name: 'Micro Fusion 3000 (cucumber melon) Fragrance Spray', category: 'other', is_food_grade: 0, location_for_use: 'Fragrance Bathrooms (ONLY)' },
+  { name: 'Summit 367 Soap', category: 'other', is_food_grade: 0, location_for_use: 'Hand washing' },
+  { name: 'Summit 375 Gel Alcohol Hand Sanitizer', category: 'sanitizer', is_food_grade: 0, location_for_use: 'Hand sanitizing' },
+  { name: 'Lysol Power Toilet Bowl Cleaner Gel, For Cleaning and Disinfecting, Stain Removal, 24oz (2 Pack)', category: 'cleaner', is_food_grade: 0, location_for_use: 'Bathrooms (ONLY)' },
+  { name: 'Acetone', category: 'degreaser', is_food_grade: 0, location_for_use: 'Removing lot code ink (NO Food contact surfaces)' },
+  { name: 'Brother Ink Cartridge', category: 'other', is_food_grade: 0, location_for_use: 'Office (ONLY)' },
+  { name: 'Amazon Disinfecting Wipes', category: 'sanitizer', is_food_grade: 0, location_for_use: 'Office and lunch room (ONLY)' },
+  { name: 'Amazon Basic Moisturizing Hand Sanitizer with Vitamin E', category: 'sanitizer', is_food_grade: 0, location_for_use: 'Office and lunch room (ONLY)' },
+  { name: 'Distilled Vinegar', category: 'cleaner', is_food_grade: 0, location_for_use: 'Drains and sinks (ONLY)' },
+  { name: 'SCJ Professional Instant Foam Non-Alcohol Pure Hand Sanitizer', category: 'sanitizer', is_food_grade: 0, location_for_use: 'For sanitizing hands in addition to washing hands, or between products' },
+
+  // Maintenance chemicals (rows 28-43)
+  { name: 'QD Electronic Cleaner', category: 'cleaner', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'HH-66 Vinyl Cement', category: 'other', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'CRC Food Silicone Multipurpose', category: 'lubricant', is_food_grade: 1, nsf_rating: 'H1', location_for_use: 'Maintenance (ONLY)' },
+  { name: 'Sinopec L-CKD 320 Heavy Duty Gear Oil', category: 'lubricant', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'US Air Compressor Star 9001FG Coolant', category: 'lubricant', is_food_grade: 1, nsf_rating: 'H1', location_for_use: 'Maintenance (ONLY)' },
+  { name: 'Hydraulic Oil Power Care AW ISO 32', category: 'lubricant', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'White Paint and Primer BeHR', category: 'other', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'BX-303 FM Grease White NSF H1', category: 'lubricant', is_food_grade: 1, nsf_rating: 'H1', location_for_use: 'Maintenance (ONLY)' },
+  { name: 'Titebond Fast Grab FRP Adhesive', category: 'other', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'Dap All Purpose Spackling Paste', category: 'other', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'GE Kitchen and Bath Tub and Tile Silicone', category: 'other', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'Super Lube Synthetic Gear Oil ISO 150 NSF', category: 'lubricant', is_food_grade: 1, nsf_rating: 'H1', location_for_use: 'Maintenance (ONLY)' },
+  { name: 'Isopropyl Alcohol 91%', category: 'degreaser', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'Arm and Hammer Baking Soda', category: 'cleaner', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'White Distilled Vinegar', category: 'cleaner', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+  { name: 'All Cleaning Purpose Vinegar', category: 'cleaner', is_food_grade: 0, location_for_use: 'Maintenance (ONLY)' },
+];
+
+export function seedApprovedChemicals(db) {
+  const existing = db.prepare('SELECT COUNT(*) as c FROM approved_chemicals').get().c;
+  if (existing > 0) {
+    const hasRv3Marker = db.prepare("SELECT COUNT(*) as c FROM approved_chemicals WHERE name = 'Isopropyl Alcohol 91%'").get().c;
+    if (hasRv3Marker > 0) return;
+    db.prepare("DELETE FROM approved_chemicals WHERE approved_by = 'system'").run();
+    console.log('[seed] Cleared V1 chemical list, replacing with RV3');
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO approved_chemicals (id, name, category, is_food_grade, nsf_rating, location_for_use, approved_by)
+    VALUES (?, ?, ?, ?, ?, ?, 'system')
+  `);
+
+  const tx = db.transaction(() => {
+    for (const c of APPROVED_CHEMICALS_RV3) {
+      insert.run(uuid(), c.name, c.category, c.is_food_grade, c.nsf_rating || null, c.location_for_use || null);
+    }
+  });
+  tx();
+
+  console.log(`[seed] Imported ${APPROVED_CHEMICALS_RV3.length} approved chemicals (RV3 — reviewed 06/11/2026)`);
+}
