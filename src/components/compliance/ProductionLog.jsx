@@ -1,11 +1,17 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { localDateStr, daysAgoStr } from '../../utils/dates';
 
 const TEAMS = ['Batching', 'Stick Pack', 'Hand Fill', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const ROOMS = ['Batching 1', 'Batching 2', ...Array.from({ length: 16 }, (_, i) => String(i)), 'Other'];
 
 function formatDate(d) {
+  if (!d) return '';
+  // Parse date-only strings as local time; new Date('YYYY-MM-DD') is UTC
+  // midnight, which renders as the previous day in US timezones
+  const [y, m, day] = d.slice(0, 10).split('-').map(Number);
+  if (y && m && day) return new Date(y, m - 1, day).toLocaleDateString();
   return new Date(d).toLocaleDateString();
 }
 
@@ -17,13 +23,11 @@ function formatTime(t) {
 }
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateStr();
 }
 
 function thirtyDaysAgo() {
-  const d = new Date();
-  d.setDate(d.getDate() - 30);
-  return d.toISOString().slice(0, 10);
+  return daysAgoStr(30);
 }
 
 const INITIAL_FORM = {

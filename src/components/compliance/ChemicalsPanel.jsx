@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, Edit2, ShieldCheck, AlertTriangle, Search, ChevronUp, ChevronDown } from 'lucide-react';
+import { localDateStr } from '../../utils/dates';
 
 const CATEGORIES = [
   { value: 'lubricant', label: 'Lubricant', color: 'bg-blue-100 text-blue-800' },
@@ -191,7 +192,7 @@ export default function ChemicalsPanel() {
     return result;
   }, [chemicals, catFilter, search, sortCol, sortDir]);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
 

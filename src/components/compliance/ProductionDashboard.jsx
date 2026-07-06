@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { BarChart3, TrendingUp, Users, Package, ClipboardCheck, Calendar } from 'lucide-react';
+import { localDateStr } from '../../utils/dates';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell,
@@ -9,7 +10,7 @@ import {
 const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#14b8a6', '#f43f5e'];
 
 function formatDate(d) {
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 function KpiCard({ icon: Icon, label, value, sub, color }) {

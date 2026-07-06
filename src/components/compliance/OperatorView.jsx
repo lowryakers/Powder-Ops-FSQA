@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
+import { localDateStr } from '../../utils/dates';
 import FileUpload from '../FileUpload';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 
@@ -49,7 +50,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
   const steps = task.procedure_steps || [];
   const taskType = detectTaskType(task);
   const issuePhotos = (() => { try { return JSON.parse(task.issue_attachments || '[]'); } catch { return []; } })();
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   const isOverdue = task.due_date < today;
   const isDueToday = task.due_date === today;
   const isCritical = task.priority === 'critical' || task.priority === 'high';
@@ -870,10 +871,10 @@ export default function OperatorView({ lang = 'en' }) {
 
   const { overdue, today, thisWeek, upcoming } = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = localDateStr(now);
     const weekEnd = new Date(now);
     weekEnd.setDate(weekEnd.getDate() + 7);
-    const weekEndStr = weekEnd.toISOString().split('T')[0];
+    const weekEndStr = localDateStr(weekEnd);
 
     const groups = { overdue: [], today: [], thisWeek: [], upcoming: [] };
     for (const t of filtered) {

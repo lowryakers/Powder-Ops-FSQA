@@ -1,5 +1,6 @@
 import { RefreshCw } from 'lucide-react';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, subMonths } from 'date-fns';
+import { localDateStr } from '../utils/dates';
 
 function getQuickRange(key) {
   const now = new Date();
@@ -84,7 +85,7 @@ export default function FilterBar({
         <label className="text-sm font-medium text-gray-600">From</label>
         <input
           type="date"
-          value={dateRange.start ? dateRange.start.toISOString().split('T')[0] : ''}
+          value={dateRange.start ? localDateStr(dateRange.start) : ''}
           onChange={(e) =>
             setDateRange((prev) => ({
               ...prev,
@@ -96,7 +97,7 @@ export default function FilterBar({
         <label className="text-sm font-medium text-gray-600">To</label>
         <input
           type="date"
-          value={dateRange.end ? dateRange.end.toISOString().split('T')[0] : ''}
+          value={dateRange.end ? localDateStr(dateRange.end) : ''}
           onChange={(e) =>
             setDateRange((prev) => ({
               ...prev,
