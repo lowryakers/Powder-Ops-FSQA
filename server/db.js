@@ -770,6 +770,16 @@ function runMigrations() {
     console.warn('[migrate] Could not migrate work_orders table for not_applicable status:', e.message);
   }
 
+  // COA extended fields for facility COA export
+  addColumnIfMissing('coa_requests', 'origin', 'TEXT');
+  addColumnIfMissing('coa_requests', 'supplier', 'TEXT');
+  addColumnIfMissing('coa_requests', 'product_code', 'TEXT');
+  addColumnIfMissing('coa_requests', 'manufacturer_lot', 'TEXT');
+  addColumnIfMissing('coa_requests', 'vendor_lot', 'TEXT');
+  addColumnIfMissing('coa_requests', 'received_date', 'TEXT');
+  addColumnIfMissing('coa_requests', 'certificate_number', 'TEXT');
+  addColumnIfMissing('coa_requests', 'date_of_issuance', 'TEXT');
+
   migrateEquipmentNotes();
   cleanEquipmentNames();
 }

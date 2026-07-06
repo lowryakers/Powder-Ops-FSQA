@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import path from 'path';
-import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync } from 'fs';
+import { mkdirSync, existsSync, createReadStream, readFileSync, statSync, unlinkSync } from 'fs';
 import { fileURLToPath } from 'url';
+import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 
@@ -30,6 +31,14 @@ const upload = multer({
 });
 
 const router = Router();
+
+const REQUEST_FIELDS = ['item_number', 'item_description', 'lot_number', 'product_expiration', 'tests_requested', 'status', 'lab_id', 'lab_name', 'date_sent', 'tat_days', 'expected_results_date', 'date_of_results', 'date_sent_to_customer', 'requested_by', 'invoice_amount', 'retest_required', 'retest_of', 'notes', 'origin', 'supplier', 'product_code', 'manufacturer_lot', 'vendor_lot', 'received_date', 'certificate_number', 'date_of_issuance'];
+
+function nextCertNumber(db) {
+  const last = db.prepare("SELECT certificate_number FROM coa_requests WHERE certificate_number IS NOT NULL ORDER BY CAST(certificate_number AS INTEGER) DESC LIMIT 1").get();
+  const next = last ? parseInt(last.certificate_number) + 1 : 160001;
+  return String(next);
+}
 
 // ──────────────── Labs ────────────────
 
@@ -142,6 +151,46 @@ router.delete('/specifications/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// ──────────────── Vendor Lot Lookup ────────────────
+
+router.get('/lot-lookup', (req, res) => {
+  const db = getDb();
+  const { lot, manufacturer_lot, vendor_lot, item_number } = req.query;
+  if (!lot && !manufacturer_lot && !vendor_lot) {
+    return res.status(400).json({ error: 'Provide lot, manufacturer_lot, or vendor_lot to search' });
+  }
+
+  let sql = 'SELECT * FROM coa_requests WHERE 1=1';
+  const params = [];
+
+  if (lot) {
+    sql += ' AND (lot_number = ? OR manufacturer_lot = ? OR vendor_lot = ?)';
+    params.push(lot, lot, lot);
+  }
+  if (manufacturer_lot) { sql += ' AND manufacturer_lot = ?'; params.push(manufacturer_lot); }
+  if (vendor_lot) { sql += ' AND vendor_lot = ?'; params.push(vendor_lot); }
+  if (item_number) { sql += ' AND item_number = ?'; params.push(item_number); }
+
+  sql += ' ORDER BY date_sent DESC, created_at DESC';
+  const matches = db.prepare(sql).all(...params);
+
+  const tested = matches.length > 0;
+  const passed = matches.some(r => r.status === 'pass');
+  const failed = matches.some(r => r.status === 'fail');
+
+  res.json({
+    tested,
+    passed,
+    failed,
+    total_matches: matches.length,
+    matches,
+    recommendation: !tested ? 'Lab testing required — no prior results for this lot.'
+      : failed ? 'WARNING: Prior test FAILED for this lot. Re-test or reject.'
+      : passed ? 'This lot has passed lab testing. No re-test needed.'
+      : 'Tests exist but are still pending/in progress.',
+  });
+});
+
 // ──────────────── Requests (main COA tracker) ────────────────
 
 router.get('/requests', (req, res) => {
@@ -157,9 +206,9 @@ router.get('/requests', (req, res) => {
   if (lot_number) { sql += ' AND lot_number = ?'; params.push(lot_number); }
   if (lab_id) { sql += ' AND lab_id = ?'; params.push(lab_id); }
   if (search) {
-    sql += ' AND (item_number LIKE ? OR item_description LIKE ? OR lot_number LIKE ?)';
+    sql += ' AND (item_number LIKE ? OR item_description LIKE ? OR lot_number LIKE ? OR manufacturer_lot LIKE ? OR vendor_lot LIKE ? OR supplier LIKE ?)';
     const s = `%${search}%`;
-    params.push(s, s, s);
+    params.push(s, s, s, s, s, s);
   }
 
   sql += ' ORDER BY date_sent DESC, created_at DESC';
@@ -190,7 +239,7 @@ router.get('/requests/:id', (req, res) => {
 
 router.post('/requests', (req, res) => {
   const db = getDb();
-  const { item_number, item_description, lot_number, product_expiration, tests_requested, lab_id, date_sent, tat_days, expected_results_date, requested_by, notes } = req.body;
+  const { item_number, item_description, lot_number, product_expiration, tests_requested, lab_id, date_sent, tat_days, expected_results_date, requested_by, notes, origin, supplier, product_code, manufacturer_lot, vendor_lot, received_date } = req.body;
 
   if (!item_number || !item_description || !lot_number || !tests_requested) {
     return res.status(400).json({ error: 'item_number, item_description, lot_number, and tests_requested are required' });
@@ -205,9 +254,9 @@ router.post('/requests', (req, res) => {
   const id = uuid();
   const status = date_sent ? 'sent' : 'pending';
 
-  db.prepare(`INSERT INTO coa_requests (id, item_number, item_description, lot_number, product_expiration, tests_requested, status, lab_id, lab_name, date_sent, tat_days, expected_results_date, requested_by, notes, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, item_number, item_description, lot_number, product_expiration || null, tests_requested, status, lab_id || null, lab_name, date_sent || null, tat_days || null, expected_results_date || null, requested_by || req.user.name, notes || null, req.user.name);
+  db.prepare(`INSERT INTO coa_requests (id, item_number, item_description, lot_number, product_expiration, tests_requested, status, lab_id, lab_name, date_sent, tat_days, expected_results_date, requested_by, notes, created_by, origin, supplier, product_code, manufacturer_lot, vendor_lot, received_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, item_number, item_description, lot_number, product_expiration || null, tests_requested, status, lab_id || null, lab_name, date_sent || null, tat_days || null, expected_results_date || null, requested_by || req.user.name, notes || null, req.user.name, origin || null, supplier || null, product_code || null, manufacturer_lot || null, vendor_lot || null, received_date || null);
 
   const created = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
   logAudit(req.user.name, 'create', 'coa_request', id, req.body, null, created);
@@ -219,11 +268,10 @@ router.put('/requests/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'COA request not found' });
 
-  const fields = ['item_number', 'item_description', 'lot_number', 'product_expiration', 'tests_requested', 'status', 'lab_id', 'lab_name', 'date_sent', 'tat_days', 'expected_results_date', 'date_of_results', 'date_sent_to_customer', 'requested_by', 'invoice_amount', 'retest_required', 'retest_of', 'notes'];
   const updates = [];
   const values = [];
 
-  for (const f of fields) {
+  for (const f of REQUEST_FIELDS) {
     if (req.body[f] !== undefined) {
       updates.push(`${f} = ?`);
       values.push(req.body[f]);
@@ -369,6 +417,199 @@ router.delete('/files/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// ──────────────── PDF Export (Facility COA) ────────────────
+
+router.get('/requests/:id/pdf', (req, res) => {
+  const db = getDb();
+  const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'COA request not found' });
+
+  const testResults = db.prepare('SELECT * FROM coa_test_results WHERE request_id = ? ORDER BY test_type').all(req.params.id);
+
+  const certNum = r.certificate_number || nextCertNumber(db);
+  if (!r.certificate_number) {
+    db.prepare("UPDATE coa_requests SET certificate_number = ?, updated_at = datetime('now') WHERE id = ?").run(certNum, req.params.id);
+  }
+
+  const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+  const fmtDate = (d) => {
+    if (!d) return 'N/A';
+    const parts = d.split('-');
+    if (parts.length === 3) return `${parts[1]}/${parts[2]}/${parts[0]}`;
+    return d;
+  };
+
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 40, bottom: 40, left: 50, right: 50 } });
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="COA_${certNum}_${r.item_description.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
+  doc.pipe(res);
+
+  const pageW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const lm = doc.page.margins.left;
+
+  // ── Logo ──
+  const logoW = 80;
+  const logoX = lm + (pageW - logoW) / 2;
+  const logoH = 100;
+  doc.save();
+  doc.roundedRect(logoX, 40, logoW, logoH, 2).lineWidth(4).strokeColor('#3a3a3a').stroke();
+  doc.fontSize(25).font('Helvetica-Bold').fillColor('#3a3a3a');
+  doc.text('POW', logoX, 52, { width: logoW, align: 'center' });
+  doc.text('DER', logoX, 78, { width: logoW, align: 'center' });
+  doc.fillColor('#c65d35');
+  doc.fontSize(27).text('OPS', logoX, 105, { width: logoW, align: 'center' });
+  doc.restore();
+
+  // ── Title ──
+  let y = 155;
+  doc.fontSize(16).font('Helvetica-Bold').fillColor('#000');
+  doc.text('CERTIFICATE OF ANALYSIS', lm, y, { width: pageW, align: 'center' });
+  y += 30;
+
+  // ── Info Grid ──
+  const col1LabelW = 120;
+  const col1ValW = 160;
+  const col2LabelW = 130;
+  const col2ValW = pageW - col1LabelW - col1ValW - col2LabelW;
+  const col2X = lm + col1LabelW + col1ValW;
+  const rowH = 20;
+
+  function infoRow(label1, val1, label2, val2) {
+    // Label 1
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#333');
+    doc.rect(lm, y, col1LabelW, rowH).fill('#e8e8e8').stroke('#ccc');
+    doc.fillColor('#333').text(label1, lm + 4, y + 5, { width: col1LabelW - 8 });
+    // Value 1
+    doc.rect(lm + col1LabelW, y, col1ValW, rowH).stroke('#ccc');
+    doc.font('Helvetica').fillColor('#000').text(val1 || 'N/A', lm + col1LabelW + 4, y + 5, { width: col1ValW - 8 });
+    // Label 2
+    if (label2) {
+      doc.rect(col2X, y, col2LabelW, rowH).fill('#e8e8e8').stroke('#ccc');
+      doc.font('Helvetica-Bold').fillColor('#333').text(label2, col2X + 4, y + 5, { width: col2LabelW - 8 });
+      doc.rect(col2X + col2LabelW, y, col2ValW, rowH).stroke('#ccc');
+      doc.font('Helvetica').fillColor('#000').text(val2 || 'N/A', col2X + col2LabelW + 4, y + 5, { width: col2ValW - 8 });
+    }
+    y += rowH;
+  }
+
+  infoRow('Product Name:', r.item_description, 'Origin:', r.origin || 'United States');
+  infoRow('Certificate Number:', certNum, 'Supplier:', r.supplier || 'N/A');
+  infoRow('Product Code:', r.product_code || r.item_number, 'Manufacturers Lot #:', r.manufacturer_lot || r.lot_number);
+  infoRow('Received Date:', fmtDate(r.received_date || r.date_sent), 'Expiration Date:', fmtDate(r.product_expiration));
+  // Vendor Lot row (single)
+  doc.rect(lm, y, col1LabelW, rowH).fill('#e8e8e8').stroke('#ccc');
+  doc.font('Helvetica-Bold').fillColor('#333').fontSize(8).text('Vendor Lot:', lm + 4, y + 5, { width: col1LabelW - 8 });
+  doc.rect(lm + col1LabelW, y, col1ValW, rowH).stroke('#ccc');
+  doc.font('Helvetica').fillColor('#000').text(r.vendor_lot || 'N/A', lm + col1LabelW + 4, y + 5, { width: col1ValW - 8 });
+  y += rowH;
+
+  // ── Certification text ──
+  y += 12;
+  doc.fontSize(7.5).font('Helvetica').fillColor('#333');
+  doc.text('The undersigned hereby certifies the following data to be true specifications of the obtained results of tests. This item is an original and is accompanied by this certificate to ensure its authenticity. Any reproduction or duplication of this item is prohibited without prior written consent.', lm, y, { width: pageW, lineGap: 2 });
+  y += 38;
+
+  // ── Test Results Table ──
+  const cols = [
+    { label: 'Test', w: 200 },
+    { label: 'Method', w: 90 },
+    { label: 'UoM', w: 45 },
+    { label: 'Specifications', w: 80 },
+    { label: 'Results', w: 55 },
+    { label: 'Pass/ Fail', w: pageW - 200 - 90 - 45 - 80 - 55 },
+  ];
+
+  // Header row
+  let x = lm;
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#fff');
+  for (const col of cols) {
+    doc.rect(x, y, col.w, 18).fill('#555').stroke('#444');
+    doc.fillColor('#fff').text(col.label, x + 3, y + 4, { width: col.w - 6 });
+    x += col.w;
+  }
+  y += 18;
+
+  // Group results by section
+  const microTests = testResults.filter(t => ['Total Aerobic Microbial Count (USP)', 'Total Coliforms (BAM) (MOD)', 'E. Coli BAM (MOD)', 'Salmonella', 'Staphylococcus aureus <2022>', 'Rapid Yeast and Mold'].includes(t.test_type) || t.test_type?.toLowerCase().includes('micro') || t.test_type?.toLowerCase().includes('coli') || t.test_type?.toLowerCase().includes('salmonella') || t.test_type?.toLowerCase().includes('yeast') || t.test_type?.toLowerCase().includes('aerobic'));
+  const hmTests = testResults.filter(t => ['Arsenic', 'Cadmium', 'Mercury', 'Lead'].includes(t.test_type) || t.test_type?.toLowerCase().includes('arsenic') || t.test_type?.toLowerCase().includes('cadmium') || t.test_type?.toLowerCase().includes('mercury') || t.test_type?.toLowerCase().includes('lead'));
+  const otherTests = testResults.filter(t => !microTests.includes(t) && !hmTests.includes(t));
+
+  function sectionHeader(title) {
+    doc.rect(lm, y, pageW, 16).fill('#ddd').stroke('#ccc');
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#333');
+    doc.text(title, lm, y + 3, { width: pageW, align: 'center' });
+    y += 16;
+  }
+
+  function resultRow(tr) {
+    const rh = 18;
+    x = lm;
+    doc.fontSize(7.5).font('Helvetica').fillColor('#000');
+    for (let i = 0; i < cols.length; i++) {
+      doc.rect(x, y, cols[i].w, rh).stroke('#ccc');
+      let val = '';
+      switch (i) {
+        case 0: val = tr.test_type; break;
+        case 1: val = tr.notes || ''; break;
+        case 2: val = tr.unit || ''; break;
+        case 3: val = ''; break;
+        case 4: val = tr.result_value || ''; break;
+        case 5:
+          val = tr.pass_fail === 'pass' ? 'PASS' : tr.pass_fail === 'fail' ? 'FAILED' : 'N/A';
+          if (tr.pass_fail === 'fail') doc.fillColor('#cc0000');
+          break;
+      }
+      doc.text(val, x + 3, y + 4, { width: cols[i].w - 6 });
+      if (i === 5) doc.fillColor('#000');
+      x += cols[i].w;
+    }
+    y += rh;
+  }
+
+  if (microTests.length > 0) {
+    sectionHeader('Rapid Complete Micro');
+    microTests.forEach(resultRow);
+  }
+  if (hmTests.length > 0) {
+    sectionHeader('Heavy Metals');
+    hmTests.forEach(resultRow);
+  }
+  if (otherTests.length > 0) {
+    sectionHeader('Other Tests');
+    otherTests.forEach(resultRow);
+  }
+
+  // If no test results, show placeholder
+  if (testResults.length === 0) {
+    y += 10;
+    doc.fontSize(9).font('Helvetica').fillColor('#666');
+    doc.text('No test results recorded. Add test results to generate a complete COA.', lm, y, { width: pageW, align: 'center' });
+    y += 20;
+  }
+
+  // ── Signature area ──
+  y += 30;
+  doc.moveTo(lm, y + 20).lineTo(lm + 150, y + 20).stroke('#999');
+  doc.fontSize(8).font('Helvetica').fillColor('#333');
+  doc.text('Quality Control', lm, y + 25);
+
+  // ── Date of Issuance ──
+  y += 55;
+  const dateBoxW = 180;
+  doc.rect(lm, y, 100, 18).fill('#e8e8e8').stroke('#ccc');
+  doc.font('Helvetica-Bold').fillColor('#333').fontSize(8).text('Date of Issuance:', lm + 4, y + 4);
+  doc.rect(lm + 100, y, 80, 18).stroke('#ccc');
+  doc.font('Helvetica').fillColor('#000').text(fmtDate(r.date_of_issuance) || today, lm + 104, y + 4);
+  y += 18;
+  doc.rect(lm, y, 100, 18).fill('#e8e8e8').stroke('#ccc');
+  doc.font('Helvetica-Bold').fillColor('#333').text('Date Printed:', lm + 4, y + 4);
+  doc.rect(lm + 100, y, 80, 18).stroke('#ccc');
+  doc.font('Helvetica').fillColor('#000').text(today, lm + 104, y + 4);
+
+  doc.end();
+});
+
 // ──────────────── Summary / Stats ────────────────
 
 router.get('/summary', (_req, res) => {
@@ -457,7 +698,9 @@ router.get('/distinct', (_req, res) => {
   const db = getDb();
   const items = db.prepare('SELECT DISTINCT item_number, item_description FROM coa_requests ORDER BY item_number').all();
   const tests = db.prepare('SELECT DISTINCT tests_requested FROM coa_requests ORDER BY tests_requested').all().map(r => r.tests_requested);
-  res.json({ items, tests });
+  const suppliers = db.prepare('SELECT DISTINCT supplier FROM coa_requests WHERE supplier IS NOT NULL AND supplier != \'\' ORDER BY supplier').all().map(r => r.supplier);
+  const vendor_lots = db.prepare('SELECT DISTINCT vendor_lot FROM coa_requests WHERE vendor_lot IS NOT NULL AND vendor_lot != \'\' ORDER BY vendor_lot').all().map(r => r.vendor_lot);
+  res.json({ items, tests, suppliers, vendor_lots });
 });
 
 export default router;

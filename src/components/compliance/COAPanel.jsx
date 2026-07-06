@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, ChevronDown, ChevronRight, FlaskConical, Building2, ClipboardList, AlertTriangle, CheckCircle2, Clock, X, Filter, Eye } from 'lucide-react';
+import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, Eye, PackageSearch, AlertTriangle } from 'lucide-react';
 
 const STATUS_CONFIG = {
   pending: { label: 'Pending', color: 'bg-gray-100 text-gray-700', dot: 'bg-gray-400' },
@@ -14,7 +14,10 @@ const STATUS_CONFIG = {
 };
 
 const TEST_TYPES = [
-  'Heavy Metals', 'Micro', 'Gluten', 'FTIR ID', 'Potency', 'Bacillus Subtilis', 'Allergens', 'Moisture', 'Other',
+  'Total Aerobic Microbial Count (USP)', 'Total Coliforms (BAM) (MOD)', 'E. Coli BAM (MOD)',
+  'Salmonella', 'Staphylococcus aureus <2022>', 'Rapid Yeast and Mold',
+  'Arsenic', 'Cadmium', 'Mercury', 'Lead',
+  'Gluten', 'FTIR ID', 'Potency', 'Bacillus Subtilis', 'Allergens', 'Moisture', 'Other',
 ];
 
 function StatusBadge({ status }) {
@@ -27,12 +30,104 @@ function StatusBadge({ status }) {
   );
 }
 
+// ──────── Lot Lookup ────────
+function LotLookup() {
+  const [query, setQuery] = useState('');
+  const [result, setResult] = useState(null);
+  const [searching, setSearching] = useState(false);
+
+  const handleSearch = async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    try {
+      const res = await fetch(`/api/coa/lot-lookup?lot=${encodeURIComponent(query.trim())}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
+      setResult(await res.json());
+    } catch { setResult({ error: 'Search failed' }); }
+    finally { setSearching(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <h3 className="font-semibold text-gray-900 mb-3">Vendor Lot Lookup</h3>
+        <p className="text-sm text-gray-500 mb-3">Check if an incoming lot has already been tested. Enter any lot number (internal, manufacturer, or vendor lot).</p>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Enter lot number..."
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <button onClick={handleSearch} disabled={searching || !query.trim()}
+            className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            {searching ? 'Searching...' : 'Look Up'}
+          </button>
+        </div>
+      </div>
+
+      {result && !result.error && (
+        <div className={`rounded-xl border-2 p-4 ${
+          result.failed ? 'border-red-300 bg-red-50' :
+          result.passed ? 'border-green-300 bg-green-50' :
+          result.tested ? 'border-blue-300 bg-blue-50' :
+          'border-yellow-300 bg-yellow-50'
+        }`}>
+          <div className="flex items-start gap-3">
+            {result.passed && !result.failed && <CheckCircle2 size={24} className="text-green-600 flex-shrink-0 mt-0.5" />}
+            {result.failed && <AlertTriangle size={24} className="text-red-600 flex-shrink-0 mt-0.5" />}
+            {!result.tested && <PackageSearch size={24} className="text-yellow-600 flex-shrink-0 mt-0.5" />}
+            {result.tested && !result.passed && !result.failed && <FlaskConical size={24} className="text-blue-600 flex-shrink-0 mt-0.5" />}
+            <div>
+              <p className={`font-semibold ${
+                result.failed ? 'text-red-800' : result.passed ? 'text-green-800' : result.tested ? 'text-blue-800' : 'text-yellow-800'
+              }`}>{result.recommendation}</p>
+              <p className="text-sm text-gray-600 mt-1">{result.total_matches} matching test record{result.total_matches !== 1 ? 's' : ''} found</p>
+            </div>
+          </div>
+
+          {result.matches?.length > 0 && (
+            <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden bg-white">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Item #</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Description</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Lot</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Tests</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Status</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {result.matches.map(m => (
+                    <tr key={m.id}>
+                      <td className="px-3 py-2 font-medium">{m.item_number}</td>
+                      <td className="px-3 py-2 text-gray-700 max-w-[200px] truncate">{m.item_description}</td>
+                      <td className="px-3 py-2 text-gray-600">{m.lot_number}</td>
+                      <td className="px-3 py-2 text-gray-600">{m.tests_requested}</td>
+                      <td className="px-3 py-2"><StatusBadge status={m.status} /></td>
+                      <td className="px-3 py-2 text-gray-600">{m.date_sent || m.date_of_results || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ──────── Request Form ────────
 function RequestForm({ initial, labs, onSave, onCancel }) {
   const [form, setForm] = useState(initial || {
     item_number: '', item_description: '', lot_number: '', product_expiration: '',
     tests_requested: '', lab_id: '', date_sent: '', tat_days: 7,
     expected_results_date: '', requested_by: '', notes: '',
+    origin: '', supplier: '', product_code: '', manufacturer_lot: '', vendor_lot: '', received_date: '',
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -46,7 +141,7 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
       <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit Lab Request' : 'New Lab Request'}</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Item / MO # *</label>
           <input required value={form.item_number} onChange={e => set('item_number', e.target.value)}
@@ -58,8 +153,38 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. ProDough Protein Cupcake (Vanilla)" />
         </div>
         <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Product Code</label>
+          <input value={form.product_code || ''} onChange={e => set('product_code', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Lot # *</label>
           <input required value={form.lot_number} onChange={e => set('lot_number', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Manufacturer Lot #</label>
+          <input value={form.manufacturer_lot || ''} onChange={e => set('manufacturer_lot', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Vendor Lot</label>
+          <input value={form.vendor_lot || ''} onChange={e => set('vendor_lot', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Supplier</label>
+          <input value={form.supplier || ''} onChange={e => set('supplier', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Honeyville" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Origin</label>
+          <input value={form.origin || ''} onChange={e => set('origin', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. United States" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Received Date</label>
+          <input type="date" value={form.received_date || ''} onChange={e => set('received_date', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
         <div>
@@ -185,11 +310,15 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
           <div>
             <h3 className="font-semibold text-gray-900">{detail.item_number} - {detail.item_description}</h3>
-            <p className="text-xs text-gray-500">Lot: {detail.lot_number}</p>
+            <p className="text-xs text-gray-500">Lot: {detail.lot_number}{detail.manufacturer_lot ? ` | Mfg Lot: ${detail.manufacturer_lot}` : ''}{detail.vendor_lot ? ` | Vendor: ${detail.vendor_lot}` : ''}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={detail.status} />
+          <a href={`/api/coa/requests/${requestId}/pdf`} target="_blank" rel="noopener noreferrer"
+            className="p-1.5 text-gray-400 hover:text-powder-600 rounded-lg hover:bg-gray-100" title="Export Facility COA PDF">
+            <Download size={14} />
+          </a>
           <button onClick={() => setEditing(true)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
             <Edit2 size={14} />
           </button>
@@ -201,12 +330,20 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
           <div><span className="text-xs text-gray-500 block">Lab</span><span className="font-medium">{detail.lab_name || '-'}</span></div>
           <div><span className="text-xs text-gray-500 block">Tests</span><span className="font-medium">{detail.tests_requested}</span></div>
+          <div><span className="text-xs text-gray-500 block">Supplier</span><span className="font-medium">{detail.supplier || '-'}</span></div>
+          <div><span className="text-xs text-gray-500 block">Origin</span><span className="font-medium">{detail.origin || '-'}</span></div>
+          <div><span className="text-xs text-gray-500 block">Product Code</span><span className="font-medium">{detail.product_code || detail.item_number}</span></div>
+          <div><span className="text-xs text-gray-500 block">Mfg Lot #</span><span className="font-medium">{detail.manufacturer_lot || detail.lot_number}</span></div>
+          <div><span className="text-xs text-gray-500 block">Vendor Lot</span><span className="font-medium">{detail.vendor_lot || '-'}</span></div>
+          <div><span className="text-xs text-gray-500 block">Received</span><span className="font-medium">{detail.received_date || '-'}</span></div>
           <div><span className="text-xs text-gray-500 block">Date Sent</span><span className="font-medium">{detail.date_sent || '-'}</span></div>
           <div><span className="text-xs text-gray-500 block">TAT</span><span className="font-medium">{detail.tat_days ? `${detail.tat_days} days` : '-'}</span></div>
-          <div><span className="text-xs text-gray-500 block">Expected Results</span><span className="font-medium">{detail.expected_results_date || '-'}</span></div>
           <div><span className="text-xs text-gray-500 block">Date of Results</span><span className="font-medium">{detail.date_of_results || '-'}</span></div>
-          <div><span className="text-xs text-gray-500 block">Requested By</span><span className="font-medium">{detail.requested_by || '-'}</span></div>
           <div><span className="text-xs text-gray-500 block">Expiration</span><span className="font-medium">{detail.product_expiration || '-'}</span></div>
+          <div><span className="text-xs text-gray-500 block">Requested By</span><span className="font-medium">{detail.requested_by || '-'}</span></div>
+          {detail.certificate_number && (
+            <div><span className="text-xs text-gray-500 block">Certificate #</span><span className="font-medium">{detail.certificate_number}</span></div>
+          )}
           {detail.invoice_amount != null && (
             <div><span className="text-xs text-gray-500 block">Invoice</span><span className="font-medium">${detail.invoice_amount}</span></div>
           )}
@@ -219,7 +356,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           <div className="text-sm"><span className="text-xs text-gray-500 block mb-1">Notes</span><p className="text-gray-700">{detail.notes}</p></div>
         )}
 
-        {/* Status actions */}
+        {/* Status actions + PDF export */}
         <div className="flex flex-wrap gap-2">
           {detail.status === 'pending' && (
             <button onClick={() => handleStatusChange('sent')} className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">Mark as Sent</button>
@@ -234,6 +371,10 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           {detail.status === 'fail' && (
             <button onClick={() => handleStatusChange('re_test')} className="px-3 py-1.5 text-xs font-medium bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100">Mark Re-Test</button>
           )}
+          <a href={`/api/coa/requests/${requestId}/pdf`} target="_blank" rel="noopener noreferrer"
+            className="px-3 py-1.5 text-xs font-medium bg-powder-50 text-powder-700 rounded-lg hover:bg-powder-100 flex items-center gap-1">
+            <Download size={12} /> Export Facility COA
+          </a>
         </div>
 
         {/* Test Results */}
@@ -309,7 +450,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
                     <option value="fail">Fail</option>
                     <option value="na">N/A</option>
                   </select>
-                  <input placeholder="Notes" value={r.notes} onChange={e => {
+                  <input placeholder="Method (e.g. USP &lt;2021&gt;)" value={r.notes} onChange={e => {
                     const next = [...resultForm];
                     next[i] = { ...next[i], notes: e.target.value };
                     setResultForm(next);
@@ -331,7 +472,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           <h4 className="text-sm font-semibold text-gray-900 mb-2">Files</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="border border-dashed border-gray-300 rounded-lg p-3">
-              <p className="text-xs font-medium text-gray-700 mb-2">Lab Results</p>
+              <p className="text-xs font-medium text-gray-700 mb-2">Lab Results (from CTLA)</p>
               {detail.files?.filter(f => f.file_type === 'lab_results').map(f => (
                 <div key={f.id} className="flex items-center gap-2 text-xs mb-1">
                   <FileText size={12} className="text-gray-400" />
@@ -340,7 +481,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
                 </div>
               ))}
               <label className={`mt-2 inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                <Upload size={12} /> Upload
+                <Upload size={12} /> Upload Lab Results
                 <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'lab_results')} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" />
               </label>
             </div>
@@ -354,7 +495,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
                 </div>
               ))}
               <label className={`mt-2 inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                <Upload size={12} /> Upload
+                <Upload size={12} /> Upload Customer COA
                 <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'customer_coa')} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" />
               </label>
             </div>
@@ -395,7 +536,7 @@ function SpecForm({ initial, onSave, onCancel }) {
           <input required value={form.item_number} onChange={e => set('item_number', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
-        <div className="sm:col-span-2 lg:col-span-1">
+        <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Item Description *</label>
           <input required value={form.item_description} onChange={e => set('item_description', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
@@ -411,7 +552,7 @@ function SpecForm({ initial, onSave, onCancel }) {
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Specification</label>
           <input value={form.specification || ''} onChange={e => set('specification', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. < 10 ppm" />
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. NMT 1.0" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Min Value</label>
@@ -426,12 +567,12 @@ function SpecForm({ initial, onSave, onCancel }) {
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Unit</label>
           <input value={form.unit || ''} onChange={e => set('unit', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. ppm, CFU/g" />
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. ppm, cfu/g" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Method</label>
           <input value={form.method || ''} onChange={e => set('method', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. AOAC 2011.25" />
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. USP <2021>" />
         </div>
       </div>
       <div className="flex gap-2 justify-end">
@@ -506,7 +647,7 @@ export default function COAPanel() {
   const { data: requests, loading: loadingReqs, refresh: refreshReqs } = useApiGet('/coa/requests' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''), [statusFilter]);
   const { data: labs, refresh: refreshLabs } = useApiGet('/coa/labs');
   const { data: specs, refresh: refreshSpecs } = useApiGet('/coa/specifications');
-  const { data: summary } = useApiGet('/coa/summary');
+  const { data: summary, refresh: refreshSummary } = useApiGet('/coa/summary');
 
   const filtered = useMemo(() => {
     if (!requests) return [];
@@ -515,7 +656,10 @@ export default function COAPanel() {
     return requests.filter(r =>
       r.item_number?.toLowerCase().includes(s) ||
       r.item_description?.toLowerCase().includes(s) ||
-      r.lot_number?.toLowerCase().includes(s)
+      r.lot_number?.toLowerCase().includes(s) ||
+      r.manufacturer_lot?.toLowerCase().includes(s) ||
+      r.vendor_lot?.toLowerCase().includes(s) ||
+      r.supplier?.toLowerCase().includes(s)
     );
   }, [requests, search]);
 
@@ -523,6 +667,7 @@ export default function COAPanel() {
     await apiPost('/coa/requests', form);
     setShowForm(false);
     refreshReqs();
+    refreshSummary();
   };
 
   const handleCreateSpec = async (form) => {
@@ -553,11 +698,10 @@ export default function COAPanel() {
     refreshLabs();
   };
 
-  // Detail view
   if (selectedId) {
     return (
       <div className="space-y-4">
-        <RequestDetail requestId={selectedId} labs={labs} onClose={() => setSelectedId(null)} onRefresh={refreshReqs} />
+        <RequestDetail requestId={selectedId} labs={labs} onClose={() => setSelectedId(null)} onRefresh={() => { refreshReqs(); refreshSummary(); }} />
       </div>
     );
   }
@@ -585,14 +729,15 @@ export default function COAPanel() {
       )}
 
       {/* Sub-tabs */}
-      <div className="flex items-center gap-1 bg-white rounded-xl border border-gray-200 p-1">
+      <div className="flex items-center gap-1 bg-white rounded-xl border border-gray-200 p-1 overflow-x-auto">
         {[
           { id: 'requests', label: 'Lab Requests', icon: FlaskConical },
+          { id: 'lot-lookup', label: 'Lot Lookup', icon: PackageSearch },
           { id: 'specs', label: 'Specifications', icon: ClipboardList },
           { id: 'labs', label: 'Labs', icon: Building2 },
         ].map(t => (
           <button key={t.id} onClick={() => { setSubTab(t.id); setShowForm(false); setEditItem(null); }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
               subTab === t.id ? 'bg-powder-50 text-powder-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}>
             <t.icon size={14} />
@@ -607,7 +752,7 @@ export default function COAPanel() {
           <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
             <div className="relative flex-1">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item #, description, or lot..."
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item #, description, lot, supplier..."
                 className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
@@ -649,7 +794,7 @@ export default function COAPanel() {
                         className="hover:bg-gray-50 cursor-pointer transition-colors">
                         <td className="px-3 py-2.5 font-medium text-powder-700">{r.item_number}</td>
                         <td className="px-3 py-2.5 text-gray-700 max-w-[200px] truncate">{r.item_description}</td>
-                        <td className="px-3 py-2.5 text-gray-600">{r.lot_number}</td>
+                        <td className="px-3 py-2.5 text-gray-600 max-w-[120px] truncate">{r.lot_number}</td>
                         <td className="px-3 py-2.5 text-gray-600 max-w-[120px] truncate">{r.tests_requested}</td>
                         <td className="px-3 py-2.5"><StatusBadge status={r.status} /></td>
                         <td className="px-3 py-2.5 text-gray-600">{r.lab_name || '-'}</td>
@@ -672,6 +817,9 @@ export default function COAPanel() {
           )}
         </>
       )}
+
+      {/* ───── Lot Lookup Tab ───── */}
+      {subTab === 'lot-lookup' && <LotLookup />}
 
       {/* ───── Specifications Tab ───── */}
       {subTab === 'specs' && (
