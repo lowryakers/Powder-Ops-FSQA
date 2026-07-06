@@ -49,6 +49,7 @@ const MODULE_GROUPS = [
       { id: 'sanitation', label: 'Sanitation' },
       { id: 'chemicals', label: 'Chemicals' },
       { id: 'hygienic', label: 'Hygienic Design' },
+      { id: 'coa', label: 'COA / Lab Testing' },
     ],
   },
   {
