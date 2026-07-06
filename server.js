@@ -28,6 +28,7 @@ import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries } from './server/production-seed.js';
+import { authenticate, optionalAuth } from './server/middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -674,6 +675,19 @@ app.post('/api/uploads', upload.array('files', 5), (req, res) => {
 });
 
 app.use('/uploads', express.static(UPLOAD_DIR));
+
+// --- Auth middleware (applied to all /api/* except public paths) ---
+app.use('/api', (req, res, next) => {
+  const skip = [
+    '/users/login',
+    '/users/set-pin',
+    '/submit/',
+    '/version',
+    '/health',
+  ];
+  if (skip.some(p => req.path === p || req.path.startsWith(p))) return next();
+  authenticate(req, res, next);
+});
 
 // --- API Routes ---
 app.use('/api/equipment', equipmentRoutes);

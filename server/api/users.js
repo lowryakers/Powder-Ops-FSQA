@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import crypto from 'crypto';
+import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -25,15 +26,7 @@ router.get('/technicians', (_req, res) => {
 });
 
 router.get('/me', (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
-  const db = getDb();
-  const session = db.prepare("SELECT s.*, u.id as uid, u.name, u.email, u.role, u.department, u.module_access FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1").get(token);
-  if (!session) return res.status(401).json({ error: 'Session expired' });
-
-  const moduleAccess = session.module_access ? JSON.parse(session.module_access) : null;
-  res.json({ id: session.uid, name: session.name, role: session.role, department: session.department, module_access: moduleAccess });
+  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access });
 });
 
 router.post('/logout', (req, res) => {
@@ -60,14 +53,8 @@ router.get('/:id', (req, res) => {
   res.json(user);
 });
 
-router.get('/:id/pin', (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
+router.get('/:id/pin', requireRole('admin'), (req, res) => {
   const db = getDb();
-  const session = db.prepare("SELECT u.role FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > datetime('now')").get(token);
-  if (!session || session.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-
   const user = db.prepare('SELECT id, pin FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ pin: user.pin || null });
@@ -84,7 +71,7 @@ router.post('/', (req, res) => {
     .run(id, name, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr);
 
   const created = db.prepare('SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(id);
-  logAudit(req.body._actor || 'system', 'create', 'user', id, { name, role: role || 'operator', department: department || 'warehouse' }, null, null);
+  logAudit(req.user.name, 'create', 'user', id, { name, role: role || 'operator', department: department || 'warehouse' }, null, null);
   res.status(201).json(created);
 });
 
@@ -106,7 +93,7 @@ router.put('/:id', (req, res) => {
       req.params.id);
 
   const updated = db.prepare('SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(req.params.id);
-  logAudit(req.body._actor || 'system', 'update', 'user', req.params.id, null, null, null);
+  logAudit(req.user.name, 'update', 'user', req.params.id, null, null, null);
   res.json(updated);
 });
 

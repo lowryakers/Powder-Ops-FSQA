@@ -3,12 +3,23 @@ import { useState, useEffect, useCallback } from 'react';
 const BASE = '/api';
 
 async function apiFetch(path, options = {}) {
+  const token = localStorage.getItem('auth_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token && { Authorization: `Bearer ${token}` }),
+    ...options.headers,
+  };
+
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers,
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   if (!res.ok) {
+    if (res.status === 401) {
+      localStorage.removeItem('auth_token');
+      window.dispatchEvent(new CustomEvent('app-logout'));
+    }
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || `API error ${res.status}`);
   }
@@ -40,6 +51,10 @@ export async function apiPost(path, body) {
 
 export async function apiPut(path, body) {
   return apiFetch(path, { method: 'PUT', body });
+}
+
+export async function apiDelete(path) {
+  return apiFetch(path, { method: 'DELETE' });
 }
 
 export { apiFetch };
