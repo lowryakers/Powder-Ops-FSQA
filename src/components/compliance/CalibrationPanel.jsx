@@ -315,12 +315,12 @@ export default function CalibrationPanel() {
                   const isOverdue = inst.next_due && inst.next_due < today;
                   return (
                     <tr key={inst.id} className={`border-b border-gray-100 hover:bg-gray-50 ${isOverdue ? 'bg-red-50/50' : ''}`}>
-                      <td className="px-4 py-3 font-mono text-xs font-medium">{inst.asset_number || '—'}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-gray-600">{inst.serial_number || 'N/A'}</td>
+                      <td className="px-4 py-3 font-mono text-xs font-medium whitespace-nowrap">{inst.asset_number || '—'}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">{inst.serial_number || 'N/A'}</td>
                       <td className="px-4 py-3 text-gray-900 font-medium">{inst.manufacturer || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{inst.model || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{inst.room || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{inst.last_calibrated ? inst.last_calibrated.split('T')[0] : '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 w-full">{inst.model || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{inst.room || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{inst.last_calibrated ? inst.last_calibrated.split('T')[0] : '—'}</td>
                       <td className={`px-4 py-3 font-medium ${isOverdue ? 'text-red-600' : 'text-gray-600'}`}>
                         {inst.next_due || '—'}
                         {isOverdue && <AlertTriangle size={12} className="inline ml-1 text-red-500" />}
@@ -378,8 +378,8 @@ export default function CalibrationPanel() {
             <tbody>
               {(records || []).map(r => (
                 <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{r.instrument_name}</td>
-                  <td className="px-4 py-3 text-gray-600">{new Date(r.calibrated_at).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 font-medium w-full">{r.instrument_name}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(r.calibrated_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.result === 'pass' ? 'bg-green-100 text-green-800' : r.result === 'fail' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
                       {r.result}
@@ -387,9 +387,9 @@ export default function CalibrationPanel() {
                   </td>
                   <td className="px-4 py-3 text-gray-600">{r.reading_before || '—'}</td>
                   <td className="px-4 py-3 text-gray-600">{r.reading_after || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{r.calibrated_by}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.calibrated_by}</td>
                   <td className="px-4 py-3 text-gray-600">{r.standard_used || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{r.next_due || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.next_due || '—'}</td>
                 </tr>
               ))}
               {(!records || records.length === 0) && (

@@ -426,10 +426,10 @@ export default function LOTOPanel() {
               {(executions || []).map(ex => (
                 <tr key={ex.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium">{ex.equipment_name}</td>
-                  <td className="px-4 py-3 text-gray-600">{ex.locked_by}</td>
-                  <td className="px-4 py-3 text-gray-600 text-xs">{new Date(ex.locked_at).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-gray-600">{ex.reason}</td>
-                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[ex.status]}`}>{ex.status}</span></td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ex.locked_by}</td>
+                  <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{new Date(ex.locked_at).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-gray-600 w-full">{ex.reason}</td>
+                  <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[ex.status]}`}>{ex.status}</span></td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{ex.released_by ? `${ex.released_by} @ ${new Date(ex.released_at).toLocaleString()}` : '—'}</td>
                 </tr>
               ))}

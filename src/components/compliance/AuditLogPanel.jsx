@@ -108,14 +108,14 @@ export default function AuditLogPanel() {
                 <tbody>
                   {(data?.data || []).map(entry => (
                     <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-400 font-mono text-xs">{entry.id}</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">{new Date(entry.timestamp).toLocaleString()}</td>
-                      <td className="px-4 py-3 font-medium">{entry.actor}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-gray-400 font-mono text-xs whitespace-nowrap">{entry.id}</td>
+                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{new Date(entry.timestamp).toLocaleString()}</td>
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">{entry.actor}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{entry.action}</span>
                       </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">{entry.entity_type}{entry.entity_id ? ` #${entry.entity_id.slice(0, 8)}` : ''}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{entry.details || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{entry.entity_type}{entry.entity_id ? ` #${entry.entity_id.slice(0, 8)}` : ''}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs w-full break-words">{entry.details || '—'}</td>
                     </tr>
                   ))}
                   {(!data?.data || data.data.length === 0) && (

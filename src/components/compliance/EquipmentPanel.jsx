@@ -632,8 +632,8 @@ export default function EquipmentPanel() {
                     <td className="px-1 text-gray-400">
                       {!someSelected && <ChevronRight size={14} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">{eq.asset_id || '—'}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-gray-500 font-mono text-xs whitespace-nowrap">{eq.asset_id || '—'}</td>
+                    <td className="px-4 py-3 w-full">
                       <span className="font-medium text-gray-900">{eq.name}</span>
                       {taskCount > 0 && (
                         <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-gray-500">
@@ -641,8 +641,8 @@ export default function EquipmentPanel() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{eq.type}</td>
-                    <td className="px-4 py-3 text-gray-600">{eq.location || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{eq.type}</td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{eq.location || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">{eq.manufacturer || '—'}</td>
                     <td className="px-4 py-3">
                       {eq.is_food_contact ? <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">Yes</span> : <span className="text-gray-400">No</span>}

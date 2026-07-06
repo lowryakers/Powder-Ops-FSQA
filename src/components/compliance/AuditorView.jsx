@@ -101,11 +101,11 @@ function PMSection({ dateRange }) {
                       {wo.status}
                     </span>
                   </td>
-                  <td className="py-1.5 px-2 text-gray-900">{wo.title || wo.pm_title}</td>
+                  <td className="py-1.5 px-2 text-gray-900 w-full">{wo.title || wo.pm_title}</td>
                   <td className="py-1.5 px-2 text-gray-600">{wo.equipment_name}</td>
-                  <td className="py-1.5 px-2 text-gray-600">{wo.due_date}</td>
-                  <td className="py-1.5 px-2 text-gray-600">{wo.completed_at ? new Date(wo.completed_at).toLocaleDateString() : '—'}</td>
-                  <td className="py-1.5 px-2 text-gray-600">{wo.completed_by || '—'}</td>
+                  <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">{wo.due_date}</td>
+                  <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">{wo.completed_at ? new Date(wo.completed_at).toLocaleDateString() : '—'}</td>
+                  <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">{wo.completed_by || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -182,12 +182,12 @@ function CalibrationSection() {
             <tbody>
               {instruments.map(inst => (
                 <tr key={inst.id} className="border-b border-gray-100">
-                  <td className="py-1.5 px-2 text-gray-900 font-medium">{inst.asset_number || '—'}</td>
-                  <td className="py-1.5 px-2 text-gray-600">{inst.manufacturer} {inst.model}</td>
+                  <td className="py-1.5 px-2 text-gray-900 font-medium whitespace-nowrap">{inst.asset_number || '—'}</td>
+                  <td className="py-1.5 px-2 text-gray-600 w-full">{inst.manufacturer} {inst.model}</td>
                   <td className="py-1.5 px-2 text-gray-600">{inst.room || '—'}</td>
                   <td className="py-1.5 px-2 text-gray-600">{inst.department || '—'}</td>
-                  <td className="py-1.5 px-2 text-gray-600">{inst.last_calibrated || '—'}</td>
-                  <td className="py-1.5 px-2 text-gray-600">{inst.next_due || '—'}</td>
+                  <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">{inst.last_calibrated || '—'}</td>
+                  <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">{inst.next_due || '—'}</td>
                   <td className="py-1.5 px-2">
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${inst.status === 'active' ? 'bg-green-100 text-green-800' : inst.status === 'overdue' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
                       {inst.status}
@@ -264,8 +264,8 @@ function SanitationSection({ dateRange }) {
             <tbody>
               {items.slice(0, 100).map(r => (
                 <tr key={r.id} className="border-b border-gray-100">
-                  <td className="py-1.5 px-2 text-gray-600">{r.performed_at ? new Date(r.performed_at).toLocaleDateString() : '—'}</td>
-                  <td className="py-1.5 px-2 text-gray-900">{r.area || r.equipment_name || '—'}</td>
+                  <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">{r.performed_at ? new Date(r.performed_at).toLocaleDateString() : '—'}</td>
+                  <td className="py-1.5 px-2 text-gray-900 w-full">{r.area || r.equipment_name || '—'}</td>
                   <td className="py-1.5 px-2 text-gray-600">{r.chemicals_used || '—'}</td>
                   <td className="py-1.5 px-2 text-gray-600">{r.atp_reading ?? '—'}</td>
                   <td className="py-1.5 px-2">
@@ -273,7 +273,7 @@ function SanitationSection({ dateRange }) {
                       {r.result}
                     </span>
                   </td>
-                  <td className="py-1.5 px-2 text-gray-600">{r.performed_by || '—'}</td>
+                  <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">{r.performed_by || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -327,7 +327,7 @@ function ChemicalsSection() {
             <tbody>
               {chemicals.map(c => (
                 <tr key={c.id} className="border-b border-gray-100">
-                  <td className="py-1.5 px-2 text-gray-900">{c.name}</td>
+                  <td className="py-1.5 px-2 text-gray-900 w-full">{c.name}</td>
                   <td className="py-1.5 px-2"><span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700 capitalize">{c.category}</span></td>
                   <td className="py-1.5 px-2">{c.is_food_grade ? <span className="text-green-600 text-xs font-medium">Yes</span> : <span className="text-gray-400 text-xs">No</span>}</td>
                   <td className="py-1.5 px-2 text-gray-600 text-xs">{c.location_for_use || '—'}</td>
@@ -379,10 +379,10 @@ function AuditLogSection({ dateRange }) {
             <tbody>
               {items.slice(0, 100).map((log, i) => (
                 <tr key={log.id || i} className="border-b border-gray-100">
-                  <td className="py-1.5 px-2 text-gray-600 text-xs">{log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}</td>
-                  <td className="py-1.5 px-2 text-gray-900">{log.actor}</td>
+                  <td className="py-1.5 px-2 text-gray-600 text-xs whitespace-nowrap">{log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}</td>
+                  <td className="py-1.5 px-2 text-gray-900 whitespace-nowrap">{log.actor}</td>
                   <td className="py-1.5 px-2"><span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">{log.action}</span></td>
-                  <td className="py-1.5 px-2 text-gray-600 text-xs">{log.entity_type} {log.entity_id ? `(${log.entity_id.slice(0, 8)}…)` : ''}</td>
+                  <td className="py-1.5 px-2 text-gray-600 text-xs w-full">{log.entity_type} {log.entity_id ? `(${log.entity_id.slice(0, 8)}…)` : ''}</td>
                 </tr>
               ))}
             </tbody>

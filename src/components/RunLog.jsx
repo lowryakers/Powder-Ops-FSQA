@@ -64,7 +64,7 @@ export default function RunLog({ runs }) {
                     {r.team}
                   </span>
                 </td>
-                <td className="px-4 py-2.5 max-w-[200px] truncate" title={r.product}>
+                <td className="px-4 py-2.5 w-full min-w-[160px]" title={r.product}>
                   {r.product}
                 </td>
                 <td className="px-4 py-2.5 whitespace-nowrap">{r.mo}</td>
@@ -81,7 +81,7 @@ export default function RunLog({ runs }) {
                 <td className="px-4 py-2.5 text-right font-medium">
                   {r.unitsPerManHour ? r.unitsPerManHour.toFixed(0) : '–'}
                 </td>
-                <td className="px-4 py-2.5 max-w-[150px] truncate text-gray-500" title={r.notes}>
+                <td className="px-4 py-2.5 min-w-[150px] text-gray-500" title={r.notes}>
                   {r.notes || '–'}
                 </td>
               </tr>

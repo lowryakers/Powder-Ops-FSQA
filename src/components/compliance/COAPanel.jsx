@@ -119,12 +119,12 @@ function LotLookup() {
                 <tbody className="divide-y divide-gray-100">
                   {result.matches.map(m => (
                     <tr key={m.id}>
-                      <td className="px-3 py-2 font-medium">{m.item_number}</td>
-                      <td className="px-3 py-2 text-gray-700 max-w-[200px] truncate">{m.item_description}</td>
-                      <td className="px-3 py-2 text-gray-600">{m.lot_number}</td>
+                      <td className="px-3 py-2 font-medium whitespace-nowrap">{m.item_number}</td>
+                      <td className="px-3 py-2 text-gray-700 w-full">{m.item_description}</td>
+                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{m.lot_number}</td>
                       <td className="px-3 py-2 text-gray-600">{m.tests_requested}</td>
-                      <td className="px-3 py-2"><StatusBadge status={m.status} /></td>
-                      <td className="px-3 py-2 text-gray-600">{m.date_sent || m.date_of_results || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap"><StatusBadge status={m.status} /></td>
+                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{m.date_sent || m.date_of_results || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -632,15 +632,15 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
                 <tbody className="divide-y divide-gray-100">
                   {detail.test_results.map(r => (
                     <tr key={r.id}>
-                      <td className="px-3 py-2 font-medium">{r.test_type}</td>
-                      <td className="px-3 py-2">{r.result_value ?? '-'}{r.unit ? ` ${r.unit}` : ''}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 font-medium whitespace-nowrap">{r.test_type}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{r.result_value ?? '-'}{r.unit ? ` ${r.unit}` : ''}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
                         {r.pass_fail === 'pass' && <span className="text-green-600 font-medium">Pass</span>}
                         {r.pass_fail === 'fail' && <span className="text-red-600 font-medium">Fail</span>}
                         {r.pass_fail === 'na' && <span className="text-gray-400">N/A</span>}
                         {!r.pass_fail && <span className="text-gray-400">-</span>}
                       </td>
-                      <td className="px-3 py-2 text-gray-500">{r.notes || '-'}</td>
+                      <td className="px-3 py-2 text-gray-500 w-full">{r.notes || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1039,13 +1039,13 @@ export default function COAPanel() {
                     {filtered.map(r => (
                       <tr key={r.id} onClick={() => setSelectedId(r.id)}
                         className="hover:bg-gray-50 cursor-pointer transition-colors">
-                        <td className="px-3 py-2.5 font-medium text-powder-700">{r.item_number}</td>
-                        <td className="px-3 py-2.5 text-gray-700 max-w-[200px] truncate">{r.item_description}</td>
-                        <td className="px-3 py-2.5 text-gray-600 max-w-[120px] truncate">{r.lot_number}</td>
-                        <td className="px-3 py-2.5 text-gray-600 max-w-[120px] truncate">{r.tests_requested}</td>
-                        <td className="px-3 py-2.5"><StatusBadge status={r.status} /></td>
-                        <td className="px-3 py-2.5 text-gray-600">{r.lab_name || '-'}</td>
-                        <td className="px-3 py-2.5 text-gray-600">{r.date_sent || '-'}</td>
+                        <td className="px-3 py-2.5 font-medium text-powder-700 whitespace-nowrap">{r.item_number}</td>
+                        <td className="px-3 py-2.5 text-gray-700 w-full">{r.item_description}</td>
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.lot_number}</td>
+                        <td className="px-3 py-2.5 text-gray-600">{r.tests_requested}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap"><StatusBadge status={r.status} /></td>
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.lab_name || '-'}</td>
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.date_sent || '-'}</td>
                         <td className="px-3 py-2.5">
                           {r.file_counts?.lab_results ? (
                             <span className="text-xs text-powder-600">{r.file_counts.lab_results} lab</span>
@@ -1098,17 +1098,17 @@ export default function COAPanel() {
                   <tbody className="divide-y divide-gray-100">
                     {specs.map(s => (
                       <tr key={s.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2.5 font-medium">{s.item_number}</td>
-                        <td className="px-3 py-2.5 text-gray-700 max-w-[200px] truncate">{s.item_description}</td>
-                        <td className="px-3 py-2.5">{s.test_type}</td>
+                        <td className="px-3 py-2.5 font-medium whitespace-nowrap">{s.item_number}</td>
+                        <td className="px-3 py-2.5 text-gray-700 w-full">{s.item_description}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">{s.test_type}</td>
                         <td className="px-3 py-2.5 text-gray-600">{s.specification || '-'}</td>
-                        <td className="px-3 py-2.5 text-gray-600">
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">
                           {s.min_value != null || s.max_value != null
                             ? `${s.min_value ?? '–'} to ${s.max_value ?? '–'}`
                             : '-'}
                         </td>
-                        <td className="px-3 py-2.5 text-gray-600">{s.unit || '-'}</td>
-                        <td className="px-3 py-2.5 text-gray-600">{s.method || '-'}</td>
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{s.unit || '-'}</td>
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{s.method || '-'}</td>
                         <td className="px-3 py-2.5">
                           <div className="flex gap-1">
                             <button onClick={() => { setEditItem(s); setShowForm(true); }} className="p-1 text-gray-400 hover:text-gray-600"><Edit2 size={14} /></button>

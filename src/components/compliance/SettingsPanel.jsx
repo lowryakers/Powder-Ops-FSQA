@@ -279,7 +279,7 @@ function UserRow({ u, onEdit, onToggle }) {
 
   return (
     <tr className="border-b border-gray-100 hover:bg-gray-50">
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 w-full">
         <span className="font-medium text-gray-900">{u.name}</span>
         {u.is_contractor ? (
           <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
@@ -304,7 +304,7 @@ function UserRow({ u, onEdit, onToggle }) {
           <span className="text-[10px] text-gray-500">{moduleCount}/{ALL_MODULE_IDS.length} modules</span>
         )}
       </td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 whitespace-nowrap">
         <span className={`px-2 py-0.5 rounded-full text-xs ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
           {u.is_active ? 'Active' : 'Disabled'}
         </span>

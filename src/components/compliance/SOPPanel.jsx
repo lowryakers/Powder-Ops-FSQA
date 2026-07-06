@@ -510,20 +510,20 @@ export default function SOPPanel() {
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <input type="checkbox" checked={selected.has(doc.id)} onChange={() => toggleSelect(doc.id)} className="rounded border-gray-300" />
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs font-bold text-gray-900" onClick={() => setExpandedId(isExpanded ? null : doc.id)}>
+                      <td className="px-4 py-3 font-mono text-xs font-bold text-gray-900 whitespace-nowrap" onClick={() => setExpandedId(isExpanded ? null : doc.id)}>
                         <span className="inline-flex items-center gap-1">
                           {isExpanded ? <ChevronDown size={14} className="text-blue-600" /> : <ChevronRight size={14} className="text-gray-400" />}
                           {doc.doc_number}
                         </span>
                       </td>
-                      <td className="px-4 py-3" onClick={() => setExpandedId(isExpanded ? null : doc.id)}>
+                      <td className="px-4 py-3 w-full" onClick={() => setExpandedId(isExpanded ? null : doc.id)}>
                         <span className="font-medium text-gray-900">{doc.title}</span>
                       </td>
-                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${catColor(doc.category)}`}>{doc.category}</span></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${catColor(doc.category)}`}>{doc.category}</span></td>
                       <td className="px-4 py-3 text-gray-600">{doc.revision}</td>
-                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[doc.status]}`}>{doc.status.replace('_', ' ')}</span></td>
-                      <td className="px-4 py-3 text-xs text-gray-600">{doc.owner || '—'}</td>
-                      <td className={`px-4 py-3 text-xs ${overdue ? 'text-orange-700 font-bold' : 'text-gray-500'}`}>{doc.review_due || '—'}</td>
+                      <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[doc.status]}`}>{doc.status.replace('_', ' ')}</span></td>
+                      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{doc.owner || '—'}</td>
+                      <td className={`px-4 py-3 text-xs whitespace-nowrap ${overdue ? 'text-orange-700 font-bold' : 'text-gray-500'}`}>{doc.review_due || '—'}</td>
                       <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           <a href={`/api/sops/${doc.id}/pdf`} className="text-gray-400 hover:text-gray-600 p-1" title="Download PDF">

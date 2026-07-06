@@ -240,18 +240,18 @@ export default function TrainingPanel() {
             <tbody>
               {filtered.map(r => (
                 <tr key={r.id} className={`border-b border-gray-100 hover:bg-gray-50 ${r.status === 'overdue' ? 'bg-red-50' : ''}`}>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <span className="font-medium text-gray-900">{r.employee_name}</span>
                     {r.employee_id && <div className="text-[10px] text-gray-400">{r.employee_id}</div>}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 w-full">
                     <span className="text-gray-800">{r.training_topic}</span>
                     {r.sop_title && <div className="text-[10px] text-gray-400">SOP: {r.sop_number}</div>}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{r.trainer || '—'}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500">{r.training_date}</td>
-                  <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[r.status]}`}>{r.status.replace('_', ' ')}</span></td>
-                  <td className="px-4 py-3 text-gray-600">{r.score != null ? `${r.score}%` : '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.trainer || '—'}</td>
+                  <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{r.training_date}</td>
+                  <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[r.status]}`}>{r.status.replace('_', ' ')}</span></td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.score != null ? `${r.score}%` : '—'}</td>
                   <td className="px-4 py-3">
                     {r.gdrive_url ? (
                       <a href={r.gdrive_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700"><ExternalLink size={14} /></a>

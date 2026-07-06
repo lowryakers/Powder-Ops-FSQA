@@ -275,12 +275,12 @@ export default function ChemicalsPanel() {
           <tbody>
             {filtered.map(c => (
               <tr key={c.id} className={`border-b border-gray-100 hover:bg-gray-50 ${!c.is_active ? 'opacity-50' : ''}`}>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 w-full">
                   <div className="font-medium text-gray-900">{c.name}</div>
                   {c.manufacturer && <div className="text-xs text-gray-500">{c.manufacturer}{c.product_code ? ` — ${c.product_code}` : ''}</div>}
                   {c.location_for_use && <div className="text-xs text-gray-400">{c.location_for_use}</div>}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 whitespace-nowrap">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${catColor(c.category)}`}>{c.category}</span>
                 </td>
                 <td className="px-4 py-3 text-gray-600 text-xs">
@@ -299,7 +299,7 @@ export default function ChemicalsPanel() {
                     <span className="text-gray-400">No</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-gray-600 text-xs">{c.max_concentration || '—'}</td>
+                <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{c.max_concentration || '—'}</td>
                 <td className="px-4 py-3">
                   {!c.is_active ? (
                     <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs">Inactive</span>

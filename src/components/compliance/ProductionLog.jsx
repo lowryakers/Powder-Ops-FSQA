@@ -389,7 +389,7 @@ function LogTable({ user }) {
                     <td className="px-3 py-2 text-sm text-gray-900 whitespace-nowrap">{formatDate(entry.date)}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.team}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.room}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700 max-w-[160px] truncate relative group">
+                    <td className="px-3 py-2 text-sm text-gray-700 w-full min-w-[160px] relative group">
                       {entry.product_name}
                       {entry.notes && (
                         <button type="button" onClick={() => setExpandedNotes(expandedNotes === entry.id ? null : entry.id)}

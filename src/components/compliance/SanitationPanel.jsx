@@ -278,14 +278,14 @@ export default function SanitationPanel() {
                       onClick={() => setExpandedId(isExpanded ? null : r.id)}
                       className={`border-b border-gray-100 cursor-pointer transition-colors hover:bg-powder-50 ${isExpanded ? 'bg-powder-50' : ''}`}
                     >
-                      <td className="px-4 py-3 font-medium">{r.area}</td>
-                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs ${TYPE_COLORS[r.type]}`}>{TYPE_LABELS[r.type]}</span></td>
+                      <td className="px-4 py-3 font-medium w-full">{r.area}</td>
+                      <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs ${TYPE_COLORS[r.type]}`}>{TYPE_LABELS[r.type]}</span></td>
                       <td className="px-4 py-3 text-gray-600">{r.equipment_name || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{r.performed_by}</td>
-                      <td className="px-4 py-3 text-gray-600">{new Date(r.performed_at).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.performed_by}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(r.performed_at).toLocaleString()}</td>
                       <td className="px-4 py-3 text-gray-600">{r.chemicals_used || '—'}{r.concentration ? ` (${r.concentration})` : ''}</td>
                       <td className="px-4 py-3 text-gray-600">{r.atp_reading ?? '—'}</td>
-                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_COLORS[r.result]}`}>{r.result}</span></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_COLORS[r.result]}`}>{r.result}</span></td>
                       <td className="px-4 py-3">
                         {r.verified_by ? (
                           <span className="text-green-600 text-xs"><CheckCircle size={12} className="inline mr-1" />{r.verified_by}</span>
