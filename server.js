@@ -4,6 +4,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync, mkdirSync, existsSync } from 'fs';
+import { gunzipSync } from 'zlib';
 import { execSync } from 'child_process';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
@@ -523,9 +524,8 @@ try {
   const coaCount = db.prepare('SELECT COUNT(*) as c FROM coa_requests').get().c;
   if (coaCount === 0) {
     const seedPath = path.join(__dirname, 'data', 'coa-seed.json.gz');
+    console.log('[seed] COA table empty, checking for seed file at:', seedPath);
     if (existsSync(seedPath)) {
-      const zlib = await import('zlib');
-      const gunzipSync = zlib.gunzipSync;
       const compressed = readFileSync(seedPath);
       const rows = JSON.parse(gunzipSync(compressed).toString());
       const cols = ['id','item_number','item_description','lot_number','product_expiration','tests_requested','status','lab_id','lab_name','date_sent','tat_days','expected_results_date','date_of_results','date_sent_to_customer','requested_by','invoice_amount','retest_required','retest_of','notes','source','source_ref','created_by','created_at','updated_at','origin','supplier','product_code','manufacturer_lot','vendor_lot','received_date','certificate_number','date_of_issuance'];
@@ -535,14 +535,15 @@ try {
         for (const r of data) insert.run(...cols.map(c => r[c] ?? null));
       });
       tx(rows);
-      // Ensure CTLA lab exists
       const hasCtla = db.prepare("SELECT COUNT(*) as c FROM coa_labs WHERE name = 'CTLA'").get().c;
       if (hasCtla === 0) db.prepare("INSERT INTO coa_labs (id, name) VALUES (?, 'CTLA')").run(uuid(), 'CTLA');
       console.log(`[seed] COA: ${rows.length} historical lab requests imported`);
+    } else {
+      console.log('[seed] COA seed file not found at:', seedPath);
     }
   }
 } catch (err) {
-  console.error('[seed] Error seeding COA data (non-fatal):', err.message);
+  console.error('[seed] Error seeding COA data (non-fatal):', err.message, err.stack);
 }
 
 // Seed SOP: Food Safety Policy Statement
