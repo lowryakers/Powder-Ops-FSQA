@@ -174,13 +174,13 @@ export default function MockRecallPanel() {
   }, [recalls]);
 
   const handleCreate = async (form) => {
-    await apiPost('/mock-recalls', { ...form, _actor: user?.name });
+    await apiPost('/mock-recalls', form);
     setShowForm(false);
     refresh();
   };
 
   const handleUpdate = async (form) => {
-    await apiPut(`/mock-recalls/${editing.id}`, { ...form, _actor: user?.name });
+    await apiPut(`/mock-recalls/${editing.id}`, form);
     setEditing(null);
     refresh();
   };

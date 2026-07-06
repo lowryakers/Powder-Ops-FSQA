@@ -31,7 +31,7 @@ router.get('/:id', (req, res) => {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { doc_number, title, category, revision, effective_date, review_due, owner, gdrive_url, gdrive_folder, description, _actor } = req.body;
+  const { doc_number, title, category, revision, effective_date, review_due, owner, gdrive_url, gdrive_folder, description } = req.body;
   if (!title || !category) return res.status(400).json({ error: 'Title and category are required' });
   const id = uuid();
   const versionId = uuid();
@@ -46,8 +46,8 @@ router.post('/', (req, res) => {
 
   const created = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(id);
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(versionId, id, revision || '1.0', _actor || 'system', 'Created', JSON.stringify(created));
-  logAudit(_actor || 'system', 'sop_created', 'sop', id, { title, category });
+    .run(versionId, id, revision || '1.0', req.user.name, 'Created', JSON.stringify(created));
+  logAudit(req.user.name, 'sop_created', 'sop', id, { title, category });
   res.status(201).json(created);
 });
 
@@ -55,7 +55,7 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { doc_number, title, category, revision, effective_date, review_due, status, owner, gdrive_url, gdrive_folder, description, _actor, _change_summary } = req.body;
+  const { doc_number, title, category, revision, effective_date, review_due, status, owner, gdrive_url, gdrive_folder, description, _change_summary } = req.body;
 
   db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, status=?, owner=?, gdrive_url=?, gdrive_folder=?, description=?, updated_at=datetime('now') WHERE id=?`).run(
     doc_number ?? existing.doc_number, title || existing.title, category || existing.category,
@@ -68,8 +68,8 @@ router.put('/:id', (req, res) => {
   const updated = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   const versionId = uuid();
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(versionId, req.params.id, updated.revision, _actor || 'system', _change_summary || 'Updated', JSON.stringify(updated));
-  logAudit(_actor || 'system', 'sop_updated', 'sop', req.params.id, { title: updated.title }, existing, updated);
+    .run(versionId, req.params.id, updated.revision, req.user.name, _change_summary || 'Updated', JSON.stringify(updated));
+  logAudit(req.user.name, 'sop_updated', 'sop', req.params.id, { title: updated.title }, existing, updated);
   res.json(updated);
 });
 

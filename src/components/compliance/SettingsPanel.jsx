@@ -375,19 +375,19 @@ export default function SettingsPanel() {
   const auditorUrl = `${window.location.origin}/auditor`;
 
   const handleCreate = async (form) => {
-    await apiPost('/users', { ...form, _actor: currentUser?.name });
+    await apiPost('/users', form);
     setShowForm(false);
     refresh();
   };
 
   const handleUpdate = async (form) => {
-    await apiPut(`/users/${editing.id}`, { ...form, _actor: currentUser?.name });
+    await apiPut(`/users/${editing.id}`, form);
     setEditing(null);
     refresh();
   };
 
   const handleToggleActive = async (user) => {
-    await apiPut(`/users/${user.id}`, { is_active: !user.is_active, _actor: currentUser?.name });
+    await apiPut(`/users/${user.id}`, { is_active: !user.is_active });
     refresh();
   };
 

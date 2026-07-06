@@ -377,22 +377,22 @@ export default function CAPAPanel() {
   }, [capas, search, filter]);
 
   const handleCreateComplaint = async (form) => {
-    await apiPost('/complaints', { ...form, _actor: user?.name });
+    await apiPost('/complaints', form);
     setShowForm(false);
     refreshC();
   };
   const handleUpdateComplaint = async (form) => {
-    await apiPut(`/complaints/${editing.id}`, { ...form, _actor: user?.name });
+    await apiPut(`/complaints/${editing.id}`, form);
     setEditing(null);
     refreshC();
   };
   const handleCreateCAPA = async (form) => {
-    await apiPost('/complaints/capas', { ...form, _actor: user?.name });
+    await apiPost('/complaints/capas', form);
     setShowCAPAForm(false);
     refreshCA(); refreshC();
   };
   const handleUpdateCAPA = async (form) => {
-    await apiPut(`/complaints/capas/${editingCAPA.id}`, { ...form, _actor: user?.name });
+    await apiPut(`/complaints/capas/${editingCAPA.id}`, form);
     setEditingCAPA(null);
     refreshCA();
   };

@@ -42,7 +42,7 @@ router.get('/:id', (req, res) => {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { employee_name, employee_id, training_topic, sop_id, trainer, training_date, completion_date, status, score, certificate_url, gdrive_url, notes, _actor } = req.body;
+  const { employee_name, employee_id, training_topic, sop_id, trainer, training_date, completion_date, status, score, certificate_url, gdrive_url, notes } = req.body;
   if (!employee_name || !training_topic) return res.status(400).json({ error: 'Employee name and training topic are required' });
   const id = uuid();
   db.prepare(`INSERT INTO training_records (id, employee_name, employee_id, training_topic, sop_id, trainer, training_date, completion_date, status, score, certificate_url, gdrive_url, notes)
@@ -52,7 +52,7 @@ router.post('/', (req, res) => {
     completion_date || null, status || 'scheduled', score ?? null,
     certificate_url || null, gdrive_url || null, notes || null
   );
-  logAudit(_actor || 'system', 'training_created', 'training', id, { employee_name, training_topic });
+  logAudit(req.user.name, 'training_created', 'training', id, { employee_name, training_topic });
   res.status(201).json(db.prepare('SELECT * FROM training_records WHERE id = ?').get(id));
 });
 
@@ -60,7 +60,7 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { employee_name, employee_id, training_topic, sop_id, trainer, training_date, completion_date, status, score, certificate_url, gdrive_url, notes, _actor } = req.body;
+  const { employee_name, employee_id, training_topic, sop_id, trainer, training_date, completion_date, status, score, certificate_url, gdrive_url, notes } = req.body;
   db.prepare(`UPDATE training_records SET employee_name=?, employee_id=?, training_topic=?, sop_id=?, trainer=?, training_date=?, completion_date=?, status=?, score=?, certificate_url=?, gdrive_url=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
     employee_name || existing.employee_name, employee_id ?? existing.employee_id,
     training_topic || existing.training_topic, sop_id ?? existing.sop_id,
@@ -69,7 +69,7 @@ router.put('/:id', (req, res) => {
     score ?? existing.score, certificate_url ?? existing.certificate_url,
     gdrive_url ?? existing.gdrive_url, notes ?? existing.notes, req.params.id
   );
-  logAudit(_actor || 'system', 'training_updated', 'training', req.params.id, { employee_name: employee_name || existing.employee_name });
+  logAudit(req.user.name, 'training_updated', 'training', req.params.id, { employee_name: employee_name || existing.employee_name });
   res.json(db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id));
 });
 

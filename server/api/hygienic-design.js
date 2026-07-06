@@ -59,7 +59,7 @@ router.get('/:id', (req, res) => {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { equipment_id, trigger_reason, description, checklist_responses, performed_by, notes, _actor } = req.body;
+  const { equipment_id, trigger_reason, description, checklist_responses, performed_by, notes } = req.body;
   if (!equipment_id || !trigger_reason || !performed_by) {
     return res.status(400).json({ error: 'equipment_id, trigger_reason, and performed_by required' });
   }
@@ -68,7 +68,7 @@ router.post('/', (req, res) => {
     INSERT INTO design_verifications (id, equipment_id, trigger_reason, description, checklist_responses, performed_by, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(id, equipment_id, trigger_reason, description || null, JSON.stringify(checklist_responses || []), performed_by, notes || null);
-  logAudit(_actor || performed_by, 'design_verification_created', 'design_verification', id, `${trigger_reason} verification for equipment ${equipment_id}`);
+  logAudit(req.user.name, 'design_verification_created', 'design_verification', id, `${trigger_reason} verification for equipment ${equipment_id}`);
   res.status(201).json({ id });
 });
 
@@ -76,7 +76,7 @@ router.put('/:id/approve', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM design_verifications WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { overall_result, conditions, approved_by, notes, _actor } = req.body;
+  const { overall_result, conditions, approved_by, notes } = req.body;
   if (!overall_result || !approved_by) {
     return res.status(400).json({ error: 'overall_result and approved_by required' });
   }
@@ -84,7 +84,7 @@ router.put('/:id/approve', (req, res) => {
     UPDATE design_verifications SET overall_result=?, conditions=?, approved_by=?, approved_at=datetime('now'), notes=?, updated_at=datetime('now')
     WHERE id=?
   `).run(overall_result, conditions || null, approved_by, notes ?? existing.notes, req.params.id);
-  logAudit(_actor || approved_by, `design_verification_${overall_result}`, 'design_verification', req.params.id, `${overall_result}: ${conditions || 'No conditions'}`);
+  logAudit(req.user.name, `design_verification_${overall_result}`, 'design_verification', req.params.id, `${overall_result}: ${conditions || 'No conditions'}`);
   res.json({ success: true });
 });
 

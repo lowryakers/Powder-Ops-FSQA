@@ -65,7 +65,7 @@ router.post('/instruments', (req, res) => {
     department || null, notes || null);
 
   const created = db.prepare('SELECT * FROM calibration_instruments WHERE id = ?').get(id);
-  logAudit(req.body._actor || 'system', 'create', 'calibration_instrument', id, { name, type }, null, created);
+  logAudit(req.user.name, 'create', 'calibration_instrument', id, { name, type }, null, created);
   res.status(201).json(created);
 });
 
@@ -88,7 +88,7 @@ router.put('/instruments/:id', (req, res) => {
   `).run(...vals, req.params.id);
 
   const updated = db.prepare('SELECT * FROM calibration_instruments WHERE id = ?').get(req.params.id);
-  logAudit(req.body._actor || 'system', 'update', 'calibration_instrument', req.params.id, null, existing, updated);
+  logAudit(req.user.name, 'update', 'calibration_instrument', req.params.id, null, existing, updated);
   res.json(updated);
 });
 

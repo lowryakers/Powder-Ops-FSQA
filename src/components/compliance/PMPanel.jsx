@@ -35,7 +35,7 @@ const STATUS_COLORS = {
 };
 
 function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
-  const [form, setForm] = useState({ notes: '', lubricant_used: '', lubricant_is_food_grade: true, chemical_id: '', _actor: '' });
+  const [form, setForm] = useState({ notes: '', lubricant_used: '', lubricant_is_food_grade: true, chemical_id: '' });
   const [saving, setSaving] = useState(false);
 
   const lubricants = (chemicals || []).filter(c => c.category === 'lubricant');
@@ -59,11 +59,6 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
   return (
     <form onSubmit={handleSubmit} className="bg-green-50 rounded-lg border border-green-200 p-3 mt-2 space-y-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Completed By *</label>
-          <input required value={form._actor} onChange={e => setForm({ ...form, _actor: e.target.value })}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="Your name" />
-        </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Lubricant Used</label>
           <select value={form.chemical_id} onChange={e => handleLubricantSelect(e.target.value)}
@@ -102,7 +97,7 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
 }
 
 function IssueForm({ wo, onFlag, onCancel }) {
-  const [form, setForm] = useState({ notes: '', attachments: [], _actor: '' });
+  const [form, setForm] = useState({ notes: '', attachments: [] });
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -116,11 +111,6 @@ function IssueForm({ wo, onFlag, onCancel }) {
       <h5 className="text-xs font-semibold text-red-800 uppercase tracking-wide flex items-center gap-1">
         <Flag size={12} /> Flag an Issue
       </h5>
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Your Name *</label>
-        <input required value={form._actor} onChange={e => setForm({ ...form, _actor: e.target.value })}
-          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="Your name" />
-      </div>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">What's the issue? *</label>
         <textarea required value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
@@ -1019,7 +1009,7 @@ export default function PMPanel() {
             <div className="text-center py-8 text-gray-400">No work orders pending clearance</div>
           ) : (clearancePending || []).map(wo => (
             <ClearanceCard key={wo.id} wo={wo} onClear={async (form) => {
-              await apiPut(`/pm/work-orders/${wo.id}/clearance`, { ...form, _actor: user?.name, _actor_department: user?.department });
+              await apiPut(`/pm/work-orders/${wo.id}/clearance`, form);
               refreshClearance();
               refreshTasks();
             }} user={user} />

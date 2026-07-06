@@ -134,19 +134,19 @@ export default function ChemicalsPanel() {
   };
 
   const handleCreate = async (form) => {
-    await apiPost('/chemicals', { ...form, _actor: user?.name });
+    await apiPost('/chemicals', form);
     setShowForm(false);
     refresh();
   };
 
   const handleUpdate = async (form) => {
-    await apiPut(`/chemicals/${editing.id}`, { ...form, _actor: user?.name });
+    await apiPut(`/chemicals/${editing.id}`, form);
     setEditing(null);
     refresh();
   };
 
   const handleToggleActive = async (chem) => {
-    await apiPut(`/chemicals/${chem.id}`, { is_active: !chem.is_active, _actor: user?.name });
+    await apiPut(`/chemicals/${chem.id}`, { is_active: !chem.is_active });
     refresh();
   };
 

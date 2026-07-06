@@ -132,7 +132,6 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
     setSaving(true);
     try {
       await onComplete(task.id, {
-        _actor: userName || 'Operator',
         notes: notes || null,
         readings: Object.keys(readings).length > 0 ? readings : undefined,
         step_results: stepChecks.length > 0 ? stepChecks : undefined,
@@ -148,7 +147,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
   const handleFlagSubmit = async () => {
     setSaving(true);
     try {
-      await onFlagIssue(task.id, { _actor: userName || 'Operator', notes: issueNotes, attachments: issueAttachments });
+      await onFlagIssue(task.id, { notes: issueNotes, attachments: issueAttachments });
       setFlagging(false);
       setIssueNotes('');
       setIssueAttachments([]);
@@ -159,7 +158,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
   const handleNASubmit = async () => {
     setSaving(true);
     try {
-      await onSkipNA(task.id, { _actor: userName || 'Operator', reason: naReason || 'Equipment not in use' });
+      await onSkipNA(task.id, { reason: naReason || 'Equipment not in use' });
       setSkippingNA(false);
       setNaReason('');
     } finally { setSaving(false); }
@@ -823,7 +822,6 @@ export default function OperatorView({ lang = 'en' }) {
     try {
       await apiPost('/pm/work-orders/batch-complete', {
         ids: [...batchSelected],
-        _actor: userName || 'Operator',
       });
       showToast(`${batchSelected.size} ${t('toast_batch')}`);
       setBatchSelected(new Set());
@@ -840,7 +838,7 @@ export default function OperatorView({ lang = 'en' }) {
     if (String(woId).startsWith('qa_')) {
       const entryId = String(woId).replace('qa_', '');
       await apiPut(`/production/entries/${entryId}/qa-signoff`, {
-        qa_signoff_by: form._actor || userName || 'QA',
+        qa_signoff_by: userName || 'QA',
         qa_notes: form.notes || null,
       });
       showToast('QA sign-off recorded');
@@ -872,7 +870,7 @@ export default function OperatorView({ lang = 'en' }) {
   };
 
   const handleUpdateItems = async (schedId, items) => {
-    await apiPut(`/pm/schedules/${schedId}/items`, { items, _actor: userName || 'Admin' });
+    await apiPut(`/pm/schedules/${schedId}/items`, { items });
     refresh();
   };
 

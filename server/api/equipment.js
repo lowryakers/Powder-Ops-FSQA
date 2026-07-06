@@ -59,7 +59,7 @@ router.post('/', (req, res) => {
   `).run(id, name, type, location || null, room || null, asset_id || null, manufacturer || null, model_number || null, serial_number || null, vendor || null, pm_frequency || null, is_food_contact ? 1 : 0, haccp_ccp_id || null, notes || null, maintenance_tasks ? JSON.stringify(maintenance_tasks) : '{}');
 
   const created = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);
-  logAudit(req.body._actor || 'system', 'create', 'equipment', id, { name, type }, null, created);
+  logAudit(req.user.name, 'create', 'equipment', id, { name, type }, null, created);
   res.status(201).json(created);
 });
 
@@ -97,7 +97,7 @@ router.post('/bulk-update', (req, res) => {
     for (const id of ids) syncMaintenanceTasksToPM(db, id);
   }
 
-  logAudit(req.body._actor || 'system', 'bulk_update', 'equipment', null, { ids, fields: Object.keys(changes) }, null, null);
+  logAudit(req.user.name, 'bulk_update', 'equipment', null, { ids, fields: Object.keys(changes) }, null, null);
   res.json({ updated: ids.length });
 });
 
@@ -126,7 +126,7 @@ router.put('/:id', (req, res) => {
   }
 
   const updated = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
-  logAudit(req.body._actor || 'system', 'update', 'equipment', req.params.id, null, existing, updated);
+  logAudit(req.user.name, 'update', 'equipment', req.params.id, null, existing, updated);
   res.json(updated);
 });
 

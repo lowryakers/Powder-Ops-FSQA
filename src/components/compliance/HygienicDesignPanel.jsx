@@ -53,7 +53,6 @@ function VerificationForm({ equipment, onSave, onCancel }) {
         ...form,
         checklist_responses: responses,
         performed_by: user?.name,
-        _actor: user?.name,
       });
     } finally { setSaving(false); }
   };
@@ -138,7 +137,7 @@ function ApprovalForm({ verification, onApprove, onCancel }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await onApprove({ overall_result: result, conditions, approved_by: user?.name, _actor: user?.name });
+      await onApprove({ overall_result: result, conditions, approved_by: user?.name });
     } finally { setSaving(false); }
   };
 

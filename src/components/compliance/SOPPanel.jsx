@@ -298,13 +298,13 @@ export default function SOPPanel() {
   }, [sops]);
 
   const handleCreate = async (form) => {
-    await apiPost('/sops', { ...form, _actor: user?.name });
+    await apiPost('/sops', form);
     setShowForm(false);
     refresh();
   };
 
   const handleUpdate = async (form) => {
-    await apiPut(`/sops/${editing.id}`, { ...form, _actor: user?.name });
+    await apiPut(`/sops/${editing.id}`, form);
     setEditing(null);
     refresh();
   };

@@ -145,14 +145,14 @@ export default function TrainingPanel() {
   }, [records]);
 
   const handleCreate = async (form) => {
-    await apiPost('/training', { ...form, _actor: user?.name });
+    await apiPost('/training', form);
     setShowForm(false);
     refresh();
     refreshMatrix();
   };
 
   const handleUpdate = async (form) => {
-    await apiPut(`/training/${editing.id}`, { ...form, _actor: user?.name });
+    await apiPut(`/training/${editing.id}`, form);
     setEditing(null);
     refresh();
     refreshMatrix();

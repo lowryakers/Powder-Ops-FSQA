@@ -42,7 +42,7 @@ router.post('/procedures', (req, res) => {
     required_locks ?? 1, required_tags ?? 1, verification_method || 'try_start');
 
   const created = db.prepare('SELECT * FROM loto_procedures WHERE id = ?').get(id);
-  logAudit(req.body._actor || 'system', 'create', 'loto_procedure', id, { title, equipment_id }, null, created);
+  logAudit(req.user.name, 'create', 'loto_procedure', id, { title, equipment_id }, null, created);
   res.status(201).json(created);
 });
 
@@ -67,7 +67,7 @@ router.put('/procedures/:id', (req, res) => {
   );
 
   const updated = db.prepare('SELECT * FROM loto_procedures WHERE id = ?').get(req.params.id);
-  logAudit(req.body._actor || 'system', 'update', 'loto_procedure', req.params.id, null, existing, updated);
+  logAudit(req.user.name, 'update', 'loto_procedure', req.params.id, null, existing, updated);
   res.json(updated);
 });
 
