@@ -518,6 +518,33 @@ try {
   console.error('[seed] Error seeding production entries (non-fatal):', err.message);
 }
 
+// Seed COA/Lab Testing historical data
+try {
+  const coaCount = db.prepare('SELECT COUNT(*) as c FROM coa_requests').get().c;
+  if (coaCount === 0) {
+    const seedPath = path.join(__dirname, 'data', 'coa-seed.json.gz');
+    if (existsSync(seedPath)) {
+      const zlib = await import('zlib');
+      const gunzipSync = zlib.gunzipSync;
+      const compressed = readFileSync(seedPath);
+      const rows = JSON.parse(gunzipSync(compressed).toString());
+      const cols = ['id','item_number','item_description','lot_number','product_expiration','tests_requested','status','lab_id','lab_name','date_sent','tat_days','expected_results_date','date_of_results','date_sent_to_customer','requested_by','invoice_amount','retest_required','retest_of','notes','source','source_ref','created_by','created_at','updated_at','origin','supplier','product_code','manufacturer_lot','vendor_lot','received_date','certificate_number','date_of_issuance'];
+      const placeholders = cols.map(() => '?').join(',');
+      const insert = db.prepare(`INSERT OR IGNORE INTO coa_requests (${cols.join(',')}) VALUES (${placeholders})`);
+      const tx = db.transaction((data) => {
+        for (const r of data) insert.run(...cols.map(c => r[c] ?? null));
+      });
+      tx(rows);
+      // Ensure CTLA lab exists
+      const hasCtla = db.prepare("SELECT COUNT(*) as c FROM coa_labs WHERE name = 'CTLA'").get().c;
+      if (hasCtla === 0) db.prepare("INSERT INTO coa_labs (id, name) VALUES (?, 'CTLA')").run(uuid(), 'CTLA');
+      console.log(`[seed] COA: ${rows.length} historical lab requests imported`);
+    }
+  }
+} catch (err) {
+  console.error('[seed] Error seeding COA data (non-fatal):', err.message);
+}
+
 // Seed SOP: Food Safety Policy Statement
 {
   const hasFSP = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE doc_number = 'POLICY 002'").get().c;
