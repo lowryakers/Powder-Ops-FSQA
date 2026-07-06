@@ -523,7 +523,7 @@ try {
 try {
   const coaCount = db.prepare('SELECT COUNT(*) as c FROM coa_requests').get().c;
   if (coaCount === 0) {
-    const seedPath = path.join(__dirname, 'data', 'coa-seed.json.gz');
+    const seedPath = path.join(__dirname, 'seeds', 'coa-seed.json.gz');
     console.log('[seed] COA table empty, checking for seed file at:', seedPath);
     if (existsSync(seedPath)) {
       const compressed = readFileSync(seedPath);
