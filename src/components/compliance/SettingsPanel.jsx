@@ -59,6 +59,7 @@ const MODULE_GROUPS = [
       { id: 'sops', label: 'SOP Registry' },
       { id: 'work-instructions', label: 'Work Instructions' },
       { id: 'job-descriptions', label: 'Job Descriptions' },
+      { id: 'org-chart', label: 'Org Chart' },
       { id: 'training', label: 'Training Records' },
       { id: 'recall', label: 'Mock Recall' },
     ],

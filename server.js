@@ -24,6 +24,7 @@ import chemicalRoutes from './server/api/chemicals.js';
 import hygienicDesignRoutes from './server/api/hygienic-design.js';
 import complaintRoutes from './server/api/complaints.js';
 import documentRoutes from './server/api/documents.js';
+import orgRoutes from './server/api/org.js';
 import trainingRoutes from './server/api/training.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
@@ -676,6 +677,74 @@ CEO
   }
 }
 
+// Seed org chart from Powder Ops Org Chart Version 6 (02/20/2026) if empty
+const orgCount = db.prepare('SELECT COUNT(*) as c FROM org_positions').get().c;
+if (orgCount === 0) {
+  try {
+    // Nested definition — inserted parents-first so parent_id links resolve
+    const ORG = {
+      title: 'CEO', name: 'Danny Augustyn', backup: 'VP', department: 'executive', children: [
+        { title: 'Timekeeping', name: 'Marnee Dortch', department: 'admin' },
+        { title: 'Formulations', name: 'Matt Schramm', department: 'quality' },
+        { title: 'VP Operations / Payroll', name: 'Lowry Akers', backup: 'CEO', department: 'executive' },
+        { title: 'Purchasing Manager', name: 'Jake Waits', backup: 'VP', department: 'admin' },
+        { title: 'Quality Technical Support Manager', name: 'Carol Pierce', department: 'quality' },
+        {
+          title: 'Quality Manager / SQF Practitioner', name: 'Maria Servin', backup: 'PCQI', department: 'quality', children: [
+            {
+              title: 'QA Technician', name: 'Diana Quishpe', department: 'quality', children: [
+                {
+                  title: 'Document Control Manager', name: 'Daniela Servin', backup: 'QA', department: 'quality', children: [
+                    { title: 'Document Control Assistant', name: 'Dayanna Meza Leon', backup: 'QA', department: 'quality' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          title: 'Production Manager / Food Safety PCQI', name: 'Adam Bliss', backup: 'VP', department: 'production', children: [
+            { title: 'Sanitation', name: 'Zuleika Mendez', department: 'sanitation' },
+            { title: 'Maintenance', name: 'Ricardo Avalos', department: 'maintenance' },
+            { title: 'Filling Production Supervisor', name: 'Reina Figueroa', backup: 'Operations', department: 'production', children: [
+              { title: 'Hand Fill Workers', department: 'production' },
+            ] },
+            { title: 'Packaging / Kitting Supervisor', name: 'Jose Luna', backup: 'Operations', department: 'production', children: [
+              { title: 'Packing Workers', department: 'production' },
+            ] },
+            { title: 'Stick Pack Production Supervisor', name: 'Josefa Moy', backup: 'Operations', department: 'production', children: [
+              { title: 'Stick Pack Operators', department: 'production' },
+            ] },
+            { title: 'Batching & Blending Supervisor', name: 'Bernardo Enciso', backup: 'Operations', department: 'production', children: [
+              { title: 'Blending Workers', department: 'production' },
+            ] },
+            { title: 'Warehouse Supervisor', name: 'Juan Gonzalez', backup: 'Operations', department: 'warehouse', children: [
+              { title: 'Shipping Assistant', name: 'Danilo Ibanez', department: 'warehouse' },
+            ] },
+          ],
+        },
+      ],
+    };
+    const insert = db.prepare('INSERT INTO org_positions (id, title, name, backup, department, parent_id, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    let n = 0;
+    const insertNode = (node, parentId, order) => {
+      const id = uuid();
+      insert.run(id, node.title, node.name || null, node.backup || null, node.department || null, parentId, order);
+      n++;
+      (node.children || []).forEach((c, i) => insertNode(c, id, i));
+    };
+    const seedOrg = db.transaction(() => {
+      insertNode(ORG, null, 0);
+      db.prepare('INSERT OR REPLACE INTO org_chart_meta (id, version, approved_by, effective_date) VALUES (1, ?, ?, ?)')
+        .run('6', 'Lowry Akers', '2026-02-20');
+    });
+    seedOrg();
+    console.log(`[seed] Seeded org chart (${n} positions, Version 6)`);
+  } catch (e) {
+    console.warn('[seed] Could not seed org chart:', e.message);
+  }
+}
+
 // --- File Uploads ---
 const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');
 mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -760,6 +829,7 @@ app.use('/api/chemicals', chemicalRoutes);
 app.use('/api/hygienic-design', hygienicDesignRoutes);
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/org', orgRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/mock-recalls', mockRecallRoutes);
 app.use('/api/production', productionRoutes);

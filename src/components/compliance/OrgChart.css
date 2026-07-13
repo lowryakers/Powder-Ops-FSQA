@@ -1,0 +1,60 @@
+/* Classic top-down org-chart tree with connector lines */
+.orgtree {
+  display: inline-block;
+  padding: 12px 20px 24px;
+}
+.orgtree ul {
+  position: relative;
+  padding-top: 24px;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+}
+.orgtree li {
+  list-style: none;
+  position: relative;
+  padding: 24px 8px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+/* connectors from each child up to the horizontal sibling bar */
+.orgtree li::before,
+.orgtree li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 50%;
+  border-top: 2px solid #cbd5e1;
+  width: 50%;
+  height: 24px;
+}
+.orgtree li::after {
+  right: auto;
+  left: 50%;
+  border-left: 2px solid #cbd5e1;
+}
+.orgtree li:only-child::before,
+.orgtree li:only-child::after { display: none; }
+.orgtree li:only-child { padding-top: 24px; }
+.orgtree li:first-child::before,
+.orgtree li:last-child::after { border: 0 none; }
+.orgtree li:last-child::before {
+  border-right: 2px solid #cbd5e1;
+  border-radius: 0 6px 0 0;
+}
+.orgtree li:first-child::after { border-radius: 6px 0 0 0; }
+/* vertical line down from a parent node into its children row */
+.orgtree ul ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  border-left: 2px solid #cbd5e1;
+  width: 0;
+  height: 24px;
+}
+.orgtree > ul { padding-top: 0; }
+.orgtree > ul > li { padding-top: 0; }
+.orgtree > ul > li::before,
+.orgtree > ul > li::after { display: none; }

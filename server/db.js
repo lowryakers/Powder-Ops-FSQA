@@ -413,6 +413,28 @@ function initSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_sop_versions_sop ON sop_versions(sop_id);
 
+    -- Org Chart (structured, editable)
+    CREATE TABLE IF NOT EXISTS org_positions (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      name TEXT,
+      backup TEXT,
+      department TEXT,
+      parent_id TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_org_parent ON org_positions(parent_id);
+
+    CREATE TABLE IF NOT EXISTS org_chart_meta (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      version TEXT,
+      approved_by TEXT,
+      effective_date TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Training Records
     CREATE TABLE IF NOT EXISTS training_records (
       id TEXT PRIMARY KEY,
