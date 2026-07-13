@@ -796,6 +796,37 @@ function runMigrations() {
 
   migrateEquipmentNotes();
   cleanEquipmentNames();
+  archivePreSystemBacklog();
+}
+
+// Go-live cutoff: work the team performed before the system was in real use
+// was tracked on paper, not here. Recurring work orders the engine generated
+// with due dates before this date are archived as not_applicable with an
+// honest label, rather than sitting as a permanent "missed" backlog that
+// drags audit-readiness metrics down. Idempotent — once archived, re-running
+// touches zero rows, and no new pre-go-live work orders are ever created.
+const GO_LIVE_DATE = '2026-07-01';
+
+function archivePreSystemBacklog() {
+  const note = `Pre-system backlog: task predates go-live (${GO_LIVE_DATE}); handled on paper before this system was in use.`;
+  const pending = db.prepare(
+    "SELECT COUNT(*) as c FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue','missed')"
+  ).get(GO_LIVE_DATE).c;
+  if (pending === 0) return;
+
+  const info = db.prepare(`
+    UPDATE work_orders
+    SET status = 'not_applicable',
+        completed_by = COALESCE(NULLIF(completed_by, ''), 'system-migration'),
+        completed_at = COALESCE(completed_at, due_date || 'T00:00:00'),
+        notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE notes || ' | ' || ? END,
+        updated_at = datetime('now')
+    WHERE due_date < ? AND status IN ('open','in_progress','overdue','missed')
+  `).run(note, note, GO_LIVE_DATE);
+
+  logAudit('system-migration', 'archive_pre_system_backlog', 'work_order', null,
+    { go_live: GO_LIVE_DATE, archived: info.changes, reason: 'pre-system backlog — recorded on paper prior to go-live' }, null, null);
+  console.log(`[migrate] Archived ${info.changes} pre-go-live work orders as not_applicable (pre-system backlog)`);
 }
 
 function cleanEquipmentNames() {
