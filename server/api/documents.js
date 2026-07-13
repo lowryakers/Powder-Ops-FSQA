@@ -36,9 +36,21 @@ async function extractPdfText(buffer) {
   return { text: parts.join('\n').replace(/\n{3,}/g, '\n\n').trim(), pages: pdfDoc.numPages };
 }
 
+// Strip common cloud/OS duplication noise from a filename before parsing
+function cleanFilename(filename) {
+  let s = filename.replace(/\.pdf$/i, '');
+  s = s.replace(/[_]+/g, ' ');
+  // Leading "Copy of " (possibly repeated, e.g. "Copy of Copy of ...")
+  s = s.replace(/^(?:\s*copy\s+of\s+)+/i, '');
+  // Trailing duplicate markers: " - Copy", " copy", " (1)", " - Copy (2)"
+  s = s.replace(/[\s-]*copy(?:\s*\(\d+\))?\s*$/i, '');
+  s = s.replace(/\s*\(\d+\)\s*$/, '');
+  return s.replace(/\s{2,}/g, ' ').trim();
+}
+
 // Best-effort guess of a document number and title from filename + first lines
 function guessMeta(filename, text) {
-  const base = filename.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').trim();
+  const base = cleanFilename(filename);
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const numRe = /\b((?:SOP|WI|JD|POL|FORM|F|QP|HACCP)[-\s]?\d{1,4}(?:[-.]\d{1,3})?)\b/i;
   let doc_number = '';
