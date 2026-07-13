@@ -33,47 +33,73 @@ export default function ComplianceDashboard() {
   if (error) return <div className="text-center py-12 text-danger-600">{error}</div>;
   if (!data) return null;
 
+  const n = (v) => (v || 0).toLocaleString();
+  const plur = (v, s = 's') => (v === 1 ? '' : s);
+  const clearancePending = data.clearance_pending || 0;
+  const sopReviewDue = data.sop_review_due || 0;
+
   const readinessChecks = [
     {
-      label: `PM Completion Rate: ${data.pm.completion_rate}%`,
-      status: data.pm.meets_sqf_target ? 'good' : data.pm.completion_rate >= 80 ? 'warning' : 'critical',
-      detail: `${data.pm.completed}/${data.pm.total} WOs completed (target ≥ 95%). ${data.pm.overdue} overdue.`,
+      label: `Task Completion: ${n(data.pm.overdue)} overdue`,
+      status: data.pm.overdue === 0 ? 'good' : 'critical',
+      detail: `${n(data.pm.overdue)} overdue · ${n(data.pm.due_soon)} due within 7 days · ${data.pm.completion_rate}% completed in the last 30 days.`,
+      action: data.pm.overdue > 0 ? `Complete or mark N/A ${n(data.pm.overdue)} overdue task${plur(data.pm.overdue)} in Task Center` : null,
       tab: 'pm',
     },
     {
-      label: `Calibration: ${data.calibration.overdue} overdue`,
+      label: `Calibration: ${n(data.calibration.overdue)} overdue`,
       status: data.calibration.overdue === 0 ? 'good' : 'critical',
-      detail: `${data.calibration.total_instruments} instruments total. ${data.calibration.due_within_7_days} due within 7 days.`,
+      detail: `${n(data.calibration.total_instruments)} instruments · ${n(data.calibration.due_within_7_days)} due within 7 days.`,
+      action: data.calibration.overdue > 0 ? `Calibrate ${n(data.calibration.overdue)} overdue instrument${plur(data.calibration.overdue)}` : null,
       tab: 'calibration',
     },
     {
       label: `Sanitation Pass Rate: ${data.sanitation.pass_rate}%`,
       status: data.sanitation.pass_rate >= 95 ? 'good' : data.sanitation.pass_rate >= 80 ? 'warning' : 'critical',
-      detail: `${data.sanitation.records_30d} records in the last 30 days. ${data.sanitation.failures_30d} failures.`,
+      detail: `${n(data.sanitation.records_30d)} records in the last 30 days · ${n(data.sanitation.failures_30d)} failures.`,
+      action: data.sanitation.failures_30d > 0 ? `Review ${n(data.sanitation.failures_30d)} sanitation failure${plur(data.sanitation.failures_30d)} from the last 30 days` : null,
       tab: 'sanitation',
     },
     {
-      label: `Chemical SDS Coverage: ${data.chemicals.total_approved - data.chemicals.missing_sds}/${data.chemicals.total_approved}`,
+      label: `Chemical SDS Coverage: ${n(data.chemicals.total_approved - data.chemicals.missing_sds)}/${n(data.chemicals.total_approved)}`,
       status: data.chemicals.missing_sds === 0 ? 'good' : data.chemicals.missing_sds <= 3 ? 'warning' : 'critical',
-      detail: data.chemicals.missing_sds > 0 ? `${data.chemicals.missing_sds} approved chemicals missing SDS documentation.` : 'All approved chemicals have SDS documentation.',
+      detail: data.chemicals.missing_sds > 0 ? `${n(data.chemicals.missing_sds)} approved chemicals missing SDS documentation.` : 'All approved chemicals have SDS documentation.',
+      action: data.chemicals.missing_sds > 0 ? `Upload SDS for ${n(data.chemicals.missing_sds)} chemical${plur(data.chemicals.missing_sds)}` : null,
       tab: 'chemicals',
     },
     {
-      label: `LOTO Procedures: ${data.loto.total_procedures} on file`,
+      label: `LOTO Coverage: ${n(data.loto.total_procedures)} procedures`,
       status: data.loto.equipment_without_procedure === 0 ? 'good' : 'warning',
-      detail: data.loto.equipment_without_procedure > 0 ? `${data.loto.equipment_without_procedure} equipment without LOTO procedures.` : 'All equipment has LOTO procedures.',
+      detail: data.loto.equipment_without_procedure > 0 ? `${n(data.loto.equipment_without_procedure)} equipment without a LOTO procedure.` : 'All equipment requiring LOTO is covered.',
+      action: data.loto.equipment_without_procedure > 0 ? `Add LOTO procedures for ${n(data.loto.equipment_without_procedure)} equipment` : null,
       tab: 'loto',
     },
     {
-      label: `Flagged Issues: ${data.flagged_issues}`,
-      status: data.flagged_issues === 0 ? 'good' : data.flagged_issues <= 2 ? 'warning' : 'critical',
-      detail: data.flagged_issues > 0 ? `${data.flagged_issues} open work orders with flagged issues requiring attention.` : 'No open issues flagged.',
+      label: `Hygiene Clearance: ${n(clearancePending)} pending`,
+      status: clearancePending === 0 ? 'good' : 'warning',
+      detail: clearancePending > 0 ? `${n(clearancePending)} completed food-contact work order${plur(clearancePending)} awaiting QA clearance.` : 'No hygiene clearances pending.',
+      action: clearancePending > 0 ? `QA-clear ${n(clearancePending)} food-contact work order${plur(clearancePending)}` : null,
       tab: 'pm',
     },
     {
-      label: `Audit Trail: ${(data.total_audit_records || 0).toLocaleString()} records (12 months)`,
+      label: `Flagged Issues: ${n(data.flagged_issues)}`,
+      status: data.flagged_issues === 0 ? 'good' : data.flagged_issues <= 2 ? 'warning' : 'critical',
+      detail: data.flagged_issues > 0 ? `${n(data.flagged_issues)} open work order${plur(data.flagged_issues)} with flagged issues requiring attention.` : 'No open issues flagged.',
+      action: data.flagged_issues > 0 ? `Resolve ${n(data.flagged_issues)} flagged issue${plur(data.flagged_issues)}` : null,
+      tab: 'pm',
+    },
+    {
+      label: `SOP Reviews: ${n(sopReviewDue)} due`,
+      status: sopReviewDue === 0 ? 'good' : 'warning',
+      detail: sopReviewDue > 0 ? `${n(sopReviewDue)} SOP${plur(sopReviewDue)} past their review date.` : 'All SOPs are within their review cycle.',
+      action: sopReviewDue > 0 ? `Review ${n(sopReviewDue)} SOP${plur(sopReviewDue)} past review date` : null,
+      tab: 'sops',
+    },
+    {
+      label: `Audit Trail: ${n(data.total_audit_records)} records (30d)`,
       status: 'good',
       detail: 'All system actions are logged with actor, timestamp, and entity.',
+      action: null,
       tab: 'audit',
     },
   ];
@@ -82,6 +108,10 @@ export default function ComplianceDashboard() {
   const totalChecks = readinessChecks.length;
   const overallReady = readyCount === totalChecks;
   const readinessPercent = Math.round((readyCount / totalChecks) * 100);
+  // Prioritize critical actions first, then warnings, for the "what's needed" summary
+  const todo = readinessChecks
+    .filter(c => c.action)
+    .sort((a, b) => (a.status === 'critical' ? 0 : 1) - (b.status === 'critical' ? 0 : 1));
 
   const chartData = (data.monthly_pm || []).map(m => ({
     month: m.month.slice(5),
@@ -119,17 +149,34 @@ export default function ComplianceDashboard() {
           <p className="text-sm text-gray-600">
             {overallReady
               ? 'All compliance areas are meeting targets. Your documentation is up to date.'
-              : `${totalChecks - readyCount} area${totalChecks - readyCount > 1 ? 's' : ''} need${totalChecks - readyCount === 1 ? 's' : ''} attention before your next audit.`}
+              : `Complete the item${todo.length === 1 ? '' : 's'} below to reach a full pass.`}
           </p>
-          {!overallReady && (
-            <p className="text-xs text-amber-700 mt-1">{showOnlyFailing ? 'Showing failing checks only — tap to show all' : 'Tap to see only failing checks'}</p>
-          )}
           <div className="mt-2 w-full max-w-xs bg-gray-200 rounded-full h-2.5">
             <div className={`h-2.5 rounded-full transition-all ${overallReady ? 'bg-green-500' : readinessPercent >= 70 ? 'bg-amber-500' : 'bg-red-500'}`}
               style={{ width: `${readinessPercent}%` }} />
           </div>
         </div>
       </div>
+
+      {/* What's needed for a full pass */}
+      {!overallReady && todo.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <AlertTriangle size={16} className="text-amber-500" /> To reach full audit readiness
+          </h3>
+          <ul className="space-y-1.5">
+            {todo.map((c, i) => (
+              <li key={i}
+                onClick={() => c.tab && goTo(c.tab)}
+                className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer hover:bg-gray-50 -mx-2 px-2 py-1 rounded-lg transition-colors">
+                <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${c.status === 'critical' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                <span className="flex-1">{c.action}</span>
+                <ChevronRight size={14} className="text-gray-400 shrink-0 mt-0.5" />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Readiness Checklist + KPI Cards */}
       <div className="grid md:grid-cols-3 gap-4">
@@ -147,13 +194,13 @@ export default function ComplianceDashboard() {
 
         {/* KPI Cards Grid */}
         <div className="md:col-span-2 grid grid-cols-2 gap-3 content-start">
-          <div onClick={() => goTo('pm')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.pm.meets_sqf_target ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+          <div onClick={() => goTo('pm')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.pm.overdue === 0 ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
             <div className="flex items-center gap-2 mb-1">
-              <Wrench size={15} className={data.pm.meets_sqf_target ? 'text-green-600' : 'text-red-600'} />
-              <span className="text-xs text-gray-600">PM Completion</span>
+              <Wrench size={15} className={data.pm.overdue === 0 ? 'text-green-600' : 'text-red-600'} />
+              <span className="text-xs text-gray-600">Tasks Overdue</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{data.pm.completion_rate}%</p>
-            <p className="text-xs text-gray-500">{data.pm.completed}/{data.pm.total} · {data.pm.overdue} overdue</p>
+            <p className="text-2xl font-bold text-gray-900">{n(data.pm.overdue)}</p>
+            <p className="text-xs text-gray-500">{n(data.pm.due_soon)} due within 7 days · {data.pm.completion_rate}% done (30d)</p>
           </div>
 
           <div onClick={() => goTo('calibration')} className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${data.calibration.overdue > 0 ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>

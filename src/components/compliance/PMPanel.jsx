@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X } from 'lucide-react';
+import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X, ListChecks } from 'lucide-react';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
@@ -658,7 +658,7 @@ export default function PMPanel() {
   const [showWOForm, setShowWOForm] = useState(false);
   const [completing, setCompleting] = useState(null);
   const [flagging, setFlagging] = useState(null);
-  const [view, setView] = useState('active');
+  const [view, setView] = useState('incomplete');
   const [archiveData, setArchiveData] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
@@ -732,10 +732,24 @@ export default function PMPanel() {
 
   const totalActive = filteredGroups.reduce((sum, g) => sum + g.items.length, 0);
 
+  // Flat, urgency-sorted worklist of every incomplete task (overdue first, then soonest due)
+  const incompleteList = (() => {
+    let items = grouped ? Object.values(grouped).flat() : [];
+    if (freqFilter !== 'all') items = items.filter(wo => wo.frequency_type === freqFilter);
+    if (q) items = items.filter(wo => [wo.title, wo.equipment_name, wo.location, wo.assigned_to].some(v => v && v.toLowerCase().includes(q)));
+    return items.slice().sort((a, b) => {
+      const ao = a.due_date < today ? 0 : 1;
+      const bo = b.due_date < today ? 0 : 1;
+      if (ao !== bo) return ao - bo;
+      return (a.due_date || '').localeCompare(b.due_date || '');
+    });
+  })();
+  const incompleteOverdue = incompleteList.filter(wo => wo.due_date < today).length;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-xl font-bold text-gray-900">Preventive Maintenance</h2>
+        <h2 className="text-xl font-bold text-gray-900">Task Center</h2>
         <button onClick={() => setShowWOForm(true)}
           className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
           <Plus size={16} /> New Work Order
@@ -813,10 +827,14 @@ export default function PMPanel() {
             </div>
           </div>
         )}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => handleViewChange('incomplete')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'incomplete' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            <ListChecks size={14} /> Incomplete ({incompleteList.length}{incompleteOverdue > 0 ? `, ${incompleteOverdue} overdue` : ''})
+          </button>
           <button onClick={() => handleViewChange('active')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'active' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            <Wrench size={14} /> Active ({totalActive})
+            <Wrench size={14} /> By Frequency ({totalActive})
           </button>
           <button onClick={() => handleViewChange('completed')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'completed' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
@@ -858,6 +876,38 @@ export default function PMPanel() {
           })}
         </div>
       </div>
+
+      {/* Incomplete — single actionable worklist */}
+      {view === 'incomplete' && (
+        <div className="space-y-6">
+          {taskLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading tasks...</div>
+          ) : incompleteList.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">All caught up — no incomplete tasks{freqFilter !== 'all' ? ` for ${freqFilter}` : ''}.</div>
+          ) : (
+            [
+              { key: 'overdue', label: 'Overdue', color: 'bg-red-100 text-red-700', items: incompleteList.filter(w => w.due_date < today) },
+              { key: 'upcoming', label: 'Open / Upcoming', color: 'bg-gray-100 text-gray-700', items: incompleteList.filter(w => w.due_date >= today) },
+            ].filter(s => s.items.length > 0).map(s => (
+              <div key={s.key}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${s.color}`}>{s.label}</span>
+                  <span className="text-sm text-gray-500">{s.items.length} task{s.items.length > 1 ? 's' : ''}</span>
+                </div>
+                <div className="space-y-2">
+                  {s.items.map(wo => (
+                    <TaskCard key={wo.id} wo={wo} completing={completing}
+                      onStartComplete={handleStartWO} onComplete={handleComplete}
+                      onCancelComplete={() => setCompleting(null)} chemicals={chemicals}
+                      flagging={flagging} onStartFlag={(id) => { setFlagging(flagging === id ? null : id); setCompleting(null); }}
+                      onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)} />
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Active Tasks by Frequency */}
       {view === 'active' && (

@@ -45,7 +45,7 @@ const NAV_GROUPS = [
   {
     label: 'Maintenance',
     items: [
-      { id: 'pm', label: 'Preventive Maintenance', icon: Wrench },
+      { id: 'pm', label: 'Task Center', icon: Wrench },
       { id: 'equipment', label: 'Equipment', icon: Shield },
       { id: 'calibration', label: 'Calibration', icon: Thermometer },
       { id: 'loto', label: 'Lockout / Tagout', icon: Lock },
@@ -229,7 +229,7 @@ function NotificationBell({ notifications, onNavigate }) {
 function MobileBottomNav({ activeTab, setActiveTab, effectiveModules }) {
   const quickTabs = [
     { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
-    { id: 'pm', label: 'PM', icon: Wrench },
+    { id: 'pm', label: 'Tasks', icon: Wrench },
     { id: 'capa', label: 'CAPA', icon: FileWarning },
     { id: 'sanitation', label: 'Sanitation', icon: Droplets },
   ].filter(t => !effectiveModules || effectiveModules.includes(t.id));

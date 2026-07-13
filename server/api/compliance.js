@@ -21,6 +21,10 @@ router.get('/dashboard', (_req, res) => {
   const pmRate = pmTotal > 0 ? ((pmCompleted / pmTotal) * 100) : 0;
 
   const overdueWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')").get(to).c;
+  const openWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE status IN ('open','in_progress')").get().c;
+  const dueSoonWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('open','in_progress')").get(to, sevenDaysOut.toISOString().split('T')[0]).c;
+  const clearancePending = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE clearance_required = 1 AND clearance_status = 'pending'").get().c;
+  const sopReviewDue = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE status != 'archived' AND review_due <= ?").get(to).c;
 
   const calTotal = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE status != 'retired'").get().c;
   const calOverdue = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due < ? AND status != 'retired'").get(to).c;
@@ -81,7 +85,11 @@ router.get('/dashboard', (_req, res) => {
       completion_rate: parseFloat(pmRate.toFixed(1)),
       meets_sqf_target: pmRate >= 95,
       overdue: overdueWOs,
+      open: openWOs,
+      due_soon: dueSoonWOs,
     },
+    clearance_pending: clearancePending,
+    sop_review_due: sopReviewDue,
     calibration: {
       total_instruments: calTotal,
       overdue: calOverdue,

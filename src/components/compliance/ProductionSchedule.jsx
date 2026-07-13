@@ -240,6 +240,14 @@ const ROOM_SECTIONS = [
   },
 ];
 
+const PRODUCTION_ROOMS = ROOM_SECTIONS.find(s => s.type === 'production')?.rooms || [];
+const KITTING_ROOMS = ROOM_SECTIONS.find(s => s.type === 'kitting')?.rooms || [];
+// Downstream packaging lines a batched product can flow to (Pouch = Hand Fill)
+const PACKAGING_TEAMS = [
+  { value: 'Stick Pack', label: 'Stick Pack' },
+  { value: 'Hand Fill', label: 'Hand Fill (Pouch)' },
+];
+
 function getMonday(date) {
   const d = new Date(date);
   const day = d.getDay();
@@ -302,18 +310,20 @@ function CleaningCell({ value, weekStart, dayIndex, room, userName, onSaved, rea
   );
 }
 
-function CellModal({ cell, weekStart, dayIndex, room, roomType, slot, userName, onClose, onSaved }) {
+function CellModal({ cell, weekStart, dayIndex, room, roomType, slot, userName, onClose, onSaved, onSetupDownstream }) {
   const [form, setForm] = useState({
-    team: cell?.team || '',
+    team: cell?.team || (roomType === 'batching' ? 'Batching' : ''),
     mo_number: cell?.mo_number || '',
     product_name: cell?.product_name || '',
     start_time: cell?.start_time || '',
     notes: cell?.notes || '',
   });
   const [repeatDays, setRepeatDays] = useState([]);
+  const [setupDownstream, setSetupDownstream] = useState(roomType === 'batching' && !cell?.id);
   const [saving, setSaving] = useState(false);
 
   const otherDays = DAYS.map((_, i) => i).filter(i => i !== dayIndex);
+  const isBatching = roomType === 'batching';
 
   const toggleRepeatDay = (d) => {
     setRepeatDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
@@ -341,6 +351,9 @@ function CellModal({ cell, weekStart, dayIndex, room, roomType, slot, userName, 
       }
       onSaved();
       onClose();
+      if (isBatching && setupDownstream && (form.product_name || form.mo_number)) {
+        onSetupDownstream?.({ product_name: form.product_name, mo_number: form.mo_number, batchDay: dayIndex });
+      }
     } catch (err) {
       console.error('Failed to save:', err);
     } finally {
@@ -458,6 +471,17 @@ function CellModal({ cell, weekStart, dayIndex, room, roomType, slot, userName, 
               </p>
             )}
           </div>
+          {isBatching && (
+            <label className="flex items-start gap-2 text-xs text-gray-600 bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2">
+              <input
+                type="checkbox"
+                checked={setupDownstream}
+                onChange={e => setSetupDownstream(e.target.checked)}
+                className="rounded border-gray-300 mt-0.5"
+              />
+              <span>After saving, set up downstream steps (Stick Pack / Pouch → Kitting) for this product.</span>
+            </label>
+          )}
           <div className="flex items-center gap-2 pt-1">
             <button
               type="submit"
@@ -613,6 +637,155 @@ function DuplicateDayModal({ weekStart, sourceDay, userName, onClose, onSaved })
   );
 }
 
+// Per-item prompt to auto-populate downstream steps for a batched product:
+// Batching → Pouch (Hand Fill) / Stick Pack → Kitting
+function DownstreamModal({ product, batchDay, weekStart, userName, nextSlotFor, onClose, onSaved }) {
+  const [pkgTeam, setPkgTeam] = useState('Stick Pack');
+  const [pkgDay, setPkgDay] = useState(batchDay);
+  const [pkgRoom, setPkgRoom] = useState('');
+  const [pkgTime, setPkgTime] = useState('');
+  const [includeKitting, setIncludeKitting] = useState(true);
+  const [kitDay, setKitDay] = useState(batchDay);
+  const [kitRoom, setKitRoom] = useState(KITTING_ROOMS[0] || '15');
+  const [kitTime, setKitTime] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const productLabel = [product.mo_number, product.product_name].filter(Boolean).join(' — ') || 'this product';
+
+  const handleConfirm = async () => {
+    if (!pkgRoom) { setError('Pick a room for the packaging step.'); return; }
+    setSaving(true);
+    setError(null);
+    const steps = [
+      { day: pkgDay, room: pkgRoom, room_type: 'production', team: pkgTeam, time: pkgTime },
+    ];
+    if (includeKitting) {
+      steps.push({ day: kitDay, room: kitRoom, room_type: 'kitting', team: 'Kitting', time: kitTime });
+    }
+    try {
+      for (const s of steps) {
+        await apiPost('/production/schedule', {
+          week_start: weekStart,
+          day_of_week: s.day,
+          room: s.room,
+          room_type: s.room_type,
+          slot: nextSlotFor(s.day, s.room),
+          team: s.team,
+          mo_number: product.mo_number || '',
+          product_name: product.product_name || '',
+          start_time: s.time || '',
+          updated_by: userName,
+        });
+      }
+      onSaved();
+      onClose();
+    } catch (err) {
+      console.error('Failed to create downstream steps:', err);
+      setError('Failed to add downstream steps. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const dayOptions = DAYS.map((d, i) => <option key={i} value={i}>{d}</option>);
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-900">Set up downstream steps</h3>
+            <p className="text-xs text-gray-500 mt-0.5">{productLabel}</p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+
+        {/* Packaging step */}
+        <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+          <p className="text-xs font-semibold text-gray-700">1 · Packaging</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-1">Line</label>
+              <select value={pkgTeam} onChange={e => setPkgTeam(e.target.value)}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+                {PACKAGING_TEAMS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-1">Day</label>
+              <select value={pkgDay} onChange={e => setPkgDay(Number(e.target.value))}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+                {dayOptions}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-1">Room</label>
+              <select value={pkgRoom} onChange={e => setPkgRoom(e.target.value)}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+                <option value="">Select room...</option>
+                {PRODUCTION_ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-1">Start time</label>
+              <input type="time" value={pkgTime} onChange={e => setPkgTime(e.target.value)}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+            </div>
+          </div>
+        </div>
+
+        {/* Kitting step */}
+        <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+          <label className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+            <input type="checkbox" checked={includeKitting} onChange={e => setIncludeKitting(e.target.checked)}
+              className="rounded border-gray-300" />
+            2 · Kitting
+          </label>
+          {includeKitting && (
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1">Day</label>
+                <select value={kitDay} onChange={e => setKitDay(Number(e.target.value))}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+                  {dayOptions}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1">Room</label>
+                <select value={kitRoom} onChange={e => setKitRoom(e.target.value)}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+                  {KITTING_ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1">Start time</label>
+                <input type="time" value={kitTime} onChange={e => setKitTime(e.target.value)}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+
+        <div className="flex items-center gap-2 pt-1">
+          <button onClick={handleConfirm} disabled={saving || !pkgRoom}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">
+            {saving ? 'Adding...' : 'Add downstream steps'}
+          </button>
+          <button onClick={onClose}
+            className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+            Skip
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProductionSchedule({ user }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [editCell, setEditCell] = useState(null); // { dayIndex, room, roomType, slot, data }
@@ -623,6 +796,7 @@ export default function ProductionSchedule({ user }) {
   const [showSnapshot, setShowSnapshot] = useState(false);
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverKey, setDragOverKey] = useState(null);
+  const [downstreamFor, setDownstreamFor] = useState(null); // { product_name, mo_number, batchDay }
 
   const monday = useMemo(() => {
     const m = getMonday(new Date());
@@ -673,6 +847,11 @@ export default function ProductionSchedule({ user }) {
   }, [monday, shareModel]);
 
   const canEdit = user?.role === 'admin';
+
+  const nextSlotFor = useCallback((dayIndex, roomName) => {
+    const entries = assignmentMap[`${dayIndex}-${roomName}`] || [];
+    return entries.length ? Math.max(...entries.map(a => a.slot || 0)) + 1 : 0;
+  }, [assignmentMap]);
 
   const handleMove = useCallback(async (id, targetDay, targetRoom, targetRoomType) => {
     try {
@@ -941,6 +1120,20 @@ export default function ProductionSchedule({ user }) {
           slot={editCell.slot}
           userName={user?.name || ''}
           onClose={() => setEditCell(null)}
+          onSaved={refresh}
+          onSetupDownstream={(p) => setDownstreamFor(p)}
+        />
+      )}
+
+      {/* Downstream auto-populate modal */}
+      {downstreamFor && (
+        <DownstreamModal
+          product={downstreamFor}
+          batchDay={downstreamFor.batchDay}
+          weekStart={weekStart}
+          userName={user?.name || ''}
+          nextSlotFor={nextSlotFor}
+          onClose={() => setDownstreamFor(null)}
           onSaved={refresh}
         />
       )}

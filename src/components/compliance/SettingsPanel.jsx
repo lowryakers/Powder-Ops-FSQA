@@ -37,7 +37,7 @@ const MODULE_GROUPS = [
   {
     label: 'Maintenance',
     modules: [
-      { id: 'pm', label: 'Preventive Maintenance' },
+      { id: 'pm', label: 'Task Center' },
       { id: 'equipment', label: 'Equipment' },
       { id: 'calibration', label: 'Calibration' },
       { id: 'loto', label: 'Lockout / Tagout' },
