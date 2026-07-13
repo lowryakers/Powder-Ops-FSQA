@@ -25,7 +25,8 @@ import hygienicDesignRoutes from './server/api/hygienic-design.js';
 import complaintRoutes from './server/api/complaints.js';
 import documentRoutes from './server/api/documents.js';
 import orgRoutes from './server/api/org.js';
-import disposalRoutes from './server/api/disposals.js';
+import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
+import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
 import trainingRoutes from './server/api/training.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
@@ -743,6 +744,17 @@ if (orgCount === 0) {
     console.log(`[seed] Seeded org chart (${n} positions, Version 6)`);
   } catch (e) {
     console.warn('[seed] Could not seed org chart:', e.message);
+  }
+}
+
+// Seed the historical Disposal Log once if the register is empty
+const disposalCount = db.prepare('SELECT COUNT(*) as c FROM disposals').get().c;
+if (disposalCount === 0) {
+  try {
+    const { disposals, items } = importDisposalLog(db, DISPOSAL_LOG_CSV, 'system-import');
+    console.log(`[seed] Imported historical disposal log (${disposals} disposals, ${items} items)`);
+  } catch (e) {
+    console.warn('[seed] Could not seed disposal log:', e.message);
   }
 }
 

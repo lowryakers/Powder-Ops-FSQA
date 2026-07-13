@@ -127,27 +127,20 @@ function parseCsv(text) {
   return rows;
 }
 
-// POST /import — ingest the Disposal Log CSV (their exact format)
-router.post('/import', (req, res) => {
-  const db = getDb();
-  const { csv } = req.body;
-  if (!csv || typeof csv !== 'string') return res.status(400).json({ error: 'csv text is required' });
-
+// Parse + group the Disposal Log CSV and insert. Reused by the import route
+// and the one-time historical seed. Returns { disposals, items }.
+export function importDisposalLog(db, csv, actor) {
   const rows = parseCsv(csv);
-  // Find the header row (contains "ITEM NAME")
   let headerIdx = rows.findIndex(r => r.some(c => /item name/i.test(c)));
   if (headerIdx === -1) headerIdx = 2;
 
-  // Group by disposal number (numeration carries forward on blank rows;
-  // skip title/section rows like "TRACEABILITY OF DISPOSAL NUMBER")
   const groups = new Map();
   let currentNum = null;
   for (let r = headerIdx + 1; r < rows.length; r++) {
     const [numeration, rev, item, part, lot, qty, reason, date, writeoff, scanned] = rows[r].map(c => (c || '').trim());
     if (/traceability of disposal/i.test(numeration)) continue;
-    // A row with only a numeration/section label and nothing else is a section header
     if (numeration && !item && !part && !lot) { currentNum = numeration; continue; }
-    if (!item && !part && !lot && !writeoff) continue; // blank row
+    if (!item && !part && !lot && !writeoff) continue;
     if (numeration) currentNum = numeration;
     const key = currentNum || `Unnumbered ${r}`;
     if (!groups.has(key)) groups.set(key, { rev, date, scanned: /true/i.test(scanned), items: [] });
@@ -163,14 +156,23 @@ router.post('/import', (req, res) => {
   const tx = db.transaction(() => {
     for (const [num, g] of groups) {
       const id = uuid();
-      insDisp.run(id, num, g.rev || null, g.items[0]?.date_disposed || g.date || null, g.scanned ? 1 : 0, req.user.name);
+      insDisp.run(id, num, g.rev || null, g.items[0]?.date_disposed || g.date || null, g.scanned ? 1 : 0, actor);
       g.items.forEach((it, i) => { insItem.run(uuid(), id, it.item_name || null, it.item_number || null, it.lot_number || null, it.quantity || null, it.reason_disposed || null, it.date_disposed || null, it.write_off_number || null, i); items++; });
       disposals++;
     }
   });
   tx();
-  logAudit(req.user.name, 'disposals_imported', 'disposal', null, { disposals, items });
-  res.status(201).json({ disposals, items });
+  return { disposals, items };
+}
+
+// POST /import — ingest the Disposal Log CSV (their exact format)
+router.post('/import', (req, res) => {
+  const db = getDb();
+  const { csv } = req.body;
+  if (!csv || typeof csv !== 'string') return res.status(400).json({ error: 'csv text is required' });
+  const result = importDisposalLog(db, csv, req.user.name);
+  logAudit(req.user.name, 'disposals_imported', 'disposal', null, result);
+  res.status(201).json(result);
 });
 
 // --- PDF (digital Form 411-1) ---
