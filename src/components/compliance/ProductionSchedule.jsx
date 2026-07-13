@@ -1,12 +1,220 @@
-import { useState, useMemo, useCallback, Fragment } from 'react';
-import { useApiGet, apiPost, apiFetch } from '../../hooks/useApi';
-import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy } from 'lucide-react';
+import { useState, useMemo, useCallback, useRef, forwardRef, Fragment } from 'react';
+import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download } from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
 const TEAMS = ['Batching', 'Stick Pack', 'Hand Fill', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const CLEANING_LEVELS = ['N/A', 'Partial', 'Full Clean'];
+
+const TEAM_COLORS = {
+  Batching: '#ca8a04',
+  'Stick Pack': '#0891b2',
+  'Hand Fill': '#7c3aed',
+  Kitting: '#2563eb',
+  Quality: '#dc2626',
+  Warehouse: '#4b5563',
+  Sanitation: '#059669',
+  Other: '#64748b',
+};
+
+function fmtTime(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  if (Number.isNaN(h)) return t;
+  const ap = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 || 12;
+  return `${hh}:${String(m ?? 0).padStart(2, '0')} ${ap}`;
+}
+
+function roomLabel(room) {
+  return /batching/i.test(room) ? room : `Room ${room}`;
+}
+
+function truncate(s, n) {
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+// Build a shared view of the week: only days/teams/rooms that actually have items,
+// grouped Day → Team → Room + product details.
+function buildShareModel(monday, assignmentMap) {
+  const days = [];
+  for (let d = 0; d < 5; d++) {
+    const teamGroups = new Map();
+    for (const section of ROOM_SECTIONS) {
+      for (const room of section.rooms) {
+        for (const a of assignmentMap[`${d}-${room}`] || []) {
+          if (!(a.team || a.mo_number || a.product_name)) continue;
+          const team = a.team || 'Unassigned';
+          if (!teamGroups.has(team)) teamGroups.set(team, []);
+          teamGroups.get(team).push({
+            room,
+            mo: a.mo_number || '',
+            product: a.product_name || '',
+            time: a.start_time || '',
+          });
+        }
+      }
+    }
+    if (teamGroups.size === 0) continue;
+    const dd = new Date(monday);
+    dd.setDate(dd.getDate() + d);
+    const teams = [...teamGroups.entries()]
+      .sort((a, b) => {
+        const ia = TEAMS.indexOf(a[0]);
+        const ib = TEAMS.indexOf(b[0]);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      })
+      .map(([team, rows]) => ({ team, rows }));
+    days.push({ dayIndex: d, label: DAYS[d], dateLabel: `${dd.getMonth() + 1}/${dd.getDate()}`, teams });
+  }
+  return days;
+}
+
+function buildShareText(monday, model) {
+  const lines = [`Production Schedule — Week of ${formatDate(monday)}`, ''];
+  if (model.length === 0) {
+    lines.push('No production scheduled this week.');
+    return lines.join('\n');
+  }
+  for (const day of model) {
+    lines.push(`${day.label.toUpperCase()} ${day.dateLabel}`);
+    for (const t of day.teams) {
+      lines.push(`  ${t.team}`);
+      for (const r of t.rows) {
+        const detail = [r.mo, r.product].filter(Boolean).join(' ');
+        const time = r.time ? ` @ ${fmtTime(r.time)}` : '';
+        lines.push(`    • ${roomLabel(r.room)} — ${detail}${time}`);
+      }
+    }
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd();
+}
+
+// Clean, self-contained SVG snapshot of the shared model (rasterized to PNG on download).
+const ScheduleSnapshot = forwardRef(function ScheduleSnapshot({ model, weekLabel }, ref) {
+  const W = 840;
+  const M = 28;
+  const contentW = W - M * 2;
+  const els = [];
+  let y = 34;
+
+  els.push(<text key="title" x={M} y={y} fontFamily="Arial, sans-serif" fontSize="22" fontWeight="700" fill="#0f172a">Production Schedule</text>);
+  y += 20;
+  els.push(<text key="sub" x={M} y={y} fontFamily="Arial, sans-serif" fontSize="13" fill="#64748b">Week of {weekLabel}</text>);
+  y += 22;
+
+  model.forEach((day, di) => {
+    els.push(<rect key={`dh${di}`} x={M} y={y} width={contentW} height={30} rx={6} fill="#0f172a" />);
+    els.push(<text key={`dt${di}`} x={M + 12} y={y + 20} fontFamily="Arial, sans-serif" fontSize="14" fontWeight="700" fill="#ffffff">{day.label} · {day.dateLabel}</text>);
+    y += 42;
+    day.teams.forEach((t, ti) => {
+      const color = TEAM_COLORS[t.team] || '#64748b';
+      els.push(<rect key={`tcc${di}-${ti}`} x={M} y={y - 10} width={11} height={11} rx={2} fill={color} />);
+      els.push(<text key={`tt${di}-${ti}`} x={M + 20} y={y} fontFamily="Arial, sans-serif" fontSize="13" fontWeight="700" fill={color}>{t.team}</text>);
+      y += 20;
+      t.rows.forEach((r, ri) => {
+        const detail = [r.mo, r.product].filter(Boolean).join('  ');
+        els.push(
+          <text key={`r${di}-${ti}-${ri}`} x={M + 20} y={y} fontFamily="Arial, sans-serif" fontSize="13" fill="#334155">
+            <tspan fontWeight="600" fill="#0f172a">{roomLabel(r.room)}</tspan>
+            <tspan>{'  —  '}{truncate(detail, 72)}</tspan>
+          </text>
+        );
+        if (r.time) {
+          els.push(<text key={`rt${di}-${ti}-${ri}`} x={W - M} y={y} textAnchor="end" fontFamily="Arial, sans-serif" fontSize="12" fill="#64748b">{fmtTime(r.time)}</text>);
+        }
+        y += 20;
+      });
+      y += 8;
+    });
+    y += 10;
+  });
+
+  const H = Math.max(y + 4, 120);
+
+  return (
+    <svg ref={ref} width={W} height={H} viewBox={`0 0 ${W} ${H}`} xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: 'auto', display: 'block' }}>
+      <rect x="0" y="0" width={W} height={H} fill="#ffffff" />
+      {els}
+    </svg>
+  );
+});
+
+function SnapshotModal({ model, weekLabel, weekStartStr, onClose }) {
+  const svgRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+
+  const download = () => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    setBusy(true);
+    const xml = new XMLSerializer().serializeToString(svg);
+    const [, , w, h] = svg.getAttribute('viewBox').split(' ').map(Number);
+    const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = w * scale;
+      canvas.height = h * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((png) => {
+        if (!png) { setBusy(false); return; }
+        const purl = URL.createObjectURL(png);
+        const a = document.createElement('a');
+        a.href = purl;
+        a.download = `production-schedule-${weekStartStr}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(purl);
+        setBusy(false);
+      }, 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); setBusy(false); };
+    img.src = url;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+          <h3 className="font-semibold text-gray-900">Schedule Snapshot</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+        <div className="overflow-auto p-4 bg-gray-100 flex-1">
+          <div className="mx-auto bg-white shadow rounded overflow-hidden" style={{ maxWidth: 840 }}>
+            {model.length === 0
+              ? <div className="p-10 text-center text-gray-400">No production scheduled this week.</div>
+              : <ScheduleSnapshot ref={svgRef} model={model} weekLabel={weekLabel} />}
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+            Close
+          </button>
+          <button
+            onClick={download}
+            disabled={busy || model.length === 0}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <Download size={14} />
+            {busy ? 'Preparing...' : 'Download PNG'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const ROOM_SECTIONS = [
   {
@@ -411,6 +619,10 @@ export default function ProductionSchedule({ user }) {
   const [duplicateDay, setDuplicateDay] = useState(null); // day index to duplicate from
   const [collapsedSections, setCollapsedSections] = useState({});
   const [copied, setCopied] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [showSnapshot, setShowSnapshot] = useState(false);
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragOverKey, setDragOverKey] = useState(null);
 
   const monday = useMemo(() => {
     const m = getMonday(new Date());
@@ -450,65 +662,92 @@ export default function ProductionSchedule({ user }) {
     setCollapsedSections(prev => ({ ...prev, [label]: !prev[label] }));
   };
 
-  const handleShare = useCallback(() => {
-    const lines = [`Production Schedule — Week of ${formatDate(monday)}`, ''];
+  const shareModel = useMemo(() => buildShareModel(monday, assignmentMap), [monday, assignmentMap]);
 
-    for (let d = 0; d < 5; d++) {
-      const dayEntries = [];
-      for (const section of ROOM_SECTIONS) {
-        for (const room of section.rooms) {
-          for (const a of assignmentMap[`${d}-${room}`] || []) {
-            if (a.team || a.mo_number || a.product_name) {
-              const parts = [a.team, a.mo_number, a.product_name].filter(Boolean).join(' — ');
-              dayEntries.push(`  Room ${room}: ${parts}${a.start_time ? ` @ ${a.start_time}` : ''}`);
-            }
-          }
-        }
-      }
-      if (dayEntries.length > 0) {
-        const dd = new Date(monday);
-        dd.setDate(dd.getDate() + d);
-        lines.push(`${DAYS[d]} ${dd.getMonth() + 1}/${dd.getDate()}:`);
-        lines.push(...dayEntries);
-        lines.push('');
-      }
-    }
-
-    const text = lines.join('\n');
+  const handleShareText = useCallback(() => {
+    const text = buildShareText(monday, shareModel);
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
-  }, [monday, assignmentMap]);
+  }, [monday, shareModel]);
 
   const canEdit = user?.role === 'admin';
+
+  const handleMove = useCallback(async (id, targetDay, targetRoom, targetRoomType) => {
+    try {
+      await apiPut(`/production/schedule/${id}/move`, {
+        day_of_week: targetDay,
+        room: targetRoom,
+        room_type: targetRoomType,
+        updated_by: user?.name || '',
+      });
+      refresh();
+    } catch (err) {
+      console.error('Failed to move assignment:', err);
+    }
+  }, [refresh, user]);
+
+  // Drop-target props shared by filled and empty cells
+  const dropProps = (dayIndex, room, roomType) => {
+    if (!canEdit) return {};
+    const key = `${dayIndex}-${room}`;
+    return {
+      onDragOver: (e) => {
+        if (!draggingId) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dragOverKey !== key) setDragOverKey(key);
+      },
+      onDrop: (e) => {
+        e.preventDefault();
+        const id = e.dataTransfer.getData('text/plain') || draggingId;
+        setDragOverKey(null);
+        setDraggingId(null);
+        if (id) handleMove(id, dayIndex, room, roomType);
+      },
+    };
+  };
 
   const renderAssignmentCell = (dayIndex, room, roomType, cellTint) => {
     const key = `${dayIndex}-${room}`;
     const entries = (assignmentMap[key] || []).filter(a => a.team || a.mo_number || a.product_name);
+    const isDropTarget = canEdit && draggingId && dragOverKey === key;
+    const dropHighlight = isDropTarget ? 'ring-2 ring-inset ring-blue-400 bg-blue-50' : '';
 
     if (entries.length > 0) {
       const nextSlot = Math.max(...entries.map(a => a.slot || 0)) + 1;
-      // Kitting can run several products in the same room on the same day
-      const canAddLine = canEdit && roomType === 'kitting';
+      // Kitting and Batching can run several products in the same room on the same day
+      const canAddLine = canEdit && (roomType === 'kitting' || roomType === 'batching');
       return (
-        <td key={dayIndex} className={`border border-gray-200 px-2 py-1.5 ${cellTint}`}>
+        <td key={dayIndex} className={`border border-gray-200 px-2 py-1.5 ${cellTint} ${dropHighlight}`} {...dropProps(dayIndex, room, roomType)}>
           <div className="space-y-1">
             {entries.map(a => (
               <div
                 key={a.id}
-                className={`text-xs leading-tight space-y-0.5 rounded ${canEdit ? 'cursor-pointer hover:bg-gray-100' : ''} transition-colors`}
+                draggable={canEdit}
+                onDragStart={canEdit ? (e) => {
+                  e.dataTransfer.setData('text/plain', a.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                  setDraggingId(a.id);
+                } : undefined}
+                onDragEnd={() => { setDraggingId(null); setDragOverKey(null); }}
+                className={`group/entry flex items-start gap-1 text-xs leading-tight rounded px-1 -mx-1 transition-colors ${canEdit ? 'cursor-grab active:cursor-grabbing hover:bg-gray-100' : ''} ${draggingId === a.id ? 'opacity-40' : ''}`}
                 onClick={canEdit ? () => setEditCell({ dayIndex, room, roomType, slot: a.slot || 0, data: a }) : undefined}
+                title={canEdit ? 'Drag to move · click to edit' : undefined}
               >
-                {a.team && <div className="font-semibold text-gray-900">{a.team}</div>}
-                {(a.mo_number || a.product_name) && (
-                  <div className="text-gray-600">
-                    {a.mo_number && <span className="font-medium">{a.mo_number}</span>}
-                    {a.mo_number && a.product_name && ' '}
-                    {a.product_name}
-                  </div>
-                )}
-                {a.start_time && <div className="text-gray-400">{a.start_time}</div>}
+                {canEdit && <GripVertical size={11} className="text-gray-300 mt-0.5 shrink-0 opacity-0 group-hover/entry:opacity-100" />}
+                <div className="space-y-0.5 min-w-0">
+                  {a.team && <div className="font-semibold text-gray-900">{a.team}</div>}
+                  {(a.mo_number || a.product_name) && (
+                    <div className="text-gray-600">
+                      {a.mo_number && <span className="font-medium">{a.mo_number}</span>}
+                      {a.mo_number && a.product_name && ' '}
+                      {a.product_name}
+                    </div>
+                  )}
+                  {a.start_time && <div className="text-gray-400">{fmtTime(a.start_time)}</div>}
+                </div>
               </div>
             ))}
             {canAddLine && (
@@ -528,8 +767,9 @@ export default function ProductionSchedule({ user }) {
     return (
       <td
         key={dayIndex}
-        className={`border border-gray-200 px-2 py-3 ${canEdit ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors text-center`}
+        className={`border border-gray-200 px-2 py-3 ${canEdit ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors text-center ${dropHighlight}`}
         onClick={canEdit ? () => setEditCell({ dayIndex, room, roomType, slot: 0, data: null }) : undefined}
+        {...dropProps(dayIndex, room, roomType)}
       >
         {canEdit && <Plus size={14} className="mx-auto text-gray-300" />}
       </td>
@@ -568,13 +808,35 @@ export default function ProductionSchedule({ user }) {
           Week of {formatDate(monday)}
         </h2>
 
-        <button
-          onClick={handleShare}
-          className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5"
-        >
-          {copied ? <Check size={14} className="text-green-600" /> : <Share2 size={14} />}
-          {copied ? 'Copied!' : 'Share'}
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShareOpen(o => !o)}
+            className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5"
+          >
+            {copied ? <Check size={14} className="text-green-600" /> : <Share2 size={14} />}
+            {copied ? 'Copied!' : 'Share'}
+            <ChevronDown size={12} />
+          </button>
+          {shareOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShareOpen(false)} />
+              <div className="absolute right-0 mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+                <button
+                  onClick={() => { handleShareText(); setShareOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <FileText size={14} className="text-gray-400" /> Copy as text
+                </button>
+                <button
+                  onClick={() => { setShowSnapshot(true); setShareOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <Camera size={14} className="text-gray-400" /> Snapshot image
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Loading / Error */}
@@ -691,6 +953,16 @@ export default function ProductionSchedule({ user }) {
           userName={user?.name || ''}
           onClose={() => setDuplicateDay(null)}
           onSaved={refresh}
+        />
+      )}
+
+      {/* Snapshot modal */}
+      {showSnapshot && (
+        <SnapshotModal
+          model={shareModel}
+          weekLabel={formatDate(monday)}
+          weekStartStr={weekStart}
+          onClose={() => setShowSnapshot(false)}
         />
       )}
     </div>

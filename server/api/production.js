@@ -253,6 +253,41 @@ router.post('/schedule/duplicate-day', (req, res) => {
   res.json({ success: true, target_days: targets, ...result });
 });
 
+// PUT /schedule/:id/move — move an assignment to another day/room (drag & drop)
+router.put('/schedule/:id/move', (req, res) => {
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Schedule assignment not found' });
+
+  const { room, room_type, updated_by } = req.body;
+  const targetDay = req.body.day_of_week != null ? Number(req.body.day_of_week) : existing.day_of_week;
+  const targetRoom = room || existing.room;
+
+  if (!Number.isInteger(targetDay) || targetDay < 0 || targetDay > 4) {
+    return res.status(400).json({ error: 'day_of_week must be an integer 0-4' });
+  }
+
+  // No-op when dropped back on the same cell
+  if (targetDay === existing.day_of_week && targetRoom === existing.room) {
+    return res.json(existing);
+  }
+
+  // Append to the end of the target cell so it never collides with an existing slot
+  const maxSlot = db.prepare('SELECT MAX(slot) as m FROM production_schedule WHERE week_start = ? AND day_of_week = ? AND room = ?')
+    .get(existing.week_start, targetDay, targetRoom).m;
+  const newSlot = maxSlot == null ? 0 : maxSlot + 1;
+
+  db.prepare(`
+    UPDATE production_schedule SET day_of_week = ?, room = ?, slot = ?, room_type = ?, updated_by = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(targetDay, targetRoom, newSlot, room_type || existing.room_type, updated_by || null, existing.id);
+
+  const updated = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(existing.id);
+  logAudit(updated_by || 'system', 'move', 'production_schedule', existing.id,
+    { from: { day: existing.day_of_week, room: existing.room }, to: { day: targetDay, room: targetRoom } }, existing, updated);
+  res.json(updated);
+});
+
 // DELETE /schedule/:id — delete a schedule assignment
 router.delete('/schedule/:id', (req, res) => {
   const db = getDb();
