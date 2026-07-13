@@ -443,6 +443,7 @@ function initSchema() {
       disposal_date TEXT,
       reason TEXT,
       approvals TEXT,
+      witness TEXT,
       scanned INTEGER NOT NULL DEFAULT 0,
       document_url TEXT,
       notes TEXT,
@@ -849,6 +850,9 @@ function runMigrations() {
 
   // Multiple schedule lines per room/day (e.g. several Kitting products on the same day)
   addColumnIfMissing('production_schedule', 'slot', 'INTEGER NOT NULL DEFAULT 0');
+
+  // Disposal witness (free-text) — Ops Manager/QC sign-offs live in approvals JSON
+  addColumnIfMissing('disposals', 'witness', 'TEXT');
 
   // Generalize the SOP registry into a unified document-control system.
   // sop_documents now holds SOPs, Work Instructions, Job Descriptions, etc.

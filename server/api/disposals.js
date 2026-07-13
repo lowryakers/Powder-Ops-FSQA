@@ -55,20 +55,32 @@ function writeItems(db, disposalId, items) {
   });
 }
 
+// Next sequential disposal number based on the highest numeric value on record.
+function nextDisposalNumber(db) {
+  const rows = db.prepare('SELECT disposal_number FROM disposals').all();
+  let max = 0;
+  for (const r of rows) {
+    const m = /(\d+)/.exec(r.disposal_number || '');
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return String(max + 1).padStart(3, '0');
+}
+
 router.post('/', (req, res) => {
   const db = getDb();
-  const { disposal_number, document_rev, disposal_date, reason, approvals, scanned, document_url, notes, items } = req.body;
+  const { disposal_number, document_rev, disposal_date, reason, witness, scanned, document_url, notes, items } = req.body;
   const id = uuid();
+  const number = (disposal_number && String(disposal_number).trim()) || nextDisposalNumber(db);
   const tx = db.transaction(() => {
-    db.prepare(`INSERT INTO disposals (id, disposal_number, document_rev, disposal_date, reason, approvals, scanned, document_url, notes, created_by)
+    db.prepare(`INSERT INTO disposals (id, disposal_number, document_rev, disposal_date, reason, witness, scanned, document_url, notes, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      id, disposal_number || null, document_rev || null, disposal_date || null, reason || null,
-      approvals ? JSON.stringify(approvals) : null, scanned ? 1 : 0, document_url || null, notes || null, req.user.name);
+      id, number, document_rev || null, disposal_date || null, reason || null,
+      witness || null, scanned ? 1 : 0, document_url || null, notes || null, req.user.name);
     writeItems(db, id, items);
   });
   tx();
   const created = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
-  logAudit(req.user.name, 'disposal_created', 'disposal', id, { disposal_number, items: (items || []).length });
+  logAudit(req.user.name, 'disposal_created', 'disposal', id, { disposal_number: number, items: (items || []).length });
   res.status(201).json({ ...created, approvals: parseApprovals(created.approvals), items: loadItems(db, id) });
 });
 
@@ -76,12 +88,13 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { disposal_number, document_rev, disposal_date, reason, approvals, scanned, document_url, notes, items } = req.body;
+  // Note: approval sign-offs are NOT settable here — they go through /approve
+  const { disposal_number, document_rev, disposal_date, reason, witness, scanned, document_url, notes, items } = req.body;
   const tx = db.transaction(() => {
-    db.prepare(`UPDATE disposals SET disposal_number=?, document_rev=?, disposal_date=?, reason=?, approvals=?, scanned=?, document_url=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
+    db.prepare(`UPDATE disposals SET disposal_number=?, document_rev=?, disposal_date=?, reason=?, witness=?, scanned=?, document_url=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
       disposal_number ?? existing.disposal_number, document_rev ?? existing.document_rev,
       disposal_date ?? existing.disposal_date, reason ?? existing.reason,
-      approvals !== undefined ? (approvals ? JSON.stringify(approvals) : null) : existing.approvals,
+      witness !== undefined ? (witness || null) : existing.witness,
       scanned !== undefined ? (scanned ? 1 : 0) : existing.scanned,
       document_url !== undefined ? (document_url || null) : existing.document_url,
       notes ?? existing.notes, req.params.id);
@@ -90,6 +103,50 @@ router.put('/:id', (req, res) => {
   tx();
   const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
   logAudit(req.user.name, 'disposal_updated', 'disposal', req.params.id, { disposal_number: updated.disposal_number }, existing, updated);
+  res.json({ ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, req.params.id) });
+});
+
+// --- Role-authenticated approval sign-offs ---
+// Ops Manager: admin or supervisor. Quality Control: QA department or admin.
+function canSign(user, role) {
+  if (role === 'ops_manager') return user.role === 'admin' || user.role === 'supervisor';
+  if (role === 'quality_control') return user.department === 'qa' || user.role === 'admin';
+  return false;
+}
+
+router.post('/:id/approve', (req, res) => {
+  const db = getDb();
+  const d = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
+  if (!d) return res.status(404).json({ error: 'Not found' });
+  const role = req.body.role;
+  if (!['ops_manager', 'quality_control'].includes(role)) return res.status(400).json({ error: 'Invalid approval role' });
+  if (!canSign(req.user, role)) {
+    return res.status(403).json({ error: role === 'quality_control' ? 'Quality Control sign-off requires a QA (or admin) account' : 'Operations Manager sign-off requires a supervisor or admin account' });
+  }
+  const approvals = parseApprovals(d.approvals);
+  approvals[role] = { name: req.user.name, user_id: req.user.id, signed_at: new Date().toISOString() };
+  db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), req.params.id);
+  logAudit(req.user.name, `disposal_signed_${role}`, 'disposal', req.params.id, { disposal_number: d.disposal_number });
+  const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
+  res.json({ ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, req.params.id) });
+});
+
+router.delete('/:id/approve/:role', (req, res) => {
+  const db = getDb();
+  const d = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
+  if (!d) return res.status(404).json({ error: 'Not found' });
+  const role = req.params.role;
+  const approvals = parseApprovals(d.approvals);
+  const sig = approvals[role];
+  if (!sig) return res.json({ ...d, approvals, items: loadItems(db, req.params.id) });
+  // Only an admin or the original signer may revoke
+  if (req.user.role !== 'admin' && sig.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Only an admin or the signer can revoke this approval' });
+  }
+  delete approvals[role];
+  db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), req.params.id);
+  logAudit(req.user.name, `disposal_unsigned_${role}`, 'disposal', req.params.id, { disposal_number: d.disposal_number });
+  const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
   res.json({ ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, req.params.id) });
 });
 
@@ -225,15 +282,16 @@ router.get('/:id/pdf', (req, res) => {
 
   pdf.font('Helvetica-Bold').fontSize(9).text('Approvals', 40, pdf.y);
   pdf.font('Helvetica').fontSize(8).moveDown(0.3);
-  const roleRows = [
-    ['Operations Manager', 'ops_manager'], ['Quality Control', 'quality_control'],
-    ['Warehouse Manager', 'warehouse_manager'], ['Disposal done by', 'disposal_by'], ['Disposal witnessed by', 'witnessed_by'],
+  const sigDate = (s) => (s?.signed_at ? new Date(s.signed_at).toLocaleDateString() : '__________');
+  const rows2 = [
+    ['Operations Manager', approvals.ops_manager],
+    ['Quality Control', approvals.quality_control],
   ];
-  for (const [label, key] of roleRows) {
-    const a = approvals[key] || {};
-    pdf.text(`${label}: ${a.name || '__________________'}     Date: ${a.date || '__________'}`, 40, pdf.y);
+  for (const [label, s] of rows2) {
+    pdf.text(`${label}: ${s?.name || '__________________'}     Date: ${sigDate(s)}`, 40, pdf.y);
     pdf.moveDown(0.4);
   }
+  pdf.text(`Disposal witnessed by: ${d.witness || '__________________'}`, 40, pdf.y);
   pdf.end();
 });
 
