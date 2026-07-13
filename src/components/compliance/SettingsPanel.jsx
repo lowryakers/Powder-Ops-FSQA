@@ -68,63 +68,78 @@ const MODULE_GROUPS = [
 
 const ALL_MODULE_IDS = MODULE_GROUPS.flatMap(g => g.modules.map(m => m.id));
 
-function ModuleAccessEditor({ value, onChange, disabled }) {
-  const access = value || ALL_MODULE_IDS;
-  const allSelected = !value || access.length === ALL_MODULE_IDS.length;
+// Normalize any stored form (null / legacy array / object) into a level map
+function normalizeAccess(value) {
+  if (value == null) return null;
+  if (Array.isArray(value)) return Object.fromEntries(value.map(id => [id, 'edit']));
+  return value;
+}
 
-  const toggle = (id) => {
+function ModuleAccessEditor({ value, onChange, disabled }) {
+  const map = normalizeAccess(value);
+  const allAccess = map == null; // null = full access to everything
+
+  const levelOf = (id) => {
+    if (allAccess) return 'edit';
+    return map[id] || 'none';
+  };
+
+  const setLevel = (id, level) => {
     if (disabled) return;
-    const current = value || [...ALL_MODULE_IDS];
-    const next = current.includes(id) ? current.filter(m => m !== id) : [...current, id];
-    onChange(next.length === ALL_MODULE_IDS.length ? null : next);
+    const base = allAccess ? Object.fromEntries(ALL_MODULE_IDS.map(m => [m, 'edit'])) : { ...map };
+    if (level === 'none') delete base[id];
+    else base[id] = level;
+    // Collapse back to "all access" if every module is set to Edit
+    const isAllEdit = ALL_MODULE_IDS.every(m => base[m] === 'edit');
+    onChange(isAllEdit ? null : base);
   };
 
   const toggleAll = () => {
     if (disabled) return;
-    onChange(allSelected ? [] : null);
+    onChange(allAccess ? {} : null); // {} = no access to anything
   };
 
-  const toggleGroup = (modules) => {
-    if (disabled) return;
-    const ids = modules.map(m => m.id);
-    const current = value || [...ALL_MODULE_IDS];
-    const allIn = ids.every(id => current.includes(id));
-    const next = allIn ? current.filter(id => !ids.includes(id)) : [...new Set([...current, ...ids])];
-    onChange(next.length === ALL_MODULE_IDS.length ? null : next);
-  };
+  const LEVELS = [
+    { value: 'none', label: 'None' },
+    { value: 'view', label: 'View' },
+    { value: 'edit', label: 'Edit' },
+  ];
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="block text-xs font-medium text-gray-700">Module Access</label>
         <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-          <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={disabled}
+          <input type="checkbox" checked={allAccess} onChange={toggleAll} disabled={disabled}
             className="rounded border-gray-300 text-powder-600" />
-          All Modules
+          Full access (all modules)
         </label>
       </div>
-      {!allSelected && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-64 overflow-y-auto">
-          {MODULE_GROUPS.map(group => {
-            const groupIds = group.modules.map(m => m.id);
-            const allGroupIn = groupIds.every(id => access.includes(id));
-            return (
-              <div key={group.label} className="space-y-1">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" checked={allGroupIn} onChange={() => toggleGroup(group.modules)} disabled={disabled}
-                    className="rounded border-gray-300 text-powder-600" />
-                  <span className="text-[10px] font-bold uppercase text-gray-500">{group.label}</span>
-                </label>
-                {group.modules.map(mod => (
-                  <label key={mod.id} className="flex items-center gap-1.5 pl-4 cursor-pointer">
-                    <input type="checkbox" checked={access.includes(mod.id)} onChange={() => toggle(mod.id)} disabled={disabled}
-                      className="rounded border-gray-300 text-powder-600" />
+      {!allAccess && (
+        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-72 overflow-y-auto space-y-3">
+          <p className="text-[11px] text-gray-500">Set each module to <strong>None</strong> (hidden), <strong>View</strong> (read-only), or <strong>Edit</strong>.</p>
+          {MODULE_GROUPS.map(group => (
+            <div key={group.label} className="space-y-1">
+              <div className="text-[10px] font-bold uppercase text-gray-500">{group.label}</div>
+              {group.modules.map(mod => {
+                const lvl = levelOf(mod.id);
+                return (
+                  <div key={mod.id} className="flex items-center justify-between gap-2 pl-1">
                     <span className="text-xs text-gray-700">{mod.label}</span>
-                  </label>
-                ))}
-              </div>
-            );
-          })}
+                    <div className="flex rounded-md border border-gray-200 overflow-hidden shrink-0">
+                      {LEVELS.map(l => (
+                        <button key={l.value} type="button" disabled={disabled}
+                          onClick={() => setLevel(mod.id, l.value)}
+                          className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${lvl === l.value ? (l.value === 'edit' ? 'bg-green-600 text-white' : l.value === 'view' ? 'bg-powder-600 text-white' : 'bg-gray-400 text-white') : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                          {l.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -133,9 +148,9 @@ function ModuleAccessEditor({ value, onChange, disabled }) {
 
 function UserForm({ initial, onSave, onCancel, canViewPin }) {
   const parseModuleAccess = (val) => {
-    if (!val) return null;
-    if (Array.isArray(val)) return val;
-    try { return JSON.parse(val); } catch { return null; }
+    if (val == null) return null;
+    if (typeof val === 'string') { try { return JSON.parse(val); } catch { return null; } }
+    return val; // already an array (legacy) or object
   };
 
   const [form, setForm] = useState(() => ({
@@ -276,8 +291,12 @@ const ROLE_CONFIG = {
 };
 
 function UserRow({ u, onEdit, onToggle }) {
-  const moduleAccess = u.module_access ? (Array.isArray(u.module_access) ? u.module_access : (() => { try { return JSON.parse(u.module_access); } catch { return null; } })()) : null;
-  const moduleCount = moduleAccess ? moduleAccess.length : ALL_MODULE_IDS.length;
+  const moduleAccess = (() => {
+    if (!u.module_access) return null;
+    if (typeof u.module_access === 'string') { try { return JSON.parse(u.module_access); } catch { return null; } }
+    return u.module_access;
+  })();
+  const moduleCount = !moduleAccess ? ALL_MODULE_IDS.length : (Array.isArray(moduleAccess) ? moduleAccess.length : Object.keys(moduleAccess).length);
 
   return (
     <tr className="border-b border-gray-100 hover:bg-gray-50">

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
+import { canEditModule } from '../../utils/permissions';
 import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText } from 'lucide-react';
 
 const CATEGORIES = ['production', 'quality', 'sanitation', 'maintenance', 'safety', 'haccp', 'training', 'admin', 'other'];
@@ -281,9 +282,9 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose })
 }
 
 /* ───────── Registry ───────── */
-export default function DocumentRegistry({ docType, title, typeLabel }) {
+export default function DocumentRegistry({ docType, moduleId, title, typeLabel }) {
   const { user } = useAuth() || {};
-  const canEdit = user?.role === 'admin' || user?.role === 'supervisor';
+  const canEdit = canEditModule(user, moduleId);
   const [sortField, setSortField] = useState('doc_number');
   const [sortOrder, setSortOrder] = useState('asc');
   const [search, setSearch] = useState('');

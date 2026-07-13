@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
+import { canEditModule } from '../../utils/permissions';
 import { Plus, Edit2, Trash2, X, Network, Settings2 } from 'lucide-react';
 import './OrgChart.css';
 
@@ -121,11 +122,22 @@ function MetaModal({ meta, onSave, onCancel }) {
   );
 }
 
-function TreeNode({ node, canEdit, onAddChild, onEdit, onDelete }) {
+function TreeNode({ node, canEdit, dnd, onAddChild, onEdit, onDelete }) {
   const deptClass = DEPT_CLASS[node.department] || DEPT_CLASS.other;
+  const isDragging = dnd.draggingId === node.id;
+  const isForbidden = dnd.forbidden.has(node.id);
+  const isDropTarget = dnd.dragOverId === node.id && dnd.draggingId && !isForbidden;
   return (
     <li>
-      <div className={`group/node relative border-2 rounded-lg px-3 py-2 min-w-[150px] max-w-[220px] text-center shadow-sm ${deptClass}`}>
+      <div
+        draggable={canEdit}
+        onDragStart={canEdit ? (e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', node.id); dnd.onDragStart(node.id); } : undefined}
+        onDragEnd={dnd.onDragEnd}
+        onDragOver={canEdit && dnd.draggingId && !isForbidden ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dnd.dragOverId !== node.id) dnd.onDragEnter(node.id); } : undefined}
+        onDrop={canEdit ? (e) => { e.preventDefault(); e.stopPropagation(); dnd.onDrop(node.id); } : undefined}
+        className={`group/node relative border-2 rounded-lg px-3 py-2 min-w-[150px] max-w-[220px] text-center shadow-sm transition-all ${deptClass} ${canEdit ? 'cursor-grab active:cursor-grabbing' : ''} ${isDragging ? 'opacity-40' : ''} ${isDropTarget ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
+        title={canEdit ? 'Drag onto another position to change reporting line' : undefined}
+      >
         <div className="text-xs font-bold text-gray-900 leading-tight">{node.title}</div>
         {node.name && <div className="text-xs text-gray-700 mt-0.5">{node.name}</div>}
         {node.backup && <div className="text-[10px] text-gray-400 mt-0.5">Back-up: {node.backup}</div>}
@@ -140,7 +152,7 @@ function TreeNode({ node, canEdit, onAddChild, onEdit, onDelete }) {
       {node.children.length > 0 && (
         <ul>
           {node.children.map(c => (
-            <TreeNode key={c.id} node={c} canEdit={canEdit} onAddChild={onAddChild} onEdit={onEdit} onDelete={onDelete} />
+            <TreeNode key={c.id} node={c} canEdit={canEdit} dnd={dnd} onAddChild={onAddChild} onEdit={onEdit} onDelete={onDelete} />
           ))}
         </ul>
       )}
@@ -150,14 +162,45 @@ function TreeNode({ node, canEdit, onAddChild, onEdit, onDelete }) {
 
 export default function OrgChart() {
   const { user } = useAuth() || {};
-  const canEdit = user?.role === 'admin';
+  const canEdit = canEditModule(user, 'org-chart');
   const { data, loading, refresh } = useApiGet('/org');
   const [editing, setEditing] = useState(null);   // position being edited
   const [adding, setAdding] = useState(null);      // { _defaultParent, parentTitle } when adding
   const [editMeta, setEditMeta] = useState(false);
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
 
   const positions = useMemo(() => data?.positions || [], [data]);
   const meta = data?.meta;
+
+  // A node can't be dropped onto itself or any of its own descendants (would create a cycle)
+  const forbidden = useMemo(() => {
+    const set = new Set();
+    if (!draggingId) return set;
+    const kids = {};
+    positions.forEach(p => { (kids[p.parent_id] || (kids[p.parent_id] = [])).push(p.id); });
+    set.add(draggingId);
+    const stack = [draggingId];
+    while (stack.length) { const cur = stack.pop(); for (const c of (kids[cur] || [])) { set.add(c); stack.push(c); } }
+    return set;
+  }, [draggingId, positions]);
+
+  const handleReparent = async (targetId) => {
+    const id = draggingId;
+    setDraggingId(null);
+    setDragOverId(null);
+    if (!id || id === targetId || forbidden.has(targetId)) return;
+    try { await apiPut(`/org/${id}`, { parent_id: targetId }); refresh(); }
+    catch (err) { console.error('Failed to move position:', err); }
+  };
+
+  const dnd = {
+    draggingId, dragOverId, forbidden,
+    onDragStart: setDraggingId,
+    onDragEnter: setDragOverId,
+    onDragEnd: () => { setDraggingId(null); setDragOverId(null); },
+    onDrop: handleReparent,
+  };
 
   const { roots } = useMemo(() => {
     const byId = {};
@@ -219,10 +262,11 @@ export default function OrgChart() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          {canEdit && <p className="text-[11px] text-gray-400 px-4 pt-3">Tip: drag a position onto another to change its reporting line. Hover a box for add/edit/remove.</p>}
           <div className="orgtree min-w-full">
             <ul>
               {roots.map(r => (
-                <TreeNode key={r.id} node={r} canEdit={canEdit}
+                <TreeNode key={r.id} node={r} canEdit={canEdit} dnd={dnd}
                   onAddChild={(n) => setAdding({ _defaultParent: n.id, parentTitle: n.title })}
                   onEdit={(n) => setEditing(n)} onDelete={handleDelete} />
               ))}

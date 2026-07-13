@@ -824,6 +824,23 @@ function runMigrations() {
   addColumnIfMissing('sop_documents', 'source_file', 'TEXT');
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_sop_doc_type ON sop_documents(doc_type)'); } catch { /* ignore */ }
 
+  // Migrate module_access from legacy array form (["a","b"]) to per-module
+  // level object ({a:"edit", b:"edit"}) so View/Edit permissions apply.
+  try {
+    const rows = db.prepare('SELECT id, module_access FROM users WHERE module_access IS NOT NULL').all();
+    for (const r of rows) {
+      let parsed;
+      try { parsed = JSON.parse(r.module_access); } catch { continue; }
+      if (Array.isArray(parsed)) {
+        const obj = {};
+        for (const id of parsed) obj[id] = 'edit';
+        db.prepare('UPDATE users SET module_access = ? WHERE id = ?').run(JSON.stringify(obj), r.id);
+      }
+    }
+  } catch (e) {
+    console.warn('[migrate] Could not migrate module_access to view/edit form:', e.message);
+  }
+
   migrateEquipmentNotes();
   cleanEquipmentNames();
   archivePreSystemBacklog();

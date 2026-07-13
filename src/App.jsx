@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet } from './hooks/useApi';
+import { visibleModuleIds, canViewModule } from './utils/permissions';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
@@ -112,9 +113,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges }) {
         {NAV_GROUPS.map((group) => {
           const visibleItems = group.items.filter(i => {
             if (i.adminOnly && user.role !== 'admin') return false;
-            if (user.role === 'admin') return true;
-            if (user.module_access && !user.module_access.includes(i.id)) return false;
-            return true;
+            return canViewModule(user, i.id);
           });
           if (visibleItems.length === 0) return null;
           const isOpen = openGroups[group.label];
@@ -415,7 +414,7 @@ function App() {
 
   // Determine effective accessible modules for this user
   const allModuleIds = NAV_GROUPS.flatMap(g => g.items).filter(i => !i.adminOnly || user.role === 'admin').map(i => i.id);
-  const effectiveModules = user.role === 'admin' ? allModuleIds : (user.module_access || allModuleIds);
+  const effectiveModules = visibleModuleIds(user, allModuleIds);
   const operatorOnly = effectiveModules.length === 1 && effectiveModules[0] === 'operator';
 
   // If user only has operator view access, render the standalone operator layout
@@ -531,9 +530,9 @@ function App() {
           {resolvedTab === 'hygienic' && <HygienicDesignPanel />}
           {resolvedTab === 'coa' && <COAPanel />}
           {resolvedTab === 'capa' && <CAPAPanel />}
-          {resolvedTab === 'sops' && <DocumentRegistry docType="sop" title="SOP Registry" typeLabel="SOP" />}
-          {resolvedTab === 'work-instructions' && <DocumentRegistry docType="work_instruction" title="Work Instructions" typeLabel="Work Instruction" />}
-          {resolvedTab === 'job-descriptions' && <DocumentRegistry docType="job_description" title="Job Descriptions" typeLabel="Job Description" />}
+          {resolvedTab === 'sops' && <DocumentRegistry docType="sop" moduleId="sops" title="SOP Registry" typeLabel="SOP" />}
+          {resolvedTab === 'work-instructions' && <DocumentRegistry docType="work_instruction" moduleId="work-instructions" title="Work Instructions" typeLabel="Work Instruction" />}
+          {resolvedTab === 'job-descriptions' && <DocumentRegistry docType="job_description" moduleId="job-descriptions" title="Job Descriptions" typeLabel="Job Description" />}
           {resolvedTab === 'org-chart' && <OrgChart />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
