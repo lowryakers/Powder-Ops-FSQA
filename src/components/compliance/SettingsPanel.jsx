@@ -57,6 +57,8 @@ const MODULE_GROUPS = [
     modules: [
       { id: 'capa', label: 'CAPA / Complaints' },
       { id: 'sops', label: 'SOP Registry' },
+      { id: 'work-instructions', label: 'Work Instructions' },
+      { id: 'job-descriptions', label: 'Job Descriptions' },
       { id: 'training', label: 'Training Records' },
       { id: 'recall', label: 'Mock Recall' },
     ],

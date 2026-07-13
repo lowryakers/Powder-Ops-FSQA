@@ -794,6 +794,14 @@ function runMigrations() {
   // Multiple schedule lines per room/day (e.g. several Kitting products on the same day)
   addColumnIfMissing('production_schedule', 'slot', 'INTEGER NOT NULL DEFAULT 0');
 
+  // Generalize the SOP registry into a unified document-control system.
+  // sop_documents now holds SOPs, Work Instructions, Job Descriptions, etc.
+  addColumnIfMissing('sop_documents', 'doc_type', "TEXT NOT NULL DEFAULT 'sop'");
+  addColumnIfMissing('sop_documents', 'approved_by', 'TEXT');
+  addColumnIfMissing('sop_documents', 'approved_at', 'TEXT');
+  addColumnIfMissing('sop_documents', 'source_file', 'TEXT');
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_sop_doc_type ON sop_documents(doc_type)'); } catch { /* ignore */ }
+
   migrateEquipmentNotes();
   cleanEquipmentNames();
   archivePreSystemBacklog();

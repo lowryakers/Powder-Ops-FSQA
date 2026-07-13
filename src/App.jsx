@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet } from './hooks/useApi';
 import LoginScreen from './components/LoginScreen.jsx';
@@ -17,7 +17,7 @@ import ChemicalsPanel from './components/compliance/ChemicalsPanel.jsx';
 import HygienicDesignPanel from './components/compliance/HygienicDesignPanel.jsx';
 import AuditorView from './components/compliance/AuditorView.jsx';
 import CAPAPanel from './components/compliance/CAPAPanel.jsx';
-import SOPPanel from './components/compliance/SOPPanel.jsx';
+import DocumentRegistry from './components/compliance/DocumentRegistry.jsx';
 import TrainingPanel from './components/compliance/TrainingPanel.jsx';
 import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
 import ProductionLog from './components/compliance/ProductionLog.jsx';
@@ -65,6 +65,8 @@ const NAV_GROUPS = [
     items: [
       { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
       { id: 'sops', label: 'SOP Registry', icon: FileText },
+      { id: 'work-instructions', label: 'Work Instructions', icon: ListChecks },
+      { id: 'job-descriptions', label: 'Job Descriptions', icon: BriefcaseBusiness },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'recall', label: 'Mock Recall', icon: Package },
     ],
@@ -527,7 +529,9 @@ function App() {
           {resolvedTab === 'hygienic' && <HygienicDesignPanel />}
           {resolvedTab === 'coa' && <COAPanel />}
           {resolvedTab === 'capa' && <CAPAPanel />}
-          {resolvedTab === 'sops' && <SOPPanel />}
+          {resolvedTab === 'sops' && <DocumentRegistry docType="sop" title="SOP Registry" typeLabel="SOP" />}
+          {resolvedTab === 'work-instructions' && <DocumentRegistry docType="work_instruction" title="Work Instructions" typeLabel="Work Instruction" />}
+          {resolvedTab === 'job-descriptions' && <DocumentRegistry docType="job_description" title="Job Descriptions" typeLabel="Job Description" />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}

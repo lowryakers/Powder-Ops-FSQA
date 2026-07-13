@@ -89,10 +89,10 @@ export default function ComplianceDashboard() {
       tab: 'pm',
     },
     {
-      label: `SOP Reviews: ${n(sopReviewDue)} due`,
+      label: `Document Reviews: ${n(sopReviewDue)} due`,
       status: sopReviewDue === 0 ? 'good' : 'warning',
-      detail: sopReviewDue > 0 ? `${n(sopReviewDue)} SOP${plur(sopReviewDue)} past their review date.` : 'All SOPs are within their review cycle.',
-      action: sopReviewDue > 0 ? `Review ${n(sopReviewDue)} SOP${plur(sopReviewDue)} past review date` : null,
+      detail: sopReviewDue > 0 ? `${n(sopReviewDue)} controlled document${plur(sopReviewDue)} past their review date.` : 'All controlled documents are within their review cycle.',
+      action: sopReviewDue > 0 ? `Review ${n(sopReviewDue)} document${plur(sopReviewDue)} past review date` : null,
       tab: 'sops',
     },
     {

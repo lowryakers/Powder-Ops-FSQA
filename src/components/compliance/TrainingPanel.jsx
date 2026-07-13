@@ -113,7 +113,7 @@ function TrainingForm({ initial, sops, onSave, onCancel }) {
 
 export default function TrainingPanel() {
   const { data: records, loading, refresh } = useApiGet('/training');
-  const { data: sops } = useApiGet('/sops');
+  const { data: sops } = useApiGet('/documents?doc_type=sop');
   const { data: matrix, refresh: refreshMatrix } = useApiGet('/training/matrix');
   const [tab, setTab] = useState('records');
   const [search, setSearch] = useState('');
