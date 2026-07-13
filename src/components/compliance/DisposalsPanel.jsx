@@ -27,18 +27,23 @@ function canSignRole(user, role) {
 }
 
 // Approval state for a disposal: both Operations Manager and Quality Control
-// sign-offs are required. Returns which roles are still outstanding.
+// sign-offs are required. Paper records are grandfathered (signatures on the
+// filed form), so they never count as outstanding.
 function approvalStatus(d) {
+  if (d?.paper_record) return { done: true, paper: true, pending: [] };
   const a = d?.approvals || {};
   const pending = [];
   if (!a.ops_manager) pending.push('Ops Mgr');
   if (!a.quality_control) pending.push('QA');
-  return { done: pending.length === 0, pending };
+  return { done: pending.length === 0, paper: false, pending };
 }
 
 // Small badge used in the log and detail view to flag outstanding sign-offs.
 function ApprovalBadge({ d }) {
-  const { done, pending } = approvalStatus(d);
+  const { done, paper, pending } = approvalStatus(d);
+  if (paper) {
+    return <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 inline-flex items-center gap-1 whitespace-nowrap"><FileText size={11} /> On paper</span>;
+  }
   if (done) {
     return <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 inline-flex items-center gap-1 whitespace-nowrap"><Check size={11} /> Approved</span>;
   }
@@ -83,6 +88,7 @@ function DisposalForm({ initial, onSave, onCancel }) {
     document_rev: initial?.document_rev || 'V4',
     disposal_date: initial?.disposal_date || '',
     notes: initial?.notes || '',
+    paper_record: !!initial?.paper_record,
     document_url: initial?.document_url || '',
     witness: initial?.witness || '',
     items: initial?.items?.length ? initial.items.map(i => ({ ...i })) : [emptyItem()],
@@ -185,6 +191,13 @@ function DisposalForm({ initial, onSave, onCancel }) {
             <FileUpload files={docFiles} maxFiles={1} onChange={(files) => set('document_url', files[0]?.url || '')} />
           </div>
         </div>
+        <label className="flex items-start gap-2 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          <input type="checkbox" checked={form.paper_record} onChange={e => set('paper_record', e.target.checked)} className="rounded border-gray-300 mt-0.5" />
+          <span>
+            Logged on paper (historical)
+            <span className="block text-[11px] text-gray-400">Signatures live on the original disposal form — attach it above. These are not flagged as awaiting in-system approval.</span>
+          </span>
+        </label>
         <p className="text-[11px] text-gray-400">Operations Manager & Quality Control sign-offs are applied from the disposal's detail view by an authorized user.</p>
 
         <div className="flex items-center gap-2 pt-1">
@@ -273,6 +286,9 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
           {/* Approvals */}
           <div className="border border-gray-200 rounded-lg p-3 space-y-2">
             <p className="text-xs font-semibold text-gray-700">Approvals</p>
+            {d.paper_record && (
+              <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-1 flex items-center gap-1.5"><FileText size={12} className="text-gray-400" /> Logged on paper — signatures are on file on the original disposal form{d.document_url ? ' (attached below)' : ''}.</p>
+            )}
             {SIGN_ROLES.map(({ key, label }) => {
               const sig = d.approvals?.[key];
               const mine = sig && sig.user_id === user?.id;

@@ -68,14 +68,14 @@ function nextDisposalNumber(db) {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { disposal_number, document_rev, disposal_date, reason, witness, scanned, document_url, notes, items } = req.body;
+  const { disposal_number, document_rev, disposal_date, reason, witness, scanned, paper_record, document_url, notes, items } = req.body;
   const id = uuid();
   const number = (disposal_number && String(disposal_number).trim()) || nextDisposalNumber(db);
   const tx = db.transaction(() => {
-    db.prepare(`INSERT INTO disposals (id, disposal_number, document_rev, disposal_date, reason, witness, scanned, document_url, notes, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    db.prepare(`INSERT INTO disposals (id, disposal_number, document_rev, disposal_date, reason, witness, paper_record, scanned, document_url, notes, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       id, number, document_rev || null, disposal_date || null, reason || null,
-      witness || null, scanned ? 1 : 0, document_url || null, notes || null, req.user.name);
+      witness || null, paper_record ? 1 : 0, scanned ? 1 : 0, document_url || null, notes || null, req.user.name);
     writeItems(db, id, items);
   });
   tx();
@@ -89,12 +89,13 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   // Note: approval sign-offs are NOT settable here — they go through /approve
-  const { disposal_number, document_rev, disposal_date, reason, witness, scanned, document_url, notes, items } = req.body;
+  const { disposal_number, document_rev, disposal_date, reason, witness, scanned, paper_record, document_url, notes, items } = req.body;
   const tx = db.transaction(() => {
-    db.prepare(`UPDATE disposals SET disposal_number=?, document_rev=?, disposal_date=?, reason=?, witness=?, scanned=?, document_url=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
+    db.prepare(`UPDATE disposals SET disposal_number=?, document_rev=?, disposal_date=?, reason=?, witness=?, paper_record=?, scanned=?, document_url=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
       disposal_number ?? existing.disposal_number, document_rev ?? existing.document_rev,
       disposal_date ?? existing.disposal_date, reason ?? existing.reason,
       witness !== undefined ? (witness || null) : existing.witness,
+      paper_record !== undefined ? (paper_record ? 1 : 0) : existing.paper_record,
       scanned !== undefined ? (scanned ? 1 : 0) : existing.scanned,
       document_url !== undefined ? (document_url || null) : existing.document_url,
       notes ?? existing.notes, req.params.id);
@@ -207,7 +208,9 @@ export function importDisposalLog(db, csv, actor) {
     g.items.push({ item_name: item, item_number: part, lot_number: lot, quantity: qty, reason_disposed: reason, date_disposed: date, write_off_number: writeoff });
   }
 
-  const insDisp = db.prepare(`INSERT INTO disposals (id, disposal_number, document_rev, disposal_date, scanned, created_by) VALUES (?, ?, ?, ?, ?, ?)`);
+  // Imported log rows are historical paper records: signatures live on the
+  // uploaded form, so mark them paper_record so they don't flag as awaiting approval.
+  const insDisp = db.prepare(`INSERT INTO disposals (id, disposal_number, document_rev, disposal_date, scanned, paper_record, created_by) VALUES (?, ?, ?, ?, ?, 1, ?)`);
   const insItem = db.prepare(`INSERT INTO disposal_items (id, disposal_id, item_name, item_number, lot_number, quantity, reason_disposed, date_disposed, write_off_number, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   let disposals = 0, items = 0;
   const tx = db.transaction(() => {
@@ -282,6 +285,10 @@ router.get('/:id/pdf', (req, res) => {
 
   pdf.font('Helvetica-Bold').fontSize(9).text('Approvals', 40, pdf.y);
   pdf.font('Helvetica').fontSize(8).moveDown(0.3);
+  if (d.paper_record) {
+    pdf.font('Helvetica-Oblique').text('Logged on paper — signatures on file on the original disposal form.', 40, pdf.y);
+    pdf.font('Helvetica').moveDown(0.4);
+  }
   const sigDate = (s) => (s?.signed_at ? new Date(s.signed_at).toLocaleDateString() : '__________');
   const rows2 = [
     ['Operations Manager', approvals.ops_manager],

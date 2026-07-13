@@ -444,6 +444,7 @@ function initSchema() {
       reason TEXT,
       approvals TEXT,
       witness TEXT,
+      paper_record INTEGER NOT NULL DEFAULT 0,
       scanned INTEGER NOT NULL DEFAULT 0,
       document_url TEXT,
       notes TEXT,
@@ -692,7 +693,9 @@ function addColumnIfMissing(table, column, definition) {
   if (!cols.find(c => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     console.log(`[migrate] Added ${table}.${column}`);
+    return true;
   }
+  return false;
 }
 
 function runMigrations() {
@@ -853,6 +856,16 @@ function runMigrations() {
 
   // Disposal witness (free-text) — Ops Manager/QC sign-offs live in approvals JSON
   addColumnIfMissing('disposals', 'witness', 'TEXT');
+
+  // "Logged on paper" flag — grandfathered/historical disposals whose Ops
+  // Manager & QC signatures live on the uploaded scanned form, not in-system,
+  // so they don't show as awaiting approval. Backfill the historical import.
+  if (addColumnIfMissing('disposals', 'paper_record', 'INTEGER NOT NULL DEFAULT 0')) {
+    try {
+      const marked = db.prepare("UPDATE disposals SET paper_record = 1 WHERE created_by = 'system-import'").run();
+      if (marked.changes > 0) console.log(`[migrate] Marked ${marked.changes} imported historical disposals as paper records`);
+    } catch (e) { console.error('[migrate] disposals paper_record backfill:', e.message); }
+  }
 
   // Generalize the SOP registry into a unified document-control system.
   // sop_documents now holds SOPs, Work Instructions, Job Descriptions, etc.

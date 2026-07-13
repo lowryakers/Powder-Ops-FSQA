@@ -59,7 +59,10 @@ let server;
 
 app.use(compression());
 app.use(cors());
-app.use(express.json());
+// Bulk document imports and base64 attachments can be large, so allow a
+// generous JSON body (default is only 100kb, which 413's a 50-doc import).
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Initialize database on startup
 let db;
