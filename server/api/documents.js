@@ -1,9 +1,105 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
+import multer from 'multer';
 import PDFDocument from 'pdfkit';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { getDb, logAudit } from '../db.js';
 
 const router = Router();
+
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 60 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.pdf$/i.test(file.originalname) || file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Only PDF files can be imported'));
+  },
+});
+
+// Pull text out of a PDF buffer, preserving line breaks by y-position
+async function extractPdfText(buffer) {
+  const pdfDoc = await getDocument({ data: new Uint8Array(buffer) }).promise;
+  const parts = [];
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const content = await page.getTextContent();
+    let lastY = null;
+    const line = [];
+    for (const item of content.items) {
+      const y = item.transform?.[5];
+      if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) line.push('\n');
+      line.push(item.str);
+      if (y !== undefined) lastY = y;
+    }
+    parts.push(line.join(''));
+  }
+  return { text: parts.join('\n').replace(/\n{3,}/g, '\n\n').trim(), pages: pdfDoc.numPages };
+}
+
+// Best-effort guess of a document number and title from filename + first lines
+function guessMeta(filename, text) {
+  const base = filename.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').trim();
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const numRe = /\b((?:SOP|WI|JD|POL|FORM|F|QP|HACCP)[-\s]?\d{1,4}(?:[-.]\d{1,3})?)\b/i;
+  let doc_number = '';
+  const fromName = base.match(numRe);
+  if (fromName) doc_number = fromName[1].toUpperCase().replace(/\s+/g, '-');
+  else {
+    for (const l of lines.slice(0, 8)) { const m = l.match(numRe); if (m) { doc_number = m[1].toUpperCase().replace(/\s+/g, '-'); break; } }
+  }
+  // Title: filename minus the doc number, else first substantial line
+  let title = base.replace(numRe, '').replace(/^[-\s]+|[-\s]+$/g, '').trim();
+  if (!title || title.length < 3) {
+    title = lines.find(l => l.length > 4 && l.length < 90 && !numRe.test(l)) || base;
+  }
+  return { doc_number, title: title.slice(0, 120) };
+}
+
+// POST /extract — parse uploaded PDFs into draft candidates (does not save)
+router.post('/extract', importUpload.array('files', 60), async (req, res) => {
+  if (!req.files?.length) return res.status(400).json({ error: 'No files uploaded' });
+  const out = [];
+  for (const f of req.files) {
+    try {
+      const { text, pages } = await extractPdfText(f.buffer);
+      const { doc_number, title } = guessMeta(f.originalname, text);
+      out.push({ filename: f.originalname, doc_number, title, content: text, pages, ok: true });
+    } catch (err) {
+      out.push({ filename: f.originalname, ok: false, error: err.message });
+    }
+  }
+  res.json({ documents: out });
+});
+
+// POST /bulk — create many documents at once (from the reviewed import)
+router.post('/bulk', (req, res) => {
+  const db = getDb();
+  const { documents } = req.body;
+  if (!Array.isArray(documents) || documents.length === 0) {
+    return res.status(400).json({ error: 'documents array is required' });
+  }
+  const insert = db.prepare(`INSERT INTO sop_documents
+    (id, doc_type, doc_number, title, category, revision, status, owner, description, source_file)
+    VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)`);
+  const insertVersion = db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)');
+
+  const tx = db.transaction(() => {
+    let count = 0;
+    for (const d of documents) {
+      if (!d.title || !d.category) continue;
+      const type = ['sop', 'work_instruction', 'job_description', 'policy', 'form'].includes(d.doc_type) ? d.doc_type : 'sop';
+      const id = uuid();
+      insert.run(id, type, d.doc_number || '', d.title, d.category, d.revision || '1.0', d.owner || null, d.content || null, d.source_file || null);
+      const created = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(id);
+      insertVersion.run(uuid(), id, created.revision, req.user.name, 'Imported', JSON.stringify(created));
+      count++;
+    }
+    return count;
+  });
+  const imported = tx();
+  logAudit(req.user.name, 'documents_bulk_imported', 'document', null, { imported });
+  res.status(201).json({ imported });
+});
 
 // Supported controlled-document types. The registry (sop_documents table) is
 // shared; doc_type separates SOPs, Work Instructions, Job Descriptions, etc.

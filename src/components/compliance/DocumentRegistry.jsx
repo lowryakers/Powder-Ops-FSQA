@@ -1,8 +1,16 @@
-import { useState } from 'react';
-import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import { useState, Fragment } from 'react';
+import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText } from 'lucide-react';
+import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload } from 'lucide-react';
+
+const DOC_TYPE_OPTIONS = [
+  { value: 'sop', label: 'SOP' },
+  { value: 'work_instruction', label: 'Work Instruction' },
+  { value: 'job_description', label: 'Job Description' },
+  { value: 'policy', label: 'Policy' },
+  { value: 'form', label: 'Form' },
+];
 
 const CATEGORIES = ['production', 'quality', 'sanitation', 'maintenance', 'safety', 'haccp', 'training', 'admin', 'other'];
 const STATUSES = [
@@ -281,6 +289,169 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose })
   );
 }
 
+/* ───────── Bulk import ───────── */
+function BulkImportModal({ defaultDocType, onImported, onClose }) {
+  const [step, setStep] = useState('select'); // select | extracting | review | saving
+  const [rows, setRows] = useState([]);
+  const [failed, setFailed] = useState([]);
+  const [previewIdx, setPreviewIdx] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    setStep('extracting');
+    setError(null);
+    try {
+      const fd = new FormData();
+      files.forEach(f => fd.append('files', f));
+      const res = await apiUpload('/documents/extract', fd);
+      const ok = (res.documents || []).filter(d => d.ok).map(d => ({
+        include: true,
+        doc_type: defaultDocType,
+        category: 'quality',
+        doc_number: d.doc_number || '',
+        title: d.title || d.filename,
+        content: d.content || '',
+        pages: d.pages,
+        filename: d.filename,
+      }));
+      setRows(ok);
+      setFailed((res.documents || []).filter(d => !d.ok));
+      setStep('review');
+    } catch (err) {
+      console.error('Extraction failed:', err);
+      setError(err.message || 'Failed to read PDFs.');
+      setStep('select');
+    }
+  };
+
+  const setRow = (i, patch) => setRows(rs => rs.map((r, j) => j === i ? { ...r, ...patch } : r));
+  const includedCount = rows.filter(r => r.include).length;
+
+  const handleSave = async () => {
+    setStep('saving');
+    try {
+      const documents = rows.filter(r => r.include && r.title).map(r => ({
+        doc_type: r.doc_type, doc_number: r.doc_number, title: r.title,
+        category: r.category, content: r.content, source_file: r.filename,
+      }));
+      const res = await apiPost('/documents/bulk', { documents });
+      onImported(res.imported || 0);
+    } catch (err) {
+      console.error('Bulk save failed:', err);
+      setError(err.message || 'Failed to save documents.');
+      setStep('review');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl my-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+          <h3 className="font-semibold text-gray-900">Import documents from PDFs</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+
+        <div className="p-5">
+          {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+
+          {(step === 'select' || step === 'extracting') && (
+            <label className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl py-12 cursor-pointer hover:bg-gray-50 ${step === 'extracting' ? 'opacity-60 pointer-events-none' : ''}`}>
+              <Upload size={28} className="text-gray-400" />
+              <span className="text-sm text-gray-600 font-medium">{step === 'extracting' ? 'Reading PDFs…' : 'Choose PDF files (you can select many at once)'}</span>
+              <span className="text-xs text-gray-400">Text is extracted into editable draft documents — you confirm the details next.</span>
+              <input type="file" accept="application/pdf,.pdf" multiple className="hidden"
+                onChange={e => handleFiles(e.target.files)} />
+            </label>
+          )}
+
+          {step === 'review' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">{includedCount} of {rows.length} document{rows.length === 1 ? '' : 's'} selected to import.</p>
+              </div>
+              {failed.length > 0 && (
+                <p className="text-xs text-amber-600">{failed.length} file(s) couldn't be read and were skipped: {failed.map(f => f.filename).join(', ')}</p>
+              )}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="overflow-x-auto max-h-[50vh] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                      <tr>
+                        <th className="px-2 py-2 w-8"></th>
+                        <th className="text-left px-2 py-2 text-xs font-medium text-gray-500">Type</th>
+                        <th className="text-left px-2 py-2 text-xs font-medium text-gray-500 whitespace-nowrap">Doc #</th>
+                        <th className="text-left px-2 py-2 text-xs font-medium text-gray-500">Title</th>
+                        <th className="text-left px-2 py-2 text-xs font-medium text-gray-500">Category</th>
+                        <th className="px-2 py-2 text-xs font-medium text-gray-500 whitespace-nowrap">Pages</th>
+                        <th className="px-2 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {rows.map((r, i) => (
+                        <Fragment key={i}>
+                          <tr className={r.include ? '' : 'opacity-40'}>
+                            <td className="px-2 py-1.5 text-center">
+                              <input type="checkbox" checked={r.include} onChange={e => setRow(i, { include: e.target.checked })} className="rounded border-gray-300" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <select value={r.doc_type} onChange={e => setRow(i, { doc_type: e.target.value })} className="px-1.5 py-1 border border-gray-200 rounded text-xs">
+                                {DOC_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input value={r.doc_number} onChange={e => setRow(i, { doc_number: e.target.value })} className="w-24 px-1.5 py-1 border border-gray-200 rounded text-xs" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input value={r.title} onChange={e => setRow(i, { title: e.target.value })} className="w-full min-w-[180px] px-1.5 py-1 border border-gray-200 rounded text-xs" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <select value={r.category} onChange={e => setRow(i, { category: e.target.value })} className="px-1.5 py-1 border border-gray-200 rounded text-xs">
+                                {CATEGORIES.map(c => <option key={c} value={c}>{cap(c)}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-2 py-1.5 text-center text-xs text-gray-500">{r.pages}</td>
+                            <td className="px-2 py-1.5">
+                              <button onClick={() => setPreviewIdx(previewIdx === i ? null : i)} className="text-xs text-blue-600 hover:underline">
+                                {previewIdx === i ? 'Hide' : 'Preview'}
+                              </button>
+                            </td>
+                          </tr>
+                          {previewIdx === i && (
+                            <tr>
+                              <td colSpan={7} className="px-3 py-2 bg-gray-50">
+                                <textarea value={r.content} onChange={e => setRow(i, { content: e.target.value })} rows={8}
+                                  className="w-full px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
+                                <p className="text-[10px] text-gray-400 mt-1">Extracted text — clean up here or after import. Original file: {r.filename}</p>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 'saving' && <div className="text-center py-12 text-gray-500">Saving {includedCount} documents…</div>}
+        </div>
+
+        {step === 'review' && (
+          <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200">
+            <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+            <button onClick={handleSave} disabled={includedCount === 0} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+              Import {includedCount} as drafts
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ───────── Registry ───────── */
 export default function DocumentRegistry({ docType, moduleId, title, typeLabel }) {
   const { user } = useAuth() || {};
@@ -296,6 +467,8 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [viewing, setViewing] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
 
   const q = search.toLowerCase().trim();
   const filtered = (docs || []).filter(d => !q || [d.title, d.doc_number, d.owner].some(v => v && v.toLowerCase().includes(q)));
@@ -332,11 +505,20 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
           <p className="text-sm text-gray-500">{filtered.length} document{filtered.length === 1 ? '' : 's'}</p>
         </div>
         {canEdit && (
-          <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
-            <Plus size={16} /> New {typeLabel}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+              <Upload size={15} /> Import PDFs
+            </button>
+            <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
+              <Plus size={16} /> New {typeLabel}
+            </button>
+          </div>
         )}
       </div>
+
+      {importMsg && (
+        <div className="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-2">{importMsg}</div>
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
@@ -409,6 +591,18 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
           onEdit={(d) => { setViewing(null); setEditing(d); }}
           onArchive={handleArchive}
           onClose={() => setViewing(null)} />
+      )}
+      {importing && (
+        <BulkImportModal
+          defaultDocType={docType}
+          onClose={() => setImporting(false)}
+          onImported={(count) => {
+            setImporting(false);
+            setImportMsg(`Imported ${count} document${count === 1 ? '' : 's'} as drafts. Review and finalize them in the list.`);
+            setTimeout(() => setImportMsg(null), 6000);
+            refresh();
+          }}
+        />
       )}
     </div>
   );
