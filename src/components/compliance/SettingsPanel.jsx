@@ -60,6 +60,7 @@ const MODULE_GROUPS = [
       { id: 'work-instructions', label: 'Work Instructions' },
       { id: 'job-descriptions', label: 'Job Descriptions' },
       { id: 'org-chart', label: 'Org Chart' },
+      { id: 'disposals', label: 'Disposals' },
       { id: 'training', label: 'Training Records' },
       { id: 'recall', label: 'Mock Recall' },
     ],

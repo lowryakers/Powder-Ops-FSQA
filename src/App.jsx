@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2 } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet } from './hooks/useApi';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
@@ -20,6 +20,7 @@ import AuditorView from './components/compliance/AuditorView.jsx';
 import CAPAPanel from './components/compliance/CAPAPanel.jsx';
 import DocumentRegistry from './components/compliance/DocumentRegistry.jsx';
 import OrgChart from './components/compliance/OrgChart.jsx';
+import DisposalsPanel from './components/compliance/DisposalsPanel.jsx';
 import TrainingPanel from './components/compliance/TrainingPanel.jsx';
 import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
 import ProductionLog from './components/compliance/ProductionLog.jsx';
@@ -70,6 +71,7 @@ const NAV_GROUPS = [
       { id: 'work-instructions', label: 'Work Instructions', icon: ListChecks },
       { id: 'job-descriptions', label: 'Job Descriptions', icon: BriefcaseBusiness },
       { id: 'org-chart', label: 'Org Chart', icon: Network },
+      { id: 'disposals', label: 'Disposals', icon: Trash2 },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'recall', label: 'Mock Recall', icon: Package },
     ],
@@ -534,6 +536,7 @@ function App() {
           {resolvedTab === 'work-instructions' && <DocumentRegistry docType="work_instruction" moduleId="work-instructions" title="Work Instructions" typeLabel="Work Instruction" />}
           {resolvedTab === 'job-descriptions' && <DocumentRegistry docType="job_description" moduleId="job-descriptions" title="Job Descriptions" typeLabel="Job Description" />}
           {resolvedTab === 'org-chart' && <OrgChart />}
+          {resolvedTab === 'disposals' && <DisposalsPanel />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}

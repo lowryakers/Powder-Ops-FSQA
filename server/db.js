@@ -435,6 +435,40 @@ function initSchema() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Disposals (digital Form 411-1)
+    CREATE TABLE IF NOT EXISTS disposals (
+      id TEXT PRIMARY KEY,
+      disposal_number TEXT,
+      document_rev TEXT,
+      disposal_date TEXT,
+      reason TEXT,
+      approvals TEXT,
+      scanned INTEGER NOT NULL DEFAULT 0,
+      document_url TEXT,
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_disposals_number ON disposals(disposal_number);
+    CREATE INDEX IF NOT EXISTS idx_disposals_date ON disposals(disposal_date);
+
+    CREATE TABLE IF NOT EXISTS disposal_items (
+      id TEXT PRIMARY KEY,
+      disposal_id TEXT NOT NULL,
+      item_name TEXT,
+      item_number TEXT,
+      lot_number TEXT,
+      quantity TEXT,
+      category TEXT,
+      reason_disposed TEXT,
+      date_disposed TEXT,
+      write_off_number TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (disposal_id) REFERENCES disposals(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_disposal_items_disposal ON disposal_items(disposal_id);
+
     -- Training Records
     CREATE TABLE IF NOT EXISTS training_records (
       id TEXT PRIMARY KEY,
