@@ -3,7 +3,7 @@ import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import FileUpload from '../FileUpload';
-import { Plus, Search, Edit2, Trash2, Download, Upload, X, Trash, Check, Paperclip, FileText, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Download, Upload, X, Trash, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 
 const CATEGORIES = [
   { value: '', label: '—' },
@@ -24,6 +24,25 @@ function canSignRole(user, role) {
   if (role === 'ops_manager') return user.role === 'admin' || user.role === 'supervisor';
   if (role === 'quality_control') return user.department === 'qa' || user.role === 'admin';
   return false;
+}
+
+// Approval state for a disposal: both Operations Manager and Quality Control
+// sign-offs are required. Returns which roles are still outstanding.
+function approvalStatus(d) {
+  const a = d?.approvals || {};
+  const pending = [];
+  if (!a.ops_manager) pending.push('Ops Mgr');
+  if (!a.quality_control) pending.push('QA');
+  return { done: pending.length === 0, pending };
+}
+
+// Small badge used in the log and detail view to flag outstanding sign-offs.
+function ApprovalBadge({ d }) {
+  const { done, pending } = approvalStatus(d);
+  if (done) {
+    return <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 inline-flex items-center gap-1 whitespace-nowrap"><Check size={11} /> Approved</span>;
+  }
+  return <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 inline-flex items-center gap-1 whitespace-nowrap"><AlertTriangle size={11} /> {pending.join(' + ')} needed</span>;
 }
 
 async function downloadDisposalPdf(id, num) {
@@ -64,7 +83,6 @@ function DisposalForm({ initial, onSave, onCancel }) {
     document_rev: initial?.document_rev || 'V4',
     disposal_date: initial?.disposal_date || '',
     notes: initial?.notes || '',
-    scanned: !!initial?.scanned,
     document_url: initial?.document_url || '',
     witness: initial?.witness || '',
     items: initial?.items?.length ? initial.items.map(i => ({ ...i })) : [emptyItem()],
@@ -81,7 +99,7 @@ function DisposalForm({ initial, onSave, onCancel }) {
     try { await onSave({ ...form, items: form.items.filter(it => it.item_name || it.item_number || it.lot_number) }); }
     finally { setSaving(false); }
   };
-  const docFiles = form.document_url ? [{ url: form.document_url, originalName: 'Scanned form' }] : [];
+  const docFiles = form.document_url ? [{ url: form.document_url, originalName: 'Attached form' }] : [];
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onCancel}>
@@ -91,9 +109,9 @@ function DisposalForm({ initial, onSave, onCancel }) {
           <button type="button" onClick={onCancel} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Disposal #</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Disposal # <span className="text-gray-400 font-normal">(auto if blank)</span></label>
             <input value={form.disposal_number} onChange={e => set('disposal_number', e.target.value)} placeholder="e.g. 007" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
           <div>
@@ -106,9 +124,6 @@ function DisposalForm({ initial, onSave, onCancel }) {
             <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
             <input type="date" value={form.disposal_date || ''} onChange={e => set('disposal_date', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700 mt-6">
-            <input type="checkbox" checked={form.scanned} onChange={e => set('scanned', e.target.checked)} className="rounded border-gray-300" /> Form scanned
-          </label>
         </div>
 
         <div>
@@ -166,7 +181,7 @@ function DisposalForm({ initial, onSave, onCancel }) {
             <input value={form.notes} onChange={e => set('notes', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Scanned form (optional — historical)</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Attach original form (optional)</label>
             <FileUpload files={docFiles} maxFiles={1} onChange={(files) => set('document_url', files[0]?.url || '')} />
           </div>
         </div>
@@ -222,7 +237,7 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-gray-900">Disposal {d.disposal_number || '—'}</span>
               {d.document_rev && <span className="text-xs text-gray-400">{d.document_rev}</span>}
-              {d.scanned ? <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 flex items-center gap-1"><Check size={11} /> Scanned</span> : <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">Not scanned</span>}
+              <ApprovalBadge d={d} />
             </div>
             <p className="text-xs text-gray-500 mt-0.5">{d.disposal_date || ''} · {d.items?.length || 0} item{d.items?.length === 1 ? '' : 's'}</p>
           </div>
@@ -285,7 +300,7 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
             </div>
           </div>
 
-          {d.document_url && <a href={d.document_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-powder-600 hover:underline"><Paperclip size={14} /> View scanned form</a>}
+          {d.document_url && <a href={d.document_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-powder-600 hover:underline"><Paperclip size={14} /> View attached form</a>}
           {d.notes && <p className="text-xs text-gray-500">{d.notes}</p>}
         </div>
 
@@ -309,7 +324,7 @@ export default function DisposalsPanel() {
   const [search, setSearch] = useState('');
   const [reasonFilter, setReasonFilter] = useState('');
   const [revFilter, setRevFilter] = useState('');
-  const [scannedFilter, setScannedFilter] = useState('');
+  const [approvalFilter, setApprovalFilter] = useState('');
   const [sortField, setSortField] = useState('date_disposed');
   const [sortDir, setSortDir] = useState('desc');
   const [creating, setCreating] = useState(false);
@@ -322,8 +337,9 @@ export default function DisposalsPanel() {
   const rows = useMemo(() => {
     const out = [];
     for (const d of disposals || []) {
+      const approved = approvalStatus(d).done;
       for (const it of (d.items || [])) {
-        out.push({ ...it, disposal_id: d.id, disposal_number: d.disposal_number, document_rev: d.document_rev, scanned: d.scanned, _d: d });
+        out.push({ ...it, disposal_id: d.id, disposal_number: d.disposal_number, document_rev: d.document_rev, approved, _d: d });
       }
     }
     return out;
@@ -338,17 +354,22 @@ export default function DisposalsPanel() {
       (!q || [x.item_name, x.item_number, x.lot_number, x.write_off_number, x.reason_disposed, x.disposal_number].some(v => v && v.toLowerCase().includes(q))) &&
       (!reasonFilter || (x.reason_disposed || '').trim() === reasonFilter) &&
       (!revFilter || x.document_rev === revFilter) &&
-      (!scannedFilter || (scannedFilter === 'yes' ? x.scanned : !x.scanned)));
+      (!approvalFilter || (approvalFilter === 'approved' ? x.approved : !x.approved)));
     const dir = sortDir === 'asc' ? 1 : -1;
     r = [...r].sort((a, b) => {
       let av, bv;
       if (sortField === 'date_disposed') { av = dateVal(a.date_disposed); bv = dateVal(b.date_disposed); }
       else if (sortField === 'quantity') { av = qtyVal(a.quantity); bv = qtyVal(b.quantity); }
+      else if (sortField === 'approved') { av = a.approved ? 1 : 0; bv = b.approved ? 1 : 0; }
       else { av = (a[sortField] || '').toString().toLowerCase(); bv = (b[sortField] || '').toString().toLowerCase(); }
       if (av < bv) return -dir; if (av > bv) return dir; return 0;
     });
     return r;
-  }, [rows, search, reasonFilter, revFilter, scannedFilter, sortField, sortDir]);
+  }, [rows, search, reasonFilter, revFilter, approvalFilter, sortField, sortDir]);
+
+  const pendingApprovals = useMemo(
+    () => (disposals || []).filter(d => !approvalStatus(d).done).length,
+    [disposals]);
 
   const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir('asc'); } };
   const sh = { sortField, sortDir, onSort };
@@ -380,7 +401,7 @@ export default function DisposalsPanel() {
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-xl border border-gray-200 p-3"><p className="text-2xl font-bold text-gray-900">{summary.total_disposals}</p><p className="text-xs text-gray-500">Disposals</p></div>
           <div className="bg-white rounded-xl border border-gray-200 p-3"><p className="text-2xl font-bold text-gray-900">{summary.total_items}</p><p className="text-xs text-gray-500">Items disposed</p></div>
-          <div className={`rounded-xl border p-3 ${summary.unscanned > 0 ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'}`}><p className={`text-2xl font-bold ${summary.unscanned > 0 ? 'text-amber-700' : 'text-gray-900'}`}>{summary.unscanned}</p><p className="text-xs text-gray-500">Forms not scanned</p></div>
+          <div className={`rounded-xl border p-3 ${pendingApprovals > 0 ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'}`}><p className={`text-2xl font-bold ${pendingApprovals > 0 ? 'text-amber-700' : 'text-gray-900'} flex items-center gap-1.5`}>{pendingApprovals > 0 && <AlertTriangle size={18} />}{pendingApprovals}</p><p className="text-xs text-gray-500">Awaiting approval</p></div>
         </div>
       )}
 
@@ -397,10 +418,10 @@ export default function DisposalsPanel() {
           <option value="">All revs</option>
           {revs.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <select value={scannedFilter} onChange={e => setScannedFilter(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
-          <option value="">Scanned: all</option>
-          <option value="yes">Scanned</option>
-          <option value="no">Not scanned</option>
+        <select value={approvalFilter} onChange={e => setApprovalFilter(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+          <option value="">Approvals: all</option>
+          <option value="pending">Awaiting approval</option>
+          <option value="approved">Fully approved</option>
         </select>
       </div>
 
@@ -423,7 +444,7 @@ export default function DisposalsPanel() {
                   <SortTh label="Write-off #" field="write_off_number" {...sh} />
                   <SortTh label="Disposal #" field="disposal_number" {...sh} />
                   <SortTh label="Rev" field="document_rev" {...sh} />
-                  <SortTh label="Scanned" field="scanned" {...sh} align="center" />
+                  <SortTh label="Approvals" field="approved" {...sh} align="center" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
@@ -438,7 +459,7 @@ export default function DisposalsPanel() {
                     <td className="px-2 py-2 text-gray-600 whitespace-pre-line">{r.write_off_number || '—'}</td>
                     <td className="px-2 py-2 text-gray-500 whitespace-nowrap">{r.disposal_number || '—'}</td>
                     <td className="px-2 py-2 text-gray-500 whitespace-nowrap">{r.document_rev || '—'}</td>
-                    <td className="px-2 py-2 text-center">{r.scanned ? <Check size={14} className="text-green-600 inline" /> : <span className="text-gray-300">—</span>}</td>
+                    <td className="px-2 py-2 text-center"><ApprovalBadge d={r._d} /></td>
                   </tr>
                 ))}
               </tbody>
