@@ -333,7 +333,7 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
       setStep('review');
     } catch (err) {
       console.error('Extraction failed:', err);
-      setError(err.message || 'Failed to read PDFs.');
+      setError(err.message || 'Failed to read the uploaded files.');
       setStep('select');
     }
   };
@@ -361,7 +361,7 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
     <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl my-6" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-900">Import documents from PDFs</h3>
+          <h3 className="font-semibold text-gray-900">Import documents from files</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
 
@@ -371,9 +371,10 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
           {(step === 'select' || step === 'extracting') && (
             <label className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl py-12 cursor-pointer hover:bg-gray-50 ${step === 'extracting' ? 'opacity-60 pointer-events-none' : ''}`}>
               <Upload size={28} className="text-gray-400" />
-              <span className="text-sm text-gray-600 font-medium">{step === 'extracting' ? 'Reading PDFs…' : 'Choose PDF files (you can select many at once)'}</span>
-              <span className="text-xs text-gray-400">Text is extracted into editable draft documents — you confirm the details next.</span>
-              <input type="file" accept="application/pdf,.pdf" multiple className="hidden"
+              <span className="text-sm text-gray-600 font-medium">{step === 'extracting' ? 'Reading files…' : 'Choose files (you can select many at once)'}</span>
+              <span className="text-xs text-gray-400">PDF, Word (.docx), text, and Markdown files are supported. Text is extracted into editable draft documents — you confirm the details next.</span>
+              <span className="text-[11px] text-gray-400">Unsupported or unreadable files are skipped, not blocked — the rest still import.</span>
+              <input type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" multiple className="hidden"
                 onChange={e => handleFiles(e.target.files)} />
             </label>
           )}
@@ -384,7 +385,12 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
                 <p className="text-sm text-gray-600">{includedCount} of {rows.length} document{rows.length === 1 ? '' : 's'} selected to import.</p>
               </div>
               {failed.length > 0 && (
-                <p className="text-xs text-amber-600">{failed.length} file(s) couldn't be read and were skipped: {failed.map(f => f.filename).join(', ')}</p>
+                <div className="text-xs text-amber-600">
+                  <p className="font-medium">{failed.length} file(s) were skipped:</p>
+                  <ul className="list-disc list-inside">
+                    {failed.map((f, i) => <li key={i}>{f.filename}{f.error ? ` — ${f.error}` : ''}</li>)}
+                  </ul>
+                </div>
               )}
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <div className="overflow-x-auto max-h-[50vh] overflow-y-auto">
@@ -423,7 +429,7 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
                                 {CATEGORIES.map(c => <option key={c} value={c}>{cap(c)}</option>)}
                               </select>
                             </td>
-                            <td className="px-2 py-1.5 text-center text-xs text-gray-500">{r.pages}</td>
+                            <td className="px-2 py-1.5 text-center text-xs text-gray-500">{r.pages ?? '—'}</td>
                             <td className="px-2 py-1.5">
                               <button onClick={() => setPreviewIdx(previewIdx === i ? null : i)} className="text-xs text-blue-600 hover:underline">
                                 {previewIdx === i ? 'Hide' : 'Preview'}
@@ -435,10 +441,12 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
                               <td colSpan={7} className="px-3 py-2 bg-gray-50">
                                 <div className="grid md:grid-cols-2 gap-3">
                                   <div>
-                                    <p className="text-[10px] font-medium text-gray-500 mb-1">Original PDF</p>
-                                    {r.blobUrl
+                                    <p className="text-[10px] font-medium text-gray-500 mb-1">Original file</p>
+                                    {r.blobUrl && /\.pdf$/i.test(r.filename || '')
                                       ? <iframe src={r.blobUrl} title={r.filename} className="w-full h-[440px] border border-gray-200 rounded bg-white" />
-                                      : <p className="text-xs text-gray-400">Original not available for preview.</p>}
+                                      : <div className="w-full h-[440px] border border-gray-200 rounded bg-white flex items-center justify-center text-center px-4">
+                                          <p className="text-xs text-gray-400">In-browser preview is available for PDFs only.<br />Review the extracted content on the right for {r.filename}.</p>
+                                        </div>}
                                   </div>
                                   <div>
                                     <p className="text-[10px] font-medium text-gray-500 mb-1">Extracted content — Markdown (editable)</p>

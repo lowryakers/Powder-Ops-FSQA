@@ -3,18 +3,38 @@ import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import PDFDocument from 'pdfkit';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import mammoth from 'mammoth';
 import { getDb, logAudit } from '../db.js';
 
 const router = Router();
 
+const MAX_IMPORT_MB = 50;
+
+// Accept a broad set of document files. Unsupported types are NOT rejected
+// here (that would abort the whole batch) — they are accepted and flagged
+// per-file during extraction so a mixed upload still imports what it can.
 const importUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024, files: 60 },
-  fileFilter: (_req, file, cb) => {
-    if (/\.pdf$/i.test(file.originalname) || file.mimetype === 'application/pdf') cb(null, true);
-    else cb(new Error('Only PDF files can be imported'));
-  },
+  limits: { fileSize: MAX_IMPORT_MB * 1024 * 1024, files: 100 },
 });
+
+// Wrap multer so its size/count errors come back as a clear 400 instead of a
+// generic 500, and one oversized file doesn't silently kill the whole import.
+function receiveImportFiles(req, res, next) {
+  importUpload.array('files', 100)(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: `A file exceeds the ${MAX_IMPORT_MB} MB limit. Split or compress it and try again.` });
+      }
+      if (err.code === 'LIMIT_FILE_COUNT') {
+        return res.status(400).json({ error: 'Too many files in one batch (max 100). Upload in smaller groups.' });
+      }
+      return res.status(400).json({ error: `Upload error: ${err.message}` });
+    }
+    return res.status(400).json({ error: err.message || 'Upload failed' });
+  });
+}
 
 // Pull text out of a PDF buffer, preserving line breaks by y-position
 async function extractPdfText(buffer) {
@@ -62,9 +82,33 @@ function textToMarkdown(text) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// Extract plain/markdown-ish text from a supported document buffer. Returns
+// { text, pages } or throws with a user-facing reason for unsupported types.
+async function extractDocText(file) {
+  const name = file.originalname || '';
+  if (/\.pdf$/i.test(name) || file.mimetype === 'application/pdf') {
+    return extractPdfText(file.buffer);
+  }
+  if (/\.docx$/i.test(name) || file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    // mammoth understands Word styles, so we get real Markdown headings/lists.
+    const { value } = await mammoth.convertToMarkdown({ buffer: file.buffer });
+    // mammoth backslash-escapes punctuation (e.g. "WI\-014", "step\."); these
+    // imported docs never rely on literal escapes, so strip them for clean text.
+    const text = (value || '').replace(/\\([\\`*_{}[\]()#+\-.!>])/g, '$1').trim();
+    return { text, pages: null, isMarkdown: true };
+  }
+  if (/\.(txt|md|markdown)$/i.test(name) || file.mimetype === 'text/plain' || file.mimetype === 'text/markdown') {
+    return { text: file.buffer.toString('utf8').trim(), pages: null, isMarkdown: /\.(md|markdown)$/i.test(name) };
+  }
+  if (/\.doc$/i.test(name)) {
+    throw new Error('Legacy .doc files are not supported — save as .docx or PDF and re-upload.');
+  }
+  throw new Error('Unsupported file type — upload a PDF, Word (.docx), text, or Markdown file.');
+}
+
 // Strip common cloud/OS duplication noise from a filename before parsing
 function cleanFilename(filename) {
-  let s = filename.replace(/\.pdf$/i, '');
+  let s = filename.replace(/\.(pdf|docx?|txt|md|markdown)$/i, '');
   s = s.replace(/[_]+/g, ' ');
   // Leading "Copy of " (possibly repeated, e.g. "Copy of Copy of ...")
   s = s.replace(/^(?:\s*copy\s+of\s+)+/i, '');
@@ -93,15 +137,20 @@ function guessMeta(filename, text) {
   return { doc_number, title: title.slice(0, 120) };
 }
 
-// POST /extract — parse uploaded PDFs into draft candidates (does not save)
-router.post('/extract', importUpload.array('files', 60), async (req, res) => {
+// POST /extract — parse uploaded documents into draft candidates (does not
+// save). PDFs, Word (.docx), and text/Markdown files are supported; any
+// unsupported or unreadable file is returned with ok:false so the rest of the
+// batch still imports.
+router.post('/extract', receiveImportFiles, async (req, res) => {
   if (!req.files?.length) return res.status(400).json({ error: 'No files uploaded' });
   const out = [];
   for (const f of req.files) {
     try {
-      const { text, pages } = await extractPdfText(f.buffer);
+      const { text, pages, isMarkdown } = await extractDocText(f);
       const { doc_number, title } = guessMeta(f.originalname, text);
-      out.push({ filename: f.originalname, doc_number, title, content: textToMarkdown(text), pages, ok: true });
+      // mammoth/Markdown sources already carry structure — don't re-mangle them.
+      const content = isMarkdown ? text : textToMarkdown(text);
+      out.push({ filename: f.originalname, doc_number, title, content, pages, ok: true });
     } catch (err) {
       out.push({ filename: f.originalname, ok: false, error: err.message });
     }
