@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApiGet } from '../../hooks/useApi';
-import { BarChart3, TrendingUp, Users, Package, ClipboardCheck, Calendar } from 'lucide-react';
+import { BarChart3, TrendingUp, Users, Package, ClipboardCheck, Calendar, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { localDateStr } from '../../utils/dates';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -9,8 +9,45 @@ import {
 
 const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#14b8a6', '#f43f5e'];
 
+const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const WEEK_DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const TEAM_ORDER = ['Batching', 'Kitting', 'Stick Pack', 'Hand Fill', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
+const TEAM_TEXT = {
+  Batching: 'text-yellow-700',
+  Kitting: 'text-blue-700',
+  'Stick Pack': 'text-cyan-700',
+  'Hand Fill': 'text-violet-700',
+  Quality: 'text-red-700',
+  Warehouse: 'text-gray-700',
+  Sanitation: 'text-emerald-700',
+  Other: 'text-gray-600',
+};
+
 function formatDate(d) {
   return localDateStr(d);
+}
+
+function getMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function fmtTime(t) {
+  if (!t) return '';
+  const [h, m] = String(t).split(':').map(Number);
+  if (Number.isNaN(h)) return t;
+  const ap = h >= 12 ? 'PM' : 'AM';
+  return `${h % 12 || 12}:${String(m ?? 0).padStart(2, '0')} ${ap}`;
+}
+
+// Normalize MO numbers so "MO76721" and "76721" match
+const normMo = (m) => (m || '').toString().replace(/[^0-9]/g, '');
+
+function num(v) {
+  return Number(v || 0).toLocaleString();
 }
 
 function KpiCard({ icon: Icon, label, value, sub, color }) {
@@ -33,6 +70,203 @@ const customTooltipStyle = {
   padding: '8px 12px',
   fontSize: '13px',
 };
+
+function CompareTile({ count, label, tone }) {
+  const tones = {
+    green: 'bg-green-50 border-green-200 text-green-700',
+    amber: 'bg-amber-50 border-amber-200 text-amber-700',
+    blue: 'bg-blue-50 border-blue-200 text-blue-700',
+  };
+  return (
+    <div className={`rounded-xl border p-4 text-center ${tones[tone]}`}>
+      <p className="text-3xl font-bold">{count}</p>
+      <p className="text-xs font-medium mt-1">{label}</p>
+    </div>
+  );
+}
+
+// At-a-glance view of what actually ran this week (from the Production Log / EOD entries),
+// grouped by team and day, plus a Schedule vs Actual comparison.
+function WeeklyProductionView() {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const monday = useMemo(() => {
+    const m = getMonday(new Date());
+    m.setDate(m.getDate() + weekOffset * 7);
+    return m;
+  }, [weekOffset]);
+  const weekDates = useMemo(
+    () => [0, 1, 2, 3, 4].map(i => { const d = new Date(monday); d.setDate(d.getDate() + i); return localDateStr(d); }),
+    [monday]
+  );
+  const monStr = weekDates[0];
+  const friStr = weekDates[4];
+  const dateIndex = useMemo(() => Object.fromEntries(weekDates.map((d, i) => [d, i])), [weekDates]);
+
+  const { data: entries, loading } = useApiGet(`/production/entries?from=${monStr}&to=${friStr}`, [monStr, friStr]);
+  const { data: sched } = useApiGet(`/production/schedule?week_start=${monStr}`, [monStr]);
+
+  const { teamGrid, teamsWithData, totals, mos, compare } = useMemo(() => {
+    const grid = {};
+    let units = 0, runs = 0, manHours = 0;
+    const moActual = new Map();
+    const rows = Array.isArray(entries) ? entries : [];
+    for (const e of rows) {
+      const idx = dateIndex[(e.date || '').slice(0, 10)];
+      if (idx == null) continue;
+      const team = e.team || 'Other';
+      if (!grid[team]) grid[team] = [[], [], [], [], []];
+      grid[team][idx].push(e);
+      units += e.quantity_completed || 0;
+      runs += 1;
+      manHours += (e.duration_hours || 0) * (e.people_count || 0);
+      if (e.mo_number) moActual.set(normMo(e.mo_number), e.mo_number);
+    }
+    const teams = TEAM_ORDER.filter(t => grid[t]).concat(Object.keys(grid).filter(t => !TEAM_ORDER.includes(t)));
+
+    const schedRows = (sched?.assignments || []).filter(a => a.mo_number || a.product_name);
+    const moSched = new Map();
+    for (const a of schedRows) { if (a.mo_number) moSched.set(normMo(a.mo_number), a.mo_number); }
+    const ran = [...moSched.keys()].filter(m => moActual.has(m)).map(m => moActual.get(m));
+    const notRun = [...moSched.keys()].filter(m => !moActual.has(m)).map(m => moSched.get(m));
+    const unscheduled = [...moActual.keys()].filter(m => !moSched.has(m)).map(m => moActual.get(m));
+
+    return {
+      teamGrid: grid,
+      teamsWithData: teams,
+      totals: { units, runs, manHours },
+      mos: [...moActual.values()],
+      compare: { ran, notRun, unscheduled, hasSchedule: schedRows.length > 0 },
+    };
+  }, [entries, sched, dateIndex]);
+
+  const rangeLabel = `${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(weekDates[4]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+      {/* Header + week nav */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+          <CalendarDays size={16} className="text-gray-400" /> Weekly Production
+          <span className="text-sm font-normal text-gray-500">{rangeLabel}</span>
+          {weekOffset === 0 && <span className="text-[10px] font-semibold uppercase tracking-wide text-green-600 bg-green-50 px-1.5 py-0.5 rounded">This week</span>}
+        </h3>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setWeekOffset(w => w - 1)} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Previous week">
+            <ChevronLeft size={16} className="text-gray-600" />
+          </button>
+          <button onClick={() => setWeekOffset(0)} className="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg">This week</button>
+          <button onClick={() => setWeekOffset(w => w + 1)} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Next week">
+            <ChevronRight size={16} className="text-gray-600" />
+          </button>
+        </div>
+      </div>
+
+      {/* Week summary */}
+      <div className="text-sm text-gray-600">
+        <span className="font-semibold text-gray-900">{num(totals.units)}</span> units ·{' '}
+        <span className="font-semibold text-gray-900">{totals.runs}</span> run{totals.runs === 1 ? '' : 's'} ·{' '}
+        <span className="font-semibold text-gray-900">{Math.round(totals.manHours).toLocaleString()}</span> man-hours
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-gray-400 text-sm">Loading week…</div>
+      ) : teamsWithData.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 text-sm">No production logged for this week.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse min-w-[720px]">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="text-left px-2 py-2 text-xs font-semibold text-gray-500 w-24">Team</th>
+                {WEEK_DAYS.map((d, i) => (
+                  <th key={d} className="text-left px-2 py-2 text-xs font-semibold text-gray-500">
+                    {WEEK_DAYS_SHORT[i]} <span className="font-normal text-gray-400">{new Date(weekDates[i]).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {teamsWithData.map(team => (
+                <tr key={team} className="border-b border-gray-100 align-top">
+                  <td className="px-2 py-2">
+                    <span className={`text-sm font-semibold ${TEAM_TEXT[team] || 'text-gray-700'}`}>{team}</span>
+                  </td>
+                  {[0, 1, 2, 3, 4].map(di => (
+                    <td key={di} className="px-2 py-2 align-top">
+                      {teamGrid[team][di].length === 0 ? (
+                        <span className="text-gray-300 text-sm">—</span>
+                      ) : (
+                        teamGrid[team][di].map(e => (
+                          <div key={e.id} className="rounded-lg border border-gray-200 bg-gray-50/50 px-2 py-1.5 mb-1 last:mb-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className={`text-xs font-semibold ${TEAM_TEXT[team] || 'text-gray-700'}`}>{e.mo_number}</span>
+                              <span className="text-xs font-semibold text-gray-800">{num(e.quantity_completed)}</span>
+                            </div>
+                            {e.product_name && <div className="text-[11px] text-gray-600 leading-tight">{e.product_name}</div>}
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                              {e.people_count}p · {Number(e.duration_hours || 0).toFixed(1)}h · {Number(e.units_per_minute || 0).toFixed(1)} u/min
+                              {e.start_time ? ` · ${fmtTime(e.start_time)}` : ''}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* MOs this week */}
+      {mos.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <span className="text-xs font-medium text-gray-500 mr-1">MOs this week ({mos.length}):</span>
+          {mos.map(m => (
+            <span key={m} className="text-[11px] font-medium bg-gray-100 text-gray-700 rounded-full px-2 py-0.5">{m}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Schedule vs Actual */}
+      <div className="pt-2 border-t border-gray-100">
+        <h4 className="text-sm font-semibold text-gray-700 mb-2">Schedule vs. Actual</h4>
+        {!compare.hasSchedule ? (
+          <p className="text-sm text-gray-400">No schedule saved for this week.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <CompareTile count={compare.ran.length} label="Ran as scheduled" tone="green" />
+              <CompareTile count={compare.notRun.length} label="Scheduled, not run" tone="amber" />
+              <CompareTile count={compare.unscheduled.length} label="Unscheduled runs" tone="blue" />
+            </div>
+            {(compare.notRun.length > 0 || compare.unscheduled.length > 0) && (
+              <div className="grid sm:grid-cols-2 gap-3 mt-3">
+                {compare.notRun.length > 0 && (
+                  <div className="text-xs text-gray-600">
+                    <p className="font-medium text-amber-700 mb-1">Scheduled but not yet run</p>
+                    <div className="flex flex-wrap gap-1">
+                      {compare.notRun.map(m => <span key={m} className="bg-amber-50 text-amber-700 rounded-full px-2 py-0.5">{m}</span>)}
+                    </div>
+                  </div>
+                )}
+                {compare.unscheduled.length > 0 && (
+                  <div className="text-xs text-gray-600">
+                    <p className="font-medium text-blue-700 mb-1">Ran without a schedule entry</p>
+                    <div className="flex flex-wrap gap-1">
+                      {compare.unscheduled.map(m => <span key={m} className="bg-blue-50 text-blue-700 rounded-full px-2 py-0.5">{m}</span>)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function ProductionDashboard() {
   const today = new Date();
@@ -63,10 +297,10 @@ export default function ProductionDashboard() {
       if (!day) return;
 
       if (!byDay[day]) byDay[day] = 0;
-      byDay[day] += e.quantity || 0;
+      byDay[day] += e.quantity_completed || 0;
 
       const hours = e.duration_hours || 0;
-      const qty = e.quantity || 0;
+      const qty = e.quantity_completed || 0;
       if (hours > 0) {
         if (!effByDay[day]) effByDay[day] = { totalRate: 0, count: 0 };
         effByDay[day].totalRate += qty / hours;
@@ -88,9 +322,6 @@ export default function ProductionDashboard() {
     return { dailyOutput, efficiencyTrend };
   }, [entries]);
 
-  if (loading) return <div className="text-center py-12 text-gray-500">Loading production dashboard...</div>;
-  if (summaryError) return <div className="text-center py-12 text-red-600">{summaryError}</div>;
-
   const hasData = summary && summary.total_entries > 0;
 
   const qaRate = hasData
@@ -100,6 +331,15 @@ export default function ProductionDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Weekly production — scheduled vs actual, at a glance */}
+      <WeeklyProductionView />
+
+      {/* Range analytics */}
+      <div className="flex items-center gap-2 pt-2">
+        <h3 className="text-base font-bold text-gray-900">Analytics</h3>
+        <span className="text-xs text-gray-400">— trends over a custom date range</span>
+      </div>
+
       {/* Date range picker */}
       <div className="flex flex-wrap items-center gap-3">
         <Calendar size={16} className="text-gray-400" />
@@ -119,7 +359,11 @@ export default function ProductionDashboard() {
         />
       </div>
 
-      {!hasData ? (
+      {loading ? (
+        <div className="text-center py-16 text-gray-500">Loading analytics…</div>
+      ) : summaryError ? (
+        <div className="text-center py-16 text-red-600">{summaryError}</div>
+      ) : !hasData ? (
         <div className="text-center py-16 text-gray-500">
           <BarChart3 size={40} className="mx-auto mb-3 text-gray-300" />
           <p className="text-sm">No production data for this period. Start logging entries to see analytics here.</p>
