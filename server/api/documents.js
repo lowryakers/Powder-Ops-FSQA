@@ -36,6 +36,32 @@ async function extractPdfText(buffer) {
   return { text: parts.join('\n').replace(/\n{3,}/g, '\n\n').trim(), pages: pdfDoc.numPages };
 }
 
+// Convert flat extracted PDF text into structured Markdown (headings, bullets,
+// numbered steps) so imported drafts arrive readable instead of a wall of text.
+const SECTION_RE = /^(purpose|scope|responsibilit(?:y|ies)|procedures?|definitions?|references?|materials?|equipment|safety|ppe|records?|revision history|version history|overview|policy|policies|objectives?|introduction|documentation|monitoring|corrective actions?|preventive (?:measures?|actions?)|verification|frequency|training|approval|distribution)\b[:.]?\s*$/i;
+
+function textToMarkdown(text) {
+  const out = [];
+  for (const raw of (text || '').split('\n')) {
+    const line = raw.replace(/[ \t]+/g, ' ').trim();
+    if (!line) { out.push(''); continue; }
+    // Bullets: various glyphs -> "- "
+    const b = line.match(/^[•◦▪·‣∙*•▪-]\s+(.*)$/);
+    if (b) { out.push('- ' + b[1]); continue; }
+    // Numbered / lettered steps -> normalized ordered list
+    const n = line.match(/^(\d+)[.)]\s+(.*)$/);
+    if (n) { out.push(`${n[1]}. ${n[2]}`); continue; }
+    // Headings: known section keyword, "Title:" line, or a short ALL-CAPS line
+    const isSection = SECTION_RE.test(line) || (line.length <= 48 && /^[A-Z][A-Za-z ]+:$/.test(line));
+    // Multi-word ALL-CAPS line (single tokens like "SSOP-01" or "GMP" are values, not headings)
+    const isCaps = line.length <= 60 && /\s/.test(line) && /[A-Z]/.test(line) && line === line.toUpperCase()
+      && /^[A-Z0-9 ,/&().:'-]+$/.test(line) && !/\.{2,}/.test(line) && line.split(' ').length <= 9;
+    if (isSection || isCaps) { out.push('## ' + line.replace(/:$/, '')); continue; }
+    out.push(line);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 // Strip common cloud/OS duplication noise from a filename before parsing
 function cleanFilename(filename) {
   let s = filename.replace(/\.pdf$/i, '');
@@ -75,7 +101,7 @@ router.post('/extract', importUpload.array('files', 60), async (req, res) => {
     try {
       const { text, pages } = await extractPdfText(f.buffer);
       const { doc_number, title } = guessMeta(f.originalname, text);
-      out.push({ filename: f.originalname, doc_number, title, content: text, pages, ok: true });
+      out.push({ filename: f.originalname, doc_number, title, content: textToMarkdown(text), pages, ok: true });
     } catch (err) {
       out.push({ filename: f.originalname, ok: false, error: err.message });
     }

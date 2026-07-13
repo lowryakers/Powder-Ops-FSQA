@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -296,12 +296,23 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
   const [failed, setFailed] = useState([]);
   const [previewIdx, setPreviewIdx] = useState(null);
   const [error, setError] = useState(null);
+  const urlsRef = useRef({});
+
+  // Object URLs are for on-screen side-by-side review only — revoke on close
+  useEffect(() => () => {
+    Object.values(urlsRef.current).forEach(u => URL.revokeObjectURL(u));
+    urlsRef.current = {};
+  }, []);
 
   const handleFiles = async (fileList) => {
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
     setStep('extracting');
     setError(null);
+    // Render the original PDFs locally for review; nothing is uploaded for storage
+    const urls = {};
+    files.forEach(f => { urls[f.name] = URL.createObjectURL(f); });
+    urlsRef.current = urls;
     try {
       const fd = new FormData();
       files.forEach(f => fd.append('files', f));
@@ -315,6 +326,7 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
         content: d.content || '',
         pages: d.pages,
         filename: d.filename,
+        blobUrl: urls[d.filename] || null,
       }));
       setRows(ok);
       setFailed((res.documents || []).filter(d => !d.ok));
@@ -421,9 +433,20 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
                           {previewIdx === i && (
                             <tr>
                               <td colSpan={7} className="px-3 py-2 bg-gray-50">
-                                <textarea value={r.content} onChange={e => setRow(i, { content: e.target.value })} rows={8}
-                                  className="w-full px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
-                                <p className="text-[10px] text-gray-400 mt-1">Extracted text — clean up here or after import. Original file: {r.filename}</p>
+                                <div className="grid md:grid-cols-2 gap-3">
+                                  <div>
+                                    <p className="text-[10px] font-medium text-gray-500 mb-1">Original PDF</p>
+                                    {r.blobUrl
+                                      ? <iframe src={r.blobUrl} title={r.filename} className="w-full h-[440px] border border-gray-200 rounded bg-white" />
+                                      : <p className="text-xs text-gray-400">Original not available for preview.</p>}
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-medium text-gray-500 mb-1">Extracted content — Markdown (editable)</p>
+                                    <textarea value={r.content} onChange={e => setRow(i, { content: e.target.value })}
+                                      className="w-full h-[440px] px-2 py-1 border border-gray-200 rounded text-xs font-mono resize-none" />
+                                  </div>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-1">Original shown for side-by-side review only — not stored. Source: {r.filename}</p>
                               </td>
                             </tr>
                           )}
