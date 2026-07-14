@@ -147,7 +147,7 @@ router.put('/entries/:id', (req, res) => {
   db.prepare(`UPDATE production_entries SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
   const updated = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
-  logAudit(req.user?.name || 'system', 'update', 'production_entry', req.params.id, req.body, existing, updated);
+  logAudit(req.user || 'system', 'update', 'production_entry', req.params.id, req.body, existing, updated);
   res.json(computeMetrics(updated));
 });
 
@@ -295,7 +295,7 @@ router.delete('/schedule/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Schedule assignment not found' });
 
   db.prepare('DELETE FROM production_schedule WHERE id = ?').run(req.params.id);
-  logAudit(req.user?.name || 'system', 'delete', 'production_schedule', req.params.id, null, existing, null);
+  logAudit(req.user || 'system', 'delete', 'production_schedule', req.params.id, null, existing, null);
   res.json({ success: true });
 });
 

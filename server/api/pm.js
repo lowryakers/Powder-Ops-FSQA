@@ -115,7 +115,7 @@ router.post('/schedules', (req, res) => {
     is_food_grade_lubricant ? 1 : 0, estimated_minutes ?? null, haccp_ccp_id || null, task_group || 'warehouse');
 
   const created = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(id);
-  logAudit(req.user.name, 'create', 'pm_schedule', id, { title, equipment_id }, null, created);
+  logAudit(req.user, 'create', 'pm_schedule', id, { title, equipment_id }, null, created);
   res.status(201).json(created);
 });
 
@@ -141,7 +141,7 @@ router.put('/schedules/:id', (req, res) => {
   );
 
   const updated = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
-  logAudit(req.user.name, 'update', 'pm_schedule', req.params.id, null, existing, updated);
+  logAudit(req.user, 'update', 'pm_schedule', req.params.id, null, existing, updated);
   res.json(updated);
 });
 
@@ -197,7 +197,7 @@ router.post('/work-orders', (req, res) => {
     priority || 'normal', assigned_to || null, due_date, JSON.stringify(procedure_steps || []), JSON.stringify(attachments || []), task_group || 'warehouse');
 
   const created = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id);
-  logAudit(req.user.name, 'create', 'work_order', id, { title, equipment_id, due_date }, null, created);
+  logAudit(req.user, 'create', 'work_order', id, { title, equipment_id, due_date }, null, created);
   res.status(201).json(created);
 });
 
@@ -227,7 +227,7 @@ router.put('/work-orders/:id', (req, res) => {
   );
 
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
-  logAudit(req.user.name, 'update', 'work_order', req.params.id, { status: newStatus }, existing, updated);
+  logAudit(req.user, 'update', 'work_order', req.params.id, { status: newStatus }, existing, updated);
   res.json(updated);
 });
 
@@ -429,7 +429,7 @@ router.post('/work-orders/:id/flag-issue', (req, res) => {
     updated_at=datetime('now') WHERE id=?
   `).run(notes, JSON.stringify(attachments || []), req.user.name, req.params.id);
 
-  logAudit(req.user.name, 'issue_flagged', 'work_order', req.params.id, { notes });
+  logAudit(req.user, 'issue_flagged', 'work_order', req.params.id, { notes });
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   res.json(updated);
 });
@@ -455,7 +455,7 @@ router.put('/work-orders/:id/clearance', requireDepartment('qa'), (req, res) => 
     clearance_notes=?, clearance_method=?, updated_at=datetime('now') WHERE id=?
   `).run(status, cleared_by, notes || null, method || null, req.params.id);
 
-  logAudit(req.user.name, `clearance_${status}`, 'work_order', req.params.id,
+  logAudit(req.user, `clearance_${status}`, 'work_order', req.params.id,
     `Method: ${method || 'visual'}, Notes: ${notes || 'none'}`);
   res.json({ success: true });
 });
@@ -656,7 +656,7 @@ router.put('/schedules/:id/items', (req, res) => {
     .run(stepsJson, req.params.id);
   db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')")
     .run(stepsJson, req.params.id);
-  logAudit(req.user.name, 'items_updated', 'pm_schedule', req.params.id, { item_count: items.length });
+  logAudit(req.user, 'items_updated', 'pm_schedule', req.params.id, { item_count: items.length });
   res.json(db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id));
 });
 

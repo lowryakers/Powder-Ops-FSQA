@@ -35,6 +35,7 @@ router.post('/logout', (req, res) => {
     const db = getDb();
     db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
   }
+  if (req.user) logAudit(req.user, 'logout', 'user', req.user.id, null, null, null, req.user.name);
   res.json({ ok: true });
 });
 
@@ -71,7 +72,7 @@ router.post('/', requireRole('admin'), (req, res) => {
     .run(id, name, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr);
 
   const created = db.prepare('SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(id);
-  logAudit(req.user.name, 'create', 'user', id, { name, role: role || 'operator', department: department || 'warehouse' }, null, null);
+  logAudit(req.user, 'create', 'user', id, { name, role: role || 'operator', department: department || 'warehouse' }, null, null, name);
   res.status(201).json(created);
 });
 
@@ -93,7 +94,17 @@ router.put('/:id', requireRole('admin'), (req, res) => {
       req.params.id);
 
   const updated = db.prepare('SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(req.params.id);
-  logAudit(req.user.name, 'update', 'user', req.params.id, null, null, null);
+
+  // Surface security-relevant changes (role, active status, module permissions)
+  // as their own explicit audit actions so they're easy to filter for.
+  const changes = {};
+  if (updated.role !== existing.role) changes.role = { from: existing.role, to: updated.role };
+  if (updated.is_active !== existing.is_active) changes.is_active = { from: existing.is_active, to: updated.is_active };
+  const permsChanged = (existing.module_access || null) !== (updated.module_access || null);
+  if (permsChanged) changes.module_access = { changed: true };
+  const securityChange = changes.role || changes.is_active || permsChanged;
+  logAudit(req.user, securityChange ? 'permission_change' : 'update', 'user', req.params.id,
+    Object.keys(changes).length ? changes : null, existing, updated, updated.name);
   res.json(updated);
 });
 
@@ -117,7 +128,10 @@ router.post('/login', (req, res) => {
   }
 
   const user = db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?) AND is_active = 1').get(name);
-  if (!user) return res.status(401).json({ error: 'User not found. Ask your admin to add you.' });
+  if (!user) {
+    logAudit(name, 'login_failed', 'user', null, { reason: 'unknown_user' }, null, null, name);
+    return res.status(401).json({ error: 'User not found. Ask your admin to add you.' });
+  }
 
   if (!user.pin) {
     return res.status(200).json({ needs_pin_setup: true, user_id: user.id, user_name: user.name });
@@ -126,7 +140,10 @@ router.post('/login', (req, res) => {
   if (!pin) return res.status(400).json({ error: 'PIN is required' });
   if (user.pin !== pin) {
     const count = (entry?.count || 0) + 1;
-    failedLogins.set(key, { count, lockedUntil: count >= MAX_ATTEMPTS ? Date.now() + LOCKOUT_MS : null });
+    const locked = count >= MAX_ATTEMPTS;
+    failedLogins.set(key, { count, lockedUntil: locked ? Date.now() + LOCKOUT_MS : null });
+    logAudit(user, locked ? 'login_locked' : 'login_failed', 'user', user.id,
+      { reason: 'bad_pin', attempt: count }, null, null, user.name);
     return res.status(401).json({ error: 'Invalid PIN' });
   }
   failedLogins.delete(key);
@@ -138,7 +155,7 @@ router.post('/login', (req, res) => {
   db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)')
     .run(uuid(), user.id, token, expires.toISOString());
 
-  logAudit(user.name, 'login', 'user', user.id, null, null, null);
+  logAudit(user, 'login', 'user', user.id, null, null, null, user.name);
   const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
   res.json({ token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess } });
 });
@@ -161,7 +178,7 @@ router.post('/set-pin', (req, res) => {
   db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)')
     .run(uuid(), user.id, token, expires.toISOString());
 
-  logAudit(user.name, 'set_pin', 'user', user.id, null, null, null);
+  logAudit(user, 'set_pin', 'user', user.id, null, null, null, user.name);
   const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
   res.json({ token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess } });
 });

@@ -59,7 +59,7 @@ router.post('/labs', (req, res) => {
     .run(id, name, contact_name || null, contact_email || null, contact_phone || null, address || null);
 
   const created = db.prepare('SELECT * FROM coa_labs WHERE id = ?').get(id);
-  logAudit(req.user.name, 'create', 'coa_lab', id, req.body, null, created);
+  logAudit(req.user, 'create', 'coa_lab', id, req.body, null, created);
   res.status(201).json(created);
 });
 
@@ -84,7 +84,7 @@ router.put('/labs/:id', (req, res) => {
   db.prepare(`UPDATE coa_labs SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
   const updated = db.prepare('SELECT * FROM coa_labs WHERE id = ?').get(req.params.id);
-  logAudit(req.user.name, 'update', 'coa_lab', req.params.id, req.body, existing, updated);
+  logAudit(req.user, 'update', 'coa_lab', req.params.id, req.body, existing, updated);
   res.json(updated);
 });
 
@@ -113,7 +113,7 @@ router.post('/specifications', (req, res) => {
     .run(id, item_number, item_description, test_type, specification || null, unit || null, min_value ?? null, max_value ?? null, method || null, req.user.name);
 
   const created = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(id);
-  logAudit(req.user.name, 'create', 'coa_specification', id, req.body, null, created);
+  logAudit(req.user, 'create', 'coa_specification', id, req.body, null, created);
   res.status(201).json(created);
 });
 
@@ -138,7 +138,7 @@ router.put('/specifications/:id', (req, res) => {
   db.prepare(`UPDATE coa_specifications SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
   const updated = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(req.params.id);
-  logAudit(req.user.name, 'update', 'coa_specification', req.params.id, req.body, existing, updated);
+  logAudit(req.user, 'update', 'coa_specification', req.params.id, req.body, existing, updated);
   res.json(updated);
 });
 
@@ -148,7 +148,7 @@ router.delete('/specifications/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Specification not found' });
 
   db.prepare("UPDATE coa_specifications SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
-  logAudit(req.user.name, 'delete', 'coa_specification', req.params.id, null, existing, null);
+  logAudit(req.user, 'delete', 'coa_specification', req.params.id, null, existing, null);
   res.json({ success: true });
 });
 
@@ -260,7 +260,7 @@ router.post('/requests', (req, res) => {
     .run(id, item_number, item_description, lot_number, product_expiration || null, tests_requested, status, lab_id || null, lab_name, date_sent || null, tat_days || null, expected_results_date || null, requested_by || req.user.name, notes || null, req.user.name, origin || null, supplier || null, product_code || null, manufacturer_lot || null, vendor_lot || null, received_date || null);
 
   const created = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
-  logAudit(req.user.name, 'create', 'coa_request', id, req.body, null, created);
+  logAudit(req.user, 'create', 'coa_request', id, req.body, null, created);
   res.status(201).json(created);
 });
 
@@ -294,7 +294,7 @@ router.put('/requests/:id', (req, res) => {
   db.prepare(`UPDATE coa_requests SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
   const updated = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
-  logAudit(req.user.name, 'update', 'coa_request', req.params.id, req.body, existing, updated);
+  logAudit(req.user, 'update', 'coa_request', req.params.id, req.body, existing, updated);
   res.json(updated);
 });
 
@@ -312,7 +312,7 @@ router.post('/requests/bulk-delete', requireRole('admin'), (req, res) => {
     db.prepare(`DELETE FROM coa_requests WHERE id IN (${ph})`).run(...ids);
   });
   tx();
-  for (const r of found) logAudit(req.user.name, 'delete', 'coa_request', r.id, null, r, null);
+  for (const r of found) logAudit(req.user, 'delete', 'coa_request', r.id, null, r, null);
   res.json({ deleted: found.length });
 });
 
@@ -324,7 +324,7 @@ router.post('/requests/bulk-update', (req, res) => {
   if (!patch || !patch.status) return res.status(400).json({ error: 'patch.status is required' });
   const ph = ids.map(() => '?').join(',');
   const info = db.prepare(`UPDATE coa_requests SET status=?, updated_at=datetime('now') WHERE id IN (${ph})`).run(patch.status, ...ids);
-  logAudit(req.user.name, 'coa_requests_bulk_updated', 'coa_request', null, { count: info.changes, status: patch.status });
+  logAudit(req.user, 'coa_requests_bulk_updated', 'coa_request', null, { count: info.changes, status: patch.status });
   res.json({ updated: info.changes });
 });
 
@@ -385,7 +385,7 @@ router.post('/requests/:id/results', (req, res) => {
     db.prepare("UPDATE coa_requests SET status = 'pass', date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?").run(req.params.id);
   }
 
-  logAudit(req.user.name, 'create', 'coa_test_results', req.params.id, { results }, null, created);
+  logAudit(req.user, 'create', 'coa_test_results', req.params.id, { results }, null, created);
   res.status(201).json(created);
 });
 
@@ -395,7 +395,7 @@ router.delete('/requests/:requestId/results/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Test result not found' });
 
   db.prepare('DELETE FROM coa_test_results WHERE id = ?').run(req.params.id);
-  logAudit(req.user.name, 'delete', 'coa_test_result', req.params.id, null, existing, null);
+  logAudit(req.user, 'delete', 'coa_test_result', req.params.id, null, existing, null);
   res.json({ success: true });
 });
 
@@ -417,7 +417,7 @@ router.post('/requests/:id/files', upload.single('file'), (req, res) => {
     .run(id, req.params.id, file_type, req.file.filename, req.file.originalname, req.file.mimetype, req.file.size, req.user.name);
 
   const created = db.prepare('SELECT * FROM coa_files WHERE id = ?').get(id);
-  logAudit(req.user.name, 'upload', 'coa_file', id, { file_type, original_name: req.file.originalname }, null, created);
+  logAudit(req.user, 'upload', 'coa_file', id, { file_type, original_name: req.file.originalname }, null, created);
   res.status(201).json(created);
 });
 
@@ -445,7 +445,7 @@ router.delete('/files/:id', (req, res) => {
   const filePath = path.join(UPLOAD_DIR, file.filename);
   db.prepare('DELETE FROM coa_files WHERE id = ?').run(req.params.id);
   if (existsSync(filePath)) unlinkSync(filePath);
-  logAudit(req.user.name, 'delete', 'coa_file', req.params.id, null, file, null);
+  logAudit(req.user, 'delete', 'coa_file', req.params.id, null, file, null);
   res.json({ success: true });
 });
 
@@ -716,7 +716,7 @@ router.post('/import', requireRole('admin', 'supervisor'), (req, res) => {
 
   try {
     const result = tx(entries);
-    logAudit(req.user.name, 'import', 'coa_requests', null, { count: result.imported, source }, null, null);
+    logAudit(req.user, 'import', 'coa_requests', null, { count: result.imported, source }, null, null);
     res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -922,7 +922,7 @@ router.post('/import-parsed-coa', (req, res) => {
 
   const created = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
   const test_results = db.prepare('SELECT * FROM coa_test_results WHERE request_id = ?').all(id);
-  logAudit(req.user.name, 'import_coa_pdf', 'coa_request', id, { source: 'ctla_upload' }, null, created);
+  logAudit(req.user, 'import_coa_pdf', 'coa_request', id, { source: 'ctla_upload' }, null, created);
   res.status(201).json({ ...created, test_results });
 });
 

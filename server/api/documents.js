@@ -276,7 +276,7 @@ router.post('/bulk', (req, res) => {
     return count;
   });
   const imported = tx();
-  logAudit(req.user.name, 'documents_bulk_imported', 'document', null, { imported });
+  logAudit(req.user, 'documents_bulk_imported', 'document', null, { imported });
   res.status(201).json({ imported });
 });
 
@@ -345,7 +345,7 @@ router.post('/', (req, res) => {
   const created = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(id);
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
     .run(uuid(), id, created.revision, req.user.name, 'Created', JSON.stringify(created));
-  logAudit(req.user.name, 'document_created', 'document', id, { doc_type: type, title, category });
+  logAudit(req.user, 'document_created', 'document', id, { doc_type: type, title, category });
   res.status(201).json(created);
 });
 
@@ -375,7 +375,7 @@ router.put('/:id', (req, res) => {
   const updated = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
     .run(uuid(), req.params.id, updated.revision, req.user.name, _change_summary || 'Updated', JSON.stringify(updated));
-  logAudit(req.user.name, 'document_updated', 'document', req.params.id, { title: updated.title }, existing, updated);
+  logAudit(req.user, 'document_updated', 'document', req.params.id, { title: updated.title }, existing, updated);
   res.json(updated);
 });
 
@@ -385,7 +385,7 @@ router.delete('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   db.prepare("UPDATE sop_documents SET status='archived', updated_at=datetime('now') WHERE id=?").run(req.params.id);
-  logAudit(req.user.name, 'document_archived', 'document', req.params.id, { title: existing.title }, existing, null);
+  logAudit(req.user, 'document_archived', 'document', req.params.id, { title: existing.title }, existing, null);
   res.json({ success: true });
 });
 
@@ -403,7 +403,7 @@ router.post('/bulk-delete', (req, res) => {
     db.prepare(`DELETE FROM sop_documents WHERE id IN (${placeholders})`).run(...ids);
   });
   tx();
-  for (const d of docs) logAudit(req.user.name, 'document_deleted', 'document', d.id, { doc_number: d.doc_number, title: d.title }, d, null);
+  for (const d of docs) logAudit(req.user, 'document_deleted', 'document', d.id, { doc_number: d.doc_number, title: d.title }, d, null);
   res.json({ deleted: docs.length });
 });
 
@@ -420,7 +420,7 @@ router.post('/bulk-update', (req, res) => {
   const placeholders = ids.map(() => '?').join(',');
   const values = fields.map(f => (patch[f] === '' ? null : patch[f]));
   const info = db.prepare(`UPDATE sop_documents SET ${setSql}, updated_at=datetime('now') WHERE id IN (${placeholders})`).run(...values, ...ids);
-  logAudit(req.user.name, 'documents_bulk_updated', 'document', null, { count: info.changes, fields, patch });
+  logAudit(req.user, 'documents_bulk_updated', 'document', null, { count: info.changes, fields, patch });
   res.json({ updated: info.changes });
 });
 

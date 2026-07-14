@@ -23,7 +23,7 @@ router.post('/', (req, res) => {
     parent_id || null, job_description_id || null, Number.isInteger(sort_order) ? sort_order : 0
   );
   const created = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(id);
-  logAudit(req.user.name, 'org_position_created', 'org_position', id, { title, name });
+  logAudit(req.user, 'org_position_created', 'org_position', id, { title, name });
   res.status(201).json(created);
 });
 
@@ -50,7 +50,7 @@ router.put('/:id', (req, res) => {
     Number.isInteger(sort_order) ? sort_order : existing.sort_order, req.params.id
   );
   const updated = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(req.params.id);
-  logAudit(req.user.name, 'org_position_updated', 'org_position', req.params.id, { title: updated.title }, existing, updated);
+  logAudit(req.user, 'org_position_updated', 'org_position', req.params.id, { title: updated.title }, existing, updated);
   res.json(updated);
 });
 
@@ -64,7 +64,7 @@ router.delete('/:id', (req, res) => {
     db.prepare('DELETE FROM org_positions WHERE id = ?').run(req.params.id);
   });
   tx();
-  logAudit(req.user.name, 'org_position_deleted', 'org_position', req.params.id, { title: existing.title }, existing, null);
+  logAudit(req.user, 'org_position_deleted', 'org_position', req.params.id, { title: existing.title }, existing, null);
   res.json({ success: true });
 });
 
@@ -80,7 +80,7 @@ router.put('/meta', (req, res) => {
     db.prepare('INSERT INTO org_chart_meta (id, version, approved_by, effective_date) VALUES (1, ?, ?, ?)')
       .run(version || null, approved_by || null, effective_date || null);
   }
-  logAudit(req.user.name, 'org_meta_updated', 'org_chart', '1', req.body);
+  logAudit(req.user, 'org_meta_updated', 'org_chart', '1', req.body);
   res.json(db.prepare('SELECT * FROM org_chart_meta WHERE id = 1').get());
 });
 

@@ -80,7 +80,7 @@ router.post('/', (req, res) => {
   });
   tx();
   const created = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
-  logAudit(req.user.name, 'disposal_created', 'disposal', id, { disposal_number: number, items: (items || []).length });
+  logAudit(req.user, 'disposal_created', 'disposal', id, { disposal_number: number, items: (items || []).length });
   res.status(201).json({ ...created, approvals: parseApprovals(created.approvals), items: loadItems(db, id) });
 });
 
@@ -103,7 +103,7 @@ router.put('/:id', (req, res) => {
   });
   tx();
   const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
-  logAudit(req.user.name, 'disposal_updated', 'disposal', req.params.id, { disposal_number: updated.disposal_number }, existing, updated);
+  logAudit(req.user, 'disposal_updated', 'disposal', req.params.id, { disposal_number: updated.disposal_number }, existing, updated);
   res.json({ ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, req.params.id) });
 });
 
@@ -127,7 +127,7 @@ router.post('/:id/approve', (req, res) => {
   const approvals = parseApprovals(d.approvals);
   approvals[role] = { name: req.user.name, user_id: req.user.id, signed_at: new Date().toISOString() };
   db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), req.params.id);
-  logAudit(req.user.name, `disposal_signed_${role}`, 'disposal', req.params.id, { disposal_number: d.disposal_number });
+  logAudit(req.user, `disposal_signed_${role}`, 'disposal', req.params.id, { disposal_number: d.disposal_number });
   const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
   res.json({ ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, req.params.id) });
 });
@@ -146,7 +146,7 @@ router.delete('/:id/approve/:role', (req, res) => {
   }
   delete approvals[role];
   db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), req.params.id);
-  logAudit(req.user.name, `disposal_unsigned_${role}`, 'disposal', req.params.id, { disposal_number: d.disposal_number });
+  logAudit(req.user, `disposal_unsigned_${role}`, 'disposal', req.params.id, { disposal_number: d.disposal_number });
   const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
   res.json({ ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, req.params.id) });
 });
@@ -160,7 +160,7 @@ router.delete('/:id', (req, res) => {
     db.prepare('DELETE FROM disposals WHERE id = ?').run(req.params.id);
   });
   tx();
-  logAudit(req.user.name, 'disposal_deleted', 'disposal', req.params.id, { disposal_number: existing.disposal_number }, existing, null);
+  logAudit(req.user, 'disposal_deleted', 'disposal', req.params.id, { disposal_number: existing.disposal_number }, existing, null);
   res.json({ success: true });
 });
 
@@ -177,7 +177,7 @@ router.post('/bulk-delete', (req, res) => {
     db.prepare(`DELETE FROM disposals WHERE id IN (${placeholders})`).run(...ids);
   });
   tx();
-  for (const d of found) logAudit(req.user.name, 'disposal_deleted', 'disposal', d.id, { disposal_number: d.disposal_number }, d, null);
+  for (const d of found) logAudit(req.user, 'disposal_deleted', 'disposal', d.id, { disposal_number: d.disposal_number }, d, null);
   res.json({ deleted: found.length });
 });
 
@@ -193,7 +193,7 @@ router.post('/bulk-update', (req, res) => {
   const placeholders = ids.map(() => '?').join(',');
   const info = db.prepare(`UPDATE disposals SET paper_record=?, updated_at=datetime('now') WHERE id IN (${placeholders})`)
     .run(patch.paper_record ? 1 : 0, ...ids);
-  logAudit(req.user.name, 'disposals_bulk_updated', 'disposal', null, { count: info.changes, paper_record: !!patch.paper_record });
+  logAudit(req.user, 'disposals_bulk_updated', 'disposal', null, { count: info.changes, paper_record: !!patch.paper_record });
   res.json({ updated: info.changes });
 });
 
@@ -264,7 +264,7 @@ router.post('/import', (req, res) => {
   const { csv } = req.body;
   if (!csv || typeof csv !== 'string') return res.status(400).json({ error: 'csv text is required' });
   const result = importDisposalLog(db, csv, req.user.name);
-  logAudit(req.user.name, 'disposals_imported', 'disposal', null, result);
+  logAudit(req.user, 'disposals_imported', 'disposal', null, result);
   res.status(201).json(result);
 });
 

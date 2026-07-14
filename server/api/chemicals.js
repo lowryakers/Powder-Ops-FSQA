@@ -32,7 +32,7 @@ router.post('/', (req, res) => {
     INSERT INTO approved_chemicals (id, name, category, manufacturer, product_code, sds_number, sds_url, is_food_grade, nsf_rating, approved_applications, max_concentration, required_contact_time_minutes, approved_by, review_due, notes, location_for_use)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, name, category, manufacturer || null, product_code || null, sds_number || null, sds_url || null, is_food_grade ? 1 : 0, nsf_rating || null, JSON.stringify(approved_applications || []), max_concentration || null, required_contact_time_minutes ?? null, req.user.name, review_due || null, notes || null, location_for_use || null);
-  logAudit(req.user.name, 'chemical_approved', 'chemical', id, { name, category });
+  logAudit(req.user, 'chemical_approved', 'chemical', id, { name, category });
   const created = db.prepare('SELECT * FROM approved_chemicals WHERE id = ?').get(id);
   res.status(201).json(created);
 });
@@ -54,7 +54,7 @@ router.put('/:id', (req, res) => {
     review_due ?? existing.review_due, notes ?? existing.notes, location_for_use ?? existing.location_for_use, req.params.id
   );
   const updated = db.prepare('SELECT * FROM approved_chemicals WHERE id = ?').get(req.params.id);
-  logAudit(req.user.name, 'chemical_updated', 'chemical', req.params.id, { name: updated.name }, existing, updated);
+  logAudit(req.user, 'chemical_updated', 'chemical', req.params.id, { name: updated.name }, existing, updated);
   res.json(updated);
 });
 

@@ -126,7 +126,7 @@ router.post('/:type', (req, res) => {
     id, cfg.key, number, req.body.record_date || null, req.body.status || cfg.defaultStatus || null,
     JSON.stringify(data), req.body.paper_record ? 1 : 0, req.body.document_url || null,
     req.body.capa_id || null, req.body.notes || null, req.user.name);
-  logAudit(req.user.name, 'qms_created', cfg.key, id, { record_number: number });
+  logAudit(req.user, 'qms_created', cfg.key, id, { record_number: number });
   res.status(201).json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id)));
 });
 
@@ -147,7 +147,7 @@ router.put('/:type/:id', (req, res) => {
     req.body.document_url !== undefined ? (req.body.document_url || null) : existing.document_url,
     req.body.capa_id !== undefined ? (req.body.capa_id || null) : existing.capa_id,
     req.body.notes ?? existing.notes, req.params.id);
-  logAudit(req.user.name, 'qms_updated', cfg.key, req.params.id, { record_number: existing.record_number });
+  logAudit(req.user, 'qms_updated', cfg.key, req.params.id, { record_number: existing.record_number });
   res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
 });
 
@@ -161,7 +161,7 @@ router.post('/:type/bulk-delete', (req, res) => {
   const ph = ids.map(() => '?').join(',');
   const found = db.prepare(`SELECT id, record_number FROM qms_records WHERE record_type = ? AND id IN (${ph})`).all(cfg.key, ...ids);
   db.prepare(`DELETE FROM qms_records WHERE record_type = ? AND id IN (${ph})`).run(cfg.key, ...ids);
-  for (const r of found) logAudit(req.user.name, 'qms_deleted', cfg.key, r.id, { record_number: r.record_number }, r, null);
+  for (const r of found) logAudit(req.user, 'qms_deleted', cfg.key, r.id, { record_number: r.record_number }, r, null);
   res.json({ deleted: found.length });
 });
 
@@ -177,7 +177,7 @@ router.post('/:type/bulk-update', (req, res) => {
   if (patch.status !== undefined) { sets.push('status=?'); vals.push(patch.status || null); }
   if (!sets.length) return res.status(400).json({ error: 'No editable fields in patch' });
   const info = db.prepare(`UPDATE qms_records SET ${sets.join(', ')}, updated_at=datetime('now') WHERE record_type = ? AND id IN (${ph})`).run(...vals, cfg.key, ...ids);
-  logAudit(req.user.name, 'qms_bulk_updated', cfg.key, null, { count: info.changes, patch });
+  logAudit(req.user, 'qms_bulk_updated', cfg.key, null, { count: info.changes, patch });
   res.json({ updated: info.changes });
 });
 
@@ -193,7 +193,7 @@ router.post('/:type/:id/approve', (req, res) => {
   const approvals = parseJson(row.approvals, {});
   approvals[appr.key] = { name: req.user.name, user_id: req.user.id, signed_at: new Date().toISOString() };
   db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), req.params.id);
-  logAudit(req.user.name, `qms_signed_${appr.key}`, cfg.key, req.params.id, { record_number: row.record_number });
+  logAudit(req.user, `qms_signed_${appr.key}`, cfg.key, req.params.id, { record_number: row.record_number });
   res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
 });
 
@@ -208,7 +208,7 @@ router.delete('/:type/:id/approve/:role', (req, res) => {
   if (req.user.role !== 'admin' && sig.user_id !== req.user.id) return res.status(403).json({ error: 'Only an admin or the original signer can revoke.' });
   delete approvals[req.params.role];
   db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), req.params.id);
-  logAudit(req.user.name, `qms_unsigned_${req.params.role}`, cfg.key, req.params.id, { record_number: row.record_number });
+  logAudit(req.user, `qms_unsigned_${req.params.role}`, cfg.key, req.params.id, { record_number: row.record_number });
   res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
 });
 
@@ -219,7 +219,7 @@ router.delete('/:type/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM qms_records WHERE id = ?').run(req.params.id);
-  logAudit(req.user.name, 'qms_deleted', cfg.key, req.params.id, { record_number: existing.record_number }, existing, null);
+  logAudit(req.user, 'qms_deleted', cfg.key, req.params.id, { record_number: existing.record_number }, existing, null);
   res.json({ success: true });
 });
 
@@ -287,7 +287,7 @@ router.post('/:type/import', (req, res) => {
   const { csv } = req.body;
   if (!csv) return res.status(400).json({ error: 'csv is required' });
   const result = importCsv(db, cfg, csv, req.user.name);
-  logAudit(req.user.name, 'qms_imported', cfg.key, null, result);
+  logAudit(req.user, 'qms_imported', cfg.key, null, result);
   res.json(result);
 });
 

@@ -52,7 +52,7 @@ router.post('/', (req, res) => {
     completion_date || null, status || 'scheduled', score ?? null,
     certificate_url || null, gdrive_url || null, notes || null
   );
-  logAudit(req.user.name, 'training_created', 'training', id, { employee_name, training_topic });
+  logAudit(req.user, 'training_created', 'training', id, { employee_name, training_topic });
   res.status(201).json(db.prepare('SELECT * FROM training_records WHERE id = ?').get(id));
 });
 
@@ -69,7 +69,7 @@ router.put('/:id', (req, res) => {
     score ?? existing.score, certificate_url ?? existing.certificate_url,
     gdrive_url ?? existing.gdrive_url, notes ?? existing.notes, req.params.id
   );
-  logAudit(req.user.name, 'training_updated', 'training', req.params.id, { employee_name: employee_name || existing.employee_name });
+  logAudit(req.user, 'training_updated', 'training', req.params.id, { employee_name: employee_name || existing.employee_name });
   res.json(db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id));
 });
 

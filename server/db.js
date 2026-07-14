@@ -917,9 +917,67 @@ function runMigrations() {
     console.warn('[migrate] Could not migrate module_access to view/edit form:', e.message);
   }
 
+  // Audit log: stable actor identity (survives renames) + role/department for
+  // filtering + human-readable entity label. Backfill identity from the users
+  // table by name, and normalize historical action verbs to the canonical set.
+  addColumnIfMissing('audit_log', 'actor_id', 'TEXT');
+  addColumnIfMissing('audit_log', 'actor_role', 'TEXT');
+  addColumnIfMissing('audit_log', 'actor_department', 'TEXT');
+  addColumnIfMissing('audit_log', 'entity_label', 'TEXT');
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_actor_id ON audit_log(actor_id)'); } catch { /* ignore */ }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)'); } catch { /* ignore */ }
+  backfillAuditActorIdentity();
+  normalizeAuditActions();
+
   migrateEquipmentNotes();
   cleanEquipmentNames();
   archivePreSystemBacklog();
+}
+
+// Fill actor_id/role/department on historical audit rows by matching the stored
+// actor name back to a current user. Idempotent — only touches rows still null.
+function backfillAuditActorIdentity() {
+  try {
+    const rows = db.prepare(
+      "SELECT DISTINCT actor FROM audit_log WHERE actor_id IS NULL AND actor IS NOT NULL AND actor != ''"
+    ).all();
+    if (rows.length === 0) return;
+    const findUser = db.prepare('SELECT id, role, department FROM users WHERE LOWER(name) = LOWER(?)');
+    const update = db.prepare(
+      'UPDATE audit_log SET actor_id = ?, actor_role = ?, actor_department = ? WHERE actor = ? AND actor_id IS NULL'
+    );
+    let filled = 0;
+    const tx = db.transaction(() => {
+      for (const { actor } of rows) {
+        const u = findUser.get(actor);
+        if (u) filled += update.run(u.id, u.role, u.department, actor).changes;
+      }
+    });
+    tx();
+    if (filled > 0) console.log(`[migrate] Backfilled actor identity on ${filled} audit log rows`);
+  } catch (e) {
+    console.warn('[migrate] audit actor backfill:', e.message);
+  }
+}
+
+// Normalize historical action verbs to the canonical set so old + new rows
+// filter consistently. Idempotent — canonicalAction is stable on its output.
+function normalizeAuditActions() {
+  try {
+    const rows = db.prepare('SELECT DISTINCT action FROM audit_log WHERE action IS NOT NULL').all();
+    const update = db.prepare('UPDATE audit_log SET action = ? WHERE action = ?');
+    let changed = 0;
+    const tx = db.transaction(() => {
+      for (const { action } of rows) {
+        const canon = canonicalAction(action);
+        if (canon !== action) changed += update.run(canon, action).changes;
+      }
+    });
+    tx();
+    if (changed > 0) console.log(`[migrate] Normalized action verbs on ${changed} audit log rows`);
+  } catch (e) {
+    console.warn('[migrate] audit action normalization:', e.message);
+  }
 }
 
 // Go-live cutoff: work the team performed before the system was in real use
@@ -1022,16 +1080,68 @@ function migrateEquipmentNotes() {
   if (migrated > 0) console.log(`[migrate] Parsed ${migrated} equipment notes into structured maintenance tasks`);
 }
 
-export function logAudit(actor, action, entityType, entityId, details, previousState, newState) {
+// Collapse the sprawling, per-entity action verbs into a small canonical set so
+// the audit log's Action filter is meaningful. Only the redundant
+// "<entity>_created/updated/deleted/…" patterns (whose noun already lives in
+// entity_type) are folded; genuinely distinct domain verbs pass through as-is.
+const ACTION_OVERRIDES = {
+  qa_signoff: 'sign_off',
+  verify_lockout: 'verify',
+  release_lockout: 'release',
+  import_coa_pdf: 'import',
+  duplicate_day: 'duplicate',
+  submit_public: 'submit',
+  archive_pre_system_backlog: 'archive',
+};
+const ACTION_SUFFIXES = [
+  ['_bulk_updated', 'bulk_update'],
+  ['_bulk_imported', 'bulk_import'],
+  ['_created', 'create'],
+  ['_updated', 'update'],
+  ['_deleted', 'delete'],
+  ['_archived', 'archive'],
+  ['_imported', 'import'],
+  ['_approved', 'approve'],
+];
+
+export function canonicalAction(action) {
+  if (!action) return action;
+  const a = String(action).toLowerCase();
+  if (ACTION_OVERRIDES[a]) return ACTION_OVERRIDES[a];
+  for (const [suffix, verb] of ACTION_SUFFIXES) {
+    if (a.endsWith(suffix)) return verb;
+  }
+  return a;
+}
+
+// `actor` accepts either a plain name (string) — legacy/system callers — or the
+// authenticated user object ({ id, name, role, department }), which lets us
+// persist a stable actor identity that survives a user being renamed and
+// enables role/department filtering. `entityLabel` is an optional
+// human-readable name for the affected record.
+export function logAudit(actor, action, entityType, entityId, details, previousState, newState, entityLabel) {
   const db = getDb();
+  let actorName, actorId = null, actorRole = null, actorDept = null;
+  if (actor && typeof actor === 'object') {
+    actorName = actor.name || 'unknown';
+    actorId = actor.id || null;
+    actorRole = actor.role || null;
+    actorDept = actor.department || null;
+  } else {
+    actorName = actor || 'system';
+  }
   db.prepare(`
-    INSERT INTO audit_log (actor, action, entity_type, entity_id, details, previous_state, new_state)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_log (actor, actor_id, actor_role, actor_department, action, entity_type, entity_id, entity_label, details, previous_state, new_state)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    actor,
-    action,
+    actorName,
+    actorId,
+    actorRole,
+    actorDept,
+    canonicalAction(action),
     entityType,
     entityId || null,
+    entityLabel || null,
     details ? JSON.stringify(details) : null,
     previousState ? JSON.stringify(previousState) : null,
     newState ? JSON.stringify(newState) : null

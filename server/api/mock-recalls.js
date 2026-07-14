@@ -39,7 +39,7 @@ router.post('/', (req, res) => {
     accounts_contacted ?? null, accounts_responded ?? null,
     effectiveness_pct ?? null, result || 'pending', corrective_actions || null, notes || null
   );
-  logAudit(req.user.name, 'mock_recall_created', 'mock_recall', id, { recall_number: nextNum, product_name });
+  logAudit(req.user, 'mock_recall_created', 'mock_recall', id, { recall_number: nextNum, product_name });
   res.status(201).json(db.prepare('SELECT * FROM mock_recalls WHERE id = ?').get(id));
 });
 
@@ -64,7 +64,7 @@ router.put('/:id', (req, res) => {
     corrective_actions ?? existing.corrective_actions, notes ?? existing.notes,
     newCompleted, req.params.id
   );
-  logAudit(req.user.name, 'mock_recall_updated', 'mock_recall', req.params.id, { result: newResult });
+  logAudit(req.user, 'mock_recall_updated', 'mock_recall', req.params.id, { result: newResult });
   res.json(db.prepare('SELECT * FROM mock_recalls WHERE id = ?').get(req.params.id));
 });
 

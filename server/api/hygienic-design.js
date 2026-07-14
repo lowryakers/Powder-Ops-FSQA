@@ -68,7 +68,7 @@ router.post('/', (req, res) => {
     INSERT INTO design_verifications (id, equipment_id, trigger_reason, description, checklist_responses, performed_by, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(id, equipment_id, trigger_reason, description || null, JSON.stringify(checklist_responses || []), performed_by, notes || null);
-  logAudit(req.user.name, 'design_verification_created', 'design_verification', id, `${trigger_reason} verification for equipment ${equipment_id}`);
+  logAudit(req.user, 'design_verification_created', 'design_verification', id, `${trigger_reason} verification for equipment ${equipment_id}`);
   res.status(201).json({ id });
 });
 
@@ -84,7 +84,7 @@ router.put('/:id/approve', (req, res) => {
     UPDATE design_verifications SET overall_result=?, conditions=?, approved_by=?, approved_at=datetime('now'), notes=?, updated_at=datetime('now')
     WHERE id=?
   `).run(overall_result, conditions || null, approved_by, notes ?? existing.notes, req.params.id);
-  logAudit(req.user.name, `design_verification_${overall_result}`, 'design_verification', req.params.id, `${overall_result}: ${conditions || 'No conditions'}`);
+  logAudit(req.user, `design_verification_${overall_result}`, 'design_verification', req.params.id, `${overall_result}: ${conditions || 'No conditions'}`);
   res.json({ success: true });
 });
 

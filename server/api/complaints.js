@@ -34,7 +34,7 @@ router.post('/', (req, res) => {
     lot_number || null, item_number || null, complaint_text, person_responsible || null,
     investigation || null, corrective_action || null, resolved ? 1 : 0, date_resolved || null, capa_needed ? 1 : 0
   );
-  logAudit(req.user.name, 'complaint_created', 'complaint', id, { complaint_number, customer_name });
+  logAudit(req.user, 'complaint_created', 'complaint', id, { complaint_number, customer_name });
   res.status(201).json(db.prepare('SELECT * FROM complaints WHERE id = ?').get(id));
 });
 
@@ -52,7 +52,7 @@ router.put('/:id', (req, res) => {
     date_resolved ?? existing.date_resolved, capa_needed !== undefined ? (capa_needed ? 1 : 0) : existing.capa_needed,
     capa_id ?? existing.capa_id, req.params.id
   );
-  logAudit(req.user.name, 'complaint_updated', 'complaint', req.params.id, { complaint_number: complaint_number || existing.complaint_number });
+  logAudit(req.user, 'complaint_updated', 'complaint', req.params.id, { complaint_number: complaint_number || existing.complaint_number });
   res.json(db.prepare('SELECT * FROM complaints WHERE id = ?').get(req.params.id));
 });
 
@@ -70,7 +70,7 @@ router.post('/bulk-delete', (req, res) => {
     db.prepare(`DELETE FROM complaints WHERE id IN (${ph})`).run(...ids);
   });
   tx();
-  for (const c of found) logAudit(req.user.name, 'complaint_deleted', 'complaint', c.id, { complaint_number: c.complaint_number }, c, null);
+  for (const c of found) logAudit(req.user, 'complaint_deleted', 'complaint', c.id, { complaint_number: c.complaint_number }, c, null);
   res.json({ deleted: found.length });
 });
 
@@ -83,7 +83,7 @@ router.post('/bulk-update', (req, res) => {
   const ph = ids.map(() => '?').join(',');
   const resolved = patch.resolved ? 1 : 0;
   const info = db.prepare(`UPDATE complaints SET resolved=?, date_resolved=CASE WHEN ?=1 AND (date_resolved IS NULL OR date_resolved='') THEN date('now') ELSE date_resolved END, updated_at=datetime('now') WHERE id IN (${ph})`).run(resolved, resolved, ...ids);
-  logAudit(req.user.name, 'complaints_bulk_updated', 'complaint', null, { count: info.changes, resolved: !!patch.resolved });
+  logAudit(req.user, 'complaints_bulk_updated', 'complaint', null, { count: info.changes, resolved: !!patch.resolved });
   res.json({ updated: info.changes });
 });
 
@@ -125,7 +125,7 @@ router.post('/capas', (req, res) => {
     db.prepare("UPDATE complaints SET capa_id = ?, capa_needed = 1, updated_at = datetime('now') WHERE id = ?").run(id, complaint_id);
   }
 
-  logAudit(req.user.name, 'capa_created', 'capa', id, { capa_number: nextNum, title });
+  logAudit(req.user, 'capa_created', 'capa', id, { capa_number: nextNum, title });
   res.status(201).json(db.prepare('SELECT * FROM capas WHERE id = ?').get(id));
 });
 
@@ -155,7 +155,7 @@ router.put('/capas/:id', (req, res) => {
     is_preventive_action !== undefined ? (is_preventive_action ? 1 : 0) : existing.is_preventive_action,
     req.params.id
   );
-  logAudit(req.user.name, 'capa_updated', 'capa', req.params.id, { status: newStatus });
+  logAudit(req.user, 'capa_updated', 'capa', req.params.id, { status: newStatus });
   res.json(db.prepare('SELECT * FROM capas WHERE id = ?').get(req.params.id));
 });
 
@@ -173,7 +173,7 @@ router.post('/capas/bulk-delete', (req, res) => {
     db.prepare(`DELETE FROM capas WHERE id IN (${ph})`).run(...ids);
   });
   tx();
-  for (const c of found) logAudit(req.user.name, 'capa_deleted', 'capa', c.id, { capa_number: c.capa_number }, c, null);
+  for (const c of found) logAudit(req.user, 'capa_deleted', 'capa', c.id, { capa_number: c.capa_number }, c, null);
   res.json({ deleted: found.length });
 });
 
@@ -185,7 +185,7 @@ router.post('/capas/bulk-update', (req, res) => {
   if (!patch || !patch.status) return res.status(400).json({ error: 'patch.status is required' });
   const ph = ids.map(() => '?').join(',');
   const info = db.prepare(`UPDATE capas SET status=?, closed_at=CASE WHEN ?='closed' AND (closed_at IS NULL OR closed_at='') THEN datetime('now') ELSE closed_at END, updated_at=datetime('now') WHERE id IN (${ph})`).run(patch.status, patch.status, ...ids);
-  logAudit(req.user.name, 'capas_bulk_updated', 'capa', null, { count: info.changes, status: patch.status });
+  logAudit(req.user, 'capas_bulk_updated', 'capa', null, { count: info.changes, status: patch.status });
   res.json({ updated: info.changes });
 });
 
