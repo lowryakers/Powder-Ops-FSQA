@@ -325,6 +325,13 @@ router.get('/:type/:id/pdf', (req, res) => {
     const sd = cfg.statuses.find(s => s.value === rec.status);
     pdf.moveDown(0.4).font('Helvetica-Bold').text('Status: ', { continued: true }).font('Helvetica').text(sd?.label || rec.status || '—');
   }
+  if (cfg.passFail) {
+    const vals = cfg.passFail.fields.map(k => parseInt(rec[k], 10)).filter(n => !Number.isNaN(n));
+    if (vals.length) {
+      pdf.moveDown(0.4).font('Helvetica-Bold').text('Result: ', { continued: true }).font('Helvetica')
+        .text(vals.some(n => n < cfg.passFail.threshold) ? 'FAIL' : 'PASS');
+    }
+  }
   if (cfg.approvals?.length) {
     pdf.moveDown(0.6).font('Helvetica-Bold').fontSize(10).text('Approvals');
     pdf.fontSize(9).font('Helvetica').moveDown(0.2);

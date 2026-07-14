@@ -213,7 +213,10 @@ export const QMS_TYPES = {
       { key: 'extension_date', label: 'Shelf-life Extension Date (if applicable)', type: 'text' },
       { key: 'note', label: 'Note', type: 'textarea' },
     ],
-    logColumns: ['record_number', 'product', 'lot', 'part_number', 'record_date', 'approvals'],
+    // A test fails if any rated sensory attribute scores below `threshold`
+    // (1 = worst … 5 = best). Records with no ratings show no result.
+    passFail: { fields: ['appearance', 'texture', 'aroma', 'flavor', 'overall'], threshold: 3 },
+    logColumns: ['record_number', 'product', 'lot', 'part_number', 'record_date', 'result', 'approvals'],
     approvals: [
       { key: 'evaluator', label: 'Evaluator (QA)', required: true, departments: ['qa'] },
     ],

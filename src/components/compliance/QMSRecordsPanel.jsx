@@ -39,6 +39,22 @@ function StatusBadge({ cfg, rec }) {
   return <span className={`px-2 py-0.5 rounded-full text-xs inline-flex items-center gap-1 whitespace-nowrap ${STATUS_TONE[d.tone] || STATUS_TONE.gray}`}>{d.label}</span>;
 }
 
+// Pass/fail evaluation for rated types (e.g. Organoleptic): fail if any rated
+// attribute is below the threshold; null (unrated) if no ratings were entered.
+function passFailResult(cfg, rec) {
+  if (!cfg.passFail) return null;
+  const vals = cfg.passFail.fields.map(k => parseInt(rec[k], 10)).filter(n => !Number.isNaN(n));
+  if (!vals.length) return null;
+  return vals.some(n => n < cfg.passFail.threshold) ? 'fail' : 'pass';
+}
+function ResultBadge({ cfg, rec }) {
+  const r = passFailResult(cfg, rec);
+  if (!r) return <span className="text-xs text-gray-300">—</span>;
+  return r === 'fail'
+    ? <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 inline-flex items-center gap-1 whitespace-nowrap"><AlertTriangle size={11} /> Fail</span>
+    : <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 inline-flex items-center gap-1 whitespace-nowrap"><Check size={11} /> Pass</span>;
+}
+
 function ApprovalBadge({ cfg, rec }) {
   const { paper, done, pending } = approvalState(cfg, rec);
   if (paper) return <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 inline-flex items-center gap-1 whitespace-nowrap"><FileText size={11} /> On paper</span>;
@@ -51,6 +67,7 @@ function fieldLabel(cfg, key) {
   if (key === 'record_date') return cfg.dateLabel || 'Date';
   if (key === 'approvals') return 'Approvals';
   if (key === 'status') return 'Status';
+  if (key === 'result') return 'Result';
   const f = cfg.fields.find(x => x.key === key);
   return f ? f.label : key;
 }
@@ -230,6 +247,7 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-gray-900">{cfg.singular} {rec.record_number || '—'}</span>
+              {cfg.passFail && passFailResult(cfg, rec) && <ResultBadge cfg={cfg} rec={rec} />}
               {cfg.statuses?.length ? <StatusBadge cfg={cfg} rec={rec} /> : <ApprovalBadge cfg={cfg} rec={rec} />}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">{rec.record_date || ''}</p>
@@ -448,6 +466,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
 
   const [search, setSearch] = useState('');
   const [approvalFilter, setApprovalFilter] = useState('');
+  const [resultFilter, setResultFilter] = useState('');
   const [sortField, setSortField] = useState('record_date');
   const [sortDir, setSortDir] = useState('desc');
   const [creating, setCreating] = useState(false);
@@ -481,6 +500,10 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
           if (approvalFilter === 'paper' && !st.paper) return false;
         }
       }
+      if (resultFilter && cfg.passFail) {
+        const res = passFailResult(cfg, rec);
+        if (resultFilter === 'unrated' ? res !== null : res !== resultFilter) return false;
+      }
       return true;
     });
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -489,11 +512,12 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
       if (sortField === 'record_date') { av = dateVal(a.record_date); bv = dateVal(b.record_date); }
       else if (sortField === 'approvals') { av = approvalState(cfg, a).done ? 1 : 0; bv = approvalState(cfg, b).done ? 1 : 0; }
       else if (sortField === 'status') { av = isOpen(cfg, a) ? 0 : 1; bv = isOpen(cfg, b) ? 0 : 1; }
+      else if (sortField === 'result') { const rank = (r) => passFailResult(cfg, r) === 'fail' ? 0 : passFailResult(cfg, r) === 'pass' ? 2 : 1; av = rank(a); bv = rank(b); }
       else { av = (a[sortField] ?? '').toString().toLowerCase(); bv = (b[sortField] ?? '').toString().toLowerCase(); }
       if (av < bv) return -dir; if (av > bv) return dir; return 0;
     });
     return r;
-  }, [records, cfg, search, approvalFilter, sortField, sortDir]);
+  }, [records, cfg, search, approvalFilter, resultFilter, sortField, sortDir]);
 
   const pending = useMemo(() => (cfg ? (records || []).filter(r => isOpen(cfg, r)).length : 0), [records, cfg]);
 
@@ -570,6 +594,14 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
             <option value="paper">On paper</option>
           </select>
         )}
+        {cfg.passFail && (
+          <select value={resultFilter} onChange={e => setResultFilter(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+            <option value="">Result: all</option>
+            <option value="fail">Failed</option>
+            <option value="pass">Passed</option>
+            <option value="unrated">Unrated</option>
+          </select>
+        )}
       </div>
 
       {loading ? (
@@ -587,12 +619,12 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
                       <button onClick={toggleAll} className="text-gray-400 hover:text-powder-600 align-middle" title={allVisibleSelected ? 'Deselect all' : 'Select all'}>{allVisibleSelected ? <CheckSquare size={16} /> : <Square size={16} />}</button>
                     </th>
                   )}
-                  {cfg.logColumns.map(col => <SortTh key={col} label={fieldLabel(cfg, col)} field={col} {...sh} align={(col === 'approvals' || col === 'status') ? 'center' : 'left'} />)}
+                  {cfg.logColumns.map(col => <SortTh key={col} label={fieldLabel(cfg, col)} field={col} {...sh} align={(col === 'approvals' || col === 'status' || col === 'result') ? 'center' : 'left'} />)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
                 {filtered.map((rec, i) => (
-                  <tr key={rec.id || i} onClick={() => setViewing(rec)} className={`hover:bg-gray-50 cursor-pointer ${selected.has(rec.id) ? 'bg-powder-50' : ''}`}>
+                  <tr key={rec.id || i} onClick={() => setViewing(rec)} className={`hover:bg-gray-50 cursor-pointer ${selected.has(rec.id) ? 'bg-powder-50' : passFailResult(cfg, rec) === 'fail' ? 'bg-red-50' : ''}`}>
                     {canEdit && (
                       <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                         <button onClick={() => toggleOne(rec.id)} className="text-gray-400 hover:text-powder-600 align-middle" title={selected.has(rec.id) ? 'Deselect' : 'Select'}>{selected.has(rec.id) ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}</button>
@@ -601,6 +633,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
                     {cfg.logColumns.map((col, ci) => {
                       if (col === 'approvals') return <td key={col} className="px-2 py-2 text-center"><ApprovalBadge cfg={cfg} rec={rec} /></td>;
                       if (col === 'status') return <td key={col} className="px-2 py-2 text-center"><StatusBadge cfg={cfg} rec={rec} /></td>;
+                      if (col === 'result') return <td key={col} className="px-2 py-2 text-center"><ResultBadge cfg={cfg} rec={rec} /></td>;
                       const primary = ci === 0 || col === cfg.primaryField;
                       return <td key={col} className={`px-2 py-2 ${primary ? 'font-medium text-gray-900' : 'text-gray-600'} ${col === 'record_number' ? 'whitespace-nowrap' : ''}`}>{displayValue(cfg, rec, col)}</td>;
                     })}
