@@ -24,6 +24,21 @@ function approvalState(cfg, rec) {
   return { paper: false, done: pending.length === 0, pending };
 }
 
+// Status-tracked types (e.g. On Hold) show a coloured status pill instead.
+const STATUS_TONE = {
+  amber: 'bg-amber-100 text-amber-700', green: 'bg-green-100 text-green-700',
+  red: 'bg-red-100 text-red-700', blue: 'bg-blue-100 text-blue-700', gray: 'bg-gray-100 text-gray-600',
+};
+function statusDef(cfg, val) { return (cfg.statuses || []).find(s => s.value === val); }
+function isOpen(cfg, rec) {
+  if (cfg.statuses?.length) { const d = statusDef(cfg, rec.status); return d ? !d.done : true; }
+  return !approvalState(cfg, rec).done;
+}
+function StatusBadge({ cfg, rec }) {
+  const d = statusDef(cfg, rec.status) || { label: rec.status || '—', tone: 'gray' };
+  return <span className={`px-2 py-0.5 rounded-full text-xs inline-flex items-center gap-1 whitespace-nowrap ${STATUS_TONE[d.tone] || STATUS_TONE.gray}`}>{d.label}</span>;
+}
+
 function ApprovalBadge({ cfg, rec }) {
   const { paper, done, pending } = approvalState(cfg, rec);
   if (paper) return <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 inline-flex items-center gap-1 whitespace-nowrap"><FileText size={11} /> On paper</span>;
@@ -35,6 +50,7 @@ function fieldLabel(cfg, key) {
   if (key === 'record_number') return `${cfg.short} #`;
   if (key === 'record_date') return cfg.dateLabel || 'Date';
   if (key === 'approvals') return 'Approvals';
+  if (key === 'status') return 'Status';
   const f = cfg.fields.find(x => x.key === key);
   return f ? f.label : key;
 }
@@ -95,7 +111,7 @@ function FieldInput({ f, value, onChange }) {
 /* ───────── Create / edit form ───────── */
 function RecordForm({ cfg, initial, onSave, onCancel }) {
   const [form, setForm] = useState(() => {
-    const base = { record_number: initial?.record_number || '', record_date: initial?.record_date || '', notes: initial?.notes || '', paper_record: !!initial?.paper_record, document_url: initial?.document_url || '' };
+    const base = { record_number: initial?.record_number || '', record_date: initial?.record_date || '', notes: initial?.notes || '', paper_record: !!initial?.paper_record, document_url: initial?.document_url || '', status: initial?.status || cfg.defaultStatus || '' };
     for (const f of cfg.fields) base[f.key] = initial?.[f.key] ?? (f.type === 'checkbox' ? false : f.type === 'multiselect' ? [] : '');
     return base;
   });
@@ -121,6 +137,14 @@ function RecordForm({ cfg, initial, onSave, onCancel }) {
             <label className="block text-xs font-medium text-gray-700 mb-1">{cfg.dateLabel || 'Date'}</label>
             <input type="date" value={form.record_date || ''} onChange={e => set('record_date', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
+          {cfg.statuses?.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+              <select value={form.status} onChange={e => set('status', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                {cfg.statuses.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="grid sm:grid-cols-2 gap-3">
@@ -188,7 +212,7 @@ function CsvImportModal({ cfg, onImported, onClose }) {
 }
 
 /* ───────── Detail / sign-offs ───────── */
-function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onEdit, onDelete, onClose }) {
+function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, onEdit, onDelete, onClose }) {
   const [signing, setSigning] = useState(null);
   const doSign = async (key) => { setSigning(key); try { await onSign(rec.id, key); } finally { setSigning(null); } };
   const downloadPdf = async () => {
@@ -206,7 +230,7 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onEdit, onDelet
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-gray-900">{cfg.singular} {rec.record_number || '—'}</span>
-              <ApprovalBadge cfg={cfg} rec={rec} />
+              {cfg.statuses?.length ? <StatusBadge cfg={cfg} rec={rec} /> : <ApprovalBadge cfg={cfg} rec={rec} />}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">{rec.record_date || ''}</p>
           </div>
@@ -227,6 +251,20 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onEdit, onDelet
             })}
           </div>
 
+          {cfg.statuses?.length > 0 && (
+            <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-2"><p className="text-xs font-semibold text-gray-700">Status</p><StatusBadge cfg={cfg} rec={rec} /></div>
+              {canEdit && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {cfg.statuses.filter(s => s.value !== rec.status).map(s => (
+                    <button key={s.value} onClick={() => onSetStatus(rec.id, s.value)} className="px-2.5 py-1 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700">Mark as {s.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {cfg.approvals?.length > 0 && (
           <div className="border border-gray-200 rounded-lg p-3 space-y-2">
             <p className="text-xs font-semibold text-gray-700">Approvals</p>
             {rec.paper_record && (
@@ -254,6 +292,7 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onEdit, onDelet
               );
             })}
           </div>
+          )}
 
           {rec.document_url && <a href={rec.document_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-powder-600 hover:underline"><Paperclip size={14} /> View attached form</a>}
           {rec.notes && <p className="text-xs text-gray-500">{rec.notes}</p>}
@@ -430,10 +469,17 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
         if (!hay.includes(q)) return false;
       }
       if (approvalFilter) {
-        const st = approvalState(cfg, rec);
-        if (approvalFilter === 'pending' && st.done) return false;
-        if (approvalFilter === 'approved' && !st.done) return false;
-        if (approvalFilter === 'paper' && !st.paper) return false;
+        if (cfg.statuses?.length) {
+          if (approvalFilter === 'pending' && !isOpen(cfg, rec)) return false;
+          if (approvalFilter === 'approved' && isOpen(cfg, rec)) return false;
+          if (approvalFilter === 'paper' && !rec.paper_record) return false;
+          if (cfg.statuses.some(s => s.value === approvalFilter) && rec.status !== approvalFilter) return false;
+        } else {
+          const st = approvalState(cfg, rec);
+          if (approvalFilter === 'pending' && st.done) return false;
+          if (approvalFilter === 'approved' && !st.done) return false;
+          if (approvalFilter === 'paper' && !st.paper) return false;
+        }
       }
       return true;
     });
@@ -442,13 +488,14 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
       let av, bv;
       if (sortField === 'record_date') { av = dateVal(a.record_date); bv = dateVal(b.record_date); }
       else if (sortField === 'approvals') { av = approvalState(cfg, a).done ? 1 : 0; bv = approvalState(cfg, b).done ? 1 : 0; }
+      else if (sortField === 'status') { av = isOpen(cfg, a) ? 0 : 1; bv = isOpen(cfg, b) ? 0 : 1; }
       else { av = (a[sortField] ?? '').toString().toLowerCase(); bv = (b[sortField] ?? '').toString().toLowerCase(); }
       if (av < bv) return -dir; if (av > bv) return dir; return 0;
     });
     return r;
   }, [records, cfg, search, approvalFilter, sortField, sortDir]);
 
-  const pending = useMemo(() => (cfg ? (records || []).filter(r => !approvalState(cfg, r).done).length : 0), [records, cfg]);
+  const pending = useMemo(() => (cfg ? (records || []).filter(r => isOpen(cfg, r)).length : 0), [records, cfg]);
 
   const visibleIds = filtered.map(r => r.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id));
@@ -463,6 +510,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
   const handleUpdate = async (form) => { const res = await apiPut(`/qms/${recordType}/${editing.id}`, form); setEditing(null); setViewing(res); refresh(); };
   const handleDelete = async (rec) => { if (!window.confirm(`Delete ${rec.record_number || 'this record'}?`)) return; await apiFetch(`/qms/${recordType}/${rec.id}`, { method: 'DELETE' }); setViewing(null); refresh(); };
   const handleSign = async (id, role) => { const res = await apiPost(`/qms/${recordType}/${id}/approve`, { role }); setViewing(res); refresh(); };
+  const handleSetStatus = async (id, status) => { const res = await apiPut(`/qms/${recordType}/${id}`, { status }); setViewing(res); refresh(); };
   const handleRevoke = async (id, role) => { const res = await apiFetch(`/qms/${recordType}/${id}/approve/${role}`, { method: 'DELETE' }); setViewing(res); refresh(); };
   const handleBulkPaper = async (paper) => { const res = await apiPost(`/qms/${recordType}/bulk-update`, { ids: [...selected], patch: { paper_record: paper } }); clearSelection(); flash(`Marked ${res.updated} as ${paper ? 'logged on paper' : 'requiring approval'}.`); refresh(); };
   const handleBulkDelete = async () => { const res = await apiPost(`/qms/${recordType}/bulk-delete`, { ids: [...selected] }); setConfirmDelete(false); clearSelection(); flash(`Permanently deleted ${res.deleted}.`); refresh(); };
@@ -500,7 +548,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
 
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white rounded-xl border border-gray-200 p-3"><p className="text-2xl font-bold text-gray-900">{records?.length || 0}</p><p className="text-xs text-gray-500">Total records</p></div>
-        <div className={`rounded-xl border p-3 ${pending > 0 ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'}`}><p className={`text-2xl font-bold flex items-center gap-1.5 ${pending > 0 ? 'text-amber-700' : 'text-gray-900'}`}>{pending > 0 && <AlertTriangle size={18} />}{pending}</p><p className="text-xs text-gray-500">Awaiting approval</p></div>
+        <div className={`rounded-xl border p-3 ${pending > 0 ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'}`}><p className={`text-2xl font-bold flex items-center gap-1.5 ${pending > 0 ? 'text-amber-700' : 'text-gray-900'}`}>{pending > 0 && <AlertTriangle size={18} />}{pending}</p><p className="text-xs text-gray-500">{cfg.statuses?.length ? `Open (${(cfg.statuses.find(s => !s.done) || {}).label || 'open'})` : 'Awaiting approval'}</p></div>
         <div className="bg-white rounded-xl border border-gray-200 p-3"><p className="text-2xl font-bold text-gray-900">{(records || []).filter(r => r.paper_record).length}</p><p className="text-xs text-gray-500">On paper (historical)</p></div>
       </div>
 
@@ -509,12 +557,19 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${cfg.label.toLowerCase()}…`} className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-powder-500" />
         </div>
-        <select value={approvalFilter} onChange={e => setApprovalFilter(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
-          <option value="">Approvals: all</option>
-          <option value="pending">Awaiting approval</option>
-          <option value="approved">Fully approved</option>
-          <option value="paper">On paper</option>
-        </select>
+        {cfg.statuses?.length ? (
+          <select value={approvalFilter} onChange={e => setApprovalFilter(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+            <option value="">Status: all</option>
+            {cfg.statuses.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        ) : (
+          <select value={approvalFilter} onChange={e => setApprovalFilter(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+            <option value="">Approvals: all</option>
+            <option value="pending">Awaiting approval</option>
+            <option value="approved">Fully approved</option>
+            <option value="paper">On paper</option>
+          </select>
+        )}
       </div>
 
       {loading ? (
@@ -532,7 +587,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
                       <button onClick={toggleAll} className="text-gray-400 hover:text-powder-600 align-middle" title={allVisibleSelected ? 'Deselect all' : 'Select all'}>{allVisibleSelected ? <CheckSquare size={16} /> : <Square size={16} />}</button>
                     </th>
                   )}
-                  {cfg.logColumns.map(col => <SortTh key={col} label={fieldLabel(cfg, col)} field={col} {...sh} align={col === 'approvals' ? 'center' : 'left'} />)}
+                  {cfg.logColumns.map(col => <SortTh key={col} label={fieldLabel(cfg, col)} field={col} {...sh} align={(col === 'approvals' || col === 'status') ? 'center' : 'left'} />)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
@@ -545,6 +600,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
                     )}
                     {cfg.logColumns.map((col, ci) => {
                       if (col === 'approvals') return <td key={col} className="px-2 py-2 text-center"><ApprovalBadge cfg={cfg} rec={rec} /></td>;
+                      if (col === 'status') return <td key={col} className="px-2 py-2 text-center"><StatusBadge cfg={cfg} rec={rec} /></td>;
                       const primary = ci === 0 || col === cfg.primaryField;
                       return <td key={col} className={`px-2 py-2 ${primary ? 'font-medium text-gray-900' : 'text-gray-600'} ${col === 'record_number' ? 'whitespace-nowrap' : ''}`}>{displayValue(cfg, rec, col)}</td>;
                     })}
@@ -558,7 +614,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
 
       {creating && <RecordForm cfg={cfg} onSave={handleCreate} onCancel={() => setCreating(false)} />}
       {editing && <RecordForm cfg={cfg} initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
-      {viewing && !editing && <RecordView cfg={cfg} rec={viewing} user={user} canEdit={canEdit} onSign={handleSign} onRevoke={handleRevoke} onEdit={(r) => setEditing(r)} onDelete={handleDelete} onClose={() => setViewing(null)} />}
+      {viewing && !editing && <RecordView cfg={cfg} rec={viewing} user={user} canEdit={canEdit} onSign={handleSign} onRevoke={handleRevoke} onSetStatus={handleSetStatus} onEdit={(r) => setEditing(r)} onDelete={handleDelete} onClose={() => setViewing(null)} />}
       {importing && <CsvImportModal cfg={cfg} onClose={() => setImporting(false)} onImported={(res) => { setImporting(false); flash(`Imported ${res.imported} records.`); refresh(); }} />}
       {attaching && <AttachFormsModal cfg={cfg} records={records} onClose={() => setAttaching(false)} onDone={refresh} />}
       {confirmDelete && <ConfirmDeleteModal count={selected.size} noun="record" onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />}

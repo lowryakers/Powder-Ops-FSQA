@@ -123,7 +123,7 @@ router.post('/:type', (req, res) => {
   const data = pickData(cfg, req.body);
   db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, document_url, capa_id, notes, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    id, cfg.key, number, req.body.record_date || null, req.body.status || null,
+    id, cfg.key, number, req.body.record_date || null, req.body.status || cfg.defaultStatus || null,
     JSON.stringify(data), req.body.paper_record ? 1 : 0, req.body.document_url || null,
     req.body.capa_id || null, req.body.notes || null, req.user.name);
   logAudit(req.user.name, 'qms_created', cfg.key, id, { record_number: number });
@@ -228,41 +228,51 @@ export function importCsv(db, cfg, csvText, actor) {
   const rows = parseCsv(csvText).filter(r => r.some(c => (c || '').trim()));
   if (!rows.length) return { imported: 0 };
   // find header row: the one containing the number column keyword
-  const numKeys = (cfg.csv?.number || []).map(k => k.toLowerCase().replace(/\s+/g, ' ').trim());
-  const mapKeys = Object.entries(cfg.csv?.map || {}).map(([k, v]) => [k.toLowerCase().replace(/\s+/g, ' ').trim(), v]);
-  const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const norm = (s) => (s || '').toLowerCase().replace(/:/g, '').replace(/\s+/g, ' ').trim();
+  const numKeys = (cfg.csv?.number || []).map(norm);
+  const mapKeys = Object.entries(cfg.csv?.map || {}).map(([k, v]) => [norm(k), v]);
   const isNumberCol = (h) => numKeys.includes(h); // exact only — avoids matching "deviation description"
-  let headerIdx = rows.findIndex(r => r.some(c => isNumberCol(norm(c))));
+  // Header row = first row that has the number column or a known field header
+  // (skips title banners like "Shelf-life Extensions").
+  let headerIdx = rows.findIndex(r => r.some(c => { const h = norm(c); return isNumberCol(h) || mapKeys.some(([k]) => k === h); }));
   if (headerIdx < 0) headerIdx = 0;
   const header = rows[headerIdx].map(norm);
   // Exact header→field mapping only. Short keys like "date"/"lot" would wrongly
   // grab long headers ("management verified, (initial and date)") on substring,
   // so we require an exact normalized match; unmapped columns are ignored.
+  const autoNumber = !!cfg.csv?.autoNumber;
   const colMap = header.map(h => {
     if (isNumberCol(h)) return '__number';
     const exact = mapKeys.find(([k]) => k === h);
     return exact ? exact[1] : null;
   });
   // Some logs put the record number in an unlabelled first column — if no header
-  // matched as the number, treat column 0 as the record number.
-  if (!colMap.includes('__number')) colMap[0] = '__number';
-  const ins = db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, data, paper_record, created_by) VALUES (?, ?, ?, ?, ?, 1, ?)`);
+  // matched as the number, treat column 0 as the record number (unless the log
+  // has no ID column at all, in which case we auto-number below).
+  if (!autoNumber && !colMap.includes('__number')) colMap[0] = '__number';
+  // For status-tracked types, the "done" column maps to record status.
+  const doneStatus = (cfg.statuses || []).find(s => s.done)?.value;
+  const ins = db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, created_by) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`);
+  // seed a running auto-number counter from the current max for this type
+  let counter = autoNumber ? (() => { let m = 0; for (const rr of db.prepare('SELECT record_number FROM qms_records WHERE record_type = ?').all(cfg.key)) { const g = String(rr.record_number || '').match(/\d+/g); if (g) m = Math.max(m, parseInt(g[g.length - 1], 10)); } return m; })() : 0;
   let imported = 0;
   const tx = db.transaction(() => {
     for (let r = headerIdx + 1; r < rows.length; r++) {
       const cells = rows[r];
-      let number = null, recordDate = null; const data = {};
+      let number = null, recordDate = null, status = cfg.defaultStatus || null; const data = {};
       colMap.forEach((target, ci) => {
         const val = (cells[ci] || '').trim();
         if (!target || !val) return;
         if (target === '__number') number = val;
         else if (target === 'record_date') recordDate = val;
+        else if (target === '__status') status = /true|yes|done|released|complete/i.test(val) ? (doneStatus || 'released') : (cfg.defaultStatus || null);
         else data[target] = val;
       });
-      // skip placeholder rows that carry only a number (no body, no date)
-      if (!Object.keys(data).length && !recordDate) continue;
-      if (!number) number = `row-${r}`;
-      ins.run(uuid(), cfg.key, number, recordDate, JSON.stringify(data), actor);
+      // skip placeholder/blank rows (no body, no date, no number)
+      if (!Object.keys(data).length && !recordDate && !number) continue;
+      if (autoNumber) number = (cfg.numberPrefix || '') + String(++counter).padStart(cfg.numberPad || 3, '0');
+      else if (!number) number = `row-${r}`;
+      ins.run(uuid(), cfg.key, number, recordDate, status, JSON.stringify(data), actor);
       imported++;
     }
   });
@@ -311,16 +321,22 @@ router.get('/:type/:id/pdf', (req, res) => {
   }
   if (rec.notes) { pdf.moveDown(0.2).font('Helvetica-Bold').text('Notes: ', { continued: true }).font('Helvetica').text(rec.notes); }
 
-  pdf.moveDown(0.6).font('Helvetica-Bold').fontSize(10).text('Approvals');
-  pdf.fontSize(9).font('Helvetica').moveDown(0.2);
-  if (rec.paper_record) {
-    pdf.font('Helvetica-Oblique').text('Logged on paper — signatures on file on the original form.').font('Helvetica').moveDown(0.2);
+  if (cfg.statuses?.length) {
+    const sd = cfg.statuses.find(s => s.value === rec.status);
+    pdf.moveDown(0.4).font('Helvetica-Bold').text('Status: ', { continued: true }).font('Helvetica').text(sd?.label || rec.status || '—');
   }
-  const sigDate = (s) => (s?.signed_at ? new Date(s.signed_at).toLocaleDateString() : '__________');
-  for (const a of cfg.approvals) {
-    const s = rec.approvals[a.key];
-    pdf.text(`${a.label}${a.required ? ' *' : ''}: ${s?.name || '__________________'}     Date: ${sigDate(s)}`);
-    pdf.moveDown(0.25);
+  if (cfg.approvals?.length) {
+    pdf.moveDown(0.6).font('Helvetica-Bold').fontSize(10).text('Approvals');
+    pdf.fontSize(9).font('Helvetica').moveDown(0.2);
+    if (rec.paper_record) {
+      pdf.font('Helvetica-Oblique').text('Logged on paper — signatures on file on the original form.').font('Helvetica').moveDown(0.2);
+    }
+    const sigDate = (s) => (s?.signed_at ? new Date(s.signed_at).toLocaleDateString() : '__________');
+    for (const a of cfg.approvals) {
+      const s = rec.approvals[a.key];
+      pdf.text(`${a.label}${a.required ? ' *' : ''}: ${s?.name || '__________________'}     Date: ${sigDate(s)}`);
+      pdf.moveDown(0.25);
+    }
   }
   pdf.end();
 });

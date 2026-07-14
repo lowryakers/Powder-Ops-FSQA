@@ -71,6 +71,9 @@ const MODULE_GROUPS = [
       { id: 'dcr', label: 'Document Change Requests' },
       { id: 'deviations', label: 'Deviations' },
       { id: 'non-conformance', label: 'Non-Conformance' },
+      { id: 'on-hold', label: 'On Hold' },
+      { id: 'component-signout', label: 'Component Sign In/Out' },
+      { id: 'organoleptic', label: 'Organoleptic Sensory' },
     ],
   },
 ];

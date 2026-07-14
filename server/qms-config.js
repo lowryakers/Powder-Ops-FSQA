@@ -108,6 +108,131 @@ export const QMS_TYPES = {
     },
   },
 
+  on_hold: {
+    key: 'on_hold',
+    label: 'On Hold',
+    singular: 'On Hold Record',
+    short: 'Hold',
+    moduleId: 'on-hold',
+    formCode: 'Form 424-01',
+    numberPrefix: 'OH-',
+    numberPad: 3,
+    primaryField: 'product',
+    dateLabel: 'Date',
+    // status-tracked (not approval-signed): items go On Hold, then Released.
+    statuses: [
+      { value: 'on_hold', label: 'On Hold', tone: 'amber' },
+      { value: 'released', label: 'Released', tone: 'green', done: true },
+    ],
+    defaultStatus: 'on_hold',
+    fields: [
+      { key: 'product', label: 'Product Name', type: 'text' },
+      { key: 'item_number', label: 'Item / Part Number', type: 'text' },
+      { key: 'work_order', label: 'Work Order', type: 'text' },
+      { key: 'lot', label: 'Lot', type: 'text' },
+      { key: 'location', label: 'Location', type: 'text' },
+      { key: 'reason', label: 'Reason on Hold', type: 'textarea' },
+      { key: 'qty', label: 'Qty on Hold', type: 'text' },
+      { key: 'placed_by', label: 'Placed on Hold (date / initials)', type: 'text' },
+      { key: 'released_by', label: 'Released (date / initials)', type: 'text' },
+    ],
+    logColumns: ['record_number', 'product', 'item_number', 'lot', 'location', 'qty', 'status'],
+    approvals: [],
+    csv: {
+      autoNumber: true, // the log has no ID column — assign sequential OH-### numbers
+      map: {
+        'item name': 'product',
+        'part number': 'item_number',
+        'lot number': 'lot',
+        'location': 'location',
+        'reason on hold': 'reason',
+        'qty on hold': 'qty',
+        'date/ initials': 'placed_by',
+        'done': '__status', // TRUE -> released, FALSE -> on_hold
+      },
+    },
+  },
+
+  component_sign_out: {
+    key: 'component_sign_out',
+    label: 'Component Sign In/Out',
+    singular: 'Component Sign-Out',
+    short: 'CSO',
+    moduleId: 'component-signout',
+    formCode: 'Form 418-02',
+    numberPrefix: 'CS-',
+    numberPad: 3,
+    primaryField: 'item_name',
+    dateLabel: 'Date',
+    fields: [
+      { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'part_number', label: 'Part Number', type: 'text' },
+      { key: 'lot_number', label: 'Lot Number', type: 'text' },
+      { key: 'qty_pulled', label: 'Qty Pulled', type: 'text' },
+    ],
+    logColumns: ['record_number', 'item_name', 'part_number', 'lot_number', 'qty_pulled', 'record_date', 'approvals'],
+    approvals: [
+      { key: 'warehouse', label: 'Warehouse (WH)', roles: ['admin', 'supervisor'], departments: ['warehouse'] },
+      { key: 'quality', label: 'Quality (QA)', required: true, departments: ['qa'] },
+    ],
+    csv: {
+      number: ['#', 'no'],
+      map: {
+        'item name': 'item_name',
+        'part number': 'part_number',
+        'lot number': 'lot_number',
+        'qty pulled': 'qty_pulled',
+      },
+    },
+  },
+
+  organoleptic: {
+    key: 'organoleptic',
+    label: 'Organoleptic Sensory Test',
+    singular: 'Organoleptic Sensory Test',
+    short: 'ORG',
+    moduleId: 'organoleptic',
+    formCode: 'Form 602-01',
+    numberPrefix: 'ORG-',
+    numberPad: 3,
+    primaryField: 'product',
+    dateLabel: 'Test Date',
+    fields: [
+      { key: 'product', label: 'Product', type: 'text' },
+      { key: 'lot', label: 'Lot', type: 'text' },
+      { key: 'part_number', label: 'Part No (BD / IM / FG)', type: 'text' },
+      { key: 'quantity', label: 'Quantity', type: 'text' },
+      { key: 'evaluator', label: 'Evaluator', type: 'text' },
+      // 1 = worst, 5 = best
+      { key: 'appearance', label: 'Appearance (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'texture', label: 'Texture (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'aroma', label: 'Aroma (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'flavor', label: 'Flavor (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'overall', label: 'Overall Satisfaction (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'lab_testing', label: 'Lab Testing Performed', type: 'select', options: ['No', 'Yes'] },
+      { key: 'extension_date', label: 'Shelf-life Extension Date (if applicable)', type: 'text' },
+      { key: 'note', label: 'Note', type: 'textarea' },
+    ],
+    logColumns: ['record_number', 'product', 'lot', 'part_number', 'record_date', 'approvals'],
+    approvals: [
+      { key: 'evaluator', label: 'Evaluator (QA)', required: true, departments: ['qa'] },
+    ],
+    csv: {
+      // seeded from the Shelf-life Extensions log (organoleptic drives extension)
+      autoNumber: true,
+      map: {
+        'product name': 'product',
+        'lot': 'lot',
+        'part number': 'part_number',
+        'date organoleptic was performed': 'record_date',
+        'lab testing (yes or no)': 'lab_testing',
+        'extension date (if applicable)': 'extension_date',
+        'perfomed by/ date': 'evaluator',
+        'comments': 'note',
+      },
+    },
+  },
+
   deviation: {
     key: 'deviation',
     label: 'Deviations',

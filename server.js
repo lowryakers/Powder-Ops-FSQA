@@ -26,7 +26,7 @@ import complaintRoutes from './server/api/complaints.js';
 import documentRoutes from './server/api/documents.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType } from './server/qms-config.js';
-import { DCR_LOG_CSV, DEVIATION_LOG_CSVS, NON_CONFORMANCE_LOG_CSV } from './server/qms-seed.js';
+import { DCR_LOG_CSV, DEVIATION_LOG_CSVS, NON_CONFORMANCE_LOG_CSV, ON_HOLD_LOG_CSV, ORGANOLEPTIC_LOG_CSV } from './server/qms-seed.js';
 import orgRoutes from './server/api/org.js';
 import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
@@ -782,6 +782,16 @@ try {
   if (ncCfg && db.prepare("SELECT COUNT(*) c FROM qms_records WHERE record_type='non_conformance'").get().c === 0) {
     const { imported } = importQmsCsv(db, ncCfg, NON_CONFORMANCE_LOG_CSV, 'system-import');
     console.log(`[seed] Imported historical Non-Conformance log (${imported} records)`);
+  }
+  const holdCfg = getQmsType('on_hold');
+  if (holdCfg && db.prepare("SELECT COUNT(*) c FROM qms_records WHERE record_type='on_hold'").get().c === 0) {
+    const { imported } = importQmsCsv(db, holdCfg, ON_HOLD_LOG_CSV, 'system-import');
+    console.log(`[seed] Imported historical On Hold log (${imported} records)`);
+  }
+  const orgCfg = getQmsType('organoleptic');
+  if (orgCfg && db.prepare("SELECT COUNT(*) c FROM qms_records WHERE record_type='organoleptic'").get().c === 0) {
+    const { imported } = importQmsCsv(db, orgCfg, ORGANOLEPTIC_LOG_CSV, 'system-import');
+    console.log(`[seed] Imported historical Organoleptic / Shelf-life log (${imported} records)`);
   }
 } catch (e) {
   console.warn('[seed] Could not seed QMS registers:', e.message);
