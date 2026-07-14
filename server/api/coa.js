@@ -298,6 +298,36 @@ router.put('/requests/:id', (req, res) => {
   res.json(updated);
 });
 
+// Bulk permanent delete of lab requests (with their test results + files).
+// Admin only.
+router.post('/requests/bulk-delete', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const ph = ids.map(() => '?').join(',');
+  const found = db.prepare(`SELECT id, certificate_number FROM coa_requests WHERE id IN (${ph})`).all(...ids);
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM coa_test_results WHERE request_id IN (${ph})`).run(...ids);
+    db.prepare(`DELETE FROM coa_files WHERE request_id IN (${ph})`).run(...ids);
+    db.prepare(`DELETE FROM coa_requests WHERE id IN (${ph})`).run(...ids);
+  });
+  tx();
+  for (const r of found) logAudit(req.user.name, 'delete', 'coa_request', r.id, null, r, null);
+  res.json({ deleted: found.length });
+});
+
+// Bulk status update for lab requests.
+router.post('/requests/bulk-update', (req, res) => {
+  const db = getDb();
+  const { ids, patch } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  if (!patch || !patch.status) return res.status(400).json({ error: 'patch.status is required' });
+  const ph = ids.map(() => '?').join(',');
+  const info = db.prepare(`UPDATE coa_requests SET status=?, updated_at=datetime('now') WHERE id IN (${ph})`).run(patch.status, ...ids);
+  logAudit(req.user.name, 'coa_requests_bulk_updated', 'coa_request', null, { count: info.changes, status: patch.status });
+  res.json({ updated: info.changes });
+});
+
 // ──────────────── Test Results ────────────────
 
 router.post('/requests/:id/results', (req, res) => {

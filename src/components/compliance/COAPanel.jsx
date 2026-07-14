@@ -1,6 +1,29 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
-import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { canEditModule } from '../../utils/permissions';
+import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square } from 'lucide-react';
+
+// Typed-confirmation dialog for permanent, irreversible bulk deletion.
+function ConfirmDeleteModal({ count, onConfirm, onClose }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ok = text.trim().toUpperCase() === 'DELETE';
+  const go = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div className="flex items-center gap-2 text-red-600"><Trash2 size={18} /><h3 className="font-semibold">Permanently delete {count} lab request{count === 1 ? '' : 's'}</h3></div>
+        <p className="text-sm text-gray-600">This removes the selected request{count === 1 ? '' : 's'}, their test results, and attached files for good. This cannot be undone. Type <span className="font-mono font-semibold">DELETE</span> to confirm.</p>
+        <input value={text} onChange={e => setText(e.target.value)} placeholder="DELETE" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus />
+        <div className="flex items-center gap-2">
+          <button disabled={!ok || busy} onClick={go} className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-40">{busy ? 'Deleting…' : `Delete ${count} permanently`}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const STATUS_CONFIG = {
   pending: { label: 'Pending', color: 'bg-gray-100 text-gray-700', dot: 'bg-gray-400' },
@@ -852,6 +875,9 @@ function LabForm({ initial, onSave, onCancel }) {
 
 // ──────── Main Panel ────────
 export default function COAPanel() {
+  const { user } = useAuth() || {};
+  const canEdit = canEditModule(user, 'coa');
+  const isAdmin = user?.role === 'admin';
   const [subTab, setSubTab] = useState('requests');
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -861,6 +887,10 @@ export default function COAPanel() {
   const [showUploadCoa, setShowUploadCoa] = useState(false);
   const [sortField, setSortField] = useState('date_sent');
   const [sortDir, setSortDir] = useState('desc');
+  const [selected, setSelected] = useState(() => new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [msg, setMsg] = useState(null);
 
   const { data: requests, loading: loadingReqs, refresh: refreshReqs } = useApiGet('/coa/requests' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''), [statusFilter]);
   const { data: labs, refresh: refreshLabs } = useApiGet('/coa/labs');
@@ -904,6 +934,29 @@ export default function COAPanel() {
     setShowForm(false);
     refreshReqs();
     refreshSummary();
+  };
+
+  // --- Bulk selection (Lab Requests) ---
+  const visibleIds = filtered.map(r => r.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id));
+  const toggleOne = (id) => setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = () => setSelected(prev => {
+    const n = new Set(prev);
+    if (allVisibleSelected) visibleIds.forEach(id => n.delete(id));
+    else visibleIds.forEach(id => n.add(id));
+    return n;
+  });
+  const clearSelection = () => setSelected(new Set());
+  const flash = (m) => { setMsg(m); setTimeout(() => setMsg(null), 6000); };
+
+  const handleBulkStatus = async (status) => {
+    if (!status) return;
+    const res = await apiPost('/coa/requests/bulk-update', { ids: [...selected], patch: { status } });
+    setBulkStatus(''); clearSelection(); flash(`Updated ${res.updated} request${res.updated === 1 ? '' : 's'}.`); refreshReqs(); refreshSummary();
+  };
+  const handleBulkDelete = async () => {
+    const res = await apiPost('/coa/requests/bulk-delete', { ids: [...selected] });
+    setConfirmDelete(false); clearSelection(); flash(`Permanently deleted ${res.deleted} request${res.deleted === 1 ? '' : 's'}.`); refreshReqs(); refreshSummary();
   };
 
   const handleCreateSpec = async (form) => {
@@ -1011,6 +1064,23 @@ export default function COAPanel() {
               onImported={() => { setShowUploadCoa(false); refreshReqs(); refreshSummary(); }} />
           )}
 
+          {msg && <div className="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-2">{msg}</div>}
+
+          {canEdit && selected.size > 0 && (
+            <div className="flex items-center gap-2 flex-wrap bg-powder-50 border border-powder-200 rounded-lg px-3 py-2">
+              <span className="text-sm font-medium text-powder-800">{selected.size} selected</span>
+              <div className="flex-1" />
+              <select value={bulkStatus} onChange={e => handleBulkStatus(e.target.value)} className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                <option value="">Set status…</option>
+                {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+              {isAdmin && (
+                <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"><Trash2 size={14} /> Delete permanently</button>
+              )}
+              <button onClick={clearSelection} className="px-3 py-1.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Clear</button>
+            </div>
+          )}
+
           {showForm && <RequestForm labs={labs} onSave={handleCreateRequest} onCancel={() => setShowForm(false)} />}
 
           {loadingReqs ? (
@@ -1023,6 +1093,13 @@ export default function COAPanel() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
+                      {canEdit && (
+                        <th className="px-3 py-2.5 w-8">
+                          <button onClick={toggleAll} className="text-gray-400 hover:text-powder-600 align-middle" title={allVisibleSelected ? 'Deselect all' : 'Select all'}>
+                            {allVisibleSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                          </button>
+                        </th>
+                      )}
                       <SortHeader label="Item #" field="item_number" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                       <SortHeader label="Description" field="item_description" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                       <SortHeader label="Lot" field="lot_number" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
@@ -1036,7 +1113,14 @@ export default function COAPanel() {
                   <tbody className="divide-y divide-gray-100">
                     {filtered.map(r => (
                       <tr key={r.id} onClick={() => setSelectedId(r.id)}
-                        className="hover:bg-gray-50 cursor-pointer transition-colors">
+                        className={`hover:bg-gray-50 cursor-pointer transition-colors ${selected.has(r.id) ? 'bg-powder-50' : ''}`}>
+                        {canEdit && (
+                          <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => toggleOne(r.id)} className="text-gray-400 hover:text-powder-600 align-middle" title={selected.has(r.id) ? 'Deselect' : 'Select'}>
+                              {selected.has(r.id) ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+                            </button>
+                          </td>
+                        )}
                         <td className="px-3 py-2.5 font-medium text-powder-700 whitespace-nowrap">{r.item_number}</td>
                         <td className="px-3 py-2.5 text-gray-700 w-full">{r.item_description}</td>
                         <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.lot_number}</td>
@@ -1163,6 +1247,10 @@ export default function COAPanel() {
             <div className="text-center py-8 text-gray-400">No labs configured yet.</div>
           )}
         </>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDeleteModal count={selected.size} onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />
       )}
     </div>
   );
