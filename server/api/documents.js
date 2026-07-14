@@ -297,6 +297,41 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Bulk permanent delete — removes documents (and their version history) for
+// good. Admin only, since this is not reversible.
+router.post('/bulk-delete', (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can permanently delete documents.' });
+  const db = getDb();
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const placeholders = ids.map(() => '?').join(',');
+  const docs = db.prepare(`SELECT id, doc_number, title, doc_type FROM sop_documents WHERE id IN (${placeholders})`).all(...ids);
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM sop_versions WHERE sop_id IN (${placeholders})`).run(...ids);
+    db.prepare(`DELETE FROM sop_documents WHERE id IN (${placeholders})`).run(...ids);
+  });
+  tx();
+  for (const d of docs) logAudit(req.user.name, 'document_deleted', 'document', d.id, { doc_number: d.doc_number, title: d.title }, d, null);
+  res.json({ deleted: docs.length });
+});
+
+// Bulk field update — set status / category / owner on many documents at once.
+router.post('/bulk-update', (req, res) => {
+  const db = getDb();
+  const { ids, patch } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  if (!patch || typeof patch !== 'object') return res.status(400).json({ error: 'patch object is required' });
+  const allowed = ['status', 'category', 'owner'];
+  const fields = Object.keys(patch).filter(k => allowed.includes(k));
+  if (!fields.length) return res.status(400).json({ error: 'No editable fields in patch' });
+  const setSql = fields.map(f => `${f}=?`).join(', ');
+  const placeholders = ids.map(() => '?').join(',');
+  const values = fields.map(f => (patch[f] === '' ? null : patch[f]));
+  const info = db.prepare(`UPDATE sop_documents SET ${setSql}, updated_at=datetime('now') WHERE id IN (${placeholders})`).run(...values, ...ids);
+  logAudit(req.user.name, 'documents_bulk_updated', 'document', null, { count: info.changes, fields, patch });
+  res.json({ updated: info.changes });
+});
+
 // PDF — single or multiple
 router.get('/:id/pdf', (req, res) => {
   const db = getDb();

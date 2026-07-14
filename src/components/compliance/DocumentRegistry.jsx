@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload } from 'lucide-react';
+import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square } from 'lucide-react';
 
 const DOC_TYPE_OPTIONS = [
   { value: 'sop', label: 'SOP' },
@@ -484,6 +484,79 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
 }
 
 /* ───────── Registry ───────── */
+// Bulk-edit selected documents: apply status / category / owner to many at once.
+function BulkEditModal({ count, onApply, onClose }) {
+  const [status, setStatus] = useState('');
+  const [category, setCategory] = useState('');
+  const [owner, setOwner] = useState('');
+  const [ownerTouched, setOwnerTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    const patch = {};
+    if (status) patch.status = status;
+    if (category) patch.category = category;
+    if (ownerTouched) patch.owner = owner;
+    if (!Object.keys(patch).length) { onClose(); return; }
+    setSaving(true);
+    try { await onApply(patch); } finally { setSaving(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onClick={e => e.stopPropagation()} onSubmit={submit} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">Edit {count} document{count === 1 ? '' : 's'}</h3>
+          <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <p className="text-xs text-gray-500">Only the fields you set are changed; leave a field blank to keep each document's current value.</p>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+          <select value={status} onChange={e => setStatus(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">— keep —</option>
+            {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+          <select value={category} onChange={e => setCategory(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">— keep —</option>
+            {CATEGORIES.map(c => <option key={c} value={c}>{cap(c)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Owner</label>
+          <input value={owner} onChange={e => { setOwner(e.target.value); setOwnerTouched(true); }} placeholder="— keep —" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div className="flex items-center gap-2 pt-1">
+          <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Applying…' : `Apply to ${count}`}</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// Typed-confirmation dialog for permanent, irreversible bulk deletion.
+function ConfirmDeleteModal({ count, onConfirm, onClose }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ok = text.trim().toUpperCase() === 'DELETE';
+  const go = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div className="flex items-center gap-2 text-red-600"><Trash2 size={18} /><h3 className="font-semibold">Permanently delete {count} document{count === 1 ? '' : 's'}</h3></div>
+        <p className="text-sm text-gray-600">This removes the selected document{count === 1 ? '' : 's'} and all version history for good. This cannot be undone. Type <span className="font-mono font-semibold">DELETE</span> to confirm.</p>
+        <input value={text} onChange={e => setText(e.target.value)} placeholder="DELETE" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus />
+        <div className="flex items-center gap-2">
+          <button disabled={!ok || busy} onClick={go} className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-40">{busy ? 'Deleting…' : `Delete ${count} permanently`}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DocumentRegistry({ docType, moduleId, title, typeLabel }) {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, moduleId);
@@ -500,9 +573,28 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
   const [viewing, setViewing] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkEditing, setBulkEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const isAdmin = user?.role === 'admin';
 
   const q = search.toLowerCase().trim();
   const filtered = (docs || []).filter(d => !q || [d.title, d.doc_number, d.owner].some(v => v && v.toLowerCase().includes(q)));
+
+  // Reset the selection whenever the document type changes (ids won't carry over).
+  useEffect(() => { setSelected(new Set()); }, [docType]);
+
+  const visibleIds = filtered.map(d => d.id);
+  const selectedVisible = visibleIds.filter(id => selected.has(id));
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+  const toggleOne = (id) => setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = () => setSelected(prev => {
+    const n = new Set(prev);
+    if (allVisibleSelected) visibleIds.forEach(id => n.delete(id));
+    else visibleIds.forEach(id => n.add(id));
+    return n;
+  });
+  const clearSelection = () => setSelected(new Set());
 
   const handleSort = (field) => {
     if (sortField === field) setSortOrder(o => o === 'asc' ? 'desc' : 'asc');
@@ -523,6 +615,25 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
   const handleArchive = async (doc) => {
     await apiFetch(`/documents/${doc.id}`, { method: 'DELETE' });
     setViewing(null);
+    refresh();
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selected];
+    await apiPost('/documents/bulk-delete', { ids });
+    setConfirmDelete(false);
+    clearSelection();
+    setImportMsg(`Permanently deleted ${ids.length} document${ids.length === 1 ? '' : 's'}.`);
+    setTimeout(() => setImportMsg(null), 6000);
+    refresh();
+  };
+  const handleBulkUpdate = async (patch) => {
+    const ids = [...selected];
+    const res = await apiPost('/documents/bulk-update', { ids, patch });
+    setBulkEditing(false);
+    clearSelection();
+    setImportMsg(`Updated ${res.updated} document${res.updated === 1 ? '' : 's'}.`);
+    setTimeout(() => setImportMsg(null), 6000);
     refresh();
   };
 
@@ -551,6 +662,18 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
         <div className="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-2">{importMsg}</div>
       )}
 
+      {canEdit && selected.size > 0 && (
+        <div className="flex items-center gap-2 flex-wrap bg-powder-50 border border-powder-200 rounded-lg px-3 py-2">
+          <span className="text-sm font-medium text-powder-800">{selected.size} selected</span>
+          <div className="flex-1" />
+          <button onClick={() => setBulkEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"><Edit2 size={14} /> Edit</button>
+          {isAdmin && (
+            <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"><Trash2 size={14} /> Delete permanently</button>
+          )}
+          <button onClick={clearSelection} className="px-3 py-1.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Clear</button>
+        </div>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -576,6 +699,13 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  {canEdit && (
+                    <th className="px-3 py-2.5 w-8">
+                      <button onClick={toggleAll} className="text-gray-400 hover:text-powder-600 align-middle" title={allVisibleSelected ? 'Deselect all' : 'Select all'}>
+                        {allVisibleSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                      </button>
+                    </th>
+                  )}
                   <SortHeader label="Doc #" field="doc_number" className="whitespace-nowrap" {...sh} />
                   <SortHeader label="Title" field="title" {...sh} />
                   <SortHeader label="Category" field="category" className="whitespace-nowrap" {...sh} />
@@ -588,7 +718,14 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map(d => (
-                  <tr key={d.id} onClick={() => setViewing(d)} className="hover:bg-gray-50 cursor-pointer">
+                  <tr key={d.id} onClick={() => setViewing(d)} className={`hover:bg-gray-50 cursor-pointer ${selected.has(d.id) ? 'bg-powder-50' : ''}`}>
+                    {canEdit && (
+                      <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => toggleOne(d.id)} className="text-gray-400 hover:text-powder-600 align-middle" title={selected.has(d.id) ? 'Deselect' : 'Select'}>
+                          {selected.has(d.id) ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+                        </button>
+                      </td>
+                    )}
                     <td className="px-3 py-2.5 font-mono text-xs font-bold text-gray-700 whitespace-nowrap">{d.doc_number || '—'}</td>
                     <td className="px-3 py-2.5 text-gray-900 font-medium w-full">{d.title}</td>
                     <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{cap(d.category)}</td>
@@ -634,6 +771,12 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
             refresh();
           }}
         />
+      )}
+      {bulkEditing && (
+        <BulkEditModal count={selected.size} onApply={handleBulkUpdate} onClose={() => setBulkEditing(false)} />
+      )}
+      {confirmDelete && (
+        <ConfirmDeleteModal count={selected.size} onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />
       )}
     </div>
   );
