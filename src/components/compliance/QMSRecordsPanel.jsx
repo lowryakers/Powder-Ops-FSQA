@@ -270,6 +270,116 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onEdit, onDelet
   );
 }
 
+// Normalize a record number to its integer core: "D05" → "5", "023" → "23".
+function normNum(rn) { const d = String(rn || '').replace(/\D/g, ''); return d ? String(parseInt(d, 10)) : ''; }
+function parseFormNumber(filename) {
+  const base = String(filename).replace(/^.*[/\\]/, '').replace(/\.[^.]*$/, '');
+  const m = base.match(/(\d+)/);
+  return m ? String(parseInt(m[1], 10)) : '';
+}
+async function uploadFile(file) {
+  const fd = new FormData();
+  fd.append('files', file);
+  const res = await fetch('/api/uploads', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error('Upload failed');
+  const [u] = await res.json();
+  return u?.url;
+}
+
+// Bulk-attach completed/scanned forms to existing records, matched by the
+// number in each filename. Ambiguous or unmatched files are surfaced for a
+// manual pick; nothing is uploaded until the user applies.
+function AttachFormsModal({ cfg, records, onDone, onClose }) {
+  const [rows, setRows] = useState([]);
+  const [applying, setApplying] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const candidatesFor = (num) => (records || []).filter(r => normNum(r.record_number) === num);
+  const onFiles = (fileList) => {
+    const files = Array.from(fileList || []);
+    setRows(files.map(file => {
+      const num = parseFormNumber(file.name);
+      const cands = candidatesFor(num);
+      return { file, name: file.name, num, candidates: cands, chosenId: cands.length === 1 ? cands[0].id : '' };
+    }));
+    setResult(null);
+  };
+  const setChosen = (i, id) => setRows(rs => rs.map((r, j) => j === i ? { ...r, chosenId: id } : r));
+
+  const apply = async () => {
+    setApplying(true);
+    let ok = 0, fail = 0;
+    for (const r of rows) {
+      if (!r.chosenId) continue;
+      try { const url = await uploadFile(r.file); await apiPut(`/qms/${cfg.key}/${r.chosenId}`, { document_url: url, paper_record: true }); ok++; }
+      catch { fail++; }
+    }
+    setApplying(false);
+    setResult({ ok, fail });
+    if (ok) onDone();
+  };
+
+  const recLabel = (r) => `${r.record_number} — ${(r.product_description || r.doc_name || '').toString().slice(0, 40)} ${r.record_date ? `(${r.record_date})` : ''}`;
+  const readyCount = rows.filter(r => r.chosenId).length;
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-6 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">Attach completed forms</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <p className="text-xs text-gray-500">Drop the scanned/completed PDFs. Each is matched to a record by the number in its filename (e.g. <span className="font-mono">Deviation_031</span> → 31). Confirm or fix any matches, then apply — files upload and attach to their records (marked as paper records).</p>
+
+        <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl py-8 cursor-pointer hover:bg-gray-50">
+          <Upload size={24} className="text-gray-400" />
+          <span className="text-sm text-gray-600 font-medium">Choose completed form files (PDF/images)</span>
+          <input type="file" accept=".pdf,image/*" multiple className="hidden" onChange={e => onFiles(e.target.files)} />
+        </label>
+
+        {rows.length > 0 && (
+          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[45vh] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200 sticky top-0"><tr>
+                <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">File</th>
+                <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 whitespace-nowrap">#</th>
+                <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Attach to record</th>
+              </tr></thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows.map((r, i) => (
+                  <tr key={i}>
+                    <td className="px-3 py-2 text-gray-700 truncate max-w-[220px]">{r.name}</td>
+                    <td className="px-3 py-2 text-gray-500 font-mono">{r.num || '—'}</td>
+                    <td className="px-3 py-2">
+                      {r.candidates.length === 0 ? (
+                        <span className="text-xs text-amber-600">No record #{r.num} found — skipped</span>
+                      ) : r.candidates.length === 1 ? (
+                        <span className="text-xs text-gray-700">{recLabel(r.candidates[0])}</span>
+                      ) : (
+                        <select value={r.chosenId} onChange={e => setChosen(i, e.target.value)} className="w-full px-2 py-1 border border-amber-300 rounded text-xs bg-amber-50">
+                          <option value="">Pick which #{r.num}…</option>
+                          {r.candidates.map(c => <option key={c.id} value={c.id}>{recLabel(c)}</option>)}
+                        </select>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {result && <p className="text-sm text-green-700">Attached {result.ok} form{result.ok === 1 ? '' : 's'}{result.fail ? `, ${result.fail} failed` : ''}.</p>}
+
+        <div className="flex items-center gap-2">
+          <button disabled={!readyCount || applying} onClick={apply} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-40">{applying ? 'Attaching…' : `Attach ${readyCount} form${readyCount === 1 ? '' : 's'}`}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmDeleteModal({ count, noun, onConfirm, onClose }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -307,6 +417,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -369,6 +480,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
         </div>
         {canEdit && (
           <div className="flex items-center gap-2">
+            <button onClick={() => setAttaching(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Paperclip size={15} /> Attach Forms</button>
             <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Upload size={15} /> Import Log (CSV)</button>
             <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700"><Plus size={16} /> New {cfg.singular}</button>
           </div>
@@ -450,6 +562,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
       {editing && <RecordForm cfg={cfg} initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
       {viewing && !editing && <RecordView cfg={cfg} rec={viewing} user={user} canEdit={canEdit} onSign={handleSign} onRevoke={handleRevoke} onEdit={(r) => setEditing(r)} onDelete={handleDelete} onClose={() => setViewing(null)} />}
       {importing && <CsvImportModal cfg={cfg} onClose={() => setImporting(false)} onImported={(res) => { setImporting(false); flash(`Imported ${res.imported} records.`); refresh(); }} />}
+      {attaching && <AttachFormsModal cfg={cfg} records={records} onClose={() => setAttaching(false)} onDone={refresh} />}
       {confirmDelete && <ConfirmDeleteModal count={selected.size} noun="record" onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />}
     </div>
   );
