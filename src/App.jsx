@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2 } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet } from './hooks/useApi';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
@@ -82,6 +82,7 @@ const NAV_GROUPS = [
     items: [
       { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
       { id: 'deviations', label: 'Deviations', icon: FileWarning },
+      { id: 'non-conformance', label: 'Non-Conformance', icon: ShieldAlert },
     ],
   },
   {
@@ -547,6 +548,7 @@ function App() {
           {resolvedTab === 'disposals' && <DisposalsPanel />}
           {resolvedTab === 'dcr' && <QMSRecordsPanel recordType="document_change_request" moduleId="dcr" />}
           {resolvedTab === 'deviations' && <QMSRecordsPanel recordType="deviation" moduleId="deviations" />}
+          {resolvedTab === 'non-conformance' && <QMSRecordsPanel recordType="non_conformance" moduleId="non-conformance" />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}

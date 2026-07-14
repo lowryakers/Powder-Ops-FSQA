@@ -270,13 +270,11 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onEdit, onDelet
   );
 }
 
-// Normalize a record number to its integer core: "D05" → "5", "023" → "23".
-function normNum(rn) { const d = String(rn || '').replace(/\D/g, ''); return d ? String(parseInt(d, 10)) : ''; }
-function parseFormNumber(filename) {
-  const base = String(filename).replace(/^.*[/\\]/, '').replace(/\.[^.]*$/, '');
-  const m = base.match(/(\d+)/);
-  return m ? String(parseInt(m[1], 10)) : '';
-}
+// Match on the LAST numeric group so year-prefixed and D-prefixed numbers line
+// up: record "25-001" and file "NC_001" → 1; record "D05" and file "05" → 5.
+function lastNum(s) { const m = String(s || '').match(/\d+/g); return m ? String(parseInt(m[m.length - 1], 10)) : ''; }
+const normNum = lastNum;
+const parseFormNumber = lastNum;
 async function uploadFile(file) {
   const fd = new FormData();
   fd.append('files', file);

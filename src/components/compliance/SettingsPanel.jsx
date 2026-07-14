@@ -70,6 +70,7 @@ const MODULE_GROUPS = [
     modules: [
       { id: 'dcr', label: 'Document Change Requests' },
       { id: 'deviations', label: 'Deviations' },
+      { id: 'non-conformance', label: 'Non-Conformance' },
     ],
   },
 ];

@@ -58,6 +58,56 @@ export const QMS_TYPES = {
     },
   },
 
+  non_conformance: {
+    key: 'non_conformance',
+    label: 'Non-Conformance',
+    singular: 'Non-Conformance Report',
+    short: 'NC',
+    moduleId: 'non-conformance',
+    formCode: 'Form 408-01',
+    numberPrefix: '25-',
+    numberPad: 3, // 25-001, 25-002, …
+    primaryField: 'product',
+    dateLabel: 'Date',
+    fields: [
+      { key: 'work_order', label: 'Work Order Number', type: 'text' },
+      { key: 'discovered_by', label: 'Who Discovered the Nonconformance', type: 'text' },
+      { key: 'investigator', label: 'Quality Investigator', type: 'text' },
+      { key: 'location', label: 'Where Did the Issue Occur (Location)', type: 'text' },
+      { key: 'customer', label: 'Customer', type: 'text' },
+      { key: 'part_number', label: 'Part Number', type: 'text' },
+      { key: 'lot_number', label: 'Lot Number', type: 'text' },
+      { key: 'product', label: 'Product', type: 'text' },
+      { key: 'vendor_number', label: 'Vendor Number', type: 'text' },
+      { key: 'description', label: 'Description of Non-Conformance (out of spec?)', type: 'textarea' },
+      { key: 'root_cause', label: 'Root Cause Analysis (what / why)', type: 'textarea' },
+      { key: 'containment', label: 'Containment (segregated? location? rationale)', type: 'textarea' },
+      { key: 'previous_lot', label: 'Was the Previous Lot Implicated?', type: 'select', options: ['No', 'Yes'] },
+      { key: 'mrb_resolution', label: 'MRB Resolution', type: 'select', options: ['Sort', 'Rework', 'Use As Is', 'Scrap', 'Not Applicable'] },
+      { key: 'capa_required', label: 'Additional CAPA required', type: 'checkbox' },
+      { key: 'capa_number', label: 'Assigned CAPA Number', type: 'text' },
+      { key: 'comments', label: 'Comments', type: 'textarea' },
+      { key: 'performed_by', label: 'Performed By', type: 'text' },
+    ],
+    logColumns: ['record_number', 'product', 'lot_number', 'work_order', 'record_date', 'approvals'],
+    approvals: [
+      { key: 'quality', label: 'Quality', required: true, departments: ['qa'] },
+      { key: 'production_management', label: 'Production Management', roles: ['admin', 'supervisor'], departments: ['production'] },
+    ],
+    csv: {
+      number: ['nc #', 'non conformance #'], // log's number column has a blank header → falls back to column 0
+      map: {
+        'lot': 'lot_number',
+        'item': 'work_order',
+        'production description': 'product',
+        'nc description': 'description',
+        'completed on': 'record_date',
+        'comments': 'comments',
+        'performance by': 'performed_by',
+      },
+    },
+  },
+
   deviation: {
     key: 'deviation',
     label: 'Deviations',

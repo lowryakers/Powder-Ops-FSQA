@@ -26,7 +26,7 @@ import complaintRoutes from './server/api/complaints.js';
 import documentRoutes from './server/api/documents.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType } from './server/qms-config.js';
-import { DCR_LOG_CSV, DEVIATION_LOG_CSVS } from './server/qms-seed.js';
+import { DCR_LOG_CSV, DEVIATION_LOG_CSVS, NON_CONFORMANCE_LOG_CSV } from './server/qms-seed.js';
 import orgRoutes from './server/api/org.js';
 import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
@@ -777,6 +777,11 @@ try {
     let total = 0;
     for (const csv of DEVIATION_LOG_CSVS) total += importQmsCsv(db, devCfg, csv, 'system-import').imported;
     console.log(`[seed] Imported historical Deviation logs (${total} records)`);
+  }
+  const ncCfg = getQmsType('non_conformance');
+  if (ncCfg && db.prepare("SELECT COUNT(*) c FROM qms_records WHERE record_type='non_conformance'").get().c === 0) {
+    const { imported } = importQmsCsv(db, ncCfg, NON_CONFORMANCE_LOG_CSV, 'system-import');
+    console.log(`[seed] Imported historical Non-Conformance log (${imported} records)`);
   }
 } catch (e) {
   console.warn('[seed] Could not seed QMS registers:', e.message);

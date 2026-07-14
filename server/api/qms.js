@@ -50,8 +50,9 @@ function nextNumber(db, cfg) {
   const rows = db.prepare('SELECT record_number FROM qms_records WHERE record_type = ?').all(cfg.key);
   let max = 0;
   for (const r of rows) {
-    const m = /(\d+)/.exec(r.record_number || '');
-    if (m) max = Math.max(max, parseInt(m[1], 10));
+    // Use the LAST numeric group so year-prefixed numbers work ("25-001" → 1).
+    const m = String(r.record_number || '').match(/\d+/g);
+    if (m) max = Math.max(max, parseInt(m[m.length - 1], 10));
   }
   return (cfg.numberPrefix || '') + String(max + 1).padStart(cfg.numberPad || 3, '0');
 }
@@ -242,6 +243,9 @@ export function importCsv(db, cfg, csvText, actor) {
     const exact = mapKeys.find(([k]) => k === h);
     return exact ? exact[1] : null;
   });
+  // Some logs put the record number in an unlabelled first column — if no header
+  // matched as the number, treat column 0 as the record number.
+  if (!colMap.includes('__number')) colMap[0] = '__number';
   const ins = db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, data, paper_record, created_by) VALUES (?, ?, ?, ?, ?, 1, ?)`);
   let imported = 0;
   const tx = db.transaction(() => {
