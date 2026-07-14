@@ -797,6 +797,29 @@ try {
   console.warn('[seed] Could not seed QMS registers:', e.message);
 }
 
+// One-time migration for the Non-Conformance simplification: the retired
+// "Performed By" and "Comments" fields fold into Investigator and Notes so no
+// historical content is lost. Idempotent — only touches rows still carrying the
+// old keys.
+try {
+  const ncRows = db.prepare("SELECT id, notes, data FROM qms_records WHERE record_type='non_conformance'").all();
+  const upd = db.prepare("UPDATE qms_records SET notes=?, data=?, updated_at=datetime('now') WHERE id=?");
+  let moved = 0;
+  for (const row of ncRows) {
+    let data; try { data = JSON.parse(row.data || '{}'); } catch { data = {}; }
+    if (data.performed_by === undefined && data.comments === undefined) continue;
+    let notes = row.notes;
+    if (data.performed_by && !data.investigator) data.investigator = data.performed_by;
+    if (data.comments && !(notes && notes.trim())) notes = data.comments;
+    delete data.performed_by; delete data.comments; delete data.vendor_number;
+    upd.run(notes || null, JSON.stringify(data), row.id);
+    moved++;
+  }
+  if (moved > 0) console.log(`[migrate] Folded NC Performed-By/Comments into Investigator/Notes on ${moved} records`);
+} catch (e) {
+  console.warn('[migrate] NC field-fold migration skipped:', e.message);
+}
+
 // --- File Uploads ---
 const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');
 mkdirSync(UPLOAD_DIR, { recursive: true });

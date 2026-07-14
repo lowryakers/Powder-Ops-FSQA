@@ -252,27 +252,28 @@ export function importCsv(db, cfg, csvText, actor) {
   if (!autoNumber && !colMap.includes('__number')) colMap[0] = '__number';
   // For status-tracked types, the "done" column maps to record status.
   const doneStatus = (cfg.statuses || []).find(s => s.done)?.value;
-  const ins = db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, created_by) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`);
+  const ins = db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, notes, data, paper_record, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`);
   // seed a running auto-number counter from the current max for this type
   let counter = autoNumber ? (() => { let m = 0; for (const rr of db.prepare('SELECT record_number FROM qms_records WHERE record_type = ?').all(cfg.key)) { const g = String(rr.record_number || '').match(/\d+/g); if (g) m = Math.max(m, parseInt(g[g.length - 1], 10)); } return m; })() : 0;
   let imported = 0;
   const tx = db.transaction(() => {
     for (let r = headerIdx + 1; r < rows.length; r++) {
       const cells = rows[r];
-      let number = null, recordDate = null, status = cfg.defaultStatus || null; const data = {};
+      let number = null, recordDate = null, notes = null, status = cfg.defaultStatus || null; const data = {};
       colMap.forEach((target, ci) => {
         const val = (cells[ci] || '').trim();
         if (!target || !val) return;
         if (target === '__number') number = val;
         else if (target === 'record_date') recordDate = val;
+        else if (target === '__notes') notes = val;
         else if (target === '__status') status = /true|yes|done|released|complete/i.test(val) ? (doneStatus || 'released') : (cfg.defaultStatus || null);
         else data[target] = val;
       });
       // skip placeholder/blank rows (no body, no date, no number)
-      if (!Object.keys(data).length && !recordDate && !number) continue;
+      if (!Object.keys(data).length && !recordDate && !number && !notes) continue;
       if (autoNumber) number = (cfg.numberPrefix || '') + String(++counter).padStart(cfg.numberPad || 3, '0');
       else if (!number) number = `row-${r}`;
-      ins.run(uuid(), cfg.key, number, recordDate, status, JSON.stringify(data), actor);
+      ins.run(uuid(), cfg.key, number, recordDate, status, notes, JSON.stringify(data), actor);
       imported++;
     }
   });
