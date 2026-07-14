@@ -1,6 +1,29 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Edit2, Search, ChevronDown, ChevronUp, FileWarning } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { canEditModule } from '../../utils/permissions';
+import { Plus, Edit2, Search, ChevronDown, ChevronUp, FileWarning, Trash2, CheckSquare, Square } from 'lucide-react';
+
+// Typed-confirmation dialog for permanent, irreversible bulk deletion.
+function ConfirmDeleteModal({ count, noun, onConfirm, onClose }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ok = text.trim().toUpperCase() === 'DELETE';
+  const go = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div className="flex items-center gap-2 text-red-600"><Trash2 size={18} /><h3 className="font-semibold">Permanently delete {count} {noun}{count === 1 ? '' : 's'}</h3></div>
+        <p className="text-sm text-gray-600">This removes the selected {noun}{count === 1 ? '' : 's'} for good. This cannot be undone. Type <span className="font-mono font-semibold">DELETE</span> to confirm.</p>
+        <input value={text} onChange={e => setText(e.target.value)} placeholder="DELETE" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus />
+        <div className="flex items-center gap-2">
+          <button disabled={!ok || busy} onClick={go} className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-40">{busy ? 'Deleting…' : `Delete ${count} permanently`}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const STATUS_COLORS = {
   open: 'bg-red-100 text-red-800',
@@ -342,9 +365,12 @@ function DetailRow({ label, value }) {
 }
 
 export default function CAPAPanel() {
+  const { user } = useAuth() || {};
+  const canEdit = canEditModule(user, 'capa');
+  const isAdmin = user?.role === 'admin';
   const { data: complaints, loading: loadingC, refresh: refreshC } = useApiGet('/complaints');
   const { data: capas, loading: loadingCA, refresh: refreshCA } = useApiGet('/complaints/capas/all');
-  const [tab, setTab] = useState('complaints');
+  const [tab, setTabRaw] = useState('complaints');
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [showCAPAForm, setShowCAPAForm] = useState(false);
@@ -352,6 +378,10 @@ export default function CAPAPanel() {
   const [editingCAPA, setEditingCAPA] = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [selected, setSelected] = useState(() => new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const setTab = (t) => { setSelected(new Set()); setTabRaw(t); };
 
   const filteredComplaints = useMemo(() => {
     let list = complaints || [];
@@ -393,6 +423,40 @@ export default function CAPAPanel() {
     await apiPut(`/complaints/capas/${editingCAPA.id}`, form);
     setEditingCAPA(null);
     refreshCA();
+  };
+
+  // --- Bulk selection (scoped to the active tab) ---
+  const currentList = tab === 'complaints' ? filteredComplaints : filteredCAPAs;
+  const visibleIds = currentList.map(x => x.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id));
+  const toggleOne = (id) => setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = () => setSelected(prev => {
+    const n = new Set(prev);
+    if (allVisibleSelected) visibleIds.forEach(id => n.delete(id));
+    else visibleIds.forEach(id => n.add(id));
+    return n;
+  });
+  const clearSelection = () => setSelected(new Set());
+  const flash = (m) => { setMsg(m); setTimeout(() => setMsg(null), 6000); };
+
+  const handleBulkComplaintUpdate = async (resolved) => {
+    const res = await apiPost('/complaints/bulk-update', { ids: [...selected], patch: { resolved } });
+    clearSelection(); flash(`Marked ${res.updated} complaint${res.updated === 1 ? '' : 's'} ${resolved ? 'resolved' : 'open'}.`); refreshC();
+  };
+  const handleBulkCapaUpdate = async (status) => {
+    const res = await apiPost('/complaints/capas/bulk-update', { ids: [...selected], patch: { status } });
+    clearSelection(); flash(`Updated ${res.updated} CAPA${res.updated === 1 ? '' : 's'} to “${status.replace('_', ' ')}”.`); refreshCA();
+  };
+  const handleBulkDelete = async () => {
+    const ids = [...selected];
+    if (tab === 'complaints') {
+      const res = await apiPost('/complaints/bulk-delete', { ids });
+      flash(`Permanently deleted ${res.deleted} complaint${res.deleted === 1 ? '' : 's'}.`); refreshC(); refreshCA();
+    } else {
+      const res = await apiPost('/complaints/capas/bulk-delete', { ids });
+      flash(`Permanently deleted ${res.deleted} CAPA${res.deleted === 1 ? '' : 's'}.`); refreshCA(); refreshC();
+    }
+    setConfirmDelete(false); clearSelection();
   };
 
   const stats = useMemo(() => {
@@ -477,6 +541,38 @@ export default function CAPAPanel() {
       {showCAPAForm && !editingCAPA && <CAPAForm complaints={complaints} onSave={handleCreateCAPA} onCancel={() => setShowCAPAForm(false)} />}
       {editingCAPA && <CAPAForm initial={editingCAPA} complaints={complaints} onSave={handleUpdateCAPA} onCancel={() => setEditingCAPA(null)} />}
 
+      {msg && <div className="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-2">{msg}</div>}
+
+      {canEdit && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={toggleAll} disabled={visibleIds.length === 0} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-powder-600 disabled:opacity-40">
+            {allVisibleSelected ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+            {allVisibleSelected ? 'Deselect all' : 'Select all'}
+          </button>
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 flex-wrap flex-1 bg-powder-50 border border-powder-200 rounded-lg px-3 py-1.5">
+              <span className="text-sm font-medium text-powder-800">{selected.size} selected</span>
+              <div className="flex-1" />
+              {tab === 'complaints' ? (
+                <>
+                  <button onClick={() => handleBulkComplaintUpdate(true)} className="px-3 py-1 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Mark resolved</button>
+                  <button onClick={() => handleBulkComplaintUpdate(false)} className="px-3 py-1 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Mark open</button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => handleBulkCapaUpdate('closed')} className="px-3 py-1 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Mark closed</button>
+                  <button onClick={() => handleBulkCapaUpdate('open')} className="px-3 py-1 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Mark open</button>
+                </>
+              )}
+              {isAdmin && (
+                <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"><Trash2 size={14} /> Delete permanently</button>
+              )}
+              <button onClick={clearSelection} className="px-3 py-1 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Clear</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Complaint List */}
       {tab === 'complaints' && (
         <div className="space-y-2">
@@ -484,6 +580,11 @@ export default function CAPAPanel() {
             <div key={c.id} className={`bg-white rounded-xl border ${c.capa_needed && !c.resolved ? 'border-red-200' : 'border-gray-200'}`}>
               <div className="px-4 py-3 flex items-center justify-between cursor-pointer" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
                 <div className="flex items-center gap-3 min-w-0">
+                  {canEdit && (
+                    <button onClick={e => { e.stopPropagation(); toggleOne(c.id); }} className="text-gray-400 hover:text-powder-600 shrink-0" title={selected.has(c.id) ? 'Deselect' : 'Select'}>
+                      {selected.has(c.id) ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+                    </button>
+                  )}
                   <span className="text-sm font-mono font-bold text-gray-900">{c.complaint_number}</span>
                   <span className="text-sm text-gray-600 truncate">{c.customer_name}</span>
                   <span className="text-xs text-gray-400">{c.date_received}</span>
@@ -529,6 +630,11 @@ export default function CAPAPanel() {
             <div key={ca.id} className={`bg-white rounded-xl border ${ca.status === 'open' || ca.status === 'in_progress' ? 'border-red-200' : 'border-gray-200'}`}>
               <div className="px-4 py-3 flex items-center justify-between cursor-pointer" onClick={() => setExpanded(expanded === ca.id ? null : ca.id)}>
                 <div className="flex items-center gap-3 min-w-0">
+                  {canEdit && (
+                    <button onClick={e => { e.stopPropagation(); toggleOne(ca.id); }} className="text-gray-400 hover:text-powder-600 shrink-0" title={selected.has(ca.id) ? 'Deselect' : 'Select'}>
+                      {selected.has(ca.id) ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+                    </button>
+                  )}
                   <span className="text-sm font-mono font-bold text-red-700">{ca.capa_number}</span>
                   <span className="text-sm text-gray-800 truncate">{ca.title}</span>
                   {ca.item_description && <span className="text-xs text-gray-400 truncate hidden sm:inline">{ca.item_description}</span>}
@@ -579,6 +685,10 @@ export default function CAPAPanel() {
           ))}
           {filteredCAPAs.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">No CAPAs found</div>}
         </div>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDeleteModal count={selected.size} noun={tab === 'complaints' ? 'complaint' : 'CAPA'} onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />
       )}
     </div>
   );

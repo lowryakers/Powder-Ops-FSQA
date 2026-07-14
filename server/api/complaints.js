@@ -56,6 +56,37 @@ router.put('/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM complaints WHERE id = ?').get(req.params.id));
 });
 
+// Bulk permanent delete of complaints. Admin only. Any CAPA that referenced a
+// deleted complaint has its link cleared so it isn't left dangling.
+router.post('/bulk-delete', (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can permanently delete complaints.' });
+  const db = getDb();
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const ph = ids.map(() => '?').join(',');
+  const found = db.prepare(`SELECT id, complaint_number FROM complaints WHERE id IN (${ph})`).all(...ids);
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE capas SET complaint_id=NULL WHERE complaint_id IN (${ph})`).run(...ids);
+    db.prepare(`DELETE FROM complaints WHERE id IN (${ph})`).run(...ids);
+  });
+  tx();
+  for (const c of found) logAudit(req.user.name, 'complaint_deleted', 'complaint', c.id, { complaint_number: c.complaint_number }, c, null);
+  res.json({ deleted: found.length });
+});
+
+// Bulk field update for complaints — resolved flag.
+router.post('/bulk-update', (req, res) => {
+  const db = getDb();
+  const { ids, patch } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  if (!patch || patch.resolved === undefined) return res.status(400).json({ error: 'patch.resolved is required' });
+  const ph = ids.map(() => '?').join(',');
+  const resolved = patch.resolved ? 1 : 0;
+  const info = db.prepare(`UPDATE complaints SET resolved=?, date_resolved=CASE WHEN ?=1 AND (date_resolved IS NULL OR date_resolved='') THEN date('now') ELSE date_resolved END, updated_at=datetime('now') WHERE id IN (${ph})`).run(resolved, resolved, ...ids);
+  logAudit(req.user.name, 'complaints_bulk_updated', 'complaint', null, { count: info.changes, resolved: !!patch.resolved });
+  res.json({ updated: info.changes });
+});
+
 // --- CAPA routes ---
 router.get('/capas/all', (_req, res) => {
   const db = getDb();
@@ -126,6 +157,36 @@ router.put('/capas/:id', (req, res) => {
   );
   logAudit(req.user.name, 'capa_updated', 'capa', req.params.id, { status: newStatus });
   res.json(db.prepare('SELECT * FROM capas WHERE id = ?').get(req.params.id));
+});
+
+// Bulk permanent delete of CAPAs. Admin only. Complaints that linked to a
+// deleted CAPA have their link cleared.
+router.post('/capas/bulk-delete', (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can permanently delete CAPAs.' });
+  const db = getDb();
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const ph = ids.map(() => '?').join(',');
+  const found = db.prepare(`SELECT id, capa_number FROM capas WHERE id IN (${ph})`).all(...ids);
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE complaints SET capa_id=NULL WHERE capa_id IN (${ph})`).run(...ids);
+    db.prepare(`DELETE FROM capas WHERE id IN (${ph})`).run(...ids);
+  });
+  tx();
+  for (const c of found) logAudit(req.user.name, 'capa_deleted', 'capa', c.id, { capa_number: c.capa_number }, c, null);
+  res.json({ deleted: found.length });
+});
+
+// Bulk status update for CAPAs.
+router.post('/capas/bulk-update', (req, res) => {
+  const db = getDb();
+  const { ids, patch } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  if (!patch || !patch.status) return res.status(400).json({ error: 'patch.status is required' });
+  const ph = ids.map(() => '?').join(',');
+  const info = db.prepare(`UPDATE capas SET status=?, closed_at=CASE WHEN ?='closed' AND (closed_at IS NULL OR closed_at='') THEN datetime('now') ELSE closed_at END, updated_at=datetime('now') WHERE id IN (${ph})`).run(patch.status, patch.status, ...ids);
+  logAudit(req.user.name, 'capas_bulk_updated', 'capa', null, { count: info.changes, status: patch.status });
+  res.json({ updated: info.changes });
 });
 
 export default router;
