@@ -3,7 +3,7 @@ import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import FileUpload from '../FileUpload';
-import { Plus, Search, Edit2, Trash2, Download, Upload, X, Trash, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Download, Upload, X, Trash, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square } from 'lucide-react';
 
 const CATEGORIES = [
   { value: '', label: '—' },
@@ -331,6 +331,27 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
   );
 }
 
+/* ───────── Bulk permanent-delete confirmation ───────── */
+function ConfirmDeleteModal({ count, onConfirm, onClose }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ok = text.trim().toUpperCase() === 'DELETE';
+  const go = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div className="flex items-center gap-2 text-red-600"><Trash2 size={18} /><h3 className="font-semibold">Permanently delete {count} disposal{count === 1 ? '' : 's'}</h3></div>
+        <p className="text-sm text-gray-600">This removes the selected disposal{count === 1 ? '' : 's'} and all their items for good. This cannot be undone. Type <span className="font-mono font-semibold">DELETE</span> to confirm.</p>
+        <input value={text} onChange={e => setText(e.target.value)} placeholder="DELETE" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus />
+        <div className="flex items-center gap-2">
+          <button disabled={!ok || busy} onClick={go} className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-40">{busy ? 'Deleting…' : `Delete ${count} permanently`}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───────── Panel ───────── */
 export default function DisposalsPanel() {
   const { user } = useAuth() || {};
@@ -348,6 +369,9 @@ export default function DisposalsPanel() {
   const [viewing, setViewing] = useState(null);
   const [importing, setImporting] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [selected, setSelected] = useState(() => new Set()); // parent disposal ids
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const isAdmin = user?.role === 'admin';
 
   // Flatten to one row per disposed item (Item Name is the primary column)
   const rows = useMemo(() => {
@@ -390,11 +414,40 @@ export default function DisposalsPanel() {
   const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir('asc'); } };
   const sh = { sortField, sortDir, onSort };
 
+  // Selection is by parent disposal (rows are individual items of a disposal).
+  const visibleDispIds = useMemo(() => [...new Set(filtered.map(r => r.disposal_id))], [filtered]);
+  const allVisibleSelected = visibleDispIds.length > 0 && visibleDispIds.every(id => selected.has(id));
+  const toggleDisp = (id) => setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = () => setSelected(prev => {
+    const n = new Set(prev);
+    if (allVisibleSelected) visibleDispIds.forEach(id => n.delete(id));
+    else visibleDispIds.forEach(id => n.add(id));
+    return n;
+  });
+  const clearSelection = () => setSelected(new Set());
+
   const handleCreate = async (form) => { await apiPost('/disposals', form); setCreating(false); refresh(); };
   const handleUpdate = async (form) => { const res = await apiPut(`/disposals/${editing.id}`, form); setEditing(null); setViewing(res); refresh(); };
   const handleDelete = async (d) => { if (!window.confirm(`Delete disposal ${d.disposal_number || ''} and its ${d.items?.length || 0} item(s)?`)) return; await apiFetch(`/disposals/${d.id}`, { method: 'DELETE' }); setViewing(null); refresh(); };
   const handleSign = async (id, role) => { const res = await apiPost(`/disposals/${id}/approve`, { role }); setViewing(res); refresh(); };
   const handleRevoke = async (id, role) => { const res = await apiFetch(`/disposals/${id}/approve/${role}`, { method: 'DELETE' }); setViewing(res); refresh(); };
+  const handleBulkPaper = async (paper) => {
+    const ids = [...selected];
+    const res = await apiPost('/disposals/bulk-update', { ids, patch: { paper_record: paper } });
+    clearSelection();
+    setMsg(`Marked ${res.updated} disposal${res.updated === 1 ? '' : 's'} as ${paper ? 'logged on paper' : 'requiring in-system approval'}.`);
+    setTimeout(() => setMsg(null), 6000);
+    refresh();
+  };
+  const handleBulkDelete = async () => {
+    const ids = [...selected];
+    const res = await apiPost('/disposals/bulk-delete', { ids });
+    setConfirmDelete(false);
+    clearSelection();
+    setMsg(`Permanently deleted ${res.deleted} disposal${res.deleted === 1 ? '' : 's'}.`);
+    setTimeout(() => setMsg(null), 6000);
+    refresh();
+  };
 
   return (
     <div className="space-y-4">
@@ -412,6 +465,19 @@ export default function DisposalsPanel() {
       </div>
 
       {msg && <div className="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-2">{msg}</div>}
+
+      {canEdit && selected.size > 0 && (
+        <div className="flex items-center gap-2 flex-wrap bg-powder-50 border border-powder-200 rounded-lg px-3 py-2">
+          <span className="text-sm font-medium text-powder-800">{selected.size} disposal{selected.size === 1 ? '' : 's'} selected</span>
+          <div className="flex-1" />
+          <button onClick={() => handleBulkPaper(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"><FileText size={14} /> Mark on paper</button>
+          <button onClick={() => handleBulkPaper(false)} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Unmark paper</button>
+          {isAdmin && (
+            <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"><Trash2 size={14} /> Delete permanently</button>
+          )}
+          <button onClick={clearSelection} className="px-3 py-1.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Clear</button>
+        </div>
+      )}
 
       {summary && (
         <div className="grid grid-cols-3 gap-3">
@@ -451,6 +517,13 @@ export default function DisposalsPanel() {
             <table className="w-full border-collapse">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  {canEdit && (
+                    <th className="px-2 py-2 w-8">
+                      <button onClick={toggleAll} className="text-gray-400 hover:text-powder-600 align-middle" title={allVisibleSelected ? 'Deselect all' : 'Select all'}>
+                        {allVisibleSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                      </button>
+                    </th>
+                  )}
                   <SortTh label="Item Name" field="item_name" {...sh} className="min-w-[180px]" />
                   <SortTh label="Part No" field="item_number" {...sh} />
                   <SortTh label="Lot" field="lot_number" {...sh} />
@@ -465,7 +538,14 @@ export default function DisposalsPanel() {
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
                 {filtered.map((r, i) => (
-                  <tr key={r.id || i} onClick={() => setViewing(r._d)} className="hover:bg-gray-50 cursor-pointer">
+                  <tr key={r.id || i} onClick={() => setViewing(r._d)} className={`hover:bg-gray-50 cursor-pointer ${selected.has(r.disposal_id) ? 'bg-powder-50' : ''}`}>
+                    {canEdit && (
+                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => toggleDisp(r.disposal_id)} className="text-gray-400 hover:text-powder-600 align-middle" title={selected.has(r.disposal_id) ? 'Deselect disposal' : 'Select disposal'}>
+                          {selected.has(r.disposal_id) ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+                        </button>
+                      </td>
+                    )}
                     <td className="px-2 py-2 font-medium text-gray-900">{r.item_name || '—'}{r.category ? <span className="block text-[10px] text-gray-400 font-normal">{CAT_LABEL[r.category] || r.category}</span> : null}</td>
                     <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{r.item_number || '—'}</td>
                     <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{r.lot_number || '—'}</td>
@@ -488,6 +568,7 @@ export default function DisposalsPanel() {
       {editing && <DisposalForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
       {viewing && !editing && <DisposalView d={viewing} user={user} canEdit={canEdit} onSign={handleSign} onRevoke={handleRevoke} onEdit={(d) => { setEditing(d); }} onDelete={handleDelete} onClose={() => setViewing(null)} />}
       {importing && <CsvImportModal onClose={() => setImporting(false)} onImported={(res) => { setImporting(false); setMsg(`Imported ${res.disposals} disposals (${res.items} items).`); setTimeout(() => setMsg(null), 6000); refresh(); }} />}
+      {confirmDelete && <ConfirmDeleteModal count={selected.size} onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />}
     </div>
   );
 }

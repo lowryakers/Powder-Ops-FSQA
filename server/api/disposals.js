@@ -164,6 +164,39 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Bulk permanent delete of disposals (and their items). Admin only.
+router.post('/bulk-delete', (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can permanently delete disposals.' });
+  const db = getDb();
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const placeholders = ids.map(() => '?').join(',');
+  const found = db.prepare(`SELECT id, disposal_number FROM disposals WHERE id IN (${placeholders})`).all(...ids);
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM disposal_items WHERE disposal_id IN (${placeholders})`).run(...ids);
+    db.prepare(`DELETE FROM disposals WHERE id IN (${placeholders})`).run(...ids);
+  });
+  tx();
+  for (const d of found) logAudit(req.user.name, 'disposal_deleted', 'disposal', d.id, { disposal_number: d.disposal_number }, d, null);
+  res.json({ deleted: found.length });
+});
+
+// Bulk field update — currently the "logged on paper" flag. Applies to many
+// disposals at once (e.g. marking a batch of historical records).
+router.post('/bulk-update', (req, res) => {
+  const db = getDb();
+  const { ids, patch } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  if (!patch || typeof patch !== 'object' || patch.paper_record === undefined) {
+    return res.status(400).json({ error: 'patch.paper_record is required' });
+  }
+  const placeholders = ids.map(() => '?').join(',');
+  const info = db.prepare(`UPDATE disposals SET paper_record=?, updated_at=datetime('now') WHERE id IN (${placeholders})`)
+    .run(patch.paper_record ? 1 : 0, ...ids);
+  logAudit(req.user.name, 'disposals_bulk_updated', 'disposal', null, { count: info.changes, paper_record: !!patch.paper_record });
+  res.json({ updated: info.changes });
+});
+
 // --- CSV log import ---
 // Minimal RFC-4180 CSV parser (handles quoted fields, embedded commas + newlines)
 function parseCsv(text) {
