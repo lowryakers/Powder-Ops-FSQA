@@ -1,0 +1,324 @@
+import { Router } from 'express';
+import { v4 as uuid } from 'uuid';
+import PDFDocument from 'pdfkit';
+import { getDb, logAudit } from '../db.js';
+import { QMS_TYPES, getType, canSignApproval } from '../qms-config.js';
+
+const router = Router();
+
+// ── helpers ───────────────────────────────────────────────────────────────
+function parseJson(raw, fallback) { if (!raw) return fallback; try { return JSON.parse(raw); } catch { return fallback; } }
+
+// Flatten a stored row into the shape the client renders: type-specific fields
+// from `data` are spread to the top level alongside the built-in columns.
+function flatten(row) {
+  const data = parseJson(row.data, {});
+  return {
+    ...data,
+    id: row.id,
+    record_type: row.record_type,
+    record_number: row.record_number,
+    record_date: row.record_date,
+    status: row.status,
+    paper_record: row.paper_record,
+    document_url: row.document_url,
+    capa_id: row.capa_id,
+    notes: row.notes,
+    created_by: row.created_by,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    approvals: parseJson(row.approvals, {}),
+  };
+}
+
+// Build the data JSON from the request body, keeping only configured field keys.
+function pickData(cfg, body) {
+  const data = {};
+  for (const f of cfg.fields) {
+    if (body[f.key] !== undefined) {
+      let v = body[f.key];
+      if (f.type === 'multiselect') v = Array.isArray(v) ? v : (v ? [v] : []);
+      if (f.type === 'checkbox') v = !!v;
+      data[f.key] = v;
+    }
+  }
+  return data;
+}
+
+// Next sequential record number for a type, honouring its prefix + padding.
+function nextNumber(db, cfg) {
+  const rows = db.prepare('SELECT record_number FROM qms_records WHERE record_type = ?').all(cfg.key);
+  let max = 0;
+  for (const r of rows) {
+    const m = /(\d+)/.exec(r.record_number || '');
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return (cfg.numberPrefix || '') + String(max + 1).padStart(cfg.numberPad || 3, '0');
+}
+
+// Minimal RFC-4180 CSV parser (quoted fields, embedded commas + newlines).
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = '', i = 0, inQuotes = false;
+  const s = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  while (i < s.length) {
+    const ch = s[i];
+    if (inQuotes) {
+      if (ch === '"') { if (s[i + 1] === '"') { field += '"'; i += 2; continue; } inQuotes = false; i++; continue; }
+      field += ch; i++; continue;
+    }
+    if (ch === '"') { inQuotes = true; i++; continue; }
+    if (ch === ',') { row.push(field); field = ''; i++; continue; }
+    if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+    field += ch; i++;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function requireType(req, res) {
+  const cfg = getType(req.params.type);
+  if (!cfg) { res.status(404).json({ error: 'Unknown record type' }); return null; }
+  return cfg;
+}
+
+// ── config (must precede /:type) ────────────────────────────────────────────
+router.get('/config', (_req, res) => {
+  res.json({ types: Object.values(QMS_TYPES) });
+});
+
+// ── list + summary ──────────────────────────────────────────────────────────
+router.get('/:type/summary', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM qms_records WHERE record_type = ?').all(cfg.key).map(flatten);
+  const total = rows.length;
+  const pendingApproval = rows.filter(r => !r.paper_record && cfg.approvals.some(a => a.required && !r.approvals[a.key])).length;
+  const paper = rows.filter(r => r.paper_record).length;
+  res.json({ total, pending_approval: pendingApproval, paper });
+});
+
+router.get('/:type', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM qms_records WHERE record_type = ? ORDER BY (record_date IS NULL), record_date DESC, created_at DESC').all(cfg.key);
+  res.json(rows.map(flatten));
+});
+
+router.get('/:type/:id', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  res.json(flatten(row));
+});
+
+// ── create ───────────────────────────────────────────────────────────────────
+router.post('/:type', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const id = uuid();
+  const number = (req.body.record_number && String(req.body.record_number).trim()) || nextNumber(db, cfg);
+  const data = pickData(cfg, req.body);
+  db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, document_url, capa_id, notes, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    id, cfg.key, number, req.body.record_date || null, req.body.status || null,
+    JSON.stringify(data), req.body.paper_record ? 1 : 0, req.body.document_url || null,
+    req.body.capa_id || null, req.body.notes || null, req.user.name);
+  logAudit(req.user.name, 'qms_created', cfg.key, id, { record_number: number });
+  res.status(201).json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id)));
+});
+
+// ── update ───────────────────────────────────────────────────────────────────
+router.put('/:type/:id', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  // approvals are NOT settable here — they go through /approve
+  const data = { ...parseJson(existing.data, {}), ...pickData(cfg, req.body) };
+  db.prepare(`UPDATE qms_records SET record_number=?, record_date=?, status=?, data=?, paper_record=?, document_url=?, capa_id=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
+    req.body.record_number ?? existing.record_number,
+    req.body.record_date !== undefined ? (req.body.record_date || null) : existing.record_date,
+    req.body.status !== undefined ? (req.body.status || null) : existing.status,
+    JSON.stringify(data),
+    req.body.paper_record !== undefined ? (req.body.paper_record ? 1 : 0) : existing.paper_record,
+    req.body.document_url !== undefined ? (req.body.document_url || null) : existing.document_url,
+    req.body.capa_id !== undefined ? (req.body.capa_id || null) : existing.capa_id,
+    req.body.notes ?? existing.notes, req.params.id);
+  logAudit(req.user.name, 'qms_updated', cfg.key, req.params.id, { record_number: existing.record_number });
+  res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
+});
+
+// ── bulk ─────────────────────────────────────────────────────────────────────
+router.post('/:type/bulk-delete', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  if (req.user.role !== 'admin') return res.status(403).json({ error: `Only an admin can permanently delete ${cfg.label}.` });
+  const db = getDb();
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const ph = ids.map(() => '?').join(',');
+  const found = db.prepare(`SELECT id, record_number FROM qms_records WHERE record_type = ? AND id IN (${ph})`).all(cfg.key, ...ids);
+  db.prepare(`DELETE FROM qms_records WHERE record_type = ? AND id IN (${ph})`).run(cfg.key, ...ids);
+  for (const r of found) logAudit(req.user.name, 'qms_deleted', cfg.key, r.id, { record_number: r.record_number }, r, null);
+  res.json({ deleted: found.length });
+});
+
+router.post('/:type/bulk-update', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const { ids, patch } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  if (!patch || typeof patch !== 'object') return res.status(400).json({ error: 'patch object is required' });
+  const ph = ids.map(() => '?').join(',');
+  const sets = [], vals = [];
+  if (patch.paper_record !== undefined) { sets.push('paper_record=?'); vals.push(patch.paper_record ? 1 : 0); }
+  if (patch.status !== undefined) { sets.push('status=?'); vals.push(patch.status || null); }
+  if (!sets.length) return res.status(400).json({ error: 'No editable fields in patch' });
+  const info = db.prepare(`UPDATE qms_records SET ${sets.join(', ')}, updated_at=datetime('now') WHERE record_type = ? AND id IN (${ph})`).run(...vals, cfg.key, ...ids);
+  logAudit(req.user.name, 'qms_bulk_updated', cfg.key, null, { count: info.changes, patch });
+  res.json({ updated: info.changes });
+});
+
+// ── approvals ─────────────────────────────────────────────────────────────────
+router.post('/:type/:id/approve', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const appr = cfg.approvals.find(a => a.key === req.body.role);
+  if (!appr) return res.status(400).json({ error: 'Unknown approval role' });
+  if (!canSignApproval(req.user, appr)) return res.status(403).json({ error: 'You are not authorized to sign this approval.' });
+  const approvals = parseJson(row.approvals, {});
+  approvals[appr.key] = { name: req.user.name, user_id: req.user.id, signed_at: new Date().toISOString() };
+  db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), req.params.id);
+  logAudit(req.user.name, `qms_signed_${appr.key}`, cfg.key, req.params.id, { record_number: row.record_number });
+  res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
+});
+
+router.delete('/:type/:id/approve/:role', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const approvals = parseJson(row.approvals, {});
+  const sig = approvals[req.params.role];
+  if (!sig) return res.status(404).json({ error: 'Not signed' });
+  if (req.user.role !== 'admin' && sig.user_id !== req.user.id) return res.status(403).json({ error: 'Only an admin or the original signer can revoke.' });
+  delete approvals[req.params.role];
+  db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), req.params.id);
+  logAudit(req.user.name, `qms_unsigned_${req.params.role}`, cfg.key, req.params.id, { record_number: row.record_number });
+  res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
+});
+
+// ── delete (single) ──────────────────────────────────────────────────────────
+router.delete('/:type/:id', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM qms_records WHERE id = ?').run(req.params.id);
+  logAudit(req.user.name, 'qms_deleted', cfg.key, req.params.id, { record_number: existing.record_number }, existing, null);
+  res.json({ success: true });
+});
+
+// ── CSV import (seed historical paper logs) ──────────────────────────────────
+export function importCsv(db, cfg, csvText, actor) {
+  const rows = parseCsv(csvText).filter(r => r.some(c => (c || '').trim()));
+  if (!rows.length) return { imported: 0 };
+  // find header row: the one containing the number column keyword
+  const numKeys = (cfg.csv?.number || []).map(k => k.toLowerCase().replace(/\s+/g, ' ').trim());
+  const mapKeys = Object.entries(cfg.csv?.map || {}).map(([k, v]) => [k.toLowerCase().replace(/\s+/g, ' ').trim(), v]);
+  const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const isNumberCol = (h) => numKeys.includes(h); // exact only — avoids matching "deviation description"
+  let headerIdx = rows.findIndex(r => r.some(c => isNumberCol(norm(c))));
+  if (headerIdx < 0) headerIdx = 0;
+  const header = rows[headerIdx].map(norm);
+  // Exact header→field mapping only. Short keys like "date"/"lot" would wrongly
+  // grab long headers ("management verified, (initial and date)") on substring,
+  // so we require an exact normalized match; unmapped columns are ignored.
+  const colMap = header.map(h => {
+    if (isNumberCol(h)) return '__number';
+    const exact = mapKeys.find(([k]) => k === h);
+    return exact ? exact[1] : null;
+  });
+  const ins = db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, data, paper_record, created_by) VALUES (?, ?, ?, ?, ?, 1, ?)`);
+  let imported = 0;
+  const tx = db.transaction(() => {
+    for (let r = headerIdx + 1; r < rows.length; r++) {
+      const cells = rows[r];
+      let number = null, recordDate = null; const data = {};
+      colMap.forEach((target, ci) => {
+        const val = (cells[ci] || '').trim();
+        if (!target || !val) return;
+        if (target === '__number') number = val;
+        else if (target === 'record_date') recordDate = val;
+        else data[target] = val;
+      });
+      // skip placeholder rows that carry only a number (no body, no date)
+      if (!Object.keys(data).length && !recordDate) continue;
+      if (!number) number = `row-${r}`;
+      ins.run(uuid(), cfg.key, number, recordDate, JSON.stringify(data), actor);
+      imported++;
+    }
+  });
+  tx();
+  return { imported };
+}
+
+router.post('/:type/import', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const { csv } = req.body;
+  if (!csv) return res.status(400).json({ error: 'csv is required' });
+  const result = importCsv(db, cfg, csv, req.user.name);
+  logAudit(req.user.name, 'qms_imported', cfg.key, null, result);
+  res.json(result);
+});
+
+// ── PDF export ────────────────────────────────────────────────────────────────
+router.get('/:type/:id/pdf', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const rec = flatten(row);
+  const pdf = new PDFDocument({ size: 'LETTER', margins: { top: 48, bottom: 48, left: 48, right: 48 } });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${cfg.short}_${(rec.record_number || rec.id).toString().replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf"`);
+  pdf.pipe(res);
+
+  pdf.fontSize(15).font('Helvetica-Bold').text(cfg.singular, { align: 'center' });
+  pdf.fontSize(8).font('Helvetica').text(cfg.formCode || '', { align: 'center' });
+  pdf.moveDown(0.6);
+  pdf.fontSize(10).font('Helvetica-Bold')
+    .text(`${cfg.short} #: ${rec.record_number || '—'}`, { continued: true })
+    .text(`      ${cfg.dateLabel || 'Date'}: ${rec.record_date || '—'}`);
+  pdf.moveDown(0.5);
+
+  pdf.font('Helvetica').fontSize(9);
+  for (const f of cfg.fields) {
+    let v = rec[f.key];
+    if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) continue;
+    if (f.type === 'checkbox') v = v ? 'Yes' : 'No';
+    if (Array.isArray(v)) v = v.join(', ');
+    pdf.font('Helvetica-Bold').text(`${f.label}: `, { continued: true }).font('Helvetica').text(String(v));
+    pdf.moveDown(0.2);
+  }
+  if (rec.notes) { pdf.moveDown(0.2).font('Helvetica-Bold').text('Notes: ', { continued: true }).font('Helvetica').text(rec.notes); }
+
+  pdf.moveDown(0.6).font('Helvetica-Bold').fontSize(10).text('Approvals');
+  pdf.fontSize(9).font('Helvetica').moveDown(0.2);
+  if (rec.paper_record) {
+    pdf.font('Helvetica-Oblique').text('Logged on paper — signatures on file on the original form.').font('Helvetica').moveDown(0.2);
+  }
+  const sigDate = (s) => (s?.signed_at ? new Date(s.signed_at).toLocaleDateString() : '__________');
+  for (const a of cfg.approvals) {
+    const s = rec.approvals[a.key];
+    pdf.text(`${a.label}${a.required ? ' *' : ''}: ${s?.name || '__________________'}     Date: ${sigDate(s)}`);
+    pdf.moveDown(0.25);
+  }
+  pdf.end();
+});
+
+export default router;

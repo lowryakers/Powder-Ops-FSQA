@@ -21,6 +21,7 @@ import CAPAPanel from './components/compliance/CAPAPanel.jsx';
 import DocumentRegistry from './components/compliance/DocumentRegistry.jsx';
 import OrgChart from './components/compliance/OrgChart.jsx';
 import DisposalsPanel from './components/compliance/DisposalsPanel.jsx';
+import QMSRecordsPanel from './components/compliance/QMSRecordsPanel.jsx';
 import TrainingPanel from './components/compliance/TrainingPanel.jsx';
 import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
 import ProductionLog from './components/compliance/ProductionLog.jsx';
@@ -74,6 +75,13 @@ const NAV_GROUPS = [
       { id: 'disposals', label: 'Disposals', icon: Trash2 },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'recall', label: 'Mock Recall', icon: Package },
+    ],
+  },
+  {
+    label: 'Quality Records',
+    items: [
+      { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
+      { id: 'deviations', label: 'Deviations', icon: FileWarning },
     ],
   },
   {
@@ -537,6 +545,8 @@ function App() {
           {resolvedTab === 'job-descriptions' && <DocumentRegistry docType="job_description" moduleId="job-descriptions" title="Job Descriptions" typeLabel="Job Description" />}
           {resolvedTab === 'org-chart' && <OrgChart />}
           {resolvedTab === 'disposals' && <DisposalsPanel />}
+          {resolvedTab === 'dcr' && <QMSRecordsPanel recordType="document_change_request" moduleId="dcr" />}
+          {resolvedTab === 'deviations' && <QMSRecordsPanel recordType="deviation" moduleId="deviations" />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}

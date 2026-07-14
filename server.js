@@ -24,6 +24,9 @@ import chemicalRoutes from './server/api/chemicals.js';
 import hygienicDesignRoutes from './server/api/hygienic-design.js';
 import complaintRoutes from './server/api/complaints.js';
 import documentRoutes from './server/api/documents.js';
+import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
+import { getType as getQmsType } from './server/qms-config.js';
+import { DCR_LOG_CSV, DEVIATION_LOG_CSVS } from './server/qms-seed.js';
 import orgRoutes from './server/api/org.js';
 import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
@@ -761,6 +764,24 @@ if (disposalCount === 0) {
   }
 }
 
+// Seed historical QMS registers (Document Change Requests, Deviations) once
+// per type if empty, from the embedded log snapshots.
+try {
+  const dcrCfg = getQmsType('document_change_request');
+  if (dcrCfg && db.prepare("SELECT COUNT(*) c FROM qms_records WHERE record_type='document_change_request'").get().c === 0) {
+    const { imported } = importQmsCsv(db, dcrCfg, DCR_LOG_CSV, 'system-import');
+    console.log(`[seed] Imported historical Document Change Request log (${imported} records)`);
+  }
+  const devCfg = getQmsType('deviation');
+  if (devCfg && db.prepare("SELECT COUNT(*) c FROM qms_records WHERE record_type='deviation'").get().c === 0) {
+    let total = 0;
+    for (const csv of DEVIATION_LOG_CSVS) total += importQmsCsv(db, devCfg, csv, 'system-import').imported;
+    console.log(`[seed] Imported historical Deviation logs (${total} records)`);
+  }
+} catch (e) {
+  console.warn('[seed] Could not seed QMS registers:', e.message);
+}
+
 // --- File Uploads ---
 const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');
 mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -847,6 +868,7 @@ app.use('/api/complaints', complaintRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/org', orgRoutes);
 app.use('/api/disposals', disposalRoutes);
+app.use('/api/qms', qmsRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/mock-recalls', mockRecallRoutes);
 app.use('/api/production', productionRoutes);

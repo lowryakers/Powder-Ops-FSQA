@@ -471,6 +471,27 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_disposal_items_disposal ON disposal_items(disposal_id);
 
+    -- QMS Records — generic framework for Document Change Requests, Deviations,
+    -- Non-Conformance, On Hold, etc. Type-specific fields live in the data JSON.
+    CREATE TABLE IF NOT EXISTS qms_records (
+      id TEXT PRIMARY KEY,
+      record_type TEXT NOT NULL,
+      record_number TEXT,
+      record_date TEXT,
+      status TEXT,
+      data TEXT,
+      approvals TEXT,
+      paper_record INTEGER NOT NULL DEFAULT 0,
+      document_url TEXT,
+      capa_id TEXT,
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_qms_type ON qms_records(record_type);
+    CREATE INDEX IF NOT EXISTS idx_qms_number ON qms_records(record_type, record_number);
+
     -- Training Records
     CREATE TABLE IF NOT EXISTS training_records (
       id TEXT PRIMARY KEY,

@@ -65,6 +65,13 @@ const MODULE_GROUPS = [
       { id: 'recall', label: 'Mock Recall' },
     ],
   },
+  {
+    label: 'Quality Records',
+    modules: [
+      { id: 'dcr', label: 'Document Change Requests' },
+      { id: 'deviations', label: 'Deviations' },
+    ],
+  },
 ];
 
 const ALL_MODULE_IDS = MODULE_GROUPS.flatMap(g => g.modules.map(m => m.id));
