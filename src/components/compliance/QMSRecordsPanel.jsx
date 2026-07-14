@@ -349,13 +349,29 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
 
-  const candidatesFor = (num) => (records || []).filter(r => normNum(r.record_number) === num);
+  const normText = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Match a filename to records. Types with attachMatch (no control number on
+  // the form, e.g. Organoleptic) match by lot / part / product found in the
+  // filename; everything else matches by the number in the filename.
+  const matchFor = (filename) => {
+    const base = normText(filename.replace(/\.[^.]*$/, ''));
+    if (cfg.attachMatch?.length) {
+      let detected = '';
+      const cands = (records || []).filter(r => cfg.attachMatch.some(k => {
+        const v = normText(r[k]);
+        if (v.length >= 4 && base.includes(v)) { if (!detected) detected = String(r[k]).trim(); return true; }
+        return false;
+      }));
+      return { candidates: cands, detected: detected || '—' };
+    }
+    const fnum = parseFormNumber(filename);
+    return { candidates: (records || []).filter(r => normNum(r.record_number) === fnum), detected: fnum || '—' };
+  };
   const onFiles = (fileList) => {
     const files = Array.from(fileList || []);
     setRows(files.map(file => {
-      const num = parseFormNumber(file.name);
-      const cands = candidatesFor(num);
-      return { file, name: file.name, num, candidates: cands, chosenId: cands.length === 1 ? cands[0].id : '' };
+      const { candidates, detected } = matchFor(file.name);
+      return { file, name: file.name, num: detected, candidates, chosenId: candidates.length === 1 ? candidates[0].id : '' };
     }));
     setResult(null);
   };
@@ -374,8 +390,13 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
     if (ok) onDone();
   };
 
-  const recLabel = (r) => `${r.record_number} — ${(r.product_description || r.doc_name || '').toString().slice(0, 40)} ${r.record_date ? `(${r.record_date})` : ''}`;
+  const recLabel = (r) => {
+    const main = r[cfg.primaryField] || r.product || r.product_description || r.doc_name || '';
+    const extra = [r.lot, r.lot_number, r.part_number].filter(Boolean).join(' · ');
+    return `${r.record_number} — ${String(main).slice(0, 36)}${extra ? ` · ${extra}` : ''}${r.record_date ? ` (${r.record_date})` : ''}`;
+  };
   const readyCount = rows.filter(r => r.chosenId).length;
+  const matchHint = cfg.attachMatch?.length ? 'lot / part / product in the filename' : 'the number in the filename';
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
@@ -384,7 +405,7 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
           <h3 className="font-semibold text-gray-900">Attach completed forms</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
-        <p className="text-xs text-gray-500">Drop the scanned/completed PDFs. Each is matched to a record by the number in its filename (e.g. <span className="font-mono">Deviation_031</span> → 31). Confirm or fix any matches, then apply — files upload and attach to their records (marked as paper records).</p>
+        <p className="text-xs text-gray-500">Drop the scanned/completed PDFs. Each is matched to a record by {matchHint}. Confirm or fix any matches, then apply — files upload and attach to their records (marked as paper records).</p>
 
         <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl py-8 cursor-pointer hover:bg-gray-50">
           <Upload size={24} className="text-gray-400" />
@@ -397,7 +418,7 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200 sticky top-0"><tr>
                 <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">File</th>
-                <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 whitespace-nowrap">#</th>
+                <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 whitespace-nowrap">Matched on</th>
                 <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Attach to record</th>
               </tr></thead>
               <tbody className="divide-y divide-gray-100">
@@ -407,12 +428,12 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
                     <td className="px-3 py-2 text-gray-500 font-mono">{r.num || '—'}</td>
                     <td className="px-3 py-2">
                       {r.candidates.length === 0 ? (
-                        <span className="text-xs text-amber-600">No record #{r.num} found — skipped</span>
+                        <span className="text-xs text-amber-600">No matching record found — skipped</span>
                       ) : r.candidates.length === 1 ? (
                         <span className="text-xs text-gray-700">{recLabel(r.candidates[0])}</span>
                       ) : (
                         <select value={r.chosenId} onChange={e => setChosen(i, e.target.value)} className="w-full px-2 py-1 border border-amber-300 rounded text-xs bg-amber-50">
-                          <option value="">Pick which #{r.num}…</option>
+                          <option value="">Pick the right record…</option>
                           {r.candidates.map(c => <option key={c.id} value={c.id}>{recLabel(c)}</option>)}
                         </select>
                       )}

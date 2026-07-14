@@ -216,6 +216,9 @@ export const QMS_TYPES = {
     // A test fails if any rated sensory attribute scores below `threshold`
     // (1 = worst … 5 = best). Records with no ratings show no result.
     passFail: { fields: ['appearance', 'texture', 'aroma', 'flavor', 'overall'], threshold: 3 },
+    // The form has no control number, so Attach Forms matches scanned files to
+    // records by lot / part number / product found in the filename instead.
+    attachMatch: ['lot', 'part_number', 'product'],
     logColumns: ['record_number', 'product', 'lot', 'part_number', 'record_date', 'result', 'approvals'],
     approvals: [
       { key: 'evaluator', label: 'Evaluator (QA)', required: true, departments: ['qa'] },
