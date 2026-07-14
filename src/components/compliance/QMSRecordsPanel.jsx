@@ -260,10 +260,16 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
             {cfg.fields.map(f => {
               const v = displayValue(cfg, rec, f.key);
               if (v === '—') return null;
+              const isCapaLink = f.link === 'capa' && /\d/.test(v) && !/^n\/?a$/i.test(v);
               return (
                 <div key={f.key} className={f.type === 'textarea' ? 'sm:col-span-2' : ''}>
                   <p className="text-[11px] font-medium text-gray-500">{f.label}</p>
-                  <p className="text-sm text-gray-800 whitespace-pre-line">{v}</p>
+                  {isCapaLink ? (
+                    <button onClick={() => { try { localStorage.setItem('capa_focus', v); } catch { /* ignore */ } window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'capa' } })); }}
+                      className="text-sm text-powder-600 hover:underline font-medium">{v} →</button>
+                  ) : (
+                    <p className="text-sm text-gray-800 whitespace-pre-line">{v}</p>
+                  )}
                 </div>
               );
             })}

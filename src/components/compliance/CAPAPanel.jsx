@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -372,6 +372,18 @@ export default function CAPAPanel() {
   const { data: capas, loading: loadingCA, refresh: refreshCA } = useApiGet('/complaints/capas/all');
   const [tab, setTabRaw] = useState('complaints');
   const [search, setSearch] = useState('');
+
+  // When a Deviation/NC "CAPA #" link navigates here, jump to the CAPA tab and
+  // filter to that number (stashed in localStorage so the mount timing is safe).
+  useEffect(() => {
+    let focus = null;
+    try { focus = localStorage.getItem('capa_focus'); } catch { /* ignore */ }
+    if (focus) {
+      setTabRaw('capas');
+      setSearch(focus.replace(/[^0-9A-Za-z\s-]/g, '').trim());
+      try { localStorage.removeItem('capa_focus'); } catch { /* ignore */ }
+    }
+  }, []);
   const [showForm, setShowForm] = useState(false);
   const [showCAPAForm, setShowCAPAForm] = useState(false);
   const [editing, setEditing] = useState(null);

@@ -74,6 +74,8 @@ const MODULE_GROUPS = [
       { id: 'on-hold', label: 'On Hold' },
       { id: 'component-signout', label: 'Component Sign In/Out' },
       { id: 'organoleptic', label: 'Organoleptic Sensory' },
+      { id: 'knife-masterlist', label: 'Knife / Blade Master List' },
+      { id: 'knife-accountability', label: 'Knife / Blade Accountability' },
     ],
   },
 ];
