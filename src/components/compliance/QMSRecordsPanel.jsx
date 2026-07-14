@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import FileUpload from '../FileUpload';
-import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square, Eye } from 'lucide-react';
 
 // Mirror of server canSignApproval — admin always; else role/department match.
 function canSign(user, appr) {
@@ -354,6 +354,17 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
   const [rows, setRows] = useState([]);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
+  // { idx, url } of the file currently previewed (object URL made on demand).
+  const [preview, setPreview] = useState(null);
+  const previewRef = useRef(null);
+  useEffect(() => { previewRef.current = preview; }, [preview]);
+  useEffect(() => () => { if (previewRef.current?.url) URL.revokeObjectURL(previewRef.current.url); }, []);
+  const togglePreview = (i, file) => {
+    setPreview(prev => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return prev?.idx === i ? null : { idx: i, url: URL.createObjectURL(file) };
+    });
+  };
 
   const normText = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   // Match a filename to records. Types with attachMatch (no control number on
@@ -406,12 +417,12 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-6 p-5 space-y-4">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-5xl my-6 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Attach completed forms</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
-        <p className="text-xs text-gray-500">Drop the scanned/completed PDFs. Each is matched to a record by {matchHint}. Confirm or fix any matches, then apply — files upload and attach to their records (marked as paper records).</p>
+        <p className="text-xs text-gray-500">Drop the scanned/completed PDFs. Each is matched to a record by {matchHint}. Use <span className="font-medium">Preview</span> to read a form when you need to confirm the right record, then apply — files upload and attach to their records (marked as paper records).</p>
 
         <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl py-8 cursor-pointer hover:bg-gray-50">
           <Upload size={24} className="text-gray-400" />
@@ -420,19 +431,23 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
         </label>
 
         {rows.length > 0 && (
-          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[45vh] overflow-y-auto">
-            <table className="w-full text-sm">
+          <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[55vh] overflow-y-auto">
+            <table className="w-full text-sm table-fixed">
               <thead className="bg-gray-50 border-b border-gray-200 sticky top-0"><tr>
-                <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">File</th>
-                <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 whitespace-nowrap">Matched on</th>
+                <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 w-[38%]">File</th>
+                <th className="text-left px-3 py-2 text-xs font-medium text-gray-500 w-[16%]">Matched on</th>
                 <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Attach to record</th>
               </tr></thead>
               <tbody className="divide-y divide-gray-100">
                 {rows.map((r, i) => (
-                  <tr key={i}>
-                    <td className="px-3 py-2 text-gray-700 truncate max-w-[220px]">{r.name}</td>
-                    <td className="px-3 py-2 text-gray-500 font-mono">{r.num || '—'}</td>
-                    <td className="px-3 py-2">
+                  <Fragment key={i}>
+                  <tr className={preview?.idx === i ? 'bg-gray-50' : ''}>
+                    <td className="px-3 py-2 align-top">
+                      <div className="text-gray-700 break-words">{r.name}</div>
+                      <button onClick={() => togglePreview(i, r.file)} className="mt-1 inline-flex items-center gap-1 text-xs text-powder-600 hover:underline"><Eye size={12} /> {preview?.idx === i ? 'Hide preview' : 'Preview'}</button>
+                    </td>
+                    <td className="px-3 py-2 align-top text-gray-500 font-mono break-words">{r.num || '—'}</td>
+                    <td className="px-3 py-2 align-top">
                       {r.candidates.length === 0 ? (
                         <span className="text-xs text-amber-600">No matching record found — skipped</span>
                       ) : r.candidates.length === 1 ? (
@@ -445,6 +460,16 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
                       )}
                     </td>
                   </tr>
+                  {preview?.idx === i && (
+                    <tr>
+                      <td colSpan={3} className="px-3 pb-3 bg-gray-50">
+                        {/\.pdf$/i.test(r.name)
+                          ? <iframe src={preview.url} title={r.name} className="w-full h-[460px] border border-gray-200 rounded bg-white" />
+                          : <img src={preview.url} alt={r.name} className="max-h-[460px] rounded border border-gray-200 bg-white" />}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
