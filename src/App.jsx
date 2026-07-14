@@ -5,6 +5,8 @@ import { useApiGet } from './hooks/useApi';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
+import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
+import ComponentKiosk from './components/kiosk/ComponentKiosk.jsx';
 import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
 import EquipmentPanel from './components/compliance/EquipmentPanel.jsx';
 import PMPanel from './components/compliance/PMPanel.jsx';
@@ -298,6 +300,14 @@ function App() {
 
   if (path === '/submit') {
     return <><SubmitWorkOrder /><UpdateBanner /></>;
+  }
+
+  if (path === '/kiosk/knife') {
+    return <><KnifeKiosk /><UpdateBanner /></>;
+  }
+
+  if (path === '/kiosk/components') {
+    return <><ComponentKiosk /><UpdateBanner /></>;
   }
 
   if (path === '/production-entry') {

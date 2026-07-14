@@ -159,13 +159,16 @@ export const QMS_TYPES = {
     numberPad: 3,
     primaryField: 'item_name',
     dateLabel: 'Date',
+    kioskPath: '/kiosk/components',
     fields: [
+      { key: 'direction', label: 'Direction', type: 'select', options: ['Out', 'In'] },
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'part_number', label: 'Part Number', type: 'text' },
       { key: 'lot_number', label: 'Lot Number', type: 'text' },
       { key: 'qty_pulled', label: 'Qty Pulled', type: 'text' },
+      { key: 'signed_by', label: 'Signed By', type: 'text' },
     ],
-    logColumns: ['record_number', 'item_name', 'part_number', 'lot_number', 'qty_pulled', 'record_date', 'approvals'],
+    logColumns: ['record_number', 'direction', 'item_name', 'part_number', 'lot_number', 'qty_pulled', 'signed_by', 'record_date', 'approvals'],
     approvals: [
       { key: 'warehouse', label: 'Warehouse (WH)', roles: ['admin', 'supervisor'], departments: ['warehouse'] },
       { key: 'quality', label: 'Quality (QA)', required: true, departments: ['qa'] },
@@ -192,6 +195,7 @@ export const QMS_TYPES = {
     numberPad: 3,
     primaryField: 'tool_id',
     dateLabel: 'Date',
+    kioskPath: '/kiosk/knife',
     // One record per tool: registered (Available), checked out (Issued), or
     // retired (Decommissioned). Combines the master list + accountability log.
     statuses: [
