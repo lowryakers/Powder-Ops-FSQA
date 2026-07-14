@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Edit2, Trash2, X, Network, Settings2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Network, Settings2, FileText } from 'lucide-react';
 import './OrgChart.css';
 
 const DEPARTMENTS = ['executive', 'quality', 'production', 'sanitation', 'maintenance', 'warehouse', 'admin', 'other'];
@@ -18,13 +18,14 @@ const DEPT_CLASS = {
 };
 const cap = (s) => (s || '').charAt(0).toUpperCase() + (s || '').slice(1);
 
-function PositionModal({ initial, parentTitle, allPositions, onSave, onCancel }) {
+function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, onSave, onCancel }) {
   const [form, setForm] = useState({
     title: initial?.title || '',
     name: initial?.name || '',
     backup: initial?.backup || '',
     department: initial?.department || 'production',
     parent_id: initial?.parent_id ?? (initial?._defaultParent ?? ''),
+    job_description_id: initial?.job_description_id || '',
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -78,6 +79,13 @@ function PositionModal({ initial, parentTitle, allPositions, onSave, onCancel })
               {parentOptions.map(p => <option key={p.id} value={p.id}>{p.title}{p.name ? ` (${p.name})` : ''}</option>)}
             </select>
           </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Job Description</label>
+          <select value={form.job_description_id || ''} onChange={e => set('job_description_id', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">— None linked —</option>
+            {(jobDescriptions || []).map(d => <option key={d.id} value={d.id}>{d.doc_number ? `${d.doc_number} · ` : ''}{d.title}</option>)}
+          </select>
         </div>
         <div className="flex items-center gap-2 pt-1">
           <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
@@ -141,6 +149,14 @@ function TreeNode({ node, canEdit, dnd, onAddChild, onEdit, onDelete }) {
         <div className="text-xs font-bold text-gray-900 leading-tight">{node.title}</div>
         {node.name && <div className="text-xs text-gray-700 mt-0.5">{node.name}</div>}
         {node.backup && <div className="text-[10px] text-gray-400 mt-0.5">Back-up: {node.backup}</div>}
+        {node.job_description_id && (
+          <button
+            draggable={false}
+            onClick={(e) => { e.stopPropagation(); try { localStorage.setItem('doc_focus', node.job_description_id); } catch { /* ignore */ } window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'job-descriptions' } })); }}
+            className="mt-1 inline-flex items-center gap-1 text-[10px] text-powder-600 hover:underline">
+            <FileText size={10} /> Job Description
+          </button>
+        )}
         {canEdit && (
           <div className="absolute -top-2.5 right-1 hidden group-hover/node:flex items-center gap-0.5 bg-white border border-gray-200 rounded-md shadow-sm px-0.5">
             <button onClick={() => onAddChild(node)} className="p-1 text-gray-400 hover:text-green-600" title="Add report"><Plus size={12} /></button>
@@ -164,6 +180,7 @@ export default function OrgChart() {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'org-chart');
   const { data, loading, refresh } = useApiGet('/org');
+  const { data: jobDescriptions } = useApiGet('/documents?doc_type=job_description');
   const [editing, setEditing] = useState(null);   // position being edited
   const [adding, setAdding] = useState(null);      // { _defaultParent, parentTitle } when adding
   const [editMeta, setEditMeta] = useState(false);
@@ -280,6 +297,7 @@ export default function OrgChart() {
           initial={editing || { _defaultParent: adding._defaultParent }}
           parentTitle={adding?.parentTitle}
           allPositions={positions}
+          jobDescriptions={jobDescriptions}
           onSave={handleSavePosition}
           onCancel={() => { setEditing(null); setAdding(null); }}
         />

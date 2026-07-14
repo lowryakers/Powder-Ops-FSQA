@@ -592,6 +592,16 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
   const [selected, setSelected] = useState(() => new Set());
   const [bulkEditing, setBulkEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // When an Org Chart position's "Job Description" link navigates here, open the
+  // linked document once it has loaded (id stashed in localStorage for timing).
+  useEffect(() => {
+    let focusId = null;
+    try { focusId = localStorage.getItem('doc_focus'); } catch { /* ignore */ }
+    if (!focusId || !docs) return;
+    const doc = docs.find(d => d.id === focusId);
+    if (doc) { setViewing(doc); try { localStorage.removeItem('doc_focus'); } catch { /* ignore */ } }
+  }, [docs]);
   const isAdmin = user?.role === 'admin';
 
   const q = search.toLowerCase().trim();

@@ -421,6 +421,7 @@ function initSchema() {
       backup TEXT,
       department TEXT,
       parent_id TEXT,
+      job_description_id TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -877,6 +878,9 @@ function runMigrations() {
 
   // Disposal witness (free-text) — Ops Manager/QC sign-offs live in approvals JSON
   addColumnIfMissing('disposals', 'witness', 'TEXT');
+
+  // Link an org-chart position to its Job Description document
+  addColumnIfMissing('org_positions', 'job_description_id', 'TEXT');
 
   // "Logged on paper" flag — grandfathered/historical disposals whose Ops
   // Manager & QC signatures live on the uploaded scanned form, not in-system,

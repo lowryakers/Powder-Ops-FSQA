@@ -14,13 +14,13 @@ router.get('/', (_req, res) => {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { title, name, backup, department, parent_id, sort_order } = req.body;
+  const { title, name, backup, department, parent_id, sort_order, job_description_id } = req.body;
   if (!title) return res.status(400).json({ error: 'Title is required' });
   const id = uuid();
-  db.prepare(`INSERT INTO org_positions (id, title, name, backup, department, parent_id, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO org_positions (id, title, name, backup, department, parent_id, job_description_id, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, title, name || null, backup || null, department || null,
-    parent_id || null, Number.isInteger(sort_order) ? sort_order : 0
+    parent_id || null, job_description_id || null, Number.isInteger(sort_order) ? sort_order : 0
   );
   const created = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(id);
   logAudit(req.user.name, 'org_position_created', 'org_position', id, { title, name });
@@ -31,7 +31,7 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { title, name, backup, department, parent_id, sort_order } = req.body;
+  const { title, name, backup, department, parent_id, sort_order, job_description_id } = req.body;
 
   // Guard against making a node its own ancestor (cycle)
   if (parent_id) {
@@ -43,9 +43,10 @@ router.put('/:id', (req, res) => {
     }
   }
 
-  db.prepare(`UPDATE org_positions SET title=?, name=?, backup=?, department=?, parent_id=?, sort_order=?, updated_at=datetime('now') WHERE id=?`).run(
+  db.prepare(`UPDATE org_positions SET title=?, name=?, backup=?, department=?, parent_id=?, job_description_id=?, sort_order=?, updated_at=datetime('now') WHERE id=?`).run(
     title || existing.title, name ?? existing.name, backup ?? existing.backup,
     department ?? existing.department, parent_id !== undefined ? (parent_id || null) : existing.parent_id,
+    job_description_id !== undefined ? (job_description_id || null) : existing.job_description_id,
     Number.isInteger(sort_order) ? sort_order : existing.sort_order, req.params.id
   );
   const updated = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(req.params.id);
