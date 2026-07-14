@@ -66,6 +66,22 @@ function MarkdownView({ text }) {
   while (i < lines.length) {
     const t = lines[i].trim();
     if (!t) { i++; continue; }
+    // GFM table: a "| a | b |" header row followed by a "| --- | --- |" separator
+    if (t.startsWith('|') && i + 1 < lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes('-')) {
+      const splitRow = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const header = splitRow(lines[i]); i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) { rows.push(splitRow(lines[i])); i++; }
+      blocks.push(
+        <div key={key++} className="my-2 overflow-x-auto">
+          <table className="text-sm border-collapse border border-gray-300 w-auto">
+            <thead className="bg-gray-50"><tr>{header.map((c, j) => <th key={j} className="border border-gray-300 px-2 py-1 text-left font-semibold text-gray-800">{renderInline(c, `th${key}${j}`)}</th>)}</tr></thead>
+            <tbody>{rows.map((r, ri) => <tr key={ri}>{header.map((_, ci) => <td key={ci} className="border border-gray-300 px-2 py-1 text-gray-700 align-top">{renderInline(r[ci] || '', `td${key}${ri}${ci}`)}</td>)}</tr>)}</tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
     const h = t.match(/^(#{1,3})\s+(.*)$/);
     if (h) {
       const lvl = h[1].length;

@@ -36,22 +36,78 @@ function receiveImportFiles(req, res, next) {
   });
 }
 
-// Pull text out of a PDF buffer, preserving line breaks by y-position
+// Cluster x-positions (cell starts) into column boundaries within a table block.
+function clusterColumns(starts, tol) {
+  const sorted = [...starts].sort((a, b) => a - b);
+  const clusters = [];
+  for (const x of sorted) {
+    const last = clusters[clusters.length - 1];
+    if (last && x - last.center <= tol) { last.xs.push(x); last.center = last.xs.reduce((s, v) => s + v, 0) / last.xs.length; }
+    else clusters.push({ center: x, xs: [x] });
+  }
+  return clusters.map(c => c.center);
+}
+
+// Pull text out of a PDF, reconstructing tables from text x/y positions so
+// ruled SOP tables come through as Markdown tables instead of jumbled text.
 async function extractPdfText(buffer) {
   const pdfDoc = await getDocument({ data: new Uint8Array(buffer) }).promise;
   const parts = [];
-  for (let i = 1; i <= pdfDoc.numPages; i++) {
-    const page = await pdfDoc.getPage(i);
+  for (let p = 1; p <= pdfDoc.numPages; p++) {
+    const page = await pdfDoc.getPage(p);
     const content = await page.getTextContent();
-    let lastY = null;
-    const line = [];
-    for (const item of content.items) {
-      const y = item.transform?.[5];
-      if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) line.push('\n');
-      line.push(item.str);
-      if (y !== undefined) lastY = y;
+    // 1) group items into visual rows by y
+    const items = content.items
+      // Drop whitespace-only fragments: some PDFs pad column gaps with a wide
+      // blank item, which otherwise hides the gap and merges the columns.
+      .filter(it => it.str !== undefined && it.str.trim() !== '')
+      .map(it => ({ str: it.str, x: it.transform?.[4] ?? 0, y: it.transform?.[5] ?? 0, w: it.width || 0, h: it.height || Math.abs(it.transform?.[3]) || 10 }));
+    items.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+    const rows = [];
+    for (const it of items) {
+      const row = rows[rows.length - 1];
+      if (row && Math.abs(row.y - it.y) <= Math.max(3, it.h * 0.5)) row.items.push(it);
+      else rows.push({ y: it.y, items: [it] });
     }
-    parts.push(line.join(''));
+    // 2) split each row into cells on large horizontal gaps
+    const rowCells = rows.map(r => {
+      const its = r.items.sort((a, b) => a.x - b.x);
+      const cells = [];
+      let cur = null, prevEnd = null;
+      for (const it of its) {
+        const gap = prevEnd == null ? 0 : it.x - prevEnd;
+        const threshold = Math.max(14, it.h * 1.4);
+        if (cur && gap <= threshold) { cur.text += (gap > it.h * 0.25 ? ' ' : '') + it.str; }
+        else { cur = { x: it.x, text: it.str }; cells.push(cur); }
+        prevEnd = it.x + it.w;
+      }
+      return cells.map(c => ({ x: c.x, text: c.text.trim() })).filter(c => c.text !== '');
+    });
+    // 3) walk rows; runs of multi-cell rows become tables, the rest stay text
+    const out = [];
+    let i = 0;
+    while (i < rowCells.length) {
+      const isMulti = (r) => r && r.length >= 2;
+      if (isMulti(rowCells[i]) && isMulti(rowCells[i + 1])) {
+        const block = [];
+        while (i < rowCells.length && isMulti(rowCells[i])) block.push(rowCells[i++]);
+        const maxCells = Math.max(...block.map(r => r.length));
+        if (maxCells >= 3 || block.length >= 3) {
+          const cols = clusterColumns(block.flatMap(r => r.map(c => c.x)), 24);
+          const nearest = (x) => { let bi = 0, bd = Infinity; cols.forEach((cx, ci) => { const d = Math.abs(cx - x); if (d < bd) { bd = d; bi = ci; } }); return bi; };
+          const grid = block.map(r => { const g = Array(cols.length).fill(''); for (const c of r) { const ci = nearest(c.x); g[ci] = (g[ci] ? g[ci] + ' ' : '') + c.text; } return g; });
+          const line = (r) => '| ' + r.map(c => c.replace(/\|/g, '\\|')).join(' | ') + ' |';
+          const sep = '| ' + cols.map(() => '---').join(' | ') + ' |';
+          out.push('', line(grid[0]), sep, ...grid.slice(1).map(line), '');
+        } else {
+          for (const r of block) out.push(r.map(c => c.text).join('  '));
+        }
+      } else {
+        if (rowCells[i]?.length) out.push(rowCells[i].map(c => c.text).join('  '));
+        i++;
+      }
+    }
+    parts.push(out.join('\n'));
   }
   return { text: parts.join('\n').replace(/\n{3,}/g, '\n\n').trim(), pages: pdfDoc.numPages };
 }
@@ -65,6 +121,8 @@ function textToMarkdown(text) {
   for (const raw of (text || '').split('\n')) {
     const line = raw.replace(/[ \t]+/g, ' ').trim();
     if (!line) { out.push(''); continue; }
+    // Reconstructed table rows pass through untouched (keep GFM pipes intact)
+    if (line.startsWith('|')) { out.push(line); continue; }
     // Bullets: various glyphs -> "- "
     const b = line.match(/^[•◦▪·‣∙*•▪-]\s+(.*)$/);
     if (b) { out.push('- ' + b[1]); continue; }
@@ -82,6 +140,42 @@ function textToMarkdown(text) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// ── HTML → Markdown (for Word docs; preserves tables as GFM) ────────────────
+function decodeEntities(s) {
+  return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n));
+}
+function stripTags(s) { return decodeEntities(s.replace(/<[^>]+>/g, '').replace(/[ \t]+/g, ' ')).trim(); }
+
+function htmlTableToGfm(tableHtml) {
+  const rows = [...tableHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map(m => [...m[1].matchAll(/<(td|th)[^>]*>([\s\S]*?)<\/\1>/gi)].map(c => stripTags(c[2]).replace(/\n/g, ' ')))
+    .filter(r => r.length);
+  if (!rows.length) return '';
+  const cols = Math.max(...rows.map(r => r.length));
+  const pad = (r) => { const a = r.slice(); while (a.length < cols) a.push(''); return a; };
+  const line = (r) => '| ' + pad(r).map(c => c.replace(/\|/g, '\\|')).join(' | ') + ' |';
+  const sep = '| ' + Array(cols).fill('---').join(' | ') + ' |';
+  return '\n' + [line(rows[0]), sep, ...rows.slice(1).map(line)].join('\n') + '\n';
+}
+
+// Convert mammoth's (clean, predictable) HTML into Markdown, keeping tables.
+function htmlToMarkdown(html) {
+  let s = html.replace(/<table[\s\S]*?<\/table>/gi, m => htmlTableToGfm(m));
+  s = s.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, l, c) => `\n${'#'.repeat(Math.min(+l, 3))} ${stripTags(c)}\n`);
+  s = s.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, c) => `- ${stripTags(c)}\n`);
+  s = s.replace(/<\/(ul|ol)>/gi, '\n').replace(/<(ul|ol)[^>]*>/gi, '\n');
+  s = s.replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, (_, __, c) => `**${c}**`);
+  s = s.replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, (_, __, c) => `*${c}*`);
+  s = s.replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, c) => `[${stripTags(c)}](${href})`);
+  s = s.replace(/<br\s*\/?>/gi, '\n');
+  s = s.replace(/<\/p>/gi, '\n\n').replace(/<p[^>]*>/gi, '');
+  // strip any remaining tags outside of the GFM tables we already built
+  s = s.split('\n').map(line => line.trim().startsWith('|') ? line : stripTags(line)).join('\n');
+  return decodeEntities(s).replace(/\n{3,}/g, '\n\n').trim();
+}
+
 // Extract plain/markdown-ish text from a supported document buffer. Returns
 // { text, pages } or throws with a user-facing reason for unsupported types.
 async function extractDocText(file) {
@@ -90,12 +184,10 @@ async function extractDocText(file) {
     return extractPdfText(file.buffer);
   }
   if (/\.docx$/i.test(name) || file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-    // mammoth understands Word styles, so we get real Markdown headings/lists.
-    const { value } = await mammoth.convertToMarkdown({ buffer: file.buffer });
-    // mammoth backslash-escapes punctuation (e.g. "WI\-014", "step\."); these
-    // imported docs never rely on literal escapes, so strip them for clean text.
-    const text = (value || '').replace(/\\([\\`*_{}[\]()#+\-.!>])/g, '$1').trim();
-    return { text, pages: null, isMarkdown: true };
+    // Use mammoth's HTML (it preserves Word tables as real <table>, which its
+    // markdown output flattens) and convert to Markdown incl. GFM tables.
+    const { value } = await mammoth.convertToHtml({ buffer: file.buffer });
+    return { text: htmlToMarkdown(value || ''), pages: null, isMarkdown: true };
   }
   if (/\.(txt|md|markdown)$/i.test(name) || file.mimetype === 'text/plain' || file.mimetype === 'text/markdown') {
     return { text: file.buffer.toString('utf8').trim(), pages: null, isMarkdown: /\.(md|markdown)$/i.test(name) };
