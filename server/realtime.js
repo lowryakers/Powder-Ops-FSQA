@@ -78,6 +78,11 @@ export function emitToChannel(channelId, event, payload) {
   io?.to(channelRoom(channelId)).emit(event, payload);
 }
 
+// Emit an event to a single user's personal room (all their connected tabs).
+export function emitToUser(userId, event, payload) {
+  io?.to(userRoom(userId)).emit(event, payload);
+}
+
 // Nudge affected users to refresh their channel list (unread counts / ordering).
 // Public channel activity reaches everyone; private/DM only its members.
 export function emitChannelsChanged(db, channel) {

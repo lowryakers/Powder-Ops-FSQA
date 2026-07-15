@@ -4,6 +4,24 @@ import { getSocket } from '../../lib/socket';
 import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages } from 'lucide-react';
 
 const EMOJI = ['👍', '✅', '❤️', '😄', '🎉', '👀', '🙏', '🔥'];
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Highlight @mentions of known users; the current user's own mentions stand out.
+function renderBody(text, users, meName) {
+  if (!text || !users?.length) return text;
+  const names = users.map(u => u.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!names.length) return text;
+  const re = new RegExp('@(' + names.map(escapeRe).join('|') + ')', 'gi');
+  const out = []; let last = 0, m, k = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const isMe = meName && m[1].toLowerCase() === meName.toLowerCase();
+    out.push(<span key={k++} className={isMe ? 'bg-amber-200 text-amber-900 rounded px-1 font-semibold' : 'text-powder-700 font-medium'}>@{m[1]}</span>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
 const fmtTime = (iso) => { const d = new Date(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z'); return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
 const fmtSize = (n) => { if (!n && n !== 0) return ''; if (n < 1024) return n + ' B'; if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB'; return (n / 1024 / 1024).toFixed(1) + ' MB'; };
 
@@ -82,7 +100,7 @@ function NewChannelModal({ users, me, onClose, onCreated }) {
   );
 }
 
-function Message({ m, me, onReact, onUnreact, onEdit, onDelete, canTranslate, viewerLang, onTranslate, autoTranslate }) {
+function Message({ m, me, onReact, onUnreact, onEdit, onDelete, canTranslate, viewerLang, onTranslate, autoTranslate, mentionUsers }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.body || '');
@@ -134,7 +152,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, canTranslate, vi
         ) : (
           m.body && (
             <div>
-              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{translated ?? m.body}</p>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{renderBody(translated ?? m.body, mentionUsers, me.name)}</p>
               {translating && <span className="text-[11px] text-gray-400 italic">Translating…</span>}
               {translated && (
                 <button onClick={() => setTranslated(null)} className="text-[11px] text-powder-600 hover:underline">
@@ -204,10 +222,12 @@ export default function CommsView({ user, onExit }) {
   const [searching, setSearching] = useState(false);
   const [searchMode, setSearchMode] = useState('keyword'); // keyword | smart | ask
   const [answer, setAnswer] = useState(null); // AI answer in ask mode
+  const [mentionQuery, setMentionQuery] = useState(null); // text after "@" being typed, or null
   const scrollRef = useRef(null);
   const socketRef = useRef(null);
   const lastTypeSent = useRef(0);
   const fileInputRef = useRef(null);
+  const composerRef = useRef(null);
 
   const list = channels || [];
   const publicCh = list.filter(c => c.kind === 'public');
@@ -229,11 +249,17 @@ export default function CommsView({ user, onExit }) {
 
   useEffect(() => { setMessages([]); setTypers([]); setPending([]); loadMessages(activeId); }, [activeId, loadMessages]);
 
-  // Establish the shared socket once for this view.
+  // Establish the shared socket once for this view + a global @mention handler.
   useEffect(() => {
     const s = getSocket();
     socketRef.current = s;
-    return () => { socketRef.current = null; };
+    const onMention = (p) => {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
+        try { new Notification(`${p.from} mentioned you`, { body: p.preview, tag: p.message_id }); } catch { /* ignore */ }
+      }
+    };
+    s.on('mention', onMention);
+    return () => { s.off('mention', onMention); socketRef.current = null; };
   }, []);
 
   // Realtime: join the active channel's room and react to pushed events (Phase 2,
@@ -282,7 +308,7 @@ export default function CommsView({ user, onExit }) {
     const text = body.trim();
     if ((!text && pending.length === 0) || !active) return;
     const attachment_ids = pending.map(p => p.id);
-    setBody(''); setPending([]);
+    setBody(''); setPending([]); setMentionQuery(null);
     try {
       const m = await apiPost(`/comms/channels/${active.id}/messages`, { body: text, attachment_ids });
       setMessages(ms => ms.some(x => x.id === m.id) ? ms : [...ms, m]);
@@ -310,12 +336,33 @@ export default function CommsView({ user, onExit }) {
   const delMsg = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); loadMessages(activeId); };
 
   const onBodyChange = (e) => {
-    setBody(e.target.value);
+    const val = e.target.value;
+    setBody(val);
+    // @mention autocomplete: detect an @token immediately before the caret.
+    const caret = e.target.selectionStart ?? val.length;
+    const mm = /(?:^|\s)@([^\s@]*)$/.exec(val.slice(0, caret));
+    setMentionQuery(mm ? mm[1] : null);
     const now = Date.now();
     if (activeId && socketRef.current && now - lastTypeSent.current > 1500) {
       lastTypeSent.current = now;
       socketRef.current.emit('typing', activeId);
     }
+  };
+
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    return (users || []).filter(u => u.id !== user.id && u.name.toLowerCase().includes(q)).slice(0, 6);
+  }, [mentionQuery, users, user.id]);
+
+  const insertMention = (name) => {
+    const ta = composerRef.current;
+    const caret = ta ? ta.selectionStart : body.length;
+    const before = body.slice(0, caret).replace(/@([^\s@]*)$/, '@' + name + ' ');
+    const after = body.slice(caret);
+    setBody(before + after);
+    setMentionQuery(null);
+    requestAnimationFrame(() => { if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); } });
   };
 
   const translateMessage = useCallback(async (m, lang) => {
@@ -489,9 +536,19 @@ export default function CommsView({ user, onExit }) {
               <div ref={scrollRef} className="flex-1 overflow-y-auto py-2">
                 {messages.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello 👋</p>}
                 {messages.map(m => <Message key={m.id} m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg}
-                  canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} autoTranslate={autoTranslate} />)}
+                  canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} autoTranslate={autoTranslate} mentionUsers={users} />)}
               </div>
-              <div className="border-t border-gray-200 p-3 shrink-0">
+              <div className="border-t border-gray-200 p-3 shrink-0 relative">
+                {mentionMatches.length > 0 && (
+                  <div className="absolute bottom-full mb-1 left-3 right-3 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-20 max-h-48 overflow-y-auto">
+                    {mentionMatches.map((u, idx) => (
+                      <button key={u.id} onMouseDown={e => { e.preventDefault(); insertMention(u.name); }}
+                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-powder-50 ${idx === 0 ? 'bg-gray-50' : ''}`}>
+                        <span className="font-medium text-gray-800">@{u.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="h-4 px-1 mb-0.5 text-[11px] text-gray-400 italic">
                   {typers.length === 1 ? `${typers[0].user_name} is typing…`
                     : typers.length === 2 ? `${typers[0].user_name} and ${typers[1].user_name} are typing…`
@@ -519,8 +576,12 @@ export default function CommsView({ user, onExit }) {
                       </button>
                     </>
                   )}
-                  <textarea value={body} onChange={onBodyChange} rows={1}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+                  <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1}
+                    onKeyDown={e => {
+                      if (mentionMatches.length && (e.key === 'Enter' || e.key === 'Tab')) { e.preventDefault(); insertMention(mentionMatches[0].name); return; }
+                      if (e.key === 'Escape' && mentionQuery !== null) { setMentionQuery(null); return; }
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+                    }}
                     placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />
                   <button onClick={send} disabled={!body.trim() && pending.length === 0} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>

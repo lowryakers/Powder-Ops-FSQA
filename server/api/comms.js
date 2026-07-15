@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db.js';
-import { emitToChannel, emitChannelsChanged } from '../realtime.js';
+import { emitToChannel, emitChannelsChanged, emitToUser } from '../realtime.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
 import { aiEnabled, summarizeChat, translateText } from '../ai.js';
@@ -79,6 +79,34 @@ function requireChannel(req, res) {
 
 function userName(db, id) {
   return db.prepare('SELECT name FROM users WHERE id = ?').get(id)?.name || 'Unknown';
+}
+
+// ── Mentions ──────────────────────────────────────────────────────────────────
+// Users who can be @mentioned in a channel: everyone for public channels,
+// members only for private/DM (so a mention can't notify someone who can't see it).
+function mentionCandidates(db, channel) {
+  if (channel.kind === 'public') return db.prepare('SELECT id, name FROM users WHERE is_active = 1').all();
+  return db.prepare('SELECT u.id, u.name FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? AND u.is_active = 1').all(channel.id);
+}
+// Match "@<display name>" occurrences (autocomplete inserts full names, which may
+// contain spaces). Longest names first so "@Ann Marie" wins over "@Ann".
+function extractMentions(db, channel, body, authorId) {
+  if (!body || !body.includes('@')) return [];
+  const lower = body.toLowerCase();
+  return mentionCandidates(db, channel)
+    .filter(u => u.id !== authorId)
+    .sort((a, b) => b.name.length - a.name.length)
+    .filter(u => lower.includes('@' + u.name.toLowerCase()));
+}
+// Record mentions for a message and push a targeted event to each mentioned user.
+function recordMentions(db, channel, messageId, body, author) {
+  const users = extractMentions(db, channel, body, author.id);
+  if (!users.length) return;
+  const ins = db.prepare('INSERT INTO chat_mentions (id, message_id, channel_id, user_id) VALUES (?, ?, ?, ?)');
+  for (const u of users) {
+    ins.run(uuid(), messageId, channel.id, u.id);
+    emitToUser(u.id, 'mention', { channel_id: channel.id, message_id: messageId, from: author.name, preview: body.slice(0, 140) });
+  }
 }
 
 // ── Channels ──────────────────────────────────────────────────────────────────
@@ -252,6 +280,7 @@ router.post('/channels/:id/messages', async (req, res) => {
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
+  recordMentions(db, channel, id, body, req.user);
   embedMessage(db, id, channel.id, body); // fire-and-forget
   res.status(201).json(message);
 });
@@ -295,6 +324,8 @@ router.put('/messages/:id', async (req, res) => {
   if (!body) return res.status(400).json({ error: 'Message body is required' });
   db.prepare("UPDATE chat_messages SET body = ?, edited_at = datetime('now') WHERE id = ?").run(body, ctx.m.id);
   db.prepare('DELETE FROM chat_message_translations WHERE message_id = ?').run(ctx.m.id); // stale after edit
+  db.prepare('DELETE FROM chat_mentions WHERE message_id = ?').run(ctx.m.id);
+  recordMentions(db, ctx.channel, ctx.m.id, body, req.user); // re-detect after edit
   const updated = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
   emitToChannel(ctx.channel.id, 'message:update', updated);
   embedMessage(db, ctx.m.id, ctx.channel.id, body); // re-embed edited text
@@ -312,6 +343,7 @@ router.delete('/messages/:id', async (req, res) => {
   db.prepare('DELETE FROM chat_attachments WHERE message_id = ?').run(ctx.m.id);
   db.prepare('DELETE FROM chat_message_embeddings WHERE message_id = ?').run(ctx.m.id);
   db.prepare('DELETE FROM chat_message_translations WHERE message_id = ?').run(ctx.m.id);
+  db.prepare('DELETE FROM chat_mentions WHERE message_id = ?').run(ctx.m.id);
   emitToChannel(ctx.channel.id, 'message:update', await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
   res.json({ ok: true });
 });
