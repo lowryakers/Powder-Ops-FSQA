@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2 } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles } from 'lucide-react';
 
 const EMOJI = ['👍', '✅', '❤️', '😄', '🎉', '👀', '🙏', '🔥'];
 const fmtTime = (iso) => { const d = new Date(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z'); return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
@@ -150,6 +150,8 @@ export default function CommsView({ user, onExit }) {
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
   const storageOn = !!commsStatus?.storage;
+  const semanticOn = !!commsStatus?.semantic;
+  const askOn = !!commsStatus?.ask;
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState('');
@@ -162,6 +164,8 @@ export default function CommsView({ user, onExit }) {
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState(null); // null = not searching
   const [searching, setSearching] = useState(false);
+  const [searchMode, setSearchMode] = useState('keyword'); // keyword | smart | ask
+  const [answer, setAnswer] = useState(null); // AI answer in ask mode
   const scrollRef = useRef(null);
   const socketRef = useRef(null);
   const lastTypeSent = useRef(0);
@@ -285,17 +289,33 @@ export default function CommsView({ user, onExit }) {
 
   const dmCandidates = useMemo(() => (users || []).filter(u => u.id !== user.id && u.name.toLowerCase().includes(dmSearch.toLowerCase())), [users, dmSearch, user.id]);
 
-  // Debounced message search across accessible channels.
+  // Debounced keyword/semantic search. Ask mode is manual (runs on Enter) since
+  // it calls the AI — we don't want a request per keystroke.
   useEffect(() => {
-    if (searchQ.trim().length < 2) { setSearchResults(null); setSearching(false); return; }
-    setSearching(true);
+    if (searchMode === 'ask') return;
+    if (searchQ.trim().length < 2) { setSearchResults(null); setAnswer(null); setSearching(false); return; }
+    setSearching(true); setAnswer(null);
+    const mode = searchMode === 'smart' ? 'semantic' : 'keyword';
     const t = setTimeout(() => {
-      apiFetch(`/comms/search?q=${encodeURIComponent(searchQ.trim())}`)
+      apiFetch(`/comms/search?q=${encodeURIComponent(searchQ.trim())}&mode=${mode}`)
         .then(r => setSearchResults(r)).catch(() => setSearchResults([])).finally(() => setSearching(false));
     }, 300);
     return () => clearTimeout(t);
-  }, [searchQ]);
-  const openResult = (r) => { setSearchQ(''); setSearchResults(null); setActiveId(r.channel_id); };
+  }, [searchQ, searchMode]);
+
+  const runAsk = async () => {
+    const question = searchQ.trim();
+    if (question.length < 3) return;
+    setSearching(true); setAnswer(null); setSearchResults(null);
+    try {
+      const r = await apiPost('/comms/ask', { question });
+      setAnswer(r.answer); setSearchResults(r.sources || []);
+    } catch (e) { setAnswer(`⚠️ ${e.message || 'Ask failed'}`); setSearchResults([]); }
+    finally { setSearching(false); }
+  };
+
+  const clearSearch = () => { setSearchQ(''); setSearchResults(null); setAnswer(null); };
+  const openResult = (r) => { clearSearch(); setActiveId(r.channel_id); };
 
   const ChannelBtn = ({ c, icon: Icon }) => (
     <button onClick={() => setActiveId(c.id)}
@@ -312,11 +332,24 @@ export default function CommsView({ user, onExit }) {
       <div className="flex items-center gap-3 px-4 h-12 border-b border-gray-200 shrink-0">
         <MessageSquare size={18} className="text-powder-600" />
         <span className="font-bold text-gray-900">Messages</span>
-        <div className="relative ml-4 flex-1 max-w-xs">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search messages…"
-            className="w-full pl-8 pr-7 py-1.5 border border-gray-300 rounded-lg text-sm" />
-          {searchQ && <button onClick={() => setSearchQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>}
+        <div className="ml-4 flex items-center gap-2 flex-1 max-w-lg">
+          <div className="relative flex-1">
+            {searchMode === 'ask' ? <Sparkles size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-powder-500" />
+              : <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />}
+            <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && searchMode === 'ask') runAsk(); }}
+              placeholder={searchMode === 'ask' ? 'Ask about your messages…' : searchMode === 'smart' ? 'Smart search…' : 'Search messages…'}
+              className="w-full pl-8 pr-7 py-1.5 border border-gray-300 rounded-lg text-sm" />
+            {searchQ && <button onClick={clearSearch} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>}
+          </div>
+          {(semanticOn || askOn) && (
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs shrink-0">
+              {[['keyword', 'Keyword'], semanticOn && ['smart', 'Smart'], askOn && ['ask', 'Ask']].filter(Boolean).map(([m, label]) => (
+                <button key={m} onClick={() => { setSearchMode(m); setSearchResults(null); setAnswer(null); }}
+                  className={`px-2.5 py-1.5 font-medium ${searchMode === m ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>{label}</button>
+              ))}
+            </div>
+          )}
         </div>
         <button onClick={onExit} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
           <ArrowLeft size={15} /> Back to Compliance
@@ -357,17 +390,27 @@ export default function CommsView({ user, onExit }) {
 
         {/* main pane */}
         <div className="flex-1 flex flex-col min-w-0">
-          {searchResults !== null ? (
+          {(searchResults !== null || answer !== null || (searching && searchMode === 'ask')) ? (
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
-                <Search size={16} className="text-gray-400" />
-                <span className="font-semibold text-gray-900">Search</span>
+                {searchMode === 'ask' ? <Sparkles size={16} className="text-powder-500" /> : <Search size={16} className="text-gray-400" />}
+                <span className="font-semibold text-gray-900">{searchMode === 'ask' ? 'Ask' : 'Search'}</span>
                 {searching ? <Loader2 size={14} className="animate-spin text-gray-400" />
-                  : <span className="text-xs text-gray-400">{searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for “{searchQ.trim()}”</span>}
+                  : searchMode === 'ask'
+                    ? <span className="text-xs text-gray-400">{(searchResults?.length || 0)} source{(searchResults?.length || 0) !== 1 ? 's' : ''}</span>
+                    : <span className="text-xs text-gray-400">{(searchResults?.length || 0)} result{(searchResults?.length || 0) !== 1 ? 's' : ''} for “{searchQ.trim()}”</span>}
               </div>
               <div className="flex-1 overflow-y-auto p-2">
-                {!searching && searchResults.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages found.</p>}
-                {searchResults.map(r => (
+                {searchMode === 'ask' && searching && <p className="text-center text-sm text-gray-400 py-8">Thinking…</p>}
+                {answer !== null && (
+                  <div className="mb-2 mx-1 p-3 rounded-xl bg-powder-50 border border-powder-100">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-powder-600 mb-1"><Sparkles size={12} /> Answer</div>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{answer}</p>
+                  </div>
+                )}
+                {answer !== null && (searchResults?.length || 0) > 0 && <div className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase text-gray-400">Sources</div>}
+                {!searching && searchResults !== null && searchResults.length === 0 && searchMode !== 'ask' && <p className="text-center text-sm text-gray-400 py-8">No messages found.</p>}
+                {(searchResults || []).map(r => (
                   <button key={r.id} onClick={() => openResult(r)} className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">
                     <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-0.5">
                       {r.channel_kind === 'dm' ? <MessageSquare size={11} /> : r.channel_kind === 'private' ? <Lock size={11} /> : <Hash size={11} />}

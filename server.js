@@ -33,7 +33,7 @@ import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
 import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
-import commsRoutes from './server/api/comms.js';
+import commsRoutes, { backfillEmbeddings } from './server/api/comms.js';
 import { initRealtime } from './server/realtime.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
@@ -995,6 +995,8 @@ server = createServer(app);
 initRealtime(server); // Comms Phase 2 — socket.io realtime on the same HTTP server
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[server] FSQA Compliance Platform running on port ${PORT} (build ${BUILD_VERSION})`);
+  // Backfill message embeddings in the background (no-op unless Voyage is configured).
+  backfillEmbeddings().catch(e => console.warn('[comms] embedding backfill error:', e.message));
 });
 
 function shutdown(signal) {

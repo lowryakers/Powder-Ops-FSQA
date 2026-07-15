@@ -45,7 +45,16 @@ message for an audit trail. Membership/access on the source channel must be resp
   triggers, backfilled) powers `GET /api/comms/search`, access-filtered so private/DM content never leaks.
   **To enable R2, set env vars:** `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`
   (optional `R2_ENDPOINT` override). Without them, chat still works; only uploads are hidden.
-- **Phase 4:** embeddings (Voyage AI) → semantic search + cross-module AI digest (membership-scoped).
+- **Phase 4 (DONE):** **Voyage AI** embeddings → semantic search + membership-scoped RAG "Ask".
+  `server/embeddings.js` (voyageEnabled(), `embed()`, cosine, BLOB (de)serialize) degrades gracefully.
+  `chat_message_embeddings` table; messages embed on create/edit (fire-and-forget), drop on delete;
+  `backfillEmbeddings()` runs on startup (idempotent, batched, no-op unless configured). `/api/comms/search?mode=semantic`
+  cosine-ranks within the caller's accessible channels; `POST /api/comms/ask` retrieves top-k accessible messages and
+  synthesizes an answer via Haiku (`summarizeChat` in ai.js) — both membership-scoped. UI: search bar mode toggle
+  Keyword / Smart / Ask (Smart shown when Voyage on, Ask when Voyage+Anthropic on) with an answer card + sources.
+  **Env:** `VOYAGE_API_KEY` (optional `VOYAGE_MODEL` default voyage-3.5-lite, `VOYAGE_BASE_URL`); Ask also needs the
+  existing `ANTHROPIC_API_KEY`. Note: cross-module *data* queries ("last lab tests for XYZ") are the existing
+  admin **Ask AI** SQL assistant (`server/ai.js` answerQuestion); comms Ask is scoped to chat messages.
 - **Phase 5:** EN/ES translate-on-display, web push, mentions. Plus: **installable PWA** (add-to-home-screen +
   web push; Capacitor later only if App/Play Store listings are wanted).
 

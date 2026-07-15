@@ -207,3 +207,25 @@ export async function answerQuestion({ question }) {
   const answer = (final.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
   return { answer: answer || 'I could not find an answer to that.', used };
 }
+
+// ── Chat digest / Q&A over messages (Comms Phase 4) ───────────────────────────
+// Synthesizes an answer from a set of already-access-checked chat messages
+// (retrieved via embeddings by the caller). The model only sees what the user is
+// allowed to see, so membership scoping is preserved.
+export async function summarizeChat({ question, contextMessages }) {
+  const c = getClient();
+  if (!c) throw new Error('AI is not configured');
+  const msgs = (contextMessages || []).slice(0, 40);
+  if (msgs.length === 0) return 'There are no relevant messages to answer that.';
+  const today = new Date().toISOString().slice(0, 10);
+  const context = msgs.map((m, i) =>
+    `[${i + 1}] #${m.channel_name} — ${m.user_name} (${m.created_at}): ${m.body}`
+  ).join('\n');
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 700,
+    system: `You are an assistant summarizing internal team chat for a food-manufacturing facility. Answer the user's question using ONLY the provided messages. Be concise (1-4 sentences or a short bulleted list). Cite the messages you used with their bracket numbers like [2]. If the messages don't contain the answer, say so plainly. Today is ${today}.`,
+    messages: [{ role: 'user', content: `Question: ${String(question || '').slice(0, 500)}\n\nMessages:\n${context}` }],
+  });
+  return (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim() || 'I could not find an answer in the messages.';
+}

@@ -4,16 +4,55 @@ import { v4 as uuid } from 'uuid';
 import { getDb } from '../db.js';
 import { emitToChannel, emitChannelsChanged } from '../realtime.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
+import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
+import { aiEnabled, summarizeChat } from '../ai.js';
 
 const router = Router();
 
 // Uploads are buffered in memory then streamed to R2. 25 MB/file, 10 files/msg.
 const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 10 } });
 
-// Feature flags for the client (uploads/search require optional config).
+// Feature flags for the client (uploads / semantic / ask require optional config).
 router.get('/status', (_req, res) => {
-  res.json({ storage: storageEnabled() });
+  res.json({ storage: storageEnabled(), semantic: voyageEnabled(), ask: aiEnabled() && voyageEnabled() });
 });
+
+// ── Embeddings (Phase 4) ──────────────────────────────────────────────────────
+// Store/refresh a message's embedding (fire-and-forget from write paths).
+async function embedMessage(db, messageId, channelId, body) {
+  if (!voyageEnabled() || !body || !body.trim()) return;
+  try {
+    const [vec] = await embed(body.slice(0, 8000), 'document');
+    if (!vec) return;
+    db.prepare(`INSERT INTO chat_message_embeddings (message_id, channel_id, model, dim, vector)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(message_id) DO UPDATE SET model=excluded.model, dim=excluded.dim, vector=excluded.vector, created_at=datetime('now')`)
+      .run(messageId, channelId, embeddingModel(), vec.length, vectorToBlob(vec));
+  } catch (e) { console.warn('[comms] embed failed:', e.message); }
+}
+
+// One-time background backfill of messages missing an embedding. Idempotent and
+// batched; safe to call on every startup (no-op once caught up / when disabled).
+export async function backfillEmbeddings() {
+  if (!voyageEnabled()) return;
+  const db = getDb();
+  const pending = db.prepare(`SELECT m.id, m.channel_id, m.body FROM chat_messages m
+    LEFT JOIN chat_message_embeddings e ON e.message_id = m.id
+    WHERE e.message_id IS NULL AND m.body IS NOT NULL AND m.deleted_at IS NULL`).all();
+  if (!pending.length) return;
+  console.log(`[comms] backfilling ${pending.length} message embedding(s)…`);
+  const BATCH = 64;
+  for (let i = 0; i < pending.length; i += BATCH) {
+    const slice = pending.slice(i, i + BATCH);
+    try {
+      const vecs = await embed(slice.map(m => m.body.slice(0, 8000)), 'document');
+      const ins = db.prepare(`INSERT OR REPLACE INTO chat_message_embeddings (message_id, channel_id, model, dim, vector) VALUES (?, ?, ?, ?, ?)`);
+      const tx = db.transaction((rows) => { rows.forEach(([m, v]) => ins.run(m.id, m.channel_id, embeddingModel(), v.length, vectorToBlob(v))); });
+      tx(slice.map((m, j) => [m, vecs[j]]).filter(([, v]) => v));
+    } catch (e) { console.warn('[comms] backfill batch failed:', e.message); break; }
+  }
+  console.log('[comms] embedding backfill complete');
+}
 
 // ── Access layer (the security foundation) ────────────────────────────────────
 // Public channels are visible to everyone; private channels and DMs are visible
@@ -213,6 +252,7 @@ router.post('/channels/:id/messages', async (req, res) => {
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
+  embedMessage(db, id, channel.id, body); // fire-and-forget
   res.status(201).json(message);
 });
 
@@ -256,6 +296,7 @@ router.put('/messages/:id', async (req, res) => {
   db.prepare("UPDATE chat_messages SET body = ?, edited_at = datetime('now') WHERE id = ?").run(body, ctx.m.id);
   const updated = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
   emitToChannel(ctx.channel.id, 'message:update', updated);
+  embedMessage(db, ctx.m.id, ctx.channel.id, body); // re-embed edited text
   res.json(updated);
 });
 
@@ -268,6 +309,7 @@ router.delete('/messages/:id', async (req, res) => {
   const atts = db.prepare('SELECT storage_key FROM chat_attachments WHERE message_id = ?').all(ctx.m.id);
   for (const a of atts) deleteObject(a.storage_key);
   db.prepare('DELETE FROM chat_attachments WHERE message_id = ?').run(ctx.m.id);
+  db.prepare('DELETE FROM chat_message_embeddings WHERE message_id = ?').run(ctx.m.id);
   emitToChannel(ctx.channel.id, 'message:update', await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
   res.json({ ok: true });
 });
@@ -297,38 +339,90 @@ router.delete('/messages/:id/reactions/:emoji', async (req, res) => {
 // FTS5 keyword search over messages, scoped to channels the caller can access.
 // The channel access check is applied after ranking so private/DM content never
 // leaks to non-members.
-router.get('/search', (req, res) => {
+// Resolve a display channel name (DMs show the other participant).
+function channelLabel(db, channel, me) {
+  if (channel.kind !== 'dm') return channel.name;
+  const other = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').get(channel.id, me);
+  return userName(db, other?.user_id || me);
+}
+
+// Turn ranked message ids into access-checked result rows (order preserved).
+function resultsFor(db, me, messageIds, limit = 40) {
+  const out = [];
+  for (const id of messageIds) {
+    const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND deleted_at IS NULL').get(id);
+    if (!m) continue;
+    const channel = getChannel(db, m.channel_id);
+    if (!canAccess(db, channel, me)) continue;
+    out.push({
+      id: m.id, channel_id: m.channel_id, channel_kind: channel.kind, channel_name: channelLabel(db, channel, me),
+      user_name: userName(db, m.user_id), body: m.body, created_at: m.created_at,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function keywordHits(db, q) {
+  const terms = q.split(/\s+/).filter(Boolean).map(t => `"${t.replace(/"/g, '')}"*`).join(' ');
+  try {
+    return db.prepare('SELECT message_id FROM chat_messages_fts WHERE chat_messages_fts MATCH ? ORDER BY rank LIMIT 200')
+      .all(terms).map(h => h.message_id);
+  } catch { return []; }
+}
+
+// Semantic retrieval: embed the query, cosine-rank message embeddings within the
+// caller's accessible channels. Bounded to accessible channels up front so
+// private/DM content never enters the ranking for a non-member.
+async function semanticHits(db, me, q, limit = 40) {
+  const channels = db.prepare(`SELECT c.id FROM chat_channels c
+    LEFT JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
+    WHERE c.archived = 0 AND (c.kind = 'public' OR m.user_id IS NOT NULL)`).all(me).map(c => c.id);
+  if (!channels.length) return [];
+  const [qvec] = await embed(q, 'query');
+  if (!qvec) return [];
+  const ph = channels.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT e.message_id, e.vector FROM chat_message_embeddings e
+    JOIN chat_messages msg ON msg.id = e.message_id
+    WHERE e.channel_id IN (${ph}) AND msg.deleted_at IS NULL`).all(...channels);
+  const scored = rows.map(r => ({ id: r.message_id, score: cosineSim(qvec, blobToVector(r.vector)) }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map(s => s.id);
+}
+
+// FTS5 keyword search (default) or embedding-based semantic search (?mode=semantic).
+router.get('/search', async (req, res) => {
   const db = getDb();
   const me = req.user.id;
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
-  // Each whitespace term becomes a quoted prefix match; quotes stripped to keep
-  // the FTS query well-formed regardless of user punctuation.
-  const terms = q.split(/\s+/).filter(Boolean).map(t => `"${t.replace(/"/g, '')}"*`).join(' ');
-  let hits = [];
   try {
-    hits = db.prepare(
-      'SELECT message_id FROM chat_messages_fts WHERE chat_messages_fts MATCH ? ORDER BY rank LIMIT 200'
-    ).all(terms);
-  } catch { hits = []; }
-  const out = [];
-  for (const h of hits) {
-    const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND deleted_at IS NULL').get(h.message_id);
-    if (!m) continue;
-    const channel = getChannel(db, m.channel_id);
-    if (!canAccess(db, channel, me)) continue;
-    let channelName = channel.name;
-    if (channel.kind === 'dm') {
-      const other = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').get(channel.id, me);
-      channelName = userName(db, other?.user_id || me);
-    }
-    out.push({
-      id: m.id, channel_id: m.channel_id, channel_kind: channel.kind, channel_name: channelName,
-      user_name: userName(db, m.user_id), body: m.body, created_at: m.created_at,
-    });
-    if (out.length >= 40) break;
+    const semantic = req.query.mode === 'semantic' && voyageEnabled();
+    const ids = semantic ? await semanticHits(db, me, q) : keywordHits(db, q);
+    res.json(resultsFor(db, me, ids));
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Search failed' });
   }
-  res.json(out);
+});
+
+// ── Ask (RAG over messages) ───────────────────────────────────────────────────
+// Retrieve the most relevant accessible messages via embeddings and let the AI
+// synthesize an answer. Membership-scoped: only messages the caller can see enter
+// the context. Requires both Voyage (retrieval) and Anthropic (synthesis).
+router.post('/ask', async (req, res) => {
+  if (!voyageEnabled() || !aiEnabled()) return res.status(503).json({ error: 'Ask is not configured on this server.' });
+  const db = getDb();
+  const me = req.user.id;
+  const question = (req.body?.question || '').trim();
+  if (question.length < 3) return res.status(400).json({ error: 'A question is required.' });
+  try {
+    const ids = await semanticHits(db, me, question, 16);
+    const sources = resultsFor(db, me, ids, 16);
+    const answer = await summarizeChat({ question, contextMessages: sources });
+    res.json({ answer, sources });
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Ask failed' });
+  }
 });
 
 export default router;
