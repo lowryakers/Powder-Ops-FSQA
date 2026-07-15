@@ -1030,6 +1030,54 @@ function runMigrations() {
   addColumnIfMissing('sop_documents', 'description_es', 'TEXT');
   addColumnIfMissing('training_questions', 'prompt_es', 'TEXT');
   addColumnIfMissing('training_questions', 'options_es', 'TEXT');
+
+  // ── Communication tool (Slack-style) — Phase 1 ──────────────────────────────
+  // Kept in the same DB so the cross-module AI assistant can reason over comms +
+  // compliance together. Private channels + DMs are gated by chat_channel_members.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_channels (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'public' CHECK (kind IN ('public','private','dm')),
+      name TEXT,
+      topic TEXT,
+      dm_key TEXT UNIQUE,
+      created_by TEXT,
+      archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS chat_channel_members (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      last_read_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (channel_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      body TEXT,
+      parent_id TEXT,
+      edited_at TEXT,
+      deleted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS chat_reactions (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      emoji TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (message_id, user_id, emoji)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_members_user ON chat_channel_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_members_channel ON chat_channel_members(channel_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_channel ON chat_messages(channel_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_chat_reactions_message ON chat_reactions(message_id);
+  `);
   try { db.prepare('UPDATE sop_documents SET training_revision = revision WHERE training_revision IS NULL').run(); } catch { /* ignore */ }
 
   // Audit log: stable actor identity (survives renames) + role/department for
