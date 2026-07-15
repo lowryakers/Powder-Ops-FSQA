@@ -330,6 +330,7 @@ router.get('/courses/:id/test', (req, res) => {
   const questions = db.prepare('SELECT * FROM training_questions WHERE test_id = ? ORDER BY position').all(test.id).map(q => ({
     id: q.id, position: q.position, type: q.type, prompt: q.prompt, points: q.points,
     options: parseJson(q.options, []),
+    prompt_es: q.prompt_es || '', options_es: parseJson(q.options_es, []),
     ...(authoring ? { correct_answer: q.correct_answer } : {}),
   }));
   res.json({ ...test, questions });
@@ -352,8 +353,8 @@ router.put('/courses/:id/test', (req, res) => {
     db.prepare('UPDATE training_tests SET is_current = 0 WHERE course_id = ?').run(req.params.id);
     db.prepare('INSERT INTO training_tests (id, course_id, version, title, passing_score, is_current, sop_revision) VALUES (?, ?, ?, ?, ?, 1, ?)')
       .run(testId, req.params.id, version, title || `${course.title} Test`, passing_score ?? course.passing_score, sopRevision);
-    const insQ = db.prepare('INSERT INTO training_questions (id, test_id, position, type, prompt, options, correct_answer, points) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    questions.forEach((q, i) => insQ.run(uuid(), testId, i, q.type || 'multiple_choice', q.prompt, JSON.stringify(q.options || []), String(q.correct_answer ?? ''), q.points ?? 1));
+    const insQ = db.prepare('INSERT INTO training_questions (id, test_id, position, type, prompt, prompt_es, options, options_es, correct_answer, points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    questions.forEach((q, i) => insQ.run(uuid(), testId, i, q.type || 'multiple_choice', q.prompt, q.prompt_es || null, JSON.stringify(q.options || []), JSON.stringify(q.options_es || []), String(q.correct_answer ?? ''), q.points ?? 1));
     db.prepare("UPDATE training_courses SET has_test = 1, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
   });
   tx();

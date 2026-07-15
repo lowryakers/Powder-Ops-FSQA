@@ -353,7 +353,7 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { doc_number, title, category, revision, effective_date, review_due, status, owner, content, source_file, _change_summary, _minor } = req.body;
+  const { doc_number, title, category, revision, effective_date, review_due, status, owner, content, source_file, _change_summary, _minor, content_es } = req.body;
 
   const newStatus = status || existing.status;
   // A material change (body or revision) that is NOT flagged as a minor edit
@@ -376,11 +376,12 @@ router.put('/:id', (req, res) => {
   // value (initialized to the current revision by migration).
   const trainingRevision = materialChange ? newRevision : (existing.training_revision || newRevision);
 
-  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, status=?, owner=?, description=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, updated_at=datetime('now') WHERE id=?`).run(
+  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, status=?, owner=?, description=?, description_es=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, updated_at=datetime('now') WHERE id=?`).run(
     doc_number ?? existing.doc_number, title || existing.title, category || existing.category,
     newRevision, effective_date ?? existing.effective_date,
     review_due ?? existing.review_due, newStatus, owner ?? existing.owner,
-    content ?? existing.description, source_file ?? existing.source_file,
+    content ?? existing.description, content_es !== undefined ? content_es : existing.description_es,
+    source_file ?? existing.source_file,
     approvedBy, approvedAt, trainingRevision, req.params.id
   );
 

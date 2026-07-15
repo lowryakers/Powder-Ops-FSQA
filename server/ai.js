@@ -105,6 +105,30 @@ export async function generateTestQuestions({ title, description, sopText, count
   }).filter(q => q.prompt && q.options.length);
 }
 
+// ── Translation ───────────────────────────────────────────────────────────────
+// Translate one or more strings to Spanish, preserving Markdown/formatting.
+// Returns an array aligned to the input array. Meant to be reviewed/edited by a
+// human before it's relied on for compliance.
+export async function translateToSpanish(items) {
+  const c = getClient();
+  if (!c) throw new Error('AI is not configured');
+  const list = (Array.isArray(items) ? items : [items]).map(s => String(s ?? ''));
+  if (list.every(s => !s.trim())) return list;
+
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 4096,
+    system: 'You are a professional translator for a food-manufacturing facility. Translate the given English strings into clear, natural Latin American Spanish suitable for plant employees. Preserve any Markdown formatting, numbers, and proper nouns. Return ONLY a JSON array of translated strings in the same order and length as the input — no commentary.',
+    messages: [{ role: 'user', content: JSON.stringify(list) }],
+    output_config: { format: { type: 'json_schema', schema: { type: 'array', items: { type: 'string' } } } },
+  });
+  const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  let out;
+  try { out = JSON.parse(text); } catch { throw new Error('Translation returned an unexpected response'); }
+  if (!Array.isArray(out) || out.length !== list.length) throw new Error('Translation length mismatch');
+  return out.map(s => String(s ?? ''));
+}
+
 // ── Read-only query assistant ─────────────────────────────────────────────────
 const ASK_SYSTEM = `You are a read-only analytics assistant for the "Powder Ops" food-safety and production management system (a SQLite database). Answer questions about production, KPIs, compliance, training, and overall system usage by querying the database — this is for an operator or executive who may be reading on a phone.
 

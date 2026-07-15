@@ -370,46 +370,53 @@ function CourseModal({ initial, onClose, onSaved }) {
 // ── Test editor ───────────────────────────────────────────────────────────────
 const blankQuestion = () => ({ type: 'multiple_choice', prompt: '', options: ['', ''], correct_answer: '0', points: 1 });
 
-function QuestionEditor({ q, onChange, onRemove, index }) {
+function QuestionEditor({ q, onChange, onRemove, index, lang = 'en' }) {
+  const es = lang === 'es';
   const set = (patch) => onChange({ ...q, ...patch });
   const setType = (type) => {
     if (type === 'true_false') set({ type, options: ['True', 'False'], correct_answer: 'true' });
     else if (type === 'short_answer') set({ type, options: [], correct_answer: '' });
     else set({ type, options: q.options.length >= 2 ? q.options : ['', ''], correct_answer: '0' });
   };
-  const setOption = (i, v) => set({ options: q.options.map((o, j) => j === i ? v : o) });
+  const setOption = (i, v) => {
+    if (es) { const oe = [...(q.options_es || [])]; oe[i] = v; set({ options_es: oe }); }
+    else set({ options: q.options.map((o, j) => j === i ? v : o) });
+  };
   const addOption = () => set({ options: [...q.options, ''] });
   const removeOption = (i) => {
     const options = q.options.filter((_, j) => j !== i);
+    const options_es = (q.options_es || []).filter((_, j) => j !== i);
     let correct = parseInt(q.correct_answer, 10);
     if (correct === i) correct = 0; else if (correct > i) correct -= 1;
-    set({ options, correct_answer: String(correct) });
+    set({ options, options_es, correct_answer: String(correct) });
   };
 
   return (
     <div className="rounded-xl border border-gray-200 p-3 space-y-2 bg-gray-50">
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold text-gray-400">Q{index + 1}</span>
-        <select value={q.type} onChange={e => setType(e.target.value)} className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white">
+        <select value={q.type} disabled={es} onChange={e => setType(e.target.value)} className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white disabled:opacity-60">
           <option value="multiple_choice">Multiple choice</option>
           <option value="true_false">True / False</option>
           <option value="short_answer">Short answer</option>
         </select>
-        <button type="button" onClick={onRemove} className="ml-auto p-1 text-gray-400 hover:text-red-500 rounded"><Trash2 size={14} /></button>
+        {es && <span className="text-[11px] text-violet-600 font-medium">Español</span>}
+        <button type="button" onClick={onRemove} disabled={es} className="ml-auto p-1 text-gray-400 hover:text-red-500 rounded disabled:opacity-40"><Trash2 size={14} /></button>
       </div>
-      <textarea value={q.prompt} onChange={e => set({ prompt: e.target.value })} rows={2} placeholder="Question prompt…"
+      <textarea value={es ? (q.prompt_es || '') : q.prompt} onChange={e => set(es ? { prompt_es: e.target.value } : { prompt: e.target.value })} rows={2}
+        placeholder={es ? 'Traducción al español…' : 'Question prompt…'}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
 
       {q.type === 'multiple_choice' && (
         <div className="space-y-1.5">
           {q.options.map((o, i) => (
             <div key={i} className="flex items-center gap-2">
-              <input type="radio" name={`correct-${q._k}`} checked={String(q.correct_answer) === String(i)} onChange={() => set({ correct_answer: String(i) })} title="Mark correct" />
-              <input value={o} onChange={e => setOption(i, e.target.value)} placeholder={`Option ${i + 1}`} className="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white" />
-              {q.options.length > 2 && <button type="button" onClick={() => removeOption(i)} className="p-1 text-gray-300 hover:text-red-500"><X size={14} /></button>}
+              <input type="radio" name={`correct-${q._k}`} checked={String(q.correct_answer) === String(i)} onChange={() => set({ correct_answer: String(i) })} disabled={es} title="Mark correct" />
+              <input value={es ? (q.options_es?.[i] || '') : o} onChange={e => setOption(i, e.target.value)} placeholder={es ? `Opción ${i + 1}` : `Option ${i + 1}`} className="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white" />
+              {!es && q.options.length > 2 && <button type="button" onClick={() => removeOption(i)} className="p-1 text-gray-300 hover:text-red-500"><X size={14} /></button>}
             </div>
           ))}
-          <button type="button" onClick={addOption} className="text-xs text-powder-600 hover:underline">+ Add option</button>
+          {!es && <button type="button" onClick={addOption} className="text-xs text-powder-600 hover:underline">+ Add option</button>}
         </div>
       )}
       {q.type === 'true_false' && (
@@ -436,9 +443,31 @@ function TestEditor({ course, aiEnabled, onClose, onSaved }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [testLang, setTestLang] = useState('en');
   const [error, setError] = useState('');
   const [changes, setChanges] = useState([]);
   const withKeys = (arr) => arr.map((q, i) => ({ ...q, _k: q._k || `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}` }));
+
+  const translateEs = async () => {
+    setTranslating(true); setError('');
+    try {
+      const strings = []; const map = [];
+      questions.forEach((q, qi) => {
+        strings.push(q.prompt || ''); map.push([qi, 'prompt']);
+        if (q.type === 'multiple_choice') (q.options || []).forEach((o, oi) => { strings.push(o || ''); map.push([qi, 'opt', oi]); });
+      });
+      const r = await apiPost('/ai/translate', { items: strings });
+      const out = r.items || [];
+      setQuestions(qs => {
+        const nq = qs.map(q => ({ ...q, options_es: [...(q.options_es || [])] }));
+        map.forEach(([qi, kind, oi], idx) => { if (kind === 'prompt') nq[qi].prompt_es = out[idx]; else nq[qi].options_es[oi] = out[idx]; });
+        return nq;
+      });
+      setTestLang('es');
+    } catch (e) { setError(e.message || 'Translation failed'); }
+    finally { setTranslating(false); }
+  };
 
   useEffect(() => {
     if (!course.sop_id) return;
@@ -510,6 +539,19 @@ function TestEditor({ course, aiEnabled, onClose, onSaved }) {
               </button>
             )}
           </div>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-lg overflow-hidden border border-gray-200">
+              <button type="button" onClick={() => setTestLang('en')} className={`px-2.5 py-1 text-xs font-bold ${testLang === 'en' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>EN</button>
+              <button type="button" onClick={() => setTestLang('es')} className={`px-2.5 py-1 text-xs font-bold ${testLang === 'es' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>ES</button>
+            </div>
+            {aiEnabled && questions.length > 0 && (
+              <button type="button" onClick={translateEs} disabled={translating}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 disabled:opacity-50">
+                <Sparkles size={13} /> {translating ? 'Translating…' : 'Translate questions to Spanish'}
+              </button>
+            )}
+            {testLang === 'es' && <span className="text-[11px] text-gray-400">Editing the Spanish version — review AI drafts.</span>}
+          </div>
           {aiEnabled && <p className="text-xs text-gray-400 -mt-1">AI drafts questions from the course{course.sop_id ? ' and its linked document' : ''} — review and edit before saving.</p>}
 
           {course.sop_test_stale && changes.length > 0 && (
@@ -527,7 +569,7 @@ function TestEditor({ course, aiEnabled, onClose, onSaved }) {
           ) : (
             <div className="space-y-2">
               {questions.map((q, i) => (
-                <QuestionEditor key={q._k} q={q} index={i} onChange={nq => setQ(i, nq)} onRemove={() => removeQ(i)} />
+                <QuestionEditor key={q._k} q={q} index={i} lang={testLang} onChange={nq => setQ(i, nq)} onRemove={() => removeQ(i)} />
               ))}
               {questions.length === 0 && <p className="text-sm text-gray-500 text-center py-6">No questions yet. Add one, or generate a draft with AI.</p>}
               <button type="button" onClick={addQ} className="inline-flex items-center gap-1.5 text-sm text-powder-600 hover:underline"><Plus size={14} /> Add question</button>

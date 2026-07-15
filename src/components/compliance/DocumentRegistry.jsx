@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square } from 'lucide-react';
+import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square, Sparkles } from 'lucide-react';
 
 const DOC_TYPE_OPTIONS = [
   { value: 'sop', label: 'SOP' },
@@ -134,13 +134,25 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
     effective_date: initial?.effective_date || '',
     review_due: initial?.review_due || '',
     content: initial?.description || '',
+    content_es: initial?.description_es || '',
     _change_summary: '',
     _minor: false,
   }));
   const [preview, setPreview] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [translating, setTranslating] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const { data: trainingImpact } = useApiGet(`/training/by-document/${initial?.id || 'none'}`, [initial?.id]);
+  const { data: aiStatus } = useApiGet('/ai/status');
+  const aiOn = !!aiStatus?.enabled;
+
+  const translate = async () => {
+    if (!form.content.trim()) return;
+    setTranslating(true);
+    try { const r = await apiPost('/ai/translate', { text: form.content }); set('content_es', r.text || ''); }
+    catch { /* surfaced by disabled state */ }
+    finally { setTranslating(false); }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -222,6 +234,22 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
           <p className="text-[11px] text-gray-400 mt-1">Markdown supported: <code># Heading</code>, <code>## Subheading</code>, <code>- bullet</code>, <code>1. numbered</code>, <code>**bold**</code>, <code>*italic*</code>, <code>[link](https://…)</code></p>
         </div>
 
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs font-medium text-gray-700">Spanish version <span className="text-gray-400 font-normal">(Español)</span></label>
+            {aiOn && (
+              <button type="button" onClick={translate} disabled={translating || !form.content.trim()}
+                className="text-xs font-medium text-violet-600 hover:underline flex items-center gap-1 disabled:opacity-50 disabled:no-underline">
+                <Sparkles size={12} /> {translating ? 'Translating…' : 'Translate to Spanish'}
+              </button>
+            )}
+          </div>
+          <textarea value={form.content_es} onChange={e => set('content_es', e.target.value)} rows={8}
+            placeholder={aiOn ? 'Click “Translate to Spanish”, then review/edit the result.' : 'Paste the Spanish version here.'}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" />
+          <p className="text-[11px] text-gray-400 mt-1">Shown when a reader switches this document to Spanish. AI drafts are editable — review before relying on them.</p>
+        </div>
+
         {initial?.id && (
           <div className="space-y-2">
             <div>
@@ -256,6 +284,8 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
 function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose }) {
   const { data: versions } = useApiGet(`/documents/${doc.id}/versions`, [doc.id]);
   const [showVersions, setShowVersions] = useState(false);
+  const [lang, setLang] = useState('en');
+  const hasEs = !!(doc.description_es && doc.description_es.trim());
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
@@ -274,11 +304,19 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose })
               {doc.approved_by ? ` · Approved by ${doc.approved_by}` : ''}
             </p>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg shrink-0"><X size={18} className="text-gray-500" /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            {hasEs && (
+              <div className="inline-flex rounded-lg overflow-hidden border border-gray-200">
+                <button onClick={() => setLang('en')} className={`px-2 py-1 text-[11px] font-bold ${lang === 'en' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>EN</button>
+                <button onClick={() => setLang('es')} className={`px-2 py-1 text-[11px] font-bold ${lang === 'es' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>ES</button>
+              </div>
+            )}
+            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+          </div>
         </div>
 
         <div className="px-5 py-4 max-h-[55vh] overflow-y-auto">
-          <MarkdownView text={doc.description} />
+          <MarkdownView text={lang === 'es' && hasEs ? doc.description_es : doc.description} />
         </div>
 
         <div className="flex items-center gap-2 px-5 py-3 border-t border-gray-200 flex-wrap">

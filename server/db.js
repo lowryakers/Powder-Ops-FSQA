@@ -1025,6 +1025,11 @@ function runMigrations() {
   addColumnIfMissing('training_tests', 'sop_revision', 'TEXT');
   addColumnIfMissing('sop_documents', 'training_revision', 'TEXT');
   addColumnIfMissing('sop_versions', 'minor', 'INTEGER NOT NULL DEFAULT 0');
+
+  // Spanish translations (AI-assisted, stored + editable) for documents + tests.
+  addColumnIfMissing('sop_documents', 'description_es', 'TEXT');
+  addColumnIfMissing('training_questions', 'prompt_es', 'TEXT');
+  addColumnIfMissing('training_questions', 'options_es', 'TEXT');
   try { db.prepare('UPDATE sop_documents SET training_revision = revision WHERE training_revision IS NULL').run(); } catch { /* ignore */ }
 
   // Audit log: stable actor identity (survives renames) + role/department for
