@@ -1,312 +1,463 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Edit2, Search, ExternalLink, CheckCircle } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { canEditModule } from '../../utils/permissions';
+import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
 
-const STATUS_COLORS = {
-  scheduled: 'bg-blue-100 text-blue-800',
-  in_progress: 'bg-yellow-100 text-yellow-800',
-  completed: 'bg-green-100 text-green-800',
-  overdue: 'bg-red-100 text-red-800',
-  failed: 'bg-red-100 text-red-800',
+const CATEGORIES = ['GMP', 'Food Safety', 'HACCP', 'Allergen', 'Food Defense', 'Sanitation', 'Safety', 'Onboarding', 'Other'];
+const ROLES = ['admin', 'supervisor', 'operator', 'auditor'];
+const DEPARTMENTS = ['warehouse', 'qa', 'cleaning', 'production', 'maintenance'];
+const FREQ = [{ v: '', l: 'One-time' }, { v: 12, l: 'Annual' }, { v: 24, l: 'Biennial' }, { v: 6, l: 'Every 6 months' }, { v: 3, l: 'Quarterly' }];
+const freqLabel = (m) => FREQ.find(f => String(f.v) === String(m || ''))?.l || (m ? `Every ${m} mo` : 'One-time');
+
+const CELL = {
+  current: { bg: 'bg-green-100', text: 'text-green-800', label: 'Current' },
+  due_soon: { bg: 'bg-amber-100', text: 'text-amber-800', label: 'Due soon' },
+  overdue: { bg: 'bg-red-100', text: 'text-red-700', label: 'Overdue' },
+  missing: { bg: 'bg-gray-100', text: 'text-gray-400', label: 'Not trained' },
+  exempt: { bg: 'bg-slate-50', text: 'text-slate-300', label: 'Exempt' },
 };
 
-function TrainingForm({ initial, sops, onSave, onCancel }) {
-  const [form, setForm] = useState(initial || {
-    employee_name: '', employee_id: '', training_topic: '', sop_id: '', trainer: '',
-    training_date: new Date().toISOString().split('T')[0], completion_date: '', status: 'scheduled',
-    score: '', certificate_url: '', gdrive_url: '', notes: '',
-  });
-  const [saving, setSaving] = useState(false);
-  const set = (k, v) => setForm({ ...form, [k]: v });
+async function uploadFile(file) {
+  const fd = new FormData();
+  fd.append('files', file);
+  const res = await fetch('/api/uploads', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error('Upload failed');
+  const [u] = await res.json();
+  return u?.url;
+}
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    try { await onSave(form); } finally { setSaving(false); }
+function StatCard({ label, value, tone, active, onClick }) {
+  const tones = {
+    red: 'border-red-200 bg-red-50 text-red-700', amber: 'border-amber-200 bg-amber-50 text-amber-700',
+    gray: 'border-gray-200 bg-gray-50 text-gray-600', green: 'border-green-200 bg-green-50 text-green-700',
   };
-
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-      <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit Training Record' : 'Add Training Record'}</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Employee Name *</label>
-          <input required value={form.employee_name} onChange={e => set('employee_name', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Employee ID</label>
-          <input value={form.employee_id || ''} onChange={e => set('employee_id', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Training Topic *</label>
-          <input required value={form.training_topic} onChange={e => set('training_topic', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Linked SOP</label>
-          <select value={form.sop_id || ''} onChange={e => set('sop_id', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">— None —</option>
-            {(sops || []).map(s => <option key={s.id} value={s.id}>{s.doc_number} — {s.title}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
-          <input value={form.trainer || ''} onChange={e => set('trainer', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Training Date *</label>
-          <input type="date" required value={form.training_date} onChange={e => set('training_date', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Completion Date</label>
-          <input type="date" value={form.completion_date || ''} onChange={e => set('completion_date', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
-          <select value={form.status} onChange={e => set('status', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="scheduled">Scheduled</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="overdue">Overdue</option>
-            <option value="failed">Failed</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Score (%)</label>
-          <input type="number" min="0" max="100" value={form.score || ''} onChange={e => set('score', e.target.value ? parseFloat(e.target.value) : '')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Google Drive Record URL</label>
-          <input value={form.gdrive_url || ''} onChange={e => set('gdrive_url', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="https://drive.google.com/..." />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Certificate URL</label>
-          <input value={form.certificate_url || ''} onChange={e => set('certificate_url', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
-        <textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={2} />
-      </div>
-      <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
-          {saving ? 'Saving...' : initial?.id ? 'Update' : 'Add Record'}
-        </button>
-        <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
-      </div>
-    </form>
+    <button onClick={onClick}
+      className={`rounded-xl border p-4 text-left transition-shadow hover:shadow-sm ${tones[tone]} ${active ? 'ring-2 ring-offset-1 ring-powder-400' : ''}`}>
+      <p className="text-2xl font-bold">{value}</p>
+      <p className="text-xs font-medium mt-0.5">{label}</p>
+    </button>
   );
 }
 
-export default function TrainingPanel() {
-  const { data: records, loading, refresh } = useApiGet('/training');
-  const { data: sops } = useApiGet('/documents?doc_type=sop');
-  const { data: matrix, refresh: refreshMatrix } = useApiGet('/training/matrix');
-  const [tab, setTab] = useState('records');
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null);
-
-  const filtered = useMemo(() => {
-    let list = records || [];
-    if (search) {
-      const s = search.toLowerCase();
-      list = list.filter(r => r.employee_name.toLowerCase().includes(s) || r.training_topic.toLowerCase().includes(s) || (r.trainer || '').toLowerCase().includes(s));
-    }
-    if (statusFilter) list = list.filter(r => r.status === statusFilter);
-    return list;
-  }, [records, search, statusFilter]);
-
-  const stats = useMemo(() => {
-    const list = records || [];
-    return {
-      total: list.length,
-      completed: list.filter(r => r.status === 'completed').length,
-      overdue: list.filter(r => r.status === 'overdue').length,
-      scheduled: list.filter(r => r.status === 'scheduled').length,
-      employees: new Set(list.map(r => r.employee_name)).size,
-    };
-  }, [records]);
-
-  const handleCreate = async (form) => {
-    await apiPost('/training', form);
-    setShowForm(false);
-    refresh();
-    refreshMatrix();
+// ── Import modal ──────────────────────────────────────────────────────────────
+function ImportModal({ onClose, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const handle = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true); setError('');
+    try { const csv = await file.text(); setResult(await apiPost('/training/import', { csv })); onDone(); }
+    catch (err) { setError(err.message || 'Import failed'); }
+    finally { setBusy(false); }
   };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">Import training records (CSV)</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <p className="text-xs text-gray-500">Columns matched automatically: <span className="font-medium">Employee, Course, Date, Score, Trainer, Notes</span>. Course names are linked to the catalog where they match; unmatched ones import as free-text and can be linked later.</p>
+        {result ? (
+          <div className="text-sm bg-green-50 border border-green-200 rounded-lg p-3 text-green-800">
+            Imported {result.imported} record{result.imported === 1 ? '' : 's'} — {result.linked} linked to a course, {result.unlinked} unlinked.
+          </div>
+        ) : (
+          <label className="flex flex-col items-center gap-2 border-2 border-dashed border-gray-300 rounded-xl py-8 cursor-pointer hover:bg-gray-50">
+            <Upload size={22} className="text-gray-400" />
+            <span className="text-sm text-gray-600 font-medium">{busy ? 'Importing…' : 'Choose a .csv file'}</span>
+            <input type="file" accept=".csv" className="hidden" onChange={handle} disabled={busy} />
+          </label>
+        )}
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end"><button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Close</button></div>
+      </div>
+    </div>
+  );
+}
 
-  const handleUpdate = async (form) => {
-    await apiPut(`/training/${editing.id}`, form);
-    setEditing(null);
-    refresh();
-    refreshMatrix();
+// ── Completion modal ──────────────────────────────────────────────────────────
+function CompletionModal({ initial, courses, users, onClose, onSaved }) {
+  const [form, setForm] = useState(initial || {
+    employee_name: '', course_id: '', training_date: new Date().toISOString().slice(0, 10),
+    completion_date: new Date().toISOString().slice(0, 10), method: 'in_person', score: '', trainer: '', notes: '', document_url: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const match = (users || []).find(u => u.name.toLowerCase() === form.employee_name.trim().toLowerCase());
+      const payload = { ...form, employee_user_id: match?.id || null, status: 'completed' };
+      if (initial?.id) await apiPut(`/training/${initial.id}`, payload);
+      else await apiPost('/training', payload);
+      onSaved();
+    } finally { setSaving(false); }
   };
-
-  if (loading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
+  const onFile = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setUploading(true);
+    try { set('document_url', await uploadFile(file)); } finally { setUploading(false); }
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <div className="bg-white rounded-xl border p-3 text-center">
-          <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
-          <div className="text-xs text-gray-500">Total Records</div>
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit' : 'Log'} training completion</h3>
+          <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
-        <div className="bg-white rounded-xl border p-3 text-center">
-          <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
-          <div className="text-xs text-gray-500">Completed</div>
-        </div>
-        <div className="bg-white rounded-xl border p-3 text-center">
-          <div className={`text-2xl font-bold ${stats.overdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>{stats.overdue}</div>
-          <div className="text-xs text-gray-500">Overdue</div>
-        </div>
-        <div className="bg-white rounded-xl border p-3 text-center">
-          <div className="text-2xl font-bold text-blue-600">{stats.scheduled}</div>
-          <div className="text-xs text-gray-500">Scheduled</div>
-        </div>
-        <div className="bg-white rounded-xl border p-3 text-center">
-          <div className="text-2xl font-bold text-purple-600">{stats.employees}</div>
-          <div className="text-xs text-gray-500">Employees</div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          <button onClick={() => setTab('records')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${tab === 'records' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600'}`}>
-            Records
-          </button>
-          <button onClick={() => setTab('matrix')} className={`px-4 py-1.5 rounded-md text-sm font-medium ${tab === 'matrix' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600'}`}>
-            Training Matrix
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
-              className="pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-48" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Employee *</label>
+            <input required list="tr-users" value={form.employee_name} onChange={e => set('employee_name', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Start typing a name…" />
+            <datalist id="tr-users">{(users || []).map(u => <option key={u.id} value={u.name} />)}</datalist>
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">All Statuses</option>
-            <option value="scheduled">Scheduled</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="overdue">Overdue</option>
-            <option value="failed">Failed</option>
-          </select>
-          <button onClick={() => { setShowForm(true); setEditing(null); }}
-            className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
-            <Plus size={16} /> Add Record
-          </button>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Course *</label>
+            <select required value={form.course_id} onChange={e => set('course_id', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">— Select course —</option>
+              {(courses || []).filter(c => c.active).map(c => <option key={c.id} value={c.id}>{c.code ? `${c.code} — ` : ''}{c.title}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Completed *</label>
+            <input type="date" required value={form.completion_date} onChange={e => set('completion_date', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Method</label>
+            <select value={form.method || ''} onChange={e => set('method', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              {['in_person', 'read_and_sign', 'online_test', 'external'].map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Score (%)</label>
+            <input type="number" min="0" max="100" value={form.score || ''} onChange={e => set('score', e.target.value ? parseFloat(e.target.value) : '')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
+            <input value={form.trainer || ''} onChange={e => set('trainer', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Scanned form / certificate</label>
+            {form.document_url ? (
+              <div className="flex items-center gap-2 text-sm">
+                <a href={form.document_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline flex items-center gap-1"><ExternalLink size={13} /> View attached</a>
+                <button type="button" onClick={() => set('document_url', '')} className="text-gray-400 hover:text-red-500 text-xs">remove</button>
+              </div>
+            ) : (
+              <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg text-sm text-gray-600 cursor-pointer hover:bg-gray-200">
+                <Paperclip size={14} /> {uploading ? 'Uploading…' : 'Attach file'}
+                <input type="file" className="hidden" onChange={onFile} disabled={uploading} />
+              </label>
+            )}
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
+            <textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)} rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
         </div>
+        <div className="flex gap-2">
+          <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save completion'}</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ── Course modal ──────────────────────────────────────────────────────────────
+function CourseModal({ initial, onClose, onSaved }) {
+  const [form, setForm] = useState(initial || {
+    code: '', title: '', category: 'GMP', description: '', retrain_months: 12,
+    required_roles: [], required_departments: [], passing_score: 80, active: true,
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const toggle = (k, v) => set(k, form[k].includes(v) ? form[k].filter(x => x !== v) : [...form[k], v]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = { ...form, retrain_months: form.retrain_months || null };
+      if (initial?.id) await apiPut(`/training/courses/${initial.id}`, payload);
+      else await apiPost('/training/courses', payload);
+      onSaved();
+    } finally { setSaving(false); }
+  };
+  const allStaff = form.required_roles.length === 0 && form.required_departments.length === 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit' : 'New'} course</h3>
+          <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Code</label>
+            <input value={form.code || ''} onChange={e => set('code', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="GMP-101" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Title *</label>
+            <input required value={form.title} onChange={e => set('title', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+            <select value={form.category} onChange={e => set('category', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Retrain</label>
+            <select value={form.retrain_months || ''} onChange={e => set('retrain_months', e.target.value ? parseInt(e.target.value) : '')} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              {FREQ.map(f => <option key={f.l} value={f.v}>{f.l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Pass score (%)</label>
+            <input type="number" min="0" max="100" value={form.passing_score} onChange={e => set('passing_score', parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div className="col-span-3">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+            <textarea value={form.description || ''} onChange={e => set('description', e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Required for {allStaff && <span className="text-powder-600 font-normal">(all staff — no roles/departments selected)</span>}</label>
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {ROLES.map(r => <button type="button" key={r} onClick={() => toggle('required_roles', r)} className={`px-2 py-1 rounded-lg text-xs border capitalize ${form.required_roles.includes(r) ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-600 border-gray-300'}`}>{r}</button>)}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {DEPARTMENTS.map(d => <button type="button" key={d} onClick={() => toggle('required_departments', d)} className={`px-2 py-1 rounded-lg text-xs border capitalize ${form.required_departments.includes(d) ? 'bg-powder-700 text-white border-powder-700' : 'bg-white text-gray-600 border-gray-300'}`}>{d}</button>)}
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!form.active} onChange={e => set('active', e.target.checked)} /> Active</label>
+        <div className="flex gap-2">
+          <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save course'}</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ── Panel ─────────────────────────────────────────────────────────────────────
+export default function TrainingPanel() {
+  const { user } = useAuth() || {};
+  const canEdit = canEditModule(user, 'training');
+  const { data: matrix, refresh: refreshMatrix } = useApiGet('/training/matrix');
+  const { data: courses, refresh: refreshCourses } = useApiGet('/training/courses');
+  const { data: due } = useApiGet('/training/due');
+  const { data: records, refresh: refreshRecords } = useApiGet('/training');
+  const { data: users } = useApiGet('/users');
+  const [view, setView] = useState('matrix');
+  const [importing, setImporting] = useState(false);
+  const [completion, setCompletion] = useState(null); // {} = new
+  const [course, setCourse] = useState(null);
+  const [search, setSearch] = useState('');
+
+  const refreshAll = () => { refreshMatrix(); refreshCourses(); refreshRecords(); };
+  const counts = matrix?.counts || { missing: 0, overdue: 0, due_soon: 0, current: 0 };
+
+  const filteredRecords = useMemo(() => {
+    const s = search.toLowerCase().trim();
+    return (records || []).filter(r => !s || r.employee_name?.toLowerCase().includes(s) || (r.course_title || r.training_topic || '').toLowerCase().includes(s));
+  }, [records, search]);
+
+  const TABS = [['matrix', 'Compliance Matrix'], ['due', 'Retraining Due'], ['courses', 'Courses'], ['records', 'Records']];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <GraduationCap size={22} className="text-powder-600" />
+          <h2 className="text-xl font-bold text-gray-900">Training</h2>
+        </div>
+        {canEdit && (
+          <div className="flex items-center gap-2">
+            <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Upload size={15} /> Import</button>
+            <button onClick={() => setCourse({})} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Plus size={15} /> Course</button>
+            <button onClick={() => setCompletion({})} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700"><Plus size={16} /> Log Completion</button>
+          </div>
+        )}
       </div>
 
-      {showForm && !editing && <TrainingForm sops={sops} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
-      {editing && <TrainingForm initial={editing} sops={sops} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard label="Overdue" value={counts.overdue} tone="red" active={view === 'due'} onClick={() => setView('due')} />
+        <StatCard label="Due soon" value={counts.due_soon} tone="amber" active={view === 'due'} onClick={() => setView('due')} />
+        <StatCard label="Not yet trained" value={counts.missing} tone="gray" active={view === 'matrix'} onClick={() => setView('matrix')} />
+        <StatCard label="Current" value={counts.current} tone="green" active={view === 'matrix'} onClick={() => setView('matrix')} />
+      </div>
 
-      {/* Records Table */}
-      {tab === 'records' && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Employee</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Topic</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Trainer</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Score</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Links</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(r => (
-                <tr key={r.id} className={`border-b border-gray-100 hover:bg-gray-50 ${r.status === 'overdue' ? 'bg-red-50' : ''}`}>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="font-medium text-gray-900">{r.employee_name}</span>
-                    {r.employee_id && <div className="text-[10px] text-gray-400">{r.employee_id}</div>}
-                  </td>
-                  <td className="px-4 py-3 w-full">
-                    <span className="text-gray-800">{r.training_topic}</span>
-                    {r.sop_title && <div className="text-[10px] text-gray-400">SOP: {r.sop_number}</div>}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.trainer || '—'}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{r.training_date}</td>
-                  <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[r.status]}`}>{r.status.replace('_', ' ')}</span></td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.score != null ? `${r.score}%` : '—'}</td>
-                  <td className="px-4 py-3">
-                    {r.gdrive_url ? (
-                      <a href={r.gdrive_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700"><ExternalLink size={14} /></a>
-                    ) : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => { setEditing(r); setShowForm(false); }} className="text-gray-400 hover:text-powder-600"><Edit2 size={14} /></button>
-                  </td>
+      <div className="flex items-center gap-1 border-b border-gray-200">
+        {TABS.map(([id, label]) => (
+          <button key={id} onClick={() => setView(id)}
+            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${view === id ? 'border-powder-600 text-powder-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{label}</button>
+        ))}
+      </div>
+
+      {/* Matrix */}
+      {view === 'matrix' && matrix && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+            {Object.entries(CELL).filter(([k]) => k !== 'exempt').map(([k, v]) => (
+              <span key={k} className="flex items-center gap-1.5"><span className={`inline-block w-3 h-3 rounded-sm ${v.bg}`} /> {v.label}</span>
+            ))}
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left px-3 py-2 font-medium text-gray-600 sticky left-0 bg-white z-10 min-w-[160px]">Employee</th>
+                  {matrix.courses.map(c => (
+                    <th key={c.id} className="px-2 py-2 font-medium text-gray-500 text-center min-w-[52px]" title={`${c.title} · ${freqLabel(c.retrain_months)}`}>
+                      <span className="text-[11px]">{c.code || c.title.slice(0, 6)}</span>
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">No training records found</div>}
+              </thead>
+              <tbody>
+                {matrix.users.map(u => (
+                  <tr key={u.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
+                      <span className="font-medium text-gray-800">{u.name}</span>
+                      <span className="block text-[11px] text-gray-400 capitalize">{u.department}</span>
+                    </td>
+                    {matrix.courses.map(c => {
+                      const cell = matrix.matrix[u.id]?.cells[c.id];
+                      if (!cell) return <td key={c.id} className="px-2 py-1.5 text-center text-gray-200">·</td>;
+                      const s = CELL[cell.state] || CELL.missing;
+                      return (
+                        <td key={c.id} className="px-2 py-1.5 text-center" title={`${u.name} — ${c.title}: ${s.label}${cell.next_due_date ? ` (due ${cell.next_due_date})` : ''}`}>
+                          <span className={`inline-block w-6 h-6 rounded ${s.bg}`} />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* Training Matrix */}
-      {tab === 'matrix' && matrix && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium text-gray-600 sticky left-0 bg-gray-50 z-10">Employee</th>
-                {(matrix.topics || []).map(t => (
-                  <th key={t} className="text-center px-2 py-2 font-medium text-gray-600 min-w-[80px]">
-                    <div className="truncate max-w-[100px]" title={t}>{t}</div>
-                  </th>
+      {/* Due */}
+      {view === 'due' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {(due || []).length === 0 ? (
+            <div className="text-center py-10 text-gray-500 flex flex-col items-center gap-2"><CheckCircle size={28} className="text-green-500" /> No retraining due in the next 30 days.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b"><tr>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Employee</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Course</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Due</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Status</th>
+              </tr></thead>
+              <tbody>
+                {(due || []).map(d => (
+                  <tr key={d.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-2 font-medium text-gray-800">{d.employee_name}</td>
+                    <td className="px-4 py-2 text-gray-600">{d.course_code ? `${d.course_code} — ` : ''}{d.course_title}</td>
+                    <td className="px-4 py-2 text-gray-600">{d.next_due_date}</td>
+                    <td className="px-4 py-2">
+                      {d.overdue
+                        ? <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full"><AlertTriangle size={12} /> Overdue</span>
+                        : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full"><Clock size={12} /> Due soon</span>}
+                    </td>
+                  </tr>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(matrix.employees || []).map(emp => (
-                <tr key={emp} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium text-gray-900 sticky left-0 bg-white z-10 whitespace-nowrap">{emp}</td>
-                  {(matrix.topics || []).map(topic => {
-                    const cell = matrix.matrix?.[emp]?.[topic];
-                    return (
-                      <td key={topic} className="px-2 py-2 text-center">
-                        {cell ? (
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${STATUS_COLORS[cell.status]}`}>
-                            {cell.status === 'completed' ? <CheckCircle size={12} className="inline" /> : cell.status}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {(!matrix.employees || matrix.employees.length === 0) && (
-            <div className="text-center py-8 text-gray-500 text-sm">No training data for matrix view yet</div>
+              </tbody>
+            </table>
           )}
         </div>
       )}
+
+      {/* Courses */}
+      {view === 'courses' && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(courses || []).map(c => (
+            <div key={c.id} className={`rounded-xl border p-4 ${c.active ? 'border-gray-200 bg-white' : 'border-gray-200 bg-gray-50 opacity-70'}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-gray-900">{c.code ? `${c.code} — ` : ''}{c.title}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{c.category} · {freqLabel(c.retrain_months)}{c.has_current_test ? ' · has test' : ''}</p>
+                </div>
+                {canEdit && <button onClick={() => setCourse(c)} className="p-1.5 text-gray-400 hover:text-powder-600 hover:bg-gray-50 rounded-lg"><Edit2 size={14} /></button>}
+              </div>
+              {c.description && <p className="text-xs text-gray-600 mt-2 line-clamp-2">{c.description}</p>}
+              <p className="text-[11px] text-gray-400 mt-2">
+                Required: {c.required_roles.length === 0 && c.required_departments.length === 0 ? 'all staff' : [...c.required_roles, ...c.required_departments].join(', ')}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Records */}
+      {view === 'records' && (
+        <div className="space-y-3">
+          <div className="relative max-w-xs">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search employee or course…"
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b"><tr>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Employee</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Course</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Completed</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Score</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Evidence</th>
+                <th className="px-4 py-2"></th>
+              </tr></thead>
+              <tbody>
+                {filteredRecords.map(r => (
+                  <tr key={r.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-2 font-medium text-gray-800">{r.employee_name}</td>
+                    <td className="px-4 py-2 text-gray-600">{r.course_title || r.training_topic || '—'}</td>
+                    <td className="px-4 py-2 text-gray-600">{r.completion_date || '—'}</td>
+                    <td className="px-4 py-2 text-gray-600">{r.score != null ? `${r.score}%` : '—'}</td>
+                    <td className="px-4 py-2">
+                      {r.document_url
+                        ? <a href={r.document_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> View</a>
+                        : r.gdrive_url
+                          ? <a href={r.gdrive_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> Drive</a>
+                          : <span className="text-gray-300 text-xs">—</span>}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {canEdit && <button onClick={() => setCompletion(r)} className="p-1.5 text-gray-400 hover:text-powder-600 rounded-lg"><Edit2 size={14} /></button>}
+                    </td>
+                  </tr>
+                ))}
+                {filteredRecords.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No training records yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {importing && <ImportModal onClose={() => setImporting(false)} onDone={refreshAll} />}
+      {completion && <CompletionModal initial={completion.id ? completion : null} courses={courses} users={users} onClose={() => setCompletion(null)} onSaved={() => { setCompletion(null); refreshAll(); }} />}
+      {course && <CourseModal initial={course.id ? course : null} onClose={() => setCourse(null)} onSaved={() => { setCourse(null); refreshCourses(); refreshMatrix(); }} />}
     </div>
   );
 }

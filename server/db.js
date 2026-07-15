@@ -517,6 +517,87 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_training_date ON training_records(training_date);
     CREATE INDEX IF NOT EXISTS idx_training_status ON training_records(status);
 
+    -- Training program: the catalog of courses (GMP, allergen, HACCP, SOP-specific…).
+    -- required_roles / required_departments (JSON arrays) drive who needs each course;
+    -- retrain_months encodes the refresher cadence (NULL = one-time).
+    CREATE TABLE IF NOT EXISTS training_courses (
+      id TEXT PRIMARY KEY,
+      code TEXT,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'GMP',
+      description TEXT,
+      sop_id TEXT,
+      retrain_months INTEGER,
+      required_roles TEXT NOT NULL DEFAULT '[]',
+      required_departments TEXT NOT NULL DEFAULT '[]',
+      has_test INTEGER NOT NULL DEFAULT 0,
+      passing_score REAL NOT NULL DEFAULT 80,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (sop_id) REFERENCES sop_documents(id)
+    );
+
+    -- Versioned assessment for a course. Editing publishes a new version so past
+    -- attempts stay tied to the exact test the employee took (is_current = latest).
+    CREATE TABLE IF NOT EXISTS training_tests (
+      id TEXT PRIMARY KEY,
+      course_id TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      title TEXT,
+      passing_score REAL NOT NULL DEFAULT 80,
+      is_current INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (course_id) REFERENCES training_courses(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS training_questions (
+      id TEXT PRIMARY KEY,
+      test_id TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      type TEXT NOT NULL DEFAULT 'multiple_choice' CHECK (type IN ('multiple_choice','true_false','short_answer')),
+      prompt TEXT NOT NULL,
+      options TEXT NOT NULL DEFAULT '[]',
+      correct_answer TEXT,
+      points REAL NOT NULL DEFAULT 1,
+      FOREIGN KEY (test_id) REFERENCES training_tests(id)
+    );
+
+    -- One row per in-app test take, auto-graded; links to the completion it created.
+    CREATE TABLE IF NOT EXISTS training_test_attempts (
+      id TEXT PRIMARY KEY,
+      test_id TEXT NOT NULL,
+      course_id TEXT NOT NULL,
+      employee_name TEXT NOT NULL,
+      employee_user_id TEXT,
+      answers TEXT NOT NULL DEFAULT '{}',
+      score REAL,
+      passed INTEGER NOT NULL DEFAULT 0,
+      record_id TEXT,
+      taken_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (test_id) REFERENCES training_tests(id)
+    );
+
+    -- Per-individual assignment/exemption overrides on top of the role/department
+    -- rules that live on the course (rule = 'required' | 'exempt').
+    CREATE TABLE IF NOT EXISTS training_requirements (
+      id TEXT PRIMARY KEY,
+      course_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      rule TEXT NOT NULL DEFAULT 'required' CHECK (rule IN ('required','exempt')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (course_id) REFERENCES training_courses(id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      UNIQUE (course_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_training_courses_active ON training_courses(active);
+    CREATE INDEX IF NOT EXISTS idx_training_tests_course ON training_tests(course_id);
+    CREATE INDEX IF NOT EXISTS idx_training_questions_test ON training_questions(test_id);
+    CREATE INDEX IF NOT EXISTS idx_training_attempts_course ON training_test_attempts(course_id);
+    CREATE INDEX IF NOT EXISTS idx_training_requirements_course ON training_requirements(course_id);
+
     -- Mock Recall Log
     CREATE TABLE IF NOT EXISTS mock_recalls (
       id TEXT PRIMARY KEY,
@@ -916,6 +997,20 @@ function runMigrations() {
   } catch (e) {
     console.warn('[migrate] Could not migrate module_access to view/edit form:', e.message);
   }
+
+  // Training records evolve from a flat log into course-linked completions with
+  // stable employee identity, a computed retraining due date, attached scanned
+  // evidence, and a link to the in-app test attempt that produced them.
+  addColumnIfMissing('training_records', 'course_id', 'TEXT');
+  addColumnIfMissing('training_records', 'employee_user_id', 'TEXT');
+  addColumnIfMissing('training_records', 'method', 'TEXT');
+  addColumnIfMissing('training_records', 'passed', 'INTEGER');
+  addColumnIfMissing('training_records', 'next_due_date', 'TEXT');
+  addColumnIfMissing('training_records', 'document_url', 'TEXT');
+  addColumnIfMissing('training_records', 'test_attempt_id', 'TEXT');
+  addColumnIfMissing('training_records', 'superseded', 'INTEGER NOT NULL DEFAULT 0');
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_training_course ON training_records(course_id)'); } catch { /* ignore */ }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_training_due ON training_records(next_due_date)'); } catch { /* ignore */ }
 
   // Audit log: stable actor identity (survives renames) + role/department for
   // filtering + human-readable entity label. Backfill identity from the users

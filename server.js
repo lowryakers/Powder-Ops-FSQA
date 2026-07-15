@@ -36,6 +36,7 @@ import productionRoutes from './server/api/production.js';
 import coaRoutes from './server/api/coa.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries } from './server/production-seed.js';
+import { seedTrainingCourses } from './server/training-seed.js';
 import { authenticate } from './server/middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -525,6 +526,13 @@ try {
   console.log('[seed] Production entries seeded');
 } catch (err) {
   console.error('[seed] Error seeding production entries (non-fatal):', err.message);
+}
+
+// Seed the standard training course catalog + starter tests
+try {
+  seedTrainingCourses(db);
+} catch (err) {
+  console.error('[seed] Error seeding training courses (non-fatal):', err.message);
 }
 
 // Seed COA/Lab Testing historical data
