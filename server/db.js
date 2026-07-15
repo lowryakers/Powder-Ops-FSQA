@@ -1158,6 +1158,9 @@ function runMigrations() {
   // Audit log: stable actor identity (survives renames) + role/department for
   // filtering + human-readable entity label. Backfill identity from the users
   // table by name, and normalize historical action verbs to the canonical set.
+  // Password auth (replacing PIN). scrypt hash stored as "salt:hash" hex.
+  addColumnIfMissing('users', 'password_hash', 'TEXT');
+
   addColumnIfMissing('audit_log', 'actor_id', 'TEXT');
   addColumnIfMissing('audit_log', 'actor_role', 'TEXT');
   addColumnIfMissing('audit_log', 'actor_department', 'TEXT');

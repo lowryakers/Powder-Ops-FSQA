@@ -904,7 +904,7 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 app.use('/api', (req, res, next) => {
   const skip = [
     '/users/login',
-    '/users/set-pin',
+    '/users/set-password',
     '/submit/',
     '/version',
     '/health',

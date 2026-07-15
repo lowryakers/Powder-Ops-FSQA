@@ -16,26 +16,21 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const loginWithToken = useCallback((token, userData, pin) => {
+  const loginWithToken = useCallback((token, userData) => {
     localStorage.setItem('auth_token', token);
     setUser(userData);
-    if (pin) {
-      localStorage.setItem('bio_user_name', userData.name);
-      localStorage.setItem('bio_user_pin', pin);
-      enrollBiometric(userData);
-    }
   }, []);
 
-  const login = useCallback(async (nameOrEmail, pin) => {
+  const login = useCallback(async (nameOrEmail, password) => {
     const res = await fetch('/api/users/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: nameOrEmail, pin }),
+      body: JSON.stringify({ name: nameOrEmail, password }),
     });
     const data = await res.json();
-    if (data.needs_pin_setup) throw new Error('PIN_SETUP_REQUIRED');
+    if (data.needs_password_setup) throw new Error('PASSWORD_SETUP_REQUIRED');
     if (!res.ok) throw new Error(data.error);
-    loginWithToken(data.token, data.user, pin);
+    loginWithToken(data.token, data.user);
     return data.user;
   }, [loginWithToken]);
 
@@ -53,43 +48,6 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-async function enrollBiometric(user) {
-  try {
-    if (!window.PublicKeyCredential) return;
-    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.();
-    if (!available) return;
-
-    const existing = localStorage.getItem('bio_cred_ids');
-    if (existing) return;
-
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
-    const credential = await navigator.credentials.create({
-      publicKey: {
-        challenge,
-        rp: { name: 'Powder Ops FSQA', id: window.location.hostname },
-        user: {
-          id: new TextEncoder().encode(user.id),
-          name: user.name,
-          displayName: user.name,
-        },
-        pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
-        authenticatorSelection: {
-          authenticatorAttachment: 'platform',
-          userVerification: 'required',
-        },
-        timeout: 60000,
-      },
-    });
-
-    if (credential) {
-      const rawId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
-      localStorage.setItem('bio_cred_ids', JSON.stringify([rawId]));
-    }
-  } catch {
-    // Biometric enrollment is optional
-  }
 }
 
 export function useAuth() {

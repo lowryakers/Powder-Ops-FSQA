@@ -9,7 +9,7 @@ const SESSION_QUERY = `
 
 export const PUBLIC_PATHS = new Set([
   'POST /users/login',
-  'POST /users/set-pin',
+  'POST /users/set-password',
 ]);
 
 function extractToken(req) {

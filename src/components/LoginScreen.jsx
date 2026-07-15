@@ -1,27 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Fingerprint, User, KeyRound } from 'lucide-react';
+import { Shield, User, KeyRound, Lock } from 'lucide-react';
 
 export default function LoginScreen({ onLogin, onLoginWithToken }) {
   const [name, setName] = useState('');
-  const [pin, setPin] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const [setupMode, setSetupMode] = useState(null);
-  const [confirmPin, setConfirmPin] = useState('');
+  const [setupMode, setSetupMode] = useState(null); // { user_id, user_name, has_pin }
+  const [currentPin, setCurrentPin] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const nameRef = useRef(null);
   const suggestionsRef = useRef(null);
-  const pinRef = useRef(null);
-
-  useEffect(() => {
-    if (window.PublicKeyCredential) {
-      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.()
-        .then(ok => setBiometricAvailable(ok))
-        .catch(() => {});
-    }
-  }, []);
+  const setupRef = useRef(null);
 
   useEffect(() => {
     if (name.length < 2) { setSuggestions([]); return; }
@@ -45,11 +37,7 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const selectUser = (u) => {
-    setName(u.name);
-    setShowSuggestions(false);
-    setSuggestions([]);
-  };
+  const selectUser = (u) => { setName(u.name); setShowSuggestions(false); setSuggestions([]); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -59,26 +47,21 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
       const res = await fetch('/api/users/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, pin: pin || undefined }),
+        body: JSON.stringify({ name, password: password || undefined }),
       });
       const data = await res.json();
 
-      if (data.needs_pin_setup) {
-        setSetupMode({ user_id: data.user_id, user_name: data.user_name });
-        setPin('');
-        setConfirmPin('');
+      if (data.needs_password_setup) {
+        setSetupMode({ user_id: data.user_id, user_name: data.user_name, has_pin: data.has_pin });
+        setPassword(''); setConfirmPassword(''); setCurrentPin('');
         setLoading(false);
-        setTimeout(() => pinRef.current?.focus(), 100);
+        setTimeout(() => setupRef.current?.focus(), 100);
         return;
       }
-
       if (!res.ok) throw new Error(data.error);
 
-      if (onLoginWithToken) {
-        onLoginWithToken(data.token, data.user, pin);
-      } else {
-        await onLogin(name, pin);
-      }
+      if (onLoginWithToken) onLoginWithToken(data.token, data.user);
+      else await onLogin(name, password);
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {
@@ -86,63 +69,27 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
     }
   };
 
-  const handleSetPin = async (e) => {
+  const handleSetPassword = async (e) => {
     e.preventDefault();
     setError('');
-    if (pin.length < 4) { setError('PIN must be at least 4 digits'); return; }
-    if (pin !== confirmPin) { setError('PINs do not match'); return; }
+    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
+    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
+    if (setupMode.has_pin && !currentPin) { setError('Enter your current PIN to continue'); return; }
 
     setLoading(true);
     try {
-      const res = await fetch('/api/users/set-pin', {
+      const res = await fetch('/api/users/set-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: setupMode.user_id, pin }),
+        body: JSON.stringify({ user_id: setupMode.user_id, password, current_pin: currentPin || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      if (onLoginWithToken) {
-        onLoginWithToken(data.token, data.user, pin);
-      } else {
-        await onLogin(setupMode.user_name, pin);
-      }
+      if (onLoginWithToken) onLoginWithToken(data.token, data.user);
+      else await onLogin(setupMode.user_name, password);
     } catch (err) {
-      setError(err.message || 'Failed to set PIN');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBiometric = async () => {
-    const savedName = localStorage.getItem('bio_user_name');
-    if (!savedName) {
-      setError('Sign in with your PIN first to enable Face ID / fingerprint');
-      return;
-    }
-    setError('');
-    setLoading(true);
-    try {
-      const credential = await navigator.credentials.get({
-        publicKey: {
-          challenge: crypto.getRandomValues(new Uint8Array(32)),
-          timeout: 60000,
-          userVerification: 'required',
-          rpId: window.location.hostname,
-          allowCredentials: JSON.parse(localStorage.getItem('bio_cred_ids') || '[]').map(id => ({
-            type: 'public-key',
-            id: Uint8Array.from(atob(id), c => c.charCodeAt(0)),
-          })),
-        },
-      });
-      if (credential) {
-        const savedPin = localStorage.getItem('bio_user_pin');
-        await onLogin(savedName, savedPin);
-      }
-    } catch (err) {
-      if (err.name !== 'NotAllowedError') {
-        setError('Biometric sign-in failed. Use your PIN instead.');
-      }
+      setError(err.message || 'Failed to set password');
     } finally {
       setLoading(false);
     }
@@ -157,32 +104,37 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
               <KeyRound size={28} className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Welcome, {setupMode.user_name}!</h1>
-            <p className="text-sm text-gray-500 mt-1">Create your PIN to get started</p>
+            <p className="text-sm text-gray-500 mt-1">Create your password to get started</p>
           </div>
 
-          <form onSubmit={handleSetPin} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">
+          <form onSubmit={handleSetPassword} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">
+            {setupMode.has_pin && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current PIN</label>
+                <input ref={setupRef} type="password" required value={currentPin} onChange={e => setCurrentPin(e.target.value.replace(/\D/g, ''))}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base tracking-widest text-center"
+                  placeholder="Your existing PIN" inputMode="numeric" maxLength={8} />
+                <p className="text-[11px] text-gray-400 mt-1 text-center">Confirm your identity with your old PIN. We'll switch you to a password.</p>
+              </div>
+            )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Create PIN</label>
-              <input ref={pinRef} type="password" required value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base tracking-widest text-center"
-                placeholder="Enter 4+ digit PIN" minLength={4} maxLength={8} inputMode="numeric" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
+              <input ref={setupMode.has_pin ? undefined : setupRef} type="password" required value={password} onChange={e => setPassword(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="At least 8 characters" minLength={8} autoComplete="new-password" />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm PIN</label>
-              <input type="password" required value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base tracking-widest text-center"
-                placeholder="Re-enter PIN" minLength={4} maxLength={8} inputMode="numeric" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm password</label>
+              <input type="password" required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Re-enter password" minLength={8} autoComplete="new-password" />
             </div>
 
             {error && <p className="text-sm text-red-600 text-center">{error}</p>}
 
             <button type="submit" disabled={loading}
               className="w-full py-3 bg-green-600 text-white rounded-xl text-base font-bold hover:bg-green-700 disabled:opacity-50 transition-colors">
-              {loading ? 'Setting up...' : 'Set PIN & Sign In'}
+              {loading ? 'Setting up…' : 'Set password & Sign In'}
             </button>
-
-            <button type="button" onClick={() => { setSetupMode(null); setPin(''); setConfirmPin(''); setError(''); }}
+            <button type="button" onClick={() => { setSetupMode(null); setPassword(''); setConfirmPassword(''); setCurrentPin(''); setError(''); }}
               className="w-full py-2 text-sm text-gray-500 hover:text-gray-700">
               Back to sign in
             </button>
@@ -208,17 +160,10 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
             <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <div className="relative">
               <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                ref={nameRef}
-                type="text"
-                required
-                autoComplete="name"
-                value={name}
+              <input ref={nameRef} type="text" required autoComplete="name" value={name}
                 onChange={e => { setName(e.target.value); setShowSuggestions(true); }}
                 onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base"
-                placeholder="Your full name"
-              />
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Your full name" />
             </div>
             {showSuggestions && suggestions.length > 0 && (
               <div ref={suggestionsRef} className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
@@ -234,26 +179,21 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">PIN</label>
-            <input type="password" value={pin} onChange={e => setPin(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base tracking-widest text-center" placeholder="••••" maxLength={8} />
-            <p className="text-[11px] text-gray-400 mt-1 text-center">First time? Just enter your name and click Sign In.</p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <div className="relative">
+              <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Your password" />
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1 text-center">First time? Just enter your name and click Sign In to set a password.</p>
           </div>
 
           {error && <p className="text-sm text-red-600 text-center">{error}</p>}
 
           <button type="submit" disabled={loading}
             className="w-full py-3 bg-powder-600 text-white rounded-xl text-base font-bold hover:bg-powder-700 disabled:opacity-50 transition-colors">
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? 'Signing in…' : 'Sign In'}
           </button>
-
-          {biometricAvailable && (
-            <button type="button" onClick={handleBiometric} disabled={loading}
-              className="w-full py-3 border-2 border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
-              <Fingerprint size={20} />
-              Sign in with Face ID / Fingerprint
-            </button>
-          )}
         </form>
       </div>
     </div>

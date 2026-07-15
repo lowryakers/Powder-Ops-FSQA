@@ -6,6 +6,28 @@ import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
+// --- Password hashing (scrypt; no external deps) ---------------------------
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+function verifyPassword(password, stored) {
+  if (!stored || !stored.includes(':')) return false;
+  const [salt, hash] = stored.split(':');
+  const test = crypto.scryptSync(String(password), salt, 64);
+  const known = Buffer.from(hash, 'hex');
+  return known.length === test.length && crypto.timingSafeEqual(known, test);
+}
+function issueSession(db, user) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires = new Date();
+  expires.setDate(expires.getDate() + 30);
+  db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)').run(uuid(), user.id, token, expires.toISOString());
+  const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
+  return { token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess } };
+}
+
 // --- User CRUD ---
 
 router.get('/', (req, res) => {
@@ -146,14 +168,15 @@ router.put('/:id', requireRole('admin'), (req, res) => {
 
 // --- Auth ---
 
-// Basic brute-force protection: lock a name out after repeated bad PINs
+// Basic brute-force protection: lock a name out after repeated bad passwords
 const failedLogins = new Map(); // name(lower) -> { count, lockedUntil }
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
+const MIN_PASSWORD = 8;
 
 router.post('/login', (req, res) => {
   const db = getDb();
-  const { pin, name } = req.body;
+  const { password, name } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const key = name.toLowerCase();
@@ -169,54 +192,57 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'User not found. Ask your admin to add you.' });
   }
 
-  if (!user.pin) {
-    return res.status(200).json({ needs_pin_setup: true, user_id: user.id, user_name: user.name });
+  // No password yet → first-login set-password flow. has_pin means an existing
+  // staffer transitioning from PIN (they must confirm their current PIN).
+  if (!user.password_hash) {
+    return res.status(200).json({ needs_password_setup: true, user_id: user.id, user_name: user.name, has_pin: !!user.pin });
   }
 
-  if (!pin) return res.status(400).json({ error: 'PIN is required' });
-  if (user.pin !== pin) {
+  if (!password) return res.status(400).json({ error: 'Password is required' });
+  if (!verifyPassword(password, user.password_hash)) {
     const count = (entry?.count || 0) + 1;
     const locked = count >= MAX_ATTEMPTS;
     failedLogins.set(key, { count, lockedUntil: locked ? Date.now() + LOCKOUT_MS : null });
     logAudit(user, locked ? 'login_locked' : 'login_failed', 'user', user.id,
-      { reason: 'bad_pin', attempt: count }, null, null, user.name);
-    return res.status(401).json({ error: 'Invalid PIN' });
+      { reason: 'bad_password', attempt: count }, null, null, user.name);
+    return res.status(401).json({ error: 'Invalid password' });
   }
   failedLogins.delete(key);
 
-  const token = crypto.randomBytes(32).toString('hex');
-  const expires = new Date();
-  expires.setDate(expires.getDate() + 30);
-
-  db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)')
-    .run(uuid(), user.id, token, expires.toISOString());
-
   logAudit(user, 'login', 'user', user.id, null, null, null, user.name);
-  const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
-  res.json({ token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess } });
+  res.json(issueSession(db, user));
 });
 
-router.post('/set-pin', (req, res) => {
+// First-login / self-serve password set. A user transitioning from a PIN must
+// prove it with current_pin; a PIN-less (e.g. imported) user sets one directly.
+router.post('/set-password', (req, res) => {
   const db = getDb();
-  const { user_id, pin } = req.body;
-  if (!user_id || !pin) return res.status(400).json({ error: 'user_id and pin are required' });
-  if (pin.length < 4) return res.status(400).json({ error: 'PIN must be at least 4 digits' });
+  const { user_id, password, current_pin } = req.body;
+  if (!user_id || !password) return res.status(400).json({ error: 'user_id and password are required' });
+  if (String(password).length < MIN_PASSWORD) return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD} characters` });
 
   const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(user_id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  if (user.pin) return res.status(400).json({ error: 'PIN already set. Use your existing PIN to sign in.' });
+  if (user.password_hash) return res.status(400).json({ error: 'Password already set. Sign in with your password.' });
+  if (user.pin && current_pin !== user.pin) return res.status(401).json({ error: 'Your current PIN is incorrect.' });
 
-  db.prepare("UPDATE users SET pin = ?, updated_at = datetime('now') WHERE id = ?").run(pin, user_id);
-
-  const token = crypto.randomBytes(32).toString('hex');
-  const expires = new Date();
-  expires.setDate(expires.getDate() + 30);
-  db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)')
-    .run(uuid(), user.id, token, expires.toISOString());
-
-  logAudit(user, 'set_pin', 'user', user.id, null, null, null, user.name);
-  const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
-  res.json({ token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess } });
+  // Set the password and retire the PIN.
+  db.prepare("UPDATE users SET password_hash = ?, pin = NULL, updated_at = datetime('now') WHERE id = ?").run(hashPassword(password), user_id);
+  logAudit(user, 'set_password', 'user', user.id, null, null, null, user.name);
+  res.json(issueSession(db, { ...user, password_hash: '1' }));
 });
 
+// Admin-set/reset a user's password (e.g. for imported users, or a lockout).
+router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const { password } = req.body;
+  if (!password || String(password).length < MIN_PASSWORD) return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD} characters` });
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  db.prepare("UPDATE users SET password_hash = ?, pin = NULL, updated_at = datetime('now') WHERE id = ?").run(hashPassword(password), user.id);
+  logAudit(req.user, 'password_reset', 'user', user.id, { by_admin: true }, null, null, user.name);
+  res.json({ ok: true });
+});
+
+export { hashPassword };
 export default router;
