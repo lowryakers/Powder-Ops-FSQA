@@ -55,8 +55,20 @@ message for an audit trail. Membership/access on the source channel must be resp
   **Env:** `VOYAGE_API_KEY` (optional `VOYAGE_MODEL` default voyage-3.5-lite, `VOYAGE_BASE_URL`); Ask also needs the
   existing `ANTHROPIC_API_KEY`. Note: cross-module *data* queries ("last lab tests for XYZ") are the existing
   admin **Ask AI** SQL assistant (`server/ai.js` answerQuestion); comms Ask is scoped to chat messages.
-- **Phase 5:** EN/ES translate-on-display, web push, mentions. Plus: **installable PWA** (add-to-home-screen +
-  web push; Capacitor later only if App/Play Store listings are wanted).
+- **Phase 5 (mostly DONE):** EN/ES translate-on-display, @mentions, installable PWA, web push — all shipped.
+  - **Translate:** `chat_message_translations` cache; per-message + channel auto-translate toggle (EN/ES); AI-gated.
+  - **@mentions:** `chat_mentions`; server extracts by display-name match (access-scoped), composer autocomplete,
+    highlight, targeted `mention` socket event.
+  - **PWA:** `public/manifest.webmanifest` + `public/sw.js` (app-shell cache, offline fallback, push handlers),
+    generated icons, `beforeinstallprompt` Install prompt. Installable / offline shell.
+  - **Web push:** `server/push.js` (VAPID via `web-push`, degrades gracefully); `chat_push_subscriptions`;
+    `/push/key|subscribe|unsubscribe`; pushes on @mention and DM; prunes dead subs on 404/410. Bell toggle in
+    comms header. **Env:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (generate once with
+    `npx web-push generate-vapid-keys`).
+  - **Capacitor** later only if App/Play Store listings are wanted (PWA covers install + push now).
+  - **STILL TODO — Slack history importer:** needs the user's Slack export (.zip). Agreed: map authors to
+    existing users by **name** (not email). Open question parked here: switch auth **PIN → password** (or add
+    password) — imported users have no PIN, so decide before/at import.
 
 **Slack history importer (Phase 5) — confirmed shape:**
 - User will make all channels public before exporting so the Slack export captures everything.

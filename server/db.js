@@ -1114,6 +1114,15 @@ function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_mentions_user ON chat_mentions(user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_chat_mentions_message ON chat_mentions(message_id);
+    CREATE TABLE IF NOT EXISTS chat_push_subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
   `);
 
   // Full-text keyword search over messages (Comms Phase 3). FTS5 may be absent

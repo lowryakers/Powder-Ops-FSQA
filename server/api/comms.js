@@ -6,6 +6,7 @@ import { emitToChannel, emitChannelsChanged, emitToUser } from '../realtime.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
 import { aiEnabled, summarizeChat, translateText } from '../ai.js';
+import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
 
 const router = Router();
 
@@ -14,7 +15,27 @@ const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSiz
 
 // Feature flags for the client (uploads / semantic / ask require optional config).
 router.get('/status', (_req, res) => {
-  res.json({ storage: storageEnabled(), semantic: voyageEnabled(), ask: aiEnabled() && voyageEnabled(), translate: aiEnabled() });
+  res.json({ storage: storageEnabled(), semantic: voyageEnabled(), ask: aiEnabled() && voyageEnabled(), translate: aiEnabled(), push: pushEnabled() });
+});
+
+// ── Web push subscriptions (Phase 5d) ─────────────────────────────────────────
+router.get('/push/key', (_req, res) => res.json({ key: vapidPublicKey() }));
+
+router.post('/push/subscribe', (req, res) => {
+  if (!pushEnabled()) return res.status(503).json({ error: 'Push is not configured on this server.' });
+  const s = req.body?.subscription || req.body;
+  if (!s?.endpoint || !s?.keys?.p256dh || !s?.keys?.auth) return res.status(400).json({ error: 'Invalid subscription' });
+  const db = getDb();
+  db.prepare(`INSERT INTO chat_push_subscriptions (id, user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth`)
+    .run(uuid(), req.user.id, s.endpoint, s.keys.p256dh, s.keys.auth);
+  res.json({ ok: true });
+});
+
+router.post('/push/unsubscribe', (req, res) => {
+  const endpoint = req.body?.endpoint;
+  if (endpoint) getDb().prepare('DELETE FROM chat_push_subscriptions WHERE endpoint = ? AND user_id = ?').run(endpoint, req.user.id);
+  res.json({ ok: true });
 });
 
 // ── Embeddings (Phase 4) ──────────────────────────────────────────────────────
@@ -103,9 +124,11 @@ function recordMentions(db, channel, messageId, body, author) {
   const users = extractMentions(db, channel, body, author.id);
   if (!users.length) return;
   const ins = db.prepare('INSERT INTO chat_mentions (id, message_id, channel_id, user_id) VALUES (?, ?, ?, ?)');
+  const label = channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'a channel');
   for (const u of users) {
     ins.run(uuid(), messageId, channel.id, u.id);
     emitToUser(u.id, 'mention', { channel_id: channel.id, message_id: messageId, from: author.name, preview: body.slice(0, 140) });
+    pushToUser(u.id, { title: `${author.name} mentioned you in ${label}`, body: body.slice(0, 140), tag: `mention-${messageId}`, url: '/' }).catch(() => {});
   }
 }
 
@@ -281,6 +304,11 @@ router.post('/channels/:id/messages', async (req, res) => {
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
   recordMentions(db, channel, id, body, req.user);
+  // DMs push to the other participant (mentions already push above).
+  if (channel.kind === 'dm' && body) {
+    const other = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').get(channel.id, req.user.id);
+    if (other) pushToUser(other.user_id, { title: `Message from ${req.user.name}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, url: '/' }).catch(() => {});
+  }
   embedMessage(db, id, channel.id, body); // fire-and-forget
   res.status(201).json(message);
 });

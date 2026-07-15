@@ -1,7 +1,17 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff } from 'lucide-react';
+
+// VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
 
 const EMOJI = ['👍', '✅', '❤️', '😄', '🎉', '👀', '🙏', '🔥'];
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -206,8 +216,11 @@ export default function CommsView({ user, onExit }) {
   const semanticOn = !!commsStatus?.semantic;
   const askOn = !!commsStatus?.ask;
   const translateOn = !!commsStatus?.translate;
+  const pushOn = !!commsStatus?.push;
   const [viewerLang, setViewerLang] = useState(() => localStorage.getItem('op_lang') || 'en');
   const [autoTranslate, setAutoTranslate] = useState(false);
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState('');
@@ -371,6 +384,33 @@ export default function CommsView({ user, onExit }) {
   }, []);
   const setLang = (l) => { setViewerLang(l); localStorage.setItem('op_lang', l); };
 
+  // Reflect any existing push subscription in the bell state.
+  useEffect(() => {
+    if (!pushOn || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(sub => setPushSubscribed(!!sub)).catch(() => {});
+  }, [pushOn]);
+
+  const togglePush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { alert('Notifications are not supported on this device/browser.'); return; }
+    setPushBusy(true);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (pushSubscribed) {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) { await apiPost('/comms/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+        setPushSubscribed(false);
+      } else {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return;
+        const { key } = await apiFetch('/comms/push/key');
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+        await apiPost('/comms/push/subscribe', { subscription: sub.toJSON() });
+        setPushSubscribed(true);
+      }
+    } catch (e) { alert(e.message || 'Could not update notifications'); }
+    finally { setPushBusy(false); }
+  };
+
   const openDm = async (u) => {
     const ch = await apiPost(`/comms/dm/${u.id}`, {});
     setShowDmPicker(false); setDmSearch('');
@@ -442,9 +482,18 @@ export default function CommsView({ user, onExit }) {
             </div>
           )}
         </div>
-        <button onClick={onExit} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
-          <ArrowLeft size={15} /> Back to Compliance
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {pushOn && (
+            <button onClick={togglePush} disabled={pushBusy}
+              title={pushSubscribed ? 'Notifications on — click to turn off' : 'Enable push notifications'}
+              className={`p-2 rounded-lg ${pushSubscribed ? 'text-powder-600 bg-powder-50 hover:bg-powder-100' : 'text-gray-400 hover:bg-gray-100'}`}>
+              {pushSubscribed ? <Bell size={16} /> : <BellOff size={16} />}
+            </button>
+          )}
+          <button onClick={onExit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
+            <ArrowLeft size={15} /> Back to Compliance
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-1 min-h-0">
