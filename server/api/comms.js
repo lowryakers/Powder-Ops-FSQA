@@ -1,9 +1,19 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db.js';
 import { emitToChannel, emitChannelsChanged } from '../realtime.js';
+import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 
 const router = Router();
+
+// Uploads are buffered in memory then streamed to R2. 25 MB/file, 10 files/msg.
+const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 10 } });
+
+// Feature flags for the client (uploads/search require optional config).
+router.get('/status', (_req, res) => {
+  res.json({ storage: storageEnabled() });
+});
 
 // ── Access layer (the security foundation) ────────────────────────────────────
 // Public channels are visible to everyone; private channels and DMs are visible
@@ -148,10 +158,31 @@ function flattenMessage(db, m) {
     body: m.deleted_at ? null : m.body, parent_id: m.parent_id,
     edited: !!m.edited_at, deleted: !!m.deleted_at, created_at: m.created_at,
     reactions: Object.entries(grouped).map(([emoji, users]) => ({ emoji, count: users.length, users })),
+    attachments: [],
   };
 }
 
-router.get('/channels/:id/messages', (req, res) => {
+// Attachments carry a short-lived presigned download URL — only ever produced
+// here, after the caller has already passed the channel access check.
+async function attachmentsFor(db, messageId, deleted) {
+  if (deleted) return [];
+  const rows = db.prepare('SELECT * FROM chat_attachments WHERE message_id = ? ORDER BY created_at').all(messageId);
+  return Promise.all(rows.map(async a => ({
+    id: a.id, filename: a.filename, content_type: a.content_type, size: a.size,
+    is_image: (a.content_type || '').startsWith('image/'),
+    url: await presignGet(a.storage_key, a.filename),
+  })));
+}
+
+// Full message serialization (reactions + attachment URLs). Async because
+// presigning is async; callers await it.
+async function serialize(db, m) {
+  const base = flattenMessage(db, m);
+  base.attachments = await attachmentsFor(db, m.id, !!m.deleted_at);
+  return base;
+}
+
+router.get('/channels/:id/messages', async (req, res) => {
   const channel = requireChannel(req, res); if (!channel) return;
   const db = getDb();
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
@@ -162,23 +193,49 @@ router.get('/channels/:id/messages', (req, res) => {
   sql += ' ORDER BY created_at DESC LIMIT ?';
   params.push(limit);
   const rows = db.prepare(sql).all(...params).reverse();
-  res.json(rows.map(m => flattenMessage(db, m)));
+  res.json(await Promise.all(rows.map(m => serialize(db, m))));
 });
 
-router.post('/channels/:id/messages', (req, res) => {
+router.post('/channels/:id/messages', async (req, res) => {
   const channel = requireChannel(req, res); if (!channel) return;
   const db = getDb();
   const body = (req.body?.body || '').trim();
-  if (!body) return res.status(400).json({ error: 'Message body is required' });
+  const attachmentIds = Array.isArray(req.body?.attachment_ids) ? req.body.attachment_ids : [];
+  if (!body && attachmentIds.length === 0) return res.status(400).json({ error: 'A message or an attachment is required' });
   const id = uuid();
   db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, parent_id) VALUES (?, ?, ?, ?, ?)')
-    .run(id, channel.id, req.user.id, body, req.body?.parent_id || null);
+    .run(id, channel.id, req.user.id, body || null, req.body?.parent_id || null);
+  // Link only the caller's own still-unattached uploads for this channel.
+  const link = db.prepare('UPDATE chat_attachments SET message_id = ? WHERE id = ? AND channel_id = ? AND user_id = ? AND message_id IS NULL');
+  for (const aid of attachmentIds) link.run(id, aid, channel.id, req.user.id);
   db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(channel.id);
   db.prepare("UPDATE chat_channel_members SET last_read_at = datetime('now') WHERE channel_id = ? AND user_id = ?").run(channel.id, req.user.id);
-  const message = flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
+  const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
   res.status(201).json(message);
+});
+
+// ── Attachments ─────────────────────────────────────────────────────────────
+// Upload one or more files to a channel; they stay unlinked until a message
+// references them via attachment_ids. Storage-gated.
+router.post('/channels/:id/attachments', attachUpload.array('files', 10), async (req, res) => {
+  if (!storageEnabled()) return res.status(503).json({ error: 'File uploads are not configured on this server.' });
+  const channel = requireChannel(req, res); if (!channel) return;
+  const db = getDb();
+  const files = req.files || [];
+  if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+  const out = [];
+  for (const f of files) {
+    const id = uuid();
+    const safe = (f.originalname || 'file').replace(/[^\w.\-]+/g, '_').slice(0, 120);
+    const key = `chat/${channel.id}/${id}-${safe}`;
+    await putObject(key, f.buffer, f.mimetype);
+    db.prepare('INSERT INTO chat_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, null, channel.id, req.user.id, (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null, key);
+    out.push({ id, filename: f.originalname, content_type: f.mimetype, size: f.size, is_image: (f.mimetype || '').startsWith('image/') });
+  }
+  res.status(201).json(out);
 });
 
 function ownedMessage(req, res) {
@@ -190,46 +247,88 @@ function ownedMessage(req, res) {
   return { m, channel };
 }
 
-router.put('/messages/:id', (req, res) => {
+router.put('/messages/:id', async (req, res) => {
   const ctx = ownedMessage(req, res); if (!ctx) return;
   const db = getDb();
   if (ctx.m.user_id !== req.user.id) return res.status(403).json({ error: 'You can only edit your own messages' });
   const body = (req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Message body is required' });
   db.prepare("UPDATE chat_messages SET body = ?, edited_at = datetime('now') WHERE id = ?").run(body, ctx.m.id);
-  const updated = flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
+  const updated = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
   emitToChannel(ctx.channel.id, 'message:update', updated);
   res.json(updated);
 });
 
-router.delete('/messages/:id', (req, res) => {
+router.delete('/messages/:id', async (req, res) => {
   const ctx = ownedMessage(req, res); if (!ctx) return;
   const db = getDb();
   if (ctx.m.user_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'You can only delete your own messages' });
   db.prepare("UPDATE chat_messages SET deleted_at = datetime('now'), body = NULL WHERE id = ?").run(ctx.m.id);
-  emitToChannel(ctx.channel.id, 'message:update', flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
+  // Purge any attached objects from storage; drop their rows.
+  const atts = db.prepare('SELECT storage_key FROM chat_attachments WHERE message_id = ?').all(ctx.m.id);
+  for (const a of atts) deleteObject(a.storage_key);
+  db.prepare('DELETE FROM chat_attachments WHERE message_id = ?').run(ctx.m.id);
+  emitToChannel(ctx.channel.id, 'message:update', await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
   res.json({ ok: true });
 });
 
 // ── Reactions ─────────────────────────────────────────────────────────────────
-router.post('/messages/:id/reactions', (req, res) => {
+router.post('/messages/:id/reactions', async (req, res) => {
   const ctx = ownedMessage(req, res); if (!ctx) return;
   const db = getDb();
   const emoji = (req.body?.emoji || '').trim();
   if (!emoji) return res.status(400).json({ error: 'emoji is required' });
   db.prepare('INSERT OR IGNORE INTO chat_reactions (id, message_id, user_id, emoji) VALUES (?, ?, ?, ?)').run(uuid(), ctx.m.id, req.user.id, emoji);
-  const updated = flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
+  const updated = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
   emitToChannel(ctx.channel.id, 'message:update', updated);
   res.json(updated);
 });
 
-router.delete('/messages/:id/reactions/:emoji', (req, res) => {
+router.delete('/messages/:id/reactions/:emoji', async (req, res) => {
   const ctx = ownedMessage(req, res); if (!ctx) return;
   const db = getDb();
   db.prepare('DELETE FROM chat_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?').run(ctx.m.id, req.user.id, decodeURIComponent(req.params.emoji));
-  const updated = flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
+  const updated = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
   emitToChannel(ctx.channel.id, 'message:update', updated);
   res.json(updated);
+});
+
+// ── Search ────────────────────────────────────────────────────────────────────
+// FTS5 keyword search over messages, scoped to channels the caller can access.
+// The channel access check is applied after ranking so private/DM content never
+// leaks to non-members.
+router.get('/search', (req, res) => {
+  const db = getDb();
+  const me = req.user.id;
+  const q = (req.query.q || '').trim();
+  if (q.length < 2) return res.json([]);
+  // Each whitespace term becomes a quoted prefix match; quotes stripped to keep
+  // the FTS query well-formed regardless of user punctuation.
+  const terms = q.split(/\s+/).filter(Boolean).map(t => `"${t.replace(/"/g, '')}"*`).join(' ');
+  let hits = [];
+  try {
+    hits = db.prepare(
+      'SELECT message_id FROM chat_messages_fts WHERE chat_messages_fts MATCH ? ORDER BY rank LIMIT 200'
+    ).all(terms);
+  } catch { hits = []; }
+  const out = [];
+  for (const h of hits) {
+    const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND deleted_at IS NULL').get(h.message_id);
+    if (!m) continue;
+    const channel = getChannel(db, m.channel_id);
+    if (!canAccess(db, channel, me)) continue;
+    let channelName = channel.name;
+    if (channel.kind === 'dm') {
+      const other = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').get(channel.id, me);
+      channelName = userName(db, other?.user_id || me);
+    }
+    out.push({
+      id: m.id, channel_id: m.channel_id, channel_kind: channel.kind, channel_name: channelName,
+      user_name: userName(db, m.user_id), body: m.body, created_at: m.created_at,
+    });
+    if (out.length >= 40) break;
+  }
+  res.json(out);
 });
 
 export default router;

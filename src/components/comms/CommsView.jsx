@@ -1,10 +1,30 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useApiGet, apiFetch, apiPost, apiPut } from '../../hooks/useApi';
+import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2 } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2 } from 'lucide-react';
 
 const EMOJI = ['👍', '✅', '❤️', '😄', '🎉', '👀', '🙏', '🔥'];
 const fmtTime = (iso) => { const d = new Date(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z'); return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
+const fmtSize = (n) => { if (!n && n !== 0) return ''; if (n < 1024) return n + ' B'; if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB'; return (n / 1024 / 1024).toFixed(1) + ' MB'; };
+
+function Attachment({ a }) {
+  if (a.is_image && a.url) {
+    return (
+      <a href={a.url} target="_blank" rel="noreferrer" className="block mt-1 max-w-xs">
+        <img src={a.url} alt={a.filename} className="rounded-lg border border-gray-200 max-h-64 object-contain" />
+      </a>
+    );
+  }
+  return (
+    <a href={a.url || undefined} target="_blank" rel="noreferrer" download={a.filename}
+      className="mt-1 inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 max-w-xs">
+      <FileText size={16} className="text-powder-600 shrink-0" />
+      <span className="text-sm text-gray-800 truncate">{a.filename}</span>
+      <span className="text-[10px] text-gray-400 shrink-0">{fmtSize(a.size)}</span>
+      <Download size={13} className="text-gray-400 shrink-0" />
+    </a>
+  );
+}
 
 function NewChannelModal({ users, me, onClose, onCreated }) {
   const [name, setName] = useState('');
@@ -88,7 +108,12 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete }) {
             <button onClick={() => setEditing(false)} className="text-xs text-gray-400">Cancel</button>
           </div>
         ) : (
-          <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{m.body}</p>
+          m.body && <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{m.body}</p>
+        )}
+        {!m.deleted && m.attachments?.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {m.attachments.map(a => <Attachment key={a.id} a={a} />)}
+          </div>
         )}
         {m.reactions?.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
@@ -123,6 +148,8 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete }) {
 export default function CommsView({ user, onExit }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
+  const { data: commsStatus } = useApiGet('/comms/status');
+  const storageOn = !!commsStatus?.storage;
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState('');
@@ -130,9 +157,15 @@ export default function CommsView({ user, onExit }) {
   const [dmSearch, setDmSearch] = useState('');
   const [showDmPicker, setShowDmPicker] = useState(false);
   const [typers, setTypers] = useState([]); // {user_id, user_name, at} of people typing in the active channel
+  const [pending, setPending] = useState([]); // uploaded-but-unsent attachments for the composer
+  const [uploading, setUploading] = useState(false);
+  const [searchQ, setSearchQ] = useState('');
+  const [searchResults, setSearchResults] = useState(null); // null = not searching
+  const [searching, setSearching] = useState(false);
   const scrollRef = useRef(null);
   const socketRef = useRef(null);
   const lastTypeSent = useRef(0);
+  const fileInputRef = useRef(null);
 
   const list = channels || [];
   const publicCh = list.filter(c => c.kind === 'public');
@@ -152,7 +185,7 @@ export default function CommsView({ user, onExit }) {
     } catch { /* channel may be inaccessible */ }
   }, [refreshChannels]);
 
-  useEffect(() => { setMessages([]); setTypers([]); loadMessages(activeId); }, [activeId, loadMessages]);
+  useEffect(() => { setMessages([]); setTypers([]); setPending([]); loadMessages(activeId); }, [activeId, loadMessages]);
 
   // Establish the shared socket once for this view.
   useEffect(() => {
@@ -205,11 +238,30 @@ export default function CommsView({ user, onExit }) {
 
   const send = async () => {
     const text = body.trim();
-    if (!text || !active) return;
-    setBody('');
-    try { const m = await apiPost(`/comms/channels/${active.id}/messages`, { body: text }); setMessages(ms => [...ms, m]); refreshChannels(); }
-    catch { setBody(text); }
+    if ((!text && pending.length === 0) || !active) return;
+    const attachment_ids = pending.map(p => p.id);
+    setBody(''); setPending([]);
+    try {
+      const m = await apiPost(`/comms/channels/${active.id}/messages`, { body: text, attachment_ids });
+      setMessages(ms => ms.some(x => x.id === m.id) ? ms : [...ms, m]);
+      refreshChannels();
+    } catch { setBody(text); setPending(pending); }
   };
+
+  const onPickFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length || !active) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      const uploaded = await apiUpload(`/comms/channels/${active.id}/attachments`, fd);
+      setPending(p => [...p, ...uploaded]);
+    } catch (err) { alert(err.message || 'Upload failed'); }
+    finally { setUploading(false); }
+  };
+  const removePending = (id) => setPending(p => p.filter(x => x.id !== id));
   const react = async (m, emoji) => { const updated = await apiPost(`/comms/messages/${m.id}/reactions`, { emoji }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
   const unreact = async (m, emoji) => { const updated = await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
   const editMsg = async (m, text) => { if (!text.trim()) return; const updated = await apiPut(`/comms/messages/${m.id}`, { body: text }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
@@ -233,6 +285,18 @@ export default function CommsView({ user, onExit }) {
 
   const dmCandidates = useMemo(() => (users || []).filter(u => u.id !== user.id && u.name.toLowerCase().includes(dmSearch.toLowerCase())), [users, dmSearch, user.id]);
 
+  // Debounced message search across accessible channels.
+  useEffect(() => {
+    if (searchQ.trim().length < 2) { setSearchResults(null); setSearching(false); return; }
+    setSearching(true);
+    const t = setTimeout(() => {
+      apiFetch(`/comms/search?q=${encodeURIComponent(searchQ.trim())}`)
+        .then(r => setSearchResults(r)).catch(() => setSearchResults([])).finally(() => setSearching(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchQ]);
+  const openResult = (r) => { setSearchQ(''); setSearchResults(null); setActiveId(r.channel_id); };
+
   const ChannelBtn = ({ c, icon: Icon }) => (
     <button onClick={() => setActiveId(c.id)}
       className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activeId === c.id ? 'bg-powder-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
@@ -248,6 +312,12 @@ export default function CommsView({ user, onExit }) {
       <div className="flex items-center gap-3 px-4 h-12 border-b border-gray-200 shrink-0">
         <MessageSquare size={18} className="text-powder-600" />
         <span className="font-bold text-gray-900">Messages</span>
+        <div className="relative ml-4 flex-1 max-w-xs">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search messages…"
+            className="w-full pl-8 pr-7 py-1.5 border border-gray-300 rounded-lg text-sm" />
+          {searchQ && <button onClick={() => setSearchQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>}
+        </div>
         <button onClick={onExit} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
           <ArrowLeft size={15} /> Back to Compliance
         </button>
@@ -287,7 +357,29 @@ export default function CommsView({ user, onExit }) {
 
         {/* main pane */}
         <div className="flex-1 flex flex-col min-w-0">
-          {active ? (
+          {searchResults !== null ? (
+            <>
+              <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
+                <Search size={16} className="text-gray-400" />
+                <span className="font-semibold text-gray-900">Search</span>
+                {searching ? <Loader2 size={14} className="animate-spin text-gray-400" />
+                  : <span className="text-xs text-gray-400">{searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for “{searchQ.trim()}”</span>}
+              </div>
+              <div className="flex-1 overflow-y-auto p-2">
+                {!searching && searchResults.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages found.</p>}
+                {searchResults.map(r => (
+                  <button key={r.id} onClick={() => openResult(r)} className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">
+                    <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-0.5">
+                      {r.channel_kind === 'dm' ? <MessageSquare size={11} /> : r.channel_kind === 'private' ? <Lock size={11} /> : <Hash size={11} />}
+                      <span className="font-medium text-gray-500">{r.channel_kind === 'dm' ? r.channel_name : (r.channel_kind === 'private' ? '' : '#') + r.channel_name}</span>
+                      <span>· {r.user_name} · {fmtTime(r.created_at)}</span>
+                    </div>
+                    <div className="text-sm text-gray-800 line-clamp-2">{r.body}</div>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : active ? (
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
                 {active.kind === 'dm' ? <MessageSquare size={16} className="text-gray-400" /> : active.kind === 'private' ? <Lock size={16} className="text-gray-400" /> : <Hash size={16} className="text-gray-400" />}
@@ -304,12 +396,33 @@ export default function CommsView({ user, onExit }) {
                     : typers.length === 2 ? `${typers[0].user_name} and ${typers[1].user_name} are typing…`
                     : typers.length > 2 ? 'Several people are typing…' : ''}
                 </div>
+                {(pending.length > 0 || uploading) && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {pending.map(p => (
+                      <div key={p.id} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg border border-gray-200 bg-gray-50 text-xs">
+                        {p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
+                        <span className="max-w-[140px] truncate text-gray-700">{p.filename}</span>
+                        <button onClick={() => removePending(p.id)} className="text-gray-400 hover:text-red-500"><X size={13} /></button>
+                      </div>
+                    ))}
+                    {uploading && <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400"><Loader2 size={12} className="animate-spin" /> Uploading…</div>}
+                  </div>
+                )}
                 <div className="flex items-end gap-2">
+                  {storageOn && (
+                    <>
+                      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onPickFiles} />
+                      <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                        className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Attach files">
+                        <Paperclip size={18} />
+                      </button>
+                    </>
+                  )}
                   <textarea value={body} onChange={onBodyChange} rows={1}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                     placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />
-                  <button onClick={send} disabled={!body.trim()} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
+                  <button onClick={send} disabled={!body.trim() && pending.length === 0} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
                 </div>
               </div>
             </>

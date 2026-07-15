@@ -37,7 +37,14 @@ message for an audit trail. Membership/access on the source channel must be resp
   session bearer token; socket joins per-channel rooms (access-checked); REST handlers emit message/edit/
   delete/reaction/channel events. Single Railway instance → in-memory adapter is fine (add Redis adapter
   only if we ever scale to multiple instances).
-- **Phase 3:** file uploads (object storage — **Cloudflare R2, confirmed** — S3-compatible, zero egress) + FTS5 keyword search.
+- **Phase 3 (DONE):** file uploads on **Cloudflare R2** (S3-compatible, zero egress) + FTS5 keyword search.
+  `server/storage.js` wraps R2 via `@aws-sdk/client-s3` and degrades gracefully — `storageEnabled()` gates the
+  paperclip UI and the upload endpoint (503 when off), same pattern as `aiEnabled()`. Uploads buffer in memory
+  (25 MB/file, 10/msg) → R2; downloads use short-lived presigned GET URLs issued **only** after the channel
+  access check. `chat_attachments` table; message delete purges the objects. FTS5 (`chat_messages_fts` + sync
+  triggers, backfilled) powers `GET /api/comms/search`, access-filtered so private/DM content never leaks.
+  **To enable R2, set env vars:** `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`
+  (optional `R2_ENDPOINT` override). Without them, chat still works; only uploads are hidden.
 - **Phase 4:** embeddings (Voyage AI) → semantic search + cross-module AI digest (membership-scoped).
 - **Phase 5:** EN/ES translate-on-display, web push, mentions. Plus: **installable PWA** (add-to-home-screen +
   web push; Capacitor later only if App/Play Store listings are wanted).
