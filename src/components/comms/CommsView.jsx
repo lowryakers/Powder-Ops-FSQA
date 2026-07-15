@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut } from '../../hooks/useApi';
+import { getSocket } from '../../lib/socket';
 import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2 } from 'lucide-react';
 
 const EMOJI = ['👍', '✅', '❤️', '😄', '🎉', '👀', '🙏', '🔥'];
@@ -128,7 +129,10 @@ export default function CommsView({ user, onExit }) {
   const [newChannel, setNewChannel] = useState(false);
   const [dmSearch, setDmSearch] = useState('');
   const [showDmPicker, setShowDmPicker] = useState(false);
+  const [typers, setTypers] = useState([]); // {user_id, user_name, at} of people typing in the active channel
   const scrollRef = useRef(null);
+  const socketRef = useRef(null);
+  const lastTypeSent = useRef(0);
 
   const list = channels || [];
   const publicCh = list.filter(c => c.kind === 'public');
@@ -148,12 +152,54 @@ export default function CommsView({ user, onExit }) {
     } catch { /* channel may be inaccessible */ }
   }, [refreshChannels]);
 
-  useEffect(() => { setMessages([]); loadMessages(activeId); }, [activeId, loadMessages]);
+  useEffect(() => { setMessages([]); setTypers([]); loadMessages(activeId); }, [activeId, loadMessages]);
+
+  // Establish the shared socket once for this view.
   useEffect(() => {
-    if (!activeId) return;
-    const t = setInterval(() => { apiFetch(`/comms/channels/${activeId}/messages`).then(setMessages).catch(() => {}); refreshChannels(); }, 4000);
+    const s = getSocket();
+    socketRef.current = s;
+    return () => { socketRef.current = null; };
+  }, []);
+
+  // Realtime: join the active channel's room and react to pushed events (Phase 2,
+  // replacing the old 4s poll). socket.io does not auto-rejoin rooms, so we
+  // re-join and resync on every (re)connect.
+  useEffect(() => {
+    const s = socketRef.current;
+    if (!s || !activeId) return;
+    s.emit('channel:join', activeId);
+
+    const onNew = (m) => {
+      if (m.channel_id !== activeId || m.parent_id) return;
+      setMessages(ms => ms.some(x => x.id === m.id) ? ms : [...ms, m]);
+      setTypers(t => t.filter(x => x.user_id !== m.user_id));
+    };
+    const onUpdate = (m) => { if (m.channel_id === activeId) setMessages(ms => ms.map(x => x.id === m.id ? m : x)); };
+    const onChannels = () => refreshChannels();
+    const onTyping = (t) => {
+      if (t.channel_id !== activeId || t.user_id === user.id) return;
+      setTypers(prev => [...prev.filter(x => x.user_id !== t.user_id), { ...t, at: Date.now() }]);
+    };
+    const onConnect = () => { s.emit('channel:join', activeId); loadMessages(activeId); refreshChannels(); };
+
+    s.on('message:new', onNew);
+    s.on('message:update', onUpdate);
+    s.on('channels:changed', onChannels);
+    s.on('typing', onTyping);
+    s.on('connect', onConnect);
+    return () => {
+      s.emit('channel:leave', activeId);
+      s.off('message:new', onNew); s.off('message:update', onUpdate);
+      s.off('channels:changed', onChannels); s.off('typing', onTyping); s.off('connect', onConnect);
+    };
+  }, [activeId, refreshChannels, loadMessages, user.id]);
+
+  // Expire typing indicators that have gone quiet for >4s.
+  useEffect(() => {
+    if (!typers.length) return;
+    const t = setInterval(() => setTypers(prev => prev.filter(x => Date.now() - x.at < 4000)), 1500);
     return () => clearInterval(t);
-  }, [activeId, refreshChannels]);
+  }, [typers.length]);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
 
@@ -168,6 +214,15 @@ export default function CommsView({ user, onExit }) {
   const unreact = async (m, emoji) => { const updated = await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
   const editMsg = async (m, text) => { if (!text.trim()) return; const updated = await apiPut(`/comms/messages/${m.id}`, { body: text }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
   const delMsg = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); loadMessages(activeId); };
+
+  const onBodyChange = (e) => {
+    setBody(e.target.value);
+    const now = Date.now();
+    if (activeId && socketRef.current && now - lastTypeSent.current > 1500) {
+      lastTypeSent.current = now;
+      socketRef.current.emit('typing', activeId);
+    }
+  };
 
   const openDm = async (u) => {
     const ch = await apiPost(`/comms/dm/${u.id}`, {});
@@ -244,8 +299,13 @@ export default function CommsView({ user, onExit }) {
                 {messages.map(m => <Message key={m.id} m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg} />)}
               </div>
               <div className="border-t border-gray-200 p-3 shrink-0">
+                <div className="h-4 px-1 mb-0.5 text-[11px] text-gray-400 italic">
+                  {typers.length === 1 ? `${typers[0].user_name} is typing…`
+                    : typers.length === 2 ? `${typers[0].user_name} and ${typers[1].user_name} are typing…`
+                    : typers.length > 2 ? 'Several people are typing…' : ''}
+                </div>
                 <div className="flex items-end gap-2">
-                  <textarea value={body} onChange={e => setBody(e.target.value)} rows={1}
+                  <textarea value={body} onChange={onBodyChange} rows={1}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                     placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />

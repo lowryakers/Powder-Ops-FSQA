@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet } from './hooks/useApi';
+import { getSocket } from './lib/socket';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
@@ -110,9 +111,17 @@ const NAV_GROUPS = [
 
 function Sidebar({ activeTab, setActiveTab, user, onClose, badges, onOpenComms }) {
   const { data: aiStatus } = useApiGet('/ai/status');
-  const { data: commsChannels } = useApiGet('/comms/channels', [activeTab]);
+  const { data: commsChannels, refresh: refreshComms } = useApiGet('/comms/channels', [activeTab]);
   const commsUnread = (commsChannels || []).reduce((n, c) => n + (c.unread || 0), 0);
   const aiOn = !!aiStatus?.enabled;
+
+  // Live-update the Messages unread badge when chat activity arrives.
+  useEffect(() => {
+    const s = getSocket();
+    const onChange = () => refreshComms();
+    s.on('channels:changed', onChange);
+    return () => s.off('channels:changed', onChange);
+  }, [refreshComms]);
   const [openGroups, setOpenGroups] = useState(() => {
     const initial = {};
     NAV_GROUPS.forEach(g => { initial[g.label] = true; });

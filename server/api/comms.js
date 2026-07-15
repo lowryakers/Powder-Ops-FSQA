@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db.js';
+import { emitToChannel, emitChannelsChanged } from '../realtime.js';
 
 const router = Router();
 
@@ -77,7 +78,9 @@ router.post('/channels', (req, res) => {
   const addMember = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
   addMember.run(uuid(), id, req.user.id, 'owner');
   if (Array.isArray(member_ids)) for (const uid of member_ids) if (uid !== req.user.id) addMember.run(uuid(), id, uid, 'member');
-  res.status(201).json(getChannel(db, id));
+  const created = getChannel(db, id);
+  emitChannelsChanged(db, created);
+  res.status(201).json(created);
 });
 
 router.get('/channels/:id', (req, res) => {
@@ -96,6 +99,7 @@ router.post('/channels/:id/members', (req, res) => {
   const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
   let added = 0;
   for (const uid of ids) added += add.run(uuid(), channel.id, uid, 'member').changes;
+  if (added) emitChannelsChanged(db, channel);
   res.json({ added });
 });
 
@@ -129,6 +133,7 @@ router.post('/dm/:userId', (req, res) => {
     add.run(uuid(), id, req.user.id, 'member');
     add.run(uuid(), id, other, 'member');
     channel = getChannel(db, id);
+    emitChannelsChanged(db, channel); // let the other participant see the new DM
   }
   res.status(201).json({ id: channel.id, kind: 'dm', name: userName(db, other), other_user_id: other });
 });
@@ -170,7 +175,10 @@ router.post('/channels/:id/messages', (req, res) => {
     .run(id, channel.id, req.user.id, body, req.body?.parent_id || null);
   db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(channel.id);
   db.prepare("UPDATE chat_channel_members SET last_read_at = datetime('now') WHERE channel_id = ? AND user_id = ?").run(channel.id, req.user.id);
-  res.status(201).json(flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id)));
+  const message = flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
+  emitToChannel(channel.id, 'message:new', message);
+  emitChannelsChanged(db, channel);
+  res.status(201).json(message);
 });
 
 function ownedMessage(req, res) {
@@ -189,7 +197,9 @@ router.put('/messages/:id', (req, res) => {
   const body = (req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Message body is required' });
   db.prepare("UPDATE chat_messages SET body = ?, edited_at = datetime('now') WHERE id = ?").run(body, ctx.m.id);
-  res.json(flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
+  const updated = flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
+  emitToChannel(ctx.channel.id, 'message:update', updated);
+  res.json(updated);
 });
 
 router.delete('/messages/:id', (req, res) => {
@@ -197,6 +207,7 @@ router.delete('/messages/:id', (req, res) => {
   const db = getDb();
   if (ctx.m.user_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'You can only delete your own messages' });
   db.prepare("UPDATE chat_messages SET deleted_at = datetime('now'), body = NULL WHERE id = ?").run(ctx.m.id);
+  emitToChannel(ctx.channel.id, 'message:update', flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
   res.json({ ok: true });
 });
 
@@ -207,14 +218,18 @@ router.post('/messages/:id/reactions', (req, res) => {
   const emoji = (req.body?.emoji || '').trim();
   if (!emoji) return res.status(400).json({ error: 'emoji is required' });
   db.prepare('INSERT OR IGNORE INTO chat_reactions (id, message_id, user_id, emoji) VALUES (?, ?, ?, ?)').run(uuid(), ctx.m.id, req.user.id, emoji);
-  res.json(flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
+  const updated = flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
+  emitToChannel(ctx.channel.id, 'message:update', updated);
+  res.json(updated);
 });
 
 router.delete('/messages/:id/reactions/:emoji', (req, res) => {
   const ctx = ownedMessage(req, res); if (!ctx) return;
   const db = getDb();
   db.prepare('DELETE FROM chat_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?').run(ctx.m.id, req.user.id, decodeURIComponent(req.params.emoji));
-  res.json(flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
+  const updated = flattenMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
+  emitToChannel(ctx.channel.id, 'message:update', updated);
+  res.json(updated);
 });
 
 export default router;

@@ -33,10 +33,20 @@ message for an audit trail. Membership/access on the source channel must be resp
 - **Phase 1 (DONE):** `chat_*` schema + membership access layer (`server/api/comms.js`), `/api/comms` endpoints,
   `CommsView` UI + workspace toggle (Messages ↔ Compliance in `src/App.jsx`). Public/private channels, DMs,
   threads-ready (`parent_id`), reactions, edit/delete, unread counts, 4s poll refresh.
-- **Phase 2 (next):** realtime (socket.io/WebSockets) replacing polling.
-- **Phase 3:** file uploads (object storage — Cloudflare R2 recommended) + FTS5 keyword search.
+- **Phase 2 (in progress):** realtime via **socket.io** replacing 4s polling. Handshake auth reuses the
+  session bearer token; socket joins per-channel rooms (access-checked); REST handlers emit message/edit/
+  delete/reaction/channel events. Single Railway instance → in-memory adapter is fine (add Redis adapter
+  only if we ever scale to multiple instances).
+- **Phase 3:** file uploads (object storage — **Cloudflare R2, confirmed** — S3-compatible, zero egress) + FTS5 keyword search.
 - **Phase 4:** embeddings (Voyage AI) → semantic search + cross-module AI digest (membership-scoped).
-- **Phase 5:** EN/ES translate-on-display, web push, mentions. Plus: Slack history importer.
+- **Phase 5:** EN/ES translate-on-display, web push, mentions. Plus: **installable PWA** (add-to-home-screen +
+  web push; Capacitor later only if App/Play Store listings are wanted).
+
+**Slack history importer (Phase 5) — confirmed shape:**
+- User will make all channels public before exporting so the Slack export captures everything.
+- Map imported authors to **existing users by NAME**, not email — keep the current user structure (add-by-name).
+- Open question the user raised: may switch auth from **PIN → password** (or add a password alongside the PIN).
+  Revisit this when building the importer / when hardening auth; not part of comms Phase 2.
 
 ## Context: audit log (Phases 1 & 2 shipped)
 - `logAudit(actorOrUser, action, entityType, entityId, details, prev, next, entityLabel)` in `server/db.js`.
