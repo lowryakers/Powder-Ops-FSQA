@@ -13,10 +13,12 @@ const ROLES = [
 const DEPARTMENTS = [
   { value: 'warehouse', label: 'Warehouse' },
   { value: 'qa', label: 'QA' },
+  { value: 'document_control', label: 'Document Control' },
   { value: 'cleaning', label: 'Cleaning' },
   { value: 'production', label: 'Production' },
   { value: 'maintenance', label: 'Maintenance' },
 ];
+const deptLabel = (d) => DEPARTMENTS.find(x => x.value === d)?.label || (d ? d.charAt(0).toUpperCase() + d.slice(1) : 'Warehouse');
 
 const MODULE_GROUPS = [
   {
@@ -323,12 +325,13 @@ function UserRow({ u, onEdit, onToggle }) {
       <td className="px-4 py-3">
         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
           u.department === 'qa' ? 'bg-teal-100 text-teal-700'
+          : u.department === 'document_control' ? 'bg-purple-100 text-purple-700'
           : u.department === 'cleaning' ? 'bg-amber-100 text-amber-700'
           : u.department === 'production' ? 'bg-green-100 text-green-700'
           : u.department === 'maintenance' ? 'bg-orange-100 text-orange-700'
           : 'bg-indigo-100 text-indigo-700'
         }`}>
-          {u.department === 'qa' ? 'QA' : (u.department || 'warehouse').charAt(0).toUpperCase() + (u.department || 'warehouse').slice(1)}
+          {deptLabel(u.department)}
         </span>
       </td>
       <td className="px-4 py-3">

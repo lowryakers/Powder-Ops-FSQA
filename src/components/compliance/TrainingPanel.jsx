@@ -2,11 +2,11 @@ import { useState, useMemo, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion } from 'lucide-react';
+import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion, Users } from 'lucide-react';
 
 const CATEGORIES = ['GMP', 'Food Safety', 'HACCP', 'Allergen', 'Food Defense', 'Sanitation', 'Safety', 'Onboarding', 'Other'];
 const ROLES = ['admin', 'supervisor', 'operator', 'auditor'];
-const DEPARTMENTS = ['warehouse', 'qa', 'cleaning', 'production', 'maintenance'];
+const DEPARTMENTS = ['warehouse', 'qa', 'document_control', 'cleaning', 'production', 'maintenance'];
 const FREQ = [{ v: '', l: 'One-time' }, { v: 12, l: 'Annual' }, { v: 24, l: 'Biennial' }, { v: 6, l: 'Every 6 months' }, { v: 3, l: 'Quarterly' }];
 const freqLabel = (m) => FREQ.find(f => String(f.v) === String(m || ''))?.l || (m ? `Every ${m} mo` : 'One-time');
 
@@ -181,6 +181,98 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
   );
 }
 
+// ── Group training modal ──────────────────────────────────────────────────────
+function GroupTrainingModal({ courses, users, onClose, onSaved }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [courseId, setCourseId] = useState('');
+  const [date, setDate] = useState(today);
+  const [trainer, setTrainer] = useState('');
+  const [method, setMethod] = useState('in_person');
+  const [sel, setSel] = useState({}); // userId -> { checked, name, score }
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const list = useMemo(() => (users || []).filter(u => u.is_active !== 0 && (!search || u.name.toLowerCase().includes(search.toLowerCase()))), [users, search]);
+  const toggle = (u) => setSel(s => ({ ...s, [u.id]: s[u.id]?.checked ? { ...s[u.id], checked: false } : { checked: true, name: u.name, score: '' } }));
+  const setScore = (id, v) => setSel(s => ({ ...s, [id]: { ...s[id], score: v } }));
+  const chosen = Object.entries(sel).filter(([, v]) => v.checked);
+
+  const save = async () => {
+    if (!courseId) { setError('Pick a course.'); return; }
+    if (chosen.length === 0) { setError('Select at least one attendee.'); return; }
+    setSaving(true); setError('');
+    try {
+      const res = await apiPost('/training/bulk-complete', {
+        course_id: courseId, completion_date: date, training_date: date, trainer, method,
+        attendees: chosen.map(([id, v]) => ({ employee_user_id: id, employee_name: v.name, score: v.score })),
+      });
+      onSaved(res.created);
+    } catch (e) { setError(e.message); setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="font-semibold text-gray-900">Record group training</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <div className="p-4 space-y-3 overflow-y-auto">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Course *</label>
+              <select value={courseId} onChange={e => setCourseId(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="">— Select course —</option>
+                {(courses || []).filter(c => c.active).map(c => <option key={c.id} value={c.id}>{c.code ? `${c.code} — ` : ''}{c.title}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Date *</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Method</label>
+              <select value={method} onChange={e => setMethod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                {['in_person', 'read_and_sign', 'online_test', 'external'].map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
+              <input value={trainer} onChange={e => setTrainer(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-700">Attendees ({chosen.length} selected)</label>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" className="px-2 py-1 border border-gray-300 rounded-lg text-xs w-32" />
+            </div>
+            <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto">
+              {list.map(u => (
+                <div key={u.id} className="flex items-center gap-2 px-3 py-1.5">
+                  <input type="checkbox" checked={!!sel[u.id]?.checked} onChange={() => toggle(u)} />
+                  <span className="flex-1 text-sm text-gray-800">{u.name} <span className="text-[11px] text-gray-400 capitalize">{(u.department || '').replace(/_/g, ' ')}</span></span>
+                  {sel[u.id]?.checked && (
+                    <input type="number" min="0" max="100" value={sel[u.id].score} onChange={e => setScore(u.id, e.target.value)} placeholder="score" className="w-16 px-2 py-1 border border-gray-300 rounded text-xs" />
+                  )}
+                </div>
+              ))}
+              {list.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No matching people.</p>}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">Leave score blank for attendance-only; a score is marked pass/fail against the course threshold.</p>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="flex items-center gap-2 p-4 border-t">
+          <button onClick={save} disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : `Record ${chosen.length || ''} completion${chosen.length === 1 ? '' : 's'}`}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Course modal ──────────────────────────────────────────────────────────────
 function CourseModal({ initial, onClose, onSaved }) {
   const { data: allDocs } = useApiGet('/documents');
@@ -249,7 +341,7 @@ function CourseModal({ initial, onClose, onSaved }) {
             {ROLES.map(r => <button type="button" key={r} onClick={() => toggle('required_roles', r)} className={`px-2 py-1 rounded-lg text-xs border capitalize ${form.required_roles.includes(r) ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-600 border-gray-300'}`}>{r}</button>)}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {DEPARTMENTS.map(d => <button type="button" key={d} onClick={() => toggle('required_departments', d)} className={`px-2 py-1 rounded-lg text-xs border capitalize ${form.required_departments.includes(d) ? 'bg-powder-700 text-white border-powder-700' : 'bg-white text-gray-600 border-gray-300'}`}>{d}</button>)}
+            {DEPARTMENTS.map(d => <button type="button" key={d} onClick={() => toggle('required_departments', d)} className={`px-2 py-1 rounded-lg text-xs border capitalize ${form.required_departments.includes(d) ? 'bg-powder-700 text-white border-powder-700' : 'bg-white text-gray-600 border-gray-300'}`}>{d.replace(/_/g, ' ')}</button>)}
           </div>
         </div>
         <div>
@@ -467,9 +559,11 @@ export default function TrainingPanel() {
   const [view, setView] = useState('matrix');
   const [importing, setImporting] = useState(false);
   const [completion, setCompletion] = useState(null); // {} = new
+  const [groupTraining, setGroupTraining] = useState(false);
   const [course, setCourse] = useState(null);
   const [testCourse, setTestCourse] = useState(null);
   const [search, setSearch] = useState('');
+  const [flash, setFlash] = useState('');
 
   const refreshAll = () => { refreshMatrix(); refreshCourses(); refreshRecords(); };
   const counts = matrix?.counts || { missing: 0, overdue: 0, due_soon: 0, current: 0 };
@@ -492,6 +586,7 @@ export default function TrainingPanel() {
           <div className="flex items-center gap-2">
             <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Upload size={15} /> Import</button>
             <button onClick={() => setCourse({})} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Plus size={15} /> Course</button>
+            <button onClick={() => setGroupTraining(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Users size={15} /> Group Training</button>
             <button onClick={() => setCompletion({})} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700"><Plus size={16} /> Log Completion</button>
           </div>
         )}
@@ -672,6 +767,8 @@ export default function TrainingPanel() {
       {completion && <CompletionModal initial={completion.id ? completion : null} courses={courses} users={users} onClose={() => setCompletion(null)} onSaved={() => { setCompletion(null); refreshAll(); }} />}
       {course && <CourseModal initial={course.id ? course : null} onClose={() => setCourse(null)} onSaved={() => { setCourse(null); refreshCourses(); refreshMatrix(); }} />}
       {testCourse && <TestEditor course={testCourse} aiEnabled={aiOn} onClose={() => setTestCourse(null)} onSaved={() => { setTestCourse(null); refreshCourses(); }} />}
+      {groupTraining && <GroupTrainingModal courses={courses} users={users} onClose={() => setGroupTraining(false)} onSaved={(n) => { setGroupTraining(false); refreshAll(); setFlash(`Recorded ${n} completion${n === 1 ? '' : 's'}.`); setTimeout(() => setFlash(''), 5000); }} />}
+      {flash && <div className="fixed bottom-4 right-4 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">{flash}</div>}
     </div>
   );
 }

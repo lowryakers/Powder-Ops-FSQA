@@ -68,22 +68,27 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: 'Compliance',
+    label: 'Document Control',
     items: [
-      { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
       { id: 'sops', label: 'SOP Registry', icon: FileText },
       { id: 'work-instructions', label: 'Work Instructions', icon: ListChecks },
       { id: 'job-descriptions', label: 'Job Descriptions', icon: BriefcaseBusiness },
-      { id: 'org-chart', label: 'Org Chart', icon: Network },
-      { id: 'disposals', label: 'Disposals', icon: Trash2 },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
+      { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
+      { id: 'org-chart', label: 'Org Chart', icon: Network },
+    ],
+  },
+  {
+    label: 'Compliance',
+    items: [
+      { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
+      { id: 'disposals', label: 'Disposals', icon: Trash2 },
       { id: 'recall', label: 'Mock Recall', icon: Package },
     ],
   },
   {
     label: 'Quality Records',
     items: [
-      { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
       { id: 'deviations', label: 'Deviations', icon: FileWarning },
       { id: 'non-conformance', label: 'Non-Conformance', icon: ShieldAlert },
       { id: 'on-hold', label: 'On Hold', icon: PauseCircle },
@@ -188,7 +193,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges }) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-gray-900 truncate">{user.name}</div>
-            <div className="text-[10px] text-gray-400 truncate">{user.role} / {{ qa: 'QA', cleaning: 'Cleaning', warehouse: 'Warehouse', production: 'Production', maintenance: 'Maintenance' }[user.department] || user.department}</div>
+            <div className="text-[10px] text-gray-400 truncate">{user.role} / {{ qa: 'QA', document_control: 'Document Control', cleaning: 'Cleaning', warehouse: 'Warehouse', production: 'Production', maintenance: 'Maintenance' }[user.department] || user.department}</div>
           </div>
           <button onClick={() => window.dispatchEvent(new CustomEvent('app-logout'))} className="text-gray-400 hover:text-gray-600" title="Sign Out">
             <LogOut size={16} />

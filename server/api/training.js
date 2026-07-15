@@ -154,6 +154,39 @@ router.post('/', (req, res) => {
   res.status(201).json(rec);
 });
 
+// Record a small-group training + test in one shot: one completion per attendee.
+router.post('/bulk-complete', (req, res) => {
+  const db = getDb();
+  const { course_id, training_date, completion_date, trainer, method, attendees } = req.body;
+  if (!course_id || !Array.isArray(attendees) || attendees.length === 0) {
+    return res.status(400).json({ error: 'course_id and at least one attendee are required' });
+  }
+  const course = db.prepare('SELECT title, passing_score FROM training_courses WHERE id = ?').get(course_id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const pass = course.passing_score ?? 80;
+  const completion = completion_date || training_date || new Date().toISOString().slice(0, 10);
+
+  let created = 0;
+  const tx = db.transaction(() => {
+    for (const a of attendees) {
+      const name = (a.employee_name || '').trim();
+      if (!name) continue;
+      const score = a.score === '' || a.score === undefined || a.score === null ? null : Number(a.score);
+      insertCompletion(db, {
+        employee_name: name, employee_user_id: a.employee_user_id || null,
+        course_id, course_title: course.title, status: 'completed',
+        method: method || 'in_person', trainer: trainer || null,
+        training_date: training_date || completion, completion_date: completion,
+        score, passed: score == null ? true : score >= pass,
+      });
+      created++;
+    }
+  });
+  tx();
+  logAudit(req.user, 'training_group_completed', 'training', null, { course_id, count: created }, null, null, course.title);
+  res.json({ created });
+});
+
 router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id);
