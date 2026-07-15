@@ -13,6 +13,7 @@ const freqLabel = (m) => FREQ.find(f => String(f.v) === String(m || ''))?.l || (
 const CELL = {
   current: { bg: 'bg-green-100', text: 'text-green-800', label: 'Current' },
   due_soon: { bg: 'bg-amber-100', text: 'text-amber-800', label: 'Due soon' },
+  outdated: { bg: 'bg-orange-100', text: 'text-orange-800', label: 'Doc updated' },
   overdue: { bg: 'bg-red-100', text: 'text-red-700', label: 'Overdue' },
   missing: { bg: 'bg-gray-100', text: 'text-gray-400', label: 'Not trained' },
   exempt: { bg: 'bg-slate-50', text: 'text-slate-300', label: 'Exempt' },
@@ -182,9 +183,12 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
 
 // ── Course modal ──────────────────────────────────────────────────────────────
 function CourseModal({ initial, onClose, onSaved }) {
+  const { data: allDocs } = useApiGet('/documents');
+  const docs = useMemo(() => (allDocs || []).filter(d => d.doc_type === 'sop' || d.doc_type === 'work_instruction'), [allDocs]);
   const [form, setForm] = useState(initial || {
     code: '', title: '', category: 'GMP', description: '', retrain_months: 12,
     required_roles: [], required_departments: [], passing_score: 80, active: true,
+    sop_id: '', retrain_on_doc_change: true,
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -247,6 +251,19 @@ function CourseModal({ initial, onClose, onSaved }) {
           <div className="flex flex-wrap gap-1.5">
             {DEPARTMENTS.map(d => <button type="button" key={d} onClick={() => toggle('required_departments', d)} className={`px-2 py-1 rounded-lg text-xs border capitalize ${form.required_departments.includes(d) ? 'bg-powder-700 text-white border-powder-700' : 'bg-white text-gray-600 border-gray-300'}`}>{d}</button>)}
           </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Linked document (SOP / WI)</label>
+          <select value={form.sop_id || ''} onChange={e => set('sop_id', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">— None —</option>
+            {docs.map(d => <option key={d.id} value={d.id}>{d.doc_number ? `${d.doc_number} — ` : ''}{d.title}</option>)}
+          </select>
+          {form.sop_id && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 mt-2">
+              <input type="checkbox" checked={!!form.retrain_on_doc_change} onChange={e => set('retrain_on_doc_change', e.target.checked)} />
+              Flag completions for retraining when this document is materially updated
+            </label>
+          )}
         </div>
         <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!form.active} onChange={e => set('active', e.target.checked)} /> Active</label>
         <div className="flex gap-2">
@@ -328,7 +345,14 @@ function TestEditor({ course, aiEnabled, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
+  const [changes, setChanges] = useState([]);
   const withKeys = (arr) => arr.map((q, i) => ({ ...q, _k: q._k || `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}` }));
+
+  useEffect(() => {
+    if (!course.sop_id) return;
+    const since = course.test_sop_revision ? `?since=${encodeURIComponent(course.test_sop_revision)}` : '';
+    apiFetch(`/training/courses/${course.id}/changes${since}`).then(r => setChanges((r.changes || []).filter(c => !c.minor))).catch(() => {});
+  }, [course.id, course.sop_id, course.test_sop_revision]);
 
   useEffect(() => {
     let stale = false;
@@ -395,6 +419,16 @@ function TestEditor({ course, aiEnabled, onClose, onSaved }) {
             )}
           </div>
           {aiEnabled && <p className="text-xs text-gray-400 -mt-1">AI drafts questions from the course{course.sop_id ? ' and its linked document' : ''} — review and edit before saving.</p>}
+
+          {course.sop_test_stale && changes.length > 0 && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+              <div className="flex items-center gap-2 font-medium text-orange-800 text-sm mb-1"><AlertTriangle size={15} /> Linked document updated since this test was written</div>
+              <ul className="text-xs text-orange-900/80 space-y-0.5 list-disc pl-5">
+                {changes.slice(0, 6).map((c, i) => <li key={i}><span className="font-medium">rev {c.revision}</span>{c.summary ? ` — ${c.summary}` : ''}</li>)}
+              </ul>
+              <p className="text-xs text-gray-500 mt-1.5">Review the questions{aiEnabled ? ' (or use Generate with AI to draft updates)' : ''}, then save — the test re-anchors to the current revision.</p>
+            </div>
+          )}
 
           {loading ? (
             <div className="text-center py-8 text-gray-500 text-sm">Loading…</div>
@@ -480,6 +514,12 @@ export default function TrainingPanel() {
       {/* Matrix */}
       {view === 'matrix' && matrix && (
         <div className="space-y-3">
+          {counts.outdated > 0 && (
+            <div className="flex items-center gap-2 text-sm bg-orange-50 border border-orange-200 text-orange-800 rounded-xl p-3">
+              <AlertTriangle size={16} />
+              {counts.outdated} completed training{counts.outdated === 1 ? '' : 's'} need{counts.outdated === 1 ? 's' : ''} refreshing — a linked document changed since it was completed.
+            </div>
+          )}
           <div className="flex flex-wrap gap-3 text-xs text-gray-500">
             {Object.entries(CELL).filter(([k]) => k !== 'exempt').map(([k, v]) => (
               <span key={k} className="flex items-center gap-1.5"><span className={`inline-block w-3 h-3 rounded-sm ${v.bg}`} /> {v.label}</span>
@@ -563,6 +603,10 @@ export default function TrainingPanel() {
                 <div>
                   <p className="font-semibold text-gray-900">{c.code ? `${c.code} — ` : ''}{c.title}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{c.category} · {freqLabel(c.retrain_months)}{c.has_current_test ? ' · has test' : ''}</p>
+                  {c.sop_title && <p className="text-[11px] text-gray-400 mt-0.5">📄 {c.sop_number ? `${c.sop_number} — ` : ''}{c.sop_title}{c.sop_training_revision ? ` (rev ${c.sop_training_revision})` : ''}</p>}
+                  {c.sop_test_stale && (
+                    <span className="inline-flex items-center gap-1 mt-1 text-[11px] font-medium text-orange-800 bg-orange-100 px-2 py-0.5 rounded-full"><AlertTriangle size={11} /> SOP updated — test needs review</span>
+                  )}
                 </div>
                 {canEdit && (
                   <div className="flex items-center gap-1 shrink-0">

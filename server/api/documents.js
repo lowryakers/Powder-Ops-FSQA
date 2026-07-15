@@ -353,9 +353,16 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { doc_number, title, category, revision, effective_date, review_due, status, owner, content, source_file, _change_summary } = req.body;
+  const { doc_number, title, category, revision, effective_date, review_due, status, owner, content, source_file, _change_summary, _minor } = req.body;
 
   const newStatus = status || existing.status;
+  // A material change (body or revision) that is NOT flagged as a minor edit
+  // advances the "training revision" — the version people must be trained on —
+  // which flags everyone trained on the prior version for retraining.
+  const bodyChanged = content !== undefined && content !== existing.description;
+  const revisionChanged = !!revision && revision !== existing.revision;
+  const isMinor = !!_minor;
+  const materialChange = (bodyChanged || revisionChanged) && !isMinor;
   // Capture approval the first time a document moves to the approved/effective state
   let approvedBy = existing.approved_by;
   let approvedAt = existing.approved_at;
@@ -364,19 +371,33 @@ router.put('/:id', (req, res) => {
     approvedAt = new Date().toISOString();
   }
 
-  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, status=?, owner=?, description=?, source_file=?, approved_by=?, approved_at=?, updated_at=datetime('now') WHERE id=?`).run(
+  const newRevision = revision || existing.revision;
+  // Bump training_revision only on a material change; otherwise keep the prior
+  // value (initialized to the current revision by migration).
+  const trainingRevision = materialChange ? newRevision : (existing.training_revision || newRevision);
+
+  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, status=?, owner=?, description=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, updated_at=datetime('now') WHERE id=?`).run(
     doc_number ?? existing.doc_number, title || existing.title, category || existing.category,
-    revision || existing.revision, effective_date ?? existing.effective_date,
+    newRevision, effective_date ?? existing.effective_date,
     review_due ?? existing.review_due, newStatus, owner ?? existing.owner,
     content ?? existing.description, source_file ?? existing.source_file,
-    approvedBy, approvedAt, req.params.id
+    approvedBy, approvedAt, trainingRevision, req.params.id
   );
 
   const updated = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
-  db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(uuid(), req.params.id, updated.revision, req.user.name, _change_summary || 'Updated', JSON.stringify(updated));
-  logAudit(req.user, 'document_updated', 'document', req.params.id, { title: updated.title }, existing, updated);
-  res.json(updated);
+  db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot, minor) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(uuid(), req.params.id, updated.revision, req.user.name, _change_summary || (isMinor ? 'Minor edit' : 'Updated'), JSON.stringify(updated), isMinor ? 1 : 0);
+
+  // How many completed trainings this change just invalidated (for the response).
+  let retraining_triggered = 0;
+  if (materialChange) {
+    retraining_triggered = db.prepare(`
+      SELECT COUNT(*) c FROM training_records tr JOIN training_courses c ON tr.course_id = c.id
+      WHERE c.sop_id = ? AND c.retrain_on_doc_change = 1 AND tr.superseded = 0 AND tr.status = 'completed'
+        AND (tr.sop_revision IS NULL OR tr.sop_revision != ?)`).get(req.params.id, trainingRevision).c;
+  }
+  logAudit(req.user, 'document_updated', 'document', req.params.id, { title: updated.title, material_change: materialChange, retraining_triggered }, existing, updated);
+  res.json({ ...updated, retraining_triggered });
 });
 
 // DELETE — soft archive

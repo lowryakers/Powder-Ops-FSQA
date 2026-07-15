@@ -1012,6 +1012,17 @@ function runMigrations() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_training_course ON training_records(course_id)'); } catch { /* ignore */ }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_training_due ON training_records(next_due_date)'); } catch { /* ignore */ }
 
+  // Document ↔ training linkage: when a linked SOP/WI changes materially, people
+  // trained on the old version go stale. `training_revision` tracks the revision
+  // training must reflect — bumped only on non-minor edits; `sop_versions.minor`
+  // marks a revision as a typo/formatting fix that should NOT trigger retraining.
+  addColumnIfMissing('training_courses', 'retrain_on_doc_change', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('training_records', 'sop_revision', 'TEXT');
+  addColumnIfMissing('training_tests', 'sop_revision', 'TEXT');
+  addColumnIfMissing('sop_documents', 'training_revision', 'TEXT');
+  addColumnIfMissing('sop_versions', 'minor', 'INTEGER NOT NULL DEFAULT 0');
+  try { db.prepare('UPDATE sop_documents SET training_revision = revision WHERE training_revision IS NULL').run(); } catch { /* ignore */ }
+
   // Audit log: stable actor identity (survives renames) + role/department for
   // filtering + human-readable entity label. Backfill identity from the users
   // table by name, and normalize historical action verbs to the canonical set.

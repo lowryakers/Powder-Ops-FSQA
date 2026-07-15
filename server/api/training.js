@@ -37,8 +37,10 @@ function courseAppliesToUser(course, user) {
 router.get('/courses', (req, res) => {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT c.*, sd.title AS sop_title, sd.doc_number AS sop_number,
-      (SELECT COUNT(*) FROM training_tests t WHERE t.course_id = c.id AND t.is_current = 1) AS has_current_test
+    SELECT c.*, sd.title AS sop_title, sd.doc_number AS sop_number, sd.revision AS sop_revision,
+      sd.training_revision AS sop_training_revision,
+      (SELECT COUNT(*) FROM training_tests t WHERE t.course_id = c.id AND t.is_current = 1) AS has_current_test,
+      (SELECT t.sop_revision FROM training_tests t WHERE t.course_id = c.id AND t.is_current = 1) AS test_sop_revision
     FROM training_courses c
     LEFT JOIN sop_documents sd ON c.sop_id = sd.id
     ORDER BY c.active DESC, c.category, c.title
@@ -47,20 +49,23 @@ router.get('/courses', (req, res) => {
     ...r,
     required_roles: parseJson(r.required_roles, []),
     required_departments: parseJson(r.required_departments, []),
+    // The current test was written against an older document revision.
+    sop_test_stale: !!(r.sop_id && r.has_current_test && r.sop_training_revision && r.test_sop_revision && r.test_sop_revision !== r.sop_training_revision),
   })));
 });
 
 router.post('/courses', (req, res) => {
   const db = getDb();
-  const { code, title, category, description, sop_id, retrain_months, required_roles, required_departments, has_test, passing_score, active } = req.body;
+  const { code, title, category, description, sop_id, retrain_months, required_roles, required_departments, has_test, passing_score, active, retrain_on_doc_change } = req.body;
   if (!title) return res.status(400).json({ error: 'title is required' });
   const id = uuid();
   db.prepare(`INSERT INTO training_courses
-    (id, code, title, category, description, sop_id, retrain_months, required_roles, required_departments, has_test, passing_score, active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, code, title, category, description, sop_id, retrain_months, required_roles, required_departments, has_test, passing_score, active, retrain_on_doc_change)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, code || null, title, category || 'GMP', description || null, sop_id || null,
     retrain_months || null, JSON.stringify(required_roles || []), JSON.stringify(required_departments || []),
-    has_test ? 1 : 0, passing_score ?? 80, active === undefined ? 1 : (active ? 1 : 0));
+    has_test ? 1 : 0, passing_score ?? 80, active === undefined ? 1 : (active ? 1 : 0),
+    retrain_on_doc_change === undefined ? 1 : (retrain_on_doc_change ? 1 : 0));
   logAudit(req.user, 'training_course_created', 'training_course', id, { title }, null, null, title);
   res.status(201).json(db.prepare('SELECT * FROM training_courses WHERE id = ?').get(id));
 });
@@ -71,14 +76,15 @@ router.put('/courses/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const b = req.body;
   db.prepare(`UPDATE training_courses SET code=?, title=?, category=?, description=?, sop_id=?, retrain_months=?,
-    required_roles=?, required_departments=?, has_test=?, passing_score=?, active=?, updated_at=datetime('now') WHERE id=?`).run(
+    required_roles=?, required_departments=?, has_test=?, passing_score=?, active=?, retrain_on_doc_change=?, updated_at=datetime('now') WHERE id=?`).run(
     b.code ?? existing.code, b.title || existing.title, b.category || existing.category, b.description ?? existing.description,
-    b.sop_id ?? existing.sop_id, b.retrain_months !== undefined ? (b.retrain_months || null) : existing.retrain_months,
+    b.sop_id !== undefined ? (b.sop_id || null) : existing.sop_id, b.retrain_months !== undefined ? (b.retrain_months || null) : existing.retrain_months,
     b.required_roles !== undefined ? JSON.stringify(b.required_roles) : existing.required_roles,
     b.required_departments !== undefined ? JSON.stringify(b.required_departments) : existing.required_departments,
     b.has_test !== undefined ? (b.has_test ? 1 : 0) : existing.has_test,
     b.passing_score ?? existing.passing_score,
-    b.active !== undefined ? (b.active ? 1 : 0) : existing.active, req.params.id);
+    b.active !== undefined ? (b.active ? 1 : 0) : existing.active,
+    b.retrain_on_doc_change !== undefined ? (b.retrain_on_doc_change ? 1 : 0) : existing.retrain_on_doc_change, req.params.id);
   logAudit(req.user, 'training_course_updated', 'training_course', req.params.id, { title: b.title || existing.title }, null, null, b.title || existing.title);
   res.json(db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id));
 });
@@ -108,21 +114,32 @@ function supersedeOlder(db, employeeName, courseId, keepId) {
     WHERE id != ? AND course_id = ? AND LOWER(employee_name) = LOWER(?)`).run(keepId, courseId, employeeName);
 }
 
+// The revision of a course's linked document that current training must reflect.
+function courseTrainingRevision(db, courseId) {
+  if (!courseId) return null;
+  const c = db.prepare('SELECT sop_id FROM training_courses WHERE id = ?').get(courseId);
+  if (!c?.sop_id) return null;
+  const d = db.prepare('SELECT training_revision, revision FROM sop_documents WHERE id = ?').get(c.sop_id);
+  return d?.training_revision || d?.revision || null;
+}
+
 function insertCompletion(db, body) {
   const id = uuid();
   const completion = body.completion_date || (body.status === 'completed' ? (body.training_date || new Date().toISOString().slice(0, 10)) : null);
   const next_due = dueDateFor(db, body.course_id, completion);
+  // Stamp the document revision this completion was trained against.
+  const sopRevision = body.sop_revision || courseTrainingRevision(db, body.course_id);
   db.prepare(`INSERT INTO training_records
     (id, employee_name, employee_id, employee_user_id, training_topic, course_id, sop_id, trainer, method,
-     training_date, completion_date, status, passed, score, next_due_date, certificate_url, document_url, gdrive_url, test_attempt_id, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+     training_date, completion_date, status, passed, score, next_due_date, certificate_url, document_url, gdrive_url, test_attempt_id, notes, sop_revision)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, body.employee_name, body.employee_id || null, body.employee_user_id || null,
     body.training_topic || body.course_title || '', body.course_id || null, body.sop_id || null,
     body.trainer || null, body.method || null,
     body.training_date || new Date().toISOString().slice(0, 10), completion,
     body.status || (completion ? 'completed' : 'scheduled'),
     body.passed === undefined ? null : (body.passed ? 1 : 0), body.score ?? null, next_due,
-    body.certificate_url || null, body.document_url || null, body.gdrive_url || null, body.test_attempt_id || null, body.notes || null);
+    body.certificate_url || null, body.document_url || null, body.gdrive_url || null, body.test_attempt_id || null, body.notes || null, sopRevision);
   if (body.status === 'completed' || completion) supersedeOlder(db, body.employee_name, body.course_id, id);
   return db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
 }
@@ -171,6 +188,10 @@ router.get('/matrix', (_req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const soon = addMonths(today, 1);
 
+  // Current training-revision for each course's linked document.
+  const docRev = {};
+  for (const d of db.prepare('SELECT id, training_revision, revision FROM sop_documents').all()) docRev[d.id] = d.training_revision || d.revision || null;
+
   const ovBy = (courseId, userId) => overrides.find(o => o.course_id === courseId && o.user_id === userId);
   const cell = (user, course) => {
     const ov = ovBy(course.id, user.id);
@@ -181,14 +202,18 @@ router.get('/matrix', (_req, res) => {
       r.course_id === course.id &&
       (r.employee_user_id === user.id || r.employee_name?.toLowerCase() === user.name.toLowerCase()));
     if (!rec) return { state: 'missing' };
+    // The linked document changed materially since this person trained.
+    const needRev = course.sop_id ? docRev[course.sop_id] : null;
+    const docOutdated = course.retrain_on_doc_change && course.sop_id && rec.sop_revision && needRev && rec.sop_revision !== needRev;
     let state = 'current';
     if (rec.next_due_date && rec.next_due_date < today) state = 'overdue';
+    else if (docOutdated) state = 'outdated';
     else if (rec.next_due_date && rec.next_due_date <= soon) state = 'due_soon';
-    return { state, completion_date: rec.completion_date, next_due_date: rec.next_due_date, record_id: rec.id, score: rec.score, passed: rec.passed };
+    return { state, completion_date: rec.completion_date, next_due_date: rec.next_due_date, record_id: rec.id, score: rec.score, passed: rec.passed, sop_revision: rec.sop_revision, current_revision: needRev };
   };
 
   const matrix = {};
-  const counts = { missing: 0, overdue: 0, due_soon: 0, current: 0 };
+  const counts = { missing: 0, overdue: 0, due_soon: 0, current: 0, outdated: 0 };
   for (const u of users) {
     matrix[u.id] = { user: { id: u.id, name: u.name, role: u.role, department: u.department }, cells: {} };
     for (const c of courses) {
@@ -215,6 +240,51 @@ router.get('/due', (_req, res) => {
     WHERE tr.superseded = 0 AND tr.status = 'completed' AND tr.next_due_date IS NOT NULL AND tr.next_due_date <= ?
     ORDER BY tr.next_due_date ASC`).all(soon);
   res.json(rows.map(r => ({ ...r, overdue: r.next_due_date < today })));
+});
+
+// ── DOCUMENT LINKAGE ──────────────────────────────────────────────────────────
+// "What changed since you last trained." Release-notes feed for a course's linked
+// document — versions newer than `since` (a revision), or the trainee's last
+// completion via `record_id`. Marks minor edits so the UI can de-emphasize them.
+router.get('/courses/:id/changes', (req, res) => {
+  const db = getDb();
+  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  if (!course.sop_id) return res.json({ changes: [], current_revision: null });
+
+  const doc = db.prepare('SELECT training_revision, revision, title, doc_number FROM sop_documents WHERE id = ?').get(course.sop_id);
+  const current = doc?.training_revision || doc?.revision || null;
+
+  let since = req.query.since || null;
+  if (!since && req.query.record_id) {
+    const rec = db.prepare('SELECT sop_revision FROM training_records WHERE id = ?').get(req.query.record_id);
+    since = rec?.sop_revision || null;
+  }
+
+  const versions = db.prepare('SELECT revision, change_summary, changed_by, created_at, minor FROM sop_versions WHERE sop_id = ? ORDER BY created_at ASC').all(course.sop_id);
+  let list = versions;
+  if (since) {
+    let sinceAt = null;
+    for (const v of versions) if (v.revision === since) sinceAt = v.created_at;
+    list = sinceAt ? versions.filter(v => v.created_at > sinceAt) : versions;
+  }
+  const changes = list.slice().reverse().map(v => ({ revision: v.revision, summary: v.change_summary, by: v.changed_by, at: v.created_at, minor: !!v.minor }));
+  res.json({
+    document: { title: doc?.title, doc_number: doc?.doc_number },
+    current_revision: current, since,
+    up_to_date: since ? since === current : null,
+    changes,
+  });
+});
+
+// Reverse link: which trainings depend on a document (for the Document Registry,
+// so an author knows a material edit will trigger retraining).
+router.get('/by-document/:sopId', (req, res) => {
+  const db = getDb();
+  const courses = db.prepare('SELECT id, code, title, retrain_on_doc_change FROM training_courses WHERE sop_id = ? AND active = 1 ORDER BY title').all(req.params.sopId);
+  const completions = db.prepare(`SELECT COUNT(DISTINCT tr.id) c FROM training_records tr JOIN training_courses c ON tr.course_id = c.id
+    WHERE c.sop_id = ? AND c.retrain_on_doc_change = 1 AND tr.superseded = 0 AND tr.status = 'completed'`).get(req.params.sopId).c;
+  res.json({ courses, count: courses.length, completions });
 });
 
 // ── TESTS ────────────────────────────────────────────────────────────────────
@@ -244,10 +314,11 @@ router.put('/courses/:id/test', (req, res) => {
   const prev = db.prepare('SELECT MAX(version) v FROM training_tests WHERE course_id = ?').get(req.params.id);
   const version = (prev?.v || 0) + 1;
   const testId = uuid();
+  const sopRevision = courseTrainingRevision(db, req.params.id);
   const tx = db.transaction(() => {
     db.prepare('UPDATE training_tests SET is_current = 0 WHERE course_id = ?').run(req.params.id);
-    db.prepare('INSERT INTO training_tests (id, course_id, version, title, passing_score, is_current) VALUES (?, ?, ?, ?, ?, 1)')
-      .run(testId, req.params.id, version, title || `${course.title} Test`, passing_score ?? course.passing_score);
+    db.prepare('INSERT INTO training_tests (id, course_id, version, title, passing_score, is_current, sop_revision) VALUES (?, ?, ?, ?, ?, 1, ?)')
+      .run(testId, req.params.id, version, title || `${course.title} Test`, passing_score ?? course.passing_score, sopRevision);
     const insQ = db.prepare('INSERT INTO training_questions (id, test_id, position, type, prompt, options, correct_answer, points) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     questions.forEach((q, i) => insQ.run(uuid(), testId, i, q.type || 'multiple_choice', q.prompt, JSON.stringify(q.options || []), String(q.correct_answer ?? ''), q.points ?? 1));
     db.prepare("UPDATE training_courses SET has_test = 1, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
@@ -268,8 +339,8 @@ router.post('/courses/:id/test/generate', async (req, res) => {
 
   let sopText = '';
   if (course.sop_id) {
-    const doc = db.prepare('SELECT content, description FROM sop_documents WHERE id = ?').get(course.sop_id);
-    sopText = doc?.content || doc?.description || '';
+    const doc = db.prepare('SELECT description FROM sop_documents WHERE id = ?').get(course.sop_id);
+    sopText = doc?.description || '';
   }
   try {
     const questions = await generateTestQuestions({ title: course.title, description: course.description, sopText, count: req.body?.count });

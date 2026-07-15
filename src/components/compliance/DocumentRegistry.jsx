@@ -135,10 +135,12 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
     review_due: initial?.review_due || '',
     content: initial?.description || '',
     _change_summary: '',
+    _minor: false,
   }));
   const [preview, setPreview] = useState(false);
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const { data: trainingImpact } = useApiGet(`/training/by-document/${initial?.id || 'none'}`, [initial?.id]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -221,9 +223,21 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
         </div>
 
         {initial?.id && (
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Change summary (for version history)</label>
-            <input value={form._change_summary} onChange={e => set('_change_summary', e.target.value)} placeholder="e.g. Updated cleaning frequency" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          <div className="space-y-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Change summary (for version history)</label>
+              <input value={form._change_summary} onChange={e => set('_change_summary', e.target.value)} placeholder="e.g. Updated cleaning frequency" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            {trainingImpact?.count > 0 && (
+              <div className="text-xs bg-orange-50 border border-orange-200 rounded-lg p-2.5 text-orange-800">
+                <span className="font-medium">{trainingImpact.count} training{trainingImpact.count === 1 ? '' : 's'}</span> {trainingImpact.count === 1 ? 'depends' : 'depend'} on this document
+                {trainingImpact.completions > 0 && <> — saving a material change will flag <span className="font-medium">{trainingImpact.completions} completed record{trainingImpact.completions === 1 ? '' : 's'}</span> for retraining.</>}
+                <label className="flex items-center gap-2 mt-1.5 text-gray-700">
+                  <input type="checkbox" checked={form._minor} onChange={e => set('_minor', e.target.checked)} />
+                  Minor edit (typo/formatting) — do not trigger retraining
+                </label>
+              </div>
+            )}
           </div>
         )}
 
