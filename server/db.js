@@ -1098,6 +1098,22 @@ function runMigrations() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_chat_embeddings_channel ON chat_message_embeddings(channel_id);
+    CREATE TABLE IF NOT EXISTS chat_message_translations (
+      message_id TEXT NOT NULL,
+      lang TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (message_id, lang)
+    );
+    CREATE TABLE IF NOT EXISTS chat_mentions (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_mentions_user ON chat_mentions(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_chat_mentions_message ON chat_mentions(message_id);
   `);
 
   // Full-text keyword search over messages (Comms Phase 3). FTS5 may be absent

@@ -5,7 +5,7 @@ import { getDb } from '../db.js';
 import { emitToChannel, emitChannelsChanged } from '../realtime.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
-import { aiEnabled, summarizeChat } from '../ai.js';
+import { aiEnabled, summarizeChat, translateText } from '../ai.js';
 
 const router = Router();
 
@@ -14,7 +14,7 @@ const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSiz
 
 // Feature flags for the client (uploads / semantic / ask require optional config).
 router.get('/status', (_req, res) => {
-  res.json({ storage: storageEnabled(), semantic: voyageEnabled(), ask: aiEnabled() && voyageEnabled() });
+  res.json({ storage: storageEnabled(), semantic: voyageEnabled(), ask: aiEnabled() && voyageEnabled(), translate: aiEnabled() });
 });
 
 // ── Embeddings (Phase 4) ──────────────────────────────────────────────────────
@@ -294,6 +294,7 @@ router.put('/messages/:id', async (req, res) => {
   const body = (req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Message body is required' });
   db.prepare("UPDATE chat_messages SET body = ?, edited_at = datetime('now') WHERE id = ?").run(body, ctx.m.id);
+  db.prepare('DELETE FROM chat_message_translations WHERE message_id = ?').run(ctx.m.id); // stale after edit
   const updated = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
   emitToChannel(ctx.channel.id, 'message:update', updated);
   embedMessage(db, ctx.m.id, ctx.channel.id, body); // re-embed edited text
@@ -310,8 +311,29 @@ router.delete('/messages/:id', async (req, res) => {
   for (const a of atts) deleteObject(a.storage_key);
   db.prepare('DELETE FROM chat_attachments WHERE message_id = ?').run(ctx.m.id);
   db.prepare('DELETE FROM chat_message_embeddings WHERE message_id = ?').run(ctx.m.id);
+  db.prepare('DELETE FROM chat_message_translations WHERE message_id = ?').run(ctx.m.id);
   emitToChannel(ctx.channel.id, 'message:update', await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
   res.json({ ok: true });
+});
+
+// ── Translation (on-display) ──────────────────────────────────────────────────
+// Translate a message to the viewer's language, caching the result so repeat
+// views (and other viewers) are free. Access-checked; AI-gated.
+router.post('/messages/:id/translate', async (req, res) => {
+  const ctx = ownedMessage(req, res); if (!ctx) return;
+  if (!aiEnabled()) return res.status(503).json({ error: 'Translation is not configured on this server.' });
+  const lang = req.body?.lang === 'en' ? 'en' : 'es';
+  const db = getDb();
+  if (ctx.m.deleted_at || !ctx.m.body) return res.status(400).json({ error: 'Nothing to translate' });
+  const cached = db.prepare('SELECT text FROM chat_message_translations WHERE message_id = ? AND lang = ?').get(ctx.m.id, lang);
+  if (cached) return res.json({ lang, text: cached.text, cached: true });
+  try {
+    const [text] = await translateText([ctx.m.body], lang);
+    db.prepare('INSERT OR REPLACE INTO chat_message_translations (message_id, lang, text) VALUES (?, ?, ?)').run(ctx.m.id, lang, text);
+    res.json({ lang, text });
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Translation failed' });
+  }
 });
 
 // ── Reactions ─────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages } from 'lucide-react';
 
 const EMOJI = ['👍', '✅', '❤️', '😄', '🎉', '👀', '🙏', '🔥'];
 const fmtTime = (iso) => { const d = new Date(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z'); return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
@@ -82,11 +82,35 @@ function NewChannelModal({ users, me, onClose, onCreated }) {
   );
 }
 
-function Message({ m, me, onReact, onUnreact, onEdit, onDelete }) {
+function Message({ m, me, onReact, onUnreact, onEdit, onDelete, canTranslate, viewerLang, onTranslate, autoTranslate }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.body || '');
+  const [translated, setTranslated] = useState(null);
+  const [translating, setTranslating] = useState(false);
   const mine = m.user_id === me.id;
+
+  const doTranslate = useCallback(async () => {
+    if (translating || translated) return;
+    setTranslating(true);
+    try { setTranslated(await onTranslate(m, viewerLang)); } catch { /* ignore */ }
+    finally { setTranslating(false); }
+  }, [translating, translated, onTranslate, m, viewerLang]);
+
+  // Channel-level "translate everything" + language changes. Keyed only on the
+  // toggle and language so a manual translate (which mutates local state) is not
+  // wiped. Auto on → translate; auto off / lang change → clear so the next
+  // request uses the current language.
+  useEffect(() => {
+    let cancelled = false;
+    if (autoTranslate && canTranslate && m.body && !m.deleted) {
+      (async () => { try { const t = await onTranslate(m, viewerLang); if (!cancelled) setTranslated(t); } catch { /* ignore */ } })();
+    } else {
+      setTranslated(null);
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoTranslate, viewerLang]);
 
   return (
     <div className="group flex gap-2 px-4 py-1.5 hover:bg-gray-50">
@@ -108,7 +132,17 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete }) {
             <button onClick={() => setEditing(false)} className="text-xs text-gray-400">Cancel</button>
           </div>
         ) : (
-          m.body && <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{m.body}</p>
+          m.body && (
+            <div>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{translated ?? m.body}</p>
+              {translating && <span className="text-[11px] text-gray-400 italic">Translating…</span>}
+              {translated && (
+                <button onClick={() => setTranslated(null)} className="text-[11px] text-powder-600 hover:underline">
+                  Translated to {viewerLang === 'en' ? 'English' : 'Spanish'} · Show original
+                </button>
+              )}
+            </div>
+          )
         )}
         {!m.deleted && m.attachments?.length > 0 && (
           <div className="flex flex-wrap gap-2">
@@ -132,6 +166,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete }) {
       {!m.deleted && (
         <div className="relative opacity-0 group-hover:opacity-100 flex items-start gap-1 shrink-0">
           <button onClick={() => setShowEmoji(s => !s)} className="p-1 text-gray-400 hover:text-gray-600" title="React"><Smile size={14} /></button>
+          {canTranslate && m.body && !translated && <button onClick={doTranslate} className="p-1 text-gray-400 hover:text-gray-600" title="Translate"><Languages size={13} /></button>}
           {mine && <button onClick={() => { setDraft(m.body || ''); setEditing(true); }} className="p-1 text-gray-400 hover:text-gray-600" title="Edit"><Edit2 size={13} /></button>}
           {(mine) && <button onClick={() => onDelete(m)} className="p-1 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
           {showEmoji && (
@@ -152,6 +187,9 @@ export default function CommsView({ user, onExit }) {
   const storageOn = !!commsStatus?.storage;
   const semanticOn = !!commsStatus?.semantic;
   const askOn = !!commsStatus?.ask;
+  const translateOn = !!commsStatus?.translate;
+  const [viewerLang, setViewerLang] = useState(() => localStorage.getItem('op_lang') || 'en');
+  const [autoTranslate, setAutoTranslate] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState('');
@@ -279,6 +317,12 @@ export default function CommsView({ user, onExit }) {
       socketRef.current.emit('typing', activeId);
     }
   };
+
+  const translateMessage = useCallback(async (m, lang) => {
+    const r = await apiPost(`/comms/messages/${m.id}/translate`, { lang });
+    return r.text;
+  }, []);
+  const setLang = (l) => { setViewerLang(l); localStorage.setItem('op_lang', l); };
 
   const openDm = async (u) => {
     const ch = await apiPost(`/comms/dm/${u.id}`, {});
@@ -428,10 +472,24 @@ export default function CommsView({ user, onExit }) {
                 {active.kind === 'dm' ? <MessageSquare size={16} className="text-gray-400" /> : active.kind === 'private' ? <Lock size={16} className="text-gray-400" /> : <Hash size={16} className="text-gray-400" />}
                 <span className="font-semibold text-gray-900">{active.name}</span>
                 {active.topic && <span className="text-xs text-gray-400 truncate">— {active.topic}</span>}
+                {translateOn && (
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <button onClick={() => setAutoTranslate(v => !v)} title="Translate all messages"
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border ${autoTranslate ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                      <Languages size={13} /> Translate
+                    </button>
+                    <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+                      {['en', 'es'].map(l => (
+                        <button key={l} onClick={() => setLang(l)} className={`px-2 py-1 text-[10px] font-bold ${viewerLang === l ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>{l.toUpperCase()}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div ref={scrollRef} className="flex-1 overflow-y-auto py-2">
                 {messages.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello 👋</p>}
-                {messages.map(m => <Message key={m.id} m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg} />)}
+                {messages.map(m => <Message key={m.id} m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg}
+                  canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} autoTranslate={autoTranslate} />)}
               </div>
               <div className="border-t border-gray-200 p-3 shrink-0">
                 <div className="h-4 px-1 mb-0.5 text-[11px] text-gray-400 italic">

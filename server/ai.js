@@ -129,6 +129,28 @@ export async function translateToSpanish(items) {
   return out.map(s => String(s ?? ''));
 }
 
+// Translate strings to a target language ('en' or 'es'), auto-detecting the
+// source. Used for on-display chat translation. Returns same-length array.
+export async function translateText(items, targetLang = 'es') {
+  const c = getClient();
+  if (!c) throw new Error('AI is not configured');
+  const list = (Array.isArray(items) ? items : [items]).map(s => String(s ?? ''));
+  if (list.every(s => !s.trim())) return list;
+  const langName = targetLang === 'en' ? 'English' : 'Latin American Spanish';
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 4096,
+    system: `You are a translator for a food-manufacturing team chat. Translate each given string into natural ${langName}, auto-detecting the source language. If a string is already in ${langName}, return it unchanged. Preserve @mentions, numbers, URLs, emoji, and Markdown. Return ONLY a JSON array of translated strings in the same order and length as the input — no commentary.`,
+    messages: [{ role: 'user', content: JSON.stringify(list) }],
+    output_config: { format: { type: 'json_schema', schema: { type: 'array', items: { type: 'string' } } } },
+  });
+  const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  let out;
+  try { out = JSON.parse(text); } catch { throw new Error('Translation returned an unexpected response'); }
+  if (!Array.isArray(out) || out.length !== list.length) throw new Error('Translation length mismatch');
+  return out.map(s => String(s ?? ''));
+}
+
 // ── Read-only query assistant ─────────────────────────────────────────────────
 const ASK_SYSTEM = `You are a read-only analytics assistant for the "Powder Ops" food-safety and production management system (a SQLite database). Answer questions about production, KPIs, compliance, training, and overall system usage by querying the database — this is for an operator or executive who may be reading on a phone.
 
