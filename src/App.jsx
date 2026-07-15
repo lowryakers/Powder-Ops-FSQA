@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet } from './hooks/useApi';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
@@ -7,6 +7,7 @@ import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
 import ComponentKiosk from './components/kiosk/ComponentKiosk.jsx';
+import AiAskPanel from './components/compliance/AiAskPanel.jsx';
 import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
 import EquipmentPanel from './components/compliance/EquipmentPanel.jsx';
 import PMPanel from './components/compliance/PMPanel.jsx';
@@ -94,6 +95,7 @@ const NAV_GROUPS = [
   {
     label: 'System',
     items: [
+      { id: 'ask-ai', label: 'Ask AI', icon: Sparkles, adminOnly: true, aiOnly: true },
       { id: 'audit', label: 'Audit Log', icon: ScrollText },
       { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
     ],
@@ -101,6 +103,8 @@ const NAV_GROUPS = [
 ];
 
 function Sidebar({ activeTab, setActiveTab, user, onClose, badges }) {
+  const { data: aiStatus } = useApiGet('/ai/status');
+  const aiOn = !!aiStatus?.enabled;
   const [openGroups, setOpenGroups] = useState(() => {
     const initial = {};
     NAV_GROUPS.forEach(g => { initial[g.label] = true; });
@@ -130,6 +134,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges }) {
         {NAV_GROUPS.map((group) => {
           const visibleItems = group.items.filter(i => {
             if (i.adminOnly && user.role !== 'admin') return false;
+            if (i.aiOnly && !aiOn) return false;
             return canViewModule(user, i.id);
           });
           if (visibleItems.length === 0) return null;
@@ -542,6 +547,7 @@ function App() {
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
           {resolvedTab === 'dashboard' && <ComplianceDashboard />}
+          {resolvedTab === 'ask-ai' && <AiAskPanel />}
           {resolvedTab === 'operator' && <OperatorView lang={opLang} />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}
           {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}

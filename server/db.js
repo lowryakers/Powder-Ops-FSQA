@@ -8,6 +8,10 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'compl
 
 let db;
 
+export function getDbPath() {
+  return DB_PATH;
+}
+
 export function getDb() {
   if (!db) {
     mkdirSync(path.dirname(DB_PATH), { recursive: true });
