@@ -314,6 +314,29 @@ function MobileBottomNav({ activeTab, setActiveTab, effectiveModules }) {
   );
 }
 
+function InstallPrompt() {
+  const [deferred, setDeferred] = useState(null);
+  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem('install_dismissed') === '1');
+  useEffect(() => {
+    const h = (e) => { e.preventDefault(); setDeferred(e); };
+    window.addEventListener('beforeinstallprompt', h);
+    return () => window.removeEventListener('beforeinstallprompt', h);
+  }, []);
+  if (!deferred || dismissed) return null;
+  return (
+    <div className="fixed bottom-20 md:bottom-4 right-4 z-50 bg-white border border-gray-200 shadow-lg rounded-xl p-3 flex items-center gap-3 max-w-xs">
+      <div className="h-9 w-9 bg-powder-600 rounded-lg flex items-center justify-center flex-shrink-0"><Shield size={18} className="text-white" /></div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-900">Install Powder Ops</p>
+        <p className="text-xs text-gray-500">Add to your home screen.</p>
+      </div>
+      <button onClick={async () => { deferred.prompt(); await deferred.userChoice.catch(() => {}); setDeferred(null); }}
+        className="px-3 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700">Install</button>
+      <button onClick={() => { setDismissed(true); sessionStorage.setItem('install_dismissed', '1'); }} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+    </div>
+  );
+}
+
 function App() {
   const { user, loading, login, loginWithToken, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -620,6 +643,7 @@ function App() {
 
       <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} effectiveModules={effectiveModules} />
       <UpdateBanner />
+      <InstallPrompt />
     </div>
   );
 }
