@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, Upload } from 'lucide-react';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
 function urlBase64ToUint8Array(base64String) {
@@ -241,6 +241,8 @@ export default function CommsView({ user, onExit }) {
   const lastTypeSent = useRef(0);
   const fileInputRef = useRef(null);
   const composerRef = useRef(null);
+  const slackZipRef = useRef(null);
+  const [importing, setImporting] = useState(false);
 
   const list = channels || [];
   const publicCh = list.filter(c => c.kind === 'public');
@@ -411,6 +413,21 @@ export default function CommsView({ user, onExit }) {
     finally { setPushBusy(false); }
   };
 
+  const onImportSlack = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const s = await apiUpload('/comms/import/slack', fd);
+      alert(`Slack import complete:\n• ${s.messagesImported} messages\n• ${s.channelsCreated} new channels\n• ${s.usersCreated} new users\n• ${s.skipped} skipped`);
+      refreshChannels();
+    } catch (err) { alert(err.message || 'Import failed'); }
+    finally { setImporting(false); }
+  };
+
   const openDm = async (u) => {
     const ch = await apiPost(`/comms/dm/${u.id}`, {});
     setShowDmPicker(false); setDmSearch('');
@@ -483,6 +500,15 @@ export default function CommsView({ user, onExit }) {
           )}
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {user.role === 'admin' && (
+            <>
+              <input ref={slackZipRef} type="file" accept=".zip" className="hidden" onChange={onImportSlack} />
+              <button onClick={() => slackZipRef.current?.click()} disabled={importing}
+                title="Import Slack export (.zip)" className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 disabled:opacity-50">
+                {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+              </button>
+            </>
+          )}
           {pushOn && (
             <button onClick={togglePush} disabled={pushBusy}
               title={pushSubscribed ? 'Notifications on — click to turn off' : 'Enable push notifications'}

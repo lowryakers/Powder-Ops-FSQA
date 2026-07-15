@@ -1161,6 +1161,10 @@ function runMigrations() {
   // Password auth (replacing PIN). scrypt hash stored as "salt:hash" hex.
   addColumnIfMissing('users', 'password_hash', 'TEXT');
 
+  // Slack import: original message ts for idempotent re-imports.
+  addColumnIfMissing('chat_messages', 'external_id', 'TEXT');
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_external ON chat_messages(channel_id, external_id)'); } catch { /* ignore */ }
+
   addColumnIfMissing('audit_log', 'actor_id', 'TEXT');
   addColumnIfMissing('audit_log', 'actor_role', 'TEXT');
   addColumnIfMissing('audit_log', 'actor_department', 'TEXT');

@@ -66,9 +66,17 @@ message for an audit trail. Membership/access on the source channel must be resp
     comms header. **Env:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (generate once with
     `npx web-push generate-vapid-keys`).
   - **Capacitor** later only if App/Play Store listings are wanted (PWA covers install + push now).
-  - **STILL TODO — Slack history importer:** needs the user's Slack export (.zip). Agreed: map authors to
-    existing users by **name** (not email). Open question parked here: switch auth **PIN → password** (or add
-    password) — imported users have no PIN, so decide before/at import.
+  - **Auth (DONE):** replaced PIN with **passwords** (scrypt in `server/api/users.js`; `users.password_hash`).
+    Login `{name,password}`; no password yet → `needs_password_setup`. `/set-password` (existing staff confirm
+    current PIN as a bridge, then PIN is cleared; imported/PIN-less users set directly); admin
+    `/:id/reset-password`. Biometric localStorage-credential replay removed. Min 8 chars.
+  - **Slack importer (DONE):** `server/slack-import.js` (adm-zip) + admin `POST /api/comms/import/slack` +
+    admin Upload button in the comms header. Maps authors to existing users **by display name** (creates
+    missing as active/password-less), get-or-creates public channels by name (merges into existing), imports
+    messages with threads (parent via `thread_ts`), reactions (common emoji shortcode→unicode, rest skipped),
+    converts `<@U>`/`<#C|x>`/`<url|label>` to `@name`/`#x`/`label (url)`, skips bots/joins. Idempotent via
+    `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
+    restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
 **Slack history importer (Phase 5) — confirmed shape:**
 - User will make all channels public before exporting so the Slack export captures everything.

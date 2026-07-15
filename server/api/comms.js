@@ -7,11 +7,15 @@ import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
 import { aiEnabled, summarizeChat, translateText } from '../ai.js';
 import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
+import { importSlackExport } from '../slack-import.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
 // Uploads are buffered in memory then streamed to R2. 25 MB/file, 10 files/msg.
 const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 10 } });
+// Slack export .zip can be large; buffer in memory up to 300 MB.
+const zipUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 300 * 1024 * 1024, files: 1 } });
 
 // Feature flags for the client (uploads / semantic / ask require optional config).
 router.get('/status', (_req, res) => {
@@ -504,6 +508,17 @@ router.post('/ask', async (req, res) => {
     res.json({ answer, sources });
   } catch (e) {
     res.status(502).json({ error: e.message || 'Ask failed' });
+  }
+});
+
+// ── Slack history import (Phase 5f, admin only) ───────────────────────────────
+router.post('/import/slack', requireRole('admin'), zipUpload.single('file'), async (req, res) => {
+  if (!req.file?.buffer) return res.status(400).json({ error: 'A Slack export .zip is required' });
+  try {
+    const summary = importSlackExport(req.file.buffer, req.user);
+    res.json(summary);
+  } catch (e) {
+    res.status(422).json({ error: e.message || 'Import failed. Is this a valid Slack export .zip?' });
   }
 });
 
