@@ -160,6 +160,7 @@ export const QMS_TYPES = {
     primaryField: 'item_name',
     dateLabel: 'Date',
     kioskPath: '/kiosk/components',
+    kioskTagline: 'Scan to Sign In / Out',
     fields: [
       { key: 'direction', label: 'Direction', type: 'select', options: ['Out', 'In'] },
       { key: 'item_name', label: 'Item Name', type: 'text' },
@@ -196,6 +197,7 @@ export const QMS_TYPES = {
     primaryField: 'tool_id',
     dateLabel: 'Date',
     kioskPath: '/kiosk/knife',
+    kioskTagline: 'Scan to Sign In / Out',
     // One record per tool: registered (Available), checked out (Issued), or
     // retired (Decommissioned). Combines the master list + accountability log.
     statuses: [

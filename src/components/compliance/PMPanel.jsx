@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X, ListChecks } from 'lucide-react';
+import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X, ListChecks, QrCode } from 'lucide-react';
+import KioskQrModal from '../kiosk/KioskQrModal';
 import FileUpload from '../FileUpload';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
@@ -666,6 +667,7 @@ export default function PMPanel() {
   const [search, setSearch] = useState('');
   const [expandedArchive, setExpandedArchive] = useState(null);
   const [statusFilter, setStatusFilter] = useState(null);
+  const [showQr, setShowQr] = useState(false);
 
   const handleCreateWO = async (form) => {
     await apiPost('/pm/work-orders', form);
@@ -750,11 +752,24 @@ export default function PMPanel() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-gray-900">Task Center</h2>
-        <button onClick={() => setShowWOForm(true)}
-          className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
-          <Plus size={16} /> New Work Order
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowQr(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
+            <QrCode size={15} /> Kiosk QR
+          </button>
+          <button onClick={() => setShowWOForm(true)}
+            className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+            <Plus size={16} /> New Work Order
+          </button>
+        </div>
       </div>
+
+      {showQr && (
+        <KioskQrModal
+          cfg={{ kioskPath: '/submit', label: 'Submit a Work Order', formCode: 'Maintenance Request', kioskTagline: 'Scan to Submit a Work Order', kioskBlurb: 'Print and post this QR where staff report equipment issues. Scanning it opens the work-order form — no login required.' }}
+          onClose={() => setShowQr(false)}
+        />
+      )}
 
       {/* Metrics */}
       {!metricsLoading && metrics && (
