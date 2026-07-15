@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { aiEnabled, generateTestQuestions } from '../ai.js';
 
 const router = Router();
 
@@ -254,6 +255,30 @@ router.put('/courses/:id/test', (req, res) => {
   tx();
   logAudit(req.user, 'training_test_updated', 'training_course', req.params.id, { version }, null, null, course.title);
   res.json({ id: testId, version });
+});
+
+// AI-draft quiz questions for a course (admin/supervisor). Returns unsaved
+// questions for the author to review/edit before publishing via PUT .../test.
+router.post('/courses/:id/test/generate', async (req, res) => {
+  if (req.user?.role !== 'admin' && req.user?.role !== 'supervisor') return res.status(403).json({ error: 'Insufficient permissions' });
+  if (!aiEnabled()) return res.status(503).json({ error: 'AI features are not configured on this server.' });
+  const db = getDb();
+  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+
+  let sopText = '';
+  if (course.sop_id) {
+    const doc = db.prepare('SELECT content, description FROM sop_documents WHERE id = ?').get(course.sop_id);
+    sopText = doc?.content || doc?.description || '';
+  }
+  try {
+    const questions = await generateTestQuestions({ title: course.title, description: course.description, sopText, count: req.body?.count });
+    if (!questions.length) return res.status(502).json({ error: 'The model did not return any usable questions. Try again.' });
+    logAudit(req.user, 'training_test_generated', 'training_course', req.params.id, { count: questions.length, model: 'ai' }, null, null, course.title);
+    res.json({ questions });
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'AI generation failed' });
+  }
 });
 
 // Submit a test attempt: auto-grade, and on pass record a completion.

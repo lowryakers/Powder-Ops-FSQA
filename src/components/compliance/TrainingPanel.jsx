@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react';
-import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { useState, useMemo, useEffect } from 'react';
+import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion } from 'lucide-react';
 
 const CATEGORIES = ['GMP', 'Food Safety', 'HACCP', 'Allergen', 'Food Defense', 'Sanitation', 'Safety', 'Onboarding', 'Other'];
 const ROLES = ['admin', 'supervisor', 'operator', 'auditor'];
@@ -258,6 +258,167 @@ function CourseModal({ initial, onClose, onSaved }) {
   );
 }
 
+// ── Test editor ───────────────────────────────────────────────────────────────
+const blankQuestion = () => ({ type: 'multiple_choice', prompt: '', options: ['', ''], correct_answer: '0', points: 1 });
+
+function QuestionEditor({ q, onChange, onRemove, index }) {
+  const set = (patch) => onChange({ ...q, ...patch });
+  const setType = (type) => {
+    if (type === 'true_false') set({ type, options: ['True', 'False'], correct_answer: 'true' });
+    else if (type === 'short_answer') set({ type, options: [], correct_answer: '' });
+    else set({ type, options: q.options.length >= 2 ? q.options : ['', ''], correct_answer: '0' });
+  };
+  const setOption = (i, v) => set({ options: q.options.map((o, j) => j === i ? v : o) });
+  const addOption = () => set({ options: [...q.options, ''] });
+  const removeOption = (i) => {
+    const options = q.options.filter((_, j) => j !== i);
+    let correct = parseInt(q.correct_answer, 10);
+    if (correct === i) correct = 0; else if (correct > i) correct -= 1;
+    set({ options, correct_answer: String(correct) });
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 p-3 space-y-2 bg-gray-50">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-semibold text-gray-400">Q{index + 1}</span>
+        <select value={q.type} onChange={e => setType(e.target.value)} className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white">
+          <option value="multiple_choice">Multiple choice</option>
+          <option value="true_false">True / False</option>
+          <option value="short_answer">Short answer</option>
+        </select>
+        <button type="button" onClick={onRemove} className="ml-auto p-1 text-gray-400 hover:text-red-500 rounded"><Trash2 size={14} /></button>
+      </div>
+      <textarea value={q.prompt} onChange={e => set({ prompt: e.target.value })} rows={2} placeholder="Question prompt…"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
+
+      {q.type === 'multiple_choice' && (
+        <div className="space-y-1.5">
+          {q.options.map((o, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input type="radio" name={`correct-${q._k}`} checked={String(q.correct_answer) === String(i)} onChange={() => set({ correct_answer: String(i) })} title="Mark correct" />
+              <input value={o} onChange={e => setOption(i, e.target.value)} placeholder={`Option ${i + 1}`} className="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white" />
+              {q.options.length > 2 && <button type="button" onClick={() => removeOption(i)} className="p-1 text-gray-300 hover:text-red-500"><X size={14} /></button>}
+            </div>
+          ))}
+          <button type="button" onClick={addOption} className="text-xs text-powder-600 hover:underline">+ Add option</button>
+        </div>
+      )}
+      {q.type === 'true_false' && (
+        <div className="flex gap-2">
+          {['true', 'false'].map(v => (
+            <button type="button" key={v} onClick={() => set({ correct_answer: v })}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border capitalize ${q.correct_answer === v ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-600 border-gray-300'}`}>{v}</button>
+          ))}
+          <span className="text-xs text-gray-400 self-center">← correct answer</span>
+        </div>
+      )}
+      {q.type === 'short_answer' && (
+        <input value={q.correct_answer} onChange={e => set({ correct_answer: e.target.value })} placeholder="Expected answer / keyword (auto-graded by match)"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
+      )}
+    </div>
+  );
+}
+
+function TestEditor({ course, aiEnabled, onClose, onSaved }) {
+  const [title, setTitle] = useState(`${course.title} Test`);
+  const [passing, setPassing] = useState(course.passing_score || 80);
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState('');
+  const withKeys = (arr) => arr.map((q, i) => ({ ...q, _k: q._k || `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}` }));
+
+  useEffect(() => {
+    let stale = false;
+    apiFetch(`/training/courses/${course.id}/test?authoring=1`)
+      .then(t => { if (!stale) { setTitle(t.title || `${course.title} Test`); setPassing(t.passing_score || 80); setQuestions(withKeys(t.questions || [])); } })
+      .catch(() => { /* no test yet */ })
+      .finally(() => { if (!stale) setLoading(false); });
+    return () => { stale = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course.id]);
+
+  const setQ = (i, q) => setQuestions(qs => qs.map((x, j) => j === i ? q : x));
+  const addQ = () => setQuestions(qs => withKeys([...qs, blankQuestion()]));
+  const removeQ = (i) => setQuestions(qs => qs.filter((_, j) => j !== i));
+
+  const generate = async () => {
+    setGenerating(true); setError('');
+    try {
+      const res = await apiPost(`/training/courses/${course.id}/test/generate`, { count: 5 });
+      setQuestions(qs => withKeys([...qs, ...(res.questions || [])]));
+    } catch (e) { setError(e.message || 'Generation failed'); }
+    finally { setGenerating(false); }
+  };
+
+  const save = async () => {
+    const clean = questions.filter(q => q.prompt.trim() && (q.type === 'short_answer' || q.options.filter(Boolean).length >= 2));
+    if (!clean.length) { setError('Add at least one complete question.'); return; }
+    setSaving(true); setError('');
+    try {
+      await apiPut(`/training/courses/${course.id}/test`, {
+        title, passing_score: passing,
+        questions: clean.map(({ _k, ...q }) => q), // eslint-disable-line no-unused-vars
+      });
+      onSaved();
+    } catch (e) { setError(e.message || 'Save failed'); setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center gap-2">
+            <FileQuestion size={18} className="text-powder-600" />
+            <h3 className="font-semibold text-gray-900">Test — {course.code ? `${course.code} · ` : ''}{course.title}</h3>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+
+        <div className="p-4 overflow-y-auto space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[180px]">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Test title</label>
+              <input value={title} onChange={e => setTitle(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            <div className="w-28">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Pass score (%)</label>
+              <input type="number" min="0" max="100" value={passing} onChange={e => setPassing(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            {aiEnabled && (
+              <button type="button" onClick={generate} disabled={generating}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50">
+                <Sparkles size={15} /> {generating ? 'Generating…' : 'Generate with AI'}
+              </button>
+            )}
+          </div>
+          {aiEnabled && <p className="text-xs text-gray-400 -mt-1">AI drafts questions from the course{course.sop_id ? ' and its linked document' : ''} — review and edit before saving.</p>}
+
+          {loading ? (
+            <div className="text-center py-8 text-gray-500 text-sm">Loading…</div>
+          ) : (
+            <div className="space-y-2">
+              {questions.map((q, i) => (
+                <QuestionEditor key={q._k} q={q} index={i} onChange={nq => setQ(i, nq)} onRemove={() => removeQ(i)} />
+              ))}
+              {questions.length === 0 && <p className="text-sm text-gray-500 text-center py-6">No questions yet. Add one, or generate a draft with AI.</p>}
+              <button type="button" onClick={addQ} className="inline-flex items-center gap-1.5 text-sm text-powder-600 hover:underline"><Plus size={14} /> Add question</button>
+            </div>
+          )}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+
+        <div className="flex items-center gap-2 p-4 border-t">
+          <button onClick={save} disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save test'}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Panel ─────────────────────────────────────────────────────────────────────
 export default function TrainingPanel() {
   const { user } = useAuth() || {};
@@ -267,10 +428,13 @@ export default function TrainingPanel() {
   const { data: due } = useApiGet('/training/due');
   const { data: records, refresh: refreshRecords } = useApiGet('/training');
   const { data: users } = useApiGet('/users');
+  const { data: aiStatus } = useApiGet('/ai/status');
+  const aiOn = !!aiStatus?.enabled;
   const [view, setView] = useState('matrix');
   const [importing, setImporting] = useState(false);
   const [completion, setCompletion] = useState(null); // {} = new
   const [course, setCourse] = useState(null);
+  const [testCourse, setTestCourse] = useState(null);
   const [search, setSearch] = useState('');
 
   const refreshAll = () => { refreshMatrix(); refreshCourses(); refreshRecords(); };
@@ -400,7 +564,12 @@ export default function TrainingPanel() {
                   <p className="font-semibold text-gray-900">{c.code ? `${c.code} — ` : ''}{c.title}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{c.category} · {freqLabel(c.retrain_months)}{c.has_current_test ? ' · has test' : ''}</p>
                 </div>
-                {canEdit && <button onClick={() => setCourse(c)} className="p-1.5 text-gray-400 hover:text-powder-600 hover:bg-gray-50 rounded-lg"><Edit2 size={14} /></button>}
+                {canEdit && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => setTestCourse(c)} title="Manage test" className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-powder-600 hover:bg-gray-50 rounded-lg"><FileQuestion size={13} /> Test</button>
+                    <button onClick={() => setCourse(c)} title="Edit course" className="p-1.5 text-gray-400 hover:text-powder-600 hover:bg-gray-50 rounded-lg"><Edit2 size={14} /></button>
+                  </div>
+                )}
               </div>
               {c.description && <p className="text-xs text-gray-600 mt-2 line-clamp-2">{c.description}</p>}
               <p className="text-[11px] text-gray-400 mt-2">
@@ -458,6 +627,7 @@ export default function TrainingPanel() {
       {importing && <ImportModal onClose={() => setImporting(false)} onDone={refreshAll} />}
       {completion && <CompletionModal initial={completion.id ? completion : null} courses={courses} users={users} onClose={() => setCompletion(null)} onSaved={() => { setCompletion(null); refreshAll(); }} />}
       {course && <CourseModal initial={course.id ? course : null} onClose={() => setCourse(null)} onSaved={() => { setCourse(null); refreshCourses(); refreshMatrix(); }} />}
+      {testCourse && <TestEditor course={testCourse} aiEnabled={aiOn} onClose={() => setTestCourse(null)} onSaved={() => { setTestCourse(null); refreshCourses(); }} />}
     </div>
   );
 }
