@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet } from './hooks/useApi';
+import { getSocket } from './lib/socket';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
@@ -31,6 +32,7 @@ import ProductionLog from './components/compliance/ProductionLog.jsx';
 import ProductionSchedule from './components/compliance/ProductionSchedule.jsx';
 import ProductionDashboard from './components/compliance/ProductionDashboard.jsx';
 import COAPanel from './components/compliance/COAPanel.jsx';
+import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 
 const NAV_GROUPS = [
@@ -107,9 +109,19 @@ const NAV_GROUPS = [
   },
 ];
 
-function Sidebar({ activeTab, setActiveTab, user, onClose, badges }) {
+function Sidebar({ activeTab, setActiveTab, user, onClose, badges, onOpenComms }) {
   const { data: aiStatus } = useApiGet('/ai/status');
+  const { data: commsChannels, refresh: refreshComms } = useApiGet('/comms/channels', [activeTab]);
+  const commsUnread = (commsChannels || []).reduce((n, c) => n + (c.unread || 0), 0);
   const aiOn = !!aiStatus?.enabled;
+
+  // Live-update the Messages unread badge when chat activity arrives.
+  useEffect(() => {
+    const s = getSocket();
+    const onChange = () => refreshComms();
+    s.on('channels:changed', onChange);
+    return () => s.off('channels:changed', onChange);
+  }, [refreshComms]);
   const [openGroups, setOpenGroups] = useState(() => {
     const initial = {};
     NAV_GROUPS.forEach(g => { initial[g.label] = true; });
@@ -132,6 +144,21 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges }) {
         </div>
         <button onClick={onClose} className="ml-auto md:hidden text-gray-400 hover:text-gray-600">
           <X size={18} />
+        </button>
+      </div>
+
+      <div className="px-2 pt-2">
+        <button
+          onClick={() => { onOpenComms?.(); onClose?.(); }}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-50 hover:bg-powder-50 hover:text-powder-700 border border-gray-200 transition-colors"
+        >
+          <MessageSquare size={16} className="text-powder-600" />
+          <span className="flex-1 text-left">Messages</span>
+          {commsUnread > 0 && (
+            <span className="flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1">
+              {commsUnread}
+            </span>
+          )}
         </button>
       </div>
 
@@ -287,9 +314,33 @@ function MobileBottomNav({ activeTab, setActiveTab, effectiveModules }) {
   );
 }
 
+function InstallPrompt() {
+  const [deferred, setDeferred] = useState(null);
+  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem('install_dismissed') === '1');
+  useEffect(() => {
+    const h = (e) => { e.preventDefault(); setDeferred(e); };
+    window.addEventListener('beforeinstallprompt', h);
+    return () => window.removeEventListener('beforeinstallprompt', h);
+  }, []);
+  if (!deferred || dismissed) return null;
+  return (
+    <div className="fixed bottom-20 md:bottom-4 right-4 z-50 bg-white border border-gray-200 shadow-lg rounded-xl p-3 flex items-center gap-3 max-w-xs">
+      <div className="h-9 w-9 bg-powder-600 rounded-lg flex items-center justify-center flex-shrink-0"><Shield size={18} className="text-white" /></div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-900">Install Powder Ops</p>
+        <p className="text-xs text-gray-500">Add to your home screen.</p>
+      </div>
+      <button onClick={async () => { deferred.prompt(); await deferred.userChoice.catch(() => {}); setDeferred(null); }}
+        className="px-3 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700">Install</button>
+      <button onClick={() => { setDismissed(true); sessionStorage.setItem('install_dismissed', '1'); }} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+    </div>
+  );
+}
+
 function App() {
   const { user, loading, login, loginWithToken, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [workspace, setWorkspace] = useState('fsqa');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { data: notifications } = useApiGet('/compliance/notifications', [activeTab, user?.id]);
   const [opLang, setOpLang] = useState(() => localStorage.getItem('op_lang') || 'en');
@@ -447,6 +498,11 @@ function App() {
     return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
   }
 
+  // Messages workspace — full-screen, separable from the FSQA workspace.
+  if (workspace === 'comms') {
+    return <><CommsView user={user} onExit={() => setWorkspace('fsqa')} /><UpdateBanner /></>;
+  }
+
   // Determine effective accessible modules for this user
   const allModuleIds = NAV_GROUPS.flatMap(g => g.items).filter(i => !i.adminOnly || user.role === 'admin').map(i => i.id);
   const effectiveModules = visibleModuleIds(user, allModuleIds);
@@ -502,7 +558,7 @@ function App() {
     <div className="min-h-screen bg-gray-50 flex">
       {/* Desktop sidebar */}
       <aside className="hidden md:block flex-shrink-0 sticky top-0 h-screen">
-        <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} />
+        <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} onOpenComms={() => setWorkspace('comms')} />
       </aside>
 
       {/* Mobile sidebar overlay */}
@@ -510,7 +566,7 @@ function App() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-60 shadow-xl">
-            <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} />
+            <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} onOpenComms={() => setWorkspace('comms')} />
           </div>
         </div>
       )}
@@ -587,6 +643,7 @@ function App() {
 
       <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} effectiveModules={effectiveModules} />
       <UpdateBanner />
+      <InstallPrompt />
     </div>
   );
 }

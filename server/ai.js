@@ -129,6 +129,28 @@ export async function translateToSpanish(items) {
   return out.map(s => String(s ?? ''));
 }
 
+// Translate strings to a target language ('en' or 'es'), auto-detecting the
+// source. Used for on-display chat translation. Returns same-length array.
+export async function translateText(items, targetLang = 'es') {
+  const c = getClient();
+  if (!c) throw new Error('AI is not configured');
+  const list = (Array.isArray(items) ? items : [items]).map(s => String(s ?? ''));
+  if (list.every(s => !s.trim())) return list;
+  const langName = targetLang === 'en' ? 'English' : 'Latin American Spanish';
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 4096,
+    system: `You are a translator for a food-manufacturing team chat. Translate each given string into natural ${langName}, auto-detecting the source language. If a string is already in ${langName}, return it unchanged. Preserve @mentions, numbers, URLs, emoji, and Markdown. Return ONLY a JSON array of translated strings in the same order and length as the input — no commentary.`,
+    messages: [{ role: 'user', content: JSON.stringify(list) }],
+    output_config: { format: { type: 'json_schema', schema: { type: 'array', items: { type: 'string' } } } },
+  });
+  const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  let out;
+  try { out = JSON.parse(text); } catch { throw new Error('Translation returned an unexpected response'); }
+  if (!Array.isArray(out) || out.length !== list.length) throw new Error('Translation length mismatch');
+  return out.map(s => String(s ?? ''));
+}
+
 // ── Read-only query assistant ─────────────────────────────────────────────────
 const ASK_SYSTEM = `You are a read-only analytics assistant for the "Powder Ops" food-safety and production management system (a SQLite database). Answer questions about production, KPIs, compliance, training, and overall system usage by querying the database — this is for an operator or executive who may be reading on a phone.
 
@@ -206,4 +228,26 @@ export async function answerQuestion({ question }) {
 
   const answer = (final.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
   return { answer: answer || 'I could not find an answer to that.', used };
+}
+
+// ── Chat digest / Q&A over messages (Comms Phase 4) ───────────────────────────
+// Synthesizes an answer from a set of already-access-checked chat messages
+// (retrieved via embeddings by the caller). The model only sees what the user is
+// allowed to see, so membership scoping is preserved.
+export async function summarizeChat({ question, contextMessages }) {
+  const c = getClient();
+  if (!c) throw new Error('AI is not configured');
+  const msgs = (contextMessages || []).slice(0, 40);
+  if (msgs.length === 0) return 'There are no relevant messages to answer that.';
+  const today = new Date().toISOString().slice(0, 10);
+  const context = msgs.map((m, i) =>
+    `[${i + 1}] #${m.channel_name} — ${m.user_name} (${m.created_at}): ${m.body}`
+  ).join('\n');
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 700,
+    system: `You are an assistant summarizing internal team chat for a food-manufacturing facility. Answer the user's question using ONLY the provided messages. Be concise (1-4 sentences or a short bulleted list). Cite the messages you used with their bracket numbers like [2]. If the messages don't contain the answer, say so plainly. Today is ${today}.`,
+    messages: [{ role: 'user', content: `Question: ${String(question || '').slice(0, 500)}\n\nMessages:\n${context}` }],
+  });
+  return (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim() || 'I could not find an answer in the messages.';
 }

@@ -1030,11 +1030,141 @@ function runMigrations() {
   addColumnIfMissing('sop_documents', 'description_es', 'TEXT');
   addColumnIfMissing('training_questions', 'prompt_es', 'TEXT');
   addColumnIfMissing('training_questions', 'options_es', 'TEXT');
+
+  // ── Communication tool (Slack-style) — Phase 1 ──────────────────────────────
+  // Kept in the same DB so the cross-module AI assistant can reason over comms +
+  // compliance together. Private channels + DMs are gated by chat_channel_members.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_channels (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'public' CHECK (kind IN ('public','private','dm')),
+      name TEXT,
+      topic TEXT,
+      dm_key TEXT UNIQUE,
+      created_by TEXT,
+      archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS chat_channel_members (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      last_read_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (channel_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      body TEXT,
+      parent_id TEXT,
+      edited_at TEXT,
+      deleted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS chat_reactions (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      emoji TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (message_id, user_id, emoji)
+    );
+    CREATE TABLE IF NOT EXISTS chat_attachments (
+      id TEXT PRIMARY KEY,
+      message_id TEXT,
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      content_type TEXT,
+      size INTEGER,
+      storage_key TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_members_user ON chat_channel_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_members_channel ON chat_channel_members(channel_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_channel ON chat_messages(channel_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_chat_reactions_message ON chat_reactions(message_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_attachments_message ON chat_attachments(message_id);
+    CREATE TABLE IF NOT EXISTS chat_message_embeddings (
+      message_id TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      dim INTEGER NOT NULL,
+      vector BLOB NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_embeddings_channel ON chat_message_embeddings(channel_id);
+    CREATE TABLE IF NOT EXISTS chat_message_translations (
+      message_id TEXT NOT NULL,
+      lang TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (message_id, lang)
+    );
+    CREATE TABLE IF NOT EXISTS chat_mentions (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_mentions_user ON chat_mentions(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_chat_mentions_message ON chat_mentions(message_id);
+    CREATE TABLE IF NOT EXISTS chat_push_subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
+  `);
+
+  // Full-text keyword search over messages (Comms Phase 3). FTS5 may be absent
+  // from some SQLite builds — degrade gracefully (search simply returns nothing).
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_fts USING fts5(
+        body, message_id UNINDEXED, channel_id UNINDEXED
+      );
+      CREATE TRIGGER IF NOT EXISTS chat_fts_ai AFTER INSERT ON chat_messages BEGIN
+        INSERT INTO chat_messages_fts (body, message_id, channel_id)
+          SELECT new.body, new.id, new.channel_id WHERE new.body IS NOT NULL AND new.deleted_at IS NULL;
+      END;
+      CREATE TRIGGER IF NOT EXISTS chat_fts_au AFTER UPDATE ON chat_messages BEGIN
+        DELETE FROM chat_messages_fts WHERE message_id = old.id;
+        INSERT INTO chat_messages_fts (body, message_id, channel_id)
+          SELECT new.body, new.id, new.channel_id WHERE new.body IS NOT NULL AND new.deleted_at IS NULL;
+      END;
+      CREATE TRIGGER IF NOT EXISTS chat_fts_ad AFTER DELETE ON chat_messages BEGIN
+        DELETE FROM chat_messages_fts WHERE message_id = old.id;
+      END;
+    `);
+    // Backfill any messages that predate the FTS index.
+    if (db.prepare('SELECT COUNT(*) n FROM chat_messages_fts').get().n === 0) {
+      db.exec(`INSERT INTO chat_messages_fts (body, message_id, channel_id)
+               SELECT body, id, channel_id FROM chat_messages WHERE body IS NOT NULL AND deleted_at IS NULL`);
+    }
+  } catch (e) {
+    console.warn('[db] FTS5 message search unavailable:', e.message);
+  }
   try { db.prepare('UPDATE sop_documents SET training_revision = revision WHERE training_revision IS NULL').run(); } catch { /* ignore */ }
 
   // Audit log: stable actor identity (survives renames) + role/department for
   // filtering + human-readable entity label. Backfill identity from the users
   // table by name, and normalize historical action verbs to the canonical set.
+  // Password auth (replacing PIN). scrypt hash stored as "salt:hash" hex.
+  addColumnIfMissing('users', 'password_hash', 'TEXT');
+
+  // Slack import: original message ts for idempotent re-imports.
+  addColumnIfMissing('chat_messages', 'external_id', 'TEXT');
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_external ON chat_messages(channel_id, external_id)'); } catch { /* ignore */ }
+
   addColumnIfMissing('audit_log', 'actor_id', 'TEXT');
   addColumnIfMissing('audit_log', 'actor_role', 'TEXT');
   addColumnIfMissing('audit_log', 'actor_department', 'TEXT');

@@ -3,6 +3,7 @@ import compression from 'compression';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createServer } from 'http';
 import { readFileSync, mkdirSync, existsSync } from 'fs';
 import { gunzipSync } from 'zlib';
 import { execSync } from 'child_process';
@@ -32,6 +33,8 @@ import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
 import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
+import commsRoutes, { backfillEmbeddings } from './server/api/comms.js';
+import { initRealtime } from './server/realtime.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
 import coaRoutes from './server/api/coa.js';
@@ -536,6 +539,19 @@ try {
   console.error('[seed] Error seeding training courses (non-fatal):', err.message);
 }
 
+// Seed default chat channels
+try {
+  if (db.prepare('SELECT COUNT(*) c FROM chat_channels').get().c === 0) {
+    const mk = (name, topic) => db.prepare("INSERT INTO chat_channels (id, kind, name, topic, created_by) VALUES (?, 'public', ?, ?, 'system')").run(uuid(), name, topic);
+    mk('general', 'Company-wide announcements and general chat');
+    mk('production', 'Production floor coordination');
+    mk('quality', 'Quality & food-safety discussion');
+    console.log('[seed] Created default chat channels');
+  }
+} catch (err) {
+  console.error('[seed] Error seeding chat channels (non-fatal):', err.message);
+}
+
 // Seed COA/Lab Testing historical data
 try {
   const coaCount = db.prepare('SELECT COUNT(*) as c FROM coa_requests').get().c;
@@ -888,7 +904,7 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 app.use('/api', (req, res, next) => {
   const skip = [
     '/users/login',
-    '/users/set-pin',
+    '/users/set-password',
     '/submit/',
     '/version',
     '/health',
@@ -918,6 +934,7 @@ app.use('/api/disposals', disposalRoutes);
 app.use('/api/qms', qmsRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/comms', commsRoutes);
 app.use('/api/mock-recalls', mockRecallRoutes);
 app.use('/api/production', productionRoutes);
 app.use('/api/coa', coaRoutes);
@@ -974,8 +991,12 @@ function purgeExpiredSessions() {
 purgeExpiredSessions();
 setInterval(purgeExpiredSessions, 60 * 60 * 1000).unref();
 
-server = app.listen(PORT, '0.0.0.0', () => {
+server = createServer(app);
+initRealtime(server); // Comms Phase 2 — socket.io realtime on the same HTTP server
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`[server] FSQA Compliance Platform running on port ${PORT} (build ${BUILD_VERSION})`);
+  // Backfill message embeddings in the background (no-op unless Voyage is configured).
+  backfillEmbeddings().catch(e => console.warn('[comms] embedding backfill error:', e.message));
 });
 
 function shutdown(signal) {

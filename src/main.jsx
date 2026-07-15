@@ -11,3 +11,10 @@ createRoot(document.getElementById('root')).render(
     </AuthProvider>
   </StrictMode>,
 );
+
+// Register the service worker for installability + offline shell + push.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* non-fatal */ });
+  });
+}

@@ -16,6 +16,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
+    "@aws-sdk/client-s3": "^3.1088.0",
+    "@aws-sdk/s3-request-presigner": "^3.1088.0",
+    "adm-zip": "^0.6.0",
     "better-sqlite3": "^12.10.0",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
@@ -30,7 +33,10 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "recharts": "^3.8.1",
-    "uuid": "^14.0.0"
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "uuid": "^14.0.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
