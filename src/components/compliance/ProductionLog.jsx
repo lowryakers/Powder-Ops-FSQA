@@ -264,6 +264,49 @@ const SORT_COLUMNS = [
   { label: 'QA Status', key: 'qa_signoff_by', type: 'boolean' },
 ];
 
+function MissedReports({ from, to }) {
+  const [open, setOpen] = useState(true);
+  const { data: missed } = useApiGet(`/production/missed-reports?from=${from}&to=${to}`, [from, to]);
+  const rows = missed || [];
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-4 py-3 text-left">
+        <AlertCircle size={16} className="text-amber-600 shrink-0" />
+        <span className="text-sm font-medium text-amber-900">{rows.length} scheduled production {rows.length === 1 ? 'run has' : 'runs have'} no end-of-day report</span>
+        {open ? <ChevronUp size={15} className="ml-auto text-amber-600" /> : <ChevronDown size={15} className="ml-auto text-amber-600" />}
+      </button>
+      {open && (
+        <div className="overflow-x-auto border-t border-amber-200">
+          <table className="w-full text-sm">
+            <thead className="bg-amber-100/50 text-amber-900">
+              <tr>
+                <th className="text-left px-4 py-2 font-medium">Date</th>
+                <th className="text-left px-4 py-2 font-medium">Room</th>
+                <th className="text-left px-4 py-2 font-medium">Team</th>
+                <th className="text-left px-4 py-2 font-medium">MO #</th>
+                <th className="text-left px-4 py-2 font-medium">Product</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((m, i) => (
+                <tr key={i} className="border-t border-amber-100">
+                  <td className="px-4 py-2 text-amber-900 whitespace-nowrap">{formatDate(m.date)}{m.days_ago > 0 ? <span className="text-amber-600 text-xs"> · {m.days_ago}d ago</span> : ''}</td>
+                  <td className="px-4 py-2 text-gray-700">{m.room}</td>
+                  <td className="px-4 py-2 font-medium text-gray-800">{m.team || '—'}</td>
+                  <td className="px-4 py-2 text-gray-600">{m.mo_number || '—'}</td>
+                  <td className="px-4 py-2 text-gray-600">{m.product_name || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LogTable({ user }) {
   const [from, setFrom] = useState(thirtyDaysAgo());
   const [to, setTo] = useState(todayStr());
@@ -317,6 +360,7 @@ function LogTable({ user }) {
 
   return (
     <div className="space-y-4">
+      <MissedReports from={from} to={to} />
       <SummaryCards from={from} to={to} />
 
       {/* Filter Bar */}
@@ -453,7 +497,7 @@ function LogTable({ user }) {
 /* ── Main Component ──────────────────────────────────────── */
 
 export default function ProductionLog({ user, directEntry }) {
-  const [tab, setTab] = useState('form');
+  const [tab, setTab] = useState('log');
   const [refreshKey, setRefreshKey] = useState(0);
 
   if (directEntry) {
@@ -461,8 +505,8 @@ export default function ProductionLog({ user, directEntry }) {
   }
 
   const tabs = [
-    { id: 'form', label: 'Entry Form', icon: Plus },
     { id: 'log', label: 'Production Log', icon: ClipboardList },
+    { id: 'form', label: 'Entry Form', icon: Plus },
   ];
 
   return (
@@ -482,7 +526,7 @@ export default function ProductionLog({ user, directEntry }) {
 
       {/* Tab Content */}
       {tab === 'form' && (
-        <EntryForm user={user} onSuccess={() => setRefreshKey(k => k + 1)} />
+        <EntryForm user={user} onSuccess={() => { setRefreshKey(k => k + 1); setTab('log'); }} />
       )}
       {tab === 'log' && (
         <LogTable key={refreshKey} user={user} />

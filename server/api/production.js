@@ -56,6 +56,39 @@ router.get('/entries/summary', (req, res) => {
   });
 });
 
+// GET /missed-reports — scheduled production slots (past / today) with no
+// matching end-of-day entry, so a supervisor's missing report is visible at a
+// glance. A slot is "reported" when an entry exists for the same date + room
+// and matching MO# (or team, when the schedule has no MO#).
+router.get('/missed-reports', (req, res) => {
+  const db = getDb();
+  const { from, to, include_today } = req.query;
+  const today = new Date().toISOString().slice(0, 10);
+  const cutoff = include_today === '1' ? today : new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+  const scheduled = db.prepare(`
+    SELECT s.room, s.team, s.mo_number, s.product_name, s.start_time,
+      date(s.week_start, '+' || s.day_of_week || ' days') AS sched_date
+    FROM production_schedule s
+    WHERE s.room_type = 'production'
+  `).all().filter(r =>
+    r.sched_date && r.sched_date <= cutoff && (!from || r.sched_date >= from) && (!to || r.sched_date <= to)
+  );
+
+  const entries = db.prepare('SELECT date, room, team, mo_number FROM production_entries').all();
+  const reported = (s) => entries.some(e =>
+    e.date === s.sched_date && e.room === s.room &&
+    (s.mo_number ? String(e.mo_number) === String(s.mo_number) : (s.team ? e.team === s.team : true)));
+
+  const missed = scheduled.filter(s => !reported(s)).map(s => ({
+    date: s.sched_date, room: s.room, team: s.team, mo_number: s.mo_number,
+    product_name: s.product_name, start_time: s.start_time,
+    days_ago: Math.round((new Date(today) - new Date(s.sched_date)) / 86400000),
+  }));
+  missed.sort((a, b) => b.date.localeCompare(a.date) || a.room.localeCompare(b.room));
+  res.json(missed);
+});
+
 // POST /entries — create a new production entry
 router.post('/entries', (req, res) => {
   const db = getDb();
