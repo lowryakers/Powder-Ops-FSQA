@@ -76,6 +76,42 @@ router.post('/', requireRole('admin'), (req, res) => {
   res.status(201).json(created);
 });
 
+// Bulk-add users (one per line elsewhere; here an array of {name, role, department}).
+router.post('/bulk', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const list = Array.isArray(req.body?.users) ? req.body.users : [];
+  if (!list.length) return res.status(400).json({ error: 'users array is required' });
+  const ROLES = ['admin', 'supervisor', 'operator', 'auditor'];
+  const ins = db.prepare('INSERT INTO users (id, name, email, role, department, module_access) VALUES (?, ?, ?, ?, ?, ?)');
+  let created = 0; const names = [];
+  const tx = db.transaction(() => {
+    for (const u of list) {
+      const name = (u.name || '').trim();
+      if (!name) continue;
+      const role = ROLES.includes(u.role) ? u.role : 'operator';
+      ins.run(uuid(), name, u.email || null, role, u.department || 'warehouse', u.module_access ? JSON.stringify(u.module_access) : null);
+      created++; names.push(name);
+    }
+  });
+  tx();
+  logAudit(req.user, 'users_bulk_created', 'user', null, { created, names }, null, null);
+  res.json({ created });
+});
+
+// Apply a module-access map to several users at once (admins are left untouched).
+router.post('/bulk-access', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const { user_ids, module_access } = req.body;
+  if (!Array.isArray(user_ids) || !user_ids.length) return res.status(400).json({ error: 'user_ids is required' });
+  const str = module_access ? JSON.stringify(module_access) : null;
+  const upd = db.prepare("UPDATE users SET module_access = ?, updated_at = datetime('now') WHERE id = ? AND role != 'admin'");
+  let updated = 0;
+  const tx = db.transaction(() => { for (const id of user_ids) updated += upd.run(str, id).changes; });
+  tx();
+  logAudit(req.user, 'permission_change', 'user', null, { bulk: true, count: updated }, null, null);
+  res.json({ updated });
+});
+
 router.put('/:id', requireRole('admin'), (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);

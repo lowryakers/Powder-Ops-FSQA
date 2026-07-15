@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Edit2, UserCheck, UserX, Copy, Shield, ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { Plus, Edit2, UserCheck, UserX, Copy, Shield, ChevronDown, ChevronRight, Eye, EyeOff, Users, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const ROLES = [
@@ -114,6 +114,15 @@ function ModuleAccessEditor({ value, onChange, disabled }) {
     onChange(allAccess ? {} : null); // {} = no access to anything
   };
 
+  // Set every module in a group to one level at once — the main simplification.
+  const setGroup = (ids, level) => {
+    if (disabled) return;
+    const base = allAccess ? Object.fromEntries(ALL_MODULE_IDS.map(m => [m, 'edit'])) : { ...map };
+    ids.forEach(id => { if (level === 'none') delete base[id]; else base[id] = level; });
+    const isAllEdit = ALL_MODULE_IDS.every(m => base[m] === 'edit');
+    onChange(isAllEdit ? null : base);
+  };
+
   const LEVELS = [
     { value: 'none', label: 'None' },
     { value: 'view', label: 'View' },
@@ -135,7 +144,18 @@ function ModuleAccessEditor({ value, onChange, disabled }) {
           <p className="text-[11px] text-gray-500">Set each module to <strong>None</strong> (hidden), <strong>View</strong> (read-only), or <strong>Edit</strong>.</p>
           {MODULE_GROUPS.map(group => (
             <div key={group.label} className="space-y-1">
-              <div className="text-[10px] font-bold uppercase text-gray-500">{group.label}</div>
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-bold uppercase text-gray-500">{group.label}</div>
+                {!disabled && (
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                    <span>set all:</span>
+                    {LEVELS.map(l => (
+                      <button key={l.value} type="button" onClick={() => setGroup(group.modules.map(m => m.id), l.value)}
+                        className="px-1.5 py-0.5 rounded border border-gray-200 bg-white hover:bg-gray-100 text-gray-500">{l.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {group.modules.map(mod => {
                 const lvl = levelOf(mod.id);
                 return (
@@ -305,7 +325,7 @@ const ROLE_CONFIG = {
   auditor: { label: 'Auditors', color: 'emerald', desc: 'Read-only compliance view' },
 };
 
-function UserRow({ u, onEdit, onToggle }) {
+function UserRow({ u, onEdit, onToggle, isEditing }) {
   const moduleAccess = (() => {
     if (!u.module_access) return null;
     if (typeof u.module_access === 'string') { try { return JSON.parse(u.module_access); } catch { return null; } }
@@ -314,7 +334,7 @@ function UserRow({ u, onEdit, onToggle }) {
   const moduleCount = !moduleAccess ? ALL_MODULE_IDS.length : (Array.isArray(moduleAccess) ? moduleAccess.length : Object.keys(moduleAccess).length);
 
   return (
-    <tr className="border-b border-gray-100 hover:bg-gray-50">
+    <tr className={`border-b border-gray-100 hover:bg-gray-50 ${isEditing ? 'bg-powder-50' : ''}`}>
       <td className="px-4 py-3 w-full">
         <span className="font-medium text-gray-900">{u.name}</span>
         {u.is_contractor ? (
@@ -347,7 +367,7 @@ function UserRow({ u, onEdit, onToggle }) {
         </span>
       </td>
       <td className="px-4 py-3 text-right flex gap-1 justify-end">
-        <button onClick={() => onEdit(u)} className="text-gray-400 hover:text-powder-600" title="Edit">
+        <button onClick={() => onEdit(u)} className={`hover:text-powder-600 ${isEditing ? 'text-powder-600' : 'text-gray-400'}`} title={isEditing ? 'Close' : 'Edit'}>
           <Edit2 size={14} />
         </button>
         <button onClick={() => onToggle(u)} className="text-gray-400 hover:text-gray-700" title={u.is_active ? 'Disable' : 'Enable'}>
@@ -358,7 +378,7 @@ function UserRow({ u, onEdit, onToggle }) {
   );
 }
 
-function RoleSection({ users, config, onEdit, onToggle, defaultOpen }) {
+function RoleSection({ users, config, onEdit, onToggle, defaultOpen, editingId, onSave, onCancel, canViewPin }) {
   const [open, setOpen] = useState(defaultOpen);
   const activeCount = users.filter(u => u.is_active).length;
 
@@ -390,7 +410,18 @@ function RoleSection({ users, config, onEdit, onToggle, defaultOpen }) {
             </tr>
           </thead>
           <tbody>
-            {users.map(u => <UserRow key={u.id} u={u} onEdit={onEdit} onToggle={onToggle} />)}
+            {users.map(u => (
+              <Fragment key={u.id}>
+                <UserRow u={u} onEdit={onEdit} onToggle={onToggle} isEditing={u.id === editingId} />
+                {u.id === editingId && (
+                  <tr className="bg-gray-50">
+                    <td colSpan={5} className="px-4 py-3 border-b border-gray-200">
+                      <UserForm initial={u} onSave={onSave} onCancel={onCancel} canViewPin={canViewPin} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
           </tbody>
         </table>
       )}
@@ -401,11 +432,121 @@ function RoleSection({ users, config, onEdit, onToggle, defaultOpen }) {
   );
 }
 
+function BulkAddModal({ onClose, onDone }) {
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const ROLE_VALS = ['admin', 'supervisor', 'operator', 'auditor'];
+  const DEPT_VALS = DEPARTMENTS.map(d => d.value);
+
+  const parsed = text.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const [name, role, dept] = l.split(',').map(s => (s || '').trim());
+    return {
+      name,
+      role: ROLE_VALS.includes((role || '').toLowerCase()) ? role.toLowerCase() : 'operator',
+      department: DEPT_VALS.includes((dept || '').toLowerCase().replace(/\s+/g, '_')) ? dept.toLowerCase().replace(/\s+/g, '_') : 'warehouse',
+    };
+  }).filter(u => u.name);
+
+  const save = async () => {
+    if (!parsed.length) { setError('Add at least one name.'); return; }
+    setSaving(true); setError('');
+    try { setResult(await apiPost('/users/bulk', { users: parsed })); }
+    catch (e) { setError(e.message); setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">Bulk add users</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        {result ? (
+          <div className="space-y-3">
+            <div className="text-sm bg-green-50 border border-green-200 rounded-lg p-3 text-green-800">Added {result.created} user{result.created === 1 ? '' : 's'}. They’ll set a PIN on first sign-in.</div>
+            <button onClick={onDone} className="w-full px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">Done</button>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-gray-500">One person per line. Optionally add role and department: <code className="bg-gray-100 px-1 rounded">Name, role, department</code>. Defaults are operator / warehouse. Roles: admin, supervisor, operator, auditor.</p>
+            <textarea value={text} onChange={e => setText(e.target.value)} rows={8}
+              placeholder={'Adam Bliss\nMaria Lopez, supervisor, production\nDevon Kim, operator, warehouse'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" />
+            <p className="text-xs text-gray-500">{parsed.length} user{parsed.length === 1 ? '' : 's'} ready to add.</p>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex items-center gap-2">
+              <button onClick={save} disabled={saving || !parsed.length} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Adding…' : `Add ${parsed.length || ''} user${parsed.length === 1 ? '' : 's'}`}</button>
+              <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BulkAccessModal({ users, onClose, onDone }) {
+  const [selected, setSelected] = useState({});
+  const [access, setAccess] = useState({}); // {} = no access; configured below (null = full)
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const eligible = (users || []).filter(u => u.role !== 'admin');
+  const chosen = Object.keys(selected).filter(id => selected[id]);
+  const toggle = (id) => setSelected(s => ({ ...s, [id]: !s[id] }));
+
+  const apply = async () => {
+    if (!chosen.length) { setError('Select at least one user.'); return; }
+    setSaving(true); setError('');
+    try { await apiPost('/users/bulk-access', { user_ids: chosen, module_access: access }); onDone(); }
+    catch (e) { setError(e.message); setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="font-semibold text-gray-900">Bulk module permissions</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <div className="p-4 grid md:grid-cols-2 gap-4 overflow-y-auto">
+          <div>
+            <p className="text-xs font-medium text-gray-700 mb-1">Apply to ({chosen.length} selected)</p>
+            <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
+              {eligible.map(u => (
+                <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer">
+                  <input type="checkbox" checked={!!selected[u.id]} onChange={() => toggle(u.id)} />
+                  <span className="text-sm text-gray-800">{u.name}</span>
+                  <span className="text-[11px] text-gray-400 capitalize ml-auto">{u.role}</span>
+                </label>
+              ))}
+              {eligible.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No non-admin users.</p>}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">Admins always have full access and are excluded.</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-700 mb-1">Access to apply</p>
+            <ModuleAccessEditor value={access} onChange={setAccess} />
+          </div>
+        </div>
+        {error && <p className="px-4 text-sm text-red-600">{error}</p>}
+        <div className="flex items-center gap-2 p-4 border-t">
+          <button onClick={apply} disabled={saving || !chosen.length} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Applying…' : `Apply to ${chosen.length || ''} user${chosen.length === 1 ? '' : 's'}`}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPanel() {
   const { user: currentUser } = useAuth();
   const { data: users, loading, refresh } = useApiGet('/users');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [bulkAdd, setBulkAdd] = useState(false);
+  const [bulkAccess, setBulkAccess] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(null);
 
   const submitUrl = `${window.location.origin}/submit`;
@@ -430,7 +571,7 @@ export default function SettingsPanel() {
   };
 
   const handleEdit = (user) => {
-    setEditing(user);
+    setEditing(prev => (prev?.id === user.id ? null : user));
     setShowForm(false);
   };
 
@@ -458,14 +599,23 @@ export default function SettingsPanel() {
             <h2 className="text-xl font-bold text-gray-900">Technicians & Users</h2>
             <p className="text-sm text-gray-500">Manage roles, departments, and module access permissions</p>
           </div>
-          <button onClick={() => { setShowForm(true); setEditing(null); }}
-            className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
-            <Plus size={16} /> Add User
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setBulkAccess(true)}
+              className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
+              <Shield size={15} /> Bulk Permissions
+            </button>
+            <button onClick={() => { setBulkAdd(true); setEditing(null); setShowForm(false); }}
+              className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
+              <Users size={15} /> Bulk Add
+            </button>
+            <button onClick={() => { setShowForm(true); setEditing(null); }}
+              className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+              <Plus size={16} /> Add User
+            </button>
+          </div>
         </div>
 
         {(showForm && !editing) && <UserForm onSave={handleCreate} onCancel={() => setShowForm(false)} />}
-        {editing && <UserForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} canViewPin={currentUser?.role === 'admin'} />}
 
         <div className="space-y-3">
           {['admin', 'supervisor', 'operator', 'auditor'].map(role => (
@@ -477,10 +627,17 @@ export default function SettingsPanel() {
               onEdit={handleEdit}
               onToggle={handleToggleActive}
               defaultOpen={role !== 'auditor'}
+              editingId={editing?.id}
+              onSave={handleUpdate}
+              onCancel={() => setEditing(null)}
+              canViewPin={currentUser?.role === 'admin'}
             />
           ))}
         </div>
       </div>
+
+      {bulkAdd && <BulkAddModal onClose={() => setBulkAdd(false)} onDone={() => { setBulkAdd(false); refresh(); }} />}
+      {bulkAccess && <BulkAccessModal users={users || []} onClose={() => setBulkAccess(false)} onDone={() => { setBulkAccess(false); refresh(); }} />}
 
       {/* Links Section */}
       <div className="space-y-4">
