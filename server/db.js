@@ -681,6 +681,20 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_production_schedule_week ON production_schedule(week_start);
     CREATE INDEX IF NOT EXISTS idx_production_schedule_room ON production_schedule(room);
 
+    -- QA-dismissed "missed end-of-day report" callouts (reviewed & cleared).
+    CREATE TABLE IF NOT EXISTS production_missed_dismissals (
+      id TEXT PRIMARY KEY,
+      dismiss_key TEXT NOT NULL UNIQUE,
+      sched_date TEXT NOT NULL,
+      room TEXT,
+      mo_number TEXT,
+      team TEXT,
+      reason TEXT,
+      dismissed_by TEXT,
+      dismissed_by_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Production Cleaning Levels
     CREATE TABLE IF NOT EXISTS production_cleaning_levels (
       id TEXT PRIMARY KEY,

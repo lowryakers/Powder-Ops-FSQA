@@ -17,6 +17,7 @@ const DEPARTMENTS = [
   { value: 'cleaning', label: 'Cleaning' },
   { value: 'production', label: 'Production' },
   { value: 'maintenance', label: 'Maintenance' },
+  { value: 'office', label: 'Office' },
 ];
 const deptLabel = (d) => DEPARTMENTS.find(x => x.value === d)?.label || (d ? d.charAt(0).toUpperCase() + d.slice(1) : 'Warehouse');
 
@@ -359,6 +360,7 @@ function UserRow({ u, onEdit, onToggle, isEditing }) {
           : u.department === 'cleaning' ? 'bg-amber-100 text-amber-700'
           : u.department === 'production' ? 'bg-green-100 text-green-700'
           : u.department === 'maintenance' ? 'bg-orange-100 text-orange-700'
+          : u.department === 'office' ? 'bg-slate-100 text-slate-700'
           : 'bg-indigo-100 text-indigo-700'
         }`}>
           {deptLabel(u.department)}
