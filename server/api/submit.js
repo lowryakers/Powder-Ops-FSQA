@@ -151,4 +151,41 @@ router.post('/component-signout', (req, res) => {
   res.status(201).json({ ok: true, record_number: number, direction: data.direction });
 });
 
+// ── Maintenance Sign In/Out kiosk ─────────────────────────────────────────────
+// The editable tool list (same one managed in the app) for the kiosk dropdown.
+router.get('/maintenance-items', (_req, res) => {
+  const db = getDb();
+  let items = [];
+  try { items = db.prepare('SELECT name FROM maintenance_items ORDER BY sort_order, name').all().map(r => r.name); } catch { /* table optional */ }
+  res.json({ items });
+});
+
+// Sign a tool out from the floor kiosk — creates a record (status Out) awaiting
+// the in-app QA return/review. `employee_name` is the typed name at the kiosk.
+router.post('/maintenance-signout', (req, res) => {
+  const db = getDb();
+  const cfg = getType('maintenance_sign_out');
+  const { employee_name, item_description, asset_tag, condition_out, time_out } = req.body;
+  const name = (employee_name || '').trim();
+  const item = (item_description || '').trim();
+  if (!name || !item) return res.status(400).json({ error: 'Item and your name are required.' });
+
+  const id = uuid();
+  const number = nextNumber(db, cfg);
+  const data = {
+    employee_name: name,
+    item_description: item,
+    asset_tag: asset_tag || '',
+    condition_out: condition_out === 'Bad' ? 'Bad' : 'Good',
+    time_out: time_out || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  };
+  db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, created_by)
+    VALUES (?, 'maintenance_sign_out', ?, ?, 'out', ?, 0, ?)`).run(id, number, today(), JSON.stringify(data), name);
+
+  logAudit(name, 'submit_public', 'maintenance_sign_out', id,
+    { record_number: number, item_description: item, via: 'kiosk' }, null, null, item);
+
+  res.status(201).json({ ok: true, record_number: number, item_description: item });
+});
+
 export default router;

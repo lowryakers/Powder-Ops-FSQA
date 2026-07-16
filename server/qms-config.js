@@ -373,6 +373,8 @@ export const QMS_TYPES = {
     numberPad: 3,
     primaryField: 'item_description',
     dateLabel: 'Date',
+    kioskPath: '/kiosk/maintenance',
+    kioskTagline: 'Scan to Sign Out a Tool',
     // A tool is signed out (Out), then returned (Returned).
     statuses: [
       { value: 'out', label: 'Out', tone: 'amber' },

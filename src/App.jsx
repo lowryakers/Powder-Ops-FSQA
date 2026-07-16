@@ -8,6 +8,7 @@ import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
 import ComponentKiosk from './components/kiosk/ComponentKiosk.jsx';
+import MaintenanceKiosk from './components/kiosk/MaintenanceKiosk.jsx';
 import AiAskPanel from './components/compliance/AiAskPanel.jsx';
 import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
 import EquipmentPanel from './components/compliance/EquipmentPanel.jsx';
@@ -492,6 +493,10 @@ function App() {
 
   if (path === '/kiosk/components') {
     return <><ComponentKiosk /><UpdateBanner /></>;
+  }
+
+  if (path === '/kiosk/maintenance') {
+    return <><MaintenanceKiosk /><UpdateBanner /></>;
   }
 
   if (path === '/production-entry') {
