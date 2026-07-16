@@ -35,6 +35,10 @@ import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
 import commsRoutes, { backfillEmbeddings } from './server/api/comms.js';
 import { initRealtime } from './server/realtime.js';
+import { aiEnabled } from './server/ai.js';
+import { storageEnabled } from './server/storage.js';
+import { voyageEnabled } from './server/embeddings.js';
+import { pushEnabled } from './server/push.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
 import coaRoutes from './server/api/coa.js';
@@ -959,7 +963,15 @@ app.get('/api/health', (_req, res) => {
   const activeSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE is_active = 1").get().c;
   const schedulesWithOpenWO = db.prepare("SELECT COUNT(DISTINCT pm_schedule_id) as c FROM work_orders WHERE pm_schedule_id IS NOT NULL AND status IN ('open','in_progress')").get().c;
   const schedulesWithoutOpenWO = activeSchedules - schedulesWithOpenWO;
-  res.json({ status: 'ok', database: 'connected', counts, work_orders_by_status: woByStatus, active_schedules: activeSchedules, schedules_with_open_wo: schedulesWithOpenWO, schedules_missing_open_wo: schedulesWithoutOpenWO });
+  // Integration status (booleans only — never any secret values) so the
+  // configured optional services can be verified at a glance from one URL.
+  const integrations = {
+    ai: aiEnabled(),            // ANTHROPIC_API_KEY → translation, Ask AI, test generation
+    storage: storageEnabled(),  // R2_* → chat file uploads + off-box backups
+    voyage: voyageEnabled(),    // VOYAGE_API_KEY → semantic "Smart" search + RAG Ask
+    push: pushEnabled(),        // VAPID_* → web push notifications
+  };
+  res.json({ status: 'ok', database: 'connected', integrations, counts, work_orders_by_status: woByStatus, active_schedules: activeSchedules, schedules_with_open_wo: schedulesWithOpenWO, schedules_missing_open_wo: schedulesWithoutOpenWO });
 });
 
 // Serve static React build — hashed assets get long cache, HTML never caches
