@@ -151,8 +151,8 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
           <div className="h-14 w-14 bg-powder-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Shield size={28} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Powder Ops FSQA</h1>
-          <p className="text-sm text-gray-500 mt-1">Compliance & Preventive Maintenance</p>
+          <h1 className="text-2xl font-bold text-gray-900">ReadyDoc</h1>
+          <p className="text-sm text-gray-500 mt-1">Powder Ops · FSQA & Compliance</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">

@@ -271,7 +271,7 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
           <label className="block text-xs font-medium text-gray-700 mb-1">Home screen</label>
           <select value={form.home_workspace || 'fsqa'} onChange={e => setForm({ ...form, home_workspace: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="fsqa">FSQA tools</option>
+            <option value="fsqa">ReadyDoc</option>
             <option value="messages">Messages</option>
           </select>
           <p className="text-[11px] text-gray-400 mt-1">Where this user lands after signing in.</p>

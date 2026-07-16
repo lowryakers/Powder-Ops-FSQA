@@ -478,8 +478,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
     <div className="fixed inset-0 bg-white flex flex-col">
       {/* top bar */}
       <div className="flex items-center gap-3 px-4 h-12 border-b border-gray-200 shrink-0">
-        <button onClick={onExit} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg shrink-0" title="Switch to the FSQA tools">
-          <ArrowLeft size={16} /> FSQA
+        <button onClick={onExit} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg shrink-0" title="Switch to ReadyDoc">
+          <ArrowLeft size={16} /> ReadyDoc
         </button>
         {onGoToSchedule && (
           <button onClick={onGoToSchedule} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg shrink-0" title="Go to the Production Schedule">

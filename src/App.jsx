@@ -139,8 +139,8 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, onOpenComms }
           <Shield size={16} className="text-white" />
         </div>
         <div className="min-w-0">
-          <h1 className="text-sm font-bold text-gray-900 truncate">Powder Ops FSQA</h1>
-          <p className="text-[10px] text-gray-400 truncate">Compliance & PM</p>
+          <h1 className="text-sm font-bold text-gray-900 truncate">ReadyDoc</h1>
+          <p className="text-[10px] text-gray-400 truncate">Powder Ops · FSQA</p>
         </div>
         <button onClick={onClose} className="ml-auto md:hidden text-gray-400 hover:text-gray-600">
           <X size={18} />
@@ -604,7 +604,7 @@ function App() {
           <div className="px-6 lg:px-8 py-2.5 flex items-center justify-between max-w-7xl mx-auto">
             <h1 className="text-sm font-semibold text-gray-700">{activeItem?.label || 'Dashboard'}</h1>
             <div className="flex items-center gap-3">
-              <button onClick={() => setHome('fsqa')} title={homePref === 'fsqa' ? 'FSQA is your home screen' : 'Make FSQA your home screen'}
+              <button onClick={() => setHome('fsqa')} title={homePref === 'fsqa' ? 'ReadyDoc is your home screen' : 'Make ReadyDoc your home screen'}
                 className={`p-1.5 rounded-lg transition-colors ${homePref === 'fsqa' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
                 <Home size={18} />
               </button>
