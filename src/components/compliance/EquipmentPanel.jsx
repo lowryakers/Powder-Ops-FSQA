@@ -110,7 +110,7 @@ function MaintenanceTasksEditor({ tasks, onChange }) {
 
 function EquipmentForm({ initial, ccps, onSave, onCancel }) {
   const initTasks = initial ? parseTasks(initial) : {};
-  const [form, setForm] = useState(initial || { name: '', type: 'Conveyor', location: '', room: '', asset_id: '', manufacturer: '', model_number: '', serial_number: '', vendor: '', pm_frequency: '', is_food_contact: false, haccp_ccp_id: '', notes: '', maintenance_tasks: {} });
+  const [form, setForm] = useState(initial || { name: '', type: 'Conveyor', location: '', room: '', asset_id: '', manufacturer: '', model_number: '', serial_number: '', vendor: '', pm_frequency: '', is_food_contact: false, haccp_ccp_id: '', notes: '', maintenance_tasks: {}, task_group: '' });
   const [tasks, setTasks] = useState(initTasks);
   const [saving, setSaving] = useState(false);
 
@@ -180,6 +180,18 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
           <label className="block text-xs font-medium text-gray-700 mb-1">PM Frequency</label>
           <input value={form.pm_frequency || ''} onChange={e => setForm({ ...form, pm_frequency: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Daily, Weekly, Monthly" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">PM Assigned To</label>
+          <select value={form.task_group || ''} onChange={e => setForm({ ...form, task_group: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">Unassigned</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="warehouse">Warehouse</option>
+            <option value="qa">QA</option>
+            <option value="cleaning">Cleaning</option>
+          </select>
+          <p className="text-[10px] text-gray-400 mt-1">Who this equipment's PM tasks go to. Applies to its PM schedules and open work orders.</p>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">HACCP CCP Link</label>
@@ -262,6 +274,7 @@ function EquipmentDetailRow({ eq, colSpan, onEdit }) {
               <ClipboardList size={16} className="text-gray-500" />
               <h4 className="text-sm font-semibold text-gray-800">Preventive Maintenance Schedule</h4>
               {taskCount > 0 && <span className="text-xs text-gray-500">({taskCount} tasks)</span>}
+              {eq.task_group && <span className="ml-auto text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-powder-100 text-powder-700">{{ maintenance: 'Maintenance', warehouse: 'Warehouse', qa: 'QA', cleaning: 'Cleaning' }[eq.task_group] || eq.task_group}</span>}
             </div>
             <MaintenanceTasksView tasks={tasks} />
           </div>

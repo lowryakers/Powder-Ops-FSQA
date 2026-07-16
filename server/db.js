@@ -954,6 +954,10 @@ function runMigrations() {
 
   // COA extended fields for facility COA export
   addColumnIfMissing('equipment', 'loto_required', 'INTEGER DEFAULT 1');
+  // Default assignee (department/group) for this equipment's PM work —
+  // 'maintenance' | 'warehouse' | 'qa' | 'cleaning'. Propagates to the
+  // equipment's PM schedules and open work orders when set.
+  addColumnIfMissing('equipment', 'task_group', 'TEXT');
   // Mark area/zone types as not requiring LOTO
   const areaTypes = ['Inspection Zone', 'Light Fixture Zone', 'Cleaning Zone', 'Monitoring'];
   const alreadyTagged = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE loto_required = 0").get().c;

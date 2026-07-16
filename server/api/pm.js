@@ -124,12 +124,12 @@ router.put('/schedules/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'PM schedule not found' });
 
-  const { title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, is_active } = req.body;
+  const { title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, is_active, task_group } = req.body;
 
   db.prepare(`
     UPDATE pm_schedules SET title=?, description=?, frequency_type=?, frequency_value=?,
     procedure_steps=?, lubricant_type=?, is_food_grade_lubricant=?, estimated_minutes=?,
-    haccp_ccp_id=?, is_active=?, updated_at=datetime('now') WHERE id=?
+    haccp_ccp_id=?, is_active=?, task_group=?, updated_at=datetime('now') WHERE id=?
   `).run(
     title || existing.title, description ?? existing.description,
     frequency_type || existing.frequency_type, frequency_value ?? existing.frequency_value,
@@ -137,8 +137,16 @@ router.put('/schedules/:id', (req, res) => {
     lubricant_type ?? existing.lubricant_type,
     is_food_grade_lubricant !== undefined ? (is_food_grade_lubricant ? 1 : 0) : existing.is_food_grade_lubricant,
     estimated_minutes ?? existing.estimated_minutes, haccp_ccp_id ?? existing.haccp_ccp_id,
-    is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active, req.params.id
+    is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
+    task_group !== undefined ? (task_group || null) : existing.task_group, req.params.id
   );
+
+  // If the assignee (task_group) changed, cascade to this PM's still-open work
+  // orders so the reassignment takes effect immediately, not just on next generation.
+  if (task_group !== undefined && (task_group || null) !== existing.task_group) {
+    db.prepare("UPDATE work_orders SET task_group=? WHERE pm_schedule_id=? AND status IN ('open','in_progress','overdue')")
+      .run(task_group || null, req.params.id);
+  }
 
   const updated = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'pm_schedule', req.params.id, null, existing, updated);

@@ -26,6 +26,15 @@ function syncMaintenanceTasksToPM(db, equipmentId) {
   }
 }
 
+// Propagate an equipment's assignee (task_group) to its PM schedules and any
+// still-open work orders, so reassigning on the Equipment List immediately
+// routes the tasks to the chosen department.
+function syncTaskGroupToPM(db, equipmentId, taskGroup) {
+  const tg = taskGroup || null;
+  db.prepare("UPDATE pm_schedules SET task_group = ?, updated_at = datetime('now') WHERE equipment_id = ?").run(tg, equipmentId);
+  db.prepare("UPDATE work_orders SET task_group = ? WHERE equipment_id = ? AND status IN ('open','in_progress','overdue')").run(tg, equipmentId);
+}
+
 router.get('/', (req, res) => {
   const db = getDb();
   const { status, type, food_contact } = req.query;
@@ -50,13 +59,14 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks } = req.body;
+  const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks, task_group } = req.body;
   if (!name || !type) return res.status(400).json({ error: 'name and type are required' });
 
   db.prepare(`
-    INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, type, location || null, room || null, asset_id || null, manufacturer || null, model_number || null, serial_number || null, vendor || null, pm_frequency || null, is_food_contact ? 1 : 0, haccp_ccp_id || null, notes || null, maintenance_tasks ? JSON.stringify(maintenance_tasks) : '{}');
+    INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks, task_group)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, type, location || null, room || null, asset_id || null, manufacturer || null, model_number || null, serial_number || null, vendor || null, pm_frequency || null, is_food_contact ? 1 : 0, haccp_ccp_id || null, notes || null, maintenance_tasks ? JSON.stringify(maintenance_tasks) : '{}', task_group || null);
+  if (task_group) syncTaskGroupToPM(db, id, task_group);
 
   const created = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'equipment', id, { name, type }, null, created);
@@ -71,7 +81,7 @@ router.post('/bulk-update', (req, res) => {
 
   const fields = [];
   const vals = [];
-  const allowed = ['type', 'location', 'room', 'manufacturer', 'model_number', 'vendor', 'pm_frequency', 'is_food_contact', 'haccp_ccp_id', 'status', 'notes', 'maintenance_tasks'];
+  const allowed = ['type', 'location', 'room', 'manufacturer', 'model_number', 'vendor', 'pm_frequency', 'is_food_contact', 'haccp_ccp_id', 'status', 'notes', 'maintenance_tasks', 'task_group'];
 
   for (const [key, value] of Object.entries(changes)) {
     if (!allowed.includes(key)) continue;
@@ -96,6 +106,9 @@ router.post('/bulk-update', (req, res) => {
   if (changes.maintenance_tasks !== undefined) {
     for (const id of ids) syncMaintenanceTasksToPM(db, id);
   }
+  if (changes.task_group !== undefined) {
+    for (const id of ids) syncTaskGroupToPM(db, id, changes.task_group);
+  }
 
   logAudit(req.user, 'bulk_update', 'equipment', null, { ids, fields: Object.keys(changes) }, null, null);
   res.json({ updated: ids.length });
@@ -106,11 +119,11 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Equipment not found' });
 
-  const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, status, notes, maintenance_tasks } = req.body;
+  const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, status, notes, maintenance_tasks, task_group } = req.body;
   db.prepare(`
     UPDATE equipment SET name = ?, type = ?, location = ?, room = ?, asset_id = ?, manufacturer = ?,
     model_number = ?, serial_number = ?, vendor = ?, pm_frequency = ?, is_food_contact = ?,
-    haccp_ccp_id = ?, status = ?, notes = ?, maintenance_tasks = ?, updated_at = datetime('now') WHERE id = ?
+    haccp_ccp_id = ?, status = ?, notes = ?, maintenance_tasks = ?, task_group = ?, updated_at = datetime('now') WHERE id = ?
   `).run(
     name || existing.name, type || existing.type, location ?? existing.location,
     room ?? existing.room, asset_id ?? existing.asset_id, manufacturer ?? existing.manufacturer,
@@ -118,8 +131,12 @@ router.put('/:id', (req, res) => {
     vendor ?? existing.vendor, pm_frequency ?? existing.pm_frequency,
     is_food_contact !== undefined ? (is_food_contact ? 1 : 0) : existing.is_food_contact,
     haccp_ccp_id ?? existing.haccp_ccp_id, status || existing.status, notes ?? existing.notes,
-    maintenance_tasks !== undefined ? JSON.stringify(maintenance_tasks) : (existing.maintenance_tasks || '{}'), req.params.id
+    maintenance_tasks !== undefined ? JSON.stringify(maintenance_tasks) : (existing.maintenance_tasks || '{}'),
+    task_group !== undefined ? (task_group || null) : existing.task_group, req.params.id
   );
+  if (task_group !== undefined && (task_group || null) !== existing.task_group) {
+    syncTaskGroupToPM(db, req.params.id, task_group);
+  }
 
   if (maintenance_tasks !== undefined) {
     syncMaintenanceTasksToPM(db, req.params.id);
