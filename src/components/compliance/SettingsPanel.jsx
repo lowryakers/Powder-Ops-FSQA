@@ -76,6 +76,7 @@ const MODULE_GROUPS = [
       { id: 'non-conformance', label: 'Non-Conformance' },
       { id: 'on-hold', label: 'On Hold' },
       { id: 'component-signout', label: 'Component Sign In/Out' },
+      { id: 'maintenance-signout', label: 'Maintenance Sign In/Out' },
       { id: 'organoleptic', label: 'Organoleptic Sensory' },
       { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor' },
     ],

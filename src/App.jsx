@@ -95,6 +95,7 @@ const NAV_GROUPS = [
       { id: 'non-conformance', label: 'Non-Conformance', icon: ShieldAlert },
       { id: 'on-hold', label: 'On Hold', icon: PauseCircle },
       { id: 'component-signout', label: 'Component Sign In/Out', icon: PackageCheck },
+      { id: 'maintenance-signout', label: 'Maintenance Sign In/Out', icon: Wrench },
       { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
       { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor', icon: Scissors },
     ],
@@ -748,6 +749,7 @@ function App() {
           {resolvedTab === 'non-conformance' && <QMSRecordsPanel recordType="non_conformance" moduleId="non-conformance" />}
           {resolvedTab === 'on-hold' && <QMSRecordsPanel recordType="on_hold" moduleId="on-hold" />}
           {resolvedTab === 'component-signout' && <QMSRecordsPanel recordType="component_sign_out" moduleId="component-signout" />}
+          {resolvedTab === 'maintenance-signout' && <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" />}
           {resolvedTab === 'organoleptic' && <QMSRecordsPanel recordType="organoleptic" moduleId="organoleptic" />}
           {resolvedTab === 'knife-accountability' && <QMSRecordsPanel recordType="knife_accountability" moduleId="knife-accountability" />}
           {resolvedTab === 'training' && <TrainingPanel />}

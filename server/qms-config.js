@@ -12,6 +12,42 @@
 // Approval canSign: admin always; else match `roles` (user.role) or `departments`.
 // ─────────────────────────────────────────────────────────────────────────
 
+// Tool Box Equipment List (from the Tool Box Equipment Verification forms) —
+// the dropdown of items for the Maintenance Sign In/Out sheet.
+export const MAINTENANCE_TOOLBOX_ITEMS = [
+  'Batch Organizer (Lot Numeration)',
+  'Hex Key Set',
+  'Stainless Steel Hammer',
+  'Cleaning Brush',
+  'Pry Bar',
+  'Air Blow Gun',
+  'Caliper',
+  'Rubber Hammer',
+  'Straight Point Tool',
+  '45° Point Pick Tool',
+  'Flat-Head Screwdriver',
+  'Philips Screwdriver',
+  'Double Open-Ended Wrench (08mm-10mm)',
+  'Double Open-Ended Wrench (11mm-13mm)',
+  'Double Open-Ended Wrench (12mm-14mm)',
+  'Double Open-Ended Wrench (13mm-16mm)',
+  'Double Open-Ended Wrench (17mm-19mm)',
+  'Double Open-Ended Wrench (24mm-24mm)',
+  'Pliers',
+  'Adjustable Wrench',
+  'Heat Seal Rubber Stamp (White)',
+  'Cutting Pliers',
+  'Leveler',
+  'Long-Nose Pliers',
+  'Big Roll of Teflon Tape (Brown)',
+  'Small Roll of Teflon Tape (Brown)',
+  'Vinyl Tape (White)',
+  'Electrical Tape (Black)',
+  'Batch Lot Ribbon (Black)',
+  'Batch Lot Ribbon (White)',
+  'Batch Lot Ribbon (Gold)',
+];
+
 export const QMS_TYPES = {
   document_change_request: {
     key: 'document_change_request',
@@ -324,6 +360,44 @@ export const QMS_TYPES = {
         'capa': 'capa_number',
       },
     },
+  },
+
+  maintenance_sign_out: {
+    key: 'maintenance_sign_out',
+    label: 'Maintenance Sign In/Out',
+    singular: 'Maintenance Sign-Out',
+    short: 'MSO',
+    moduleId: 'maintenance-signout',
+    formCode: 'Form 703-01',
+    numberPrefix: 'MS-',
+    numberPad: 3,
+    primaryField: 'item_description',
+    dateLabel: 'Date',
+    // A tool is signed out (Out), then returned (Returned).
+    statuses: [
+      { value: 'out', label: 'Out', tone: 'amber' },
+      { value: 'returned', label: 'Returned', tone: 'green', done: true },
+    ],
+    defaultStatus: 'out',
+    // Fields mirror Form 703-01 (Maintenance Sign-Out Sheet). Item Description is
+    // a dropdown of the Tool Box Equipment List (Tool Box Equipment Verification).
+    fields: [
+      { key: 'employee_name', label: 'Employee Name', type: 'text' },
+      { key: 'item_description', label: 'Item Description', type: 'select', options: MAINTENANCE_TOOLBOX_ITEMS },
+      { key: 'asset_tag', label: 'Asset Tag', type: 'text' },
+      { key: 'condition_out', label: 'Condition (Good / Bad)', type: 'select', options: ['Good', 'Bad'] },
+      { key: 'time_out', label: 'Time Out', type: 'text' },
+      { key: 'issued_by', label: 'Issued By (QA)', type: 'text' },
+      { key: 'return_date', label: 'Return Date', type: 'date' },
+      { key: 'return_time', label: 'Return Time', type: 'text' },
+      { key: 'condition_returned', label: 'Returned Condition (Good / Bad)', type: 'select', options: ['Good', 'Bad'] },
+      { key: 'comments', label: 'Comments', type: 'textarea' },
+      { key: 'retrieved_by', label: 'Retrieved By (QA)', type: 'text' },
+    ],
+    logColumns: ['record_number', 'item_description', 'asset_tag', 'employee_name', 'condition_out', 'record_date', 'status', 'approvals'],
+    approvals: [
+      { key: 'quality', label: 'Reviewed by QA', required: true, departments: ['qa'] },
+    ],
   },
 };
 
