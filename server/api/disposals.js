@@ -56,7 +56,7 @@ function writeItems(db, disposalId, items) {
 }
 
 // Next sequential disposal number based on the highest numeric value on record.
-function nextDisposalNumber(db) {
+export function nextDisposalNumber(db) {
   const rows = db.prepare('SELECT disposal_number FROM disposals').all();
   let max = 0;
   for (const r of rows) {

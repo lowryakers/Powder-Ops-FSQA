@@ -977,6 +977,11 @@ function runMigrations() {
 
   // Disposal witness (free-text) — Ops Manager/QC sign-offs live in approvals JSON
   addColumnIfMissing('disposals', 'witness', 'TEXT');
+  // Draft status + provenance back-link (e.g. auto-created from an organoleptic
+  // FAIL). status: NULL/'complete' = normal; 'draft' = needs completion.
+  addColumnIfMissing('disposals', 'status', 'TEXT');
+  addColumnIfMissing('disposals', 'source_type', 'TEXT');
+  addColumnIfMissing('disposals', 'source_id', 'TEXT');
 
   // Link an org-chart position to its Job Description document
   addColumnIfMissing('org_positions', 'job_description_id', 'TEXT');

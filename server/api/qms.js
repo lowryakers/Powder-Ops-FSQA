@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
+import { nextDisposalNumber } from './disposals.js';
 import { QMS_TYPES, getType, canSignApproval } from '../qms-config.js';
 
 const router = Router();
@@ -114,6 +115,35 @@ router.get('/:type/:id', (req, res) => {
   res.json(flatten(row));
 });
 
+// Cross-module automation: a failed organoleptic sensory test means the product
+// must be dispositioned, so open a DRAFT disposal pre-filled from the test and
+// back-linked to it (source_type/source_id). Idempotent — one draft per source
+// test; never auto-deletes, so a QA reviewer stays in control.
+function syncOrganolepticDisposal(db, cfg, rec, user) {
+  if (cfg.key !== 'organoleptic' || !cfg.passFail) return null;
+  const failed = cfg.passFail.fields.some(k => {
+    const n = parseInt(rec[k], 10);
+    return !Number.isNaN(n) && n < cfg.passFail.threshold;
+  });
+  if (!failed) return null;
+  const exists = db.prepare("SELECT id FROM disposals WHERE source_type = 'organoleptic' AND source_id = ?").get(rec.id);
+  if (exists) return null;
+  const id = uuid();
+  const number = nextDisposalNumber(db);
+  const notes = `Auto-generated from Organoleptic test ${rec.record_number || ''} (FAIL). Draft — review and complete: add disposal date, quantity, witness, and approvals.`;
+  const tx = db.transaction(() => {
+    db.prepare(`INSERT INTO disposals (id, disposal_number, reason, notes, status, source_type, source_id, created_by)
+      VALUES (?, ?, ?, ?, 'draft', 'organoleptic', ?, ?)`).run(
+      id, number, 'Organoleptic sensory test failure', notes, rec.id, user?.name || 'system');
+    db.prepare(`INSERT INTO disposal_items (id, disposal_id, item_name, item_number, lot_number, quantity, reason_disposed, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)`).run(
+      uuid(), id, rec.product || null, rec.part_number || null, rec.lot || null, rec.quantity || null, 'Organoleptic FAIL');
+  });
+  tx();
+  logAudit(user, 'disposal_created', 'disposal', id, { disposal_number: number, source: 'organoleptic', source_record: rec.record_number }, null, null);
+  return id;
+}
+
 // ── create ───────────────────────────────────────────────────────────────────
 router.post('/:type', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
@@ -127,7 +157,9 @@ router.post('/:type', (req, res) => {
     JSON.stringify(data), req.body.paper_record ? 1 : 0, req.body.document_url || null,
     req.body.capa_id || null, req.body.notes || null, req.user.name);
   logAudit(req.user, 'qms_created', cfg.key, id, { record_number: number });
-  res.status(201).json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id)));
+  const created = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id));
+  try { syncOrganolepticDisposal(db, cfg, created, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
+  res.status(201).json(created);
 });
 
 // ── update ───────────────────────────────────────────────────────────────────
@@ -148,7 +180,9 @@ router.put('/:type/:id', (req, res) => {
     req.body.capa_id !== undefined ? (req.body.capa_id || null) : existing.capa_id,
     req.body.notes ?? existing.notes, req.params.id);
   logAudit(req.user, 'qms_updated', cfg.key, req.params.id, { record_number: existing.record_number });
-  res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
+  const updated = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id));
+  try { syncOrganolepticDisposal(db, cfg, updated, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
+  res.json(updated);
 });
 
 // ── bulk ─────────────────────────────────────────────────────────────────────

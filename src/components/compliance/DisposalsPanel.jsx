@@ -250,9 +250,13 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-gray-900">Disposal {d.disposal_number || '—'}</span>
               {d.document_rev && <span className="text-xs text-gray-400">{d.document_rev}</span>}
+              {d.status === 'draft' && <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Draft</span>}
               <ApprovalBadge d={d} />
             </div>
             <p className="text-xs text-gray-500 mt-0.5">{d.disposal_date || ''} · {d.items?.length || 0} item{d.items?.length === 1 ? '' : 's'}</p>
+            {d.status === 'draft' && d.source_type === 'organoleptic' && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1 mt-1.5">Auto-created from an organoleptic FAIL — review and complete the details, then approve.</p>
+            )}
           </div>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
@@ -553,7 +557,10 @@ export default function DisposalsPanel() {
                     <td className="px-2 py-2 text-gray-600 max-w-[220px]">{r.reason_disposed || '—'}</td>
                     <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{r.date_disposed || '—'}</td>
                     <td className="px-2 py-2 text-gray-600 whitespace-pre-line">{r.write_off_number || '—'}</td>
-                    <td className="px-2 py-2 text-gray-500 whitespace-nowrap">{r.disposal_number || '—'}</td>
+                    <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
+                      {r.disposal_number || '—'}
+                      {r._d?.status === 'draft' && <span className="ml-1.5 text-[9px] font-bold uppercase px-1 py-0.5 rounded bg-amber-100 text-amber-700">Draft</span>}
+                    </td>
                     <td className="px-2 py-2 text-gray-500 whitespace-nowrap">{r.document_rev || '—'}</td>
                     <td className="px-2 py-2 text-center"><ApprovalBadge d={r._d} /></td>
                   </tr>
