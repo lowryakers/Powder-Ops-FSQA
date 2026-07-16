@@ -129,9 +129,10 @@ function IssueForm({ wo, onFlag, onCancel }) {
   );
 }
 
-function WOForm({ equipment, technicians, onSave, onCancel }) {
-  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', assigned_to: '', due_date: '', attachments: [] });
+function WOForm({ equipment, technicians, onSave, onCancel, user }) {
+  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', assigned_to: '', due_date: '', attachments: [], task_group: 'warehouse' });
   const [saving, setSaving] = useState(false);
+  const canAssignDC = user?.role === 'admin' || (user?.role === 'supervisor' && ['qa', 'document_control'].includes(user?.department));
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -143,10 +144,21 @@ function WOForm({ equipment, technicians, onSave, onCancel }) {
       <h3 className="font-semibold text-gray-900">New Work Order</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Equipment *</label>
-          <select required value={form.equipment_id} onChange={e => setForm({ ...form, equipment_id: e.target.value })}
+          <label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
+          <select value={form.task_group} onChange={e => setForm({ ...form, task_group: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">Select...</option>
+            <option value="warehouse">Warehouse</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="qa">QA</option>
+            <option value="cleaning">Cleaning</option>
+            {canAssignDC && <option value="document_control">Document Control</option>}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Equipment {form.task_group === 'document_control' ? '' : <span className="text-gray-400 font-normal">(optional)</span>}</label>
+          <select value={form.equipment_id} onChange={e => setForm({ ...form, equipment_id: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">None — general task</option>
             {(equipment || []).map(eq => <option key={eq.id} value={eq.id}>{eq.name} ({eq.location || 'No location'})</option>)}
           </select>
         </div>
@@ -825,7 +837,7 @@ export default function PMPanel() {
         </div>
       )}
 
-      {showWOForm && <WOForm equipment={equipment} technicians={technicians} onSave={handleCreateWO} onCancel={() => setShowWOForm(false)} />}
+      {showWOForm && <WOForm equipment={equipment} technicians={technicians} onSave={handleCreateWO} onCancel={() => setShowWOForm(false)} user={user} />}
 
       {/* Group Filter (Admin) + View Toggle + Frequency Filter */}
       <div className="space-y-2">

@@ -958,6 +958,32 @@ function runMigrations() {
   // 'maintenance' | 'warehouse' | 'qa' | 'cleaning'. Propagates to the
   // equipment's PM schedules and open work orders when set.
   addColumnIfMissing('equipment', 'task_group', 'TEXT');
+
+  // Make work_orders.equipment_id nullable so departments (e.g. Document
+  // Control) can be assigned free-form tasks that aren't tied to a machine.
+  // One-time, transactional table rebuild — guarded so it only runs once.
+  try {
+    const col = db.prepare('PRAGMA table_info(work_orders)').all().find(c => c.name === 'equipment_id');
+    if (col && col.notnull === 1) {
+      const createSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='work_orders'").get().sql;
+      const newSql = createSql
+        .replace(/CREATE TABLE\s+"?work_orders"?/i, 'CREATE TABLE work_orders_new')
+        .replace(/equipment_id\s+TEXT\s+NOT\s+NULL/i, 'equipment_id TEXT');
+      const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='work_orders' AND sql IS NOT NULL").all().map(r => r.sql);
+      db.pragma('foreign_keys = OFF');
+      db.transaction(() => {
+        db.exec(newSql);
+        db.exec('INSERT INTO work_orders_new SELECT * FROM work_orders');
+        db.exec('DROP TABLE work_orders');
+        db.exec('ALTER TABLE work_orders_new RENAME TO work_orders');
+        for (const ix of indexes) db.exec(ix);
+      })();
+      db.pragma('foreign_keys = ON');
+      console.log('[migrate] work_orders.equipment_id is now nullable (non-equipment tasks supported)');
+    }
+  } catch (e) {
+    console.error('[migrate] work_orders equipment_id nullable failed:', e.message);
+  }
   // Mark area/zone types as not requiring LOTO
   const areaTypes = ['Inspection Zone', 'Light Fixture Zone', 'Cleaning Zone', 'Monitoring'];
   const alreadyTagged = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE loto_required = 0").get().c;

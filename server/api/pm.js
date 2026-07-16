@@ -161,7 +161,7 @@ router.get('/work-orders', (req, res) => {
   const { status, equipment_id, from, to, assigned_to } = req.query;
   let sql = `SELECT wo.*, e.name as equipment_name, e.room, ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
-    JOIN equipment e ON wo.equipment_id = e.id
+    LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id WHERE 1=1`;
   const params = [];
 
@@ -178,7 +178,7 @@ router.get('/work-orders', (req, res) => {
 router.get('/work-orders/:id', (req, res) => {
   const db = getDb();
   const wo = db.prepare(`SELECT wo.*, e.name as equipment_name, e.room, ps.title as pm_title
-    FROM work_orders wo JOIN equipment e ON wo.equipment_id = e.id
+    FROM work_orders wo LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id WHERE wo.id = ?`).get(req.params.id);
   if (!wo) return res.status(404).json({ error: 'Work order not found' });
 
@@ -194,18 +194,29 @@ router.post('/work-orders', (req, res) => {
   const id = uuid();
   const { pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments, task_group } = req.body;
 
-  if (!equipment_id || !title || !due_date) {
-    return res.status(400).json({ error: 'equipment_id, title, and due_date are required' });
+  // Equipment is optional so departments (e.g. Document Control) can be assigned
+  // free-form tasks — "review SOP-014" — that aren't tied to a machine.
+  if (!title || !due_date) {
+    return res.status(400).json({ error: 'title and due_date are required' });
+  }
+
+  const group = task_group || 'warehouse';
+  // Assigning to Document Control is limited to admins and QA / Document Control
+  // supervisors (the roles that own document workflow).
+  if (group === 'document_control') {
+    const canAssignDC = req.user?.role === 'admin' ||
+      (req.user?.role === 'supervisor' && ['qa', 'document_control'].includes(req.user?.department));
+    if (!canAssignDC) return res.status(403).json({ error: 'Only admins or QA / Document Control supervisors can assign Document Control tasks.' });
   }
 
   db.prepare(`
     INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments, task_group)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, pm_schedule_id || null, equipment_id, title, description || null,
-    priority || 'normal', assigned_to || null, due_date, JSON.stringify(procedure_steps || []), JSON.stringify(attachments || []), task_group || 'warehouse');
+  `).run(id, pm_schedule_id || null, equipment_id || null, title, description || null,
+    priority || 'normal', assigned_to || null, due_date, JSON.stringify(procedure_steps || []), JSON.stringify(attachments || []), group);
 
   const created = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id);
-  logAudit(req.user, 'create', 'work_order', id, { title, equipment_id, due_date }, null, created);
+  logAudit(req.user, 'create', 'work_order', id, { title, equipment_id: equipment_id || null, task_group: group, due_date }, null, created);
   res.status(201).json(created);
 });
 
@@ -606,7 +617,7 @@ router.get('/operator-tasks', (req, res) => {
     e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id,
     ps.frequency_type, ps.title as schedule_title
     FROM work_orders wo
-    JOIN equipment e ON wo.equipment_id = e.id
+    LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
     WHERE wo.status IN ('open', 'in_progress', 'overdue')`;
   const params = [];
