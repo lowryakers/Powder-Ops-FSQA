@@ -5,7 +5,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaTool } from '@anthropic-ai/sdk/helpers/beta/json-schema';
 import Database from 'better-sqlite3';
-import { getDbPath } from './db.js';
+import crypto from 'crypto';
+import { getDbPath, getDb } from './db.js';
 
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
 
@@ -149,6 +150,52 @@ export async function translateText(items, targetLang = 'es') {
   try { out = JSON.parse(text); } catch { throw new Error('Translation returned an unexpected response'); }
   if (!Array.isArray(out) || out.length !== list.length) throw new Error('Translation length mismatch');
   return out.map(s => String(s ?? ''));
+}
+
+// Cached content translation. Reuses translateText() but persists each result in
+// translation_cache keyed by (sha1(source), lang) so repeated strings — e.g. the
+// same task title shown to every operator — are translated once. Degrades
+// gracefully: returns the source strings unchanged when AI is off or on failure,
+// so callers never break. Order/length always matches the input.
+const hashText = (s) => crypto.createHash('sha1').update(s).digest('hex');
+
+export async function translateCached(texts, targetLang = 'es') {
+  const list = (Array.isArray(texts) ? texts : [texts]).map(s => String(s ?? ''));
+  if (targetLang === 'en' || !aiEnabled()) return list;
+
+  const db = getDb();
+  const out = new Array(list.length);
+  const misses = [];
+  const missIdx = [];
+  const getStmt = db.prepare('SELECT translated FROM translation_cache WHERE source_hash = ? AND target_lang = ?');
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (!s.trim()) { out[i] = s; continue; }
+    let row = null;
+    try { row = getStmt.get(hashText(s), targetLang); } catch { /* cache read best-effort */ }
+    if (row) out[i] = row.translated;
+    else { misses.push(s); missIdx.push(i); }
+  }
+
+  if (misses.length) {
+    let translated;
+    try {
+      translated = await translateText(misses, targetLang);
+    } catch {
+      for (const i of missIdx) out[i] = list[i]; // fall back to source on failure
+      return out;
+    }
+    const ins = db.prepare(
+      'INSERT OR IGNORE INTO translation_cache (source_hash, target_lang, source_text, translated, created_at) VALUES (?, ?, ?, ?, ?)'
+    );
+    const now = new Date().toISOString();
+    for (let k = 0; k < misses.length; k++) {
+      const i = missIdx[k];
+      out[i] = translated[k];
+      try { ins.run(hashText(misses[k]), targetLang, misses[k].slice(0, 4000), translated[k], now); } catch { /* cache write best-effort */ }
+    }
+  }
+  return out;
 }
 
 // ── Read-only query assistant ─────────────────────────────────────────────────
