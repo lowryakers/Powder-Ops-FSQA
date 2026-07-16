@@ -133,7 +133,7 @@ export default function KnifeKiosk() {
           <div className="h-12 w-12 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3">
             <Scissors size={24} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Knife / Blade Sign In/Out</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Knife / Razor Blade / Scissor Sign In/Out</h1>
           <p className="text-sm text-gray-500 mt-1">Tap your knife to check it out or return it</p>
         </div>
 

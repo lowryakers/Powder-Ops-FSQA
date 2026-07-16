@@ -187,8 +187,8 @@ export const QMS_TYPES = {
 
   knife_accountability: {
     key: 'knife_accountability',
-    label: 'Knife / Blade Accountability',
-    singular: 'Knife / Blade',
+    label: 'Knife / Razor Blade / Scissor',
+    singular: 'Knife / Razor Blade / Scissor',
     short: 'KB',
     moduleId: 'knife-accountability',
     formCode: 'Form 440-01 / 440-02',

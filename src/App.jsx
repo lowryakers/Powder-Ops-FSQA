@@ -96,7 +96,7 @@ const NAV_GROUPS = [
       { id: 'on-hold', label: 'On Hold', icon: PauseCircle },
       { id: 'component-signout', label: 'Component Sign In/Out', icon: PackageCheck },
       { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
-      { id: 'knife-accountability', label: 'Knife / Blade Accountability', icon: Scissors },
+      { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor', icon: Scissors },
     ],
   },
   {

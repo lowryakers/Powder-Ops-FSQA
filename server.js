@@ -45,6 +45,7 @@ import coaRoutes from './server/api/coa.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries } from './server/production-seed.js';
 import { seedTrainingCourses } from './server/training-seed.js';
+import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate } from './server/middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -822,6 +823,8 @@ try {
     const { imported } = importQmsCsv(db, orgCfg, ORGANOLEPTIC_LOG_CSV, 'system-import');
     console.log(`[seed] Imported historical Organoleptic / Shelf-life log (${imported} records)`);
   }
+  const knifeSeeded = seedKnifeMasterlist(db);
+  if (knifeSeeded) console.log(`[seed] Seeded Knife / Razor Blade / Scissor masterlist (${knifeSeeded} records)`);
 } catch (e) {
   console.warn('[seed] Could not seed QMS registers:', e.message);
 }
