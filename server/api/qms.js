@@ -85,8 +85,45 @@ function requireType(req, res) {
 }
 
 // ── config (must precede /:type) ────────────────────────────────────────────
+// Editable Maintenance Sign In/Out item list, stored in the DB and managed in
+// the app. Read helper + admin write endpoint.
+function maintenanceItems(db) {
+  try { return db.prepare('SELECT name FROM maintenance_items ORDER BY sort_order, name').all().map(r => r.name); }
+  catch { return []; }
+}
+
+router.get('/maintenance-items', (req, res) => {
+  res.json({ items: maintenanceItems(getDb()) });
+});
+
+router.put('/maintenance-items', (req, res) => {
+  if (!(req.user?.role === 'admin' || req.user?.role === 'supervisor')) {
+    return res.status(403).json({ error: 'Only admins or supervisors can edit the item list.' });
+  }
+  const items = Array.isArray(req.body?.items)
+    ? [...new Set(req.body.items.map(s => String(s || '').trim()).filter(Boolean))]
+    : null;
+  if (!items) return res.status(400).json({ error: 'items (array) is required' });
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare('DELETE FROM maintenance_items').run();
+    const ins = db.prepare('INSERT INTO maintenance_items (id, name, sort_order) VALUES (?, ?, ?)');
+    items.forEach((name, i) => ins.run(uuid(), name, i));
+  })();
+  logAudit(req.user, 'update', 'maintenance_items', null, { count: items.length }, null, null);
+  res.json({ items });
+});
+
 router.get('/config', (_req, res) => {
-  res.json({ types: Object.values(QMS_TYPES) });
+  // Inject the current (editable) Maintenance item list into its dropdown field.
+  const items = maintenanceItems(getDb());
+  const types = Object.values(QMS_TYPES).map(t => {
+    if (t.key === 'maintenance_sign_out' && items.length) {
+      return { ...t, fields: t.fields.map(f => f.key === 'item_description' ? { ...f, options: items } : f) };
+    }
+    return t;
+  });
+  res.json({ types });
 });
 
 // ── list + summary ──────────────────────────────────────────────────────────

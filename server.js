@@ -26,7 +26,7 @@ import hygienicDesignRoutes from './server/api/hygienic-design.js';
 import complaintRoutes from './server/api/complaints.js';
 import documentRoutes from './server/api/documents.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
-import { getType as getQmsType } from './server/qms-config.js';
+import { getType as getQmsType, MAINTENANCE_TOOLBOX_ITEMS } from './server/qms-config.js';
 import { DCR_LOG_CSV, DEVIATION_LOG_CSVS, NON_CONFORMANCE_LOG_CSV, ON_HOLD_LOG_CSV, ORGANOLEPTIC_LOG_CSV } from './server/qms-seed.js';
 import orgRoutes from './server/api/org.js';
 import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
@@ -825,6 +825,13 @@ try {
   }
   const knifeSeeded = seedKnifeMasterlist(db);
   if (knifeSeeded) console.log(`[seed] Seeded Knife / Razor Blade / Scissor masterlist (${knifeSeeded} records)`);
+  // Seed the editable Maintenance Sign-Out item list from the default Tool Box
+  // Equipment List (only when empty, so app edits are never overwritten).
+  if (db.prepare('SELECT COUNT(*) c FROM maintenance_items').get().c === 0) {
+    const ins = db.prepare('INSERT INTO maintenance_items (id, name, sort_order) VALUES (?, ?, ?)');
+    db.transaction(() => MAINTENANCE_TOOLBOX_ITEMS.forEach((name, i) => ins.run(uuid(), name, i)))();
+    console.log(`[seed] Seeded ${MAINTENANCE_TOOLBOX_ITEMS.length} Maintenance Sign-Out items`);
+  }
 } catch (e) {
   console.warn('[seed] Could not seed QMS registers:', e.message);
 }

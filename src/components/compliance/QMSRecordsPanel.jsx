@@ -3,7 +3,7 @@ import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import FileUpload from '../FileUpload';
-import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square, Eye, QrCode } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square, Eye, QrCode, ListChecks } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
 
 // Mirror of server canSignApproval — admin always; else role/department match.
@@ -354,6 +354,66 @@ async function uploadFile(file) {
   return u?.url;
 }
 
+// Manage the editable dropdown list for the Maintenance Sign In/Out item field.
+// Add/rename/remove/reorder tools; saved to the DB and reflected in the form.
+function ManageItemsModal({ onDone, onClose }) {
+  const [items, setItems] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    apiFetch('/qms/maintenance-items').then(r => setItems(r.items || [])).catch(() => setItems([]));
+  }, []);
+  const set = (i, v) => setItems(a => a.map((x, j) => j === i ? v : x));
+  const remove = (i) => setItems(a => a.filter((_, j) => j !== i));
+  const add = () => setItems(a => [...a, '']);
+  const move = (i, d) => setItems(a => {
+    const j = i + d; if (j < 0 || j >= a.length) return a;
+    const n = [...a]; [n[i], n[j]] = [n[j], n[i]]; return n;
+  });
+  const save = async () => {
+    setSaving(true); setErr(null);
+    try {
+      const clean = [...new Set(items.map(s => s.trim()).filter(Boolean))];
+      await apiPut('/qms/maintenance-items', { items: clean });
+      onDone();
+      onClose();
+    } catch (e) { setErr(e.message || 'Save failed'); setSaving(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg my-6 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">Manage Item List</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <p className="text-xs text-gray-500">The dropdown of tools/equipment for the Maintenance Sign In/Out form. Changes apply to new sign-outs; existing records keep what was recorded.</p>
+        {items === null ? <p className="text-sm text-gray-400 py-4 text-center">Loading…</p> : (
+          <div className="space-y-1.5 max-h-[55vh] overflow-y-auto">
+            {items.map((it, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <div className="flex flex-col text-gray-300">
+                  <button type="button" onClick={() => move(i, -1)} className="hover:text-gray-600 leading-none" title="Move up"><ChevronUp size={13} /></button>
+                  <button type="button" onClick={() => move(i, 1)} className="hover:text-gray-600 leading-none" title="Move down"><ChevronDown size={13} /></button>
+                </div>
+                <span className="text-[11px] text-gray-400 w-5 text-right">{i + 1}</span>
+                <input value={it} onChange={e => set(i, e.target.value)} spellCheck="true"
+                  className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                <button type="button" onClick={() => remove(i)} className="p-1 text-gray-300 hover:text-red-500"><Trash2 size={14} /></button>
+              </div>
+            ))}
+            <button type="button" onClick={add} className="flex items-center gap-1.5 text-sm text-powder-600 hover:underline mt-1"><Plus size={14} /> Add item</button>
+          </div>
+        )}
+        {err && <p className="text-xs text-red-600">{err}</p>}
+        <div className="flex items-center gap-2 pt-1">
+          <button onClick={save} disabled={saving || items === null} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save list'}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Bulk-attach completed/scanned forms to existing records, matched by the
 // number in each filename. Ambiguous or unmatched files are surfaced for a
 // manual pick; nothing is uploaded until the user applies.
@@ -519,7 +579,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, moduleId);
   const isAdmin = user?.role === 'admin';
-  const { data: config } = useApiGet('/qms/config');
+  const { data: config, refresh: refreshConfig } = useApiGet('/qms/config');
   const cfg = useMemo(() => (config?.types || []).find(t => t.key === recordType), [config, recordType]);
   const { data: records, loading, refresh } = useApiGet(`/qms/${recordType}`, [recordType]);
 
@@ -533,6 +593,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
   const [viewing, setViewing] = useState(null);
   const [importing, setImporting] = useState(false);
   const [attaching, setAttaching] = useState(false);
+  const [managingItems, setManagingItems] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showQr, setShowQr] = useState(false);
@@ -611,6 +672,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
         {canEdit && (
           <div className="flex items-center gap-2">
             {cfg.kioskPath && <button onClick={() => setShowQr(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><QrCode size={15} /> Kiosk QR</button>}
+            {recordType === 'maintenance_sign_out' && <button onClick={() => setManagingItems(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><ListChecks size={15} /> Manage Items</button>}
             <button onClick={() => setAttaching(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Paperclip size={15} /> Attach Forms</button>
             <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Upload size={15} /> Import Log (CSV)</button>
             <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700"><Plus size={16} /> New {cfg.singular}</button>
@@ -711,6 +773,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
       {viewing && !editing && <RecordView cfg={cfg} rec={viewing} user={user} canEdit={canEdit} onSign={handleSign} onRevoke={handleRevoke} onSetStatus={handleSetStatus} onEdit={(r) => setEditing(r)} onDelete={handleDelete} onClose={() => setViewing(null)} />}
       {importing && <CsvImportModal cfg={cfg} onClose={() => setImporting(false)} onImported={(res) => { setImporting(false); flash(`Imported ${res.imported} records.`); refresh(); }} />}
       {attaching && <AttachFormsModal cfg={cfg} records={records} onClose={() => setAttaching(false)} onDone={refresh} />}
+      {managingItems && <ManageItemsModal onClose={() => setManagingItems(false)} onDone={() => { refreshConfig(); flash('Item list updated.'); }} />}
       {confirmDelete && <ConfirmDeleteModal count={selected.size} noun="record" onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />}
       {showQr && cfg.kioskPath && <KioskQrModal cfg={cfg} onClose={() => setShowQr(false)} />}
     </div>

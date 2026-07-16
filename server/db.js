@@ -1230,6 +1230,18 @@ function runMigrations() {
     console.warn('[db] translation_cache unavailable:', e.message);
   }
 
+  // Editable dropdown list for the Maintenance Sign In/Out item field, managed
+  // in Settings. Seeded (in server.js) from the Tool Box Equipment List default.
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS maintenance_items (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )`);
+  } catch (e) {
+    console.warn('[db] maintenance_items unavailable:', e.message);
+  }
+
   // Slack import: original message ts for idempotent re-imports.
   addColumnIfMissing('chat_messages', 'external_id', 'TEXT');
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_external ON chat_messages(channel_id, external_id)'); } catch { /* ignore */ }
