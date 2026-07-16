@@ -357,6 +357,96 @@ function ConfirmDeleteModal({ count, onConfirm, onClose }) {
 }
 
 /* ───────── Panel ───────── */
+// Match on the last numeric group so "007", "DISP-7", "disposal_07" all line up.
+function lastNum(s) { const m = String(s || '').match(/\d+/g); return m ? String(parseInt(m[m.length - 1], 10)) : ''; }
+async function uploadFormFile(file) {
+  const fd = new FormData();
+  fd.append('files', file);
+  const res = await fetch('/api/uploads', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error('Upload failed');
+  const [u] = await res.json();
+  return u?.url;
+}
+
+// Bulk-attach scanned/completed disposal forms, matched to disposals by the
+// number in each filename (same flow as the QMS logs). Nothing uploads until
+// the user applies; ambiguous files get a manual picker.
+function DisposalAttachModal({ disposals, onDone, onClose }) {
+  const [rows, setRows] = useState([]);
+  const [applying, setApplying] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const onFiles = (fileList) => {
+    const files = Array.from(fileList || []);
+    setRows(files.map(file => {
+      const fnum = lastNum(file.name.replace(/\.[^.]*$/, ''));
+      const candidates = (disposals || []).filter(d => lastNum(d.disposal_number) === fnum);
+      return { file, name: file.name, num: fnum || '—', candidates, chosenId: candidates.length === 1 ? candidates[0].id : '' };
+    }));
+    setResult(null);
+  };
+  const setChosen = (i, id) => setRows(rs => rs.map((r, j) => j === i ? { ...r, chosenId: id } : r));
+
+  const apply = async () => {
+    setApplying(true);
+    let ok = 0, fail = 0;
+    for (const r of rows) {
+      if (!r.chosenId) continue;
+      try { const url = await uploadFormFile(r.file); await apiPut(`/disposals/${r.chosenId}`, { document_url: url, paper_record: true }); ok++; }
+      catch { fail++; }
+    }
+    setApplying(false);
+    setResult({ ok, fail });
+    if (ok) onDone();
+  };
+
+  const dispLabel = (d) => `Disposal ${d.disposal_number || '—'}${d.disposal_date ? ` (${d.disposal_date})` : ''} · ${(d.items || []).length} item${(d.items || []).length === 1 ? '' : 's'}`;
+  const readyCount = rows.filter(r => r.chosenId).length;
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-6 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">Attach completed disposal forms</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <p className="text-xs text-gray-500">Drop the scanned/completed PDFs. Each is matched to a disposal by the number in the filename, then attached to that record (marked as a paper record). Nothing uploads until you apply.</p>
+        <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl py-8 cursor-pointer hover:bg-gray-50">
+          <Upload size={24} className="text-gray-400" />
+          <span className="text-sm text-gray-600 font-medium">Choose completed form files (PDF/images)</span>
+          <input type="file" accept=".pdf,image/*" multiple className="hidden" onChange={e => onFiles(e.target.files)} />
+        </label>
+        {rows.length > 0 && (
+          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[50vh] overflow-y-auto">
+            {rows.map((r, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2 text-sm">
+                <FileText size={15} className="text-gray-400 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-gray-800">{r.name}</div>
+                  <div className="text-[11px] text-gray-400">Detected #: {r.num} · {r.candidates.length} match{r.candidates.length === 1 ? '' : 'es'}</div>
+                </div>
+                <select value={r.chosenId} onChange={e => setChosen(i, e.target.value)}
+                  className="px-2 py-1 border border-gray-300 rounded-lg text-xs max-w-[45%]">
+                  <option value="">{r.candidates.length ? 'Pick disposal…' : 'No match'}</option>
+                  {(r.candidates.length ? r.candidates : disposals || []).map(d => <option key={d.id} value={d.id}>{dispLabel(d)}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+        )}
+        {result && <p className="text-sm text-gray-600">Attached {result.ok} form{result.ok === 1 ? '' : 's'}{result.fail ? `, ${result.fail} failed` : ''}.</p>}
+        <div className="flex items-center gap-2">
+          <button onClick={apply} disabled={applying || readyCount === 0}
+            className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
+            {applying ? 'Attaching…' : `Attach ${readyCount || ''} form${readyCount === 1 ? '' : 's'}`}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DisposalsPanel() {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'disposals');
@@ -372,6 +462,7 @@ export default function DisposalsPanel() {
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [msg, setMsg] = useState(null);
   const [selected, setSelected] = useState(() => new Set()); // parent disposal ids
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -462,6 +553,7 @@ export default function DisposalsPanel() {
         </div>
         {canEdit && (
           <div className="flex items-center gap-2">
+            <button onClick={() => setAttaching(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Paperclip size={15} /> Attach Forms</button>
             <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Upload size={15} /> Import Log (CSV)</button>
             <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700"><Plus size={16} /> New Disposal</button>
           </div>
@@ -575,6 +667,7 @@ export default function DisposalsPanel() {
       {editing && <DisposalForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
       {viewing && !editing && <DisposalView d={viewing} user={user} canEdit={canEdit} onSign={handleSign} onRevoke={handleRevoke} onEdit={(d) => { setEditing(d); }} onDelete={handleDelete} onClose={() => setViewing(null)} />}
       {importing && <CsvImportModal onClose={() => setImporting(false)} onImported={(res) => { setImporting(false); setMsg(`Imported ${res.disposals} disposals (${res.items} items).`); setTimeout(() => setMsg(null), 6000); refresh(); }} />}
+      {attaching && <DisposalAttachModal disposals={disposals || []} onDone={refresh} onClose={() => setAttaching(false)} />}
       {confirmDelete && <ConfirmDeleteModal count={selected.size} onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />}
     </div>
   );
