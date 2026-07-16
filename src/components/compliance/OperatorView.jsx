@@ -826,16 +826,30 @@ export default function OperatorView() {
     if (missing.length === 0) return;
     missing.forEach(s => requestedRef.current.add(s));
     let cancelled = false;
-    apiPost('/ai/translate-content', { texts: missing, lang: 'es' })
-      .then(res => {
-        if (cancelled || !Array.isArray(res?.translations)) return;
-        setContentMap(prev => {
-          const next = { ...prev };
-          missing.forEach((s, i) => { next[s] = res.translations[i] ?? s; });
-          return next;
-        });
-      })
-      .catch(() => { missing.forEach(s => requestedRef.current.delete(s)); });
+    // Chunk requests: a busy operator can have far more than the endpoint's
+    // 200-string cap in unique task text, and one oversized request would be
+    // rejected — leaving everything untranslated. Send in batches of 100 and
+    // apply each as it returns.
+    const CHUNK = 100;
+    (async () => {
+      for (let i = 0; i < missing.length; i += CHUNK) {
+        if (cancelled) return;
+        const batch = missing.slice(i, i + CHUNK);
+        try {
+          const res = await apiPost('/ai/translate-content', { texts: batch, lang: 'es' });
+          if (cancelled) return;
+          if (Array.isArray(res?.translations)) {
+            setContentMap(prev => {
+              const next = { ...prev };
+              batch.forEach((s, k) => { next[s] = res.translations[k] ?? s; });
+              return next;
+            });
+          }
+        } catch {
+          batch.forEach(s => requestedRef.current.delete(s)); // allow retry on next render
+        }
+      }
+    })();
     return () => { cancelled = true; };
   }, [lang, tasks]);
   // Translate task content for display (identity in EN or when not yet translated).
