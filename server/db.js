@@ -1160,6 +1160,8 @@ function runMigrations() {
   // table by name, and normalize historical action verbs to the canonical set.
   // Password auth (replacing PIN). scrypt hash stored as "salt:hash" hex.
   addColumnIfMissing('users', 'password_hash', 'TEXT');
+  // Default landing workspace per user: 'fsqa' (default) or 'messages'.
+  addColumnIfMissing('users', 'home_workspace', 'TEXT');
 
   // Slack import: original message ts for idempotent re-imports.
   addColumnIfMissing('chat_messages', 'external_id', 'TEXT');

@@ -191,6 +191,7 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
   const [form, setForm] = useState(() => ({
     name: '', pin: '', role: 'operator', department: 'warehouse',
     ...initial,
+    home_workspace: initial?.home_workspace || 'fsqa',
     module_access: parseModuleAccess(initial?.module_access),
   }));
   const [saving, setSaving] = useState(false);
@@ -264,6 +265,15 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Home screen</label>
+          <select value={form.home_workspace || 'fsqa'} onChange={e => setForm({ ...form, home_workspace: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="fsqa">FSQA tools</option>
+            <option value="messages">Messages</option>
+          </select>
+          <p className="text-[11px] text-gray-400 mt-1">Where this user lands after signing in.</p>
         </div>
       </div>
 
