@@ -404,7 +404,7 @@ function QuestionEditor({ q, onChange, onRemove, index, lang = 'en' }) {
         <button type="button" onClick={onRemove} disabled={es} className="ml-auto p-1 text-gray-400 hover:text-red-500 rounded disabled:opacity-40"><Trash2 size={14} /></button>
       </div>
       <textarea value={es ? (q.prompt_es || '') : q.prompt} onChange={e => set(es ? { prompt_es: e.target.value } : { prompt: e.target.value })} rows={2}
-        placeholder={es ? 'Traducción al español…' : 'Question prompt…'}
+        placeholder={es ? 'Traducción al español…' : 'Question prompt…'} spellCheck="true" lang={es ? 'es' : 'en'}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
 
       {q.type === 'multiple_choice' && (
@@ -412,7 +412,7 @@ function QuestionEditor({ q, onChange, onRemove, index, lang = 'en' }) {
           {q.options.map((o, i) => (
             <div key={i} className="flex items-center gap-2">
               <input type="radio" name={`correct-${q._k}`} checked={String(q.correct_answer) === String(i)} onChange={() => set({ correct_answer: String(i) })} disabled={es} title="Mark correct" />
-              <input value={es ? (q.options_es?.[i] || '') : o} onChange={e => setOption(i, e.target.value)} placeholder={es ? `Opción ${i + 1}` : `Option ${i + 1}`} className="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white" />
+              <input value={es ? (q.options_es?.[i] || '') : o} onChange={e => setOption(i, e.target.value)} placeholder={es ? `Opción ${i + 1}` : `Option ${i + 1}`} spellCheck="true" lang={es ? 'es' : 'en'} className="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white" />
               {!es && q.options.length > 2 && <button type="button" onClick={() => removeOption(i)} className="p-1 text-gray-300 hover:text-red-500"><X size={14} /></button>}
             </div>
           ))}

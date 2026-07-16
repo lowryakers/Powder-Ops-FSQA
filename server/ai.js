@@ -198,6 +198,27 @@ export async function translateCached(texts, targetLang = 'es') {
   return out;
 }
 
+// Proofread document/test content: fix spelling, grammar, punctuation, and
+// clarity WITHOUT changing meaning, procedure steps, numbers, measurements, or
+// Markdown structure. Returns the corrected text plus short notes on what changed.
+export async function proofreadText(text) {
+  const c = getClient();
+  if (!c) throw new Error('AI is not configured');
+  const src = String(text ?? '');
+  if (!src.trim()) return { corrected: src, notes: [] };
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 4096,
+    system: `You are a proofreader for food-safety and quality documents (SOPs, work instructions, training material). Correct spelling, grammar, and punctuation and improve clarity, but DO NOT change the meaning, procedure steps, sequence, numbers, measurements, chemical names, or Markdown structure (headings, lists, tables, links). Return ONLY JSON: {"corrected":"<the full corrected text>","notes":["short description of a fix", ...]} — notes summarize the kinds of changes you made (max 6). If nothing needs changing, return the text unchanged with an empty notes array.`,
+    messages: [{ role: 'user', content: src.slice(0, 12000) }],
+    output_config: { format: { type: 'json_schema', schema: { type: 'object', additionalProperties: false, required: ['corrected', 'notes'], properties: { corrected: { type: 'string' }, notes: { type: 'array', items: { type: 'string' } } } } } },
+  });
+  const text2 = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  let out;
+  try { out = JSON.parse(text2); } catch { throw new Error('Proofread returned an unexpected response'); }
+  return { corrected: String(out.corrected ?? src), notes: Array.isArray(out.notes) ? out.notes.map(String).slice(0, 6) : [] };
+}
+
 // ── Read-only query assistant ─────────────────────────────────────────────────
 const ASK_SYSTEM = `You are a read-only analytics assistant for the "Powder Ops" food-safety and production management system (a SQLite database). Answer questions about production, KPIs, compliance, training, and overall system usage by querying the database — this is for an operator or executive who may be reading on a phone.
 

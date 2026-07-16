@@ -141,6 +141,8 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
   const [preview, setPreview] = useState(false);
   const [saving, setSaving] = useState(false);
   const [translating, setTranslating] = useState(false);
+  const [proofing, setProofing] = useState(false);
+  const [proofNotes, setProofNotes] = useState(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const { data: trainingImpact } = useApiGet(`/training/by-document/${initial?.id || 'none'}`, [initial?.id]);
   const { data: aiStatus } = useApiGet('/ai/status');
@@ -152,6 +154,19 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
     try { const r = await apiPost('/ai/translate', { text: form.content }); set('content_es', r.text || ''); }
     catch { /* surfaced by disabled state */ }
     finally { setTranslating(false); }
+  };
+
+  const proofread = async () => {
+    if (!form.content.trim()) return;
+    setProofing(true);
+    setProofNotes(null);
+    try {
+      const r = await apiPost('/ai/proofread', { text: form.content });
+      if (r.corrected && r.corrected !== form.content) set('content', r.corrected);
+      setProofNotes((Array.isArray(r.notes) && r.notes.length) ? r.notes : ['No changes needed — reads clean.']);
+    } catch {
+      setProofNotes(['Proofread is unavailable right now.']);
+    } finally { setProofing(false); }
   };
 
   const handleSubmit = async (e) => {
@@ -185,7 +200,7 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
           </div>
           <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-gray-700 mb-1">Title *</label>
-            <input required value={form.title} onChange={e => set('title', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <input required value={form.title} onChange={e => set('title', e.target.value)} spellCheck="true" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Category *</label>
@@ -218,18 +233,32 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
         <div>
           <div className="flex items-center justify-between mb-1">
             <label className="block text-xs font-medium text-gray-700">Content</label>
-            <button type="button" onClick={() => setPreview(p => !p)} className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1">
-              <Eye size={12} /> {preview ? 'Edit' : 'Preview'}
-            </button>
+            <div className="flex items-center gap-3">
+              {aiOn && !preview && (
+                <button type="button" onClick={proofread} disabled={proofing || !form.content.trim()}
+                  className="text-xs font-medium text-violet-600 hover:underline flex items-center gap-1 disabled:opacity-50 disabled:no-underline"
+                  title="Fix spelling, grammar, and clarity without changing meaning">
+                  <Sparkles size={12} /> {proofing ? 'Checking…' : 'Proofread'}
+                </button>
+              )}
+              <button type="button" onClick={() => setPreview(p => !p)} className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1">
+                <Eye size={12} /> {preview ? 'Edit' : 'Preview'}
+              </button>
+            </div>
           </div>
           {preview ? (
             <div className="w-full min-h-[16rem] px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 prose-sm">
               <MarkdownView text={form.content} />
             </div>
           ) : (
-            <textarea value={form.content} onChange={e => set('content', e.target.value)} rows={14}
+            <textarea value={form.content} onChange={e => set('content', e.target.value)} rows={14} spellCheck="true"
               placeholder={'# Purpose\nDescribe the purpose...\n\n## Procedure\n1. First step\n2. Second step\n\n- Bullet point\n- **Bold** and *italic* supported'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" />
+          )}
+          {proofNotes && (
+            <div className="mt-1 text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded px-2 py-1">
+              <span className="font-semibold">Proofread:</span> {proofNotes.join(' · ')}
+            </div>
           )}
           <p className="text-[11px] text-gray-400 mt-1">Markdown supported: <code># Heading</code>, <code>## Subheading</code>, <code>- bullet</code>, <code>1. numbered</code>, <code>**bold**</code>, <code>*italic*</code>, <code>[link](https://…)</code></p>
         </div>
@@ -244,7 +273,7 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
               </button>
             )}
           </div>
-          <textarea value={form.content_es} onChange={e => set('content_es', e.target.value)} rows={8}
+          <textarea value={form.content_es} onChange={e => set('content_es', e.target.value)} rows={8} spellCheck="true" lang="es"
             placeholder={aiOn ? 'Click “Translate to Spanish”, then review/edit the result.' : 'Paste the Spanish version here.'}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" />
           <p className="text-[11px] text-gray-400 mt-1">Shown when a reader switches this document to Spanish. AI drafts are editable — review before relying on them.</p>

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { aiEnabled, aiModel, answerQuestion, translateToSpanish, translateCached } from '../ai.js';
+import { aiEnabled, aiModel, answerQuestion, translateToSpanish, translateCached, proofreadText } from '../ai.js';
 import { logAudit } from '../db.js';
 
 const router = Router();
@@ -42,6 +42,20 @@ router.post('/translate-content', async (req, res) => {
     res.json({ translations, enabled: true });
   } catch {
     res.json({ translations: texts.map(s => String(s ?? '')), enabled: aiEnabled() });
+  }
+});
+
+// Proofread document/test content — available to any authenticated user (the
+// editor UI is only shown to those who can edit documents anyway).
+router.post('/proofread', async (req, res) => {
+  if (!aiEnabled()) return res.status(503).json({ error: 'AI features are not configured on this server.' });
+  const text = req.body?.text;
+  if (typeof text !== 'string' || !text.trim()) return res.status(400).json({ error: 'text is required' });
+  try {
+    const out = await proofreadText(text);
+    res.json(out);
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Proofread failed' });
   }
 });
 
