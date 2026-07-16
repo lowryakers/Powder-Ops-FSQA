@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
@@ -33,7 +33,7 @@ const PRIORITY_RING = {
   high: 'ring-2 ring-orange-300 border-orange-300',
 };
 
-function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, isAdmin, batchMode, batchSelected, onBatchToggle, t }) {
+function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, isAdmin, batchMode, batchSelected, onBatchToggle, t, tc = (s) => s }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
@@ -205,11 +205,11 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
 
           <div className="flex-1 min-w-0">
             {/* Title row */}
-            <h3 className="text-base font-semibold text-gray-900 leading-snug">{task.title}</h3>
+            <h3 className="text-base font-semibold text-gray-900 leading-snug">{tc(task.title)}</h3>
 
             {/* Equipment + location */}
             <p className="text-sm text-gray-500 mt-0.5">
-              {task.equipment_name}
+              {tc(task.equipment_name)}
               {task.location && <span className="text-gray-400"> &middot; {task.location}</span>}
             </p>
 
@@ -283,7 +283,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
               {steps.map((s, i) => (
                 <li key={i} className="flex items-start gap-2.5 text-sm">
                   <span className="shrink-0 w-5 h-5 rounded-full bg-gray-100 text-gray-500 text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
-                  <span className="text-gray-600 leading-snug">{s}</span>
+                  <span className="text-gray-600 leading-snug">{tc(s)}</span>
                 </li>
               ))}
             </ol>
@@ -700,7 +700,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                     <button key={i} onClick={() => toggleStep(i)}
                       className="w-full flex items-start gap-2 text-left py-1.5 px-1 rounded-lg hover:bg-green-100/50 transition-colors">
                       {stepChecks[i] ? <SquareCheck size={18} className="text-green-600 shrink-0 mt-0.5" /> : <Square size={18} className="text-gray-400 shrink-0 mt-0.5" />}
-                      <span className={`text-sm leading-snug ${stepChecks[i] ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{step}</span>
+                      <span className={`text-sm leading-snug ${stepChecks[i] ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{tc(step)}</span>
                     </button>
                   ))}
                 </div>
@@ -786,6 +786,45 @@ export default function OperatorView() {
   const groupParam = viewDept === 'all' ? '' : `?group=${viewDept}`;
   const { data: tasks, loading, refresh } = useApiGet(`/pm/operator-tasks${groupParam}`);
   const { data: technicians } = useApiGet('/users/technicians');
+
+  // AI content translation: the static UI labels come from operatorStrings, but
+  // task titles / equipment names / procedure steps are DB data in English. When
+  // ES is selected we translate that content on the server (cached) so Spanish-
+  // speaking operators read the *whole* task, not just the chrome. Degrades to
+  // English if AI is off or the request fails. requestedRef prevents re-fetching
+  // strings we've already asked for as the task list refreshes.
+  const [contentMap, setContentMap] = useState({});
+  const requestedRef = useRef(new Set());
+  useEffect(() => {
+    if (lang !== 'es' || !Array.isArray(tasks)) return;
+    const seen = new Set();
+    const missing = [];
+    for (const tk of tasks) {
+      const candidates = [tk.title, tk.equipment_name, ...(Array.isArray(tk.procedure_steps) ? tk.procedure_steps : [])];
+      for (const s of candidates) {
+        if (typeof s === 'string' && s.trim() && !seen.has(s) && !requestedRef.current.has(s)) {
+          seen.add(s);
+          missing.push(s);
+        }
+      }
+    }
+    if (missing.length === 0) return;
+    missing.forEach(s => requestedRef.current.add(s));
+    let cancelled = false;
+    apiPost('/ai/translate-content', { texts: missing, lang: 'es' })
+      .then(res => {
+        if (cancelled || !Array.isArray(res?.translations)) return;
+        setContentMap(prev => {
+          const next = { ...prev };
+          missing.forEach((s, i) => { next[s] = res.translations[i] ?? s; });
+          return next;
+        });
+      })
+      .catch(() => { missing.forEach(s => requestedRef.current.delete(s)); });
+    return () => { cancelled = true; };
+  }, [lang, tasks]);
+  // Translate task content for display (identity in EN or when not yet translated).
+  const tc = useCallback((s) => (lang === 'es' && s && contentMap[s]) || s, [lang, contentMap]);
   const [freqFilter, setFreqFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState('');
@@ -1039,7 +1078,7 @@ export default function OperatorView() {
           {overdue.length > 0 && (
             <SectionHeader icon={AlertTriangle} title={t('section_overdue')} count={overdue.length} color="bg-red-500" defaultOpen={true}>
               {overdue.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1047,7 +1086,7 @@ export default function OperatorView() {
           {today.length > 0 && (
             <SectionHeader icon={CircleDot} title={t('section_due_today')} count={today.length} color="bg-powder-600" defaultOpen={true}>
               {today.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1055,7 +1094,7 @@ export default function OperatorView() {
           {thisWeek.length > 0 && (
             <SectionHeader icon={CalendarDays} title={t('section_this_week')} count={thisWeek.length} color="bg-gray-500" defaultOpen={overdue.length + today.length < 10}>
               {thisWeek.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1063,7 +1102,7 @@ export default function OperatorView() {
           {upcoming.length > 0 && (
             <SectionHeader icon={Clock} title={t('section_upcoming')} count={upcoming.length} color="bg-gray-400" defaultOpen={overdue.length + today.length + thisWeek.length < 5}>
               {upcoming.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
               ))}
             </SectionHeader>
           )}

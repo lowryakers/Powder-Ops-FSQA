@@ -295,16 +295,22 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
             {rec.paper_record && (
               <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-1 flex items-center gap-1.5"><FileText size={12} className="text-gray-400" /> Logged on paper — signatures are on file on the original form{rec.document_url ? ' (attached below)' : ''}.</p>
             )}
+            {!rec.paper_record && (
+              <p className="text-[11px] text-gray-500 bg-amber-50 border border-amber-100 rounded px-2 py-1">By signing, you certify you have reviewed this record and approve it in the stated capacity. Your name, role, and the time are recorded with the signature.</p>
+            )}
             {cfg.approvals.map(a => {
               const sig = rec.approvals?.[a.key];
               const mine = sig && sig.user_id === user?.id;
               return (
-                <div key={a.key} className="flex items-center justify-between gap-2">
+                <div key={a.key} className="flex items-start justify-between gap-2">
                   <span className="text-xs text-gray-500 w-48 shrink-0">{a.label}{a.required ? ' *' : ''}</span>
                   {sig ? (
-                    <div className="flex items-center gap-2 flex-1">
-                      <span className="text-xs text-green-700 flex items-center gap-1"><Check size={12} /> {sig.name} · {new Date(sig.signed_at).toLocaleDateString()}</span>
-                      {(user?.role === 'admin' || mine) && <button onClick={() => onRevoke(rec.id, a.key)} className="text-[11px] text-gray-400 hover:text-red-500">revoke</button>}
+                    <div className="flex flex-col gap-0.5 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-green-700 flex items-center gap-1"><Check size={12} /> {sig.name}{sig.role ? ` (${sig.role})` : ''} · {new Date(sig.signed_at).toLocaleString()}</span>
+                        {(user?.role === 'admin' || mine) && <button onClick={() => onRevoke(rec.id, a.key)} className="text-[11px] text-gray-400 hover:text-red-500">revoke</button>}
+                      </div>
+                      {sig.attestation && <span className="text-[10px] text-gray-400 italic">“{sig.attestation}”</span>}
                     </div>
                   ) : a.external ? (
                     <span className="text-xs text-gray-400">Recorded off-system</span>

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { aiEnabled, aiModel, answerQuestion, translateToSpanish } from '../ai.js';
+import { aiEnabled, aiModel, answerQuestion, translateToSpanish, translateCached } from '../ai.js';
 import { logAudit } from '../db.js';
 
 const router = Router();
@@ -21,6 +21,27 @@ router.post('/translate', async (req, res) => {
     res.json({ items: out, text: out[0] });
   } catch (e) {
     res.status(502).json({ error: e.message || 'Translation failed' });
+  }
+});
+
+// Cached content translation for display — available to ANY authenticated user
+// (operators included) so the floor view can show task titles/steps in Spanish.
+// Never errors the caller: if AI is off or translation fails, the original
+// strings come back unchanged (English) and the UI just shows source text.
+router.post('/translate-content', async (req, res) => {
+  const texts = req.body?.texts;
+  const lang = req.body?.lang === 'en' ? 'en' : 'es';
+  if (!Array.isArray(texts)) return res.status(400).json({ error: 'texts (array) is required' });
+  if (texts.length === 0) return res.json({ translations: [] });
+  if (texts.length > 200) return res.status(400).json({ error: 'Too many strings (max 200)' });
+  if (!aiEnabled() || lang === 'en') {
+    return res.json({ translations: texts.map(s => String(s ?? '')), enabled: aiEnabled() });
+  }
+  try {
+    const translations = await translateCached(texts, lang);
+    res.json({ translations, enabled: true });
+  } catch {
+    res.json({ translations: texts.map(s => String(s ?? '')), enabled: aiEnabled() });
   }
 });
 

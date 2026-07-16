@@ -191,9 +191,13 @@ router.post('/:type/:id/approve', (req, res) => {
   if (!appr) return res.status(400).json({ error: 'Unknown approval role' });
   if (!canSignApproval(req.user, appr)) return res.status(403).json({ error: 'You are not authorized to sign this approval.' });
   const approvals = parseJson(row.approvals, {});
-  approvals[appr.key] = { name: req.user.name, user_id: req.user.id, signed_at: new Date().toISOString() };
+  // Capture the meaning of the signature (SQF/GMP e-signature intent), not just
+  // who/when. Stored with the signature so it prints on the record and can't be
+  // separated from the act of signing.
+  const attestation = appr.attestation || `I certify that I have reviewed this ${(cfg.singular || 'record').toLowerCase()} and approve it in the capacity of ${appr.label}.`;
+  approvals[appr.key] = { name: req.user.name, user_id: req.user.id, role: req.user.role, signed_at: new Date().toISOString(), attestation };
   db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), req.params.id);
-  logAudit(req.user, `qms_signed_${appr.key}`, cfg.key, req.params.id, { record_number: row.record_number });
+  logAudit(req.user, `qms_signed_${appr.key}`, cfg.key, req.params.id, { record_number: row.record_number, attestation });
   res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
 });
 
@@ -339,11 +343,34 @@ router.get('/:type/:id/pdf', (req, res) => {
     if (rec.paper_record) {
       pdf.font('Helvetica-Oblique').text('Logged on paper — signatures on file on the original form.').font('Helvetica').moveDown(0.2);
     }
-    const sigDate = (s) => (s?.signed_at ? new Date(s.signed_at).toLocaleDateString() : '__________');
+    const sigDate = (s) => (s?.signed_at ? new Date(s.signed_at).toLocaleString() : '__________');
     for (const a of cfg.approvals) {
       const s = rec.approvals[a.key];
-      pdf.text(`${a.label}${a.required ? ' *' : ''}: ${s?.name || '__________________'}     Date: ${sigDate(s)}`);
+      pdf.font('Helvetica-Bold').text(`${a.label}${a.required ? ' *' : ''}: `, { continued: true })
+        .font('Helvetica').text(`${s?.name || '__________________'}     Date: ${sigDate(s)}`);
+      if (s?.attestation) {
+        pdf.fontSize(8).font('Helvetica-Oblique').text(`   "${s.attestation}"`).font('Helvetica').fontSize(9);
+      }
       pdf.moveDown(0.25);
+    }
+  }
+
+  // Chain-of-custody: the full audit trail for this record, so the exported PDF
+  // is a self-contained auditor artifact (who did what, when).
+  const history = db.prepare(
+    'SELECT timestamp, actor, action FROM audit_log WHERE entity_type = ? AND entity_id = ? ORDER BY timestamp ASC'
+  ).all(cfg.key, req.params.id);
+  if (history.length) {
+    const humanize = (a) => String(a || '')
+      .replace(/^qms_signed_/, 'Signed — ')
+      .replace(/^qms_unsigned_/, 'Signature revoked — ')
+      .replace(/_/g, ' ');
+    pdf.moveDown(0.6).font('Helvetica-Bold').fontSize(10).text('Record History');
+    pdf.fontSize(8).font('Helvetica').moveDown(0.2);
+    for (const h of history) {
+      const ts = h.timestamp ? new Date(h.timestamp).toLocaleString() : '';
+      pdf.text(`${ts}   ·   ${h.actor || 'system'}   ·   ${humanize(h.action)}`);
+      pdf.moveDown(0.15);
     }
   }
   pdf.end();

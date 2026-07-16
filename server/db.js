@@ -1177,6 +1177,24 @@ function runMigrations() {
   // Default landing workspace per user: 'fsqa' (default) or 'messages'.
   addColumnIfMissing('users', 'home_workspace', 'TEXT');
 
+  // Generic content-translation cache: reusable across modules (operator task
+  // titles/steps, etc.). Keyed by a hash of the source text + target language so
+  // identical strings are translated once and reused everywhere.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS translation_cache (
+        source_hash TEXT NOT NULL,
+        target_lang TEXT NOT NULL,
+        source_text TEXT,
+        translated  TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        PRIMARY KEY (source_hash, target_lang)
+      )
+    `);
+  } catch (e) {
+    console.warn('[db] translation_cache unavailable:', e.message);
+  }
+
   // Slack import: original message ts for idempotent re-imports.
   addColumnIfMissing('chat_messages', 'external_id', 'TEXT');
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_external ON chat_messages(channel_id, external_id)'); } catch { /* ignore */ }
