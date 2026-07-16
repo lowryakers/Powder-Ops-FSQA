@@ -25,6 +25,7 @@ import chemicalRoutes from './server/api/chemicals.js';
 import hygienicDesignRoutes from './server/api/hygienic-design.js';
 import complaintRoutes from './server/api/complaints.js';
 import documentRoutes, { generateDocumentReviewTasks } from './server/api/documents.js';
+import qualityScheduleRoutes, { generateQualityScheduleTasks } from './server/api/quality-schedules.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_TOOLBOX_ITEMS } from './server/qms-config.js';
 import { DCR_LOG_CSV, DEVIATION_LOG_CSVS, NON_CONFORMANCE_LOG_CSV, ON_HOLD_LOG_CSV, ORGANOLEPTIC_LOG_CSV } from './server/qms-seed.js';
@@ -943,6 +944,7 @@ app.use('/api/chemicals', chemicalRoutes);
 app.use('/api/hygienic-design', hygienicDesignRoutes);
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/quality-schedules', qualityScheduleRoutes);
 app.use('/api/org', orgRoutes);
 app.use('/api/disposals', disposalRoutes);
 app.use('/api/qms', qmsRoutes);
@@ -1025,6 +1027,11 @@ server.listen(PORT, '0.0.0.0', () => {
     const n = generateDocumentReviewTasks(db);
     if (n > 0) console.log(`[review] Generated ${n} document-review task(s)`);
   } catch (e) { console.warn('[review] document-review task generation skipped:', e.message); }
+  // Generate any due recurring quality-control tasks on startup (idempotent).
+  try {
+    const q = generateQualityScheduleTasks(db);
+    if (q > 0) console.log(`[quality] Generated ${q} quality-control task(s)`);
+  } catch (e) { console.warn('[quality] quality task generation skipped:', e.message); }
 });
 
 function shutdown(signal) {

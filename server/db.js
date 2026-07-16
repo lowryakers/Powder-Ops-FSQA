@@ -1036,6 +1036,28 @@ function runMigrations() {
     console.warn('[migrate] document review scheduling backfill:', e.message);
   }
 
+  // Quality task schedules (Phase 2): recurring Quality-Control checks
+  // (hygienic, organoleptic, glass/brittle-plastic, sanitation, etc.) that
+  // generate QA work orders on a calendar frequency, mirroring how equipment
+  // PM schedules feed maintenance tasks. next_due drives generation; the
+  // schedule advances on its own calendar so a missed check never piles up.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS quality_schedules (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      module_id TEXT,
+      frequency_type TEXT NOT NULL DEFAULT 'monthly',
+      frequency_value INTEGER NOT NULL DEFAULT 1,
+      procedure_steps TEXT NOT NULL DEFAULT '[]',
+      next_due TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  addColumnIfMissing('work_orders', 'quality_schedule_id', 'TEXT'); // link a QC task back to its schedule
+
   // Material-level requirements narrative (Form 607-01 sections 2-5): packaging,
   // labeling, storage, acceptance criteria, etc. One row per item number,
   // alongside the per-test limits in coa_specifications.

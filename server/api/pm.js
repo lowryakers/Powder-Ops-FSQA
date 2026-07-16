@@ -3,6 +3,15 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireDepartment } from '../middleware/auth.js';
 import { generateDocumentReviewTasks, recomputeDocumentReview } from './documents.js';
+import { generateQualityScheduleTasks } from './quality-schedules.js';
+
+// Side-effects to run when any work order transitions to completed, regardless
+// of which completion path handled it. Completing a document-review task
+// advances that document's review cycle. (Quality schedules advance on their
+// own calendar at generation time, so they need no completion hook.)
+function onWorkOrderCompleted(db, wo) {
+  if (wo && wo.document_id) recomputeDocumentReview(db, wo.document_id);
+}
 
 const router = Router();
 
@@ -246,10 +255,8 @@ router.put('/work-orders/:id', (req, res) => {
     due_date || existing.due_date, req.params.id
   );
 
-  // Completing a document-review task advances that document's review cycle
-  // (last_reviewed = today, next review_due = today + its frequency).
-  if (newStatus === 'completed' && existing.status !== 'completed' && existing.document_id) {
-    recomputeDocumentReview(db, existing.document_id);
+  if (newStatus === 'completed' && existing.status !== 'completed') {
+    onWorkOrderCompleted(db, existing);
   }
 
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
@@ -350,6 +357,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   if (needsClearance) {
     logAudit('system', 'clearance_required', 'work_order', req.params.id, 'Food-contact equipment — hygiene clearance pending');
   }
+  onWorkOrderCompleted(db, existing);
 
   let nextWO = null;
   if (existing.pm_schedule_id) {
@@ -396,6 +404,7 @@ router.post('/work-orders/batch-complete', (req, res) => {
       }
 
       logAudit(completedBy, 'complete', 'work_order', id, { batch: true }, null, null);
+      onWorkOrderCompleted(db, wo);
 
       if (wo.pm_schedule_id) {
         const sched = getSched.get(wo.pm_schedule_id);
@@ -613,6 +622,7 @@ router.get('/operator-tasks', (req, res) => {
   const db = getDb();
   markMissedWorkOrders(db);
   generateDocumentReviewTasks(db);
+  generateQualityScheduleTasks(db);
   const { assigned_to } = req.query;
   // Operators are locked to their own department's tasks; only admins/supervisors
   // may view other departments (or all) via the group filter.

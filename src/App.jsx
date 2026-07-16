@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -21,6 +21,7 @@ import OperatorView from './components/compliance/OperatorView.jsx';
 import SettingsPanel from './components/compliance/SettingsPanel.jsx';
 import ChemicalsPanel from './components/compliance/ChemicalsPanel.jsx';
 import HygienicDesignPanel from './components/compliance/HygienicDesignPanel.jsx';
+import QualitySchedulesPanel from './components/compliance/QualitySchedulesPanel.jsx';
 import AuditorView from './components/compliance/AuditorView.jsx';
 import CAPAPanel from './components/compliance/CAPAPanel.jsx';
 import DocumentRegistry from './components/compliance/DocumentRegistry.jsx';
@@ -73,6 +74,7 @@ const NAV_GROUPS = [
     label: 'Quality',
     items: [
       { id: 'coa', label: 'COA / Lab Testing', icon: TestTubes },
+      { id: 'quality-schedules', label: 'Quality Schedules', icon: CalendarClock },
       { id: 'hygienic', label: 'Hygienic Design', icon: ClipboardCheck },
       { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
       { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
@@ -741,6 +743,7 @@ function App() {
           {resolvedTab === 'chemicals' && <ChemicalsPanel />}
           {resolvedTab === 'loto' && <LOTOPanel />}
           {resolvedTab === 'equipment' && <EquipmentPanel />}
+          {resolvedTab === 'quality-schedules' && <QualitySchedulesPanel />}
           {resolvedTab === 'hygienic' && <HygienicDesignPanel />}
           {resolvedTab === 'coa' && <COAPanel />}
           {resolvedTab === 'capa' && <CAPAPanel />}
