@@ -25,7 +25,7 @@ function issueSession(db, user) {
   expires.setDate(expires.getDate() + 30);
   db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)').run(uuid(), user.id, token, expires.toISOString());
   const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
-  return { token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess } };
+  return { token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess, home_workspace: user.home_workspace || 'fsqa' } };
 }
 
 // --- User CRUD ---
@@ -33,7 +33,7 @@ function issueSession(db, user) {
 router.get('/', (req, res) => {
   const db = getDb();
   const { role, active } = req.query;
-  let sql = 'SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE 1=1';
+  let sql = 'SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, created_at FROM users WHERE 1=1';
   const params = [];
   if (role) { sql += ' AND role = ?'; params.push(role); }
   if (active !== undefined) { sql += ' AND is_active = ?'; params.push(active === 'true' ? 1 : 0); }
@@ -48,7 +48,15 @@ router.get('/technicians', (_req, res) => {
 });
 
 router.get('/me', (req, res) => {
-  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access });
+  const hw = getDb().prepare('SELECT home_workspace FROM users WHERE id = ?').get(req.user.id)?.home_workspace || 'fsqa';
+  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access, home_workspace: hw });
+});
+
+// Let a user set their own default landing workspace.
+router.post('/me/home', (req, res) => {
+  const w = req.body?.workspace === 'messages' ? 'messages' : 'fsqa';
+  getDb().prepare("UPDATE users SET home_workspace = ?, updated_at = datetime('now') WHERE id = ?").run(w, req.user.id);
+  res.json({ ok: true, home_workspace: w });
 });
 
 router.post('/logout', (req, res) => {
@@ -139,16 +147,17 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'User not found' });
 
-  const { name, email, pin, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access } = req.body;
+  const { name, email, pin, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace } = req.body;
   const moduleAccessStr = module_access !== undefined ? (module_access ? JSON.stringify(module_access) : null) : existing.module_access;
-  db.prepare(`UPDATE users SET name=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, updated_at=datetime('now') WHERE id=?`)
+  const homeWorkspace = home_workspace !== undefined ? (home_workspace === 'messages' ? 'messages' : 'fsqa') : existing.home_workspace;
+  db.prepare(`UPDATE users SET name=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, updated_at=datetime('now') WHERE id=?`)
     .run(name || existing.name, email ?? existing.email, pin || null, role || existing.role,
       department || existing.department || 'warehouse',
       is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
       is_contractor !== undefined ? (is_contractor ? 1 : 0) : (existing.is_contractor || 0),
       contractor_company ?? existing.contractor_company, contractor_license ?? existing.contractor_license,
       contractor_insurance_expiry ?? existing.contractor_insurance_expiry, contractor_scope ?? existing.contractor_scope,
-      moduleAccessStr,
+      moduleAccessStr, homeWorkspace,
       req.params.id);
 
   const updated = db.prepare('SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(req.params.id);

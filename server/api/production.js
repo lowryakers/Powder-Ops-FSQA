@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
+
+// Stable identity for a "missed report" slot, used to remember QA dismissals.
+const missedKey = (d, room, mo, team) => `${d}|${room || ''}|${mo ? 'mo:' + mo : (team ? 'team:' + team : '*')}`;
 
 // --- Helper: compute duration and rate metrics ---
 function computeMetrics(entry) {
@@ -62,7 +66,7 @@ router.get('/entries/summary', (req, res) => {
 // and matching MO# (or team, when the schedule has no MO#).
 router.get('/missed-reports', (req, res) => {
   const db = getDb();
-  const { from, to, include_today } = req.query;
+  const { from, to, include_today, include_dismissed } = req.query;
   const today = new Date().toISOString().slice(0, 10);
   const cutoff = include_today === '1' ? today : new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
@@ -80,13 +84,50 @@ router.get('/missed-reports', (req, res) => {
     e.date === s.sched_date && e.room === s.room &&
     (s.mo_number ? String(e.mo_number) === String(s.mo_number) : (s.team ? e.team === s.team : true)));
 
-  const missed = scheduled.filter(s => !reported(s)).map(s => ({
-    date: s.sched_date, room: s.room, team: s.team, mo_number: s.mo_number,
-    product_name: s.product_name, start_time: s.start_time,
-    days_ago: Math.round((new Date(today) - new Date(s.sched_date)) / 86400000),
-  }));
+  const dismissals = {};
+  for (const d of db.prepare('SELECT * FROM production_missed_dismissals').all()) dismissals[d.dismiss_key] = d;
+  const includeDismissed = include_dismissed === '1';
+
+  const missed = scheduled.filter(s => !reported(s)).map(s => {
+    const key = missedKey(s.sched_date, s.room, s.mo_number, s.team);
+    const dis = dismissals[key];
+    return {
+      date: s.sched_date, room: s.room, team: s.team, mo_number: s.mo_number,
+      product_name: s.product_name, start_time: s.start_time,
+      days_ago: Math.round((new Date(today) - new Date(s.sched_date)) / 86400000),
+      dismiss_key: key,
+      dismissed: !!dis,
+      dismiss_reason: dis?.reason || null,
+      dismissed_by: dis?.dismissed_by || null,
+      dismissed_at: dis?.created_at || null,
+    };
+  }).filter(m => includeDismissed || !m.dismissed);
   missed.sort((a, b) => b.date.localeCompare(a.date) || a.room.localeCompare(b.room));
   res.json(missed);
+});
+
+// Dismiss a missed-report callout after QA review (records who/why for audit).
+router.post('/missed-reports/dismiss', requireRole('admin', 'supervisor'), (req, res) => {
+  const db = getDb();
+  const { date, room, mo_number, team, reason } = req.body || {};
+  if (!date || !room) return res.status(400).json({ error: 'date and room are required' });
+  const key = missedKey(date, room, mo_number, team);
+  db.prepare(`INSERT INTO production_missed_dismissals (id, dismiss_key, sched_date, room, mo_number, team, reason, dismissed_by, dismissed_by_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(dismiss_key) DO UPDATE SET reason = excluded.reason, dismissed_by = excluded.dismissed_by, dismissed_by_id = excluded.dismissed_by_id, created_at = datetime('now')`)
+    .run(uuid(), key, date, room, mo_number || null, team || null, (reason || '').slice(0, 500) || null, req.user.name, req.user.id);
+  logAudit(req.user, 'dismiss', 'production_missed_report', key, { date, room, mo_number, team, reason }, null, null, `${room} · ${date}`);
+  res.json({ ok: true, dismiss_key: key });
+});
+
+// Undo a dismissal — the callout returns to the active list.
+router.post('/missed-reports/restore', requireRole('admin', 'supervisor'), (req, res) => {
+  const db = getDb();
+  const { dismiss_key, date, room, mo_number, team } = req.body || {};
+  const key = dismiss_key || missedKey(date, room, mo_number, team);
+  const info = db.prepare('DELETE FROM production_missed_dismissals WHERE dismiss_key = ?').run(key);
+  if (info.changes) logAudit(req.user, 'restore', 'production_missed_report', key, null, null, null, key);
+  res.json({ ok: true });
 });
 
 // POST /entries — create a new production entry

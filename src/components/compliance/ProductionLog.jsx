@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2 } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 
 const TEAMS = ['Batching', 'Stick Pack', 'Hand Fill', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
@@ -264,43 +264,110 @@ const SORT_COLUMNS = [
   { label: 'QA Status', key: 'qa_signoff_by', type: 'boolean' },
 ];
 
-function MissedReports({ from, to }) {
+function MissedReports({ from, to, user }) {
   const [open, setOpen] = useState(true);
-  const { data: missed } = useApiGet(`/production/missed-reports?from=${from}&to=${to}`, [from, to]);
+  const [showDismissed, setShowDismissed] = useState(false);
+  const [dismissing, setDismissing] = useState(null); // dismiss_key of the row being reviewed
+  const [reason, setReason] = useState('');
+  const canManage = user?.role === 'admin' || user?.role === 'supervisor';
+  // Managers always load dismissed too, so the review/restore stays reachable
+  // even once every active callout has been cleared.
+  const { data: missed, refresh } = useApiGet(
+    `/production/missed-reports?from=${from}&to=${to}${canManage ? '&include_dismissed=1' : ''}`, [from, to]);
   const rows = missed || [];
+  const active = rows.filter(r => !r.dismissed);
+  const dismissedRows = rows.filter(r => r.dismissed);
+  const activeCount = active.length;
   if (rows.length === 0) return null;
+  const displayRows = showDismissed ? rows : active;
+
+  const doDismiss = async (m) => {
+    try { await apiPost('/production/missed-reports/dismiss', { date: m.date, room: m.room, mo_number: m.mo_number, team: m.team, reason }); }
+    catch (e) { alert(e.message || 'Could not dismiss'); return; }
+    setDismissing(null); setReason(''); refresh();
+  };
+  const doRestore = async (m) => {
+    try { await apiPost('/production/missed-reports/restore', { dismiss_key: m.dismiss_key }); } catch { /* ignore */ }
+    refresh();
+  };
+  const colSpan = canManage ? 6 : 5;
 
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-4 py-3 text-left">
         <AlertCircle size={16} className="text-amber-600 shrink-0" />
-        <span className="text-sm font-medium text-amber-900">{rows.length} scheduled production {rows.length === 1 ? 'run has' : 'runs have'} no end-of-day report</span>
+        <span className="text-sm font-medium text-amber-900">
+          {activeCount > 0
+            ? `${activeCount} scheduled production ${activeCount === 1 ? 'run has' : 'runs have'} no end-of-day report`
+            : 'All end-of-day reports accounted for'}
+        </span>
         {open ? <ChevronUp size={15} className="ml-auto text-amber-600" /> : <ChevronDown size={15} className="ml-auto text-amber-600" />}
       </button>
       {open && (
-        <div className="overflow-x-auto border-t border-amber-200">
-          <table className="w-full text-sm">
-            <thead className="bg-amber-100/50 text-amber-900">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium">Date</th>
-                <th className="text-left px-4 py-2 font-medium">Room</th>
-                <th className="text-left px-4 py-2 font-medium">Team</th>
-                <th className="text-left px-4 py-2 font-medium">MO #</th>
-                <th className="text-left px-4 py-2 font-medium">Product</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((m, i) => (
-                <tr key={i} className="border-t border-amber-100">
-                  <td className="px-4 py-2 text-amber-900 whitespace-nowrap">{formatDate(m.date)}{m.days_ago > 0 ? <span className="text-amber-600 text-xs"> · {m.days_ago}d ago</span> : ''}</td>
-                  <td className="px-4 py-2 text-gray-700">{m.room}</td>
-                  <td className="px-4 py-2 font-medium text-gray-800">{m.team || '—'}</td>
-                  <td className="px-4 py-2 text-gray-600">{m.mo_number || '—'}</td>
-                  <td className="px-4 py-2 text-gray-600">{m.product_name || '—'}</td>
+        <div className="border-t border-amber-200">
+          {canManage && dismissedRows.length > 0 && (
+            <div className="px-4 py-2 flex justify-end">
+              <label className="flex items-center gap-1.5 text-xs text-amber-800 cursor-pointer select-none">
+                <input type="checkbox" checked={showDismissed} onChange={e => setShowDismissed(e.target.checked)} /> Show dismissed ({dismissedRows.length})
+              </label>
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-amber-100/50 text-amber-900">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">Date</th>
+                  <th className="text-left px-4 py-2 font-medium">Room</th>
+                  <th className="text-left px-4 py-2 font-medium">Team</th>
+                  <th className="text-left px-4 py-2 font-medium">MO #</th>
+                  <th className="text-left px-4 py-2 font-medium">Product</th>
+                  {canManage && <th className="text-right px-4 py-2 font-medium">Review</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {displayRows.length === 0 && (
+                  <tr><td colSpan={colSpan} className="px-4 py-3 text-sm text-gray-500 italic">No outstanding reports — {dismissedRows.length} cleared. Toggle above to review.</td></tr>
+                )}
+                {displayRows.map((m) => (
+                  <Fragment key={m.dismiss_key}>
+                    <tr className={`border-t border-amber-100 ${m.dismissed ? 'opacity-60' : ''}`}>
+                      <td className="px-4 py-2 text-amber-900 whitespace-nowrap">{formatDate(m.date)}{m.days_ago > 0 ? <span className="text-amber-600 text-xs"> · {m.days_ago}d ago</span> : ''}</td>
+                      <td className="px-4 py-2 text-gray-700">{m.room}</td>
+                      <td className="px-4 py-2 font-medium text-gray-800">{m.team || '—'}</td>
+                      <td className="px-4 py-2 text-gray-600">{m.mo_number || '—'}</td>
+                      <td className="px-4 py-2 text-gray-600">
+                        {m.product_name || '—'}
+                        {m.dismissed && <div className="text-[11px] text-gray-500 italic mt-0.5">Dismissed{m.dismissed_by ? ` by ${m.dismissed_by}` : ''}{m.dismiss_reason ? ` — ${m.dismiss_reason}` : ''}</div>}
+                      </td>
+                      {canManage && (
+                        <td className="px-4 py-2 text-right whitespace-nowrap">
+                          {m.dismissed ? (
+                            <button onClick={() => doRestore(m)} className="text-xs text-amber-700 hover:underline inline-flex items-center gap-1"><Undo2 size={13} /> Restore</button>
+                          ) : dismissing !== m.dismiss_key && (
+                            <button onClick={() => { setDismissing(m.dismiss_key); setReason(''); }} className="text-xs text-gray-500 hover:text-red-600 inline-flex items-center gap-1"><X size={13} /> Dismiss</button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                    {canManage && dismissing === m.dismiss_key && (
+                      <tr className="border-t border-amber-100 bg-amber-100/40">
+                        <td colSpan={colSpan} className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <input value={reason} onChange={e => setReason(e.target.value)} autoFocus
+                              placeholder="Reason / note (e.g. operator notified, run cancelled)…"
+                              onKeyDown={e => { if (e.key === 'Enter') doDismiss(m); if (e.key === 'Escape') { setDismissing(null); setReason(''); } }}
+                              className="flex-1 px-2 py-1 border border-amber-300 rounded text-sm" />
+                            <button onClick={() => doDismiss(m)} className="px-2.5 py-1 bg-amber-600 text-white rounded text-xs font-medium inline-flex items-center gap-1 hover:bg-amber-700"><Check size={13} /> Dismiss</button>
+                            <button onClick={() => { setDismissing(null); setReason(''); }} className="px-2 py-1 text-gray-500 text-xs hover:text-gray-700">Cancel</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -360,7 +427,7 @@ function LogTable({ user }) {
 
   return (
     <div className="space-y-4">
-      <MissedReports from={from} to={to} />
+      <MissedReports from={from} to={to} user={user} />
       <SummaryCards from={from} to={to} />
 
       {/* Filter Bar */}

@@ -17,6 +17,7 @@ const DEPARTMENTS = [
   { value: 'cleaning', label: 'Cleaning' },
   { value: 'production', label: 'Production' },
   { value: 'maintenance', label: 'Maintenance' },
+  { value: 'office', label: 'Office' },
 ];
 const deptLabel = (d) => DEPARTMENTS.find(x => x.value === d)?.label || (d ? d.charAt(0).toUpperCase() + d.slice(1) : 'Warehouse');
 
@@ -191,6 +192,7 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
   const [form, setForm] = useState(() => ({
     name: '', pin: '', role: 'operator', department: 'warehouse',
     ...initial,
+    home_workspace: initial?.home_workspace || 'fsqa',
     module_access: parseModuleAccess(initial?.module_access),
   }));
   const [saving, setSaving] = useState(false);
@@ -264,6 +266,15 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Home screen</label>
+          <select value={form.home_workspace || 'fsqa'} onChange={e => setForm({ ...form, home_workspace: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="fsqa">FSQA tools</option>
+            <option value="messages">Messages</option>
+          </select>
+          <p className="text-[11px] text-gray-400 mt-1">Where this user lands after signing in.</p>
         </div>
       </div>
 
@@ -349,6 +360,7 @@ function UserRow({ u, onEdit, onToggle, isEditing }) {
           : u.department === 'cleaning' ? 'bg-amber-100 text-amber-700'
           : u.department === 'production' ? 'bg-green-100 text-green-700'
           : u.department === 'maintenance' ? 'bg-orange-100 text-orange-700'
+          : u.department === 'office' ? 'bg-slate-100 text-slate-700'
           : 'bg-indigo-100 text-indigo-700'
         }`}>
           {deptLabel(u.department)}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
-import { useApiGet } from './hooks/useApi';
+import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
 import LoginScreen from './components/LoginScreen.jsx';
@@ -220,7 +220,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, onOpenComms }
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-gray-900 truncate">{user.name}</div>
-            <div className="text-[10px] text-gray-400 truncate">{user.role} / {{ qa: 'QA', document_control: 'Document Control', cleaning: 'Cleaning', warehouse: 'Warehouse', production: 'Production', maintenance: 'Maintenance' }[user.department] || user.department}</div>
+            <div className="text-[10px] text-gray-400 truncate">{user.role} / {{ qa: 'QA', document_control: 'Document Control', cleaning: 'Cleaning', warehouse: 'Warehouse', production: 'Production', maintenance: 'Maintenance', office: 'Office' }[user.department] || user.department}</div>
           </div>
           <button onClick={() => window.dispatchEvent(new CustomEvent('app-logout'))} className="text-gray-400 hover:text-gray-600" title="Sign Out">
             <LogOut size={16} />
@@ -341,7 +341,24 @@ function App() {
   const { user, loading, login, loginWithToken, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [workspace, setWorkspace] = useState('fsqa');
+  const [homePref, setHomePref] = useState('fsqa');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const homeApplied = useRef(false);
+
+  // Apply the user's default landing workspace once, on first load after login.
+  useEffect(() => {
+    if (!user) { homeApplied.current = false; return; }
+    setHomePref(user.home_workspace || 'fsqa');
+    if (!homeApplied.current) {
+      homeApplied.current = true;
+      if (user.home_workspace === 'messages') setWorkspace('comms');
+    }
+  }, [user]);
+
+  const setHome = useCallback((w) => {
+    setHomePref(w);
+    apiPost('/users/me/home', { workspace: w }).catch(() => {});
+  }, []);
   const { data: notifications } = useApiGet('/compliance/notifications', [activeTab, user?.id]);
   const [opLang, setOpLang] = useState(() => localStorage.getItem('op_lang') || 'en');
   const toggleLang = useCallback((lang) => { setOpLang(lang); localStorage.setItem('op_lang', lang); }, []);
@@ -500,7 +517,16 @@ function App() {
 
   // Messages workspace — full-screen, separable from the FSQA workspace.
   if (workspace === 'comms') {
-    return <><CommsView user={user} onExit={() => setWorkspace('fsqa')} /><UpdateBanner /></>;
+    return <>
+      <CommsView
+        user={user}
+        onExit={() => setWorkspace('fsqa')}
+        onGoToSchedule={canViewModule(user, 'production-schedule') ? () => { setWorkspace('fsqa'); setActiveTab('production-schedule'); } : null}
+        homePref={homePref}
+        onSetHome={setHome}
+      />
+      <UpdateBanner />
+    </>;
   }
 
   // Determine effective accessible modules for this user
@@ -578,6 +604,10 @@ function App() {
           <div className="px-6 lg:px-8 py-2.5 flex items-center justify-between max-w-7xl mx-auto">
             <h1 className="text-sm font-semibold text-gray-700">{activeItem?.label || 'Dashboard'}</h1>
             <div className="flex items-center gap-3">
+              <button onClick={() => setHome('fsqa')} title={homePref === 'fsqa' ? 'FSQA is your home screen' : 'Make FSQA your home screen'}
+                className={`p-1.5 rounded-lg transition-colors ${homePref === 'fsqa' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
+                <Home size={18} />
+              </button>
               <NotificationBell notifications={notifications} onNavigate={setActiveTab} />
               <div className="flex items-center gap-2">
                 <div className="h-7 w-7 rounded-full bg-powder-100 flex items-center justify-center text-xs font-bold text-powder-700">

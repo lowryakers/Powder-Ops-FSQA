@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, Upload } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, Upload, CalendarDays, Home } from 'lucide-react';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
 function urlBase64ToUint8Array(base64String) {
@@ -208,7 +208,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, canTranslate, vi
   );
 }
 
-export default function CommsView({ user, onExit }) {
+export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSetHome }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
@@ -481,6 +481,11 @@ export default function CommsView({ user, onExit }) {
         <button onClick={onExit} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg shrink-0" title="Switch to the FSQA tools">
           <ArrowLeft size={16} /> FSQA
         </button>
+        {onGoToSchedule && (
+          <button onClick={onGoToSchedule} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg shrink-0" title="Go to the Production Schedule">
+            <CalendarDays size={16} /> <span className="hidden sm:inline">Schedule</span>
+          </button>
+        )}
         <div className="h-5 w-px bg-gray-200 shrink-0" />
         <MessageSquare size={18} className="text-powder-600 shrink-0" />
         <span className="font-bold text-gray-900 shrink-0">Messages</span>
@@ -504,6 +509,12 @@ export default function CommsView({ user, onExit }) {
           )}
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {onSetHome && (
+            <button onClick={() => onSetHome('messages')} title={homePref === 'messages' ? 'Messages is your home screen' : 'Make Messages your home screen'}
+              className={`p-2 rounded-lg ${homePref === 'messages' ? 'text-powder-600 bg-powder-50 hover:bg-powder-100' : 'text-gray-400 hover:bg-gray-100'}`}>
+              <Home size={16} />
+            </button>
+          )}
           {user.role === 'admin' && (
             <>
               <input ref={slackZipRef} type="file" accept=".zip" className="hidden" onChange={onImportSlack} />
