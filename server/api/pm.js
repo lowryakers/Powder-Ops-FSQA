@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireDepartment } from '../middleware/auth.js';
+import { generateDocumentReviewTasks, recomputeDocumentReview } from './documents.js';
 
 const router = Router();
 
@@ -244,6 +245,12 @@ router.put('/work-orders/:id', (req, res) => {
     step_completions ? JSON.stringify(step_completions) : existing.step_completions,
     due_date || existing.due_date, req.params.id
   );
+
+  // Completing a document-review task advances that document's review cycle
+  // (last_reviewed = today, next review_due = today + its frequency).
+  if (newStatus === 'completed' && existing.status !== 'completed' && existing.document_id) {
+    recomputeDocumentReview(db, existing.document_id);
+  }
 
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'work_order', req.params.id, { status: newStatus }, existing, updated);
@@ -605,6 +612,7 @@ router.post('/generate', (_req, res) => {
 router.get('/operator-tasks', (req, res) => {
   const db = getDb();
   markMissedWorkOrders(db);
+  generateDocumentReviewTasks(db);
   const { assigned_to } = req.query;
   // Operators are locked to their own department's tasks; only admins/supervisors
   // may view other departments (or all) via the group filter.

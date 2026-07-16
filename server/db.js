@@ -1019,6 +1019,23 @@ function runMigrations() {
   addColumnIfMissing('coa_specifications', 'vendor', 'TEXT');
   addColumnIfMissing('coa_specifications', 'revision', 'TEXT');
 
+  // Document review scheduling: each controlled document gets a review frequency
+  // (default annual per SQF) that drives an auto-computed next-review date
+  // (stored in the existing review_due) and generates Document-Control tasks.
+  addColumnIfMissing('sop_documents', 'review_frequency', 'TEXT');
+  addColumnIfMissing('sop_documents', 'last_reviewed', 'TEXT');
+  addColumnIfMissing('work_orders', 'document_id', 'TEXT'); // link a review task back to its doc
+  try {
+    db.prepare("UPDATE sop_documents SET review_frequency = 'annual' WHERE review_frequency IS NULL").run();
+    // Seed a next-review date for docs that don't have one yet: effective date
+    // (or creation) + 1 year. Only touches active docs missing review_due.
+    db.prepare(`UPDATE sop_documents
+      SET review_due = date(COALESCE(NULLIF(effective_date,''), date(created_at), date('now')), '+12 months')
+      WHERE (review_due IS NULL OR review_due = '') AND status != 'archived'`).run();
+  } catch (e) {
+    console.warn('[migrate] document review scheduling backfill:', e.message);
+  }
+
   // Material-level requirements narrative (Form 607-01 sections 2-5): packaging,
   // labeling, storage, acceptance criteria, etc. One row per item number,
   // alongside the per-test limits in coa_specifications.

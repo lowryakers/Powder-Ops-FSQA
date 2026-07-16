@@ -10,6 +10,46 @@ const router = Router();
 
 const MAX_IMPORT_MB = 50;
 
+// ── Document review scheduling (Doc-Control task feed) ────────────────────────
+export const REVIEW_FREQ_MONTHS = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12, biennial: 24 };
+const REVIEW_LEAD_DAYS = 30;
+
+// Recompute a document's next review after it's reviewed: last_reviewed = today,
+// review_due = today + its frequency. Called when a review task is completed.
+export function recomputeDocumentReview(db, documentId) {
+  const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(documentId);
+  if (!doc) return;
+  const months = REVIEW_FREQ_MONTHS[doc.review_frequency] || 12;
+  db.prepare(`UPDATE sop_documents SET last_reviewed = date('now'), review_due = date('now', ?), updated_at = datetime('now') WHERE id = ?`)
+    .run(`+${months} months`, documentId);
+}
+
+// Generate a Document-Control task for each active document whose review is due
+// within the lead window (or overdue), unless one is already open. Idempotent.
+export function generateDocumentReviewTasks(db) {
+  let due;
+  try {
+    due = db.prepare(`SELECT id, doc_number, title FROM sop_documents
+      WHERE status != 'archived' AND review_due IS NOT NULL AND review_due != ''
+        AND date(review_due) <= date('now', ?)`).all(`+${REVIEW_LEAD_DAYS} days`);
+  } catch { return 0; }
+  if (!due.length) return 0;
+  const hasOpen = db.prepare("SELECT 1 FROM work_orders WHERE document_id = ? AND status IN ('open','in_progress','overdue') LIMIT 1");
+  const ins = db.prepare(`INSERT INTO work_orders (id, title, description, priority, due_date, task_group, document_id, status)
+    VALUES (?, ?, ?, 'normal', ?, 'document_control', ?, 'open')`);
+  let created = 0;
+  const tx = db.transaction(() => {
+    for (const d of due) {
+      if (hasOpen.get(d.id)) continue;
+      const reviewDue = db.prepare('SELECT review_due FROM sop_documents WHERE id = ?').get(d.id).review_due;
+      ins.run(uuid(), `Review ${d.doc_number || ''}: ${d.title || 'document'}`.trim(), 'Scheduled document review (SQF).', reviewDue, d.id);
+      created++;
+    }
+  });
+  tx();
+  return created;
+}
+
 // Accept a broad set of document files. Unsupported types are NOT rejected
 // here (that would abort the whole batch) — they are accepted and flagged
 // per-file during extraction so a mixed upload still imports what it can.
@@ -334,11 +374,23 @@ router.post('/', (req, res) => {
   const approvedBy = st === 'active' ? (req.body.approved_by || req.user.name) : null;
   const approvedAt = st === 'active' ? new Date().toISOString() : null;
 
+  // Review frequency defaults to annual (SQF baseline). When no explicit review
+  // date is given, derive it from the effective date (or today) + the frequency.
+  const reviewFrequency = REVIEW_FREQ_MONTHS[req.body.review_frequency] ? req.body.review_frequency : 'annual';
+  let reviewDue = review_due || null;
+  if (!reviewDue) {
+    const months = REVIEW_FREQ_MONTHS[reviewFrequency];
+    const base = effective_date || null;
+    reviewDue = base
+      ? db.prepare(`SELECT date(?, ?) d`).get(base, `+${months} months`).d
+      : db.prepare(`SELECT date('now', ?) d`).get(`+${months} months`).d;
+  }
+
   db.prepare(`INSERT INTO sop_documents
-    (id, doc_type, doc_number, title, category, revision, effective_date, review_due, status, owner, description, source_file, approved_by, approved_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, doc_type, doc_number, title, category, revision, effective_date, review_due, review_frequency, status, owner, description, source_file, approved_by, approved_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, type, doc_number || '', title, category, revision || '1.0',
-    effective_date || null, review_due || null, st, owner || null,
+    effective_date || null, reviewDue, reviewFrequency, st, owner || null,
     content || null, source_file || null, approvedBy, approvedAt
   );
 
@@ -353,9 +405,23 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { doc_number, title, category, revision, effective_date, review_due, status, owner, content, source_file, _change_summary, _minor, content_es } = req.body;
+  const { doc_number, title, category, revision, effective_date, review_due, review_frequency, status, owner, content, source_file, _change_summary, _minor, content_es } = req.body;
 
   const newStatus = status || existing.status;
+  // Resolve review frequency (validate against known values) and, if the caller
+  // changed the frequency without supplying an explicit review date, re-derive
+  // the next review date from the effective date (or today) + the new frequency.
+  const newFrequency = REVIEW_FREQ_MONTHS[review_frequency]
+    ? review_frequency
+    : (existing.review_frequency || 'annual');
+  let newReviewDue = review_due ?? existing.review_due;
+  if (review_frequency && newFrequency !== existing.review_frequency && review_due === undefined) {
+    const months = REVIEW_FREQ_MONTHS[newFrequency];
+    const base = effective_date ?? existing.effective_date;
+    newReviewDue = base
+      ? db.prepare(`SELECT date(?, ?) d`).get(base, `+${months} months`).d
+      : db.prepare(`SELECT date('now', ?) d`).get(`+${months} months`).d;
+  }
   // A material change (body or revision) that is NOT flagged as a minor edit
   // advances the "training revision" — the version people must be trained on —
   // which flags everyone trained on the prior version for retraining.
@@ -376,10 +442,10 @@ router.put('/:id', (req, res) => {
   // value (initialized to the current revision by migration).
   const trainingRevision = materialChange ? newRevision : (existing.training_revision || newRevision);
 
-  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, status=?, owner=?, description=?, description_es=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, updated_at=datetime('now') WHERE id=?`).run(
+  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, review_frequency=?, status=?, owner=?, description=?, description_es=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, updated_at=datetime('now') WHERE id=?`).run(
     doc_number ?? existing.doc_number, title || existing.title, category || existing.category,
     newRevision, effective_date ?? existing.effective_date,
-    review_due ?? existing.review_due, newStatus, owner ?? existing.owner,
+    newReviewDue, newFrequency, newStatus, owner ?? existing.owner,
     content ?? existing.description, content_es !== undefined ? content_es : existing.description_es,
     source_file ?? existing.source_file,
     approvedBy, approvedAt, trainingRevision, req.params.id
