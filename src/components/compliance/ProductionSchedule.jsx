@@ -848,6 +848,16 @@ export default function ProductionSchedule({ user }) {
 
   const canEdit = user?.role === 'admin';
 
+  // View-only users get a decluttered schedule: rooms with no work that week are
+  // hidden, and a room's Cleaning row is hidden when every day is N/A. Editors
+  // (admins) always see the full grid so they can fill empty cells.
+  const roomHasWork = useCallback((room) =>
+    DAYS.some((_, di) => (assignmentMap[`${di}-${room}`] || []).some(a => a.team || a.mo_number || a.product_name)),
+    [assignmentMap]);
+  const roomHasCleaning = useCallback((room) =>
+    DAYS.some((_, di) => { const v = cleaningMap[`${di}-${room}`]; return v && v !== 'N/A'; }),
+    [cleaningMap]);
+
   const nextSlotFor = useCallback((dayIndex, roomName) => {
     const entries = assignmentMap[`${dayIndex}-${roomName}`] || [];
     return entries.length ? Math.max(...entries.map(a => a.slot || 0)) + 1 : 0;
@@ -1054,6 +1064,9 @@ export default function ProductionSchedule({ user }) {
               <tbody>
                 {ROOM_SECTIONS.map(section => {
                   const isCollapsed = collapsedSections[section.label];
+                  // Viewers only see rooms that have work scheduled this week.
+                  const rooms = canEdit ? section.rooms : section.rooms.filter(roomHasWork);
+                  if (rooms.length === 0) return null; // hide fully-empty sections for viewers
                   return (
                     <Fragment key={section.label}>
                       {/* Section header */}
@@ -1065,13 +1078,13 @@ export default function ProductionSchedule({ user }) {
                           <div className="flex items-center gap-2">
                             {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                             {section.label}
-                            <span className="text-xs font-normal opacity-70">({section.rooms.length} room{section.rooms.length !== 1 ? 's' : ''})</span>
+                            <span className="text-xs font-normal opacity-70">({rooms.length} room{rooms.length !== 1 ? 's' : ''})</span>
                           </div>
                         </td>
                       </tr>
 
                       {/* Room rows */}
-                      {!isCollapsed && section.rooms.map(room => (
+                      {!isCollapsed && rooms.map(room => (
                         <Fragment key={room}>
                           <tr className="hover:bg-gray-50/50">
                             <td className="border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 whitespace-nowrap">
@@ -1079,7 +1092,8 @@ export default function ProductionSchedule({ user }) {
                             </td>
                             {DAYS.map((_, di) => renderAssignmentCell(di, room, section.type, section.cellTint))}
                           </tr>
-                          {/* Cleaning level row */}
+                          {/* Cleaning level row — hidden for viewers when all N/A */}
+                          {(canEdit || roomHasCleaning(room)) && (
                           <tr className="bg-gray-50/70">
                             <td className="border border-gray-200 px-3 py-1 text-[10px] uppercase tracking-wider font-medium text-gray-400">
                               Cleaning
@@ -1098,6 +1112,7 @@ export default function ProductionSchedule({ user }) {
                               </td>
                             ))}
                           </tr>
+                          )}
                         </Fragment>
                       ))}
                     </Fragment>
