@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -919,6 +919,76 @@ function LabForm({ initial, onSave, onCancel }) {
 }
 
 // ──────── Main Panel ────────
+// ──────── Material Requirements (Form 607-01 sections 2–5) ────────
+const MAT_607_DEFAULTS = {
+  packaging: 'The product shall be packaged and transported in containers secured to protect the contents from extraneous materials and from loss under normal handling, shipment and storage. Packaging materials shall not transmit contaminants or objectionable substances to the product.',
+  labeling: 'Each container is to be clearly labeled with: Product name, Manufacturer, Date Manufactured, Batch Number, and Net Weight.',
+  desiccant: 'Label each container with a brightly colored sticker stating "desiccant included" if desiccant is added to the container.',
+  storage: 'All products shall be stored and protected from foreign odors, moisture, contaminants, and light.',
+  handling: 'Refer to the Material Safety Data Sheet.',
+  safety: 'Refer to the Material Safety Data Sheet.',
+  acceptance_criteria: 'A Certificate of Analysis (COA) is required with each batch. All incoming batches shall be sampled for full testing and released according to the specification results. No damaged or improperly labeled containers are acceptable. Material missing a COA is not acceptable and will not be received in the facility.',
+  retest_panel: 'Organoleptic, Identification, APC, and Yeast & Mold',
+  treatment_note: 'If treatment is necessary to meet the microbiology specifications, the process used must be noted on the COA. Ethylene oxide and gamma irradiation are not allowed processes.',
+};
+const MAT_SECTIONS = [
+  { key: 'packaging', label: 'Packaging' },
+  { key: 'labeling', label: 'Labeling' },
+  { key: 'desiccant', label: 'Desiccant Requirements' },
+  { key: 'storage', label: 'Storage' },
+  { key: 'handling', label: 'Handling' },
+  { key: 'safety', label: 'Safety' },
+  { key: 'acceptance_criteria', label: 'Acceptance Criteria' },
+  { key: 'treatment_note', label: 'Treatment (microbiology)' },
+];
+
+function MaterialSpecModal({ item, onClose, onSaved }) {
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    apiFetch(`/coa/material-spec?item_number=${encodeURIComponent(item.item_number)}`)
+      .then(existing => setForm(existing || { item_number: item.item_number, common_name: item.item_description || '', ...MAT_607_DEFAULTS }))
+      .catch(() => setForm({ item_number: item.item_number, common_name: item.item_description || '', ...MAT_607_DEFAULTS }));
+  }, [item.item_number, item.item_description]);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const save = async () => {
+    setSaving(true);
+    try { await apiPut('/coa/material-spec', { ...form, item_number: item.item_number }); onSaved?.(); onClose(); }
+    finally { setSaving(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-2xl my-6 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">Material Requirements — {item.item_number}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <p className="text-xs text-gray-500">Form 607-01 sections 2–5 for this material. Prefilled with the standard text — edit as needed per material.</p>
+        {form === null ? <p className="text-sm text-gray-400 py-6 text-center">Loading…</p> : (
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div><label className="block text-xs font-medium text-gray-700 mb-1">Common Name</label><input value={form.common_name || ''} onChange={e => set('common_name', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+              <div><label className="block text-xs font-medium text-gray-700 mb-1">Vendor</label><input value={form.vendor || ''} onChange={e => set('vendor', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+              <div><label className="block text-xs font-medium text-gray-700 mb-1">Max Shelf Life</label><input value={form.max_shelf_life || ''} onChange={e => set('max_shelf_life', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 2 years" /></div>
+            </div>
+            {MAT_SECTIONS.map(s => (
+              <div key={s.key}>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{s.label}</label>
+                <textarea value={form[s.key] || ''} onChange={e => set(s.key, e.target.value)} rows={2} spellCheck="true" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+            ))}
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Retest Panel</label><input value={form.retest_panel || ''} onChange={e => set('retest_panel', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+          </div>
+        )}
+        <div className="flex items-center gap-2 pt-1">
+          <button onClick={save} disabled={saving || form === null} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save requirements'}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function COAPanel() {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'coa');
@@ -926,6 +996,7 @@ export default function COAPanel() {
   const [subTab, setSubTab] = useState('requests');
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
+  const [matReqItem, setMatReqItem] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -1238,6 +1309,7 @@ export default function COAPanel() {
                         <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{s.method || '-'}</td>
                         <td className="px-3 py-2.5">
                           <div className="flex gap-1">
+                            <button onClick={() => setMatReqItem({ item_number: s.item_number, item_description: s.item_description })} title="Material requirements (607-01)" className="p-1 text-gray-400 hover:text-powder-600"><ClipboardList size={14} /></button>
                             <button onClick={() => { setEditItem(s); setShowForm(true); }} className="p-1 text-gray-400 hover:text-gray-600"><Edit2 size={14} /></button>
                             <button onClick={() => handleDeleteSpec(s.id)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
                           </div>
@@ -1253,6 +1325,8 @@ export default function COAPanel() {
           )}
         </>
       )}
+
+      {matReqItem && <MaterialSpecModal item={matReqItem} onClose={() => setMatReqItem(null)} onSaved={refreshSpecs} />}
 
       {/* ───── Labs Tab ───── */}
       {subTab === 'labs' && (

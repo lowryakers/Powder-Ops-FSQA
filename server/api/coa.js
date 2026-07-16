@@ -90,6 +90,30 @@ router.put('/labs/:id', (req, res) => {
 
 // ──────────────── Specifications ────────────────
 
+// Material-level requirements narrative (Form 607-01 sections 2–5), one per item.
+const MATERIAL_SPEC_FIELDS = ['common_name', 'sku_number', 'vendor', 'revision', 'packaging', 'labeling', 'desiccant', 'storage', 'handling', 'safety', 'acceptance_criteria', 'retest_panel', 'max_shelf_life', 'treatment_note', 'notes'];
+
+router.get('/material-spec', (req, res) => {
+  const db = getDb();
+  const { item_number } = req.query;
+  if (!item_number) return res.status(400).json({ error: 'item_number is required' });
+  res.json(db.prepare('SELECT * FROM coa_material_specs WHERE item_number = ?').get(item_number) || null);
+});
+
+router.put('/material-spec', (req, res) => {
+  const db = getDb();
+  const item_number = String(req.body?.item_number || '').trim();
+  if (!item_number) return res.status(400).json({ error: 'item_number is required' });
+  const cols = ['item_number', ...MATERIAL_SPEC_FIELDS, 'updated_by'];
+  const vals = [item_number, ...MATERIAL_SPEC_FIELDS.map(f => req.body[f] ?? null), req.user.name];
+  const placeholders = cols.map(() => '?').join(', ');
+  const updates = [...MATERIAL_SPEC_FIELDS, 'updated_by'].map(c => `${c}=excluded.${c}`).join(', ');
+  db.prepare(`INSERT INTO coa_material_specs (${cols.join(', ')}) VALUES (${placeholders})
+    ON CONFLICT(item_number) DO UPDATE SET ${updates}, updated_at=datetime('now')`).run(...vals);
+  logAudit(req.user, 'update', 'coa_material_spec', item_number, { item_number }, null, null);
+  res.json(db.prepare('SELECT * FROM coa_material_specs WHERE item_number = ?').get(item_number));
+});
+
 router.get('/specifications', (req, res) => {
   const db = getDb();
   const { item_number } = req.query;

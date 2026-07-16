@@ -1019,6 +1019,23 @@ function runMigrations() {
   addColumnIfMissing('coa_specifications', 'vendor', 'TEXT');
   addColumnIfMissing('coa_specifications', 'revision', 'TEXT');
 
+  // Material-level requirements narrative (Form 607-01 sections 2-5): packaging,
+  // labeling, storage, acceptance criteria, etc. One row per item number,
+  // alongside the per-test limits in coa_specifications.
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS coa_material_specs (
+      item_number TEXT PRIMARY KEY,
+      common_name TEXT, sku_number TEXT, vendor TEXT, revision TEXT,
+      packaging TEXT, labeling TEXT, desiccant TEXT,
+      storage TEXT, handling TEXT, safety TEXT,
+      acceptance_criteria TEXT, retest_panel TEXT, max_shelf_life TEXT, treatment_note TEXT,
+      notes TEXT, updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+  } catch (e) {
+    console.warn('[db] coa_material_specs unavailable:', e.message);
+  }
+
   // Link an org-chart position to its Job Description document
   addColumnIfMissing('org_positions', 'job_description_id', 'TEXT');
 
