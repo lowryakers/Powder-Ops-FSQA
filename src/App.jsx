@@ -122,21 +122,13 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, onOpenComms }
     s.on('channels:changed', onChange);
     return () => s.off('channels:changed', onChange);
   }, [refreshComms]);
-  // Collapse groups by default — only Overview and the group holding the active
-  // module start open — so the sidebar reads as a short list, not a wall of ~30
-  // links. Users can expand any group; navigating opens the relevant one.
+  // All groups expanded by default — users prefer seeing every module at once.
+  // (Groups are still individually collapsible.)
   const [openGroups, setOpenGroups] = useState(() => {
     const initial = {};
-    NAV_GROUPS.forEach(g => {
-      initial[g.label] = g.label === 'Overview' || g.items.some(i => i.id === activeTab);
-    });
+    NAV_GROUPS.forEach(g => { initial[g.label] = true; });
     return initial;
   });
-
-  useEffect(() => {
-    const grp = NAV_GROUPS.find(g => g.items.some(i => i.id === activeTab));
-    if (grp) setOpenGroups(prev => (prev[grp.label] ? prev : { ...prev, [grp.label]: true }));
-  }, [activeTab]);
 
   const toggleGroup = (label) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
