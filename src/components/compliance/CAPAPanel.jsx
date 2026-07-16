@@ -521,11 +521,11 @@ export default function CAPAPanel() {
             CAPA Report Log ({(capas || []).length})
           </button>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[140px] sm:flex-none">
             <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
-              className="pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-48" />
+              className="pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-full sm:w-48" />
           </div>
           <select value={filter} onChange={e => setFilter(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm">

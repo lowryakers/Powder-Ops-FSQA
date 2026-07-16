@@ -625,7 +625,7 @@ export default function TrainingPanel() {
           <h2 className="text-xl font-bold text-gray-900">Training</h2>
         </div>
         {canEdit && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Upload size={15} /> Import</button>
             <button onClick={() => setCourse({})} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Plus size={15} /> Course</button>
             <button onClick={() => setGroupTraining(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Users size={15} /> Group Training</button>

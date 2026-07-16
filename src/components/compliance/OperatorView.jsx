@@ -1001,7 +1001,7 @@ export default function OperatorView() {
             <button
               key={d.id}
               onClick={() => setViewDept(d.id)}
-              className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={`flex-1 px-2 sm:px-3 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                 viewDept === d.id
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'

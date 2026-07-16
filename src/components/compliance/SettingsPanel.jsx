@@ -411,7 +411,8 @@ function RoleSection({ users, config, onEdit, onToggle, defaultOpen, editingId, 
         {open ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
       </button>
       {open && users.length > 0 && (
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[560px]">
           <thead className="bg-gray-50 border-t border-b">
             <tr>
               <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Name</th>
@@ -436,6 +437,7 @@ function RoleSection({ users, config, onEdit, onToggle, defaultOpen, editingId, 
             ))}
           </tbody>
         </table>
+        </div>
       )}
       {open && users.length === 0 && (
         <div className="px-4 py-6 text-center text-sm text-gray-400 border-t">No {config.label.toLowerCase()} yet</div>
@@ -606,12 +608,12 @@ export default function SettingsPanel() {
     <div className="space-y-8">
       {/* Users Section */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Technicians & Users</h2>
             <p className="text-sm text-gray-500">Manage roles, departments, and module access permissions</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => setBulkAccess(true)}
               className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
               <Shield size={15} /> Bulk Permissions
