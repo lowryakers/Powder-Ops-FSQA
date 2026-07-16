@@ -500,7 +500,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                     <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
                       {bpgItems.map((item, i) => (
                         <div key={i} className={`grid grid-cols-[1fr_40px_52px_auto] gap-0 px-2 py-1.5 items-center ${itemConditions[i] === 'bad' || itemConditions[i] === 'broken' ? 'bg-red-50' : itemConditions[i] === 'good' ? 'bg-green-50/30' : ''}`}>
-                          <span className="text-sm text-gray-800 truncate">{item.name}</span>
+                          <span className="text-sm text-gray-800 truncate">{tc(item.name)}</span>
                           <span className="text-xs text-gray-500">{item.qty}</span>
                           <span className={`text-[10px] font-medium ${item.material === 'Glass' ? 'text-blue-600' : 'text-gray-500'}`}>{item.material}</span>
                           <div className="flex gap-0.5">
@@ -568,10 +568,10 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                         return (
                           <div key={i}>
                             {showSection && (
-                              <div className="bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700 uppercase tracking-wide">{item.section}</div>
+                              <div className="bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700 uppercase tracking-wide">{tc(item.section)}</div>
                             )}
                             <div className={`grid grid-cols-[1fr_auto] gap-0 px-2 py-1.5 items-center ${itemConditions[i] === 'bad' ? 'bg-amber-50' : itemConditions[i] === 'broken' ? 'bg-red-50' : itemConditions[i] === 'good' ? 'bg-green-50/30' : ''}`}>
-                              <span className="text-sm text-gray-800">{item.name}</span>
+                              <span className="text-sm text-gray-800">{tc(item.name)}</span>
                               <div className="flex gap-0.5">
                                 {item.type === 'input' ? (
                                   <input type="text" placeholder={item.name.includes('Hour') ? 'Hours' : item.name.includes('Water') ? 'Full / Need' : 'Value'}
@@ -799,12 +799,27 @@ export default function OperatorView() {
     if (lang !== 'es' || !Array.isArray(tasks)) return;
     const seen = new Set();
     const missing = [];
+    const consider = (s) => {
+      if (typeof s === 'string' && s.trim() && !seen.has(s) && !requestedRef.current.has(s)) {
+        seen.add(s);
+        missing.push(s);
+      }
+    };
     for (const tk of tasks) {
-      const candidates = [tk.title, tk.equipment_name, ...(Array.isArray(tk.procedure_steps) ? tk.procedure_steps : [])];
-      for (const s of candidates) {
-        if (typeof s === 'string' && s.trim() && !seen.has(s) && !requestedRef.current.has(s)) {
-          seen.add(s);
-          missing.push(s);
+      consider(tk.title);
+      consider(tk.equipment_name);
+      const steps = Array.isArray(tk.procedure_steps) ? tk.procedure_steps : [];
+      for (const st of steps) {
+        if (typeof st !== 'string') continue;
+        if (st.includes('|')) {
+          // Inspection items are "name|qty/material|section" — only the name and
+          // section are shown to the operator, so translate those parts, not the
+          // packed string (which the model would mangle).
+          const parts = st.split('|');
+          consider(parts[0]?.trim());
+          consider(parts[2]?.trim());
+        } else {
+          consider(st);
         }
       }
     }
