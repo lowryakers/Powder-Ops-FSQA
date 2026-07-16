@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -122,11 +122,21 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, onOpenComms }
     s.on('channels:changed', onChange);
     return () => s.off('channels:changed', onChange);
   }, [refreshComms]);
+  // Collapse groups by default — only Overview and the group holding the active
+  // module start open — so the sidebar reads as a short list, not a wall of ~30
+  // links. Users can expand any group; navigating opens the relevant one.
   const [openGroups, setOpenGroups] = useState(() => {
     const initial = {};
-    NAV_GROUPS.forEach(g => { initial[g.label] = true; });
+    NAV_GROUPS.forEach(g => {
+      initial[g.label] = g.label === 'Overview' || g.items.some(i => i.id === activeTab);
+    });
     return initial;
   });
+
+  useEffect(() => {
+    const grp = NAV_GROUPS.find(g => g.items.some(i => i.id === activeTab));
+    if (grp) setOpenGroups(prev => (prev[grp.label] ? prev : { ...prev, [grp.label]: true }));
+  }, [activeTab]);
 
   const toggleGroup = (label) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
@@ -283,13 +293,118 @@ function NotificationBell({ notifications, onNavigate }) {
   );
 }
 
-function MobileBottomNav({ activeTab, setActiveTab, effectiveModules }) {
-  const quickTabs = [
-    { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
-    { id: 'pm', label: 'Tasks', icon: Wrench },
-    { id: 'capa', label: 'CAPA', icon: FileWarning },
-    { id: 'sanitation', label: 'Sanitation', icon: Droplets },
-  ].filter(t => !effectiveModules || effectiveModules.includes(t.id));
+// Flatten the nav to the modules this user may actually open (respects role,
+// AI availability, and per-module access). Shared by search + mobile quick-tabs.
+function accessibleNavItems(user, aiOn) {
+  const flat = [];
+  for (const g of NAV_GROUPS) {
+    for (const i of g.items) {
+      if (i.adminOnly && user.role !== 'admin') continue;
+      if (i.aiOnly && !aiOn) continue;
+      if (!canViewModule(user, i.id)) continue;
+      flat.push({ ...i, group: g.label });
+    }
+  }
+  return flat;
+}
+
+// Global "jump to a module" command palette. With ~30 modules, hunting through
+// the sidebar is the main navigation friction; this lets anyone type a name (or
+// press ⌘K / Ctrl-K) and jump straight there. Only shows modules the user can open.
+function ModuleSearch({ user, onNavigate }) {
+  const { data: aiStatus } = useApiGet('/ai/status');
+  const aiOn = !!aiStatus?.enabled;
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [hi, setHi] = useState(0);
+  const ref = useRef(null);
+  const inputRef = useRef(null);
+
+  const items = useMemo(() => accessibleNavItems(user, aiOn), [user, aiOn]);
+  const results = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return items;
+    return items.filter(i => i.label.toLowerCase().includes(term) || i.group.toLowerCase().includes(term));
+  }, [q, items]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setOpen(o => !o); }
+      else if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  useEffect(() => { if (open) { setQ(''); setHi(0); setTimeout(() => inputRef.current?.focus(), 0); } }, [open]);
+  useEffect(() => { setHi(0); }, [q]);
+
+  const choose = (item) => { if (!item) return; onNavigate(item.id); setOpen(false); };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(true)} title="Search modules (⌘K)"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:bg-gray-50 text-sm w-48 lg:w-56">
+        <Search size={15} />
+        <span className="flex-1 text-left">Search…</span>
+        <kbd className="hidden lg:inline text-[10px] text-gray-300 border border-gray-200 rounded px-1">⌘K</kbd>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+            <Search size={15} className="text-gray-400" />
+            <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(h + 1, results.length - 1)); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); }
+                else if (e.key === 'Enter') { e.preventDefault(); choose(results[hi]); }
+              }}
+              placeholder="Jump to a module…" className="flex-1 text-sm outline-none bg-transparent" />
+          </div>
+          <div className="max-h-80 overflow-y-auto py-1">
+            {results.length === 0 ? (
+              <div className="px-4 py-6 text-center text-gray-400 text-sm">No matches</div>
+            ) : results.map((item, idx) => (
+              <button key={item.id} onMouseEnter={() => setHi(idx)} onClick={() => choose(item)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left ${idx === hi ? 'bg-powder-50 text-powder-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+                <item.icon size={15} className={idx === hi ? 'text-powder-600' : 'text-gray-400'} />
+                <span className="flex-1">{item.label}</span>
+                <span className="text-[10px] text-gray-300">{item.group}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MOBILE_TAB_LABELS = { dashboard: 'Home', operator: 'Operator', pm: 'Tasks', 'production-schedule': 'Schedule', 'production-log': 'Production', capa: 'CAPA', sanitation: 'Sanitation' };
+
+function MobileBottomNav({ activeTab, setActiveTab, user }) {
+  // Role-aware quick-tabs: prefer the modules most people use day-to-day, but
+  // only ones this user can open, and fall back to their first accessible
+  // modules so a warehouse operator gets useful tabs instead of CAPA/Sanitation.
+  const quickTabs = useMemo(() => {
+    const flat = accessibleNavItems(user, false);
+    const byId = Object.fromEntries(flat.map(i => [i.id, i]));
+    const preferred = ['dashboard', 'operator', 'pm', 'production-schedule', 'production-log', 'capa', 'sanitation'];
+    const picked = [];
+    const seen = new Set();
+    for (const id of preferred) {
+      if (byId[id] && !seen.has(id)) { picked.push(byId[id]); seen.add(id); }
+      if (picked.length === 4) break;
+    }
+    for (const it of flat) {
+      if (picked.length === 4) break;
+      if (!seen.has(it.id)) { picked.push(it); seen.add(it.id); }
+    }
+    return picked.slice(0, 4).map(i => ({ id: i.id, label: MOBILE_TAB_LABELS[i.id] || i.label, icon: i.icon }));
+  }, [user]);
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-bottom">
@@ -582,6 +697,7 @@ function App() {
           <div className="px-6 lg:px-8 py-2.5 flex items-center justify-between max-w-7xl mx-auto">
             <h1 className="text-sm font-semibold text-gray-700">{activeItem?.label || 'Dashboard'}</h1>
             <div className="flex items-center gap-3">
+              <ModuleSearch user={user} onNavigate={setActiveTab} />
               <button onClick={() => setHome('fsqa')} title={homePref === 'fsqa' ? 'ReadyDoc is your home screen' : 'Make ReadyDoc your home screen'}
                 className={`p-1.5 rounded-lg transition-colors ${homePref === 'fsqa' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
                 <Home size={18} />
@@ -649,7 +765,7 @@ function App() {
         </main>
       </div>
 
-      <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} effectiveModules={effectiveModules} />
+      <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} />
       <UpdateBanner />
       <InstallPrompt />
     </div>
