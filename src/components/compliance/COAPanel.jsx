@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiDelete, apiUpload, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square } from 'lucide-react';
@@ -368,7 +368,30 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
     origin: '', supplier: '', product_code: '', manufacturer_lot: '', vendor_lot: '', received_date: '',
   });
   const [saving, setSaving] = useState(false);
+  const [specInfo, setSpecInfo] = useState(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Pull the material spec for this item and pre-fill the test panel, so tests
+  // aren't re-typed. Results then auto pass/fail against this spec (server side).
+  const loadSpec = async (itemNum) => {
+    const item = String(itemNum ?? form.item_number).trim();
+    if (!item) { setSpecInfo(null); return; }
+    try {
+      const specs = await apiFetch(`/coa/specifications?item_number=${encodeURIComponent(item)}`);
+      if (Array.isArray(specs) && specs.length) {
+        const tests = [...new Set(specs.map(s => s.test_type))];
+        const meta = specs[0];
+        setSpecInfo({ count: specs.length, tests, sku: meta.sku_number, vendor: meta.vendor, revision: meta.revision, item_description: meta.item_description });
+        setForm(f => ({
+          ...f,
+          tests_requested: f.tests_requested?.trim() ? f.tests_requested : tests.join(', '),
+          item_description: f.item_description?.trim() ? f.item_description : (meta.item_description || ''),
+        }));
+      } else {
+        setSpecInfo({ count: 0 });
+      }
+    } catch { setSpecInfo(null); }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -379,10 +402,16 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
       <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit Lab Request' : 'New Lab Request'}</h3>
+      {specInfo?.count > 0 && (
+        <div className="text-[12px] text-powder-800 bg-powder-50 border border-powder-100 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+          <span>Spec on file{specInfo.revision ? ` (${specInfo.revision})` : ''}{specInfo.vendor ? ` · ${specInfo.vendor}` : ''} — {specInfo.count} test{specInfo.count === 1 ? '' : 's'}. Results will auto pass/fail against it.</span>
+          <button type="button" onClick={() => setForm(f => ({ ...f, tests_requested: specInfo.tests.join(', ') }))} className="text-powder-600 hover:underline font-medium shrink-0">Reload tests</button>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Item / MO # *</label>
-          <input required value={form.item_number} onChange={e => set('item_number', e.target.value)}
+          <input required value={form.item_number} onChange={e => set('item_number', e.target.value)} onBlur={() => loadSpec()}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. MO01409" />
         </div>
         <div className="sm:col-span-2">
@@ -750,6 +779,7 @@ function SpecForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState(initial || {
     item_number: '', item_description: '', test_type: '', specification: '',
     unit: '', min_value: '', max_value: '', method: '',
+    sku_number: '', vendor: '', revision: '',
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -779,6 +809,21 @@ function SpecForm({ initial, onSave, onCancel }) {
           <label className="block text-xs font-medium text-gray-700 mb-1">Item Description *</label>
           <input required value={form.item_description} onChange={e => set('item_description', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">SKU Number</label>
+          <input value={form.sku_number || ''} onChange={e => set('sku_number', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Vendor</label>
+          <input value={form.vendor || ''} onChange={e => set('vendor', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Revision</label>
+          <input value={form.revision || ''} onChange={e => set('revision', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. V1" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Test Type *</label>

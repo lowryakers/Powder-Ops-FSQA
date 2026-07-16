@@ -1013,6 +1013,12 @@ function runMigrations() {
   addColumnIfMissing('disposals', 'source_type', 'TEXT');
   addColumnIfMissing('disposals', 'source_id', 'TEXT');
 
+  // Raw-material spec identity (Form 607-01): SKU / vendor / revision on the
+  // COA specifications so a spec is tied to a material, not just an item number.
+  addColumnIfMissing('coa_specifications', 'sku_number', 'TEXT');
+  addColumnIfMissing('coa_specifications', 'vendor', 'TEXT');
+  addColumnIfMissing('coa_specifications', 'revision', 'TEXT');
+
   // Link an org-chart position to its Job Description document
   addColumnIfMissing('org_positions', 'job_description_id', 'TEXT');
 

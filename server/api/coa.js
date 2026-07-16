@@ -102,15 +102,15 @@ router.get('/specifications', (req, res) => {
 
 router.post('/specifications', (req, res) => {
   const db = getDb();
-  const { item_number, item_description, test_type, specification, unit, min_value, max_value, method } = req.body;
+  const { item_number, item_description, test_type, specification, unit, min_value, max_value, method, sku_number, vendor, revision } = req.body;
   if (!item_number || !item_description || !test_type) {
     return res.status(400).json({ error: 'item_number, item_description, and test_type are required' });
   }
 
   const id = uuid();
-  db.prepare(`INSERT INTO coa_specifications (id, item_number, item_description, test_type, specification, unit, min_value, max_value, method, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, item_number, item_description, test_type, specification || null, unit || null, min_value ?? null, max_value ?? null, method || null, req.user.name);
+  db.prepare(`INSERT INTO coa_specifications (id, item_number, item_description, test_type, specification, unit, min_value, max_value, method, sku_number, vendor, revision, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, item_number, item_description, test_type, specification || null, unit || null, min_value ?? null, max_value ?? null, method || null, sku_number || null, vendor || null, revision || null, req.user.name);
 
   const created = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'coa_specification', id, req.body, null, created);
@@ -122,7 +122,7 @@ router.put('/specifications/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Specification not found' });
 
-  const fields = ['item_number', 'item_description', 'test_type', 'specification', 'unit', 'min_value', 'max_value', 'method', 'is_active'];
+  const fields = ['item_number', 'item_description', 'test_type', 'specification', 'unit', 'min_value', 'max_value', 'method', 'sku_number', 'vendor', 'revision', 'is_active'];
   const updates = [];
   const values = [];
   for (const f of fields) {
