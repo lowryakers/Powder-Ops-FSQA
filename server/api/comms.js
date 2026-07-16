@@ -329,7 +329,7 @@ router.post('/channels/:id/attachments', attachUpload.array('files', 10), async 
   const out = [];
   for (const f of files) {
     const id = uuid();
-    const safe = (f.originalname || 'file').replace(/[^\w.\-]+/g, '_').slice(0, 120);
+    const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
     const key = `chat/${channel.id}/${id}-${safe}`;
     await putObject(key, f.buffer, f.mimetype);
     db.prepare('INSERT INTO chat_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')

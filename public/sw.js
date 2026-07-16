@@ -53,7 +53,7 @@ self.addEventListener('fetch', (event) => {
 
 // ── Web push (Phase 5d) ───────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
-  let data = {};
+  let data;
   try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data && event.data.text() }; }
   const title = data.title || 'Powder Ops';
   const options = {
