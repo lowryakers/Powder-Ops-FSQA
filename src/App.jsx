@@ -360,8 +360,6 @@ function App() {
     apiPost('/users/me/home', { workspace: w }).catch(() => {});
   }, []);
   const { data: notifications } = useApiGet('/compliance/notifications', [activeTab, user?.id]);
-  const [opLang, setOpLang] = useState(() => localStorage.getItem('op_lang') || 'en');
-  const toggleLang = useCallback((lang) => { setOpLang(lang); localStorage.setItem('op_lang', lang); }, []);
   const path = window.location.pathname;
 
   useEffect(() => {
@@ -470,16 +468,6 @@ function App() {
               <p className="text-xs text-gray-500">{{ qa: 'QA Tasks', cleaning: 'Cleaning Tasks', maintenance: 'Maintenance Tasks', warehouse: 'Warehouse Tasks' }[user.department] || 'My Tasks'}</p>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex border border-gray-200 rounded-lg overflow-hidden">
-                <button onClick={() => toggleLang('en')}
-                  className={`px-2 py-1 text-[10px] font-bold transition-colors ${opLang === 'en' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                  EN
-                </button>
-                <button onClick={() => toggleLang('es')}
-                  className={`px-2 py-1 text-[10px] font-bold transition-colors ${opLang === 'es' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                  ES
-                </button>
-              </div>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${{ qa: 'bg-teal-100 text-teal-700', cleaning: 'bg-amber-100 text-amber-700', maintenance: 'bg-violet-100 text-violet-700', warehouse: 'bg-indigo-100 text-indigo-700' }[user.department] || 'bg-gray-100 text-gray-700'}`}>
                 {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH' }[user.department] || user.department?.toUpperCase()}
               </span>
@@ -491,7 +479,7 @@ function App() {
           </div>
         </header>
         <main className="max-w-3xl mx-auto px-4 py-6">
-          <OperatorView lang={opLang} />
+          <OperatorView />
         </main>
         <UpdateBanner />
       </div>
@@ -548,16 +536,6 @@ function App() {
               <p className="text-xs text-gray-500">{{ qa: 'QA Tasks', cleaning: 'Cleaning Tasks', maintenance: 'Maintenance Tasks', warehouse: 'Warehouse Tasks' }[user.department] || 'My Tasks'}</p>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex border border-gray-200 rounded-lg overflow-hidden">
-                <button onClick={() => toggleLang('en')}
-                  className={`px-2 py-1 text-[10px] font-bold transition-colors ${opLang === 'en' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                  EN
-                </button>
-                <button onClick={() => toggleLang('es')}
-                  className={`px-2 py-1 text-[10px] font-bold transition-colors ${opLang === 'es' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                  ES
-                </button>
-              </div>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${{ qa: 'bg-teal-100 text-teal-700', cleaning: 'bg-amber-100 text-amber-700', maintenance: 'bg-violet-100 text-violet-700', warehouse: 'bg-indigo-100 text-indigo-700' }[user.department] || 'bg-gray-100 text-gray-700'}`}>
                 {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH' }[user.department] || user.department?.toUpperCase()}
               </span>
@@ -569,7 +547,7 @@ function App() {
           </div>
         </header>
         <main className="max-w-3xl mx-auto px-4 py-6">
-          <OperatorView lang={opLang} />
+          <OperatorView />
         </main>
         <UpdateBanner />
       </div>
@@ -639,7 +617,7 @@ function App() {
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
           {resolvedTab === 'dashboard' && <ComplianceDashboard />}
           {resolvedTab === 'ask-ai' && <AiAskPanel />}
-          {resolvedTab === 'operator' && <OperatorView lang={opLang} />}
+          {resolvedTab === 'operator' && <OperatorView />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}
           {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}
           {resolvedTab === 'production-dashboard' && <ProductionDashboard />}

@@ -772,10 +772,15 @@ const DEPT_KEYS = [
   { id: 'cleaning', key: 'cleaning' },
 ];
 
-export default function OperatorView({ lang = 'en' }) {
+export default function OperatorView() {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin' || user?.role === 'supervisor';
   const userDept = user?.department || 'warehouse';
+  // Language is owned here so the EN/ES toggle is available in every context the
+  // Operator View appears (standalone layout and the in-app tab). Shares the
+  // 'op_lang' preference with the rest of the app.
+  const [lang, setLang] = useState(() => localStorage.getItem('op_lang') || 'en');
+  const changeLang = (l) => { setLang(l); localStorage.setItem('op_lang', l); };
   const t = useMemo(() => createTranslator(lang), [lang]);
   const [viewDept, setViewDept] = useState(isAdmin ? 'all' : userDept);
   const groupParam = viewDept === 'all' ? '' : `?group=${viewDept}`;
@@ -933,7 +938,11 @@ export default function OperatorView({ lang = 'en' }) {
             {today.length} {t('due_today_count')} &middot; {filtered.length} {t('total')}
           </p>
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 items-center">
+          <div className="flex border border-gray-200 rounded-lg overflow-hidden mr-1">
+            <button onClick={() => changeLang('en')} className={`px-2 py-1.5 text-[10px] font-bold transition-colors ${lang === 'en' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>EN</button>
+            <button onClick={() => changeLang('es')} className={`px-2 py-1.5 text-[10px] font-bold transition-colors ${lang === 'es' ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>ES</button>
+          </div>
           <button onClick={() => { setBatchMode(!batchMode); setBatchSelected(new Set()); }}
             className={`w-9 h-9 rounded-lg flex items-center justify-center border transition-colors ${batchMode ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
             title={t('batch_complete')}>
