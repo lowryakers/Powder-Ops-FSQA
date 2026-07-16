@@ -770,6 +770,7 @@ const DEPT_KEYS = [
   { id: 'warehouse', key: 'warehouse' },
   { id: 'qa', key: 'qa' },
   { id: 'cleaning', key: 'cleaning' },
+  { id: 'document_control', key: 'document_control' },
 ];
 
 export default function OperatorView() {

@@ -53,6 +53,14 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Warehouse',
+    items: [
+      { id: 'component-signout', label: 'Component Sign In/Out', icon: PackageCheck },
+      { id: 'maintenance-signout', label: 'Maintenance Sign In/Out', icon: Wrench },
+      { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor', icon: Scissors },
+    ],
+  },
+  {
     label: 'Maintenance',
     items: [
       { id: 'pm', label: 'Task Center', icon: Wrench },
@@ -62,12 +70,24 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: 'Quality & Safety',
+    label: 'Quality',
+    items: [
+      { id: 'coa', label: 'COA / Lab Testing', icon: TestTubes },
+      { id: 'hygienic', label: 'Hygienic Design', icon: ClipboardCheck },
+      { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
+      { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
+      { id: 'deviations', label: 'Deviations', icon: FileWarning },
+      { id: 'non-conformance', label: 'Non-Conformance', icon: ShieldAlert },
+      { id: 'on-hold', label: 'On Hold', icon: PauseCircle },
+      { id: 'disposals', label: 'Disposals', icon: Trash2 },
+      { id: 'recall', label: 'Mock Recall', icon: Package },
+    ],
+  },
+  {
+    label: 'Cleaning',
     items: [
       { id: 'sanitation', label: 'Sanitation', icon: Droplets },
       { id: 'chemicals', label: 'Chemicals', icon: FlaskConical },
-      { id: 'hygienic', label: 'Hygienic Design', icon: ClipboardCheck },
-      { id: 'coa', label: 'COA / Lab Testing', icon: TestTubes },
     ],
   },
   {
@@ -79,26 +99,6 @@ const NAV_GROUPS = [
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
       { id: 'org-chart', label: 'Org Chart', icon: Network },
-    ],
-  },
-  {
-    label: 'Compliance',
-    items: [
-      { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
-      { id: 'disposals', label: 'Disposals', icon: Trash2 },
-      { id: 'recall', label: 'Mock Recall', icon: Package },
-    ],
-  },
-  {
-    label: 'Quality Records',
-    items: [
-      { id: 'deviations', label: 'Deviations', icon: FileWarning },
-      { id: 'non-conformance', label: 'Non-Conformance', icon: ShieldAlert },
-      { id: 'on-hold', label: 'On Hold', icon: PauseCircle },
-      { id: 'component-signout', label: 'Component Sign In/Out', icon: PackageCheck },
-      { id: 'maintenance-signout', label: 'Maintenance Sign In/Out', icon: Wrench },
-      { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
-      { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor', icon: Scissors },
     ],
   },
   {

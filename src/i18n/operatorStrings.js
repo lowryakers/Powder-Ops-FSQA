@@ -12,6 +12,7 @@ const strings = {
   warehouse: { en: 'Warehouse', es: 'Almacén' },
   qa: { en: 'QA', es: 'QA' },
   cleaning: { en: 'Cleaning', es: 'Limpieza' },
+  document_control: { en: 'Doc Control', es: 'Control de Docs' },
 
   // Search & filters
   search_placeholder: { en: 'Search tasks, equipment, location...', es: 'Buscar tareas, equipos, ubicación...' },
