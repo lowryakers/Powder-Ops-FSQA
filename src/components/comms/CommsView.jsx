@@ -478,8 +478,12 @@ export default function CommsView({ user, onExit }) {
     <div className="fixed inset-0 bg-white flex flex-col">
       {/* top bar */}
       <div className="flex items-center gap-3 px-4 h-12 border-b border-gray-200 shrink-0">
-        <MessageSquare size={18} className="text-powder-600" />
-        <span className="font-bold text-gray-900">Messages</span>
+        <button onClick={onExit} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg shrink-0" title="Switch to the FSQA tools">
+          <ArrowLeft size={16} /> FSQA
+        </button>
+        <div className="h-5 w-px bg-gray-200 shrink-0" />
+        <MessageSquare size={18} className="text-powder-600 shrink-0" />
+        <span className="font-bold text-gray-900 shrink-0">Messages</span>
         <div className="ml-4 flex items-center gap-2 flex-1 max-w-lg">
           <div className="relative flex-1">
             {searchMode === 'ask' ? <Sparkles size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-powder-500" />
@@ -516,9 +520,6 @@ export default function CommsView({ user, onExit }) {
               {pushSubscribed ? <Bell size={16} /> : <BellOff size={16} />}
             </button>
           )}
-          <button onClick={onExit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
-            <ArrowLeft size={15} /> Back to Compliance
-          </button>
         </div>
       </div>
 
