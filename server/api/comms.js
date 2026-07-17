@@ -534,6 +534,45 @@ router.get('/channels/:id/messages', async (req, res) => {
   res.json(await Promise.all(rows.map(m => serialize(db, m))));
 });
 
+// The caller's Threads inbox: every thread they started or replied to (or were
+// mentioned in the root of), newest activity first, with parent + replies.
+router.get('/threads', async (req, res) => {
+  const db = getDb();
+  const me = req.user.id;
+  const isAdmin = req.user.role === 'admin';
+  const rows = db.prepare(`
+    SELECT p.id, MAX(r.created_at) AS last_reply
+    FROM chat_messages p
+    JOIN chat_messages r ON r.parent_id = p.id AND r.deleted_at IS NULL
+    WHERE p.parent_id IS NULL AND p.deleted_at IS NULL
+      AND (
+        p.user_id = ?
+        OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = ?)
+        OR EXISTS (SELECT 1 FROM chat_mentions mn WHERE mn.message_id = p.id AND mn.user_id = ?)
+      )
+    GROUP BY p.id
+    ORDER BY last_reply DESC
+    LIMIT 40`).all(me, me, me);
+
+  const out = [];
+  for (const row of rows) {
+    const parent = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(row.id);
+    if (!parent) continue;
+    const channel = getChannel(db, parent.channel_id);
+    if (!channel || !canAccess(db, channel, me, isAdmin)) continue;
+    const replies = db.prepare('SELECT * FROM chat_messages WHERE parent_id = ? ORDER BY created_at ASC').all(parent.id);
+    out.push({
+      channel_id: channel.id,
+      channel_name: channelLabel(db, channel, me),
+      channel_kind: channel.kind,
+      parent: await serialize(db, parent),
+      replies: await Promise.all(replies.map(m => serialize(db, m))),
+      last_reply: row.last_reply,
+    });
+  }
+  res.json(out);
+});
+
 // A message's thread: the parent plus all its replies in order. Access is
 // enforced through the parent's channel.
 router.get('/messages/:id/thread', async (req, res) => {

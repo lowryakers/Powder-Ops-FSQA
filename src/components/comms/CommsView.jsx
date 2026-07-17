@@ -328,6 +328,58 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, view
   );
 }
 
+// One thread in the Threads inbox: channel label, parent, replies, reply box.
+function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel }) {
+  const [body, setBody] = useState('');
+  const react = async (m, e) => { await apiPost(`/comms/messages/${m.id}/reactions`, { emoji: e }); refresh(); };
+  const unreact = async (m, e) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(e)}`, { method: 'DELETE' }); refresh(); };
+  const del = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); refresh(); };
+  const edit = async (m, text) => { await apiPut(`/comms/messages/${m.id}`, { body: text }); refresh(); };
+  const send = async () => { const t = body.trim(); if (!t) return; await apiPost(`/comms/channels/${thread.channel_id}/messages`, { body: t, parent_id: thread.parent.id }); setBody(''); refresh(); };
+  const Icon = thread.channel_kind === 'dm' ? MessageSquare : thread.channel_kind === 'private' ? Lock : Hash;
+  return (
+    <div className="border border-gray-200 rounded-xl m-3 overflow-hidden">
+      <button onClick={() => onOpenChannel(thread.channel_id)} className="w-full flex items-center gap-1.5 px-4 py-2 bg-gray-50 border-b border-gray-100 text-sm font-semibold text-gray-800 hover:bg-gray-100">
+        <Icon size={14} className="text-gray-400" /> {thread.channel_name}
+      </button>
+      <div className="py-1">
+        <Message m={thread.parent} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+          canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />
+        <div className="px-4 py-0.5 text-[11px] font-medium text-gray-400">{thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}</div>
+        {thread.replies.map(r => <Message key={r.id} m={r} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+          canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />)}
+      </div>
+      <div className="flex items-end gap-2 p-2 border-t border-gray-100">
+        <textarea value={body} onChange={e => setBody(e.target.value)} rows={1}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
+          placeholder="Reply…" className="flex-1 px-3 py-1.5 border border-gray-300 rounded-xl text-sm resize-none max-h-24" />
+        <button onClick={send} disabled={!body.trim()} className="p-2 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={15} /></button>
+      </div>
+    </div>
+  );
+}
+
+function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile }) {
+  const { data: threads, loading, refresh } = useApiGet('/comms/threads');
+  const list = threads || [];
+  return (
+    <>
+      <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
+        <button onClick={onCloseMobile} className="md:hidden -ml-1 p-1 text-gray-500 hover:text-gray-700" title="Back"><ArrowLeft size={18} /></button>
+        <MessageSquare size={16} className="text-powder-600" />
+        <span className="font-semibold text-gray-900">Threads</span>
+        <span className="text-xs text-gray-400">{list.length ? `· ${list.length}` : ''}</span>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {loading ? <p className="text-center text-sm text-gray-400 py-8">Loading threads…</p>
+          : list.length === 0 ? <p className="text-center text-sm text-gray-400 py-8">No threads yet. Reply to a message to start one.</p>
+          : list.map(t => <ThreadInboxCard key={t.parent.id} thread={t} me={me} refresh={refresh} mentionUsers={mentionUsers}
+              canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} onOpenChannel={onOpenChannel} />)}
+      </div>
+    </>
+  );
+}
+
 // Searchable, grouped emoji picker used for reactions and the composer.
 function EmojiPicker({ onPick, onClose, align = 'right', vertical = 'down' }) {
   const [q, setQ] = useState('');
@@ -475,7 +527,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const [activeId, setActiveId] = useState(null);
   // On phones the list and thread can't share the screen — show one at a time.
   const [mobileThread, setMobileThread] = useState(false);
-  const openChannel = (id) => { setActiveId(id); setMobileThread(true); setChanFilter(''); };
+  const openChannel = (id) => { setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false); };
   // Sidebar channel quick-filter (type to filter, ↑/↓ + Enter to jump).
   const [chanFilter, setChanFilter] = useState('');
   const [chanHi, setChanHi] = useState(0);
@@ -506,6 +558,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const [showSettings, setShowSettings] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [replyTo, setReplyTo] = useState(null); // parent message whose thread is open
+  const [threadsOpen, setThreadsOpen] = useState(false); // Threads inbox view
 
   const list = channels || [];
   const publicCh = list.filter(c => c.kind === 'public');
@@ -530,7 +583,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const kindIcon = (c) => (c.kind === 'dm' ? MessageSquare : c.post_policy === 'admins' ? Megaphone : c.kind === 'private' ? Lock : Hash);
   // On phones, the main pane also needs to show when a search/ask is running.
   const searchActive = searchResults !== null || answer !== null || (searching && searchMode === 'ask');
-  const showMainMobile = mobileThread || searchActive;
+  const showMainMobile = mobileThread || searchActive || threadsOpen;
 
   // Active channel's members — used to warn when @mentioning a non-member and to
   // scope the mention autocomplete to people who can actually see the channel.
@@ -851,6 +904,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
       <div className="flex flex-1 min-h-0">
         {/* sidebar — full width on phones, hidden there once a channel is open */}
         <div className={`w-full md:w-60 border-r border-gray-200 flex-col shrink-0 overflow-y-auto p-2 space-y-3 ${showMainMobile ? 'hidden md:flex' : 'flex'}`}>
+          {/* Threads inbox shortcut (like Slack) */}
+          <button onClick={() => { setThreadsOpen(true); setMobileThread(false); clearSearch(); }}
+            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm font-medium ${threadsOpen ? 'bg-powder-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
+            <MessageSquare size={15} className="opacity-80" /> Threads
+          </button>
           {/* Quick filter — type to filter channels & DMs, ↑/↓ + Enter to jump */}
           <div className="relative px-1">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -943,7 +1001,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
 
         {/* main pane — hidden on phones until a channel is opened */}
         <div className={`flex-1 flex-col min-w-0 ${showMainMobile ? 'flex' : 'hidden md:flex'}`}>
-          {(searchResults !== null || answer !== null || (searching && searchMode === 'ask')) ? (
+          {threadsOpen ? (
+            <ThreadsView me={user} mentionUsers={users} canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} onOpenChannel={openChannel} onCloseMobile={() => setThreadsOpen(false)} />
+          ) : (searchResults !== null || answer !== null || (searching && searchMode === 'ask')) ? (
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
                 {searchMode === 'ask' ? <Sparkles size={16} className="text-powder-500" /> : <Search size={16} className="text-gray-400" />}
