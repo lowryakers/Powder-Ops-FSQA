@@ -8,3 +8,8 @@ data/uploads/
 .env
 *.log
 .DS_Store
+
+# Scratch test/screenshot files
+_test*.cjs
+_shot*.mjs
+_pdf*.mjs
