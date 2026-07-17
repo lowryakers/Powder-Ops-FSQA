@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -152,6 +152,107 @@ function NewChannelModal({ users, me, onClose, onCreated }) {
         <div className="flex gap-2">
           <button onClick={create} disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Creating…' : 'Create channel'}</button>
           <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Channel details drawer — opened by clicking the channel title (like Slack).
+// Shows privacy, topic, and members; lets members add people and lets admins
+// change privacy / announcement mode / rename.
+function ChannelDetails({ channel, me, users, onClose, onChanged }) {
+  const { data, refresh } = useApiGet(`/comms/channels/${channel.id}`, [channel.id]);
+  const [adding, setAdding] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(channel.name);
+  const isAdmin = me?.role === 'admin';
+  const members = data?.members || [];
+  const memberIds = new Set(members.map(m => m.user_id));
+  const candidates = (users || []).filter(u => u.is_active && !memberIds.has(u.id));
+  const depts = [...new Set(candidates.map(u => u.department).filter(Boolean))].sort();
+
+  const addMany = async (ids) => { if (ids.length) { await apiPost(`/comms/channels/${channel.id}/members`, { user_ids: ids }); refresh(); onChanged?.(); } };
+  const removeMember = async (uid) => { await apiFetch(`/comms/channels/${channel.id}/members/${uid}`, { method: 'DELETE' }); refresh(); onChanged?.(); };
+  const setField = async (patch) => { await apiPut(`/comms/channels/${channel.id}`, patch); refresh(); onChanged?.(); };
+  const saveName = async () => { if (name.trim() && name.trim() !== channel.name) await setField({ name: name.trim() }); setRenaming(false); };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-end" onClick={onClose}>
+      <div className="bg-white h-full w-full max-w-md shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2 min-w-0">
+            {channel.post_policy === 'admins' ? <Megaphone size={17} className="text-gray-400 shrink-0" /> : channel.kind === 'private' ? <Lock size={17} className="text-gray-400 shrink-0" /> : <Hash size={17} className="text-gray-400 shrink-0" />}
+            {renaming ? (
+              <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setRenaming(false); }}
+                className="font-semibold text-gray-900 border border-powder-300 rounded px-2 py-0.5 text-sm" />
+            ) : (
+              <h3 className="text-base font-semibold text-gray-900 truncate">{channel.name}</h3>
+            )}
+            {isAdmin && !renaming && <button onClick={() => { setName(channel.name); setRenaming(true); }} className="text-gray-300 hover:text-powder-600"><Edit2 size={13} /></button>}
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="p-5 overflow-y-auto space-y-5">
+          {channel.topic && <p className="text-sm text-gray-600">{channel.topic}</p>}
+
+          {/* Settings (admin) */}
+          {isAdmin && (
+            <div className="space-y-2">
+              <div className="text-[11px] font-bold uppercase text-gray-400">Settings</div>
+              <label className="flex items-center justify-between text-sm text-gray-700">
+                <span className="flex items-center gap-2"><Lock size={14} className="text-gray-400" /> Private (invite only)</span>
+                <input type="checkbox" checked={channel.kind === 'private'} onChange={e => setField({ kind: e.target.checked ? 'private' : 'public' })} />
+              </label>
+              <label className="flex items-center justify-between text-sm text-gray-700">
+                <span className="flex items-center gap-2"><Megaphone size={14} className="text-gray-400" /> Announcement (admins post only)</span>
+                <input type="checkbox" checked={channel.post_policy === 'admins'} onChange={e => setField({ post_policy: e.target.checked ? 'admins' : 'all' })} />
+              </label>
+            </div>
+          )}
+
+          {/* Members */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-bold uppercase text-gray-400">Members · {members.length}</div>
+              {candidates.length > 0 && <button onClick={() => setAdding(a => !a)} className="text-xs text-powder-600 hover:text-powder-700 font-medium flex items-center gap-1"><UserPlus size={13} /> Add people</button>}
+            </div>
+
+            {adding && (
+              <div className="mb-3 border border-gray-200 rounded-lg p-2">
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  <button onClick={() => addMany(candidates.map(u => u.id))} className="text-xs px-2 py-0.5 rounded-lg bg-powder-600 text-white font-medium hover:bg-powder-700">+ Everyone ({candidates.length})</button>
+                  {depts.map(d => {
+                    const ids = candidates.filter(u => u.department === d).map(u => u.id);
+                    return <button key={d} onClick={() => addMany(ids)} className="text-xs px-2 py-0.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-powder-50 capitalize">+ {d.replace('_', ' ')} ({ids.length})</button>;
+                  })}
+                </div>
+                <div className="max-h-40 overflow-y-auto">
+                  {candidates.map(u => (
+                    <button key={u.id} onClick={() => addMany([u.id])} className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-powder-50 text-left">
+                      <UserPlus size={13} className="text-powder-600" />
+                      <span className="text-sm text-gray-800 flex-1">{u.name}</span>
+                      <span className="text-xs text-gray-400 capitalize">{(u.department || '').replace('_', ' ')}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-0.5">
+              {members.map(m => (
+                <div key={m.user_id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50">
+                  <div className="h-7 w-7 rounded-lg bg-powder-100 text-powder-700 flex items-center justify-center text-[11px] font-bold shrink-0">
+                    {m.name?.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
+                  </div>
+                  <span className="text-sm text-gray-800 flex-1">{m.name}{m.user_id === me.id ? ' (you)' : ''}</span>
+                  {m.role === 'owner' && <span className="text-[10px] uppercase text-gray-400">owner</span>}
+                  {isAdmin && m.user_id !== me.id && <button onClick={() => removeMember(m.user_id)} className="text-gray-300 hover:text-red-500" title="Remove from channel"><UserMinus size={14} /></button>}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -322,6 +423,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const fileInputRef = useRef(null);
   const composerRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   const list = channels || [];
   const publicCh = list.filter(c => c.kind === 'public');
@@ -709,8 +811,17 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
                 <button onClick={() => setMobileThread(false)} className="md:hidden -ml-1 p-1 text-gray-500 hover:text-gray-700" title="Back to channels"><ArrowLeft size={18} /></button>
                 {active.kind === 'dm' ? <MessageSquare size={16} className="text-gray-400" /> : active.post_policy === 'admins' ? <Megaphone size={16} className="text-gray-400" /> : active.kind === 'private' ? <Lock size={16} className="text-gray-400" /> : <Hash size={16} className="text-gray-400" />}
-                <span className="font-semibold text-gray-900 truncate shrink-0 max-w-[55%] sm:max-w-none">{active.name}</span>
+                {active.kind === 'dm' ? (
+                  <span className="font-semibold text-gray-900 truncate shrink-0 max-w-[55%] sm:max-w-none">{active.name}</span>
+                ) : (
+                  <button onClick={() => setShowDetails(true)} className="font-semibold text-gray-900 truncate shrink-0 max-w-[55%] sm:max-w-none hover:underline" title="Channel details & members">{active.name}</button>
+                )}
                 {active.topic && <span className="text-xs text-gray-400 truncate hidden sm:inline">— {active.topic}</span>}
+                {active.kind !== 'dm' && (
+                  <button onClick={() => setShowDetails(true)} className="ml-1 flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs text-gray-500 hover:bg-gray-100" title="Members">
+                    <Users size={13} /> Details
+                  </button>
+                )}
                 {translateOn && (
                   <div className="ml-auto flex items-center gap-1.5">
                     <button onClick={() => setAutoTranslate(v => !v)} title="Translate all messages"
@@ -811,6 +922,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
 
       {newChannel && <NewChannelModal users={users} me={user} onClose={() => setNewChannel(false)} onCreated={(ch) => { setNewChannel(false); refreshChannels(); openChannel(ch.id); }} />}
       {showSettings && <CommsSettings users={users} onClose={() => setShowSettings(false)} onChanged={refreshChannels} />}
+      {showDetails && active && active.kind !== 'dm' && <ChannelDetails channel={active} me={user} users={users} onClose={() => setShowDetails(false)} onChanged={refreshChannels} />}
     </div>
   );
 }
