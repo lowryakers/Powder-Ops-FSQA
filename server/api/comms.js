@@ -131,16 +131,30 @@ function extractMentions(db, channel, body, authorId) {
     .sort((a, b) => b.name.length - a.name.length)
     .filter(u => lower.includes('@' + u.name.toLowerCase()));
 }
-// Record mentions for a message and push a targeted event to each mentioned user.
+// True when the body contains a channel-wide broadcast mention (@channel/@here/
+// @everyone), which notifies every member rather than named individuals.
+function hasBroadcast(body) {
+  return /(^|\s)@(channel|here|everyone)\b/i.test(body || '');
+}
+// Record mentions for a message and push a targeted event to each recipient.
+// @channel / @here / @everyone notify every member of the channel; otherwise
+// only the individually-named members are notified.
 function recordMentions(db, channel, messageId, body, author) {
-  const users = extractMentions(db, channel, body, author.id);
-  if (!users.length) return;
+  let recipients;
+  if (hasBroadcast(body)) {
+    recipients = db.prepare('SELECT u.id, u.name FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? AND u.is_active = 1 AND u.id != ?').all(channel.id, author.id);
+  } else {
+    recipients = extractMentions(db, channel, body, author.id);
+  }
+  if (!recipients.length) return;
   const ins = db.prepare('INSERT INTO chat_mentions (id, message_id, channel_id, user_id) VALUES (?, ?, ?, ?)');
   const label = channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'a channel');
-  for (const u of users) {
+  const broadcast = hasBroadcast(body);
+  for (const u of recipients) {
     ins.run(uuid(), messageId, channel.id, u.id);
-    emitToUser(u.id, 'mention', { channel_id: channel.id, message_id: messageId, from: author.name, preview: body.slice(0, 140) });
-    pushToUser(u.id, { title: `${author.name} mentioned you in ${label}`, body: body.slice(0, 140), tag: `mention-${messageId}`, url: '/' }).catch(() => {});
+    emitToUser(u.id, 'mention', { channel_id: channel.id, message_id: messageId, from: author.name, preview: body.slice(0, 140), broadcast });
+    const title = broadcast ? `${author.name} notified ${label}` : `${author.name} mentioned you in ${label}`;
+    pushToUser(u.id, { title, body: body.slice(0, 140), tag: `mention-${messageId}`, url: '/' }).catch(() => {});
   }
 }
 
@@ -166,6 +180,12 @@ router.get('/channels', (req, res) => {
       `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND user_id != ?
        AND (? IS NULL OR created_at > ?)`
     ).get(c.id, me, c.last_read_at, c.last_read_at).n;
+    // Unread @mentions of me in this channel (drives a distinct badge).
+    const mentions = db.prepare(
+      `SELECT COUNT(*) n FROM chat_mentions mn JOIN chat_messages msg ON msg.id = mn.message_id
+       WHERE mn.channel_id = ? AND mn.user_id = ? AND msg.deleted_at IS NULL
+       AND (? IS NULL OR msg.created_at > ?)`
+    ).get(c.id, me, c.last_read_at, c.last_read_at).n;
 
     let display = c.name, other = null;
     if (c.kind === 'dm') {
@@ -175,7 +195,7 @@ router.get('/channels', (req, res) => {
     }
     return {
       id: c.id, kind: c.kind, name: display, topic: c.topic,
-      is_member: !!c.membership_id, unread, other_user_id: other,
+      is_member: !!c.membership_id, unread, mentions, other_user_id: other,
       post_policy: c.post_policy || 'all', is_default: !!c.is_default,
     };
   });

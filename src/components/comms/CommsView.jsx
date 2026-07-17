@@ -440,6 +440,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const searchActive = searchResults !== null || answer !== null || (searching && searchMode === 'ask');
   const showMainMobile = mobileThread || searchActive;
 
+  // Active channel's members — used to warn when @mentioning a non-member and to
+  // scope the mention autocomplete to people who can actually see the channel.
+  const { data: activeInfo } = useApiGet(activeId ? `/comms/channels/${activeId}` : '/comms/status', [activeId]);
+  const channelMemberIds = useMemo(() => new Set((activeInfo?.members || []).map(m => m.user_id)), [activeInfo]);
+  const channelMembers = useMemo(() => (activeInfo?.members || []).map(m => ({ id: m.user_id, name: m.name })), [activeInfo]);
+
   // Default to #general (or first channel) once loaded.
   useEffect(() => { if (!activeId && list.length) setActiveId((publicCh.find(c => c.name === 'general') || list[0]).id); }, [list, activeId]); // eslint-disable-line
 
@@ -557,8 +563,22 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const mentionMatches = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
-    return (users || []).filter(u => u.id !== user.id && u.name.toLowerCase().includes(q)).slice(0, 6);
-  }, [mentionQuery, users, user.id]);
+    // Suggest channel members first (they can see the channel); fall back to all
+    // users only if member list hasn't loaded.
+    const pool = channelMembers.length ? channelMembers : (users || []);
+    return pool.filter(u => u.id !== user.id && u.name.toLowerCase().includes(q)).slice(0, 6);
+  }, [mentionQuery, channelMembers, users, user.id]);
+
+  // People typed as @Name who match a real user but aren't in this channel —
+  // they won't see the message, so warn the author before they send.
+  const nonMemberMentions = useMemo(() => {
+    if (!body.includes('@') || !channelMemberIds.size || !active || active.kind === 'dm') return [];
+    const lower = body.toLowerCase();
+    return (users || [])
+      .filter(u => u.id !== user.id && !channelMemberIds.has(u.id))
+      .filter(u => lower.includes('@' + u.name.toLowerCase()))
+      .sort((a, b) => b.name.length - a.name.length);
+  }, [body, users, channelMemberIds, active, user.id]);
 
   const insertMention = (name) => {
     const ta = composerRef.current;
@@ -642,14 +662,19 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const clearSearch = () => { setSearchQ(''); setSearchResults(null); setAnswer(null); };
   const openResult = (r) => { clearSearch(); openChannel(r.channel_id); };
 
-  const ChannelBtn = ({ c, icon: Icon, highlight, onHover }) => (
+  const ChannelBtn = ({ c, icon: Icon, highlight, onHover }) => {
+    const unread = c.unread > 0;
+    const mentioned = c.mentions > 0;
+    return (
     <button onClick={() => openChannel(c.id)} onMouseEnter={onHover}
-      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activeId === c.id ? 'bg-powder-600 text-white' : highlight ? 'bg-powder-50 text-powder-700' : 'text-gray-700 hover:bg-gray-100'}`}>
+      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activeId === c.id ? 'bg-powder-600 text-white' : highlight ? 'bg-powder-50 text-powder-700' : unread ? 'text-gray-900 hover:bg-gray-100' : 'text-gray-600 hover:bg-gray-100'}`}>
       <Icon size={14} className="shrink-0 opacity-80" />
-      <span className="truncate flex-1 text-left">{c.name}</span>
-      {c.unread > 0 && <span className={`text-[10px] font-bold px-1.5 rounded-full ${activeId === c.id ? 'bg-white/25' : 'bg-red-500 text-white'}`}>{c.unread}</span>}
+      <span className={`truncate flex-1 text-left ${unread && activeId !== c.id ? 'font-semibold' : ''}`}>{c.name}</span>
+      {mentioned && <span className="text-[10px] font-bold px-1.5 rounded-full bg-red-500 text-white" title="You were mentioned">@{c.mentions}</span>}
+      {unread && !mentioned && <span className={`text-[10px] font-bold px-1.5 rounded-full ${activeId === c.id ? 'bg-white/25' : 'bg-gray-300 text-gray-700'}`}>{c.unread}</span>}
     </button>
-  );
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-white flex flex-col">
@@ -676,8 +701,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
               className="w-full pl-8 pr-7 py-1.5 border border-gray-300 rounded-lg text-sm" />
             {searchQ && <button onClick={clearSearch} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>}
           </div>
+          {/* Mode tabs inline on desktop; on mobile they move to a second row (below). */}
           {(semanticOn || askOn) && (
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs shrink-0">
+            <div className="hidden sm:flex rounded-lg border border-gray-200 overflow-hidden text-xs shrink-0">
               {[['keyword', 'Keyword'], semanticOn && ['smart', 'Smart'], askOn && ['ask', 'Ask']].filter(Boolean).map(([m, label]) => (
                 <button key={m} onClick={() => { setSearchMode(m); setSearchResults(null); setAnswer(null); }}
                   className={`px-2.5 py-1.5 font-medium ${searchMode === m ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>{label}</button>
@@ -685,10 +711,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
             </div>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1 sm:gap-2 shrink-0">
           {onSetHome && (
             <button onClick={() => onSetHome('messages')} title={homePref === 'messages' ? 'Messages is your home screen' : 'Make Messages your home screen'}
-              className={`p-2 rounded-lg ${homePref === 'messages' ? 'text-powder-600 bg-powder-50 hover:bg-powder-100' : 'text-gray-400 hover:bg-gray-100'}`}>
+              className={`hidden sm:block p-2 rounded-lg ${homePref === 'messages' ? 'text-powder-600 bg-powder-50 hover:bg-powder-100' : 'text-gray-400 hover:bg-gray-100'}`}>
               <Home size={16} />
             </button>
           )}
@@ -709,6 +735,16 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
           )}
         </div>
       </div>
+
+      {/* Mobile: search mode tabs move to their own row so the top bar stays clean */}
+      {(semanticOn || askOn) && searchQ && (
+        <div className="sm:hidden flex gap-1 px-4 py-1.5 border-b border-gray-200 shrink-0">
+          {[['keyword', 'Keyword'], semanticOn && ['smart', 'Smart'], askOn && ['ask', 'Ask']].filter(Boolean).map(([m, label]) => (
+            <button key={m} onClick={() => { setSearchMode(m); setSearchResults(null); setAnswer(null); }}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${searchMode === m ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{label}</button>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0">
         {/* sidebar — full width on phones, hidden there once a channel is open */}
@@ -880,6 +916,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
                       </div>
                     ))}
                     {uploading && <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400"><Loader2 size={12} className="animate-spin" /> Uploading…</div>}
+                  </div>
+                )}
+                {nonMemberMentions.length > 0 && (
+                  <div className="mb-2 flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+                    <Bell size={12} className="mt-0.5 shrink-0" />
+                    <span>
+                      {nonMemberMentions.map(u => u.name).join(', ')} {nonMemberMentions.length === 1 ? "isn't" : "aren't"} in this channel, so {nonMemberMentions.length === 1 ? "they won't" : "they won't"} see this message.
+                      {user.role === 'admin' && ' Add them from the channel title → Members.'}
+                    </span>
                   </div>
                 )}
                 <div className="flex items-end gap-2">
