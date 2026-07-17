@@ -775,7 +775,9 @@ const DEPT_KEYS = [
 
 export default function OperatorView() {
   const { user } = useAuth() || {};
-  const isAdmin = user?.role === 'admin' || user?.role === 'supervisor';
+  // Only admins may view other departments. Everyone else (incl. supervisors)
+  // is locked to their own department's tasks.
+  const isAdmin = user?.role === 'admin';
   const userDept = user?.department || 'warehouse';
   // Language is owned here so the EN/ES toggle is available in every context the
   // Operator View appears (standalone layout and the in-app tab). Shares the

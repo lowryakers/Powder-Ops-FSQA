@@ -350,5 +350,35 @@ router.post('/:id/merge', requireRole('admin'), (req, res) => {
   res.json({ ok: true, merged_into: intoId });
 });
 
+// Permanently remove a user. Guarded: refuses if the person has any activity
+// history (chat messages or task records) — those must be preserved, so the
+// admin is told to Deactivate (or Merge) instead. Safe for erroneous/empty
+// accounts (e.g. an import mistake).
+router.delete('/:id', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'User not found' });
+  if (u.id === req.user.id) return res.status(400).json({ error: "You can't remove your own account." });
+  let messages = 0, tasks = 0;
+  try { messages = db.prepare('SELECT COUNT(*) c FROM chat_messages WHERE user_id = ?').get(u.id).c; } catch { /* table may be absent */ }
+  try { tasks = db.prepare('SELECT COUNT(*) c FROM work_orders WHERE completed_by = ? OR assigned_to = ?').get(u.name, u.name).c; } catch { /* absent */ }
+  if (messages > 0 || tasks > 0) {
+    return res.status(409).json({
+      error: 'This person has activity history and can\'t be permanently removed. Deactivate them instead (keeps their history but blocks login), or merge them into another account.',
+      messages, tasks,
+    });
+  }
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id);
+    for (const t of ['chat_channel_members', 'chat_push_subscriptions', 'chat_mentions', 'chat_reactions']) {
+      try { db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(u.id); } catch { /* table may not exist */ }
+    }
+    db.prepare('DELETE FROM users WHERE id = ?').run(u.id);
+  });
+  tx();
+  logAudit(req.user, 'delete', 'user', u.id, { name: u.name, role: u.role }, null, null, u.name);
+  res.json({ ok: true, removed: u.id });
+});
+
 export { hashPassword };
 export default router;

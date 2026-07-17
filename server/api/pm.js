@@ -624,10 +624,10 @@ router.get('/operator-tasks', (req, res) => {
   generateDocumentReviewTasks(db);
   generateQualityScheduleTasks(db);
   const { assigned_to } = req.query;
-  // Operators are locked to their own department's tasks; only admins/supervisors
-  // may view other departments (or all) via the group filter.
-  const isManager = req.user?.role === 'admin' || req.user?.role === 'supervisor';
-  const group = isManager ? req.query.group : (req.user?.department || 'warehouse');
+  // Only admins may view other departments (or all) via the group filter.
+  // Everyone else — including supervisors — is locked to their own department.
+  const canViewAll = req.user?.role === 'admin';
+  const group = canViewAll ? req.query.group : (req.user?.department || 'warehouse');
 
   let sql = `SELECT wo.id, wo.title, wo.status, wo.priority, wo.due_date, wo.assigned_to,
     wo.procedure_steps, wo.pm_schedule_id, wo.task_group,

@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react';
-import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Edit2, UserCheck, UserX, Copy, Shield, ChevronDown, ChevronRight, Eye, EyeOff, Users, X } from 'lucide-react';
+import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
+import { Plus, Copy, Shield, ChevronDown, ChevronRight, Eye, EyeOff, Users, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const ROLES = [
@@ -337,7 +337,7 @@ const ROLE_CONFIG = {
   auditor: { label: 'Auditors', color: 'emerald', desc: 'Read-only compliance view' },
 };
 
-function UserRow({ u, onEdit, onToggle, isEditing }) {
+function UserRow({ u, onEdit, onToggle, onRemove, isEditing }) {
   const moduleAccess = (() => {
     if (!u.module_access) return null;
     if (typeof u.module_access === 'string') { try { return JSON.parse(u.module_access); } catch { return null; } }
@@ -375,23 +375,38 @@ function UserRow({ u, onEdit, onToggle, isEditing }) {
         )}
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
-        <span className={`px-2 py-0.5 rounded-full text-xs ${u.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-          {u.is_active ? 'Active' : 'Disabled'}
-        </span>
+        {u.is_active ? (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800"><span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Active</span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-200 text-gray-600"><span className="h-1.5 w-1.5 rounded-full bg-gray-400" /> Inactive</span>
+        )}
       </td>
-      <td className="px-4 py-3 text-right flex gap-1 justify-end">
-        <button onClick={() => onEdit(u)} className={`hover:text-powder-600 ${isEditing ? 'text-powder-600' : 'text-gray-400'}`} title={isEditing ? 'Close' : 'Edit'}>
-          <Edit2 size={14} />
-        </button>
-        <button onClick={() => onToggle(u)} className="text-gray-400 hover:text-gray-700" title={u.is_active ? 'Disable' : 'Enable'}>
-          {u.is_active ? <UserX size={14} /> : <UserCheck size={14} />}
-        </button>
+      <td className="px-4 py-3 text-right">
+        <div className="flex gap-1.5 justify-end items-center">
+          <button onClick={() => onEdit(u)} className={`px-2 py-1 rounded-lg text-xs font-medium border ${isEditing ? 'border-powder-300 text-powder-700 bg-powder-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`} title="Edit role, department, access">
+            {isEditing ? 'Close' : 'Edit'}
+          </button>
+          {u.is_active ? (
+            <button onClick={() => onToggle(u)} className="px-2 py-1 rounded-lg text-xs font-medium border border-amber-200 text-amber-700 hover:bg-amber-50" title="Blocks login but keeps all history">
+              Deactivate
+            </button>
+          ) : (
+            <>
+              <button onClick={() => onToggle(u)} className="px-2 py-1 rounded-lg text-xs font-medium border border-green-200 text-green-700 hover:bg-green-50" title="Restore login access">
+                Activate
+              </button>
+              <button onClick={() => onRemove(u)} className="px-2 py-1 rounded-lg text-xs font-medium border border-red-200 text-red-600 hover:bg-red-50" title="Permanently delete (only if they have no history)">
+                Remove
+              </button>
+            </>
+          )}
+        </div>
       </td>
     </tr>
   );
 }
 
-function RoleSection({ users, config, onEdit, onToggle, defaultOpen, editingId, onSave, onCancel, canViewPin }) {
+function RoleSection({ users, config, onEdit, onToggle, onRemove, defaultOpen, editingId, onSave, onCancel, canViewPin }) {
   const [open, setOpen] = useState(defaultOpen);
   const activeCount = users.filter(u => u.is_active).length;
 
@@ -426,7 +441,7 @@ function RoleSection({ users, config, onEdit, onToggle, defaultOpen, editingId, 
           <tbody>
             {users.map(u => (
               <Fragment key={u.id}>
-                <UserRow u={u} onEdit={onEdit} onToggle={onToggle} isEditing={u.id === editingId} />
+                <UserRow u={u} onEdit={onEdit} onToggle={onToggle} onRemove={onRemove} isEditing={u.id === editingId} />
                 {u.id === editingId && (
                   <tr className="bg-gray-50">
                     <td colSpan={5} className="px-4 py-3 border-b border-gray-200">
@@ -585,6 +600,16 @@ export default function SettingsPanel() {
     refresh();
   };
 
+  const handleRemove = async (user) => {
+    if (!window.confirm(`Permanently remove ${user.name}? This only works if they have no message or task history — otherwise deactivate them instead.`)) return;
+    try {
+      await apiDelete(`/users/${user.id}`);
+      refresh();
+    } catch (e) {
+      alert(e.message || 'Could not remove this person. Deactivate them instead to keep their history.');
+    }
+  };
+
   const handleEdit = (user) => {
     setEditing(prev => (prev?.id === user.id ? null : user));
     setShowForm(false);
@@ -641,6 +666,7 @@ export default function SettingsPanel() {
               config={ROLE_CONFIG[role]}
               onEdit={handleEdit}
               onToggle={handleToggleActive}
+              onRemove={handleRemove}
               defaultOpen={role !== 'auditor'}
               editingId={editing?.id}
               onSave={handleUpdate}
