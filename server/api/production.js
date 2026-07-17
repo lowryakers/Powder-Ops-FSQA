@@ -403,4 +403,54 @@ router.post('/schedule/cleaning', (req, res) => {
   }
 });
 
+// --- Schedule "publish/notify" marker ---------------------------------------
+// Admins press Notify when the week's schedule is ready; everyone else sees a
+// New/Updated badge on the Schedule tab until they open it. The marker is a
+// single app-wide row (keyed by week_start so the label reflects the week that
+// changed); per-user "seen" state lives on users.schedule_seen_at.
+function getSetting(db, key) {
+  try { return db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)?.value ?? null; }
+  catch { return null; }
+}
+function setSetting(db, key, value) {
+  db.prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`).run(key, value);
+}
+
+// POST /schedule/notify — admin publishes the schedule (kind: 'new' | 'updated')
+router.post('/schedule/notify', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const kind = req.body?.kind === 'new' ? 'new' : 'updated';
+  const weekStart = req.body?.week_start || null;
+  // Millisecond-precision timestamp (same format as schedule_seen_at) so the
+  // unseen comparison is exact even for rapid notify/seen sequences.
+  const at = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+  setSetting(db, 'schedule_notified_at', at);
+  setSetting(db, 'schedule_notify_kind', kind);
+  if (weekStart) setSetting(db, 'schedule_notify_week', weekStart);
+  // The publisher has, by definition, already seen it.
+  if (req.user?.id) db.prepare("UPDATE users SET schedule_seen_at = ? WHERE id = ?").run(at, req.user.id);
+  logAudit(req.user || 'system', 'notify', 'production_schedule', weekStart || 'week', { kind, week_start: weekStart }, null, null);
+  res.json({ notified_at: at, kind, week_start: weekStart });
+});
+
+// GET /schedule/notify-status — is there an unseen schedule notice for me?
+router.get('/schedule/notify-status', (req, res) => {
+  const db = getDb();
+  const notifiedAt = getSetting(db, 'schedule_notified_at');
+  const kind = getSetting(db, 'schedule_notify_kind') || 'updated';
+  const week = getSetting(db, 'schedule_notify_week') || null;
+  let seenAt = null;
+  if (req.user?.id) seenAt = db.prepare('SELECT schedule_seen_at FROM users WHERE id = ?').get(req.user.id)?.schedule_seen_at || null;
+  const unseen = !!notifiedAt && (!seenAt || notifiedAt > seenAt);
+  res.json({ notified_at: notifiedAt, kind, week_start: week, seen_at: seenAt, unseen });
+});
+
+// POST /schedule/seen — mark the schedule as viewed by the current user
+router.post('/schedule/seen', (req, res) => {
+  const db = getDb();
+  if (req.user?.id) db.prepare("UPDATE users SET schedule_seen_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?").run(req.user.id);
+  res.json({ ok: true });
+});
+
 export default router;

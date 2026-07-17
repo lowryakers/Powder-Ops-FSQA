@@ -1290,6 +1290,22 @@ function runMigrations() {
   addColumnIfMissing('users', 'password_hash', 'TEXT');
   // Default landing workspace per user: 'fsqa' (default) or 'messages'.
   addColumnIfMissing('users', 'home_workspace', 'TEXT');
+  // Last time this user opened the Production Schedule — clears the New/Updated
+  // badge that admins raise when they publish/update the week's schedule.
+  addColumnIfMissing('users', 'schedule_seen_at', 'TEXT');
+
+  // Generic app-wide key/value settings (e.g. the schedule "notified" marker).
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key        TEXT PRIMARY KEY,
+        value      TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+  } catch (e) {
+    console.warn('[db] app_settings unavailable:', e.message);
+  }
 
   // Generic content-translation cache: reusable across modules (operator task
   // titles/steps, etc.). Keyed by a hash of the source text + target language so

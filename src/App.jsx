@@ -115,7 +115,7 @@ const NAV_GROUPS = [
   },
 ];
 
-function Sidebar({ activeTab, setActiveTab, user, onClose, badges, onOpenComms }) {
+function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotice, onOpenComms }) {
   const { data: aiStatus } = useApiGet('/ai/status');
   const { data: commsChannels, refresh: refreshComms } = useApiGet('/comms/channels', [activeTab]);
   const commsUnread = (commsChannels || []).reduce((n, c) => n + (c.unread || 0), 0);
@@ -206,6 +206,11 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, onOpenComms }
                       >
                         <item.icon size={16} className={isActive ? 'text-powder-600' : 'text-gray-400'} />
                         <span className="flex-1 text-left">{item.label}</span>
+                        {item.id === 'production-schedule' && scheduleNotice?.unseen && (
+                          <span className="ml-auto flex-shrink-0 h-[18px] flex items-center rounded-full bg-emerald-500 text-white text-[9px] font-bold uppercase tracking-wide px-1.5">
+                            {scheduleNotice.kind === 'new' ? 'New' : 'Updated'}
+                          </span>
+                        )}
                         {badges?.[item.id] > 0 && (
                           <span className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1">
                             {badges[item.id]}
@@ -472,8 +477,16 @@ function App() {
     setHomePref(w);
     apiPost('/users/me/home', { workspace: w }).catch(() => {});
   }, []);
-  const { data: notifications } = useApiGet('/compliance/notifications', [activeTab, user?.id]);
+  const { data: notifications, refresh: refreshNotifications } = useApiGet('/compliance/notifications', [activeTab, user?.id]);
   const path = window.location.pathname;
+
+  // Refresh the sidebar notice when the schedule is opened (clears the badge)
+  // or an admin publishes it.
+  useEffect(() => {
+    const handler = () => refreshNotifications();
+    window.addEventListener('schedule-notice-changed', handler);
+    return () => window.removeEventListener('schedule-notice-changed', handler);
+  }, [refreshNotifications]);
 
   useEffect(() => {
     const handler = () => logout();
@@ -679,7 +692,7 @@ function App() {
     <div className="min-h-screen bg-gray-50 flex">
       {/* Desktop sidebar */}
       <aside className="hidden md:block flex-shrink-0 sticky top-0 h-screen">
-        <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} onOpenComms={() => setWorkspace('comms')} />
+        <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} scheduleNotice={notifications?.scheduleNotice} onOpenComms={() => setWorkspace('comms')} />
       </aside>
 
       {/* Mobile sidebar overlay */}
@@ -687,7 +700,7 @@ function App() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-60 shadow-xl">
-            <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} onOpenComms={() => setWorkspace('comms')} />
+            <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} scheduleNotice={notifications?.scheduleNotice} onOpenComms={() => setWorkspace('comms')} />
           </div>
         </div>
       )}

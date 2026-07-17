@@ -185,7 +185,7 @@ router.get('/audit-ready', (_req, res) => {
   });
 });
 
-router.get('/notifications', (_req, res) => {
+router.get('/notifications', (req, res) => {
   const db = getDb();
   const today = new Date().toISOString().split('T')[0];
   const sevenDaysOut = new Date();
@@ -223,7 +223,22 @@ router.get('/notifications', (_req, res) => {
     }
   }
 
-  res.json({ items, badges, total: items.filter(i => i.severity === 'critical' || i.severity === 'warning').length });
+  // Production Schedule "New/Updated" notice: a text pill on the Schedule tab
+  // that persists per-user until they open the schedule. Raised by an admin
+  // pressing Notify (see production.js), cleared by opening the tab.
+  let scheduleNotice = null;
+  try {
+    const notifiedAt = db.prepare("SELECT value FROM app_settings WHERE key = 'schedule_notified_at'").get()?.value || null;
+    if (notifiedAt) {
+      const kind = db.prepare("SELECT value FROM app_settings WHERE key = 'schedule_notify_kind'").get()?.value || 'updated';
+      let seenAt = null;
+      if (req.user?.id) seenAt = db.prepare('SELECT schedule_seen_at FROM users WHERE id = ?').get(req.user.id)?.schedule_seen_at || null;
+      const unseen = !seenAt || notifiedAt > seenAt;
+      scheduleNotice = { unseen, kind, notified_at: notifiedAt };
+    }
+  } catch { /* app_settings/column may not exist yet */ }
+
+  res.json({ items, badges, scheduleNotice, total: items.filter(i => i.severity === 'critical' || i.severity === 'warning').length });
 });
 
 export default router;

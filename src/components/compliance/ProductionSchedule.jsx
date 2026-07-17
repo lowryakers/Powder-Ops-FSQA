@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback, useRef, forwardRef, Fragment } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, forwardRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
-import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell } from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -310,7 +310,7 @@ function CleaningCell({ value, weekStart, dayIndex, room, userName, onSaved, rea
   );
 }
 
-function CellModal({ cell, weekStart, dayIndex, room, roomType, slot, userName, onClose, onSaved, onSetupDownstream }) {
+function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, room, roomType, slot, userName, onClose, onSaved, onSetupDownstream }) {
   const [form, setForm] = useState({
     team: cell?.team || (roomType === 'batching' ? 'Batching' : ''),
     mo_number: cell?.mo_number || '',
@@ -319,6 +319,8 @@ function CellModal({ cell, weekStart, dayIndex, room, roomType, slot, userName, 
     notes: cell?.notes || '',
   });
   const [repeatDays, setRepeatDays] = useState([]);
+  const [repeatNextDays, setRepeatNextDays] = useState([]); // days in the following week
+  const [showNextWeek, setShowNextWeek] = useState(false);
   const [setupDownstream, setSetupDownstream] = useState(roomType === 'batching' && !cell?.id);
   const [saving, setSaving] = useState(false);
 
@@ -328,13 +330,15 @@ function CellModal({ cell, weekStart, dayIndex, room, roomType, slot, userName, 
   const toggleRepeatDay = (d) => {
     setRepeatDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
   };
+  const toggleRepeatNextDay = (d) => {
+    setRepeatNextDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
       const payload = {
-        week_start: weekStart,
         room,
         room_type: roomType,
         slot: slot || 0,
@@ -345,9 +349,13 @@ function CellModal({ cell, weekStart, dayIndex, room, roomType, slot, userName, 
         notes: form.notes,
         updated_by: userName,
       };
-      await apiPost('/production/schedule', { ...payload, day_of_week: dayIndex });
+      await apiPost('/production/schedule', { ...payload, week_start: weekStart, day_of_week: dayIndex });
       for (const d of repeatDays) {
-        await apiPost('/production/schedule', { ...payload, day_of_week: d });
+        await apiPost('/production/schedule', { ...payload, week_start: weekStart, day_of_week: d });
+      }
+      // Copy into next week (slot 0 in the target cells — they're a fresh week)
+      for (const d of repeatNextDays) {
+        await apiPost('/production/schedule', { ...payload, week_start: nextWeekStart, day_of_week: d, slot: 0 });
       }
       onSaved();
       onClose();
@@ -469,6 +477,50 @@ function CellModal({ cell, weekStart, dayIndex, room, roomType, slot, userName, 
               <p className="text-[11px] text-gray-400 mt-1">
                 Saving will also apply this to {repeatDays.slice().sort().map(d => DAY_SHORT[d]).join(', ')}.
               </p>
+            )}
+            {/* Push into next week */}
+            <button
+              type="button"
+              onClick={() => setShowNextWeek(v => !v)}
+              className="mt-2 flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline"
+            >
+              <Calendar size={12} />
+              {showNextWeek ? 'Hide next week' : 'Also add to next week…'}
+            </button>
+            {showNextWeek && (
+              <div className="mt-1.5 rounded-lg border border-blue-100 bg-blue-50/40 p-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-medium text-gray-600">Week of {nextWeekLabel}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRepeatNextDays([0, 1, 2, 3, 4])}
+                    className="text-[11px] font-medium text-blue-600 hover:underline"
+                  >
+                    Mon–Fri
+                  </button>
+                </div>
+                <div className="flex gap-1.5">
+                  {DAYS.map((_, d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => toggleRepeatNextDay(d)}
+                      className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                        repeatNextDays.includes(d)
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {DAY_SHORT[d]}
+                    </button>
+                  ))}
+                </div>
+                {repeatNextDays.length > 0 && (
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Also adds to {repeatNextDays.slice().sort().map(d => DAY_SHORT[d]).join(', ')} next week.
+                  </p>
+                )}
+              </div>
             )}
           </div>
           {isBatching && (
@@ -798,13 +850,30 @@ export default function ProductionSchedule({ user }) {
   const [dragOverKey, setDragOverKey] = useState(null);
   const [downstreamFor, setDownstreamFor] = useState(null); // { product_name, mo_number, batchDay }
 
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  const [notified, setNotified] = useState(false);
+
   const monday = useMemo(() => {
     const m = getMonday(new Date());
     m.setDate(m.getDate() + weekOffset * 7);
     return m;
   }, [weekOffset]);
 
+  const nextMonday = useMemo(() => {
+    const m = new Date(monday);
+    m.setDate(m.getDate() + 7);
+    return m;
+  }, [monday]);
+
   const weekStart = formatWeekStart(monday);
+  const nextWeekStart = formatWeekStart(nextMonday);
+
+  // Opening the schedule clears the New/Updated badge for this user.
+  useEffect(() => {
+    apiPost('/production/schedule/seen', {})
+      .then(() => window.dispatchEvent(new CustomEvent('schedule-notice-changed')))
+      .catch(() => {});
+  }, []);
 
   const { data, loading, error, refresh } = useApiGet(`/production/schedule?week_start=${weekStart}`, [weekStart]);
 
@@ -847,6 +916,18 @@ export default function ProductionSchedule({ user }) {
   }, [monday, shareModel]);
 
   const canEdit = user?.role === 'admin';
+
+  const handleNotify = useCallback(async (kind) => {
+    setNotifyOpen(false);
+    try {
+      await apiPost('/production/schedule/notify', { kind, week_start: weekStart });
+      setNotified(true);
+      window.dispatchEvent(new CustomEvent('schedule-notice-changed'));
+      setTimeout(() => setNotified(false), 2500);
+    } catch (err) {
+      console.error('Failed to notify:', err);
+    }
+  }, [weekStart]);
 
   // View-only users get a decluttered schedule: rooms with no work that week are
   // hidden, and a room's Cleaning row is hidden when every day is N/A. Editors
@@ -906,8 +987,9 @@ export default function ProductionSchedule({ user }) {
 
     if (entries.length > 0) {
       const nextSlot = Math.max(...entries.map(a => a.slot || 0)) + 1;
-      // Kitting and Batching can run several products in the same room on the same day
-      const canAddLine = canEdit && (roomType === 'kitting' || roomType === 'batching');
+      // Any room can run several products on the same day — Kitting/Batching, and
+      // production rooms running Stick Pack / Hand Fill, etc.
+      const canAddLine = canEdit;
       return (
         <td key={dayIndex} className={`border border-gray-200 px-2 py-1.5 ${cellTint} ${dropHighlight}`} {...dropProps(dayIndex, room, roomType)}>
           <div className="space-y-1">
@@ -997,6 +1079,42 @@ export default function ProductionSchedule({ user }) {
           Week of {formatDate(monday)}
         </h2>
 
+        <div className="flex items-center gap-1.5">
+        {canEdit && (
+          <div className="relative">
+            <button
+              onClick={() => setNotifyOpen(o => !o)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 ${notified ? 'text-emerald-700 bg-emerald-50' : 'text-gray-600 hover:bg-gray-100'}`}
+              title="Notify the team that the schedule is ready"
+            >
+              {notified ? <Check size={14} className="text-emerald-600" /> : <Bell size={14} />}
+              {notified ? 'Team notified' : 'Notify'}
+              {!notified && <ChevronDown size={12} />}
+            </button>
+            {notifyOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setNotifyOpen(false)} />
+                <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+                  <div className="px-3 py-1.5 text-[11px] text-gray-400">Show a badge on everyone's Schedule tab</div>
+                  <button
+                    onClick={() => handleNotify('new')}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <span className="h-[16px] flex items-center rounded-full bg-emerald-500 text-white text-[9px] font-bold uppercase px-1.5">New</span>
+                    New schedule posted
+                  </button>
+                  <button
+                    onClick={() => handleNotify('updated')}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <span className="h-[16px] flex items-center rounded-full bg-emerald-500 text-white text-[9px] font-bold uppercase px-1.5">Upd</span>
+                    Schedule updated
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <div className="relative">
           <button
             onClick={() => setShareOpen(o => !o)}
@@ -1026,6 +1144,7 @@ export default function ProductionSchedule({ user }) {
             </>
           )}
         </div>
+        </div>
       </div>
 
       {/* Loading / Error */}
@@ -1035,15 +1154,15 @@ export default function ProductionSchedule({ user }) {
       {/* Schedule Grid */}
       {!loading && !error && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-13rem)]">
             <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-600 w-32">
+                  <th className="sticky top-0 z-20 bg-gray-50 border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-600 w-32">
                     Room
                   </th>
                   {DAYS.map((day, i) => (
-                    <th key={day} className="border border-gray-200 px-3 py-2 text-center text-xs font-semibold text-gray-600">
+                    <th key={day} className="sticky top-0 z-20 bg-gray-50 border border-gray-200 px-3 py-2 text-center text-xs font-semibold text-gray-600">
                       <div className="flex items-center justify-center gap-1">
                         <span>{DAY_SHORT[i]}</span>
                         {canEdit && (
@@ -1129,6 +1248,8 @@ export default function ProductionSchedule({ user }) {
         <CellModal
           cell={editCell.data}
           weekStart={weekStart}
+          nextWeekStart={nextWeekStart}
+          nextWeekLabel={formatDate(nextMonday)}
           dayIndex={editCell.dayIndex}
           room={editCell.room}
           roomType={editCell.roomType}
