@@ -259,6 +259,75 @@ function ChannelDetails({ channel, me, users, onClose, onChanged }) {
   );
 }
 
+// Thread drawer: a parent message and its replies, with a reply composer.
+function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef }) {
+  const [thread, setThread] = useState(null);
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const endRef = useRef(null);
+
+  const load = useCallback(async () => {
+    try { setThread(await apiFetch(`/comms/messages/${parent.id}/thread`)); } catch { /* gone */ }
+  }, [parent.id]);
+  useEffect(() => { load(); }, [load]);
+  // Live-refresh when a reply to this parent arrives.
+  useEffect(() => {
+    const s = socketRef?.current; if (!s) return;
+    const onNew = (m) => { if (m.parent_id === parent.id) load(); };
+    s.on('message:new', onNew);
+    return () => s.off('message:new', onNew);
+  }, [parent.id, load, socketRef]);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [thread]);
+
+  const react = async (m, emoji) => { await apiPost(`/comms/messages/${m.id}/reactions`, { emoji }); load(); };
+  const unreact = async (m, emoji) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); load(); };
+  const del = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); load(); onChanged?.(); };
+  const edit = async (m, text) => { await apiPut(`/comms/messages/${m.id}`, { body: text }); load(); };
+
+  const send = async () => {
+    const text = body.trim(); if (!text) return;
+    setSending(true);
+    try {
+      await apiPost(`/comms/channels/${parent.channel_id}/messages`, { body: text, parent_id: parent.id });
+      setBody(''); await load(); onChanged?.();
+    } finally { setSending(false); }
+  };
+
+  const replies = thread?.replies || [];
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-end" onClick={onClose}>
+      <div className="bg-white h-full w-full max-w-md shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 h-12 border-b border-gray-100 shrink-0">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-gray-900">Thread</div>
+            <div className="text-[11px] text-gray-400 truncate">{channelName}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto py-2">
+          {thread && <Message m={thread.parent} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+            canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />}
+          {replies.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-1">
+              <div className="text-[11px] text-gray-400">{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</div>
+              <div className="flex-1 h-px bg-gray-100" />
+            </div>
+          )}
+          {replies.map(r => <Message key={r.id} m={r} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+            canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />)}
+          <div ref={endRef} />
+        </div>
+        <div className="border-t border-gray-200 p-3 shrink-0 flex items-end gap-2">
+          <textarea value={body} onChange={e => setBody(e.target.value)} rows={1}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
+            placeholder="Reply…" className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />
+          <button onClick={send} disabled={sending || !body.trim()} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Searchable, grouped emoji picker used for reactions and the composer.
 function EmojiPicker({ onPick, onClose, align = 'right', vertical = 'down' }) {
   const [q, setQ] = useState('');
@@ -288,7 +357,7 @@ function EmojiPicker({ onPick, onClose, align = 'right', vertical = 'down' }) {
   );
 }
 
-function Message({ m, me, onReact, onUnreact, onEdit, onDelete, canTranslate, viewerLang, onTranslate, autoTranslate, mentionUsers }) {
+function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, canTranslate, viewerLang, onTranslate, autoTranslate, mentionUsers }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.body || '');
@@ -368,10 +437,18 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, canTranslate, vi
             })}
           </div>
         )}
+        {onReply && m.reply_count > 0 && (
+          <button onClick={() => onReply(m)} className="mt-1 inline-flex items-center gap-1.5 pl-1 pr-2.5 py-0.5 rounded-full border border-gray-200 hover:border-powder-300 hover:bg-powder-50 text-xs">
+            <MessageSquare size={12} className="text-powder-600" />
+            <span className="font-medium text-powder-700">{m.reply_count} {m.reply_count === 1 ? 'reply' : 'replies'}</span>
+            {m.reply_names?.length > 0 && <span className="text-gray-400">· {m.reply_names.join(', ')}</span>}
+          </button>
+        )}
       </div>
       {!m.deleted && (
         <div className="relative opacity-0 group-hover:opacity-100 flex items-start gap-1 shrink-0">
           <button onClick={() => setShowEmoji(s => !s)} className="p-1 text-gray-400 hover:text-gray-600" title="React"><Smile size={14} /></button>
+          {onReply && <button onClick={() => onReply(m)} className="p-1 text-gray-400 hover:text-gray-600" title="Reply in thread"><MessageSquare size={13} /></button>}
           {canTranslate && m.body && !translated && <button onClick={doTranslate} className="p-1 text-gray-400 hover:text-gray-600" title="Translate"><Languages size={13} /></button>}
           {mine && <button onClick={() => { setDraft(m.body || ''); setEditing(true); }} className="p-1 text-gray-400 hover:text-gray-600" title="Edit"><Edit2 size={13} /></button>}
           {(mine) && <button onClick={() => onDelete(m)} className="p-1 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
@@ -424,6 +501,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const composerRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [replyTo, setReplyTo] = useState(null); // parent message whose thread is open
 
   const list = channels || [];
   const publicCh = list.filter(c => c.kind === 'public');
@@ -482,7 +560,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
     s.emit('channel:join', activeId);
 
     const onNew = (m) => {
-      if (m.channel_id !== activeId || m.parent_id) return;
+      if (m.channel_id !== activeId) return;
+      // A threaded reply: bump the parent's reply count in the main list.
+      if (m.parent_id) {
+        setMessages(ms => ms.map(x => x.id === m.parent_id ? { ...x, reply_count: (x.reply_count || 0) + 1 } : x));
+        return;
+      }
       setMessages(ms => ms.some(x => x.id === m.id) ? ms : [...ms, m]);
       setTypers(t => t.filter(x => x.user_id !== m.user_id));
     };
@@ -879,7 +962,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
                   return (
                     <div key={m.id}>
                       {showDay && <DateDivider iso={m.created_at} />}
-                      <Message m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg}
+                      <Message m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg} onReply={setReplyTo}
                         canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} autoTranslate={autoTranslate} mentionUsers={users} />
                     </div>
                   );
@@ -968,6 +1051,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
       {newChannel && <NewChannelModal users={users} me={user} onClose={() => setNewChannel(false)} onCreated={(ch) => { setNewChannel(false); refreshChannels(); openChannel(ch.id); }} />}
       {showSettings && <CommsSettings users={users} onClose={() => setShowSettings(false)} onChanged={refreshChannels} />}
       {showDetails && active && active.kind !== 'dm' && <ChannelDetails channel={active} me={user} users={users} onClose={() => setShowDetails(false)} onChanged={refreshChannels} />}
+      {replyTo && <ThreadPanel parent={replyTo} me={user} channelName={active?.kind === 'dm' ? active.name : '#' + (active?.name || '')} mentionUsers={users}
+        canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} socketRef={socketRef}
+        onClose={() => setReplyTo(null)} onChanged={() => loadMessages(activeId)} />}
     </div>
   );
 }

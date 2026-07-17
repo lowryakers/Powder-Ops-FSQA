@@ -396,11 +396,17 @@ function flattenMessage(db, m) {
   const reactions = db.prepare('SELECT emoji, user_id FROM chat_reactions WHERE message_id = ?').all(m.id);
   const grouped = {};
   for (const r of reactions) { (grouped[r.emoji] ||= []).push(r.user_id); }
+  // Thread summary for a top-level message: how many replies and who's in it.
+  const thread = db.prepare('SELECT COUNT(*) c, MAX(created_at) last FROM chat_messages WHERE parent_id = ? AND deleted_at IS NULL').get(m.id);
+  const repliers = thread.c > 0
+    ? db.prepare('SELECT DISTINCT user_id FROM chat_messages WHERE parent_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 3').all(m.id).map(r => userName(db, r.user_id))
+    : [];
   return {
     id: m.id, channel_id: m.channel_id, user_id: m.user_id, user_name: userName(db, m.user_id),
     body: m.deleted_at ? null : m.body, parent_id: m.parent_id,
     edited: !!m.edited_at, deleted: !!m.deleted_at, created_at: m.created_at,
     reactions: Object.entries(grouped).map(([emoji, users]) => ({ emoji, count: users.length, users })),
+    reply_count: thread.c, last_reply_at: thread.last, reply_names: repliers,
     attachments: [],
   };
 }
@@ -437,6 +443,21 @@ router.get('/channels/:id/messages', async (req, res) => {
   params.push(limit);
   const rows = db.prepare(sql).all(...params).reverse();
   res.json(await Promise.all(rows.map(m => serialize(db, m))));
+});
+
+// A message's thread: the parent plus all its replies in order. Access is
+// enforced through the parent's channel.
+router.get('/messages/:id/thread', async (req, res) => {
+  const db = getDb();
+  const parent = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(req.params.id);
+  if (!parent) return res.status(404).json({ error: 'Message not found' });
+  const channel = getChannel(db, parent.channel_id);
+  if (!channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')) return res.status(404).json({ error: 'Not found' });
+  const replies = db.prepare('SELECT * FROM chat_messages WHERE parent_id = ? ORDER BY created_at ASC').all(parent.id);
+  res.json({
+    parent: await serialize(db, parent),
+    replies: await Promise.all(replies.map(m => serialize(db, m))),
+  });
 });
 
 router.post('/channels/:id/messages', async (req, res) => {
