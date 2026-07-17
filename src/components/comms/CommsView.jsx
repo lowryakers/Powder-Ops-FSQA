@@ -225,7 +225,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const [activeId, setActiveId] = useState(null);
   // On phones the list and thread can't share the screen — show one at a time.
   const [mobileThread, setMobileThread] = useState(false);
-  const openChannel = (id) => { setActiveId(id); setMobileThread(true); };
+  const openChannel = (id) => { setActiveId(id); setMobileThread(true); setChanFilter(''); };
+  // Sidebar channel quick-filter (type to filter, ↑/↓ + Enter to jump).
+  const [chanFilter, setChanFilter] = useState('');
+  const [chanHi, setChanHi] = useState(0);
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState('');
   const [newChannel, setNewChannel] = useState(false);
@@ -252,6 +255,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const privateCh = list.filter(c => c.kind === 'private');
   const dms = list.filter(c => c.kind === 'dm');
   const active = list.find(c => c.id === activeId) || null;
+  // Channel quick-filter: flat, ordered match list for keyboard jump-to.
+  const chanTerm = chanFilter.trim().toLowerCase();
+  const chanMatches = chanTerm
+    ? [...publicCh, ...privateCh, ...dms].filter(c => (c.name || '').toLowerCase().includes(chanTerm))
+    : [];
+  const kindIcon = (c) => (c.kind === 'dm' ? MessageSquare : c.kind === 'private' ? Lock : Hash);
   // On phones, the main pane also needs to show when a search/ask is running.
   const searchActive = searchResults !== null || answer !== null || (searching && searchMode === 'ask');
   const showMainMobile = mobileThread || searchActive;
@@ -456,9 +465,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const clearSearch = () => { setSearchQ(''); setSearchResults(null); setAnswer(null); };
   const openResult = (r) => { clearSearch(); openChannel(r.channel_id); };
 
-  const ChannelBtn = ({ c, icon: Icon }) => (
-    <button onClick={() => openChannel(c.id)}
-      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activeId === c.id ? 'bg-powder-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
+  const ChannelBtn = ({ c, icon: Icon, highlight, onHover }) => (
+    <button onClick={() => openChannel(c.id)} onMouseEnter={onHover}
+      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activeId === c.id ? 'bg-powder-600 text-white' : highlight ? 'bg-powder-50 text-powder-700' : 'text-gray-700 hover:bg-gray-100'}`}>
       <Icon size={14} className="shrink-0 opacity-80" />
       <span className="truncate flex-1 text-left">{c.name}</span>
       {c.unread > 0 && <span className={`text-[10px] font-bold px-1.5 rounded-full ${activeId === c.id ? 'bg-white/25' : 'bg-red-500 text-white'}`}>{c.unread}</span>}
@@ -525,6 +534,34 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
       <div className="flex flex-1 min-h-0">
         {/* sidebar — full width on phones, hidden there once a channel is open */}
         <div className={`w-full md:w-60 border-r border-gray-200 flex-col shrink-0 overflow-y-auto p-2 space-y-3 ${showMainMobile ? 'hidden md:flex' : 'flex'}`}>
+          {/* Quick filter — type to filter channels & DMs, ↑/↓ + Enter to jump */}
+          <div className="relative px-1">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={chanFilter}
+              onChange={e => { setChanFilter(e.target.value); setChanHi(0); }}
+              onKeyDown={e => {
+                if (!chanMatches.length) return;
+                if (e.key === 'ArrowDown') { e.preventDefault(); setChanHi(h => Math.min(h + 1, chanMatches.length - 1)); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); setChanHi(h => Math.max(h - 1, 0)); }
+                else if (e.key === 'Enter') { e.preventDefault(); openChannel(chanMatches[chanHi].id); }
+                else if (e.key === 'Escape') { setChanFilter(''); }
+              }}
+              placeholder="Jump to channel or person…"
+              className="w-full pl-7 pr-6 py-1.5 border border-gray-200 rounded-lg text-xs bg-gray-50 focus:bg-white focus:border-powder-300 outline-none" />
+            {chanFilter && <button onClick={() => setChanFilter('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={13} /></button>}
+          </div>
+
+          {chanTerm ? (
+            /* Filtered flat result list (quick-switcher) */
+            <div className="space-y-0.5">
+              {chanMatches.length === 0
+                ? <p className="px-2 py-4 text-center text-xs text-gray-400">No channels or people match “{chanFilter.trim()}”.</p>
+                : chanMatches.map((c, idx) => (
+                    <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} highlight={idx === chanHi} onHover={() => setChanHi(idx)} />
+                  ))}
+            </div>
+          ) : (
+          <>
           <div>
             <div className="flex items-center justify-between px-2 mb-1">
               <span className="text-[10px] font-bold uppercase text-gray-400">Channels</span>
@@ -552,6 +589,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
               {dms.map(c => <ChannelBtn key={c.id} c={c} icon={MessageSquare} />)}
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* main pane — hidden on phones until a channel is opened */}
