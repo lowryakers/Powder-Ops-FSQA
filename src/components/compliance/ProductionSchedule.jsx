@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, forwardRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
-import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock } from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -993,7 +993,9 @@ export default function ProductionSchedule({ user }) {
       return (
         <td key={dayIndex} className={`border border-gray-200 px-2 py-1.5 ${cellTint} ${dropHighlight}`} {...dropProps(dayIndex, room, roomType)}>
           <div className="space-y-1">
-            {entries.map(a => (
+            {entries.map(a => {
+              const color = TEAM_COLORS[a.team] || '#64748b';
+              return (
               <div
                 key={a.id}
                 draggable={canEdit}
@@ -1003,24 +1005,27 @@ export default function ProductionSchedule({ user }) {
                   setDraggingId(a.id);
                 } : undefined}
                 onDragEnd={() => { setDraggingId(null); setDragOverKey(null); }}
-                className={`group/entry flex items-start gap-1 text-xs leading-tight rounded px-1 -mx-1 transition-colors ${canEdit ? 'cursor-grab active:cursor-grabbing hover:bg-gray-100' : ''} ${draggingId === a.id ? 'opacity-40' : ''}`}
+                className={`group/entry relative flex items-start gap-1 text-xs leading-tight rounded-md pl-2 pr-1 py-1 bg-white border border-gray-200/80 shadow-sm transition-colors ${canEdit ? 'cursor-grab active:cursor-grabbing hover:border-gray-300 hover:bg-gray-50' : ''} ${draggingId === a.id ? 'opacity-40' : ''}`}
+                style={{ borderLeft: `3px solid ${color}` }}
                 onClick={canEdit ? () => setEditCell({ dayIndex, room, roomType, slot: a.slot || 0, data: a }) : undefined}
                 title={canEdit ? 'Drag to move · click to edit' : undefined}
               >
                 {canEdit && <GripVertical size={11} className="text-gray-300 mt-0.5 shrink-0 opacity-0 group-hover/entry:opacity-100" />}
-                <div className="space-y-0.5 min-w-0">
-                  {a.team && <div className="font-semibold text-gray-900">{a.team}</div>}
-                  {(a.mo_number || a.product_name) && (
-                    <div className="text-gray-600">
-                      {a.mo_number && <span className="font-medium">{a.mo_number}</span>}
-                      {a.mo_number && a.product_name && ' '}
-                      {a.product_name}
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  {a.team && (
+                    <div className="font-semibold uppercase tracking-wide text-[10px]" style={{ color }}>{a.team}</div>
+                  )}
+                  {a.mo_number && <div className="font-semibold text-gray-900">{a.mo_number}</div>}
+                  {a.product_name && <div className="text-gray-600">{a.product_name}</div>}
+                  {a.start_time && (
+                    <div className="flex items-center gap-1 text-gray-400 text-[11px]">
+                      <Clock size={9} className="shrink-0" />{fmtTime(a.start_time)}
                     </div>
                   )}
-                  {a.start_time && <div className="text-gray-400">{fmtTime(a.start_time)}</div>}
                 </div>
               </div>
-            ))}
+              );
+            })}
             {canAddLine && (
               <button
                 onClick={() => setEditCell({ dayIndex, room, roomType, slot: nextSlot, data: null })}
