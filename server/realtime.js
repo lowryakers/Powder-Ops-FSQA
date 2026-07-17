@@ -94,3 +94,10 @@ export function emitChannelsChanged(db, channel) {
     for (const m of members) io.to(userRoom(m.user_id)).emit('channels:changed', { channel_id: channel.id });
   }
 }
+
+// Tell every connected client to refresh its channel list. Used for admin
+// channel-management ops (rename, privacy change, archive/delete) where the
+// visibility set can change for anyone.
+export function emitChannelsRefresh() {
+  if (io) io.emit('channels:changed', {});
+}

@@ -39,8 +39,38 @@ function cleanText(text, slackUsers) {
     .trim();
 }
 
-export function importSlackExport(buffer, importerUser) {
+// Parse a Slack export .zip without importing — lists the channels (so an admin
+// can pick which ones should be restored as private in this tool) and a rough
+// message count per channel. Cheap enough for a one-time admin action.
+export function previewSlackExport(buffer) {
+  const zip = new AdmZip(buffer);
+  const entries = zip.getEntries();
+  const chanEntry = entries.find(x => x.entryName === 'channels.json' || x.entryName.endsWith('/channels.json'));
+  const usersEntry = entries.find(x => x.entryName === 'users.json' || x.entryName.endsWith('/users.json'));
+  let channelsJson = [];
+  let usersJson = [];
+  try { if (chanEntry) channelsJson = JSON.parse(chanEntry.getData().toString('utf8')) || []; } catch { /* ignore */ }
+  try { if (usersEntry) usersJson = JSON.parse(usersEntry.getData().toString('utf8')) || []; } catch { /* ignore */ }
+  const channels = channelsJson.filter(c => c.name).map(sc => {
+    const files = entries.filter(e => !e.isDirectory && e.entryName.startsWith(sc.name + '/') && e.entryName.endsWith('.json'));
+    let messages = 0;
+    for (const f of files) { try { const arr = JSON.parse(f.getData().toString('utf8')); if (Array.isArray(arr)) messages += arr.length; } catch { /* skip */ } }
+    return {
+      name: sc.name,
+      topic: sc.purpose?.value || sc.topic?.value || '',
+      members: Array.isArray(sc.members) ? sc.members.length : 0,
+      messages,
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+  const userCount = usersJson.filter(u => !u.is_bot && !u.deleted).length;
+  return { channels, userCount };
+}
+
+export function importSlackExport(buffer, importerUser, options = {}) {
   const db = getDb();
+  // Names (as they appear in the Slack export) that should be restored as
+  // private in this tool — the user flipped these to public only to export.
+  const privateNames = new Set((options.privateChannels || []).map(n => String(n).toLowerCase()));
   const zip = new AdmZip(buffer);
   const entries = zip.getEntries();
   const readJson = (name) => {
@@ -67,19 +97,41 @@ export function importSlackExport(buffer, importerUser) {
     userMap[su.id] = ourId;
   }
 
-  // ── Channels: get-or-create public channels by name ───────────────────────
+  // ── Channels: get-or-create by name, honoring the private designation ─────
+  // Channels the user marked private are created (or updated) as private, and
+  // their Slack members (mapped to our users) + the importer are added so the
+  // channel is actually visible to the right people. Public channels need no
+  // membership rows (everyone can see them).
   const channelsJson = readJson('channels.json') || [];
-  const channelMap = {};   // slackId -> { id, name }
-  let channelsCreated = 0;
-  const getChan = db.prepare("SELECT id FROM chat_channels WHERE kind = 'public' AND name = ?");
-  const insChan = db.prepare("INSERT INTO chat_channels (id, kind, name, topic, created_by) VALUES (?, 'public', ?, ?, ?)");
+  const channelMap = {};   // slackId -> { id, name, private }
+  let channelsCreated = 0, channelsMadePrivate = 0;
+  const getChan = db.prepare('SELECT id, kind FROM chat_channels WHERE name = ? ORDER BY (kind = \'dm\') LIMIT 1');
+  const insChan = db.prepare('INSERT INTO chat_channels (id, kind, name, topic, created_by) VALUES (?, ?, ?, ?, ?)');
+  const setPrivate = db.prepare("UPDATE chat_channels SET kind = 'private', updated_at = datetime('now') WHERE id = ?");
+  const addChanMember = db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)");
   for (const sc of channelsJson) {
     if (!sc.name) continue;
+    const wantPrivate = privateNames.has(String(sc.name).toLowerCase());
     const existing = getChan.get(sc.name);
     let cid;
-    if (existing) cid = existing.id;
-    else { cid = uuid(); insChan.run(cid, sc.name, sc.purpose?.value || sc.topic?.value || null, importerUser.id); channelsCreated++; }
-    channelMap[sc.id] = { id: cid, name: sc.name };
+    if (existing) {
+      cid = existing.id;
+      if (wantPrivate && existing.kind === 'public') { setPrivate.run(cid); channelsMadePrivate++; }
+    } else {
+      cid = uuid();
+      insChan.run(cid, wantPrivate ? 'private' : 'public', sc.name, sc.purpose?.value || sc.topic?.value || null, importerUser.id);
+      channelsCreated++;
+      if (wantPrivate) channelsMadePrivate++;
+    }
+    channelMap[sc.id] = { id: cid, name: sc.name, private: wantPrivate };
+    // For private channels, seed membership from the export + the importer.
+    if (wantPrivate) {
+      addChanMember.run(uuid(), cid, importerUser.id, 'owner');
+      for (const sid of (Array.isArray(sc.members) ? sc.members : [])) {
+        const our = userMap[sid];
+        if (our) addChanMember.run(uuid(), cid, our, 'member');
+      }
+    }
   }
 
   // ── Messages (+ threads + reactions), per channel, in ts order ────────────
@@ -123,5 +175,5 @@ export function importSlackExport(buffer, importerUser) {
   });
   run();
 
-  return { usersCreated, channelsCreated, messagesImported, skipped };
+  return { usersCreated, channelsCreated, channelsMadePrivate, messagesImported, skipped };
 }

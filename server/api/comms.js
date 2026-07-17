@@ -2,12 +2,12 @@ import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db.js';
-import { emitToChannel, emitChannelsChanged, emitToUser } from '../realtime.js';
+import { emitToChannel, emitChannelsChanged, emitChannelsRefresh, emitToUser } from '../realtime.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
 import { aiEnabled, summarizeChat, translateText } from '../ai.js';
 import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
-import { importSlackExport } from '../slack-import.js';
+import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
@@ -84,6 +84,10 @@ export async function backfillEmbeddings() {
 // only to their members. Every read/write goes through canAccess().
 function getChannel(db, id) {
   return db.prepare('SELECT * FROM chat_channels WHERE id = ? AND archived = 0').get(id);
+}
+// Admin lookups need archived channels too.
+function getChannelAny(db, id) {
+  return db.prepare('SELECT * FROM chat_channels WHERE id = ?').get(id);
 }
 function isMember(db, channelId, userId) {
   return !!db.prepare('SELECT 1 FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId);
@@ -188,8 +192,11 @@ router.post('/channels', (req, res) => {
 });
 
 router.get('/channels/:id', (req, res) => {
-  const channel = requireChannel(req, res); if (!channel) return;
   const db = getDb();
+  // Admins can inspect any channel's roster (for settings); everyone else is
+  // limited to channels they can access.
+  const channel = req.user.role === 'admin' ? getChannelAny(db, req.params.id) : requireChannel(req, res);
+  if (!channel) { if (req.user.role === 'admin') res.status(404).json({ error: 'Channel not found' }); return; }
   const members = db.prepare(`
     SELECT m.user_id, m.role, u.name FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? ORDER BY u.name
   `).all(channel.id);
@@ -197,14 +204,99 @@ router.get('/channels/:id', (req, res) => {
 });
 
 router.post('/channels/:id/members', (req, res) => {
-  const channel = requireChannel(req, res); if (!channel) return;
   const db = getDb();
+  // Members can invite; admins can manage membership of any channel (including
+  // ones they haven't joined) so channel administration works from settings.
+  const channel = req.user.role === 'admin'
+    ? getChannelAny(db, req.params.id)
+    : requireChannel(req, res);
+  if (!channel) { if (req.user.role === 'admin') res.status(404).json({ error: 'Channel not found' }); return; }
   const ids = Array.isArray(req.body?.user_ids) ? req.body.user_ids : [];
   const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
   let added = 0;
   for (const uid of ids) added += add.run(uuid(), channel.id, uid, 'member').changes;
   if (added) emitChannelsChanged(db, channel);
   res.json({ added });
+});
+
+// Admin roster of every channel (incl. private & archived) with member counts,
+// for the comms settings screen. DMs are excluded — they aren't managed here.
+router.get('/admin/channels', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT c.id, c.kind, c.name, c.topic, c.archived, c.created_at,
+      (SELECT COUNT(*) FROM chat_channel_members m WHERE m.channel_id = c.id) AS member_count,
+      (SELECT COUNT(*) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL) AS message_count
+    FROM chat_channels c
+    WHERE c.kind != 'dm'
+    ORDER BY c.archived, c.kind, c.name`).all();
+  res.json(rows);
+});
+
+// ── Channel administration (admin only) ──────────────────────────────────────
+// Rename, change privacy (public ↔ private), edit topic, or archive/unarchive.
+router.put('/channels/:id', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const channel = getChannelAny(db, req.params.id);
+  if (!channel) return res.status(404).json({ error: 'Channel not found' });
+  if (channel.kind === 'dm') return res.status(400).json({ error: 'Direct messages cannot be edited' });
+  const { name, kind, topic, archived } = req.body;
+  const newKind = kind === 'private' ? 'private' : kind === 'public' ? 'public' : channel.kind;
+  let cleanName = channel.name;
+  if (name !== undefined && name !== null && String(name).trim()) {
+    cleanName = String(name).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || channel.name;
+  }
+  db.prepare(`UPDATE chat_channels SET name = ?, kind = ?, topic = ?, archived = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(cleanName, newKind, topic !== undefined ? (topic || null) : channel.topic,
+      archived !== undefined ? (archived ? 1 : 0) : channel.archived, channel.id);
+  // Making a channel private: ensure the admin who owns it stays a member so it
+  // doesn't vanish from everyone. Existing members are preserved either way.
+  if (newKind === 'private' && channel.kind === 'public') {
+    db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, 'owner')")
+      .run(uuid(), channel.id, req.user.id);
+  }
+  emitChannelsRefresh(); // visibility set may have changed for anyone
+  res.json(getChannel(db, channel.id));
+});
+
+// Archive a channel (default) or permanently purge it with ?purge=true.
+router.delete('/channels/:id', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const channel = getChannelAny(db, req.params.id);
+  if (!channel) return res.status(404).json({ error: 'Channel not found' });
+  const purge = req.query.purge === 'true' || req.query.purge === '1';
+  if (!purge) {
+    db.prepare("UPDATE chat_channels SET archived = 1, updated_at = datetime('now') WHERE id = ?").run(channel.id);
+    emitChannelsRefresh();
+    return res.json({ archived: channel.id });
+  }
+  // Hard delete: purge attachment objects, then all child rows, then the channel.
+  const atts = db.prepare(`SELECT a.storage_key FROM chat_attachments a
+    JOIN chat_messages m ON m.id = a.message_id WHERE m.channel_id = ?`).all(channel.id);
+  for (const a of atts) deleteObject(a.storage_key);
+  const purgeTx = db.transaction(() => {
+    db.prepare(`DELETE FROM chat_attachments WHERE message_id IN (SELECT id FROM chat_messages WHERE channel_id = ?)`).run(channel.id);
+    db.prepare(`DELETE FROM chat_message_embeddings WHERE message_id IN (SELECT id FROM chat_messages WHERE channel_id = ?)`).run(channel.id);
+    db.prepare(`DELETE FROM chat_message_translations WHERE message_id IN (SELECT id FROM chat_messages WHERE channel_id = ?)`).run(channel.id);
+    db.prepare(`DELETE FROM chat_mentions WHERE message_id IN (SELECT id FROM chat_messages WHERE channel_id = ?)`).run(channel.id);
+    db.prepare(`DELETE FROM chat_reactions WHERE message_id IN (SELECT id FROM chat_messages WHERE channel_id = ?)`).run(channel.id);
+    db.prepare('DELETE FROM chat_messages WHERE channel_id = ?').run(channel.id);
+    db.prepare('DELETE FROM chat_channel_members WHERE channel_id = ?').run(channel.id);
+    db.prepare('DELETE FROM chat_channels WHERE id = ?').run(channel.id);
+  });
+  purgeTx();
+  emitChannelsRefresh();
+  res.json({ deleted: channel.id });
+});
+
+// Remove a member from a private channel.
+router.delete('/channels/:id/members/:userId', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const channel = getChannelAny(db, req.params.id);
+  if (!channel) return res.status(404).json({ error: 'Channel not found' });
+  const info = db.prepare('DELETE FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').run(channel.id, req.params.userId);
+  if (info.changes) emitChannelsRefresh();
+  res.json({ removed: info.changes });
 });
 
 // Mark a channel read up to now.
@@ -512,10 +604,29 @@ router.post('/ask', async (req, res) => {
 });
 
 // ── Slack history import (Phase 5f, admin only) ───────────────────────────────
-router.post('/import/slack', requireRole('admin'), zipUpload.single('file'), async (req, res) => {
+// Parse an export and return its channel list so the admin can choose which
+// channels to restore as private before running the actual import.
+router.post('/import/slack/preview', requireRole('admin'), zipUpload.single('file'), (req, res) => {
   if (!req.file?.buffer) return res.status(400).json({ error: 'A Slack export .zip is required' });
   try {
-    const summary = importSlackExport(req.file.buffer, req.user);
+    res.json(previewSlackExport(req.file.buffer));
+  } catch (e) {
+    res.status(422).json({ error: e.message || 'Could not read this file. Is it a valid Slack export .zip?' });
+  }
+});
+
+router.post('/import/slack', requireRole('admin'), zipUpload.single('file'), async (req, res) => {
+  if (!req.file?.buffer) return res.status(400).json({ error: 'A Slack export .zip is required' });
+  // private_channels: JSON array (or comma list) of channel names to make private.
+  let privateChannels = [];
+  const raw = req.body?.private_channels;
+  if (Array.isArray(raw)) privateChannels = raw;
+  else if (typeof raw === 'string' && raw.trim()) {
+    try { const p = JSON.parse(raw); if (Array.isArray(p)) privateChannels = p; }
+    catch { privateChannels = raw.split(',').map(s => s.trim()).filter(Boolean); }
+  }
+  try {
+    const summary = importSlackExport(req.file.buffer, req.user, { privateChannels });
     res.json(summary);
   } catch (e) {
     res.status(422).json({ error: e.message || 'Import failed. Is this a valid Slack export .zip?' });
