@@ -191,7 +191,8 @@ router.get('/channels', (req, res) => {
     if (c.kind === 'dm') {
       const others = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(c.id, me);
       other = others[0]?.user_id || me;
-      display = userName(db, other);
+      // 1:1 → the other person; group DM → all other participants' names.
+      display = others.length ? others.map(o => userName(db, o.user_id)).join(', ') : userName(db, me);
     }
     return {
       id: c.id, kind: c.kind, name: display, topic: c.topic,
@@ -454,6 +455,31 @@ router.post('/dm/:userId', (req, res) => {
   res.status(201).json({ id: channel.id, kind: 'dm', name: userName(db, other), other_user_id: other });
 });
 
+// Get-or-create a group DM among the caller and 1+ other users. Identified by
+// the sorted set of member ids, so the same group always maps to one channel.
+router.post('/dm', (req, res) => {
+  const db = getDb();
+  const ids = Array.isArray(req.body?.user_ids) ? req.body.user_ids.filter(Boolean) : [];
+  const memberIds = [...new Set([req.user.id, ...ids])];
+  const others = memberIds.filter(id => id !== req.user.id);
+  if (others.length === 0) return res.status(400).json({ error: 'Pick at least one other person' });
+  // Everyone must be an active user.
+  for (const id of others) {
+    if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND is_active = 1').get(id)) return res.status(404).json({ error: 'A selected person was not found' });
+  }
+  const key = [...memberIds].sort().join(':');
+  let channel = db.prepare("SELECT * FROM chat_channels WHERE kind = 'dm' AND dm_key = ?").get(key);
+  if (!channel) {
+    const id = uuid();
+    db.prepare("INSERT INTO chat_channels (id, kind, dm_key, created_by) VALUES (?, 'dm', ?, ?)").run(id, key, req.user.id);
+    const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
+    for (const mid of memberIds) add.run(uuid(), id, mid, 'member');
+    channel = getChannel(db, id);
+    emitChannelsChanged(db, channel);
+  }
+  res.status(201).json({ id: channel.id, kind: 'dm', name: others.map(id => userName(db, id)).join(', ') });
+});
+
 // ── Messages ──────────────────────────────────────────────────────────────────
 function flattenMessage(db, m) {
   const reactions = db.prepare('SELECT emoji, user_id FROM chat_reactions WHERE message_id = ?').all(m.id);
@@ -545,10 +571,10 @@ router.post('/channels/:id/messages', async (req, res) => {
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
   recordMentions(db, channel, id, body, req.user);
-  // DMs push to the other participant (mentions already push above).
+  // DMs push to the other participant(s) — everyone in the DM but the sender.
   if (channel.kind === 'dm' && body) {
-    const other = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').get(channel.id, req.user.id);
-    if (other) pushToUser(other.user_id, { title: `Message from ${req.user.name}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, url: '/' }).catch(() => {});
+    const recips = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(channel.id, req.user.id);
+    for (const r of recips) pushToUser(r.user_id, { title: `Message from ${req.user.name}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, url: '/' }).catch(() => {});
   }
   embedMessage(db, id, channel.id, body); // fire-and-forget
   res.status(201).json(message);
@@ -665,8 +691,8 @@ router.delete('/messages/:id/reactions/:emoji', async (req, res) => {
 // Resolve a display channel name (DMs show the other participant).
 function channelLabel(db, channel, me) {
   if (channel.kind !== 'dm') return channel.name;
-  const other = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').get(channel.id, me);
-  return userName(db, other?.user_id || me);
+  const others = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(channel.id, me);
+  return others.length ? others.map(o => userName(db, o.user_id)).join(', ') : userName(db, me);
 }
 
 // Turn ranked message ids into access-checked result rows (order preserved).

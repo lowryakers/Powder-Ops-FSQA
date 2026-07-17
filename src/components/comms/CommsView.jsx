@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -487,6 +487,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const [showComposerEmoji, setShowComposerEmoji] = useState(false);
   const [newChannel, setNewChannel] = useState(false);
   const [dmSearch, setDmSearch] = useState('');
+  const [dmSelected, setDmSelected] = useState([]); // user ids picked for a new (group) DM
   const [showDmPicker, setShowDmPicker] = useState(false);
   const [typers, setTypers] = useState([]); // {user_id, user_name, at} of people typing in the active channel
   const [pending, setPending] = useState([]); // uploaded-but-unsent attachments for the composer
@@ -721,9 +722,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
 
   const markAllRead = async () => { await apiPost('/comms/read-all', {}); refreshChannels(); };
 
-  const openDm = async (u) => {
-    const ch = await apiPost(`/comms/dm/${u.id}`, {});
-    setShowDmPicker(false); setDmSearch('');
+  const toggleDmPick = (id) => setDmSelected(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
+  const startDm = async () => {
+    if (!dmSelected.length) return;
+    // One person → the 1:1 endpoint; multiple → a group DM.
+    const ch = dmSelected.length === 1
+      ? await apiPost(`/comms/dm/${dmSelected[0]}`, {})
+      : await apiPost('/comms/dm', { user_ids: dmSelected });
+    setShowDmPicker(false); setDmSearch(''); setDmSelected([]);
     await refreshChannels();
     openChannel(ch.id);
   };
@@ -910,8 +916,21 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
               <div className="mb-1 px-1">
                 <input value={dmSearch} onChange={e => setDmSearch(e.target.value)} placeholder="Search people…" className="w-full px-2 py-1 border border-gray-300 rounded text-xs mb-1" autoFocus />
                 <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
-                  {dmCandidates.map(u => <button key={u.id} onClick={() => openDm(u)} className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50">{u.name}</button>)}
+                  {dmCandidates.map(u => {
+                    const picked = dmSelected.includes(u.id);
+                    return (
+                      <button key={u.id} onClick={() => toggleDmPick(u.id)} className={`w-full flex items-center gap-2 text-left px-2 py-1.5 text-sm ${picked ? 'bg-powder-50' : 'hover:bg-gray-50'}`}>
+                        <span className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${picked ? 'bg-powder-600 border-powder-600' : 'border-gray-300'}`}>{picked && <Check size={11} className="text-white" />}</span>
+                        <span className="flex-1 truncate">{u.name}</span>
+                        <span className="text-[10px] text-gray-400 capitalize">{(u.department || '').replace('_', ' ')}</span>
+                      </button>
+                    );
+                  })}
                 </div>
+                <button onClick={startDm} disabled={!dmSelected.length}
+                  className="w-full mt-1 px-2 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700 disabled:opacity-40">
+                  {dmSelected.length <= 1 ? 'Message' : `Start group DM (${dmSelected.length})`}{dmSelected.length === 1 ? ' 1 person' : ''}
+                </button>
               </div>
             )}
             <div className="space-y-0.5">
