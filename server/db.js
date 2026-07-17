@@ -1058,6 +1058,7 @@ function runMigrations() {
   `);
   addColumnIfMissing('work_orders', 'quality_schedule_id', 'TEXT'); // link a QC task back to its schedule
 
+
   // Material-level requirements narrative (Form 607-01 sections 2-5): packaging,
   // labeling, storage, acceptance criteria, etc. One row per item number,
   // alongside the per-test limits in coa_specifications.
@@ -1235,6 +1236,11 @@ function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
   `);
+
+  // Comms: announcement channels (admins-only posting) and default channels
+  // (everyone auto-joined, pinned) — Slack-style #general / #announcements.
+  addColumnIfMissing('chat_channels', 'post_policy', "TEXT NOT NULL DEFAULT 'all'"); // 'all' | 'admins'
+  addColumnIfMissing('chat_channels', 'is_default', 'INTEGER NOT NULL DEFAULT 0');
 
   // Full-text keyword search over messages (Comms Phase 3). FTS5 may be absent
   // from some SQLite builds — degrade gracefully (search simply returns nothing).

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
-import { getDb } from '../db.js';
+import { getDb, logAudit } from '../db.js';
 import { emitToChannel, emitChannelsChanged, emitChannelsRefresh, emitToUser } from '../realtime.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
@@ -151,7 +151,7 @@ router.get('/channels', (req, res) => {
     FROM chat_channels c
     LEFT JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
     WHERE c.archived = 0 AND (c.kind = 'public' OR m.user_id IS NOT NULL)
-    ORDER BY c.kind, c.name
+    ORDER BY c.is_default DESC, c.kind, c.name
   `).all(me);
 
   const out = rows.map(c => {
@@ -169,6 +169,7 @@ router.get('/channels', (req, res) => {
     return {
       id: c.id, kind: c.kind, name: display, topic: c.topic,
       is_member: !!c.membership_id, unread, other_user_id: other,
+      post_policy: c.post_policy || 'all', is_default: !!c.is_default,
     };
   });
   res.json(out);
@@ -224,13 +225,41 @@ router.post('/channels/:id/members', (req, res) => {
 router.get('/admin/channels', requireRole('admin'), (req, res) => {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT c.id, c.kind, c.name, c.topic, c.archived, c.created_at,
+    SELECT c.id, c.kind, c.name, c.topic, c.archived, c.created_at, c.post_policy, c.is_default,
       (SELECT COUNT(*) FROM chat_channel_members m WHERE m.channel_id = c.id) AS member_count,
-      (SELECT COUNT(*) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL) AS message_count
+      (SELECT COUNT(*) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL) AS message_count,
+      (SELECT MAX(created_at) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL) AS last_activity,
+      (SELECT COUNT(*) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL AND msg.created_at >= datetime('now','-30 days')) AS recent_count
     FROM chat_channels c
     WHERE c.kind != 'dm'
-    ORDER BY c.archived, c.kind, c.name`).all();
+    ORDER BY c.is_default DESC, c.archived, c.kind, c.name`).all();
   res.json(rows);
+});
+
+// Mark every channel the caller can see as read up to now (clears their unread
+// badges — handy right after a bulk history import).
+router.post('/read-all', (req, res) => {
+  const db = getDb();
+  const me = req.user.id;
+  const now = new Date().toISOString();
+  // Update existing memberships…
+  db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE user_id = ?').run(now, me);
+  // …and create read-markers for public channels the user hasn't joined yet.
+  const missing = db.prepare(`SELECT c.id FROM chat_channels c
+    WHERE c.kind = 'public' AND c.archived = 0
+      AND NOT EXISTS (SELECT 1 FROM chat_channel_members m WHERE m.channel_id = c.id AND m.user_id = ?)`).all(me);
+  const ins = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)');
+  for (const c of missing) ins.run(uuid(), c.id, me, 'member', now);
+  res.json({ ok: true });
+});
+
+// Admin: clear the import-driven unread backlog for EVERYONE by marking all
+// memberships read as of now. One-shot cleanup after a big import.
+router.post('/admin/reset-unread', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const info = db.prepare("UPDATE chat_channel_members SET last_read_at = datetime('now')").run();
+  logAudit(req.user, 'reset_unread', 'comms', null, { memberships: info.changes });
+  res.json({ ok: true, memberships: info.changes });
 });
 
 // ── Channel administration (admin only) ──────────────────────────────────────
@@ -240,15 +269,16 @@ router.put('/channels/:id', requireRole('admin'), (req, res) => {
   const channel = getChannelAny(db, req.params.id);
   if (!channel) return res.status(404).json({ error: 'Channel not found' });
   if (channel.kind === 'dm') return res.status(400).json({ error: 'Direct messages cannot be edited' });
-  const { name, kind, topic, archived } = req.body;
+  const { name, kind, topic, archived, post_policy } = req.body;
   const newKind = kind === 'private' ? 'private' : kind === 'public' ? 'public' : channel.kind;
+  const newPolicy = post_policy === 'admins' ? 'admins' : post_policy === 'all' ? 'all' : (channel.post_policy || 'all');
   let cleanName = channel.name;
   if (name !== undefined && name !== null && String(name).trim()) {
     cleanName = String(name).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || channel.name;
   }
-  db.prepare(`UPDATE chat_channels SET name = ?, kind = ?, topic = ?, archived = ?, updated_at = datetime('now') WHERE id = ?`)
+  db.prepare(`UPDATE chat_channels SET name = ?, kind = ?, topic = ?, archived = ?, post_policy = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(cleanName, newKind, topic !== undefined ? (topic || null) : channel.topic,
-      archived !== undefined ? (archived ? 1 : 0) : channel.archived, channel.id);
+      archived !== undefined ? (archived ? 1 : 0) : channel.archived, newPolicy, channel.id);
   // Making a channel private: ensure the admin who owns it stays a member so it
   // doesn't vanish from everyone. Existing members are preserved either way.
   if (newKind === 'private' && channel.kind === 'public') {
@@ -385,6 +415,10 @@ router.get('/channels/:id/messages', async (req, res) => {
 router.post('/channels/:id/messages', async (req, res) => {
   const channel = requireChannel(req, res); if (!channel) return;
   const db = getDb();
+  // Announcement channels: only admins may post (everyone still reads/reacts).
+  if (channel.post_policy === 'admins' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can post in this channel' });
+  }
   const body = (req.body?.body || '').trim();
   const attachmentIds = Array.isArray(req.body?.attachment_ids) ? req.body.attachment_ids : [];
   if (!body && attachmentIds.length === 0) return res.status(400).json({ error: 'A message or an attachment is required' });

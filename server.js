@@ -550,13 +550,45 @@ try {
 try {
   if (db.prepare('SELECT COUNT(*) c FROM chat_channels').get().c === 0) {
     const mk = (name, topic) => db.prepare("INSERT INTO chat_channels (id, kind, name, topic, created_by) VALUES (?, 'public', ?, ?, 'system')").run(uuid(), name, topic);
-    mk('general', 'Company-wide announcements and general chat');
+    mk('general', 'Company-wide general chat');
     mk('production', 'Production floor coordination');
     mk('quality', 'Quality & food-safety discussion');
     console.log('[seed] Created default chat channels');
   }
 } catch (err) {
   console.error('[seed] Error seeding chat channels (non-fatal):', err.message);
+}
+
+// Ensure Slack-style default channels (idempotent, runs every startup):
+//  • #general and #announcements always exist and are "default" (pinned; every
+//    active user is auto-joined so they can't miss them / can't leave).
+//  • #announcements is admins-only posting (a broadcast channel).
+try {
+  const getByName = db.prepare("SELECT id FROM chat_channels WHERE name = ? AND kind != 'dm' ORDER BY (kind='dm') LIMIT 1");
+  const ensureChannel = (name, topic, policy) => {
+    let row = getByName.get(name);
+    if (!row) {
+      const id = uuid();
+      db.prepare("INSERT INTO chat_channels (id, kind, name, topic, created_by, is_default, post_policy) VALUES (?, 'public', ?, ?, 'system', 1, ?)").run(id, name, topic, policy);
+      return id;
+    }
+    db.prepare("UPDATE chat_channels SET is_default = 1, post_policy = ?, archived = 0 WHERE id = ?").run(policy, row.id);
+    return row.id;
+  };
+  const generalId = ensureChannel('general', 'Company-wide general chat', 'all');
+  const announceId = ensureChannel('announcements', 'Company-wide announcements — admins post, everyone reads', 'admins');
+  // Auto-join every active user to the default channels.
+  const defaultIds = [generalId, announceId];
+  const activeUsers = db.prepare('SELECT id FROM users WHERE is_active = 1').all();
+  const addMember = db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, 'member')");
+  let joined = 0;
+  const tx = db.transaction(() => {
+    for (const cid of defaultIds) for (const u of activeUsers) joined += addMember.run(uuid(), cid, u.id).changes;
+  });
+  tx();
+  if (joined > 0) console.log(`[seed] Auto-joined users to default channels (${joined} memberships)`);
+} catch (err) {
+  console.error('[seed] Error ensuring default channels (non-fatal):', err.message);
 }
 
 // Seed COA/Lab Testing historical data

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
+import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
 function urlBase64ToUint8Array(base64String) {
@@ -14,26 +15,72 @@ function urlBase64ToUint8Array(base64String) {
   return out;
 }
 
-const EMOJI = ['👍', '✅', '❤️', '😄', '🎉', '👀', '🙏', '🔥'];
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// Highlight @mentions of known users; the current user's own mentions stand out.
+// Render a message body: convert :shortcode: emoji and Slack <!channel>/<!here>
+// refs, then tokenize @mentions and Slack *bold* / ~strike~ / `code` markup into
+// styled nodes. (Italic via single underscore is intentionally left alone so
+// snake_case words and channel refs aren't mangled.)
 function renderBody(text, users, meName) {
-  if (!text || !users?.length) return text;
-  const names = users.map(u => u.name).filter(Boolean).sort((a, b) => b.length - a.length);
-  if (!names.length) return text;
-  const re = new RegExp('@(' + names.map(escapeRe).join('|') + ')', 'gi');
+  if (!text) return text;
+  let s = replaceShortcodes(text)
+    .replace(/<!channel>|<!everyone>/gi, '@channel')
+    .replace(/<!here>/gi, '@here');
+
+  const names = (users || []).map(u => u.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  const parts = [
+    names.length ? '@(?:' + names.map(escapeRe).join('|') + ')' : null,
+    '@channel', '@here',
+    '\\*(?=\\S)[^*\\n]*?\\S\\*', // *bold*
+    '~(?=\\S)[^~\\n]*?\\S~',     // ~strike~
+    '`[^`\\n]+`',               // `code`
+  ].filter(Boolean);
+  const re = new RegExp('(' + parts.join('|') + ')', 'g');
+
   const out = []; let last = 0, m, k = 0;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) out.push(text.slice(last, m.index));
-    const isMe = meName && m[1].toLowerCase() === meName.toLowerCase();
-    out.push(<span key={k++} className={isMe ? 'bg-amber-200 text-amber-900 rounded px-1 font-semibold' : 'text-powder-700 font-medium'}>@{m[1]}</span>);
-    last = m.index + m[0].length;
+  while ((m = re.exec(s)) !== null) {
+    if (m.index > last) out.push(s.slice(last, m.index));
+    const tok = m[0];
+    if (tok[0] === '@') {
+      const nm = tok.slice(1);
+      const isMe = meName && nm.toLowerCase() === meName.toLowerCase();
+      const isBroadcast = nm === 'channel' || nm === 'here';
+      out.push(<span key={k++} className={isMe ? 'bg-amber-200 text-amber-900 rounded px-1 font-semibold' : isBroadcast ? 'bg-amber-100 text-amber-800 rounded px-1 font-medium' : 'text-powder-700 font-medium'}>{tok}</span>);
+    } else if (tok[0] === '*') {
+      out.push(<strong key={k++}>{tok.slice(1, -1)}</strong>);
+    } else if (tok[0] === '~') {
+      out.push(<span key={k++} className="line-through">{tok.slice(1, -1)}</span>);
+    } else if (tok[0] === '`') {
+      out.push(<code key={k++} className="px-1 py-0.5 rounded bg-gray-100 text-[0.85em] font-mono">{tok.slice(1, -1)}</code>);
+    }
+    last = m.index + tok.length;
   }
-  if (last < text.length) out.push(text.slice(last));
-  return out;
+  if (last < s.length) out.push(s.slice(last));
+  return out.length ? out : s;
 }
-const fmtTime = (iso) => { const d = new Date(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z'); return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
+const parseMsgDate = (iso) => new Date(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+const fmtTime = (iso) => parseMsgDate(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const dayKey = (iso) => { const d = parseMsgDate(iso); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+// Slack-style day divider label: Today / Yesterday / weekday+date.
+const dayLabel = (iso) => {
+  const d = parseMsgDate(iso); const now = new Date();
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOf(now) - startOf(d)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  const opts = { weekday: 'long', month: 'long', day: 'numeric' };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString([], opts);
+};
+function DateDivider({ iso }) {
+  return (
+    <div className="flex items-center gap-3 px-4 my-2">
+      <div className="flex-1 h-px bg-gray-200" />
+      <span className="text-[11px] font-semibold text-gray-500 bg-white border border-gray-200 rounded-full px-3 py-0.5 shadow-sm">{dayLabel(iso)}</span>
+      <div className="flex-1 h-px bg-gray-200" />
+    </div>
+  );
+}
 const fmtSize = (n) => { if (!n && n !== 0) return ''; if (n < 1024) return n + ' B'; if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB'; return (n / 1024 / 1024).toFixed(1) + ' MB'; };
 
 function Attachment({ a }) {
@@ -106,6 +153,35 @@ function NewChannelModal({ users, me, onClose, onCreated }) {
           <button onClick={create} disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Creating…' : 'Create channel'}</button>
           <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Searchable, grouped emoji picker used for reactions and the composer.
+function EmojiPicker({ onPick, onClose, align = 'right', vertical = 'down' }) {
+  const [q, setQ] = useState('');
+  const term = q.trim().toLowerCase();
+  const searchHits = term ? EMOJI_INDEX.filter(e => e.name.includes(term)).slice(0, 48) : null;
+  return (
+    <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} ${vertical === 'up' ? 'bottom-8' : 'top-7'} z-30 w-64 bg-white border border-gray-200 rounded-xl shadow-lg p-2`}
+      onMouseLeave={onClose}>
+      <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search emoji…"
+        className="w-full px-2 py-1.5 mb-2 border border-gray-200 rounded-lg text-xs outline-none focus:border-powder-300" />
+      <div className="max-h-56 overflow-y-auto">
+        {searchHits ? (
+          <div className="grid grid-cols-8 gap-0.5">
+            {searchHits.map(e => <button key={e.name} title={e.name} onClick={() => onPick(e.emoji)} className="p-1 text-lg hover:bg-gray-100 rounded">{e.emoji}</button>)}
+            {searchHits.length === 0 && <p className="col-span-8 text-center text-xs text-gray-400 py-3">No emoji found</p>}
+          </div>
+        ) : PICKER_GROUPS.map(g => (
+          <div key={g.label} className="mb-1.5">
+            <div className="text-[10px] font-bold uppercase text-gray-400 px-1 mb-0.5">{g.label}</div>
+            <div className="grid grid-cols-8 gap-0.5">
+              {g.emojis.map((e, i) => <button key={g.label + i} onClick={() => onPick(e)} className="p-1 text-lg hover:bg-gray-100 rounded">{e}</button>)}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -198,11 +274,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, canTranslate, vi
           {canTranslate && m.body && !translated && <button onClick={doTranslate} className="p-1 text-gray-400 hover:text-gray-600" title="Translate"><Languages size={13} /></button>}
           {mine && <button onClick={() => { setDraft(m.body || ''); setEditing(true); }} className="p-1 text-gray-400 hover:text-gray-600" title="Edit"><Edit2 size={13} /></button>}
           {(mine) && <button onClick={() => onDelete(m)} className="p-1 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
-          {showEmoji && (
-            <div className="absolute right-0 top-6 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-1 flex gap-0.5">
-              {EMOJI.map(e => <button key={e} onClick={() => { onReact(m, e); setShowEmoji(false); }} className="p-1 hover:bg-gray-100 rounded">{e}</button>)}
-            </div>
-          )}
+          {showEmoji && <EmojiPicker onPick={(e) => { onReact(m, e); setShowEmoji(false); }} onClose={() => setShowEmoji(false)} />}
         </div>
       )}
     </div>
@@ -231,6 +303,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const [chanHi, setChanHi] = useState(0);
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState('');
+  const [showComposerEmoji, setShowComposerEmoji] = useState(false);
   const [newChannel, setNewChannel] = useState(false);
   const [dmSearch, setDmSearch] = useState('');
   const [showDmPicker, setShowDmPicker] = useState(false);
@@ -260,7 +333,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const chanMatches = chanTerm
     ? [...publicCh, ...privateCh, ...dms].filter(c => (c.name || '').toLowerCase().includes(chanTerm))
     : [];
-  const kindIcon = (c) => (c.kind === 'dm' ? MessageSquare : c.kind === 'private' ? Lock : Hash);
+  const kindIcon = (c) => (c.kind === 'dm' ? MessageSquare : c.post_policy === 'admins' ? Megaphone : c.kind === 'private' ? Lock : Hash);
   // On phones, the main pane also needs to show when a search/ask is running.
   const searchActive = searchResults !== null || answer !== null || (searching && searchMode === 'ask');
   const showMainMobile = mobileThread || searchActive;
@@ -428,6 +501,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
     finally { setPushBusy(false); }
   };
 
+  const markAllRead = async () => { await apiPost('/comms/read-all', {}); refreshChannels(); };
+
   const openDm = async (u) => {
     const ch = await apiPost(`/comms/dm/${u.id}`, {});
     setShowDmPicker(false); setDmSearch('');
@@ -515,6 +590,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
               <Home size={16} />
             </button>
           )}
+          <button onClick={markAllRead} title="Mark all channels read"
+            className="p-2 rounded-lg text-gray-400 hover:bg-gray-100"><CheckCheck size={16} /></button>
           {user.role === 'admin' && (
             <button onClick={() => setShowSettings(true)} title="Communication settings"
               className="p-2 rounded-lg text-gray-400 hover:bg-gray-100">
@@ -568,8 +645,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
               <button onClick={() => setNewChannel(true)} className="text-gray-400 hover:text-powder-600" title="New channel"><Plus size={14} /></button>
             </div>
             <div className="space-y-0.5">
-              {publicCh.map(c => <ChannelBtn key={c.id} c={c} icon={Hash} />)}
-              {privateCh.map(c => <ChannelBtn key={c.id} c={c} icon={Lock} />)}
+              {publicCh.map(c => <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} />)}
+              {privateCh.map(c => <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} />)}
             </div>
           </div>
           <div>
@@ -631,7 +708,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
                 <button onClick={() => setMobileThread(false)} className="md:hidden -ml-1 p-1 text-gray-500 hover:text-gray-700" title="Back to channels"><ArrowLeft size={18} /></button>
-                {active.kind === 'dm' ? <MessageSquare size={16} className="text-gray-400" /> : active.kind === 'private' ? <Lock size={16} className="text-gray-400" /> : <Hash size={16} className="text-gray-400" />}
+                {active.kind === 'dm' ? <MessageSquare size={16} className="text-gray-400" /> : active.post_policy === 'admins' ? <Megaphone size={16} className="text-gray-400" /> : active.kind === 'private' ? <Lock size={16} className="text-gray-400" /> : <Hash size={16} className="text-gray-400" />}
                 <span className="font-semibold text-gray-900 truncate shrink-0 max-w-[55%] sm:max-w-none">{active.name}</span>
                 {active.topic && <span className="text-xs text-gray-400 truncate hidden sm:inline">— {active.topic}</span>}
                 {translateOn && (
@@ -650,9 +727,22 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
               </div>
               <div ref={scrollRef} className="flex-1 overflow-y-auto py-2">
                 {messages.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello 👋</p>}
-                {messages.map(m => <Message key={m.id} m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg}
-                  canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} autoTranslate={autoTranslate} mentionUsers={users} />)}
+                {messages.map((m, i) => {
+                  const showDay = i === 0 || dayKey(m.created_at) !== dayKey(messages[i - 1].created_at);
+                  return (
+                    <div key={m.id}>
+                      {showDay && <DateDivider iso={m.created_at} />}
+                      <Message m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg}
+                        canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} autoTranslate={autoTranslate} mentionUsers={users} />
+                    </div>
+                  );
+                })}
               </div>
+              {active.post_policy === 'admins' && user.role !== 'admin' ? (
+                <div className="border-t border-gray-200 p-3 shrink-0 text-center text-sm text-gray-400 flex items-center justify-center gap-2">
+                  <Lock size={14} /> Only admins can post in #{active.name}. You can still read and react.
+                </div>
+              ) : (
               <div className="border-t border-gray-200 p-3 shrink-0 relative">
                 {mentionMatches.length > 0 && (
                   <div className="absolute bottom-full mb-1 left-3 right-3 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-20 max-h-48 overflow-y-auto">
@@ -691,17 +781,27 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
                       </button>
                     </>
                   )}
+                  <div className="relative">
+                    <button onClick={() => setShowComposerEmoji(s => !s)}
+                      className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl" title="Emoji"><Smile size={18} /></button>
+                    {showComposerEmoji && (
+                      <EmojiPicker align="left" vertical="up" onClose={() => setShowComposerEmoji(false)}
+                        onPick={(e) => { setBody(b => b + e); setShowComposerEmoji(false); composerRef.current?.focus(); }} />
+                    )}
+                  </div>
                   <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1}
                     onKeyDown={e => {
+                      // While the @mention menu is open, Enter/Tab picks the top match.
                       if (mentionMatches.length && (e.key === 'Enter' || e.key === 'Tab')) { e.preventDefault(); insertMention(mentionMatches[0].name); return; }
                       if (e.key === 'Escape' && mentionQuery !== null) { setMentionQuery(null); return; }
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+                      // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).
                     }}
                     placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />
                   <button onClick={send} disabled={!body.trim() && pending.length === 0} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
                 </div>
               </div>
+              )}
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Select a channel to start.</div>

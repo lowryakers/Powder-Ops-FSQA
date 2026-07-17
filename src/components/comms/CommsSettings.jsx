@@ -1,9 +1,21 @@
 import { useState, useRef } from 'react';
-import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
-import { Hash, Lock, X, Trash2, Archive, ArchiveRestore, Pencil, Check, Users, Upload, Loader2, UserPlus, UserMinus } from 'lucide-react';
+import { useApiGet, apiFetch, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
+import { Hash, Lock, X, Trash2, Archive, ArchiveRestore, Pencil, Check, Users, Upload, Loader2, UserPlus, UserMinus, Megaphone, GitMerge } from 'lucide-react';
 
 const DEPARTMENTS = ['warehouse', 'maintenance', 'qa', 'cleaning', 'document_control', 'office'];
 const ROLES = ['operator', 'supervisor', 'auditor', 'admin'];
+
+// Usage flag for a channel: empty or long-idle → candidate to clean up.
+function channelFlag(c) {
+  if (c.archived) return null;
+  if ((c.message_count || 0) === 0) return { label: 'empty', cls: 'text-gray-600 bg-gray-100' };
+  if (c.last_activity) {
+    const last = new Date(String(c.last_activity).replace(' ', 'T') + 'Z');
+    const days = Math.floor((Date.now() - last.getTime()) / 86400000);
+    if (days >= 90) return { label: `idle ${days}d`, cls: 'text-amber-700 bg-amber-50' };
+  }
+  return null;
+}
 
 function TabButton({ active, onClick, icon: Icon, children }) {
   return (
@@ -34,6 +46,16 @@ function ChannelsTab({ users }) {
     try { await apiPut(`/comms/channels/${c.id}`, { kind: c.kind === 'private' ? 'public' : 'private' }); refresh(); }
     finally { setBusy(false); }
   };
+  const togglePolicy = async (c) => {
+    await apiPut(`/comms/channels/${c.id}`, { post_policy: c.post_policy === 'admins' ? 'all' : 'admins' });
+    refresh();
+  };
+  const clearUnread = async () => {
+    if (!window.confirm("Clear unread badges for everyone? This marks all channels read for all users (useful right after an import).")) return;
+    setBusy(true);
+    try { await apiPost('/comms/admin/reset-unread', {}); }
+    finally { setBusy(false); }
+  };
   const toggleArchive = async (c) => {
     if (c.archived) { await apiPut(`/comms/channels/${c.id}`, { archived: false }); }
     else { await apiDelete(`/comms/channels/${c.id}`); } // soft archive
@@ -49,21 +71,30 @@ function ChannelsTab({ users }) {
 
   return (
     <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-gray-400">{rows.filter(c => !c.archived).length} active channels</p>
+        <button onClick={clearUnread} disabled={busy} className="text-xs text-powder-600 hover:text-powder-700 font-medium disabled:opacity-50">Clear unread for everyone</button>
+      </div>
       {loading ? <p className="text-sm text-gray-400 py-6 text-center">Loading channels…</p> : (
         <div className="space-y-1.5">
           {rows.length === 0 && <p className="text-sm text-gray-400 py-6 text-center">No channels yet.</p>}
-          {rows.map(c => (
+          {rows.map(c => {
+            const flag = channelFlag(c);
+            const Icon = c.post_policy === 'admins' ? Megaphone : c.kind === 'private' ? Lock : Hash;
+            return (
             <div key={c.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${c.archived ? 'bg-gray-50 border-gray-200 opacity-70' : 'border-gray-200'}`}>
-              {c.kind === 'private' ? <Lock size={15} className="text-gray-400 shrink-0" /> : <Hash size={15} className="text-gray-400 shrink-0" />}
+              <Icon size={15} className="text-gray-400 shrink-0" />
               {editing === c.id ? (
                 <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') rename(c); if (e.key === 'Escape') setEditing(null); }}
                   className="flex-1 px-2 py-1 border border-powder-300 rounded text-sm" />
               ) : (
-                <span className="flex-1 text-sm font-medium text-gray-800 truncate">
+                <span className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">
                   {c.name}
+                  {c.is_default ? <span className="ml-2 text-[10px] uppercase text-powder-500">default</span> : null}
                   {c.archived ? <span className="ml-2 text-[10px] uppercase text-gray-400">archived</span> : null}
-                  <span className="ml-2 text-xs font-normal text-gray-400">{c.member_count} members · {c.message_count} msgs</span>
+                  {flag && <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${flag.cls}`}>{flag.label}</span>}
+                  <span className="ml-2 text-xs font-normal text-gray-400">{c.member_count}m · {c.message_count} msgs</span>
                 </span>
               )}
               {editing === c.id ? (
@@ -71,6 +102,7 @@ function ChannelsTab({ users }) {
               ) : (
                 <>
                   <button onClick={() => { setEditing(c.id); setEditName(c.name); }} className="p-1 text-gray-400 hover:text-powder-600 rounded" title="Rename"><Pencil size={14} /></button>
+                  <button onClick={() => togglePolicy(c)} className={`p-1 rounded ${c.post_policy === 'admins' ? 'text-amber-600' : 'text-gray-400 hover:text-amber-600'}`} title={c.post_policy === 'admins' ? 'Announcement (admins-only) — click to allow all' : 'Make announcement (admins-only posting)'}><Megaphone size={14} /></button>
                   <button onClick={() => togglePrivacy(c)} disabled={busy} className="p-1 text-gray-400 hover:text-powder-600 rounded" title={c.kind === 'private' ? 'Make public' : 'Make private'}>
                     {c.kind === 'private' ? <Hash size={14} /> : <Lock size={14} />}
                   </button>
@@ -82,11 +114,17 @@ function ChannelsTab({ users }) {
                 </>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
-      <p className="mt-4 text-[11px] text-gray-400">
-        Archiving hides a channel but keeps its history (reversible). Delete permanently removes the channel and every message — use with care.
+      {rows.some(c => channelFlag(c)) && (
+        <p className="mt-3 text-[11px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+          Tip: channels flagged <span className="font-medium">empty</span> or <span className="font-medium">idle 90d+</span> are candidates to archive or merge — a leaner channel list is easier for the team to navigate.
+        </p>
+      )}
+      <p className="mt-3 text-[11px] text-gray-400">
+        Archiving hides a channel but keeps its history (reversible). Delete permanently removes the channel and every message — use with care. The megaphone makes a channel announcement-only (admins post, everyone reads).
       </p>
     </div>
   );
@@ -145,6 +183,59 @@ function ChannelMembers({ channel, users, onBack }) {
   );
 }
 
+/* ─────────────────────────── Duplicate finder ─────────────────────────── */
+function DuplicateFinder({ onMerged }) {
+  const [groups, setGroups] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [keep, setKeep] = useState({}); // groupIdx -> user id to keep
+
+  const scan = async () => {
+    setLoading(true);
+    try { const r = await apiFetch('/users/duplicates'); setGroups(r.groups || []); }
+    finally { setLoading(false); }
+  };
+  const merge = async (gi, group) => {
+    const keeper = keep[gi] || group.users[0].id;
+    const dupes = group.users.filter(u => u.id !== keeper);
+    if (!dupes.length) return;
+    if (!window.confirm(`Merge ${dupes.map(d => d.name).join(', ')} into ${group.users.find(u => u.id === keeper).name}? Their messages move to the kept person and the duplicate accounts are removed.`)) return;
+    for (const d of dupes) await apiPost(`/users/${d.id}/merge`, { into: keeper });
+    await scan(); onMerged?.();
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-3 mb-4 bg-gray-50">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-700 flex items-center gap-1.5"><GitMerge size={15} className="text-powder-600" /> Find duplicate people</span>
+        <button onClick={scan} disabled={loading} className="text-xs text-powder-600 hover:text-powder-700 font-medium disabled:opacity-50">{loading ? 'Scanning…' : groups ? 'Rescan' : 'Scan'}</button>
+      </div>
+      {groups && groups.length === 0 && <p className="text-xs text-gray-500 mt-2">No likely duplicates found. 🎉</p>}
+      {groups && groups.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {groups.map((g, gi) => (
+            <div key={gi} className="bg-white border border-gray-200 rounded-lg p-2">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${g.confidence === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{g.confidence}</span>
+                <span className="text-[11px] text-gray-400">pick who to keep:</span>
+              </div>
+              <div className="space-y-1">
+                {g.users.map(u => (
+                  <label key={u.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="radio" name={`keep-${gi}`} checked={(keep[gi] || g.users[0].id) === u.id} onChange={() => setKeep(k => ({ ...k, [gi]: u.id }))} />
+                    <span className="text-gray-800">{u.name}</span>
+                    <span className="text-[11px] text-gray-400">{(u.department || '').replace('_', ' ')} · {u.role} · {u.message_count} msgs{u.is_active ? '' : ' · inactive'}</span>
+                  </label>
+                ))}
+              </div>
+              <button onClick={() => merge(gi, g)} className="mt-1.5 text-xs bg-powder-600 text-white px-2.5 py-1 rounded-lg font-medium hover:bg-powder-700">Merge</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─────────────────────────── People tab ─────────────────────────── */
 function PeopleTab() {
   const { data: users, loading, refresh } = useApiGet('/users');
@@ -167,6 +258,7 @@ function PeopleTab() {
 
   return (
     <div>
+      <DuplicateFinder onMerged={refresh} />
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm text-gray-500">{active.length} active {inactive.length ? `· ${inactive.length} deactivated` : ''}</p>
         {!showAdd && (

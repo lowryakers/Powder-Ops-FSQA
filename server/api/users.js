@@ -6,6 +6,15 @@ import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
+// New accounts join the Slack-style default channels (#general, #announcements)
+// so everyone is reachable there from day one.
+function joinDefaultChannels(db, userId) {
+  try {
+    const add = db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, 'member')");
+    for (const c of db.prepare('SELECT id FROM chat_channels WHERE is_default = 1').all()) add.run(uuid(), c.id, userId);
+  } catch { /* chat tables may not exist in some contexts */ }
+}
+
 // --- Password hashing (scrypt; no external deps) ---------------------------
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -77,6 +86,44 @@ router.get('/lookup', (req, res) => {
   res.json(users);
 });
 
+// NOTE: must be registered before '/:id' so it isn't captured as an id.
+// Report likely duplicate people so an admin can merge them. Groups by a
+// normalized-name key (high confidence); then pairs remaining users whose
+// normalized names are near-identical (prefix/substring or edit distance ≤ 2)
+// as "possible". Each user carries its chat message count to help pick which
+// record to keep.
+router.get('/duplicates', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const users = db.prepare('SELECT id, name, email, role, department, is_active, created_at FROM users').all();
+  const msgCount = db.prepare('SELECT COUNT(*) c FROM chat_messages WHERE user_id = ?');
+  const decorate = (u) => ({ ...u, message_count: msgCount.get(u.id).c });
+
+  const byKey = {};
+  for (const u of users) { const k = normName(u.name); if (!k) continue; (byKey[k] ||= []).push(u); }
+
+  const groups = [];
+  const grouped = new Set();
+  // High-confidence: same normalized key.
+  for (const [, list] of Object.entries(byKey)) {
+    if (list.length > 1) { groups.push({ confidence: 'high', users: list.map(decorate) }); list.forEach(u => grouped.add(u.id)); }
+  }
+  // Possible: near-identical normalized names across the remaining singletons.
+  const singles = users.filter(u => !grouped.has(u.id) && normName(u.name));
+  for (let i = 0; i < singles.length; i++) {
+    if (grouped.has(singles[i].id)) continue;
+    for (let j = i + 1; j < singles.length; j++) {
+      if (grouped.has(singles[j].id)) continue;
+      const a = normName(singles[i].name), b = normName(singles[j].name);
+      const near = a === b || a.startsWith(b) || b.startsWith(a) || (Math.abs(a.length - b.length) <= 3 && levenshtein(a, b) <= 2);
+      if (near) {
+        groups.push({ confidence: 'possible', users: [decorate(singles[i]), decorate(singles[j])] });
+        grouped.add(singles[i].id); grouped.add(singles[j].id);
+      }
+    }
+  }
+  res.json({ groups });
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT id, name, email, role, department, is_active, created_at FROM users WHERE id = ?').get(req.params.id);
@@ -101,6 +148,7 @@ router.post('/', requireRole('admin'), (req, res) => {
   db.prepare('INSERT INTO users (id, name, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(id, name, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr);
 
+  joinDefaultChannels(db, id);
   const created = db.prepare('SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'user', id, { name, role: role || 'operator', department: department || 'warehouse' }, null, null, name);
   res.status(201).json(created);
@@ -119,7 +167,9 @@ router.post('/bulk', requireRole('admin'), (req, res) => {
       const name = (u.name || '').trim();
       if (!name) continue;
       const role = ROLES.includes(u.role) ? u.role : 'operator';
-      ins.run(uuid(), name, u.email || null, role, u.department || 'warehouse', u.module_access ? JSON.stringify(u.module_access) : null);
+      const nid = uuid();
+      ins.run(nid, name, u.email || null, role, u.department || 'warehouse', u.module_access ? JSON.stringify(u.module_access) : null);
+      joinDefaultChannels(db, nid);
       created++; names.push(name);
     }
   });
@@ -251,6 +301,53 @@ router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
   db.prepare("UPDATE users SET password_hash = ?, pin = NULL, updated_at = datetime('now') WHERE id = ?").run(hashPassword(password), user.id);
   logAudit(req.user, 'password_reset', 'user', user.id, { by_admin: true }, null, null, user.name);
   res.json({ ok: true });
+});
+
+// ── Duplicate detection + merge (post-import cleanup) ─────────────────────────
+// Normalize a name for comparison: lowercase, strip everything but letters/
+// digits. "Adam B." and "adamb" both collapse to "adamb".
+function normName(n) { return String(n || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[m][n];
+}
+
+// Merge one user (the "from" duplicate) into another ("into" — the record to
+// keep). Reassigns all chat authorship/reactions/mentions/memberships, then
+// deletes the duplicate account. Chat-scoped by design: import duplicates have
+// no operational (work-order/audit) history under their own id.
+router.post('/:id/merge', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const fromId = req.params.id;
+  const intoId = req.body?.into;
+  if (!intoId || intoId === fromId) return res.status(400).json({ error: 'A different target user is required' });
+  const from = db.prepare('SELECT * FROM users WHERE id = ?').get(fromId);
+  const into = db.prepare('SELECT * FROM users WHERE id = ?').get(intoId);
+  if (!from || !into) return res.status(404).json({ error: 'User not found' });
+
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE chat_messages SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
+    // Reactions & memberships have uniqueness constraints — move what won't
+    // collide, drop the rest (the target already reacted / is a member).
+    db.prepare('UPDATE OR IGNORE chat_reactions SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
+    db.prepare('DELETE FROM chat_reactions WHERE user_id = ?').run(fromId);
+    db.prepare('UPDATE chat_mentions SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
+    db.prepare('UPDATE OR IGNORE chat_channel_members SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
+    db.prepare('DELETE FROM chat_channel_members WHERE user_id = ?').run(fromId);
+    // Clean up auth artifacts, then remove the duplicate account.
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(fromId);
+    try { db.prepare('DELETE FROM chat_push_subscriptions WHERE user_id = ?').run(fromId); } catch { /* table may not exist */ }
+    db.prepare('DELETE FROM users WHERE id = ?').run(fromId);
+  });
+  tx();
+  logAudit(req.user, 'merge', 'user', intoId, { merged_from: from.name, merged_from_id: fromId }, null, null, into.name);
+  res.json({ ok: true, merged_into: intoId });
 });
 
 export { hashPassword };
