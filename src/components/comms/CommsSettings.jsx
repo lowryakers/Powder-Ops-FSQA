@@ -138,7 +138,11 @@ function ChannelMembers({ channel, users, onBack }) {
   const candidates = (users || []).filter(u => u.is_active && !memberIds.has(u.id));
 
   const add = async (uid) => { await apiPost(`/comms/channels/${channel.id}/members`, { user_ids: [uid] }); refresh(); };
+  const addMany = async (ids) => { if (ids.length) { await apiPost(`/comms/channels/${channel.id}/members`, { user_ids: ids }); refresh(); } };
   const remove = async (uid) => { await apiDelete(`/comms/channels/${channel.id}/members/${uid}`); refresh(); };
+
+  // Departments represented among people not yet in the channel — for bulk add.
+  const depts = [...new Set(candidates.map(u => u.department).filter(Boolean))].sort();
 
   return (
     <div>
@@ -147,10 +151,17 @@ function ChannelMembers({ channel, users, onBack }) {
         {channel.kind === 'private' ? <Lock size={16} className="text-gray-400" /> : <Hash size={16} className="text-gray-400" />}
         <h4 className="font-semibold text-gray-900">{channel.name}</h4>
       </div>
-      {channel.kind === 'public' && (
-        <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-3">
-          This is a public channel — everyone can already see it. Membership only affects unread tracking here; make it private to restrict access.
-        </p>
+      <p className="text-[11px] text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mb-3">
+        Members are the people who can see this channel. Add a whole department at once below.
+      </p>
+      {candidates.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          <button onClick={() => addMany(candidates.map(u => u.id))} className="text-xs px-2.5 py-1 rounded-lg bg-powder-600 text-white font-medium hover:bg-powder-700">+ Everyone ({candidates.length})</button>
+          {depts.map(d => {
+            const ids = candidates.filter(u => u.department === d).map(u => u.id);
+            return <button key={d} onClick={() => addMany(ids)} className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-powder-50 hover:text-powder-700 capitalize">+ {d.replace('_', ' ')} ({ids.length})</button>;
+          })}
+        </div>
       )}
       <div className="space-y-1 mb-4">
         {members.length === 0 && <p className="text-sm text-gray-400">No members yet.</p>}

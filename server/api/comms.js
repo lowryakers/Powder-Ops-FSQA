@@ -92,17 +92,21 @@ function getChannelAny(db, id) {
 function isMember(db, channelId, userId) {
   return !!db.prepare('SELECT 1 FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId);
 }
-function canAccess(db, channel, userId) {
+// Access model: admins can reach every channel (to administer). Everyone else
+// only sees channels they're a member of — public no longer means "everyone",
+// so operators are confined to the channels they've been added to (their dept +
+// the auto-joined default channels). Membership is the single gate.
+function canAccess(db, channel, userId, isAdmin = false) {
   if (!channel) return false;
-  if (channel.kind === 'public') return true;
+  if (isAdmin) return true;
   return isMember(db, channel.id, userId);
 }
 // Resolve a channel and enforce access in one step; sends 404 if not allowed
-// (private channels are hidden, not "forbidden", to avoid leaking existence).
+// (channels a user can't see are hidden, not "forbidden", to avoid leaking existence).
 function requireChannel(req, res) {
   const db = getDb();
   const channel = getChannel(db, req.params.id || req.params.channelId);
-  if (!channel || !canAccess(db, channel, req.user.id)) { res.status(404).json({ error: 'Channel not found' }); return null; }
+  if (!channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')) { res.status(404).json({ error: 'Channel not found' }); return null; }
   return channel;
 }
 
@@ -111,10 +115,10 @@ function userName(db, id) {
 }
 
 // ── Mentions ──────────────────────────────────────────────────────────────────
-// Users who can be @mentioned in a channel: everyone for public channels,
-// members only for private/DM (so a mention can't notify someone who can't see it).
+// Users who can be @mentioned in a channel are its members — a mention should
+// never notify someone who can't see the channel. (Now that public channels are
+// membership-gated too, this is uniform across kinds.)
 function mentionCandidates(db, channel) {
-  if (channel.kind === 'public') return db.prepare('SELECT id, name FROM users WHERE is_active = 1').all();
   return db.prepare('SELECT u.id, u.name FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? AND u.is_active = 1').all(channel.id);
 }
 // Match "@<display name>" occurrences (autocomplete inserts full names, which may
@@ -146,11 +150,14 @@ function recordMentions(db, channel, messageId, body, author) {
 router.get('/channels', (req, res) => {
   const db = getDb();
   const me = req.user.id;
+  // Admins see every channel (to administer); everyone else only sees channels
+  // they're a member of.
+  const isAdmin = req.user.role === 'admin';
   const rows = db.prepare(`
     SELECT c.*, m.last_read_at, m.id AS membership_id
     FROM chat_channels c
     LEFT JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
-    WHERE c.archived = 0 AND (c.kind = 'public' OR m.user_id IS NOT NULL)
+    WHERE c.archived = 0 AND (${isAdmin ? "c.kind != 'dm' OR m.user_id IS NOT NULL" : 'm.user_id IS NOT NULL'})
     ORDER BY c.is_default DESC, c.kind, c.name
   `).all(me);
 
@@ -559,13 +566,13 @@ function channelLabel(db, channel, me) {
 }
 
 // Turn ranked message ids into access-checked result rows (order preserved).
-function resultsFor(db, me, messageIds, limit = 40) {
+function resultsFor(db, me, messageIds, limit = 40, isAdmin = false) {
   const out = [];
   for (const id of messageIds) {
     const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND deleted_at IS NULL').get(id);
     if (!m) continue;
     const channel = getChannel(db, m.channel_id);
-    if (!canAccess(db, channel, me)) continue;
+    if (!canAccess(db, channel, me, isAdmin)) continue;
     out.push({
       id: m.id, channel_id: m.channel_id, channel_kind: channel.kind, channel_name: channelLabel(db, channel, me),
       user_name: userName(db, m.user_id), body: m.body, created_at: m.created_at,
@@ -586,10 +593,10 @@ function keywordHits(db, q) {
 // Semantic retrieval: embed the query, cosine-rank message embeddings within the
 // caller's accessible channels. Bounded to accessible channels up front so
 // private/DM content never enters the ranking for a non-member.
-async function semanticHits(db, me, q, limit = 40) {
+async function semanticHits(db, me, q, limit = 40, isAdmin = false) {
   const channels = db.prepare(`SELECT c.id FROM chat_channels c
     LEFT JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
-    WHERE c.archived = 0 AND (c.kind = 'public' OR m.user_id IS NOT NULL)`).all(me).map(c => c.id);
+    WHERE c.archived = 0 AND (${isAdmin ? '1=1' : 'm.user_id IS NOT NULL'})`).all(me).map(c => c.id);
   if (!channels.length) return [];
   const [qvec] = await embed(q, 'query');
   if (!qvec) return [];
@@ -609,9 +616,10 @@ router.get('/search', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
   try {
+    const isAdmin = req.user.role === 'admin';
     const semantic = req.query.mode === 'semantic' && voyageEnabled();
-    const ids = semantic ? await semanticHits(db, me, q) : keywordHits(db, q);
-    res.json(resultsFor(db, me, ids));
+    const ids = semantic ? await semanticHits(db, me, q, 40, isAdmin) : keywordHits(db, q);
+    res.json(resultsFor(db, me, ids, 40, isAdmin));
   } catch (e) {
     res.status(502).json({ error: e.message || 'Search failed' });
   }
@@ -628,8 +636,9 @@ router.post('/ask', async (req, res) => {
   const question = (req.body?.question || '').trim();
   if (question.length < 3) return res.status(400).json({ error: 'A question is required.' });
   try {
-    const ids = await semanticHits(db, me, question, 16);
-    const sources = resultsFor(db, me, ids, 16);
+    const isAdmin = req.user.role === 'admin';
+    const ids = await semanticHits(db, me, question, 16, isAdmin);
+    const sources = resultsFor(db, me, ids, 16, isAdmin);
     const answer = await summarizeChat({ question, contextMessages: sources });
     res.json({ answer, sources });
   } catch (e) {
