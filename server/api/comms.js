@@ -625,8 +625,14 @@ router.post('/import/slack', requireRole('admin'), zipUpload.single('file'), asy
     try { const p = JSON.parse(raw); if (Array.isArray(p)) privateChannels = p; }
     catch { privateChannels = raw.split(',').map(s => s.trim()).filter(Boolean); }
   }
+  // user_map: { slackId: existingUserId } — admin remaps for authors whose names
+  // don't match (export was taken before display names were fixed).
+  let userMap = {};
+  const rawMap = req.body?.user_map;
+  if (rawMap && typeof rawMap === 'string') { try { const m = JSON.parse(rawMap); if (m && typeof m === 'object') userMap = m; } catch { /* ignore */ } }
+  else if (rawMap && typeof rawMap === 'object') userMap = rawMap;
   try {
-    const summary = importSlackExport(req.file.buffer, req.user, { privateChannels });
+    const summary = importSlackExport(req.file.buffer, req.user, { privateChannels, userMap });
     res.json(summary);
   } catch (e) {
     res.status(422).json({ error: e.message || 'Import failed. Is this a valid Slack export .zip?' });

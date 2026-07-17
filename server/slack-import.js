@@ -43,6 +43,7 @@ function cleanText(text, slackUsers) {
 // can pick which ones should be restored as private in this tool) and a rough
 // message count per channel. Cheap enough for a one-time admin action.
 export function previewSlackExport(buffer) {
+  const db = getDb();
   const zip = new AdmZip(buffer);
   const entries = zip.getEntries();
   const chanEntry = entries.find(x => x.entryName === 'channels.json' || x.entryName.endsWith('/channels.json'));
@@ -62,8 +63,25 @@ export function previewSlackExport(buffer) {
       messages,
     };
   }).sort((a, b) => a.name.localeCompare(b.name));
-  const userCount = usersJson.filter(u => !u.is_bot && !u.deleted).length;
-  return { channels, userCount };
+
+  // Author match check: which export people already match an existing user by
+  // name, and which would be created new. The export was taken before the user
+  // fixed display names, so this lets the admin remap the misses on import.
+  const findUser = db.prepare('SELECT id, name FROM users WHERE LOWER(name) = LOWER(?)');
+  const users = usersJson.filter(u => !u.is_bot && !u.deleted).map(su => {
+    const displayName = su.profile?.real_name || su.real_name || su.profile?.display_name || su.name;
+    const hit = (displayName && findUser.get(displayName)) || (su.profile?.display_name ? findUser.get(su.profile.display_name) : null);
+    return {
+      slack_id: su.id,
+      name: displayName || su.name || su.id,
+      handle: su.name || '',
+      matched: !!hit,
+      matched_user_id: hit?.id || null,
+      matched_name: hit?.name || null,
+    };
+  }).sort((a, b) => Number(a.matched) - Number(b.matched) || a.name.localeCompare(b.name));
+
+  return { channels, users, userCount: users.length, unmatchedCount: users.filter(u => !u.matched).length };
 }
 
 export function importSlackExport(buffer, importerUser, options = {}) {
@@ -80,19 +98,25 @@ export function importSlackExport(buffer, importerUser, options = {}) {
   };
 
   // ── Users: map by display name; create missing ────────────────────────────
+  // Admin-supplied overrides (slackId → existing user id) win over name-matching
+  // — this is how misses from a pre-rename export get pointed at the right user.
+  const chosenMap = options.userMap || {};
   const usersJson = readJson('users.json') || [];
   const slackUsers = {};   // slackId -> { name }
   const userMap = {};      // slackId -> our user id
-  let usersCreated = 0;
+  let usersCreated = 0, usersMapped = 0;
   const findUser = db.prepare('SELECT id FROM users WHERE LOWER(name) = LOWER(?)');
+  const findById = db.prepare('SELECT id FROM users WHERE id = ?');
   const insUser = db.prepare('INSERT INTO users (id, name, role, department, is_active) VALUES (?, ?, ?, ?, 1)');
   for (const su of usersJson) {
     const displayName = su.profile?.real_name || su.real_name || su.profile?.display_name || su.name;
     slackUsers[su.id] = { name: su.profile?.display_name || displayName };
     if (su.is_bot || su.deleted || !displayName) continue;      // known for text refs, but not import authors
-    const existing = findUser.get(displayName) || (su.profile?.display_name ? findUser.get(su.profile.display_name) : null);
+    // 1) explicit admin mapping, 2) auto name-match, 3) create new
+    const override = chosenMap[su.id] ? findById.get(chosenMap[su.id]) : null;
+    const existing = override || findUser.get(displayName) || (su.profile?.display_name ? findUser.get(su.profile.display_name) : null);
     let ourId;
-    if (existing) ourId = existing.id;
+    if (existing) { ourId = existing.id; if (override) usersMapped++; }
     else { ourId = uuid(); insUser.run(ourId, displayName, 'operator', 'warehouse'); usersCreated++; }
     userMap[su.id] = ourId;
   }
@@ -140,6 +164,11 @@ export function importSlackExport(buffer, importerUser, options = {}) {
   const existsExt = db.prepare('SELECT id FROM chat_messages WHERE channel_id = ? AND external_id = ?');
   const insReaction = db.prepare('INSERT OR IGNORE INTO chat_reactions (id, message_id, user_id, emoji) VALUES (?, ?, ?, ?)');
   const KEEP_SUBTYPES = new Set([undefined, null, 'me_message', 'thread_broadcast', 'file_share', 'bot_message']);
+  // Slack channel-management notices ("Lowry made this channel public", topic/
+  // purpose/name changes, join/leave). Most carry a subtype and are dropped
+  // above, but the privacy-conversion notice can arrive as plain text — this is
+  // the safety net so it never lands as a real message.
+  const SYSTEM_TEXT = /(made this channel (public|private)|converted (this|to) .*(public|private) channel|set the channel (topic|purpose|name)|(un)?archived this channel|renamed the channel|(has )?(joined|left) the (channel|group|conversation)|added .+ to (this|the) (channel|conversation))/i;
 
   const run = db.transaction(() => {
     for (const sc of channelsJson) {
@@ -153,6 +182,7 @@ export function importSlackExport(buffer, importerUser, options = {}) {
       const tsToId = {};
       for (const m of msgs) {
         if (m.subtype && !KEEP_SUBTYPES.has(m.subtype)) { skipped++; continue; }   // channel_join/leave/etc.
+        if (m.text && SYSTEM_TEXT.test(m.text)) { skipped++; continue; }            // channel-management notices
         const uid = userMap[m.user];
         if (!uid) { skipped++; continue; }                                          // unmapped author/bot
         if (existsExt.get(chan.id, m.ts)) { skipped++; continue; }                  // idempotent re-import
@@ -175,5 +205,5 @@ export function importSlackExport(buffer, importerUser, options = {}) {
   });
   run();
 
-  return { usersCreated, channelsCreated, channelsMadePrivate, messagesImported, skipped };
+  return { usersCreated, usersMapped, channelsCreated, channelsMadePrivate, messagesImported, skipped };
 }

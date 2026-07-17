@@ -223,6 +223,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [activeId, setActiveId] = useState(null);
+  // On phones the list and thread can't share the screen — show one at a time.
+  const [mobileThread, setMobileThread] = useState(false);
+  const openChannel = (id) => { setActiveId(id); setMobileThread(true); };
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState('');
   const [newChannel, setNewChannel] = useState(false);
@@ -249,6 +252,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const privateCh = list.filter(c => c.kind === 'private');
   const dms = list.filter(c => c.kind === 'dm');
   const active = list.find(c => c.id === activeId) || null;
+  // On phones, the main pane also needs to show when a search/ask is running.
+  const searchActive = searchResults !== null || answer !== null || (searching && searchMode === 'ask');
+  const showMainMobile = mobileThread || searchActive;
 
   // Default to #general (or first channel) once loaded.
   useEffect(() => { if (!activeId && list.length) setActiveId((publicCh.find(c => c.name === 'general') || list[0]).id); }, [list, activeId]); // eslint-disable-line
@@ -417,7 +423,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
     const ch = await apiPost(`/comms/dm/${u.id}`, {});
     setShowDmPicker(false); setDmSearch('');
     await refreshChannels();
-    setActiveId(ch.id);
+    openChannel(ch.id);
   };
 
   const dmCandidates = useMemo(() => (users || []).filter(u => u.id !== user.id && u.name.toLowerCase().includes(dmSearch.toLowerCase())), [users, dmSearch, user.id]);
@@ -448,10 +454,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   };
 
   const clearSearch = () => { setSearchQ(''); setSearchResults(null); setAnswer(null); };
-  const openResult = (r) => { clearSearch(); setActiveId(r.channel_id); };
+  const openResult = (r) => { clearSearch(); openChannel(r.channel_id); };
 
   const ChannelBtn = ({ c, icon: Icon }) => (
-    <button onClick={() => setActiveId(c.id)}
+    <button onClick={() => openChannel(c.id)}
       className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activeId === c.id ? 'bg-powder-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
       <Icon size={14} className="shrink-0 opacity-80" />
       <span className="truncate flex-1 text-left">{c.name}</span>
@@ -463,18 +469,18 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
     <div className="fixed inset-0 bg-white flex flex-col">
       {/* top bar */}
       <div className="flex items-center gap-3 px-4 h-12 border-b border-gray-200 shrink-0">
-        <button onClick={onExit} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg shrink-0" title="Switch to ReadyDoc">
-          <ArrowLeft size={16} /> ReadyDoc
+        <button onClick={onExit} className="flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg shrink-0" title="Switch to ReadyDoc">
+          <ArrowLeft size={16} /> <span className="hidden sm:inline">ReadyDoc</span>
         </button>
         {onGoToSchedule && (
           <button onClick={onGoToSchedule} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg shrink-0" title="Go to the Production Schedule">
             <CalendarDays size={16} /> <span className="hidden sm:inline">Schedule</span>
           </button>
         )}
-        <div className="h-5 w-px bg-gray-200 shrink-0" />
+        <div className="h-5 w-px bg-gray-200 shrink-0 hidden sm:block" />
         <MessageSquare size={18} className="text-powder-600 shrink-0" />
-        <span className="font-bold text-gray-900 shrink-0">Messages</span>
-        <div className="ml-4 flex items-center gap-2 flex-1 max-w-lg">
+        <span className="font-bold text-gray-900 shrink-0 hidden sm:inline">Messages</span>
+        <div className="ml-2 sm:ml-4 flex items-center gap-2 flex-1 min-w-0 sm:max-w-lg">
           <div className="relative flex-1">
             {searchMode === 'ask' ? <Sparkles size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-powder-500" />
               : <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />}
@@ -517,8 +523,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {/* sidebar */}
-        <div className="w-60 border-r border-gray-200 flex flex-col shrink-0 overflow-y-auto p-2 space-y-3">
+        {/* sidebar — full width on phones, hidden there once a channel is open */}
+        <div className={`w-full md:w-60 border-r border-gray-200 flex-col shrink-0 overflow-y-auto p-2 space-y-3 ${showMainMobile ? 'hidden md:flex' : 'flex'}`}>
           <div>
             <div className="flex items-center justify-between px-2 mb-1">
               <span className="text-[10px] font-bold uppercase text-gray-400">Channels</span>
@@ -548,8 +554,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
           </div>
         </div>
 
-        {/* main pane */}
-        <div className="flex-1 flex flex-col min-w-0">
+        {/* main pane — hidden on phones until a channel is opened */}
+        <div className={`flex-1 flex-col min-w-0 ${showMainMobile ? 'flex' : 'hidden md:flex'}`}>
           {(searchResults !== null || answer !== null || (searching && searchMode === 'ask')) ? (
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
@@ -585,9 +591,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
           ) : active ? (
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
+                <button onClick={() => setMobileThread(false)} className="md:hidden -ml-1 p-1 text-gray-500 hover:text-gray-700" title="Back to channels"><ArrowLeft size={18} /></button>
                 {active.kind === 'dm' ? <MessageSquare size={16} className="text-gray-400" /> : active.kind === 'private' ? <Lock size={16} className="text-gray-400" /> : <Hash size={16} className="text-gray-400" />}
-                <span className="font-semibold text-gray-900">{active.name}</span>
-                {active.topic && <span className="text-xs text-gray-400 truncate">— {active.topic}</span>}
+                <span className="font-semibold text-gray-900 truncate shrink-0 max-w-[55%] sm:max-w-none">{active.name}</span>
+                {active.topic && <span className="text-xs text-gray-400 truncate hidden sm:inline">— {active.topic}</span>}
                 {translateOn && (
                   <div className="ml-auto flex items-center gap-1.5">
                     <button onClick={() => setAutoTranslate(v => !v)} title="Translate all messages"
@@ -663,7 +670,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
         </div>
       </div>
 
-      {newChannel && <NewChannelModal users={users} me={user} onClose={() => setNewChannel(false)} onCreated={(ch) => { setNewChannel(false); refreshChannels(); setActiveId(ch.id); }} />}
+      {newChannel && <NewChannelModal users={users} me={user} onClose={() => setNewChannel(false)} onCreated={(ch) => { setNewChannel(false); refreshChannels(); openChannel(ch.id); }} />}
       {showSettings && <CommsSettings users={users} onClose={() => setShowSettings(false)} onChanged={refreshChannels} />}
     </div>
   );

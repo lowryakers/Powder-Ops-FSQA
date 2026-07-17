@@ -229,24 +229,31 @@ function PeopleTab() {
 
 /* ─────────────────────────── Import tab ─────────────────────────── */
 function ImportTab({ onImported }) {
+  const { data: existingUsers } = useApiGet('/users');
   const fileRef = useRef(null);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [privateSet, setPrivateSet] = useState(new Set());
-  const [phase, setPhase] = useState('idle'); // idle | previewing | ready | importing | done
+  const [choices, setChoices] = useState({}); // slack_id -> existing user id ('' = create new)
+  const [step, setStep] = useState('idle'); // idle | previewing | channels | people | importing | done
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+
+  const activeUsers = (existingUsers || []).filter(u => u.is_active);
 
   const onPick = async (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
-    setFile(f); setError(''); setResult(null); setPhase('previewing');
+    setFile(f); setError(''); setResult(null); setStep('previewing');
     try {
       const fd = new FormData(); fd.append('file', f);
       const p = await apiUpload('/comms/import/slack/preview', fd);
-      setPreview(p); setPrivateSet(new Set()); setPhase('ready');
-    } catch (err) { setError(err.message || 'Could not read that file.'); setPhase('idle'); }
+      // Seed choices: auto-matched keep their match; misses default to "create new".
+      const seed = {};
+      for (const u of (p.users || [])) seed[u.slack_id] = u.matched_user_id || '';
+      setPreview(p); setPrivateSet(new Set()); setChoices(seed); setStep('channels');
+    } catch (err) { setError(err.message || 'Could not read that file.'); setStep('idle'); }
   };
 
   const toggle = (name) => setPrivateSet(s => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; });
@@ -254,44 +261,56 @@ function ImportTab({ onImported }) {
   const nonePrivate = () => setPrivateSet(new Set());
 
   const runImport = async () => {
-    setPhase('importing'); setError('');
+    setStep('importing'); setError('');
     try {
+      const userMap = {};
+      for (const [sid, uid] of Object.entries(choices)) if (uid) userMap[sid] = uid;
       const fd = new FormData();
       fd.append('file', file);
       fd.append('private_channels', JSON.stringify([...privateSet]));
+      fd.append('user_map', JSON.stringify(userMap));
       const s = await apiUpload('/comms/import/slack', fd);
-      setResult(s); setPhase('done'); onImported?.();
-    } catch (err) { setError(err.message || 'Import failed.'); setPhase('ready'); }
+      setResult(s); setStep('done'); onImported?.();
+    } catch (err) { setError(err.message || 'Import failed.'); setStep('people'); }
   };
+
+  const reset = () => { setStep('idle'); setPreview(null); setFile(null); setResult(null); setChoices({}); };
+
+  const users = preview?.users || [];
+  const unmatched = users.filter(u => !u.matched);
+  const willCreate = users.filter(u => !choices[u.slack_id]).length;
+  const willMap = users.length - willCreate;
 
   return (
     <div>
-      <p className="text-sm text-gray-600 mb-3">
-        Upload a Slack workspace export (.zip). You'll then pick which channels were private so they're restored as private here.
-      </p>
       <input ref={fileRef} type="file" accept=".zip" className="hidden" onChange={onPick} />
 
-      {phase === 'idle' && (
-        <button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
-          <Upload size={16} /> Choose export .zip
-        </button>
+      {step === 'idle' && (
+        <>
+          <p className="text-sm text-gray-600 mb-3">
+            Upload a Slack workspace export (.zip). You'll pick which channels were private and confirm that people match up before anything is imported.
+          </p>
+          <button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
+            <Upload size={16} /> Choose export .zip
+          </button>
+        </>
       )}
-      {phase === 'previewing' && <p className="flex items-center gap-2 text-sm text-gray-500"><Loader2 size={15} className="animate-spin" /> Reading export…</p>}
+      {step === 'previewing' && <p className="flex items-center gap-2 text-sm text-gray-500"><Loader2 size={15} className="animate-spin" /> Reading export…</p>}
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-2">{error}</p>}
 
-      {(phase === 'ready' || phase === 'importing') && preview && (
-        <div className="mt-2">
+      {/* Step 1 — channels */}
+      {step === 'channels' && preview && (
+        <div>
+          <StepDots step={1} />
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-700 font-medium">
-              {preview.channels.length} channels · {preview.userCount} people
-            </p>
+            <p className="text-sm text-gray-700 font-medium">{preview.channels.length} channels · {preview.userCount} people</p>
             <div className="text-xs">
               <button onClick={allPrivate} className="text-powder-600 hover:underline mr-2">All private</button>
               <button onClick={nonePrivate} className="text-gray-400 hover:underline">None</button>
             </div>
           </div>
           <p className="text-[11px] text-gray-500 mb-2">Check the channels that should be <span className="font-medium">private</span> in this tool:</p>
-          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-64 overflow-y-auto">
+          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto">
             {preview.channels.map(c => (
               <label key={c.name} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50">
                 <input type="checkbox" checked={privateSet.has(c.name)} onChange={() => toggle(c.name)} />
@@ -302,27 +321,76 @@ function ImportTab({ onImported }) {
             ))}
           </div>
           <div className="flex items-center gap-2 mt-3">
-            <button onClick={runImport} disabled={phase === 'importing'}
-              className="flex items-center gap-2 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
-              {phase === 'importing' ? <><Loader2 size={15} className="animate-spin" /> Importing…</> : <>Import {privateSet.size} private / {preview.channels.length - privateSet.size} public</>}
-            </button>
-            <button onClick={() => { setPhase('idle'); setPreview(null); setFile(null); }} className="px-3 py-2 text-sm text-gray-500">Cancel</button>
+            <button onClick={() => setStep('people')} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">Next: match people →</button>
+            <button onClick={reset} className="px-3 py-2 text-sm text-gray-500">Cancel</button>
           </div>
         </div>
       )}
 
-      {phase === 'done' && result && (
+      {/* Step 2 — people match */}
+      {step === 'people' && preview && (
+        <div>
+          <StepDots step={2} />
+          <div className={`rounded-lg px-3 py-2 mb-3 text-sm ${unmatched.length ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}>
+            {unmatched.length === 0
+              ? <>All {users.length} people match an existing account. ✓</>
+              : <><span className="font-semibold">{unmatched.length}</span> of {users.length} people don't match an existing name. Map them to the right person, or leave as “Create new”.</>}
+          </div>
+          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-64 overflow-y-auto">
+            {users.map(u => {
+              const chosen = choices[u.slack_id] || '';
+              return (
+                <div key={u.slack_id} className="flex items-center gap-2 px-3 py-2">
+                  <span className={`h-2 w-2 rounded-full shrink-0 ${chosen ? 'bg-green-500' : 'bg-amber-400'}`} />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm text-gray-800 truncate block">{u.name}</span>
+                    {u.handle && <span className="text-[11px] text-gray-400">@{u.handle}</span>}
+                  </div>
+                  <select value={chosen} onChange={e => setChoices(c => ({ ...c, [u.slack_id]: e.target.value }))}
+                    className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 max-w-[52%]">
+                    <option value="">➕ Create new</option>
+                    {activeUsers.map(eu => <option key={eu.id} value={eu.id}>{eu.name}</option>)}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2">{willMap} mapped to existing · {willCreate} created new.</p>
+          <div className="flex items-center gap-2 mt-3">
+            <button onClick={() => setStep('channels')} className="px-3 py-2 text-sm text-gray-500">← Back</button>
+            <button onClick={runImport} className="flex items-center gap-2 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
+              Import {privateSet.size} private / {preview.channels.length - privateSet.size} public
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'importing' && <p className="flex items-center gap-2 text-sm text-gray-500 mt-3"><Loader2 size={15} className="animate-spin" /> Importing… this can take a moment for large histories.</p>}
+
+      {step === 'done' && result && (
         <div className="mt-2 text-sm bg-green-50 border border-green-200 rounded-lg p-3 text-green-800">
           <p className="font-semibold mb-1">Import complete</p>
           <ul className="space-y-0.5 text-green-700">
             <li>• {result.messagesImported} messages imported</li>
             <li>• {result.channelsCreated} new channels ({result.channelsMadePrivate} set private)</li>
-            <li>• {result.usersCreated} new people</li>
-            <li>• {result.skipped} skipped (duplicates / system messages)</li>
+            <li>• {result.usersMapped} people mapped to existing · {result.usersCreated} created new</li>
+            <li>• {result.skipped} skipped (duplicates / system notices)</li>
           </ul>
-          <button onClick={() => { setPhase('idle'); setPreview(null); setFile(null); setResult(null); }} className="mt-2 text-xs text-green-700 hover:underline">Import another</button>
+          <button onClick={reset} className="mt-2 text-xs text-green-700 hover:underline">Import another</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function StepDots({ step }) {
+  return (
+    <div className="flex items-center gap-2 mb-3 text-[11px] font-medium">
+      <span className={step >= 1 ? 'text-powder-600' : 'text-gray-400'}>1. Channels</span>
+      <span className="text-gray-300">→</span>
+      <span className={step >= 2 ? 'text-powder-600' : 'text-gray-400'}>2. People</span>
+      <span className="text-gray-300">→</span>
+      <span className="text-gray-400">Import</span>
     </div>
   );
 }
