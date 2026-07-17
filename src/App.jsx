@@ -434,23 +434,61 @@ function MobileBottomNav({ activeTab, setActiveTab, user }) {
 
 function InstallPrompt() {
   const [deferred, setDeferred] = useState(null);
-  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem('install_dismissed') === '1');
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem('install_dismissed') === '1');
+
+  // iOS Safari never fires beforeinstallprompt — users must add to the home
+  // screen manually — so detect it and show step-by-step instructions instead.
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  const [showIosHelp, setShowIosHelp] = useState(false);
+
   useEffect(() => {
     const h = (e) => { e.preventDefault(); setDeferred(e); };
     window.addEventListener('beforeinstallprompt', h);
     return () => window.removeEventListener('beforeinstallprompt', h);
   }, []);
-  if (!deferred || dismissed) return null;
+
+  const close = () => { setDismissed(true); localStorage.setItem('install_dismissed', '1'); };
+
+  if (dismissed || isStandalone) return null;
+
+  // iOS: instruction card (Share → Add to Home Screen)
+  if (isIOS && !deferred) {
+    return (
+      <div className="fixed bottom-20 md:bottom-4 right-4 left-4 md:left-auto z-50 bg-white border border-gray-200 shadow-lg rounded-xl p-3 max-w-xs md:ml-auto">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 bg-powder-600 rounded-lg flex items-center justify-center flex-shrink-0"><Shield size={18} className="text-white" /></div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-900">Add ReadyDoc to Home Screen</p>
+            <p className="text-xs text-gray-500">Get an app icon &amp; full-screen mode.</p>
+          </div>
+          <button onClick={() => setShowIosHelp(s => !s)} className="px-3 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700">{showIosHelp ? 'Hide' : 'How'}</button>
+          <button onClick={close} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+        </div>
+        {showIosHelp && (
+          <ol className="mt-2 pt-2 border-t border-gray-100 text-xs text-gray-600 space-y-1 list-decimal list-inside">
+            <li>Tap the <span className="font-semibold">Share</span> button in Safari&apos;s toolbar.</li>
+            <li>Choose <span className="font-semibold">Add to Home Screen</span>.</li>
+            <li>Tap <span className="font-semibold">Add</span> — the icon appears on your home screen.</li>
+          </ol>
+        )}
+      </div>
+    );
+  }
+
+  // Android / desktop Chrome: native install prompt
+  if (!deferred) return null;
   return (
     <div className="fixed bottom-20 md:bottom-4 right-4 z-50 bg-white border border-gray-200 shadow-lg rounded-xl p-3 flex items-center gap-3 max-w-xs">
       <div className="h-9 w-9 bg-powder-600 rounded-lg flex items-center justify-center flex-shrink-0"><Shield size={18} className="text-white" /></div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-900">Install Powder Ops</p>
+        <p className="text-sm font-semibold text-gray-900">Install ReadyDoc</p>
         <p className="text-xs text-gray-500">Add to your home screen.</p>
       </div>
       <button onClick={async () => { deferred.prompt(); await deferred.userChoice.catch(() => {}); setDeferred(null); }}
         className="px-3 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700">Install</button>
-      <button onClick={() => { setDismissed(true); sessionStorage.setItem('install_dismissed', '1'); }} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+      <button onClick={close} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
     </div>
   );
 }

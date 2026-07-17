@@ -6,12 +6,22 @@
 <title>Powder Ops — Workspaces</title>
 <!--
   Intranet launcher for start.powder-ops.com.
-  ┌─ Set your two destinations here ────────────────────────────────┐
-  |  FSQA_URL     = the FSQA app (your Railway domain)               |
-  |  KEYCHAIN_URL = https://www.keychain.com/auth                    |
+  ┌─ Configure everything in ONE place: the LAUNCHER block below ────┐
+  |  showKeychain = false  →  ReadyDoc-only landing (current)        |
+  |  showKeychain = true   →  bring the Keychain tile back instantly |
+  |  readyDocUrl  = the ReadyDoc (FSQA) app — your Railway domain    |
+  |  keychainUrl  = https://www.keychain.com/auth                    |
   └─────────────────────────────────────────────────────────────────┘
-  Edit the two href="" values on the .tile links below.
 -->
+<script>
+  // Single source of truth for the launcher. Flip showKeychain to true when
+  // the Keychain workspace is ready — no other edits needed.
+  window.LAUNCHER = {
+    showKeychain: false,
+    readyDocUrl: 'https://powderops-fsqa.up.railway.app/',
+    keychainUrl: 'https://www.keychain.com/auth',
+  };
+</script>
 <style>
   :root {
     --ground: #f4f4f2;
@@ -101,6 +111,8 @@
 
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 560px) { .tiles { grid-template-columns: 1fr; } }
+  /* ReadyDoc-only mode: a single, comfortably-sized tile instead of a lonely half-width one. */
+  .tiles.solo { grid-template-columns: 1fr; max-width: 420px; }
 
   .tile {
     position: relative;
@@ -152,14 +164,14 @@
       <div class="wordmark">Powder<b>&nbsp;Ops</b></div>
     </div>
 
-    <h1 class="lede">
+    <h1 class="lede" id="lede">
       Choose a workspace
-      <span class="sub">Two tools, one starting point. Pick where you're headed.</span>
+      <span class="sub" id="lede-sub">Two tools, one starting point. Pick where you're headed.</span>
     </h1>
 
-    <div class="tiles">
-      <!-- FSQA app URL ↓ -->
-      <a class="tile tile--fsqa" href="https://powderops-fsqa.up.railway.app/">
+    <div class="tiles" id="tiles">
+      <!-- ReadyDoc (FSQA) — href set from window.LAUNCHER.readyDocUrl -->
+      <a class="tile tile--fsqa" id="tile-fsqa" href="https://powderops-fsqa.up.railway.app/">
         <div class="icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>
@@ -172,7 +184,7 @@
         </span>
       </a>
 
-      <a class="tile tile--keychain" href="https://www.keychain.com/auth">
+      <a class="tile tile--keychain" id="tile-keychain" href="https://www.keychain.com/auth" hidden>
         <div class="icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 6.3-6.3"/><path d="m14 5 3 3"/><path d="m17 2 3 3-2.5 2.5-3-3z"/>
@@ -186,7 +198,28 @@
       </a>
     </div>
 
-    <p class="foot">Powder Ops · Signing in? Each tool has its own login.</p>
+    <p class="foot" id="foot">Powder Ops · Signing in? Each tool has its own login.</p>
   </main>
+
+  <script>
+    (function () {
+      var cfg = window.LAUNCHER || {};
+      var fsqa = document.getElementById('tile-fsqa');
+      var keychain = document.getElementById('tile-keychain');
+      if (cfg.readyDocUrl) fsqa.setAttribute('href', cfg.readyDocUrl);
+      if (cfg.keychainUrl) keychain.setAttribute('href', cfg.keychainUrl);
+
+      if (cfg.showKeychain) {
+        keychain.removeAttribute('hidden');
+      } else {
+        // ReadyDoc-only: one centered tile and copy that doesn't promise a second tool.
+        keychain.remove();
+        document.getElementById('tiles').classList.add('solo');
+        document.getElementById('lede').firstChild.textContent = 'Welcome';
+        document.getElementById('lede-sub').textContent = 'Your food safety, quality & compliance workspace.';
+        document.getElementById('foot').textContent = 'Powder Ops · ReadyDoc';
+      }
+    })();
+  </script>
 </body>
 </html>
