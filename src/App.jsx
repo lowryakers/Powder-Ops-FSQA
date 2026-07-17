@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -22,6 +22,7 @@ import SettingsPanel from './components/compliance/SettingsPanel.jsx';
 import ChemicalsPanel from './components/compliance/ChemicalsPanel.jsx';
 import HygienicDesignPanel from './components/compliance/HygienicDesignPanel.jsx';
 import QualitySchedulesPanel from './components/compliance/QualitySchedulesPanel.jsx';
+import TeamActivityPanel from './components/compliance/TeamActivityPanel.jsx';
 import AuditorView from './components/compliance/AuditorView.jsx';
 import CAPAPanel from './components/compliance/CAPAPanel.jsx';
 import DocumentRegistry from './components/compliance/DocumentRegistry.jsx';
@@ -107,6 +108,7 @@ const NAV_GROUPS = [
     label: 'System',
     items: [
       { id: 'ask-ai', label: 'Ask AI', icon: Sparkles, adminOnly: true, aiOnly: true },
+      { id: 'team-activity', label: 'Team Activity', icon: Users, adminOnly: true },
       { id: 'audit', label: 'Audit Log', icon: ScrollText },
       { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
     ],
@@ -762,6 +764,7 @@ function App() {
           {resolvedTab === 'knife-accountability' && <QMSRecordsPanel recordType="knife_accountability" moduleId="knife-accountability" />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
+          {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}
           {resolvedTab === 'settings' && <SettingsPanel />}
         </main>
