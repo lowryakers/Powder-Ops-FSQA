@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -479,6 +479,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   // Sidebar channel quick-filter (type to filter, ↑/↓ + Enter to jump).
   const [chanFilter, setChanFilter] = useState('');
   const [chanHi, setChanHi] = useState(0);
+  // Admin-defined sidebar sections (channel groupings) + collapse state.
+  const { data: sections, refresh: refreshSections } = useApiGet('/comms/sections');
+  const [collapsedSecs, setCollapsedSecs] = useState({});
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState('');
   const [showComposerEmoji, setShowComposerEmoji] = useState(false);
@@ -507,6 +510,16 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const publicCh = list.filter(c => c.kind === 'public');
   const privateCh = list.filter(c => c.kind === 'private');
   const dms = list.filter(c => c.kind === 'dm');
+  // Section grouping for the sidebar: pinned default channels first, then each
+  // admin section (in order), then everything ungrouped.
+  const pinned = list.filter(c => c.is_default);
+  const nonDefaultCh = list.filter(c => !c.is_default && c.kind !== 'dm');
+  const byOrder = (a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name);
+  const sectionList = sections || [];
+  const sectionGroups = sectionList
+    .map(s => ({ ...s, channels: nonDefaultCh.filter(c => c.section_id === s.id).sort(byOrder) }))
+    .filter(g => g.channels.length);
+  const ungroupedCh = nonDefaultCh.filter(c => !c.section_id || !sectionList.some(s => s.id === c.section_id)).sort(byOrder);
   const active = list.find(c => c.id === activeId) || null;
   // Channel quick-filter: flat, ordered match list for keyboard jump-to.
   const chanTerm = chanFilter.trim().toLowerCase();
@@ -570,7 +583,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
       setTypers(t => t.filter(x => x.user_id !== m.user_id));
     };
     const onUpdate = (m) => { if (m.channel_id === activeId) setMessages(ms => ms.map(x => x.id === m.id ? m : x)); };
-    const onChannels = () => refreshChannels();
+    const onChannels = () => { refreshChannels(); refreshSections(); };
     const onTyping = (t) => {
       if (t.channel_id !== activeId || t.user_id === user.id) return;
       setTypers(prev => [...prev.filter(x => x.user_id !== t.user_id), { ...t, at: Date.now() }]);
@@ -860,14 +873,32 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
             </div>
           ) : (
           <>
+          {/* Pinned default channels (#general / #announcements) */}
+          {pinned.length > 0 && (
+            <div className="space-y-0.5">
+              {pinned.map(c => <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} />)}
+            </div>
+          )}
+          {/* Admin sections */}
+          {sectionGroups.map(sec => {
+            const open = !collapsedSecs[sec.id];
+            return (
+              <div key={sec.id}>
+                <button onClick={() => setCollapsedSecs(s => ({ ...s, [sec.id]: !s[sec.id] }))} className="w-full flex items-center gap-1 px-2 mb-1 text-[10px] font-bold uppercase text-gray-400 hover:text-gray-600">
+                  {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {sec.name}
+                </button>
+                {open && <div className="space-y-0.5">{sec.channels.map(c => <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} />)}</div>}
+              </div>
+            );
+          })}
+          {/* Ungrouped channels */}
           <div>
             <div className="flex items-center justify-between px-2 mb-1">
-              <span className="text-[10px] font-bold uppercase text-gray-400">Channels</span>
+              <span className="text-[10px] font-bold uppercase text-gray-400">{sectionGroups.length ? 'Channels' : 'Channels'}</span>
               <button onClick={() => setNewChannel(true)} className="text-gray-400 hover:text-powder-600" title="New channel"><Plus size={14} /></button>
             </div>
             <div className="space-y-0.5">
-              {publicCh.map(c => <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} />)}
-              {privateCh.map(c => <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} />)}
+              {ungroupedCh.map(c => <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} />)}
             </div>
           </div>
           <div>

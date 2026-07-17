@@ -1242,6 +1242,17 @@ function runMigrations() {
   addColumnIfMissing('chat_channels', 'post_policy', "TEXT NOT NULL DEFAULT 'all'"); // 'all' | 'admins'
   addColumnIfMissing('chat_channels', 'is_default', 'INTEGER NOT NULL DEFAULT 0');
 
+  // Comms: sidebar sections (admin-defined groupings like OFFICE / WAREHOUSE /
+  // PRODUCTION) and per-channel ordering within a section.
+  db.exec(`CREATE TABLE IF NOT EXISTS chat_sections (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );`);
+  addColumnIfMissing('chat_channels', 'section_id', 'TEXT');
+  addColumnIfMissing('chat_channels', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+
   // Full-text keyword search over messages (Comms Phase 3). FTS5 may be absent
   // from some SQLite builds — degrade gracefully (search simply returns nothing).
   try {

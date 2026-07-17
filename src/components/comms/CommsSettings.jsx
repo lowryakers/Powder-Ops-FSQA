@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
-import { Hash, Lock, X, Trash2, Archive, ArchiveRestore, Pencil, Check, Users, Upload, Loader2, UserPlus, UserMinus, Megaphone, GitMerge } from 'lucide-react';
+import { Hash, Lock, X, Trash2, Archive, ArchiveRestore, Pencil, Check, Users, Upload, Loader2, UserPlus, UserMinus, Megaphone, GitMerge, ArrowUp, ArrowDown } from 'lucide-react';
 
 const DEPARTMENTS = ['warehouse', 'maintenance', 'qa', 'cleaning', 'document_control', 'office'];
 const ROLES = ['operator', 'supervisor', 'auditor', 'admin'];
@@ -27,14 +27,60 @@ function TabButton({ active, onClick, icon: Icon, children }) {
 }
 
 /* ─────────────────────────── Channels tab ─────────────────────────── */
+// Admin manager for sidebar sections (create / rename / reorder / delete).
+function SectionsManager({ secs, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const add = async () => { if (!newName.trim()) return; await apiPost('/comms/sections', { name: newName.trim() }); setNewName(''); onChange(); };
+  const rename = async (s, name) => { if (name.trim() && name.trim() !== s.name) { await apiPut(`/comms/sections/${s.id}`, { name: name.trim() }); onChange(); } };
+  const del = async (s) => { if (window.confirm(`Delete section "${s.name}"? Its channels become ungrouped.`)) { await apiDelete(`/comms/sections/${s.id}`); onChange(); } };
+  const move = async (i, dir) => {
+    const order = secs.map(s => s.id);
+    const j = i + dir; if (j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    await apiPost('/comms/sections/reorder', { order }); onChange();
+  };
+  return (
+    <div className="border border-gray-200 rounded-lg mb-3">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700">
+        <span>Sidebar sections {secs.length ? `(${secs.length})` : ''}</span>
+        <span className="text-xs text-powder-600">{open ? 'Hide' : 'Manage'}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-1.5">
+          {secs.map((s, i) => (
+            <div key={s.id} className="flex items-center gap-1.5">
+              <input defaultValue={s.name} onBlur={e => rename(s, e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                className="flex-1 px-2 py-1 border border-gray-200 rounded text-sm" />
+              <button onClick={() => move(i, -1)} disabled={i === 0} className="p-1 text-gray-400 hover:text-powder-600 disabled:opacity-30" title="Move up"><ArrowUp size={13} /></button>
+              <button onClick={() => move(i, 1)} disabled={i === secs.length - 1} className="p-1 text-gray-400 hover:text-powder-600 disabled:opacity-30" title="Move down"><ArrowDown size={13} /></button>
+              <button onClick={() => del(s)} className="p-1 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
+            </div>
+          ))}
+          <div className="flex items-center gap-1.5 pt-1">
+            <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add(); }}
+              placeholder="New section name (e.g. Warehouse)" className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+            <button onClick={add} disabled={!newName.trim()} className="px-2.5 py-1 bg-powder-600 text-white text-xs font-medium rounded-lg disabled:opacity-50">Add</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChannelsTab({ users }) {
   const { data: channels, loading, refresh } = useApiGet('/comms/admin/channels');
+  const { data: sections, refresh: refreshSecs } = useApiGet('/comms/sections');
   const [editing, setEditing] = useState(null); // channel id being renamed
   const [editName, setEditName] = useState('');
   const [managing, setManaging] = useState(null); // channel object for member mgmt
   const [busy, setBusy] = useState(false);
 
   const rows = channels || [];
+  const secs = sections || [];
+  const assignSection = async (c, sectionId) => { await apiPut(`/comms/channels/${c.id}/section`, { section_id: sectionId || null }); refresh(); };
+  const reload = () => { refresh(); refreshSecs(); };
 
   const rename = async (c) => {
     if (!editName.trim() || editName.trim() === c.name) { setEditing(null); return; }
@@ -75,6 +121,7 @@ function ChannelsTab({ users }) {
         <p className="text-xs text-gray-400">{rows.filter(c => !c.archived).length} active channels</p>
         <button onClick={clearUnread} disabled={busy} className="text-xs text-powder-600 hover:text-powder-700 font-medium disabled:opacity-50">Clear unread for everyone</button>
       </div>
+      <SectionsManager secs={secs} onChange={reload} />
       {loading ? <p className="text-sm text-gray-400 py-6 text-center">Loading channels…</p> : (
         <div className="space-y-1.5">
           {rows.length === 0 && <p className="text-sm text-gray-400 py-6 text-center">No channels yet.</p>}
@@ -101,6 +148,13 @@ function ChannelsTab({ users }) {
                 <button onClick={() => rename(c)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Save"><Check size={15} /></button>
               ) : (
                 <>
+                  {!c.is_default && secs.length > 0 && (
+                    <select value={c.section_id || ''} onChange={e => assignSection(c, e.target.value)} title="Section"
+                      className="text-[11px] border border-gray-200 rounded px-1 py-1 max-w-[96px] text-gray-600">
+                      <option value="">No section</option>
+                      {secs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  )}
                   <button onClick={() => { setEditing(c.id); setEditName(c.name); }} className="p-1 text-gray-400 hover:text-powder-600 rounded" title="Rename"><Pencil size={14} /></button>
                   <button onClick={() => togglePolicy(c)} className={`p-1 rounded ${c.post_policy === 'admins' ? 'text-amber-600' : 'text-gray-400 hover:text-amber-600'}`} title={c.post_policy === 'admins' ? 'Announcement (admins-only) — click to allow all' : 'Make announcement (admins-only posting)'}><Megaphone size={14} /></button>
                   <button onClick={() => togglePrivacy(c)} disabled={busy} className="p-1 text-gray-400 hover:text-powder-600 rounded" title={c.kind === 'private' ? 'Make public' : 'Make private'}>

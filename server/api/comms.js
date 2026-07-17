@@ -172,7 +172,7 @@ router.get('/channels', (req, res) => {
     FROM chat_channels c
     LEFT JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
     WHERE c.archived = 0 AND (${isAdmin ? "c.kind != 'dm' OR m.user_id IS NOT NULL" : 'm.user_id IS NOT NULL'})
-    ORDER BY c.is_default DESC, c.kind, c.name
+    ORDER BY c.is_default DESC, c.sort_order, c.kind, c.name
   `).all(me);
 
   const out = rows.map(c => {
@@ -197,6 +197,7 @@ router.get('/channels', (req, res) => {
       id: c.id, kind: c.kind, name: display, topic: c.topic,
       is_member: !!c.membership_id, unread, mentions, other_user_id: other,
       post_policy: c.post_policy || 'all', is_default: !!c.is_default,
+      section_id: c.section_id || null, sort_order: c.sort_order || 0,
     };
   });
   res.json(out);
@@ -252,15 +253,77 @@ router.post('/channels/:id/members', (req, res) => {
 router.get('/admin/channels', requireRole('admin'), (req, res) => {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT c.id, c.kind, c.name, c.topic, c.archived, c.created_at, c.post_policy, c.is_default,
+    SELECT c.id, c.kind, c.name, c.topic, c.archived, c.created_at, c.post_policy, c.is_default, c.section_id, c.sort_order,
       (SELECT COUNT(*) FROM chat_channel_members m WHERE m.channel_id = c.id) AS member_count,
       (SELECT COUNT(*) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL) AS message_count,
       (SELECT MAX(created_at) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL) AS last_activity,
       (SELECT COUNT(*) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL AND msg.created_at >= datetime('now','-30 days')) AS recent_count
     FROM chat_channels c
     WHERE c.kind != 'dm'
-    ORDER BY c.is_default DESC, c.archived, c.kind, c.name`).all();
+    ORDER BY c.is_default DESC, c.archived, c.sort_order, c.kind, c.name`).all();
   res.json(rows);
+});
+
+// ── Sidebar sections (admin-defined channel groupings) ────────────────────────
+router.get('/sections', (req, res) => {
+  const db = getDb();
+  res.json(db.prepare('SELECT id, name, sort_order FROM chat_sections ORDER BY sort_order, name').all());
+});
+router.post('/sections', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const name = (req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Section name is required' });
+  const id = uuid();
+  const next = (db.prepare('SELECT MAX(sort_order) m FROM chat_sections').get().m ?? -1) + 1;
+  db.prepare('INSERT INTO chat_sections (id, name, sort_order) VALUES (?, ?, ?)').run(id, name, next);
+  emitChannelsRefresh();
+  res.status(201).json(db.prepare('SELECT id, name, sort_order FROM chat_sections WHERE id = ?').get(id));
+});
+router.put('/sections/:id', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const s = db.prepare('SELECT * FROM chat_sections WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Not found' });
+  const name = req.body?.name !== undefined ? String(req.body.name).trim() || s.name : s.name;
+  db.prepare("UPDATE chat_sections SET name = ? WHERE id = ?").run(name, s.id);
+  emitChannelsRefresh();
+  res.json(db.prepare('SELECT id, name, sort_order FROM chat_sections WHERE id = ?').get(s.id));
+});
+// Reorder sections: body { order: [sectionId, …] } sets sort_order by index.
+router.post('/sections/reorder', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const order = Array.isArray(req.body?.order) ? req.body.order : [];
+  const upd = db.prepare('UPDATE chat_sections SET sort_order = ? WHERE id = ?');
+  db.transaction(() => order.forEach((id, i) => upd.run(i, id)))();
+  emitChannelsRefresh();
+  res.json({ ok: true });
+});
+router.delete('/sections/:id', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  db.prepare('UPDATE chat_channels SET section_id = NULL WHERE section_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM chat_sections WHERE id = ?').run(req.params.id);
+  emitChannelsRefresh();
+  res.json({ ok: true });
+});
+// Assign a channel to a section and/or set its order within the section.
+router.put('/channels/:id/section', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const channel = getChannelAny(db, req.params.id);
+  if (!channel) return res.status(404).json({ error: 'Channel not found' });
+  const sectionId = req.body?.section_id || null;
+  if (sectionId && !db.prepare('SELECT 1 FROM chat_sections WHERE id = ?').get(sectionId)) return res.status(400).json({ error: 'Unknown section' });
+  const sortOrder = Number.isInteger(req.body?.sort_order) ? req.body.sort_order : channel.sort_order;
+  db.prepare("UPDATE chat_channels SET section_id = ?, sort_order = ?, updated_at = datetime('now') WHERE id = ?").run(sectionId, sortOrder, channel.id);
+  emitChannelsRefresh();
+  res.json({ ok: true });
+});
+// Reorder channels within a section: body { order: [channelId, …] }.
+router.post('/channels/reorder', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const order = Array.isArray(req.body?.order) ? req.body.order : [];
+  const upd = db.prepare('UPDATE chat_channels SET sort_order = ? WHERE id = ?');
+  db.transaction(() => order.forEach((id, i) => upd.run(i, id)))();
+  emitChannelsRefresh();
+  res.json({ ok: true });
 });
 
 // Mark every channel the caller can see as read up to now (clears their unread
