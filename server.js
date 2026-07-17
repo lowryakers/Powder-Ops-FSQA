@@ -79,6 +79,23 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Intranet launcher: requests arriving on the launcher hostname
+// (start.powder-ops.com by default) get the standalone launcher page instead
+// of the ReadyDoc app. The Railway domain and any app custom domains are
+// unaffected and keep serving the React app below. Override the hostname with
+// the LAUNCHER_HOST env var if it ever changes.
+const LAUNCHER_HOST = (process.env.LAUNCHER_HOST || 'start.powder-ops.com').toLowerCase();
+const LAUNCHER_FILE = path.join(__dirname, 'launcher', 'index.html');
+app.use((req, res, next) => {
+  const host = (req.headers.host || '').split(':')[0].toLowerCase();
+  if (host !== LAUNCHER_HOST) return next();
+  // Leave the health check and any API calls working on this host, just in case.
+  if (req.path === '/api/health' || req.path.startsWith('/api/')) return next();
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  return res.sendFile(LAUNCHER_FILE);
+});
+
 // Initialize database on startup
 let db;
 try {
