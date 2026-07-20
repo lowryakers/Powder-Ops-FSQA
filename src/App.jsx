@@ -556,6 +556,17 @@ function App() {
     return () => window.removeEventListener('open-comms-channel', handler);
   }, []);
 
+  // Opened from a push notification (SW navigates to /?c=<channelId>): jump
+  // straight into that channel in Messages, then clean the URL.
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('c');
+    if (c) {
+      setCommsLink({ channelId: c, from: null, fromLabel: 'Back' });
+      setWorkspace('comms');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
   // Global edge-swipe navigation (mobile): from the left edge opens the sidebar
   // (or, in Messages, goes back to ReadyDoc); from the right edge opens Messages.
   useEdgeSwipe({
@@ -704,6 +715,7 @@ function App() {
         onExit={() => { setWorkspace('fsqa'); setCommsLink(null); }}
         onGoToSchedule={canViewModule(user, 'production-schedule') ? () => { setWorkspace('fsqa'); setActiveTab('production-schedule'); } : null}
         openChannelName={commsLink?.channel}
+        openChannelId={commsLink?.channelId}
         backLabel={commsLink?.from ? commsLink.fromLabel : null}
         onBackToModule={commsLink?.from ? () => { setWorkspace('fsqa'); setActiveTab(commsLink.from); setCommsLink(null); } : null}
         homePref={homePref}

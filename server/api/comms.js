@@ -155,7 +155,7 @@ function recordMentions(db, channel, messageId, body, author) {
     emitToUser(u.id, 'mention', { channel_id: channel.id, message_id: messageId, from: author.name, preview: body.slice(0, 140), broadcast });
     const title = broadcast ? `${author.name} notified ${label}` : `${author.name} mentioned you in ${label}`;
     // Mentions re-alert (renotify) — they're higher priority than a normal message.
-    pushToUser(u.id, { title, body: body.slice(0, 140), tag: `mention-${messageId}`, renotify: true, url: '/' }).catch(() => {});
+    pushToUser(u.id, { title, body: body.slice(0, 140), tag: `mention-${messageId}`, renotify: true, url: `/?c=${channel.id}` }).catch(() => {});
   }
   return recipients.map(u => u.id);
 }
@@ -195,7 +195,7 @@ function notifyChannelMessage(db, channel, body, author, excludeUserIds = []) {
     const summary = n > 1
       ? `${n} new · ${author.name}: ${body.slice(0, 80)}`
       : `${author.name}: ${body.slice(0, 120)}`;
-    pushToUser(uid, { title: label, body: summary, tag: `channel-${channel.id}`, renotify: true, url: '/' }).catch(() => {});
+    pushToUser(uid, { title: label, body: summary, tag: `channel-${channel.id}`, renotify: true, url: `/?c=${channel.id}` }).catch(() => {});
   }
 }
 
@@ -399,8 +399,21 @@ router.post('/read-all', (req, res) => {
 // memberships read as of now. One-shot cleanup after a big import.
 router.post('/admin/reset-unread', requireRole('admin'), (req, res) => {
   const db = getDb();
-  const info = db.prepare("UPDATE chat_channel_members SET last_read_at = datetime('now')").run();
+  // Millisecond precision to match chat_messages.created_at so the unread
+  // comparison is exact (see the read endpoints).
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+  // Everyone's existing memberships → read as of now.
+  const info = db.prepare('UPDATE chat_channel_members SET last_read_at = ?').run(now);
+  // Also give the calling admin read-markers for public channels they haven't
+  // joined, so their own sidebar clears completely (admins see every channel).
+  const me = req.user.id;
+  const missing = db.prepare(`SELECT c.id FROM chat_channels c
+    WHERE c.kind = 'public' AND c.archived = 0
+      AND NOT EXISTS (SELECT 1 FROM chat_channel_members m WHERE m.channel_id = c.id AND m.user_id = ?)`).all(me);
+  const ins = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)');
+  for (const c of missing) ins.run(uuid(), c.id, me, 'member', now);
   logAudit(req.user, 'reset_unread', 'comms', null, { memberships: info.changes });
+  emitChannelsRefresh();
   res.json({ ok: true, memberships: info.changes });
 });
 
@@ -671,7 +684,7 @@ router.post('/channels/:id/messages', async (req, res) => {
   // DMs push to the other participant(s) — everyone in the DM but the sender.
   if (channel.kind === 'dm' && body) {
     const recips = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(channel.id, req.user.id);
-    for (const r of recips) pushToUser(r.user_id, { title: `Message from ${req.user.name}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, renotify: true, url: '/' }).catch(() => {});
+    for (const r of recips) pushToUser(r.user_id, { title: `Message from ${req.user.name}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, renotify: true, url: `/?c=${channel.id}` }).catch(() => {});
   } else if (body) {
     // Every other channel message: grouped, summarized, debounced push to members
     // who weren't already @mentioned (they got a higher-priority alert above).

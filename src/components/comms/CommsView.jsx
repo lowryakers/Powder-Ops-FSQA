@@ -527,7 +527,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, canTran
   );
 }
 
-export default function CommsView({ user, onExit, onGoToSchedule, openChannelName, backLabel, onBackToModule, homePref, onSetHome }) {
+export default function CommsView({ user, onExit, onGoToSchedule, openChannelName, openChannelId, backLabel, onBackToModule, homePref, onSetHome }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
@@ -620,13 +620,17 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   // Schedule's "Discuss" → #production) wins, else #general, else the first.
   useEffect(() => {
     if (activeId || !list.length) return;
+    // From a push notification: open the exact channel by id.
+    if (openChannelId && linkedOpenedRef.current !== openChannelId && list.some(c => c.id === openChannelId)) {
+      linkedOpenedRef.current = openChannelId; setActiveId(openChannelId); return;
+    }
     if (openChannelName && linkedOpenedRef.current !== openChannelName) {
       const t = openChannelName.toLowerCase();
       const target = list.find(c => (c.name || '').toLowerCase() === t) || list.find(c => (c.name || '').toLowerCase().includes(t));
       if (target) { linkedOpenedRef.current = openChannelName; setActiveId(target.id); return; }
     }
     setActiveId((publicCh.find(c => c.name === 'general') || list[0]).id);
-  }, [list, activeId, openChannelName]); // eslint-disable-line
+  }, [list, activeId, openChannelName, openChannelId]); // eslint-disable-line
 
   const loadMessages = useCallback(async (id) => {
     if (!id) return;
@@ -801,14 +805,36 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   }, []);
   const setLang = (l) => { setViewerLang(l); localStorage.setItem('op_lang', l); };
 
-  // Reflect any existing push subscription in the bell state.
+  const pushSupported = ('serviceWorker' in navigator) && ('PushManager' in window);
+
+  const doSubscribe = useCallback(async () => {
+    const reg = await navigator.serviceWorker.ready;
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return false;
+    const { key } = await apiFetch('/comms/push/key');
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+    await apiPost('/comms/push/subscribe', { subscription: sub.toJSON() });
+    setPushSubscribed(true);
+    return true;
+  }, []);
+
+  // Reflect any existing subscription; and auto-enable notifications by default
+  // (unless the user has explicitly turned them off before) so people don't miss
+  // messages. Only auto-requests when the browser permission isn't already denied.
   useEffect(() => {
-    if (!pushOn || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
-    navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(sub => setPushSubscribed(!!sub)).catch(() => {});
-  }, [pushOn]);
+    if (!pushOn || !pushSupported) return;
+    navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(async (sub) => {
+      if (sub) { setPushSubscribed(true); return; }
+      const optedOut = localStorage.getItem('comms_push_optout') === '1';
+      if (!optedOut && (typeof Notification !== 'undefined') && Notification.permission !== 'denied') {
+        try { await doSubscribe(); } catch { /* leave the bell for manual enable */ }
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pushOn, pushSupported]);
 
   const togglePush = async () => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { alert('Notifications are not supported on this device/browser.'); return; }
+    if (!pushSupported) { alert('Notifications are not supported on this device/browser.'); return; }
     setPushBusy(true);
     try {
       const reg = await navigator.serviceWorker.ready;
@@ -816,13 +842,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
         const sub = await reg.pushManager.getSubscription();
         if (sub) { await apiPost('/comms/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
         setPushSubscribed(false);
+        localStorage.setItem('comms_push_optout', '1'); // remember the user's choice
       } else {
-        const perm = await Notification.requestPermission();
-        if (perm !== 'granted') return;
-        const { key } = await apiFetch('/comms/push/key');
-        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
-        await apiPost('/comms/push/subscribe', { subscription: sub.toJSON() });
-        setPushSubscribed(true);
+        localStorage.removeItem('comms_push_optout');
+        const ok = await doSubscribe();
+        if (!ok) return;
       }
     } catch (e) { alert(e.message || 'Could not update notifications'); }
     finally { setPushBusy(false); }
