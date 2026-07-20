@@ -394,9 +394,13 @@ function EmojiPicker({ onPick, onClose, align = 'right', vertical = 'down' }) {
   useEffect(() => {
     const onDocClick = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) onClose(); };
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('click', onDocClick);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('click', onDocClick); document.removeEventListener('keydown', onKey); };
+    // Attach on the next tick so the very click that OPENED the picker doesn't
+    // immediately bubble to document and close it again.
+    const tid = setTimeout(() => {
+      document.addEventListener('click', onDocClick);
+      document.addEventListener('keydown', onKey);
+    }, 0);
+    return () => { clearTimeout(tid); document.removeEventListener('click', onDocClick); document.removeEventListener('keydown', onKey); };
   }, [onClose]);
   return (
     <div ref={boxRef} className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} ${vertical === 'up' ? 'bottom-8' : 'top-7'} z-30 w-64 bg-white border border-gray-200 rounded-xl shadow-lg p-2`}>
