@@ -4,6 +4,7 @@ import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
 import { setAppBadge } from './lib/appBadge';
+import { useEdgeSwipe } from './lib/useEdgeSwipe';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
@@ -554,6 +555,13 @@ function App() {
     window.addEventListener('open-comms-channel', handler);
     return () => window.removeEventListener('open-comms-channel', handler);
   }, []);
+
+  // Global edge-swipe navigation (mobile): from the left edge opens the sidebar
+  // (or, in Messages, goes back to ReadyDoc); from the right edge opens Messages.
+  useEdgeSwipe({
+    onSwipeRightFromLeft: () => { if (workspace === 'comms') { setWorkspace('fsqa'); setCommsLink(null); } else setSidebarOpen(true); },
+    onSwipeLeftFromRight: () => { if (workspace !== 'comms') setWorkspace('comms'); },
+  });
 
   if (path === '/submit') {
     return <><SubmitWorkOrder /><UpdateBanner /></>;
