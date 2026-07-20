@@ -501,6 +501,9 @@ function App() {
   const { user, loading, login, loginWithToken, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [workspace, setWorkspace] = useState('fsqa');
+  // Cross-link request from a module → a specific comms channel, remembering
+  // where to return. Set by an 'open-comms-channel' event (e.g. from Schedule).
+  const [commsLink, setCommsLink] = useState(null); // { channel, from, fromLabel }
   const [homePref, setHomePref] = useState('fsqa');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const homeApplied = useRef(false);
@@ -540,6 +543,16 @@ function App() {
     const handler = (e) => setActiveTab(e.detail?.tab || 'dashboard');
     window.addEventListener('app-navigate', handler);
     return () => window.removeEventListener('app-navigate', handler);
+  }, []);
+
+  // Jump from a module to a specific comms channel, remembering the origin.
+  useEffect(() => {
+    const handler = (e) => {
+      setCommsLink({ channel: e.detail?.channel || null, from: e.detail?.from || null, fromLabel: e.detail?.fromLabel || 'Back' });
+      setWorkspace('comms');
+    };
+    window.addEventListener('open-comms-channel', handler);
+    return () => window.removeEventListener('open-comms-channel', handler);
   }, []);
 
   if (path === '/submit') {
@@ -680,8 +693,11 @@ function App() {
     return <>
       <CommsView
         user={user}
-        onExit={() => setWorkspace('fsqa')}
+        onExit={() => { setWorkspace('fsqa'); setCommsLink(null); }}
         onGoToSchedule={canViewModule(user, 'production-schedule') ? () => { setWorkspace('fsqa'); setActiveTab('production-schedule'); } : null}
+        openChannelName={commsLink?.channel}
+        backLabel={commsLink?.from ? commsLink.fromLabel : null}
+        onBackToModule={commsLink?.from ? () => { setWorkspace('fsqa'); setActiveTab(commsLink.from); setCommsLink(null); } : null}
         homePref={homePref}
         onSetHome={setHome}
       />

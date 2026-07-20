@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, forwardRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
-import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock, MessageSquare } from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -1085,6 +1085,13 @@ export default function ProductionSchedule({ user }) {
         </h2>
 
         <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('open-comms-channel', { detail: { channel: 'production', from: 'production-schedule', fromLabel: 'Schedule' } }))}
+          className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5"
+          title="Discuss this schedule in Messages"
+        >
+          <MessageSquare size={14} /> <span className="hidden sm:inline">Discuss</span>
+        </button>
         {canEdit && (
           <div className="relative">
             <button

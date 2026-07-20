@@ -523,7 +523,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, canTran
   );
 }
 
-export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSetHome }) {
+export default function CommsView({ user, onExit, onGoToSchedule, openChannelName, backLabel, onBackToModule, homePref, onSetHome }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
@@ -568,6 +568,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const fileInputRef = useRef(null);
   const justOpenedRef = useRef(true); // force scroll-to-bottom on channel open
   const [showJump, setShowJump] = useState(false); // "Jump to latest" affordance
+  const linkedOpenedRef = useRef(null); // guards the module→channel deep-link
   const composerRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -611,7 +612,17 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const channelMembers = useMemo(() => (activeInfo?.members || []).map(m => ({ id: m.user_id, name: m.name })), [activeInfo]);
 
   // Default to #general (or first channel) once loaded.
-  useEffect(() => { if (!activeId && list.length) setActiveId((publicCh.find(c => c.name === 'general') || list[0]).id); }, [list, activeId]); // eslint-disable-line
+  // Pick the initial channel once the list loads: a module deep-link (e.g.
+  // Schedule's "Discuss" → #production) wins, else #general, else the first.
+  useEffect(() => {
+    if (activeId || !list.length) return;
+    if (openChannelName && linkedOpenedRef.current !== openChannelName) {
+      const t = openChannelName.toLowerCase();
+      const target = list.find(c => (c.name || '').toLowerCase() === t) || list.find(c => (c.name || '').toLowerCase().includes(t));
+      if (target) { linkedOpenedRef.current = openChannelName; setActiveId(target.id); return; }
+    }
+    setActiveId((publicCh.find(c => c.name === 'general') || list[0]).id);
+  }, [list, activeId, openChannelName]); // eslint-disable-line
 
   const loadMessages = useCallback(async (id) => {
     if (!id) return;
@@ -880,9 +891,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
     <div className="fixed inset-0 bg-white flex flex-col">
       {/* top bar */}
       <div className="flex items-center gap-3 px-4 h-12 border-b border-gray-200 shrink-0">
+        {onBackToModule ? (
+          <button onClick={onBackToModule} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-semibold text-powder-700 bg-powder-50 hover:bg-powder-100 rounded-lg shrink-0" title={`Back to ${backLabel}`}>
+            <ArrowLeft size={16} /> {backLabel}
+          </button>
+        ) : (
         <button onClick={onExit} className="flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg shrink-0" title="Switch to ReadyDoc">
           <ArrowLeft size={16} /> <span className="hidden sm:inline">ReadyDoc</span>
         </button>
+        )}
         {onGoToSchedule && (
           <button onClick={onGoToSchedule} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg shrink-0" title="Go to the Production Schedule">
             <CalendarDays size={16} /> <span className="hidden sm:inline">Schedule</span>
