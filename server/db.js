@@ -18,6 +18,16 @@ export function getDb() {
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
+    // Throughput tuning (safe on a single Railway instance with WAL):
+    //  - synchronous=NORMAL: fewer fsyncs; durable across app crashes, only the
+    //    last transaction is at risk on OS/power loss (we also keep DB backups).
+    //  - busy_timeout: wait rather than throw if a write briefly locks.
+    //  - temp_store=MEMORY + a larger page cache + mmap: faster sorts/scans.
+    db.pragma('synchronous = NORMAL');
+    db.pragma('busy_timeout = 5000');
+    db.pragma('temp_store = MEMORY');
+    db.pragma('cache_size = -16000'); // ~16 MB page cache
+    try { db.pragma('mmap_size = 268435456'); } catch { /* mmap unsupported — non-fatal */ }
     initSchema();
   }
   return db;
@@ -1349,6 +1359,13 @@ function runMigrations() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)'); } catch { /* ignore */ }
   backfillAuditActorIdentity();
   normalizeAuditActions();
+
+  // Hot-path indexes added after the fact. task_group is now a primary filter
+  // for the split department teams (operator-tasks, archive, missed-reports);
+  // the partial index speeds the frequent "pending QA sign-off" scan.
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_group_status ON work_orders(task_group, status)'); } catch { /* ignore */ }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_clearance ON work_orders(clearance_required, clearance_status)'); } catch { /* ignore */ }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_production_entries_pending_qa ON production_entries(qa_signoff_by) WHERE qa_signoff_by IS NULL'); } catch { /* ignore */ }
 
   migrateEquipmentNotes();
   cleanEquipmentNames();
