@@ -838,6 +838,91 @@ function DownstreamModal({ product, batchDay, weekStart, userName, nextSlotFor, 
   );
 }
 
+// Mobile view of the week's schedule: one swipeable day at a time as cards,
+// grouped by section → room. Much easier to read on a phone than the wide grid.
+function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay }) {
+  const [day, setDay] = useState(initialDay);
+  const touchX = useRef(null);
+  const go = (dir) => setDay(d => Math.min(4, Math.max(0, d + dir)));
+  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; };
+  const onTouchEnd = (e) => {
+    if (touchX.current == null) return;
+    const dx = e.changedTouches[0].clientX - touchX.current;
+    touchX.current = null;
+    if (Math.abs(dx) > 45) go(dx < 0 ? 1 : -1);
+  };
+
+  const sections = ROOM_SECTIONS.map(section => {
+    const rooms = section.rooms
+      .map(room => ({ room, entries: (assignmentMap[`${day}-${room}`] || []).filter(a => a.team || a.mo_number || a.product_name) }))
+      .filter(r => canEdit ? true : r.entries.length > 0);
+    return { section, rooms: rooms.filter(r => canEdit || r.entries.length > 0) };
+  }).filter(s => s.rooms.length > 0);
+
+  return (
+    <div className="md:hidden" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      {/* Day pager */}
+      <div className="sticky top-0 z-10 flex items-center justify-between bg-white border border-gray-200 rounded-xl px-2 py-2 mb-3">
+        <button onClick={() => go(-1)} disabled={day === 0} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30"><ChevronLeft size={18} /></button>
+        <div className="text-center">
+          <div className="text-sm font-bold text-gray-900">{DAYS[day]}</div>
+          <div className="text-[11px] text-gray-400">{dayDate(monday, day)}</div>
+        </div>
+        <button onClick={() => go(1)} disabled={day === 4} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30"><ChevronRight size={18} /></button>
+      </div>
+      {/* Day dots */}
+      <div className="flex justify-center gap-1.5 mb-3">
+        {DAYS.map((_, i) => (
+          <button key={i} onClick={() => setDay(i)} className={`h-1.5 rounded-full transition-all ${i === day ? 'w-5 bg-powder-600' : 'w-1.5 bg-gray-300'}`} aria-label={DAYS[i]} />
+        ))}
+      </div>
+
+      {sections.length === 0 && <p className="text-center text-sm text-gray-400 py-10">Nothing scheduled for {DAYS[day]}.</p>}
+      <div className="space-y-4">
+        {sections.map(({ section, rooms }) => (
+          <div key={section.label}>
+            <div className={`text-xs font-semibold px-2 py-1 rounded-md inline-block mb-2 ${section.headerClass}`}>{section.label}</div>
+            <div className="space-y-2">
+              {rooms.map(({ room, entries }) => (
+                <div key={room} className="border border-gray-200 rounded-xl p-3">
+                  <div className="text-sm font-semibold text-gray-800 mb-1.5">{roomLabel(room)}</div>
+                  {entries.length === 0 && canEdit && (
+                    <button onClick={() => onEditCell({ dayIndex: day, room, roomType: section.type, slot: 0, data: null })}
+                      className="w-full flex items-center justify-center gap-1 text-xs font-medium text-blue-500 border border-dashed border-blue-200 rounded-lg py-2">
+                      <Plus size={12} /> Add product
+                    </button>
+                  )}
+                  <div className="space-y-1.5">
+                    {entries.map(a => {
+                      const color = TEAM_COLORS[a.team] || '#64748b';
+                      return (
+                        <div key={a.id} onClick={canEdit ? () => onEditCell({ dayIndex: day, room, roomType: section.type, slot: a.slot || 0, data: a }) : undefined}
+                          className={`rounded-md pl-2 pr-2 py-1.5 bg-white border border-gray-200 ${canEdit ? 'active:bg-gray-50' : ''}`} style={{ borderLeft: `3px solid ${color}` }}>
+                          {a.team && <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color }}>{a.team}</div>}
+                          {a.mo_number && <div className="text-sm font-semibold text-gray-900">{a.mo_number}</div>}
+                          {a.product_name && <div className="text-sm text-gray-600">{a.product_name}</div>}
+                          {a.start_time && <div className="flex items-center gap-1 text-[11px] text-gray-400"><Clock size={9} /> {fmtTime(a.start_time)}</div>}
+                        </div>
+                      );
+                    })}
+                    {entries.length > 0 && canEdit && (
+                      <button onClick={() => onEditCell({ dayIndex: day, room, roomType: section.type, slot: Math.max(...entries.map(a => a.slot || 0)) + 1, data: null })}
+                        className="w-full flex items-center justify-center gap-1 text-[11px] font-medium text-blue-500 hover:bg-blue-50 rounded border border-dashed border-blue-200 py-1">
+                        <Plus size={10} /> Add product
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-center text-[11px] text-gray-400 mt-4">Swipe left/right to change day</p>
+    </div>
+  );
+}
+
 export default function ProductionSchedule({ user }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [editCell, setEditCell] = useState(null); // { dayIndex, room, roomType, slot, data }
@@ -867,6 +952,13 @@ export default function ProductionSchedule({ user }) {
 
   const weekStart = formatWeekStart(monday);
   const nextWeekStart = formatWeekStart(nextMonday);
+
+  // Mobile day view starts on today (Mon=0..Fri=4) when viewing this week.
+  const mobileInitialDay = useMemo(() => {
+    if (weekOffset !== 0) return 0;
+    const wd = new Date().getDay(); // 0=Sun..6=Sat
+    return Math.min(4, Math.max(0, wd === 0 ? 0 : wd - 1));
+  }, [weekOffset]);
 
   // Opening the schedule clears the New/Updated badge for this user.
   useEffect(() => {
@@ -1163,9 +1255,14 @@ export default function ProductionSchedule({ user }) {
       {loading && <div className="text-center py-12 text-gray-500">Loading schedule...</div>}
       {error && <div className="text-center py-12 text-red-600">{error}</div>}
 
-      {/* Schedule Grid */}
+      {/* Mobile: swipeable one-day card view */}
       {!loading && !error && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <MobileDayCards monday={monday} assignmentMap={assignmentMap} canEdit={canEdit} onEditCell={setEditCell} initialDay={mobileInitialDay} />
+      )}
+
+      {/* Schedule Grid (desktop / tablet) */}
+      {!loading && !error && (
+        <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-auto max-h-[calc(100vh-13rem)]">
             <table className="w-full border-collapse min-w-[640px]">
               <thead>
