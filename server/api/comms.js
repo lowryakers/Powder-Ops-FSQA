@@ -187,6 +187,11 @@ router.get('/channels', (req, res) => {
        AND (? IS NULL OR msg.created_at > ?)`
     ).get(c.id, me, c.last_read_at, c.last_read_at).n;
 
+    // Most recent message time — lets the client sort channels by activity.
+    const lastActivity = db.prepare(
+      'SELECT MAX(created_at) t FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL'
+    ).get(c.id).t || null;
+
     let display = c.name, other = null;
     if (c.kind === 'dm') {
       const others = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(c.id, me);
@@ -199,6 +204,7 @@ router.get('/channels', (req, res) => {
       is_member: !!c.membership_id, unread, mentions, other_user_id: other,
       post_policy: c.post_policy || 'all', is_default: !!c.is_default,
       section_id: c.section_id || null, sort_order: c.sort_order || 0,
+      last_activity: lastActivity,
     };
   });
   res.json(out);
@@ -332,7 +338,11 @@ router.post('/channels/reorder', requireRole('admin'), (req, res) => {
 router.post('/read-all', (req, res) => {
   const db = getDb();
   const me = req.user.id;
-  const now = new Date().toISOString();
+  // Must match chat_messages.created_at's format (SQLite 'YYYY-MM-DD HH:MM:SS'),
+  // NOT ISO 8601 — the unread check is a string comparison (created_at >
+  // last_read_at), and an ISO 'T'/'Z' value sorts wrong against the space format,
+  // which is why marking read didn't clear/hold. Millisecond precision for exact ordering.
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
   // Update existing memberships…
   db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE user_id = ?').run(now, me);
   // …and create read-markers for public channels the user hasn't joined yet.
@@ -424,7 +434,9 @@ router.delete('/channels/:id/members/:userId', requireRole('admin'), (req, res) 
 router.post('/channels/:id/read', (req, res) => {
   const channel = requireChannel(req, res); if (!channel) return;
   const db = getDb();
-  const now = new Date().toISOString();
+  // SQLite datetime format (not ISO) so it compares correctly against
+  // chat_messages.created_at in the unread query. See /read-all.
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
   const info = db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?").run(now, channel.id, req.user.id);
   // Public channels the user hasn't joined have no membership row — create one lazily so reads track.
   if (info.changes === 0 && channel.kind === 'public') {
@@ -599,13 +611,18 @@ router.post('/channels/:id/messages', async (req, res) => {
   const attachmentIds = Array.isArray(req.body?.attachment_ids) ? req.body.attachment_ids : [];
   if (!body && attachmentIds.length === 0) return res.status(400).json({ error: 'A message or an attachment is required' });
   const id = uuid();
-  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, parent_id) VALUES (?, ?, ?, ?, ?)')
-    .run(id, channel.id, req.user.id, body || null, req.body?.parent_id || null);
+  // Millisecond-precision created_at (not the second-precision datetime('now')
+  // column default) so unread ordering is exact — a message that arrives in the
+  // same second as a read is still correctly newer. Reuse the same value as the
+  // sender's read marker so they never see their own message as unread.
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, channel.id, req.user.id, body || null, req.body?.parent_id || null, now);
   // Link only the caller's own still-unattached uploads for this channel.
   const link = db.prepare('UPDATE chat_attachments SET message_id = ? WHERE id = ? AND channel_id = ? AND user_id = ? AND message_id IS NULL');
   for (const aid of attachmentIds) link.run(id, aid, channel.id, req.user.id);
   db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(channel.id);
-  db.prepare("UPDATE chat_channel_members SET last_read_at = datetime('now') WHERE channel_id = ? AND user_id = ?").run(channel.id, req.user.id);
+  db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?").run(now, channel.id, req.user.id);
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);

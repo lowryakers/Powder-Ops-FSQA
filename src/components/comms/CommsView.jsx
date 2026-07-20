@@ -565,6 +565,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const socketRef = useRef(null);
   const lastTypeSent = useRef(0);
   const fileInputRef = useRef(null);
+  const justOpenedRef = useRef(true); // force scroll-to-bottom on channel open
+  const [showJump, setShowJump] = useState(false); // "Jump to latest" affordance
   const composerRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -574,7 +576,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const list = channels || [];
   const publicCh = list.filter(c => c.kind === 'public');
   const privateCh = list.filter(c => c.kind === 'private');
-  const dms = list.filter(c => c.kind === 'dm');
+  // DMs are conversation-driven, so surface unread first, then most recent.
+  const dms = list.filter(c => c.kind === 'dm').sort((a, b) =>
+    (b.unread > 0) - (a.unread > 0) || (b.last_activity || '').localeCompare(a.last_activity || ''));
   // Section grouping for the sidebar: pinned default channels first, then each
   // admin section (in order), then everything ungrouped.
   const pinned = list.filter(c => c.is_default);
@@ -674,7 +678,28 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
     return () => clearInterval(t);
   }, [typers.length]);
 
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
+  // Force scroll-to-bottom when a channel is opened (messages load async).
+  useEffect(() => { justOpenedRef.current = true; setShowJump(false); }, [activeId]);
+  // On new messages, follow only if the reader is already near the bottom (so we
+  // don't yank them down while they're reading history); always land at bottom
+  // right after opening a channel.
+  useEffect(() => {
+    const el = scrollRef.current; if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (justOpenedRef.current || near) {
+      el.scrollTop = el.scrollHeight;
+      justOpenedRef.current = false;
+      setShowJump(false);
+    }
+  }, [messages]);
+  const onMessagesScroll = () => {
+    const el = scrollRef.current; if (!el) return;
+    setShowJump(el.scrollHeight - el.scrollTop - el.clientHeight > 240);
+  };
+  const jumpToLatest = () => {
+    const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight;
+    setShowJump(false);
+  };
 
   const send = async () => {
     const text = body.trim();
@@ -831,13 +856,18 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const ChannelBtn = ({ c, icon: Icon, highlight, onHover }) => {
     const unread = c.unread > 0;
     const mentioned = c.mentions > 0;
+    const isActive = activeId === c.id;
+    // Unread channels stand out: a blue dot in the gutter + bold, full-black name.
     return (
     <button onClick={() => openChannel(c.id)} onMouseEnter={onHover}
-      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activeId === c.id ? 'bg-powder-600 text-white' : highlight ? 'bg-powder-50 text-powder-700' : unread ? 'text-gray-900 hover:bg-gray-100' : 'text-gray-600 hover:bg-gray-100'}`}>
+      className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm ${isActive ? 'bg-powder-600 text-white' : highlight ? 'bg-powder-50 text-powder-700' : unread ? 'text-gray-900 hover:bg-gray-100' : 'text-gray-600 hover:bg-gray-100'}`}>
+      <span className="w-1.5 shrink-0 flex items-center justify-center">
+        {unread && !isActive && <span className={`h-1.5 w-1.5 rounded-full ${mentioned ? 'bg-red-500' : 'bg-powder-500'}`} />}
+      </span>
       <Icon size={14} className="shrink-0 opacity-80" />
-      <span className={`truncate flex-1 text-left ${unread && activeId !== c.id ? 'font-semibold' : ''}`}>{c.name}</span>
+      <span className={`truncate flex-1 text-left ${unread && !isActive ? 'font-bold' : ''}`}>{c.name}</span>
       {mentioned && <span className="text-[10px] font-bold px-1.5 rounded-full bg-red-500 text-white" title="You were mentioned">@{c.mentions}</span>}
-      {unread && !mentioned && <span className={`text-[10px] font-bold px-1.5 rounded-full ${activeId === c.id ? 'bg-white/25' : 'bg-gray-300 text-gray-700'}`}>{c.unread}</span>}
+      {unread && !mentioned && <span className={`text-[10px] font-bold px-1.5 rounded-full ${isActive ? 'bg-white/25 text-white' : 'bg-powder-500 text-white'}`}>{c.unread}</span>}
     </button>
     );
   };
@@ -1076,7 +1106,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
                   </div>
                 )}
               </div>
-              <div ref={scrollRef} className="flex-1 overflow-y-auto py-2">
+              <div ref={scrollRef} onScroll={onMessagesScroll} className="flex-1 overflow-y-auto py-2">
                 {messages.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello 👋</p>}
                 {messages.map((m, i) => {
                   const showDay = i === 0 || dayKey(m.created_at) !== dayKey(messages[i - 1].created_at);
@@ -1089,6 +1119,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
                   );
                 })}
               </div>
+              {showJump && (
+                <div className="relative">
+                  <button onClick={jumpToLatest}
+                    className="absolute bottom-2 right-4 z-10 flex items-center gap-1 px-3 py-1.5 bg-powder-600 text-white text-xs font-semibold rounded-full shadow-lg hover:bg-powder-700">
+                    <ChevronDown size={14} /> Jump to latest
+                  </button>
+                </div>
+              )}
               {active.post_policy === 'admins' && user.role !== 'admin' ? (
                 <div className="border-t border-gray-200 p-3 shrink-0 text-center text-sm text-gray-400 flex items-center justify-center gap-2">
                   <Lock size={14} /> Only admins can post in #{active.name}. You can still read and react.
