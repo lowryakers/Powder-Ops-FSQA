@@ -38,6 +38,27 @@ body {
   }
 }
 
+/* Freeze table headers while scrolling any data table (desktop + mobile).
+   The app's standard horizontal-scroll wrapper (`.overflow-x-auto` directly
+   wrapping a <table>) becomes a bounded scroll area so the header can stick.
+   Applies app-wide via :has() — no per-table edits. Short tables never reach
+   the max-height, so they're unaffected. Add `.no-sticky-head` to opt out. */
+.overflow-x-auto:has(> table):not(.no-sticky-head) {
+  max-height: min(72vh, 680px);
+  overflow: auto;
+}
+.overflow-x-auto:has(> table):not(.no-sticky-head) thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+/* Sticky cells need their own opaque background (a row's bg doesn't travel with
+   them). Provide a gray-50 fallback only where the th sets no bg-* itself, so
+   intentionally colored headers keep their color. */
+.overflow-x-auto:has(> table):not(.no-sticky-head) thead th:not([class*="bg-"]) {
+  background-color: #f9fafb;
+}
+
 @keyframes fade-in {
   from { opacity: 0; transform: translate(-50%, -12px); }
   to { opacity: 1; transform: translate(-50%, 0); }
