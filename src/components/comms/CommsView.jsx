@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
+import { setAppBadge } from '../../lib/appBadge';
 import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
@@ -574,6 +575,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, homePref, onSe
   const [threadsOpen, setThreadsOpen] = useState(false); // Threads inbox view
 
   const list = channels || [];
+  // Keep the PWA home-screen icon badge in sync while the user is in Comms.
+  const totalUnread = list.reduce((n, c) => n + (c.unread || 0), 0);
+  useEffect(() => { setAppBadge(totalUnread); }, [totalUnread]);
   const publicCh = list.filter(c => c.kind === 'public');
   const privateCh = list.filter(c => c.kind === 'private');
   // DMs are conversation-driven, so surface unread first, then most recent.

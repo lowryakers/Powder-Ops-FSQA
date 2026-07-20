@@ -3,6 +3,7 @@ import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Loc
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
+import { setAppBadge } from './lib/appBadge';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
@@ -129,6 +130,8 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
     s.on('channels:changed', onChange);
     return () => s.off('channels:changed', onChange);
   }, [refreshComms]);
+  // Reflect total unread on the installed PWA's home-screen icon (Badging API).
+  useEffect(() => { setAppBadge(commsUnread); }, [commsUnread]);
   // All groups expanded by default — users prefer seeing every module at once.
   // (Groups are still individually collapsible.)
   const [openGroups, setOpenGroups] = useState(() => {
