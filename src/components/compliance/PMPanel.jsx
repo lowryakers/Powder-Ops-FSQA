@@ -526,6 +526,7 @@ const GROUP_TABS = [
   { value: 'maintenance', label: 'Maintenance', color: 'bg-violet-600' },
   { value: 'warehouse', label: 'Warehouse', color: 'bg-indigo-600' },
   { value: 'qa', label: 'QA', color: 'bg-teal-600' },
+  { value: 'document_control', label: 'Document Control', color: 'bg-sky-600' },
   { value: 'cleaning', label: 'Cleaning', color: 'bg-amber-600' },
 ];
 
@@ -558,7 +559,8 @@ function ClearanceCard({ wo, onClear, user }) {
     setError('');
     setSaving(true);
     try {
-      await onClear({ clearance_status: status, clearance_method: method, clearance_notes: notes });
+      // Server expects: status, cleared_by, method, notes (see PUT /pm/work-orders/:id/clearance)
+      await onClear({ status, cleared_by: user?.name, method, notes });
     } catch (err) {
       setError(err.message || 'Clearance failed');
     } finally {

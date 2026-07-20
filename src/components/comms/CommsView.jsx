@@ -383,11 +383,22 @@ function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, 
 // Searchable, grouped emoji picker used for reactions and the composer.
 function EmojiPicker({ onPick, onClose, align = 'right', vertical = 'down' }) {
   const [q, setQ] = useState('');
+  const boxRef = useRef(null);
   const term = q.trim().toLowerCase();
   const searchHits = term ? EMOJI_INDEX.filter(e => e.name.includes(term)).slice(0, 48) : null;
+  // Close on outside click / Escape — NOT on mouseleave (that closed the picker
+  // the moment you moved the pointer to search, or when the mobile keyboard
+  // opened). Using 'click' (not mousedown) so the toggle button that opened it
+  // closes cleanly instead of closing-then-reopening.
+  useEffect(() => {
+    const onDocClick = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) onClose(); };
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('click', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('click', onDocClick); document.removeEventListener('keydown', onKey); };
+  }, [onClose]);
   return (
-    <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} ${vertical === 'up' ? 'bottom-8' : 'top-7'} z-30 w-64 bg-white border border-gray-200 rounded-xl shadow-lg p-2`}
-      onMouseLeave={onClose}>
+    <div ref={boxRef} className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} ${vertical === 'up' ? 'bottom-8' : 'top-7'} z-30 w-64 bg-white border border-gray-200 rounded-xl shadow-lg p-2`}>
       <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search emoji…"
         className="w-full px-2 py-1.5 mb-2 border border-gray-200 rounded-lg text-xs outline-none focus:border-powder-300" />
       <div className="max-h-56 overflow-y-auto">
