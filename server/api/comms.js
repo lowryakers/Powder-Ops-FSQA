@@ -146,7 +146,7 @@ function recordMentions(db, channel, messageId, body, author) {
   } else {
     recipients = extractMentions(db, channel, body, author.id);
   }
-  if (!recipients.length) return;
+  if (!recipients.length) return [];
   const ins = db.prepare('INSERT INTO chat_mentions (id, message_id, channel_id, user_id) VALUES (?, ?, ?, ?)');
   const label = channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'a channel');
   const broadcast = hasBroadcast(body);
@@ -154,7 +154,48 @@ function recordMentions(db, channel, messageId, body, author) {
     ins.run(uuid(), messageId, channel.id, u.id);
     emitToUser(u.id, 'mention', { channel_id: channel.id, message_id: messageId, from: author.name, preview: body.slice(0, 140), broadcast });
     const title = broadcast ? `${author.name} notified ${label}` : `${author.name} mentioned you in ${label}`;
-    pushToUser(u.id, { title, body: body.slice(0, 140), tag: `mention-${messageId}`, url: '/' }).catch(() => {});
+    // Mentions re-alert (renotify) — they're higher priority than a normal message.
+    pushToUser(u.id, { title, body: body.slice(0, 140), tag: `mention-${messageId}`, renotify: true, url: '/' }).catch(() => {});
+  }
+  return recipients.map(u => u.id);
+}
+
+// Debounce window: at most one channel push per person+channel in this span, so
+// a burst of messages coalesces into one (tag-collapsed) alert instead of a
+// buzz per message. In-memory is fine on a single instance.
+const PUSH_DEBOUNCE_MS = 25000;
+const lastChannelPushAt = new Map(); // `${userId}:${channelId}` -> epoch ms
+
+function channelUnread(db, channelId, userId) {
+  const lr = db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId)?.last_read_at || null;
+  return db.prepare(
+    `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND user_id != ?
+     AND (? IS NULL OR created_at > ?)`
+  ).get(channelId, userId, lr, lr).n;
+}
+
+// Push a normal channel message to every member (except the author and anyone
+// already @mentioned/DM'd). Grouped per channel via a stable tag so the phone
+// shows ONE notification per channel that updates with a running count, and
+// debounced so rapid messages don't each buzz.
+function notifyChannelMessage(db, channel, body, author, excludeUserIds = []) {
+  if (!pushEnabled() || !body || channel.kind === 'dm') return;
+  const exclude = new Set([author.id, ...excludeUserIds]);
+  const members = db.prepare(
+    'SELECT u.id FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? AND u.is_active = 1'
+  ).all(channel.id);
+  const label = channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'Channel');
+  const now = Date.now();
+  for (const { id: uid } of members) {
+    if (exclude.has(uid)) continue;
+    const key = `${uid}:${channel.id}`;
+    if (now - (lastChannelPushAt.get(key) || 0) < PUSH_DEBOUNCE_MS) continue; // coalesce burst
+    lastChannelPushAt.set(key, now);
+    const n = channelUnread(db, channel.id, uid);
+    const summary = n > 1
+      ? `${n} new · ${author.name}: ${body.slice(0, 80)}`
+      : `${author.name}: ${body.slice(0, 120)}`;
+    pushToUser(uid, { title: label, body: summary, tag: `channel-${channel.id}`, renotify: true, url: '/' }).catch(() => {});
   }
 }
 
@@ -626,11 +667,15 @@ router.post('/channels/:id/messages', async (req, res) => {
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
-  recordMentions(db, channel, id, body, req.user);
+  const mentionedIds = recordMentions(db, channel, id, body, req.user) || [];
   // DMs push to the other participant(s) — everyone in the DM but the sender.
   if (channel.kind === 'dm' && body) {
     const recips = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(channel.id, req.user.id);
-    for (const r of recips) pushToUser(r.user_id, { title: `Message from ${req.user.name}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, url: '/' }).catch(() => {});
+    for (const r of recips) pushToUser(r.user_id, { title: `Message from ${req.user.name}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, renotify: true, url: '/' }).catch(() => {});
+  } else if (body) {
+    // Every other channel message: grouped, summarized, debounced push to members
+    // who weren't already @mentioned (they got a higher-priority alert above).
+    notifyChannelMessage(db, channel, body, req.user, mentionedIds);
   }
   embedMessage(db, id, channel.id, body); // fire-and-forget
   res.status(201).json(message);

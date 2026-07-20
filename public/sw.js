@@ -1,6 +1,6 @@
 /* Powder Ops service worker — app-shell caching (Phase 5c) + web push (Phase 5d).
    Bump CACHE_VERSION to force clients onto a new shell. */
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const SHELL_CACHE = `powder-shell-${CACHE_VERSION}`;
 const OFFLINE_URL = '/';
 
@@ -61,6 +61,9 @@ self.addEventListener('push', (event) => {
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     tag: data.tag || undefined,
+    // renotify re-alerts when a notification with the same tag is replaced
+    // (e.g. a busy channel) instead of updating silently.
+    renotify: !!data.renotify && !!data.tag,
     data: { url: data.url || '/' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
