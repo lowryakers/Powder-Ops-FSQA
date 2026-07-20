@@ -4,6 +4,7 @@ import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
 import { visibleModuleIds, canViewModule } from './utils/permissions';
+import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
@@ -233,7 +234,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-gray-900 truncate">{user.name}</div>
-            <div className="text-[10px] text-gray-400 truncate">{user.role} / {{ qa: 'QA', document_control: 'Document Control', cleaning: 'Cleaning', warehouse: 'Warehouse', production: 'Production', maintenance: 'Maintenance', office: 'Office' }[user.department] || user.department}</div>
+            <div className="text-[10px] text-gray-400 truncate">{user.role} / {deptLabel(user.department)}</div>
           </div>
           <button onClick={() => window.dispatchEvent(new CustomEvent('app-logout'))} className="text-gray-400 hover:text-gray-600" title="Sign Out">
             <LogOut size={16} />

@@ -265,7 +265,8 @@ const SORT_COLUMNS = [
 ];
 
 function MissedReports({ from, to, user }) {
-  const [open, setOpen] = useState(true);
+  // Start collapsed — it's a compact summary line that QA expands when reviewing.
+  const [open, setOpen] = useState(false);
   const [showDismissed, setShowDismissed] = useState(false);
   const [dismissing, setDismissing] = useState(null); // dismiss_key of the row being reviewed
   const [reason, setReason] = useState('');
@@ -427,7 +428,8 @@ function LogTable({ user }) {
 
   return (
     <div className="space-y-4">
-      <MissedReports from={from} to={to} user={user} />
+      {/* Missed end-of-day reports are a QA review tool — only QA (and admins) see them. */}
+      {(user?.role === 'admin' || user?.department === 'qa') && <MissedReports from={from} to={to} user={user} />}
       <SummaryCards from={from} to={to} />
 
       {/* Filter Bar */}

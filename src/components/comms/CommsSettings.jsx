@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
 import { Hash, Lock, X, Trash2, Archive, ArchiveRestore, Pencil, Check, Users, Upload, Loader2, UserPlus, UserMinus, Megaphone, GitMerge, ArrowUp, ArrowDown } from 'lucide-react';
+import { DEPARTMENT_VALUES, deptLabel } from '../../constants/departments';
 
-const DEPARTMENTS = ['warehouse', 'maintenance', 'qa', 'cleaning', 'document_control', 'office'];
+const DEPARTMENTS = DEPARTMENT_VALUES;
 const ROLES = ['operator', 'supervisor', 'auditor', 'admin'];
 
 // Usage flag for a channel: empty or long-idle → candidate to clean up.
@@ -339,7 +340,7 @@ function PeopleTab() {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           <div className="grid grid-cols-2 gap-2">
             <select value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
-              {DEPARTMENTS.map(d => <option key={d} value={d}>{d.replace('_', ' ')}</option>)}
+              {DEPARTMENTS.map(d => <option key={d} value={d}>{deptLabel(d)}</option>)}
             </select>
             <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
               {ROLES.map(r => <option key={r} value={r}>{r}</option>)}

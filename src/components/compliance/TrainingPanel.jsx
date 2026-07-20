@@ -3,10 +3,11 @@ import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion, Users } from 'lucide-react';
+import { DEPARTMENT_VALUES } from '../../constants/departments';
 
 const CATEGORIES = ['GMP', 'Food Safety', 'HACCP', 'Allergen', 'Food Defense', 'Sanitation', 'Safety', 'Onboarding', 'Other'];
 const ROLES = ['admin', 'supervisor', 'operator', 'auditor'];
-const DEPARTMENTS = ['warehouse', 'qa', 'document_control', 'cleaning', 'production', 'maintenance', 'office'];
+const DEPARTMENTS = DEPARTMENT_VALUES;
 const FREQ = [{ v: '', l: 'One-time' }, { v: 12, l: 'Annual' }, { v: 24, l: 'Biennial' }, { v: 6, l: 'Every 6 months' }, { v: 3, l: 'Quarterly' }];
 const freqLabel = (m) => FREQ.find(f => String(f.v) === String(m || ''))?.l || (m ? `Every ${m} mo` : 'One-time');
 

@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 import { Plus, Copy, Shield, ChevronDown, ChevronRight, Eye, EyeOff, Users, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { DEPARTMENTS, DEPARTMENT_GROUPS, deptLabel } from '../../constants/departments';
 
 const ROLES = [
   { value: 'admin', label: 'Admin', desc: 'Full access to all features' },
@@ -10,16 +11,6 @@ const ROLES = [
   { value: 'auditor', label: 'Auditor', desc: 'Read-only compliance view' },
 ];
 
-const DEPARTMENTS = [
-  { value: 'warehouse', label: 'Warehouse' },
-  { value: 'qa', label: 'QA' },
-  { value: 'document_control', label: 'Document Control' },
-  { value: 'cleaning', label: 'Cleaning' },
-  { value: 'production', label: 'Production' },
-  { value: 'maintenance', label: 'Maintenance' },
-  { value: 'office', label: 'Office' },
-];
-const deptLabel = (d) => DEPARTMENTS.find(x => x.value === d)?.label || (d ? d.charAt(0).toUpperCase() + d.slice(1) : 'Warehouse');
 
 const MODULE_GROUPS = [
   {
@@ -265,7 +256,11 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
           <label className="block text-xs font-medium text-gray-700 mb-1">Department *</label>
           <select value={form.department || 'warehouse'} onChange={e => setForm({ ...form, department: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+            {DEPARTMENT_GROUPS.map(g => (
+              <optgroup key={g.label} label={g.label}>
+                {g.options.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </optgroup>
+            ))}
           </select>
         </div>
         <div>

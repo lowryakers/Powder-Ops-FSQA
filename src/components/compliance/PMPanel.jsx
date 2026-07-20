@@ -527,6 +527,10 @@ const GROUP_TABS = [
   { value: 'warehouse', label: 'Warehouse', color: 'bg-indigo-600' },
   { value: 'qa', label: 'QA', color: 'bg-teal-600' },
   { value: 'document_control', label: 'Document Control', color: 'bg-sky-600' },
+  { value: 'batching', label: 'Batching', color: 'bg-yellow-600' },
+  { value: 'kitting', label: 'Kitting', color: 'bg-blue-600' },
+  { value: 'sticks', label: 'Sticks', color: 'bg-cyan-600' },
+  { value: 'hand_fill', label: 'Hand Fill', color: 'bg-purple-600' },
   { value: 'cleaning', label: 'Cleaning', color: 'bg-amber-600' },
 ];
 
