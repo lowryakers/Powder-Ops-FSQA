@@ -129,9 +129,16 @@ function IssueForm({ wo, onFlag, onCancel }) {
   );
 }
 
-function WOForm({ equipment, technicians, onSave, onCancel }) {
-  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', assigned_to: '', due_date: '', attachments: [] });
+function WOForm({ equipment, technicians, onSave, onCancel, user }) {
+  // Document Control assignment is limited to admins + QA/DC supervisors (server
+  // enforces this too); everyone else picks from the other teams.
+  const canAssignDC = user?.role === 'admin' || (user?.role === 'supervisor' && ['qa', 'document_control'].includes(user?.department));
+  const teamOptions = GROUP_TABS.filter(g => g.value !== 'all' && (g.value !== 'document_control' || canAssignDC));
+  const defaultGroup = teamOptions.some(g => g.value === user?.department) ? user.department : 'maintenance';
+
+  const [form, setForm] = useState({ equipment_id: '', title: '', description: '', priority: 'normal', assigned_to: '', due_date: '', attachments: [], task_group: defaultGroup });
   const [saving, setSaving] = useState(false);
+  const isMaintenance = form.task_group === 'maintenance';
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -140,20 +147,27 @@ function WOForm({ equipment, technicians, onSave, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-      <h3 className="font-semibold text-gray-900">New Work Order</h3>
+      <h3 className="font-semibold text-gray-900">New Task</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Equipment *</label>
-          <select required value={form.equipment_id} onChange={e => setForm({ ...form, equipment_id: e.target.value })}
+          <label className="block text-xs font-medium text-gray-700 mb-1">Team *</label>
+          <select required value={form.task_group} onChange={e => setForm({ ...form, task_group: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">Select...</option>
-            {(equipment || []).map(eq => <option key={eq.id} value={eq.id}>{eq.name} ({eq.location || 'No location'})</option>)}
+            {teamOptions.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
           </select>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Title *</label>
           <input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={isMaintenance ? 'e.g. Quarterly PM' : 'e.g. Review SOP-014'} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Equipment{isMaintenance ? '' : ' (optional)'}</label>
+          <select required={isMaintenance} value={form.equipment_id} onChange={e => setForm({ ...form, equipment_id: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">{isMaintenance ? 'Select...' : 'None — not tied to equipment'}</option>
+            {(equipment || []).map(eq => <option key={eq.id} value={eq.id}>{eq.name} ({eq.location || 'No location'})</option>)}
+          </select>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Due Date *</label>
@@ -171,18 +185,23 @@ function WOForm({ equipment, technicians, onSave, onCancel }) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Assigned To</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Assign to (direct report)</label>
           <select value={form.assigned_to} onChange={e => setForm({ ...form, assigned_to: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">Unassigned</option>
+            <option value="">Unassigned (whole team)</option>
             {(technicians || []).map(t => <option key={t.id} value={t.name}>{t.name} ({t.role})</option>)}
           </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-medium text-gray-700 mb-1">Description / instructions</label>
+          <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="What needs to be done…" />
         </div>
       </div>
       <FileUpload files={form.attachments} onChange={attachments => setForm({ ...form, attachments })} />
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
-          {saving ? 'Creating...' : 'Create Work Order'}
+          {saving ? 'Creating...' : 'Create Task'}
         </button>
         <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
       </div>
@@ -765,7 +784,7 @@ export default function PMPanel() {
           </button>
           <button onClick={() => setShowWOForm(true)}
             className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
-            <Plus size={16} /> New Work Order
+            <Plus size={16} /> New Task
           </button>
         </div>
       </div>
@@ -831,7 +850,7 @@ export default function PMPanel() {
         </div>
       )}
 
-      {showWOForm && <WOForm equipment={equipment} technicians={technicians} onSave={handleCreateWO} onCancel={() => setShowWOForm(false)} />}
+      {showWOForm && <WOForm equipment={equipment} technicians={technicians} user={user} onSave={handleCreateWO} onCancel={() => setShowWOForm(false)} />}
 
       {/* Group Filter (Admin) + View Toggle + Frequency Filter */}
       <div className="space-y-2">
