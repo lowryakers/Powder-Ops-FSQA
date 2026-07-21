@@ -1178,7 +1178,7 @@ export default function ProductionSchedule({ user }) {
 
         <div className="flex items-center gap-1.5 shrink-0">
         <button
-          onClick={() => window.dispatchEvent(new CustomEvent('open-comms-channel', { detail: { channel: 'production', from: 'production-schedule', fromLabel: 'Schedule' } }))}
+          onClick={() => window.dispatchEvent(new CustomEvent('open-comms-channel', { detail: { channel: 'production_schedule', from: 'production-schedule', fromLabel: 'Schedule' } }))}
           className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5"
           title="Discuss this schedule in Messages"
         >

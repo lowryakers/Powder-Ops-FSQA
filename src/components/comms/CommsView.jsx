@@ -709,8 +709,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
       linkedOpenedRef.current = openChannelId; setActiveId(openChannelId); return;
     }
     if (openChannelName && linkedOpenedRef.current !== openChannelName) {
-      const t = openChannelName.toLowerCase();
-      const target = list.find(c => (c.name || '').toLowerCase() === t) || list.find(c => (c.name || '').toLowerCase().includes(t));
+      // Tolerate underscores / hyphens / spacing differences (e.g. a link to
+      // "production_schedule" resolving a "#production-schedule" channel).
+      const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const t = norm(openChannelName);
+      const target = list.find(c => norm(c.name) === t) || list.find(c => norm(c.name).includes(t));
       if (target) { linkedOpenedRef.current = openChannelName; setActiveId(target.id); return; }
     }
     setActiveId((publicCh.find(c => c.name === 'general') || list[0]).id);

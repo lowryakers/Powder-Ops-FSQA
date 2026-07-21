@@ -508,7 +508,7 @@ router.post('/schedule/notify', requireRole('admin'), async (req, res) => {
         const ch = getChannelByName(db, channel);
         if (ch) { await postMessageAs(db, ch, req.user, teamScheduleMessage(team, rows, weekStart, kind)); posted.push(team); }
       }
-      const prod = getChannelByName(db, 'production');
+      const prod = getChannelByName(db, 'production_schedule');
       if (prod) await postMessageAs(db, prod, req.user, combinedScheduleMessage(assignments, weekStart, kind, changedTeams));
     }
   } catch (e) {
