@@ -282,11 +282,29 @@ function ChannelDetails({ channel, me, users, onClose, onChanged }) {
 }
 
 // Thread drawer: a parent message and its replies, with a reply composer.
-function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef }) {
+function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef, storageOn }) {
   const [thread, setThread] = useState(null);
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
+  const [pending, setPending] = useState([]); // uploaded-but-unsent attachments
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
   const endRef = useRef(null);
+
+  const onPickFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      const uploaded = await apiUpload(`/comms/channels/${parent.channel_id}/attachments`, fd);
+      setPending(p => [...p, ...uploaded]);
+    } catch (err) { alert(err.message || 'Upload failed'); }
+    finally { setUploading(false); }
+  };
+  const removePending = (id) => setPending(p => p.filter(x => x.id !== id));
 
   const load = useCallback(async () => {
     try { setThread(await apiFetch(`/comms/messages/${parent.id}/thread`)); } catch { /* gone */ }
@@ -307,11 +325,13 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, view
   const edit = async (m, text) => { await apiPut(`/comms/messages/${m.id}`, { body: text }); load(); };
 
   const send = async () => {
-    const text = body.trim(); if (!text) return;
+    const text = body.trim();
+    const attachment_ids = pending.map(p => p.id);
+    if (!text && !attachment_ids.length) return;
     setSending(true);
     try {
-      await apiPost(`/comms/channels/${parent.channel_id}/messages`, { body: text, parent_id: parent.id });
-      setBody(''); await load(); onChanged?.();
+      await apiPost(`/comms/channels/${parent.channel_id}/messages`, { body: text, parent_id: parent.id, attachment_ids });
+      setBody(''); setPending([]); await load(); onChanged?.();
     } finally { setSending(false); }
   };
 
@@ -339,11 +359,32 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, view
             canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />)}
           <div ref={endRef} />
         </div>
-        <div className="border-t border-gray-200 p-3 shrink-0 flex items-end gap-2">
-          <textarea value={body} onChange={e => setBody(e.target.value)} rows={1}
-            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
-            placeholder="Reply…" className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />
-          <button onClick={send} disabled={sending || !body.trim()} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
+        <div className="border-t border-gray-200 p-3 shrink-0">
+          {(pending.length > 0 || uploading) && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {pending.map(p => (
+                <div key={p.id} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg border border-gray-200 bg-gray-50 text-xs">
+                  {p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
+                  <span className="max-w-[140px] truncate text-gray-700">{p.filename}</span>
+                  <button onClick={() => removePending(p.id)} className="text-gray-400 hover:text-red-500"><X size={13} /></button>
+                </div>
+              ))}
+              {uploading && <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400"><Loader2 size={12} className="animate-spin" /> Uploading…</div>}
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            {storageOn && (
+              <>
+                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onPickFiles} />
+                <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                  className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Attach files"><Paperclip size={16} /></button>
+              </>
+            )}
+            <textarea value={body} onChange={e => setBody(e.target.value)} rows={1}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
+              placeholder="Reply…" className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />
+            <button onClick={send} disabled={sending || (!body.trim() && !pending.length)} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
+          </div>
         </div>
       </div>
     </div>
@@ -636,6 +677,21 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   // On phones, the main pane also needs to show when a search/ask is running.
   const searchActive = searchResults !== null || answer !== null || (searching && searchMode === 'ask');
   const showMainMobile = mobileThread || searchActive || threadsOpen;
+
+  // Left-edge swipe (from App) steps back one level within Messages rather than
+  // jumping straight out: open thread → channel → channel list → ReadyDoc.
+  useEffect(() => {
+    const back = () => {
+      if (replyTo) { setReplyTo(null); return; }
+      if (searchActive) { setSearchQ(''); setSearchResults(null); setAnswer(null); return; }
+      if (threadsOpen) { setThreadsOpen(false); return; }
+      if (mobileThread) { setMobileThread(false); return; }
+      if (onBackToModule) { onBackToModule(); return; }
+      onExit?.();
+    };
+    window.addEventListener('comms-back', back);
+    return () => window.removeEventListener('comms-back', back);
+  }, [replyTo, searchActive, threadsOpen, mobileThread, onBackToModule, onExit]);
 
   // Active channel's members — used to warn when @mentioning a non-member and to
   // scope the mention autocomplete to people who can actually see the channel.
@@ -1327,7 +1383,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
       {showSettings && <CommsSettings users={users} onClose={() => setShowSettings(false)} onChanged={refreshChannels} />}
       {showDetails && active && active.kind !== 'dm' && <ChannelDetails channel={active} me={user} users={users} onClose={() => setShowDetails(false)} onChanged={refreshChannels} />}
       {replyTo && <ThreadPanel parent={replyTo} me={user} channelName={active?.kind === 'dm' ? active.name : '#' + (active?.name || '')} mentionUsers={users}
-        canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} socketRef={socketRef}
+        canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} socketRef={socketRef} storageOn={storageOn}
         onClose={() => setReplyTo(null)} onChanged={() => loadMessages(activeId)} />}
     </div>
   );

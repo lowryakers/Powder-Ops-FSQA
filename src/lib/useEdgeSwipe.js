@@ -4,13 +4,13 @@ import { useEffect } from 'react';
 // swipe *starts* within `edge` px of a screen edge, so it never fights content
 // scrolling or mid-screen carousels (e.g. the schedule day pager). Vertical
 // drags are ignored.
-export function useEdgeSwipe({ onSwipeRightFromLeft, onSwipeLeftFromRight, edge = 28, threshold = 60 } = {}) {
+export function useEdgeSwipe({ onSwipeRightFromLeft, onSwipeLeftFromRight, edge = 24, threshold = 70 } = {}) {
   useEffect(() => {
-    let sx = 0, sy = 0, fromLeft = false, fromRight = false, tracking = false;
+    let sx = 0, sy = 0, st = 0, fromLeft = false, fromRight = false, tracking = false;
     const onStart = (e) => {
       if (e.touches.length !== 1) { tracking = false; return; }
       const t = e.touches[0];
-      sx = t.clientX; sy = t.clientY;
+      sx = t.clientX; sy = t.clientY; st = Date.now();
       fromLeft = sx <= edge;
       fromRight = sx >= window.innerWidth - edge;
       tracking = fromLeft || fromRight;
@@ -20,7 +20,12 @@ export function useEdgeSwipe({ onSwipeRightFromLeft, onSwipeLeftFromRight, edge 
       tracking = false;
       const t = e.changedTouches[0];
       const dx = t.clientX - sx, dy = t.clientY - sy;
-      if (Math.abs(dy) > 50 || Math.abs(dx) < threshold) return; // vertical / too short
+      const dt = Date.now() - st;
+      // Intentional edge swipe: far enough, clearly horizontal (not a diagonal
+      // scroll), and a flick rather than a slow drag.
+      if (Math.abs(dx) < threshold) return;
+      if (Math.abs(dx) < Math.abs(dy) * 1.8) return;
+      if (dt > 700) return;
       if (fromLeft && dx > 0) onSwipeRightFromLeft?.();
       else if (fromRight && dx < 0) onSwipeLeftFromRight?.();
     };

@@ -1,6 +1,6 @@
 /* Powder Ops service worker — app-shell caching (Phase 5c) + web push (Phase 5d).
    Bump CACHE_VERSION to force clients onto a new shell. */
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const SHELL_CACHE = `powder-shell-${CACHE_VERSION}`;
 const OFFLINE_URL = '/';
 
@@ -72,14 +72,27 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const target = (event.notification.data && event.notification.data.url) || '/';
-  let channelId = null;
-  try { channelId = new URL(target, self.location.origin).searchParams.get('c'); } catch { /* ignore */ }
+  let channelId = null, messageId = null;
+  try {
+    const u = new URL(target, self.location.origin);
+    channelId = u.searchParams.get('c');
+    messageId = u.searchParams.get('m');
+  } catch { /* ignore */ }
   event.waitUntil((async () => {
+    // Persist the target where the page can read it. iOS PWAs launch at the
+    // manifest start_url and drop the notification's query string, so the URL
+    // alone can't be trusted — the client reads this on load and on focus.
+    if (channelId) {
+      try {
+        const cache = await caches.open('pending-nav');
+        await cache.put('/__pending_nav', new Response(JSON.stringify({ channelId, messageId, ts: Date.now() }), { headers: { 'Content-Type': 'application/json' } }));
+      } catch { /* ignore */ }
+    }
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     // An app window is already open: tell it in-app which channel to open (more
     // reliable than navigate, especially on iOS) and focus it.
     for (const c of all) {
-      if (channelId) c.postMessage({ type: 'open-channel', channelId });
+      if (channelId) c.postMessage({ type: 'open-channel', channelId, messageId });
       if ('focus' in c) return c.focus();
     }
     // Otherwise launch a fresh window at /?c=<id>; the app reads it on load.

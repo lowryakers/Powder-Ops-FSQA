@@ -699,35 +699,57 @@ function App() {
     return () => window.removeEventListener('open-comms-channel', handler);
   }, []);
 
-  // Opened from a push notification (SW navigates to /?c=<channelId>): jump
-  // straight into that channel in Messages, then clean the URL.
+  // Deep-link into a channel from a push notification. Three paths, because iOS
+  // PWAs are unreliable about honoring the notification URL:
+  //  1. URL query (?c=…) when the app boots at the notification target.
+  //  2. A pending-nav entry the service worker stashes in the Cache API — read on
+  //     load AND whenever the app is foregrounded (iOS opens at start_url and
+  //     drops the query string, so this is the path that actually fires there).
+  //  3. A postMessage from the SW when a window is already open.
+  const openFromNotification = useCallback((channelId) => {
+    if (!channelId) return;
+    setCommsLink({ channelId, from: null, fromLabel: 'Back' });
+    setWorkspace('comms');
+  }, []);
+
   useEffect(() => {
     const c = new URLSearchParams(window.location.search).get('c');
     if (c) {
-      setCommsLink({ channelId: c, from: null, fromLabel: 'Back' });
-      setWorkspace('comms');
+      openFromNotification(c);
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+    let cancelled = false;
+    const checkPending = async () => {
+      if (!('caches' in window)) return;
+      try {
+        const cache = await caches.open('pending-nav');
+        const res = await cache.match('/__pending_nav');
+        if (!res) return;
+        await cache.delete('/__pending_nav');
+        const { channelId, ts } = await res.json();
+        if (!cancelled && channelId && Date.now() - ts < 5 * 60 * 1000) openFromNotification(channelId);
+      } catch { /* ignore */ }
+    };
+    checkPending();
+    const onVis = () => { if (document.visibilityState === 'visible') checkPending(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { cancelled = true; document.removeEventListener('visibilitychange', onVis); };
+  }, [openFromNotification]);
 
-  // Notification tapped while the app is already open: the service worker posts
-  // the channel to focus. Open it in-app (more reliable than a reload on iOS).
+  // Notification tapped while the app is already open: the SW posts the channel.
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
-    const onMsg = (e) => {
-      if (e.data?.type === 'open-channel' && e.data.channelId) {
-        setCommsLink({ channelId: e.data.channelId, from: null, fromLabel: 'Back' });
-        setWorkspace('comms');
-      }
-    };
+    const onMsg = (e) => { if (e.data?.type === 'open-channel') openFromNotification(e.data.channelId); };
     navigator.serviceWorker.addEventListener('message', onMsg);
     return () => navigator.serviceWorker.removeEventListener('message', onMsg);
-  }, []);
+  }, [openFromNotification]);
 
-  // Global edge-swipe navigation (mobile): from the left edge opens the sidebar
-  // (or, in Messages, goes back to ReadyDoc); from the right edge opens Messages.
+  // Global edge-swipe navigation (mobile). From the left edge: in Messages it
+  // steps back one level (thread → channel → channel list → ReadyDoc), handled
+  // inside CommsView via the 'comms-back' event; elsewhere it opens the sidebar.
+  // From the right edge (only in ReadyDoc): opens Messages.
   useEdgeSwipe({
-    onSwipeRightFromLeft: () => { if (workspace === 'comms') { setWorkspace('fsqa'); setCommsLink(null); } else setSidebarOpen(true); },
+    onSwipeRightFromLeft: () => { if (workspace === 'comms') window.dispatchEvent(new CustomEvent('comms-back')); else setSidebarOpen(true); },
     onSwipeLeftFromRight: () => { if (workspace !== 'comms') setWorkspace('comms'); },
   });
 
