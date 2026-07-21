@@ -732,7 +732,49 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-gray-400"><FileText size={36} className="mx-auto mb-2 text-gray-300" /><p className="text-sm">No records found.{canEdit ? ' Create one or import your log.' : ''}</p></div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <>
+        {/* Mobile: card list (columns come from the record type's config) */}
+        <div className="md:hidden space-y-2">
+          {(() => {
+            const badgeCol = cfg.logColumns.find(c => ['status', 'approvals', 'result'].includes(c));
+            const textCols = cfg.logColumns.filter(c => !['status', 'approvals', 'result'].includes(c));
+            return filtered.map((rec, i) => {
+              const fail = passFailResult(cfg, rec) === 'fail';
+              const [c0, c1, ...crest] = textCols;
+              return (
+                <div key={rec.id || i} onClick={() => setViewing(rec)}
+                  className={`bg-white rounded-xl border border-gray-200 border-l-4 ${fail ? 'border-l-red-500' : 'border-l-emerald-500'} p-3 active:bg-gray-50 ${selected.has(rec.id) ? 'ring-2 ring-powder-300' : ''}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm leading-snug">{displayValue(cfg, rec, c0)}</div>
+                      {c1 && <div className="text-xs text-gray-600 leading-snug">{displayValue(cfg, rec, c1)}</div>}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {badgeCol === 'status' && <StatusBadge cfg={cfg} rec={rec} />}
+                      {badgeCol === 'approvals' && <ApprovalBadge cfg={cfg} rec={rec} />}
+                      {badgeCol === 'result' && <ResultBadge cfg={cfg} rec={rec} />}
+                      {canEdit && (
+                        <button onClick={e => { e.stopPropagation(); toggleOne(rec.id); }} className="text-gray-300 hover:text-powder-600" title={selected.has(rec.id) ? 'Deselect' : 'Select'}>
+                          {selected.has(rec.id) ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {crest.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                      {crest.map(col => {
+                        const v = displayValue(cfg, rec, col);
+                        return v && v !== '—' ? <span key={col}>{fieldLabel(cfg, col)}: <span className="font-medium text-gray-700">{v}</span></span> : null;
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
+        </div>
+        {/* Desktop: full table */}
+        <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead className="bg-gray-50 border-b border-gray-200">
@@ -766,6 +808,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
             </table>
           </div>
         </div>
+        </>
       )}
 
       {creating && <RecordForm cfg={cfg} onSave={handleCreate} onCancel={() => setCreating(false)} />}

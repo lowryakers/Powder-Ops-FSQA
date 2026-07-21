@@ -609,7 +609,44 @@ export default function EquipmentPanel() {
       {(showForm && !editing) && <EquipmentForm ccps={ccps} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
       {editing && <EquipmentForm initial={editing} ccps={ccps} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* Mobile: card list */}
+      <div className="md:hidden space-y-2">
+        {filtered.map(eq => {
+          const isSelected = selected.has(eq.id);
+          const tasks = parseTasks(eq);
+          const taskCount = Object.values(tasks).reduce((s, arr) => s + arr.length, 0);
+          const stripe = eq.status === 'active' ? 'border-l-green-500' : eq.status === 'partial' ? 'border-l-yellow-500' : 'border-l-red-500';
+          return (
+            <div key={eq.id} onClick={() => setEditing(eq)}
+              className={`bg-white rounded-xl border border-gray-200 border-l-4 ${stripe} p-3 active:bg-gray-50 ${isSelected ? 'ring-2 ring-powder-300' : ''}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-semibold text-gray-900 text-sm leading-snug">{eq.name}</div>
+                  {eq.asset_id && <div className="text-[11px] text-gray-400 font-mono">Asset #{eq.asset_id}</div>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${eq.status === 'active' ? 'bg-green-100 text-green-800' : eq.status === 'partial' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>{eq.status}</span>
+                  <button onClick={e => { e.stopPropagation(); toggleSelect(eq.id); }} className="text-gray-300 hover:text-powder-600" title={isSelected ? 'Deselect' : 'Select'}>
+                    {isSelected ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+                  </button>
+                </div>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                {eq.type && <span>{eq.type}</span>}
+                {eq.location && <span>{eq.location}</span>}
+                {eq.is_food_contact ? <span className="text-blue-700">Food-contact</span> : null}
+                {taskCount > 0 && <span className="inline-flex items-center gap-0.5"><ClipboardList size={11} />{taskCount} task{taskCount > 1 ? 's' : ''}</span>}
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="text-center py-8 text-gray-400 text-sm">{hasFilters ? 'No equipment matches your filters' : 'No equipment registered yet'}</div>
+        )}
+      </div>
+
+      {/* Desktop: full table */}
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">

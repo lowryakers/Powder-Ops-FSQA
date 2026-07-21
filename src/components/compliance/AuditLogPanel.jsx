@@ -154,7 +154,32 @@ export default function AuditLogPanel() {
             <div className="px-4 py-2 bg-gray-50 border-b text-xs text-gray-500">
               {data?.total || 0} total records
             </div>
-            <div className="overflow-x-auto">
+            {/* Mobile: card list */}
+            <div className="md:hidden divide-y divide-gray-100">
+              {(data?.data || []).map(entry => (
+                <div key={entry.id} className="px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-gray-900 text-sm truncate">{entry.actor}</span>
+                    <span className={`shrink-0 px-2 py-0.5 rounded text-[11px] ${SECURITY_ACTIONS.has(entry.action) ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>{entry.action.replace(/_/g, ' ')}</span>
+                  </div>
+                  <div className="mt-0.5 text-xs text-gray-600">
+                    {entry.entity_label || entry.entity_type}
+                    {!entry.entity_label && entry.entity_id ? ` #${String(entry.entity_id).slice(0, 8)}` : ''}
+                    {entry.entity_label ? <span className="text-gray-400"> · {entry.entity_type}</span> : ''}
+                  </div>
+                  {entry.details && <div className="mt-0.5 text-xs text-gray-500 line-clamp-2">{entry.details}</div>}
+                  <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
+                    <span>{new Date(entry.timestamp).toLocaleString()}</span>
+                    {entry.actor_role && <span className={`px-1.5 py-0.5 rounded capitalize ${ROLE_TONE[entry.actor_role] || 'bg-gray-100 text-gray-600'}`}>{entry.actor_role}</span>}
+                  </div>
+                </div>
+              ))}
+              {(!data?.data || data.data.length === 0) && (
+                <div className="px-4 py-8 text-center text-gray-500 text-sm">No audit log entries match these filters</div>
+              )}
+            </div>
+            {/* Desktop: full table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
