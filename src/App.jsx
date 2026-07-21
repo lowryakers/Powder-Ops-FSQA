@@ -567,6 +567,20 @@ function App() {
     }
   }, []);
 
+  // Notification tapped while the app is already open: the service worker posts
+  // the channel to focus. Open it in-app (more reliable than a reload on iOS).
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onMsg = (e) => {
+      if (e.data?.type === 'open-channel' && e.data.channelId) {
+        setCommsLink({ channelId: e.data.channelId, from: null, fromLabel: 'Back' });
+        setWorkspace('comms');
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onMsg);
+    return () => navigator.serviceWorker.removeEventListener('message', onMsg);
+  }, []);
+
   // Global edge-swipe navigation (mobile): from the left edge opens the sidebar
   // (or, in Messages, goes back to ReadyDoc); from the right edge opens Messages.
   useEdgeSwipe({

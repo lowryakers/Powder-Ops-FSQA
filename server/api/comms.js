@@ -205,14 +205,14 @@ function notifyChannelMessage(db, channel, body, author, excludeUserIds = []) {
 router.get('/channels', (req, res) => {
   const db = getDb();
   const me = req.user.id;
-  // Admins see every channel (to administer); everyone else only sees channels
-  // they're a member of.
-  const isAdmin = req.user.role === 'admin';
+  // Everyone — admins included — only sees channels they belong to, so admins
+  // aren't buried under every channel. Channel administration (all channels)
+  // happens through GET /admin/channels + the Comms settings panel instead.
   const rows = db.prepare(`
     SELECT c.*, m.last_read_at, m.id AS membership_id
     FROM chat_channels c
     LEFT JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
-    WHERE c.archived = 0 AND (${isAdmin ? "c.kind != 'dm' OR m.user_id IS NOT NULL" : 'm.user_id IS NOT NULL'})
+    WHERE c.archived = 0 AND m.user_id IS NOT NULL
     ORDER BY c.is_default DESC, c.sort_order, c.kind, c.name
   `).all(me);
 

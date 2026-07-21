@@ -602,6 +602,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   // DMs are conversation-driven, so surface unread first, then most recent.
   const dms = list.filter(c => c.kind === 'dm').sort((a, b) =>
     (b.unread > 0) - (a.unread > 0) || (b.last_activity || '').localeCompare(a.last_activity || ''));
+  // Everything unread, floated to the very top of the sidebar (most recent first).
+  const unreadList = list.filter(c => c.unread > 0)
+    .sort((a, b) => (b.last_activity || '').localeCompare(a.last_activity || ''));
   // Section grouping for the sidebar: pinned default channels first, then each
   // admin section (in order), then everything ungrouped.
   const pinned = list.filter(c => c.is_default);
@@ -645,6 +648,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     }
     setActiveId((publicCh.find(c => c.name === 'general') || list[0]).id);
   }, [list, activeId, openChannelName, openChannelId]); // eslint-disable-line
+
+  // A push-notification deep-link can arrive while Comms is already open — open
+  // the requested channel even if another one is active.
+  useEffect(() => {
+    if (!openChannelId || !list.length || linkedOpenedRef.current === openChannelId) return;
+    if (list.some(c => c.id === openChannelId)) { linkedOpenedRef.current = openChannelId; openChannel(openChannelId); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openChannelId, list.length]);
 
   const loadMessages = useCallback(async (id) => {
     if (!id) return;
@@ -866,7 +877,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     finally { setPushBusy(false); }
   };
 
-  const markAllRead = async () => { await apiPost('/comms/read-all', {}); refreshChannels(); };
+  const markChannelRead = async (id) => { try { await apiPost(`/comms/channels/${id}/read`, {}); refreshChannels(); } catch { /* ignore */ } };
   const markUnread = async (m) => { try { await apiPost(`/comms/messages/${m.id}/unread`, {}); refreshChannels(); } catch { /* ignore */ } };
 
   const toggleDmPick = (id) => setDmSelected(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
@@ -916,17 +927,25 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     const mentioned = c.mentions > 0;
     const isActive = activeId === c.id;
     // Unread channels stand out: a blue dot in the gutter + bold, full-black name.
+    // Hovering an unread channel swaps its count for a "mark read" checkmark
+    // (per-channel — there's no global "mark everything read").
     return (
-    <button onClick={() => openChannel(c.id)} onMouseEnter={onHover}
-      className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm ${isActive ? 'bg-powder-600 text-white' : highlight ? 'bg-powder-50 text-powder-700' : unread ? 'text-gray-900 hover:bg-gray-100' : 'text-gray-600 hover:bg-gray-100'}`}>
+    <div onClick={() => openChannel(c.id)} onMouseEnter={onHover}
+      className={`group/ch w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm cursor-pointer ${isActive ? 'bg-powder-600 text-white' : highlight ? 'bg-powder-50 text-powder-700' : unread ? 'text-gray-900 hover:bg-gray-100' : 'text-gray-600 hover:bg-gray-100'}`}>
       <span className="w-1.5 shrink-0 flex items-center justify-center">
         {unread && !isActive && <span className={`h-1.5 w-1.5 rounded-full ${mentioned ? 'bg-red-500' : 'bg-powder-500'}`} />}
       </span>
       <Icon size={14} className="shrink-0 opacity-80" />
       <span className={`truncate flex-1 text-left ${unread && !isActive ? 'font-bold' : ''}`}>{c.name}</span>
-      {mentioned && <span className="text-[10px] font-bold px-1.5 rounded-full bg-red-500 text-white" title="You were mentioned">@{c.mentions}</span>}
-      {unread && !mentioned && <span className={`text-[10px] font-bold px-1.5 rounded-full ${isActive ? 'bg-white/25 text-white' : 'bg-powder-500 text-white'}`}>{c.unread}</span>}
-    </button>
+      {mentioned && <span className={`text-[10px] font-bold px-1.5 rounded-full bg-red-500 text-white ${unread ? 'group-hover/ch:hidden' : ''}`} title="You were mentioned">@{c.mentions}</span>}
+      {unread && !mentioned && <span className={`text-[10px] font-bold px-1.5 rounded-full group-hover/ch:hidden ${isActive ? 'bg-white/25 text-white' : 'bg-powder-500 text-white'}`}>{c.unread}</span>}
+      {unread && (
+        <button onClick={(e) => { e.stopPropagation(); markChannelRead(c.id); }} title="Mark read"
+          className={`hidden group-hover/ch:inline-flex items-center p-0.5 rounded ${isActive ? 'text-white hover:bg-white/20' : 'text-gray-400 hover:text-powder-600 hover:bg-gray-200'}`}>
+          <CheckCheck size={13} />
+        </button>
+      )}
+    </div>
     );
   };
 
@@ -978,8 +997,6 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
               <Home size={16} />
             </button>
           )}
-          <button onClick={markAllRead} title="Mark all channels read"
-            className="p-2 rounded-lg text-gray-400 hover:bg-gray-100"><CheckCheck size={16} /></button>
           {user.role === 'admin' && (
             <button onClick={() => setShowSettings(true)} title="Communication settings"
               className="p-2 rounded-lg text-gray-400 hover:bg-gray-100">
@@ -1042,6 +1059,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
             </div>
           ) : (
           <>
+          {/* Unread — everything with new messages, floated to the top */}
+          {unreadList.length > 0 && (
+            <div>
+              <div className="px-2 mb-1 text-[10px] font-bold uppercase text-powder-600">Unread</div>
+              <div className="space-y-0.5">
+                {unreadList.map(c => <ChannelBtn key={'u' + c.id} c={c} icon={kindIcon(c)} />)}
+              </div>
+            </div>
+          )}
           {/* Pinned default channels (#general / #announcements) */}
           {pinned.length > 0 && (
             <div className="space-y-0.5">

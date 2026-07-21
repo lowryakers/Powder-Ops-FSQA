@@ -1,6 +1,6 @@
 /* Powder Ops service worker — app-shell caching (Phase 5c) + web push (Phase 5d).
    Bump CACHE_VERSION to force clients onto a new shell. */
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const SHELL_CACHE = `powder-shell-${CACHE_VERSION}`;
 const OFFLINE_URL = '/';
 
@@ -72,9 +72,17 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const target = (event.notification.data && event.notification.data.url) || '/';
+  let channelId = null;
+  try { channelId = new URL(target, self.location.origin).searchParams.get('c'); } catch { /* ignore */ }
   event.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const c of all) { if ('focus' in c) { c.navigate(target).catch(() => {}); return c.focus(); } }
+    // An app window is already open: tell it in-app which channel to open (more
+    // reliable than navigate, especially on iOS) and focus it.
+    for (const c of all) {
+      if (channelId) c.postMessage({ type: 'open-channel', channelId });
+      if ('focus' in c) return c.focus();
+    }
+    // Otherwise launch a fresh window at /?c=<id>; the app reads it on load.
     if (self.clients.openWindow) return self.clients.openWindow(target);
   })());
 });
