@@ -174,19 +174,25 @@ function ModuleAccessEditor({ value, onChange, disabled }) {
   );
 }
 
-// Admin-only password reset. One button expands an inline form; the acting
-// admin must re-enter their own password to authorize the change.
+// Admin-only password reset. Because ReadyDoc can't email people, the admin
+// sets a *temporary* password here and hands it to the user, who then signs in
+// and can change it themselves. The admin re-enters their own password to
+// authorize the change.
 function ResetPasswordControl({ userId, userName }) {
   const [open, setOpen] = useState(false);
   const [pw, setPw] = useState('');
   const [adminPw, setAdminPw] = useState('');
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);
+  const [done, setDone] = useState(null); // the temp password that was set (shown for sharing)
+  const [copied, setCopied] = useState(false);
   const [err, setErr] = useState(null);
 
+  const generate = () => setPw(`${Math.random().toString(36).slice(2, 6)}-${Math.random().toString(36).slice(2, 6)}`);
+  const copy = () => { navigator.clipboard?.writeText(done).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); };
+
   const submit = async () => {
-    setErr(null); setMsg(null);
-    if (pw.length < 8) { setErr('New password must be at least 8 characters.'); return; }
+    setErr(null);
+    if (pw.length < 8) { setErr('Temporary password must be at least 8 characters.'); return; }
     setBusy(true);
     try {
       const token = localStorage.getItem('auth_token');
@@ -197,34 +203,63 @@ function ResetPasswordControl({ userId, userName }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setErr(data.error || 'Could not reset password.'); return; }
-      setMsg(`Password reset. Share it with ${userName || 'the user'}.`);
-      setPw(''); setAdminPw(''); setOpen(false);
+      setDone(pw); setAdminPw('');
     } finally { setBusy(false); }
   };
+
+  // Success: show the temp password + exactly what to tell the user.
+  if (done) {
+    return (
+      <div className="mt-1.5 bg-green-50 border border-green-200 rounded-lg p-2.5 space-y-1.5">
+        <p className="text-xs font-semibold text-green-800">Temporary password set for {userName || 'this user'}.</p>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 px-2 py-1 bg-white border border-green-200 rounded font-mono text-sm text-gray-900 break-all">{done}</code>
+          <button type="button" onClick={copy} className="px-2 py-1 text-xs font-medium text-green-700 border border-green-300 rounded hover:bg-green-100 shrink-0">{copied ? 'Copied!' : 'Copy'}</button>
+        </div>
+        <p className="text-[11px] text-green-700 leading-relaxed">
+          Send this to {userName || 'them'}. They sign in with their <span className="font-medium">name + this password</span>, then change it any time from their account menu (top-right avatar → Change password).
+        </p>
+        <button type="button" onClick={() => { setOpen(false); setDone(null); setPw(''); }}
+          className="text-[11px] font-medium text-gray-500 hover:text-gray-700">Done</button>
+      </div>
+    );
+  }
 
   if (!open) {
     return (
       <div className="mt-1.5">
-        <button type="button" onClick={() => { setOpen(true); setMsg(null); }}
+        <button type="button" onClick={() => { setOpen(true); }}
           className="flex items-center gap-1.5 text-xs font-medium text-powder-600 hover:text-powder-700">
           <KeyRound size={13} /> Reset password
         </button>
-        {msg && <p className="text-[11px] text-green-600 mt-1">{msg}</p>}
+        <p className="text-[10px] text-gray-400 mt-0.5">Sets a temporary password you hand off to the user.</p>
       </div>
     );
   }
 
   return (
-    <div className="mt-1.5 space-y-1.5 bg-gray-50 border border-gray-200 rounded-lg p-2">
-      <input type="text" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password"
-        className="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm" placeholder="New password (min 8)" />
-      <input type="password" value={adminPw} onChange={e => setAdminPw(e.target.value)} autoComplete="current-password"
-        className="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm" placeholder="Confirm with YOUR password" />
+    <div className="mt-1.5 space-y-2 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+      <p className="text-[11px] text-gray-500 leading-relaxed">
+        1. Set a temporary password &nbsp;·&nbsp; 2. Confirm it's you &nbsp;·&nbsp; 3. Share it with {userName || 'the user'}
+      </p>
+      <div>
+        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Temporary password for {userName || 'user'}</label>
+        <div className="flex items-center gap-1.5">
+          <input type="text" value={pw} onChange={e => setPw(e.target.value)} autoComplete="off"
+            className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-md text-sm font-mono" placeholder="min 8 characters" />
+          <button type="button" onClick={generate} className="px-2 py-1.5 text-xs font-medium text-powder-600 border border-powder-200 rounded-md hover:bg-powder-50 shrink-0">Generate</button>
+        </div>
+      </div>
+      <div>
+        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Confirm with your own admin password</label>
+        <input type="password" value={adminPw} onChange={e => setAdminPw(e.target.value)} autoComplete="current-password"
+          className="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm" placeholder="Your password" />
+      </div>
       {err && <p className="text-[11px] text-red-600">{err}</p>}
       <div className="flex items-center gap-2">
         <button type="button" onClick={submit} disabled={busy}
           className="px-2.5 py-1 bg-powder-600 text-white text-xs font-medium rounded-md hover:bg-powder-700 disabled:opacity-50">
-          {busy ? 'Saving…' : 'Set password'}
+          {busy ? 'Saving…' : 'Set temporary password'}
         </button>
         <button type="button" onClick={() => { setOpen(false); setErr(null); setPw(''); setAdminPw(''); }}
           className="px-2.5 py-1 text-gray-500 text-xs font-medium rounded-md hover:bg-gray-100">Cancel</button>

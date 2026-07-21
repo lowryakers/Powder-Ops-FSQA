@@ -68,6 +68,20 @@ router.post('/me/home', (req, res) => {
   res.json({ ok: true, home_workspace: w });
 });
 
+// Self-service password change: confirm the current password, then set a new one.
+// (First-time users with no password yet use /set-password instead.)
+router.post('/me/password', (req, res) => {
+  const db = getDb();
+  const { current_password, new_password } = req.body || {};
+  if (!new_password || String(new_password).length < MIN_PASSWORD) return res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD} characters` });
+  const me = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+  if (!me?.password_hash) return res.status(400).json({ error: 'No password set yet. Sign out and set one from the login screen.' });
+  if (!verifyPassword(String(current_password || ''), me.password_hash)) return res.status(401).json({ error: 'Your current password is incorrect.' });
+  db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(hashPassword(new_password), req.user.id);
+  logAudit(req.user, 'password_change', 'user', req.user.id, { self: true }, null, null, req.user.name);
+  res.json({ ok: true });
+});
+
 router.post('/logout', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (token) {

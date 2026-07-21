@@ -185,7 +185,7 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password"
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Your password" />
             </div>
-            <p className="text-[11px] text-gray-400 mt-1 text-center">First time? Just enter your name and click Sign In to set a password.</p>
+            <p className="text-[11px] text-gray-400 mt-1 text-center">First time here? Leave this blank and click Sign In to create your password.<br />Password reset by an admin? Enter the temporary one they gave you.</p>
           </div>
 
           {error && <p className="text-sm text-red-600 text-center">{error}</p>}

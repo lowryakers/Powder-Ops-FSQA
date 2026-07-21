@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -263,6 +263,9 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
             <div className="text-sm font-medium text-gray-900 truncate">{user.name}</div>
             <div className="text-[10px] text-gray-400 truncate">{user.role} / {deptLabel(user.department)}</div>
           </div>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('app-change-password'))} className="text-gray-400 hover:text-gray-600" data-tip="Change password" data-tip-left>
+            <KeyRound size={15} />
+          </button>
           <button onClick={() => window.dispatchEvent(new CustomEvent('app-logout'))} className="text-gray-400 hover:text-gray-600" title="Sign Out">
             <LogOut size={16} />
           </button>
@@ -318,6 +321,116 @@ function NotificationBell({ notifications, onNavigate }) {
               </button>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Self-service password change, reachable from the account menu. Uses raw fetch
+// (not the useApi wrapper) so a wrong current password surfaces as a form error
+// instead of triggering an auto-logout on 401.
+function ChangePasswordModal({ onClose }) {
+  const [cur, setCur] = useState('');
+  const [nw, setNw] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErr('');
+    if (nw.length < 8) { setErr('New password must be at least 8 characters.'); return; }
+    if (nw !== confirm) { setErr('New passwords do not match.'); return; }
+    setBusy(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/users/me/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ current_password: cur, new_password: nw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setErr(data.error || 'Could not change password.'); return; }
+      setDone(true);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-1">
+          <KeyRound size={18} className="text-powder-600" />
+          <h3 className="text-base font-bold text-gray-900">Change your password</h3>
+        </div>
+        {done ? (
+          <div className="mt-3 space-y-3">
+            <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg p-3">Password changed. Use your new password next time you sign in.</p>
+            <button onClick={onClose} className="w-full py-2.5 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">Done</button>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="mt-3 space-y-3">
+            <p className="text-xs text-gray-500">Enter your current password, then choose a new one (at least 8 characters).</p>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Current password</label>
+              <input type="password" autoFocus value={cur} onChange={e => setCur(e.target.value)} autoComplete="current-password"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Current password" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">New password</label>
+              <input type="password" value={nw} onChange={e => setNw(e.target.value)} autoComplete="new-password"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="At least 8 characters" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Confirm new password</label>
+              <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Re-enter new password" />
+            </div>
+            {err && <p className="text-xs text-red-600">{err}</p>}
+            <div className="flex items-center gap-2 pt-1">
+              <button type="submit" disabled={busy} className="flex-1 py-2.5 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
+                {busy ? 'Saving…' : 'Change password'}
+              </button>
+              <button type="button" onClick={onClose} className="px-4 py-2.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Cancel</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Top-right account menu: name/avatar → Change password / Sign out.
+function AccountMenu({ user, onChangePassword, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-gray-100" data-tip="Account" data-tip-left>
+        <div className="h-7 w-7 rounded-full bg-powder-100 flex items-center justify-center text-xs font-bold text-powder-700">
+          {(user.name || '?')[0]}
+        </div>
+        <span className="text-sm text-gray-600">{user.name}</span>
+        <ChevronDown size={14} className="text-gray-400" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden py-1">
+          <div className="px-3 py-2 border-b border-gray-100">
+            <div className="text-sm font-medium text-gray-900 truncate">{user.name}</div>
+            <div className="text-[11px] text-gray-400 capitalize">{user.role}</div>
+          </div>
+          <button onClick={() => { setOpen(false); onChangePassword(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+            <KeyRound size={15} className="text-gray-400" /> Change password
+          </button>
+          <button onClick={() => { setOpen(false); onLogout(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+            <LogOut size={15} className="text-gray-400" /> Sign out
+          </button>
         </div>
       )}
     </div>
@@ -530,6 +643,7 @@ function App() {
   const [commsLink, setCommsLink] = useState(null); // { channel, from, fromLabel }
   const [homePref, setHomePref] = useState('fsqa');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showChangePw, setShowChangePw] = useState(false);
   const homeApplied = useRef(false);
 
   // Apply the user's default landing workspace once, on first load after login.
@@ -562,6 +676,12 @@ function App() {
     window.addEventListener('app-logout', handler);
     return () => window.removeEventListener('app-logout', handler);
   }, [logout]);
+
+  useEffect(() => {
+    const handler = () => setShowChangePw(true);
+    window.addEventListener('app-change-password', handler);
+    return () => window.removeEventListener('app-change-password', handler);
+  }, []);
 
   useEffect(() => {
     const handler = (e) => setActiveTab(e.detail?.tab || 'dashboard');
@@ -713,6 +833,9 @@ function App() {
                 {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH' }[user.department] || user.department?.toUpperCase()}
               </span>
               <span className="text-xs text-gray-500">{user.name}</span>
+              <button onClick={() => setShowChangePw(true)} className="text-gray-400 hover:text-gray-600" data-tip="Change password" data-tip-left>
+                <KeyRound size={17} />
+              </button>
               <button onClick={logout} className="text-gray-400 hover:text-gray-600" title="Sign Out">
                 <LogOut size={18} />
               </button>
@@ -722,6 +845,7 @@ function App() {
         <main className="max-w-3xl mx-auto px-4 py-6">
           <OperatorView />
         </main>
+        {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
         <UpdateBanner />
       </div>
     );
@@ -785,6 +909,9 @@ function App() {
                 {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH' }[user.department] || user.department?.toUpperCase()}
               </span>
               <span className="text-xs text-gray-500">{user.name}</span>
+              <button onClick={() => setShowChangePw(true)} className="text-gray-400 hover:text-gray-600" data-tip="Change password" data-tip-left>
+                <KeyRound size={17} />
+              </button>
               <button onClick={logout} className="text-gray-400 hover:text-gray-600" title="Sign Out">
                 <LogOut size={18} />
               </button>
@@ -794,6 +921,7 @@ function App() {
         <main className="max-w-3xl mx-auto px-4 py-6">
           <OperatorView />
         </main>
+        {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
         <UpdateBanner />
       </div>
     );
@@ -839,12 +967,7 @@ function App() {
                   <Settings size={18} />
                 </button>
               )}
-              <div className="flex items-center gap-2">
-                <div className="h-7 w-7 rounded-full bg-powder-100 flex items-center justify-center text-xs font-bold text-powder-700">
-                  {(user.name || '?')[0]}
-                </div>
-                <span className="text-sm text-gray-600">{user.name}</span>
-              </div>
+              <AccountMenu user={user} onChangePassword={() => setShowChangePw(true)} onLogout={logout} />
             </div>
           </div>
         </header>
@@ -910,6 +1033,7 @@ function App() {
       </div>
 
       <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} />
+      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
       <UpdateBanner />
       <InstallPrompt />
     </div>
