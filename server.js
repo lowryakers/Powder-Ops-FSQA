@@ -930,7 +930,7 @@ try {
       db.transaction(() => flat.forEach((it, i) => ins.run(uuid(), it.name, i, it.category)))();
       console.log(`[seed] Seeded ${flat.length} Maintenance Sign-Out items`);
     } else {
-      const flag = db.prepare("SELECT value FROM app_settings WHERE key = 'maint_items_v2'").get();
+      const flag = db.prepare("SELECT value FROM app_settings WHERE key = 'maint_items_v3'").get();
       if (!flag) {
         const has = db.prepare('SELECT 1 FROM maintenance_items WHERE name = ?');
         const setCat = db.prepare('UPDATE maintenance_items SET category = ? WHERE name = ? AND (category IS NULL OR category = ?)');
@@ -942,7 +942,7 @@ try {
             if (has.get(it.name)) setCat.run(it.category, it.name, '');
             else { ins.run(uuid(), it.name, next++, it.category); added++; }
           }
-          db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('maint_items_v2', '1', datetime('now'))").run();
+          db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('maint_items_v3', '1', datetime('now'))").run();
         })();
         console.log(`[migrate] Maintenance items: categorized existing + added ${added} new`);
       }

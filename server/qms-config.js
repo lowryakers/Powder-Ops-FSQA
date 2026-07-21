@@ -73,6 +73,22 @@ export const MAINTENANCE_ITEM_GROUPS = [
       'Sealer #3',
     ],
   },
+  {
+    category: 'Calibration Weights',
+    items: [
+      'Calibration Weight — 25 kg',
+      'Calibration Weight — 500 g',
+      'Calibration Weight — 200 g',
+      'Calibration Weight — 100 g',
+      'Calibration Weight — 50 g',
+      'Calibration Weight — 20 g',
+      'Calibration Weight — 10 g',
+      'Calibration Weight — 5 g',
+      'Calibration Weight — 2 g',
+      'Calibration Weight — 10 kg',
+      'Calibration Weight — 1 g',
+    ],
+  },
 ];
 
 // Flat list (back-compat) — every checkable item, Tool Box first then Equipment.

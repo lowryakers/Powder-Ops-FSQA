@@ -368,7 +368,7 @@ async function uploadFile(file) {
 // Add/rename/recategorize/remove/reorder tools; saved to the DB and reflected in
 // the form. Items carry a category so the dropdown can group them (Tool Box
 // Equipment List / Equipment List).
-const MAINT_CATEGORIES = ['Tool Box Equipment List', 'Equipment List'];
+const MAINT_CATEGORIES = ['Tool Box Equipment List', 'Equipment List', 'Calibration Weights'];
 function ManageItemsModal({ onDone, onClose }) {
   const [items, setItems] = useState(null);
   const [saving, setSaving] = useState(false);
