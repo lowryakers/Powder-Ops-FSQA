@@ -774,10 +774,16 @@ const DEPT_KEYS = [
 ];
 
 export default function OperatorView() {
-  const { user } = useAuth() || {};
-  // Only admins may view other departments. Everyone else (incl. supervisors)
-  // is locked to their own department's tasks.
-  const isAdmin = user?.role === 'admin';
+  const { user: authUser } = useAuth() || {};
+  const authIsAdmin = authUser?.role === 'admin';
+  // "View as": an admin can preview exactly what a specific non-admin operator
+  // sees. While active, the view is that person's (role/department), read-only.
+  const [viewAs, setViewAs] = useState(null); // { id, name, department } or null
+  const [showViewAsPicker, setShowViewAsPicker] = useState(false);
+  const user = viewAs ? { ...authUser, role: 'operator', name: viewAs.name, department: viewAs.department } : authUser;
+  // Only admins (acting as themselves) may browse other departments. Everyone
+  // else — and an admin impersonating an operator — is locked to one department.
+  const isAdmin = !viewAs && authIsAdmin;
   const userDept = user?.department || 'warehouse';
   // Language is owned here so the EN/ES toggle is available in every context the
   // Operator View appears (standalone layout and the in-app tab). Shares the
@@ -785,10 +791,16 @@ export default function OperatorView() {
   const [lang, setLang] = useState(() => localStorage.getItem('op_lang') || 'en');
   const changeLang = (l) => { setLang(l); localStorage.setItem('op_lang', l); };
   const t = useMemo(() => createTranslator(lang), [lang]);
-  const [viewDept, setViewDept] = useState(isAdmin ? 'all' : userDept);
+  const [adminViewDept, setAdminViewDept] = useState('all');
+  // The department whose tasks we load: the impersonated person's, else the
+  // admin's chosen filter, else the viewer's own department.
+  const viewDept = viewAs ? (viewAs.department || 'warehouse') : (authIsAdmin ? adminViewDept : userDept);
   const groupParam = viewDept === 'all' ? '' : `?group=${viewDept}`;
   const { data: tasks, loading, refresh } = useApiGet(`/pm/operator-tasks${groupParam}`);
   const { data: technicians } = useApiGet('/users/technicians');
+  // Roster for the View-as picker (admins only).
+  const { data: rosterUsers } = useApiGet(authIsAdmin ? '/users' : '/users/technicians');
+  const viewAsCandidates = (rosterUsers || []).filter(u => u.is_active && u.role !== 'admin');
 
   // AI content translation: the static UI labels come from operatorStrings, but
   // task titles / equipment names / procedure steps are DB data in English. When
@@ -876,9 +888,10 @@ export default function OperatorView() {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  }, []);
+  }, [setBatchSelected]);
 
   const handleBatchComplete = async () => {
+    if (viewAs) { showToast(`Exit “Viewing as ${viewAs.name}” to make changes`, 'info'); return; }
     if (batchSelected.size === 0) return;
     setBatchSaving(true);
     try {
@@ -896,7 +909,15 @@ export default function OperatorView() {
     }
   };
 
+  // While previewing someone else's view, block writes so an admin doesn't
+  // accidentally act (as themselves) from inside the impersonated view.
+  const blockedByViewAs = () => {
+    if (viewAs) { showToast(`Exit “Viewing as ${viewAs.name}” to make changes`, 'info'); return true; }
+    return false;
+  };
+
   const handleComplete = async (woId, form) => {
+    if (blockedByViewAs()) return;
     if (String(woId).startsWith('qa_')) {
       const entryId = String(woId).replace('qa_', '');
       await apiPut(`/production/entries/${entryId}/qa-signoff`, {
@@ -913,6 +934,7 @@ export default function OperatorView() {
   };
 
   const handleFlagIssue = async (woId, form) => {
+    if (blockedByViewAs()) return;
     if (String(woId).startsWith('qa_')) return;
     await apiPost(`/pm/work-orders/${woId}/flag-issue`, form);
     showToast(t('toast_issue'), 'info');
@@ -920,6 +942,7 @@ export default function OperatorView() {
   };
 
   const handleSkipNA = async (woId, form) => {
+    if (blockedByViewAs()) return;
     if (String(woId).startsWith('qa_')) return;
     await apiPost(`/pm/work-orders/${woId}/not-applicable`, form);
     showToast(t('toast_na'), 'info');
@@ -927,11 +950,13 @@ export default function OperatorView() {
   };
 
   const handleAssign = async (woId, assignedTo) => {
+    if (blockedByViewAs()) return;
     await apiPut(`/pm/work-orders/${woId}`, { assigned_to: assignedTo });
     refresh();
   };
 
   const handleUpdateItems = async (schedId, items) => {
+    if (blockedByViewAs()) return;
     await apiPut(`/pm/schedules/${schedId}/items`, { items });
     refresh();
   };
@@ -1026,13 +1051,45 @@ export default function OperatorView() {
         </div>
       </div>
 
+      {/* View as operator (admin): preview exactly what a specific person sees */}
+      {authIsAdmin && (viewAs ? (
+        <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+          <div className="flex items-center gap-2 text-sm text-amber-800 min-w-0">
+            <CircleDot size={15} className="shrink-0" />
+            <span className="truncate">Viewing as <span className="font-semibold">{viewAs.name}</span>{viewAs.department ? ` · ${viewAs.department.replace(/_/g, ' ')}` : ''} — read only</span>
+          </div>
+          <button onClick={() => { setViewAs(null); setShowViewAsPicker(false); }} className="shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-amber-700 border border-amber-200 hover:bg-amber-100">Exit</button>
+        </div>
+      ) : (
+        <div className="relative">
+          <button onClick={() => setShowViewAsPicker(v => !v)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200">
+            <Search size={14} /> View as operator…
+          </button>
+          {showViewAsPicker && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowViewAsPicker(false)} />
+              <div className="absolute left-0 mt-1 w-64 max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+                {viewAsCandidates.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No operators found</div>}
+                {viewAsCandidates.map(u => (
+                  <button key={u.id} onClick={() => { setViewAs({ id: u.id, name: u.name, department: u.department }); setShowViewAsPicker(false); }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between gap-2">
+                    <span className="text-gray-800 truncate">{u.name}</span>
+                    <span className="text-[11px] text-gray-400 shrink-0">{(u.department || '').replace(/_/g, ' ')}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+
       {/* Admin department toggle */}
       {isAdmin && (
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
           {DEPT_KEYS.map(d => (
             <button
               key={d.id}
-              onClick={() => setViewDept(d.id)}
+              onClick={() => setAdminViewDept(d.id)}
               className={`flex-1 px-2 sm:px-3 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                 viewDept === d.id
                   ? 'bg-white text-gray-900 shadow-sm'
