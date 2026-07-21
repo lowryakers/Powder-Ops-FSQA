@@ -274,14 +274,12 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
         </div>
       </div>
 
-      {!isAdmin && (
-        <ModuleAccessEditor
-          value={form.module_access}
-          onChange={(val) => setForm({ ...form, module_access: val })}
-        />
-      )}
+      <ModuleAccessEditor
+        value={form.module_access}
+        onChange={(val) => setForm({ ...form, module_access: val })}
+      />
       {isAdmin && (
-        <p className="text-xs text-gray-400 italic">Admins have full access to all modules.</p>
+        <p className="text-[11px] text-gray-400 italic -mt-1">Admins default to full access — uncheck "Full access" to hide specific modules from this admin. Settings always stays enabled.</p>
       )}
 
       <div className="flex items-center gap-4 mt-1">
@@ -363,7 +361,7 @@ function UserRow({ u, onEdit, onToggle, onRemove, isEditing }) {
         </span>
       </td>
       <td className="px-4 py-3">
-        {u.role === 'admin' ? (
+        {u.role === 'admin' && !moduleAccess ? (
           <span className="text-[10px] text-gray-400">All modules</span>
         ) : (
           <span className="text-[10px] text-gray-500">{moduleCount}/{ALL_MODULE_IDS.length} modules</span>
