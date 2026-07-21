@@ -670,7 +670,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
           <p className="text-sm text-gray-500">{filtered.length} record{filtered.length === 1 ? '' : 's'}</p>
         </div>
         {canEdit && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {cfg.kioskPath && <button onClick={() => setShowQr(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><QrCode size={15} /> Kiosk QR</button>}
             {recordType === 'maintenance_sign_out' && <button onClick={() => setManagingItems(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><ListChecks size={15} /> Manage Items</button>}
             <button onClick={() => setAttaching(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Paperclip size={15} /> Attach Forms</button>

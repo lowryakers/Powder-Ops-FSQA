@@ -1147,8 +1147,8 @@ export default function ProductionSchedule({ user }) {
   return (
     <div className="space-y-4">
       {/* Week Navigation Bar */}
-      <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-3">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 bg-white rounded-xl border border-gray-200 px-4 py-3">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setWeekOffset(w => w - 1)}
             className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
@@ -1172,11 +1172,11 @@ export default function ProductionSchedule({ user }) {
           </button>
         </div>
 
-        <h2 className="text-sm sm:text-base font-semibold text-gray-900">
+        <h2 className="text-sm sm:text-base font-semibold text-gray-900 whitespace-nowrap order-last sm:order-none w-full sm:w-auto text-center">
           Week of {formatDate(monday)}
         </h2>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('open-comms-channel', { detail: { channel: 'production', from: 'production-schedule', fromLabel: 'Schedule' } }))}
           className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5"

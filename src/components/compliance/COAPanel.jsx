@@ -1230,12 +1230,12 @@ export default function COAPanel() {
                       )}
                     </div>
                   </div>
-                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                    {r.lot_number && <span>Lot <span className="font-medium text-gray-700">{r.lot_number}</span></span>}
-                    {r.tests_requested && <span>{r.tests_requested}</span>}
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500 min-w-0">
+                    {r.lot_number && <span className="min-w-0 break-all">Lot <span className="font-medium text-gray-700">{r.lot_number}</span></span>}
+                    {r.tests_requested && <span className="break-words">{r.tests_requested}</span>}
                   </div>
-                  <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-400">
-                    {r.lab_name && <span>{r.lab_name}</span>}
+                  <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-400 min-w-0">
+                    {r.lab_name && <span className="break-words">{r.lab_name}</span>}
                     {r.date_sent && <span>Sent {r.date_sent}</span>}
                     {r.file_counts?.lab_results ? <span className="text-powder-600">{r.file_counts.lab_results} lab file{r.file_counts.lab_results > 1 ? 's' : ''}</span> : null}
                   </div>

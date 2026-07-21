@@ -836,9 +836,9 @@ export default function PMPanel() {
       {/* Group Filter (Admin) + View Toggle + Frequency Filter */}
       <div className="space-y-2">
         {isAdmin && (
-          <div className="flex items-center gap-2">
-            <Users size={14} className="text-gray-500" />
-            <div className="flex gap-1">
+          <div className="flex items-start gap-2">
+            <Users size={14} className="text-gray-500 mt-1.5 shrink-0" />
+            <div className="flex gap-1 flex-wrap">
               {GROUP_TABS.map(g => (
                 <button key={g.value} onClick={() => { setGroupFilter(g.value); if (view === 'completed') loadArchive(freqFilter, dateFrom, dateTo, g.value); }}
                   className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${groupFilter === g.value ? `${g.color} text-white` : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>

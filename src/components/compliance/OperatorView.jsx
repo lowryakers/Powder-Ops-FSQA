@@ -1085,12 +1085,12 @@ export default function OperatorView() {
 
       {/* Admin department toggle */}
       {isAdmin && (
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto no-scrollbar">
           {DEPT_KEYS.map(d => (
             <button
               key={d.id}
               onClick={() => setAdminViewDept(d.id)}
-              className={`flex-1 px-2 sm:px-3 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+              className={`flex-1 shrink-0 px-2 sm:px-3 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                 viewDept === d.id
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
