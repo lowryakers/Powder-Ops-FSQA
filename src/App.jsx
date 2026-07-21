@@ -828,13 +828,13 @@ function App() {
             <h1 className="text-sm font-semibold text-gray-700">{activeItem?.label || 'Dashboard'}</h1>
             <div className="flex items-center gap-3">
               <ModuleSearch user={user} onNavigate={setActiveTab} />
-              <button onClick={() => setHome('fsqa')} title={homePref === 'fsqa' ? 'ReadyDoc is your home screen' : 'Make ReadyDoc your home screen'}
+              <button onClick={() => setHome('fsqa')} data-tip={homePref === 'fsqa' ? 'ReadyDoc is your home screen' : 'Make ReadyDoc your home screen'}
                 className={`p-1.5 rounded-lg transition-colors ${homePref === 'fsqa' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
                 <Home size={18} />
               </button>
               <NotificationBell notifications={notifications} onNavigate={setActiveTab} />
               {user.role === 'admin' && (
-                <button onClick={() => setActiveTab('settings')} title="Settings"
+                <button onClick={() => setActiveTab('settings')} data-tip="Settings" data-tip-left
                   className={`p-1.5 rounded-lg transition-colors ${resolvedTab === 'settings' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
                   <Settings size={18} />
                 </button>

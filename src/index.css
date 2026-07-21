@@ -76,3 +76,34 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Instant, styled tooltips for icon-only buttons. Add data-tip="Label" to any
+   element; shows below on hover. Hover-capable pointers only (skips touch). */
+@media (hover: hover) {
+  [data-tip] { position: relative; }
+  [data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%) translateY(-3px);
+    background: #1f2937;
+    color: #fff;
+    font-size: 11px;
+    line-height: 1.1;
+    font-weight: 500;
+    white-space: nowrap;
+    padding: 5px 8px;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .12s ease, transform .12s ease;
+    z-index: 60;
+  }
+  [data-tip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+  /* data-tip-left aligns the bubble to the element's right edge (for icons near
+     the right side of the screen, so the tip doesn't overflow the viewport). */
+  [data-tip][data-tip-left]::after { left: auto; right: 0; transform: translateY(-3px); }
+  [data-tip][data-tip-left]:hover::after { transform: translateY(0); }
+}

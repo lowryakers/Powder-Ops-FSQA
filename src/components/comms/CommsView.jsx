@@ -526,14 +526,14 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
       </div>
       {!m.deleted && (
         <div className="relative opacity-0 group-hover:opacity-100 flex items-start gap-1 shrink-0">
-          <button onClick={() => setShowEmoji(s => !s)} className="p-1 text-gray-400 hover:text-gray-600" title="React"><Smile size={14} /></button>
-          {onReply && <button onClick={() => onReply(m)} className="p-1 text-gray-400 hover:text-gray-600" title="Reply in thread"><MessageSquare size={13} /></button>}
-          {canTranslate && m.body && !translated && <button onClick={doTranslate} className="p-1 text-gray-400 hover:text-gray-600" title="Translate"><Languages size={13} /></button>}
-          {onMarkUnread && <button onClick={() => onMarkUnread(m)} className="p-1 text-gray-400 hover:text-powder-600" title="Mark unread from here">
+          <button onClick={() => setShowEmoji(s => !s)} className="p-1 text-gray-400 hover:text-gray-600" data-tip="React"><Smile size={14} /></button>
+          {onReply && <button onClick={() => onReply(m)} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Reply in thread"><MessageSquare size={13} /></button>}
+          {canTranslate && m.body && !translated && <button onClick={doTranslate} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Translate"><Languages size={13} /></button>}
+          {onMarkUnread && <button onClick={() => onMarkUnread(m)} className="p-1 text-gray-400 hover:text-powder-600" data-tip="Mark unread from here">
             <span className="block h-2.5 w-2.5 rounded-full border-2 border-current" />
           </button>}
-          {mine && <button onClick={() => { setDraft(m.body || ''); setEditing(true); }} className="p-1 text-gray-400 hover:text-gray-600" title="Edit"><Edit2 size={13} /></button>}
-          {(mine) && <button onClick={() => onDelete(m)} className="p-1 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
+          {mine && <button onClick={() => { setDraft(m.body || ''); setEditing(true); }} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Edit" data-tip-left><Edit2 size={13} /></button>}
+          {(mine) && <button onClick={() => onDelete(m)} className="p-1 text-gray-400 hover:text-red-500" data-tip="Delete" data-tip-left><Trash2 size={13} /></button>}
           {showEmoji && <EmojiPicker onPick={(e) => { onReact(m, e); setShowEmoji(false); }} onClose={() => setShowEmoji(false)} />}
         </div>
       )}
@@ -992,20 +992,20 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
         </div>
         <div className="ml-auto flex items-center gap-1 sm:gap-2 shrink-0">
           {onSetHome && (
-            <button onClick={() => onSetHome('messages')} title={homePref === 'messages' ? 'Messages is your home screen' : 'Make Messages your home screen'}
+            <button onClick={() => onSetHome('messages')} data-tip={homePref === 'messages' ? 'Messages is your home screen' : 'Make Messages your home screen'} data-tip-left
               className={`hidden sm:block p-2 rounded-lg ${homePref === 'messages' ? 'text-powder-600 bg-powder-50 hover:bg-powder-100' : 'text-gray-400 hover:bg-gray-100'}`}>
               <Home size={16} />
             </button>
           )}
           {user.role === 'admin' && (
-            <button onClick={() => setShowSettings(true)} title="Communication settings"
+            <button onClick={() => setShowSettings(true)} data-tip="Communication settings" data-tip-left
               className="p-2 rounded-lg text-gray-400 hover:bg-gray-100">
               <Settings size={16} />
             </button>
           )}
           {pushOn && (
-            <button onClick={togglePush} disabled={pushBusy}
-              title={pushSubscribed ? 'Notifications on — click to turn off' : 'Enable push notifications'}
+            <button onClick={togglePush} disabled={pushBusy} data-tip-left
+              data-tip={pushSubscribed ? 'Notifications on — click to turn off' : 'Enable push notifications'}
               className={`p-2 rounded-lg ${pushSubscribed ? 'text-powder-600 bg-powder-50 hover:bg-powder-100' : 'text-gray-400 hover:bg-gray-100'}`}>
               {pushSubscribed ? <Bell size={16} /> : <BellOff size={16} />}
             </button>
@@ -1090,7 +1090,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
           <div>
             <div className="flex items-center justify-between px-2 mb-1">
               <span className="text-[10px] font-bold uppercase text-gray-400">{sectionGroups.length ? 'Channels' : 'Channels'}</span>
-              <button onClick={() => setNewChannel(true)} className="text-gray-400 hover:text-powder-600" title="New channel"><Plus size={14} /></button>
+              <button onClick={() => setNewChannel(true)} className="text-gray-400 hover:text-powder-600" data-tip="New channel" data-tip-left><Plus size={14} /></button>
             </div>
             <div className="space-y-0.5">
               {ungroupedCh.map(c => <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} />)}
@@ -1099,7 +1099,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
           <div>
             <div className="flex items-center justify-between px-2 mb-1">
               <span className="text-[10px] font-bold uppercase text-gray-400">Direct Messages</span>
-              <button onClick={() => setShowDmPicker(s => !s)} className="text-gray-400 hover:text-powder-600" title="New DM"><Plus size={14} /></button>
+              <button onClick={() => setShowDmPicker(s => !s)} className="text-gray-400 hover:text-powder-600" data-tip="New message or group" data-tip-left><Plus size={14} /></button>
             </div>
             {showDmPicker && (
               <div className="mb-1 px-1">
