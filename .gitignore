@@ -13,3 +13,4 @@ data/uploads/
 _test*.cjs
 _shot*.mjs
 _pdf*.mjs
+*.db
