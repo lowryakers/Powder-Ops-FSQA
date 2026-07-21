@@ -42,6 +42,12 @@ const TEST_TYPES = [
   'Gluten', 'FTIR ID', 'Potency', 'Bacillus Subtilis', 'Allergens', 'Moisture', 'Other',
 ];
 
+// Left-edge accent for the mobile cards, keyed to status.
+const statusStripe = (s) => ({
+  pass: 'border-l-green-500', fail: 'border-l-red-500', hold: 'border-l-yellow-500',
+  sent: 'border-l-blue-500', re_test: 'border-l-orange-500',
+}[s] || 'border-l-gray-300');
+
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
   return (
@@ -1204,7 +1210,40 @@ export default function COAPanel() {
           ) : filtered.length === 0 ? (
             <div className="text-center py-8 text-gray-400">No lab requests found</div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <>
+            {/* Mobile: card list (search + status filter above still apply) */}
+            <div className="md:hidden space-y-2">
+              {filtered.map(r => (
+                <div key={r.id} onClick={() => setSelectedId(r.id)}
+                  className={`bg-white rounded-xl border border-gray-200 border-l-4 ${statusStripe(r.status)} p-3 active:bg-gray-50 ${selected.has(r.id) ? 'ring-2 ring-powder-300' : ''}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-powder-700 text-sm">{r.item_number}</div>
+                      <div className="text-gray-800 text-sm leading-snug">{r.item_description}</div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <StatusBadge status={r.status} />
+                      {canEdit && (
+                        <button onClick={e => { e.stopPropagation(); toggleOne(r.id); }} className="text-gray-300 hover:text-powder-600" title={selected.has(r.id) ? 'Deselect' : 'Select'}>
+                          {selected.has(r.id) ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                    {r.lot_number && <span>Lot <span className="font-medium text-gray-700">{r.lot_number}</span></span>}
+                    {r.tests_requested && <span>{r.tests_requested}</span>}
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-400">
+                    {r.lab_name && <span>{r.lab_name}</span>}
+                    {r.date_sent && <span>Sent {r.date_sent}</span>}
+                    {r.file_counts?.lab_results ? <span className="text-powder-600">{r.file_counts.lab_results} lab file{r.file_counts.lab_results > 1 ? 's' : ''}</span> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Desktop: full table */}
+            <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
@@ -1255,6 +1294,7 @@ export default function COAPanel() {
                 </table>
               </div>
             </div>
+            </>
           )}
         </>
       )}
