@@ -28,7 +28,7 @@ import documentRoutes, { generateDocumentReviewTasks } from './server/api/docume
 import qualityScheduleRoutes, { generateQualityScheduleTasks } from './server/api/quality-schedules.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
-import { getType as getQmsType, MAINTENANCE_TOOLBOX_ITEMS } from './server/qms-config.js';
+import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
 import { DCR_LOG_CSV, DEVIATION_LOG_CSVS, NON_CONFORMANCE_LOG_CSV, ON_HOLD_LOG_CSV, ORGANOLEPTIC_LOG_CSV } from './server/qms-seed.js';
 import orgRoutes from './server/api/org.js';
 import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
@@ -377,6 +377,48 @@ try {
     } catch (e) {
       console.warn('[seed] Could not seed calibration:', e.message);
     }
+  }
+}
+
+// Seed the calibration reference weights (the Calibration Weights section of the
+// Tool Box Equipment List) into the Calibration log — once, guarded by a flag so
+// it never duplicates and admin edits/deletions are respected afterward.
+{
+  const CAL_WEIGHTS = [
+    { label: '25 kg', unit: 'kg', qty: 6, note: 'Certified reference weight' },
+    { label: '500 g', unit: 'g', qty: 1, note: 'Certified reference weight' },
+    { label: '200 g', unit: 'g', qty: 1, note: 'Certified reference weight' },
+    { label: '100 g', unit: 'g', qty: 1, note: 'Certified reference weight (tiny weights kit)' },
+    { label: '50 g', unit: 'g', qty: 1, note: 'Certified reference weight (tiny weights kit)' },
+    { label: '20 g', unit: 'g', qty: 2, note: 'Certified reference weight (tiny weights kit)' },
+    { label: '10 g', unit: 'g', qty: 1, note: 'Certified reference weight (tiny weights kit)' },
+    { label: '5 g', unit: 'g', qty: 1, note: 'Certified reference weight (tiny weights kit)' },
+    { label: '2 g', unit: 'g', qty: 2, note: 'Certified reference weight (tiny weights kit)' },
+    { label: '10 kg', unit: 'kg', qty: 1, note: 'NOT certified — do not use as a reference standard', status: 'out_of_service' },
+    { label: '1 g', unit: 'g', qty: 1, note: 'Missing — must purchase', status: 'out_of_service' },
+  ];
+  try {
+    const seeded = db.prepare("SELECT value FROM app_settings WHERE key = 'cal_weights_seeded'").get();
+    if (!seeded) {
+      const insW = db.prepare(`INSERT INTO calibration_instruments
+        (id, name, type, manufacturer, model, max_capacity, unit_of_measure, calibration_frequency, status, department, notes)
+        VALUES (?, ?, 'weight', 'Calibration Weight', ?, ?, ?, 'annual', ?, 'qa', ?)`);
+      const exists = db.prepare('SELECT 1 FROM calibration_instruments WHERE name = ?');
+      let n = 0;
+      db.transaction(() => {
+        for (const w of CAL_WEIGHTS) {
+          const name = `Calibration Weight — ${w.label}`;
+          if (exists.get(name)) continue;
+          const notes = w.qty > 1 ? `Qty: ${w.qty}. ${w.note}` : w.note;
+          insW.run(uuid(), name, w.label, w.label, w.unit, w.status || 'active', notes);
+          n++;
+        }
+        db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('cal_weights_seeded','1',datetime('now'))").run();
+      })();
+      if (n) console.log(`[seed] Added ${n} calibration reference weights`);
+    }
+  } catch (e) {
+    console.warn('[seed] Could not seed calibration weights:', e.message);
   }
 }
 
@@ -876,12 +918,35 @@ try {
   }
   const knifeSeeded = seedKnifeMasterlist(db);
   if (knifeSeeded) console.log(`[seed] Seeded Knife / Razor Blade / Scissor masterlist (${knifeSeeded} records)`);
-  // Seed the editable Maintenance Sign-Out item list from the default Tool Box
-  // Equipment List (only when empty, so app edits are never overwritten).
-  if (db.prepare('SELECT COUNT(*) c FROM maintenance_items').get().c === 0) {
-    const ins = db.prepare('INSERT INTO maintenance_items (id, name, sort_order) VALUES (?, ?, ?)');
-    db.transaction(() => MAINTENANCE_TOOLBOX_ITEMS.forEach((name, i) => ins.run(uuid(), name, i)))();
-    console.log(`[seed] Seeded ${MAINTENANCE_TOOLBOX_ITEMS.length} Maintenance Sign-Out items`);
+  // Seed the editable Maintenance Sign-Out item list (Tool Box Equipment List +
+  // Equipment List), grouped by category. Fresh installs get the full set; a
+  // one-time upgrade adds the newer items + categories to existing installs
+  // without disturbing any custom items admins have added.
+  {
+    const flat = MAINTENANCE_ITEM_GROUPS.flatMap(g => g.items.map(name => ({ name, category: g.category })));
+    const count = db.prepare('SELECT COUNT(*) c FROM maintenance_items').get().c;
+    if (count === 0) {
+      const ins = db.prepare('INSERT INTO maintenance_items (id, name, sort_order, category) VALUES (?, ?, ?, ?)');
+      db.transaction(() => flat.forEach((it, i) => ins.run(uuid(), it.name, i, it.category)))();
+      console.log(`[seed] Seeded ${flat.length} Maintenance Sign-Out items`);
+    } else {
+      const flag = db.prepare("SELECT value FROM app_settings WHERE key = 'maint_items_v2'").get();
+      if (!flag) {
+        const has = db.prepare('SELECT 1 FROM maintenance_items WHERE name = ?');
+        const setCat = db.prepare('UPDATE maintenance_items SET category = ? WHERE name = ? AND (category IS NULL OR category = ?)');
+        const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) m FROM maintenance_items').get().m;
+        const ins = db.prepare('INSERT INTO maintenance_items (id, name, sort_order, category) VALUES (?, ?, ?, ?)');
+        let added = 0, next = maxOrder + 1;
+        db.transaction(() => {
+          for (const it of flat) {
+            if (has.get(it.name)) setCat.run(it.category, it.name, '');
+            else { ins.run(uuid(), it.name, next++, it.category); added++; }
+          }
+          db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('maint_items_v2', '1', datetime('now'))").run();
+        })();
+        console.log(`[migrate] Maintenance items: categorized existing + added ${added} new`);
+      }
+    }
   }
 } catch (e) {
   console.warn('[seed] Could not seed QMS registers:', e.message);

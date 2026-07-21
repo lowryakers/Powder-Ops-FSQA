@@ -305,20 +305,17 @@ router.post('/set-password', (req, res) => {
   res.json(issueSession(db, { ...user, password_hash: '1' }));
 });
 
-// Admin-set/reset a user's password (e.g. for imported users, or a lockout).
+// Admin reset: one click clears the user's password so their next sign-in runs
+// the first-time set-password flow (they choose a brand-new password themselves,
+// no temporary one to hand off). Existing sessions are dropped so the reset
+// takes effect everywhere immediately.
 router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
   const db = getDb();
-  const { password, admin_password } = req.body;
-  if (!password || String(password).length < MIN_PASSWORD) return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD} characters` });
-  // Re-authorize this sensitive action with the acting admin's own password.
-  const admin = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
-  if (admin?.password_hash && !verifyPassword(String(admin_password || ''), admin.password_hash)) {
-    return res.status(401).json({ error: 'Your password is incorrect.' });
-  }
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  db.prepare("UPDATE users SET password_hash = ?, pin = NULL, updated_at = datetime('now') WHERE id = ?").run(hashPassword(password), user.id);
-  logAudit(req.user, 'password_reset', 'user', user.id, { by_admin: true }, null, null, user.name);
+  db.prepare("UPDATE users SET password_hash = NULL, pin = NULL, updated_at = datetime('now') WHERE id = ?").run(user.id);
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id); // force re-auth
+  logAudit(req.user, 'password_reset', 'user', user.id, { by_admin: true, mode: 'send_to_setup' }, null, null, user.name);
   res.json({ ok: true });
 });
 

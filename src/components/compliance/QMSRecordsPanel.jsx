@@ -106,12 +106,22 @@ function FieldInput({ f, value, onChange }) {
   if (f.type === 'date') return <input type="date" value={value || ''} onChange={e => onChange(e.target.value)} className={base} />;
   if (f.type === 'number') return <input type="number" value={value ?? ''} onChange={e => onChange(e.target.value)} className={base} />;
   if (f.type === 'checkbox') return <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} className="rounded border-gray-300" /> {f.label}</label>;
-  if (f.type === 'select') return (
-    <select value={value || ''} onChange={e => onChange(e.target.value)} className={base}>
-      <option value="">—</option>
-      {f.options.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
-  );
+  if (f.type === 'select') {
+    // options can be a flat list of strings or grouped [{ group, items }] → optgroups
+    const grouped = Array.isArray(f.options) && f.options.some(o => o && typeof o === 'object' && Array.isArray(o.items));
+    return (
+      <select value={value || ''} onChange={e => onChange(e.target.value)} className={base}>
+        <option value="">—</option>
+        {grouped
+          ? f.options.map(g => (
+              <optgroup key={g.group} label={g.group}>
+                {g.items.map(o => <option key={o} value={o}>{o}</option>)}
+              </optgroup>
+            ))
+          : f.options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    );
+  }
   if (f.type === 'multiselect') {
     const arr = Array.isArray(value) ? value : [];
     const toggle = (o) => onChange(arr.includes(o) ? arr.filter(x => x !== o) : [...arr, o]);
@@ -355,17 +365,23 @@ async function uploadFile(file) {
 }
 
 // Manage the editable dropdown list for the Maintenance Sign In/Out item field.
-// Add/rename/remove/reorder tools; saved to the DB and reflected in the form.
+// Add/rename/recategorize/remove/reorder tools; saved to the DB and reflected in
+// the form. Items carry a category so the dropdown can group them (Tool Box
+// Equipment List / Equipment List).
+const MAINT_CATEGORIES = ['Tool Box Equipment List', 'Equipment List'];
 function ManageItemsModal({ onDone, onClose }) {
   const [items, setItems] = useState(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   useEffect(() => {
-    apiFetch('/qms/maintenance-items').then(r => setItems(r.items || [])).catch(() => setItems([]));
+    apiFetch('/qms/maintenance-items')
+      // Normalize legacy strings → { name, category }.
+      .then(r => setItems((r.items || []).map(it => typeof it === 'string' ? { name: it, category: '' } : { name: it.name || '', category: it.category || '' })))
+      .catch(() => setItems([]));
   }, []);
-  const set = (i, v) => setItems(a => a.map((x, j) => j === i ? v : x));
+  const set = (i, patch) => setItems(a => a.map((x, j) => j === i ? { ...x, ...patch } : x));
   const remove = (i) => setItems(a => a.filter((_, j) => j !== i));
-  const add = () => setItems(a => [...a, '']);
+  const add = (category) => setItems(a => [...a, { name: '', category: category || '' }]);
   const move = (i, d) => setItems(a => {
     const j = i + d; if (j < 0 || j >= a.length) return a;
     const n = [...a]; [n[i], n[j]] = [n[j], n[i]]; return n;
@@ -373,7 +389,10 @@ function ManageItemsModal({ onDone, onClose }) {
   const save = async () => {
     setSaving(true); setErr(null);
     try {
-      const clean = [...new Set(items.map(s => s.trim()).filter(Boolean))];
+      const seen = new Set();
+      const clean = items
+        .map(it => ({ name: it.name.trim(), category: (it.category || '').trim() || null }))
+        .filter(it => it.name && !seen.has(it.name) && seen.add(it.name));
       await apiPut('/qms/maintenance-items', { items: clean });
       onDone();
       onClose();
@@ -381,12 +400,12 @@ function ManageItemsModal({ onDone, onClose }) {
   };
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg my-6 p-5 space-y-3">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-xl my-6 p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Manage Item List</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
-        <p className="text-xs text-gray-500">The dropdown of tools/equipment for the Maintenance Sign In/Out form. Changes apply to new sign-outs; existing records keep what was recorded.</p>
+        <p className="text-xs text-gray-500">The dropdown of items for the Maintenance Sign In/Out form. The category groups them in the dropdown. Changes apply to new sign-outs; existing records keep what was recorded.</p>
         {items === null ? <p className="text-sm text-gray-400 py-4 text-center">Loading…</p> : (
           <div className="space-y-1.5 max-h-[55vh] overflow-y-auto">
             {items.map((it, i) => (
@@ -395,13 +414,23 @@ function ManageItemsModal({ onDone, onClose }) {
                   <button type="button" onClick={() => move(i, -1)} className="hover:text-gray-600 leading-none" title="Move up"><ChevronUp size={13} /></button>
                   <button type="button" onClick={() => move(i, 1)} className="hover:text-gray-600 leading-none" title="Move down"><ChevronDown size={13} /></button>
                 </div>
-                <span className="text-[11px] text-gray-400 w-5 text-right">{i + 1}</span>
-                <input value={it} onChange={e => set(i, e.target.value)} spellCheck="true"
-                  className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
-                <button type="button" onClick={() => remove(i)} className="p-1 text-gray-300 hover:text-red-500"><Trash2 size={14} /></button>
+                <span className="text-[11px] text-gray-400 w-5 text-right shrink-0">{i + 1}</span>
+                <input value={it.name} onChange={e => set(i, { name: e.target.value })} spellCheck="true" placeholder="Item name"
+                  className="flex-1 min-w-0 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                <select value={it.category} onChange={e => set(i, { category: e.target.value })}
+                  className="shrink-0 w-36 px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white">
+                  <option value="">No group</option>
+                  {MAINT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {it.category && !MAINT_CATEGORIES.includes(it.category) && <option value={it.category}>{it.category}</option>}
+                </select>
+                <button type="button" onClick={() => remove(i)} className="p-1 text-gray-300 hover:text-red-500 shrink-0"><Trash2 size={14} /></button>
               </div>
             ))}
-            <button type="button" onClick={add} className="flex items-center gap-1.5 text-sm text-powder-600 hover:underline mt-1"><Plus size={14} /> Add item</button>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {MAINT_CATEGORIES.map(c => (
+                <button key={c} type="button" onClick={() => add(c)} className="flex items-center gap-1.5 text-xs text-powder-600 hover:underline"><Plus size={13} /> Add to {c}</button>
+              ))}
+            </div>
           </div>
         )}
         {err && <p className="text-xs text-red-600">{err}</p>}

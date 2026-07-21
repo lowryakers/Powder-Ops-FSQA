@@ -12,41 +12,71 @@
 // Approval canSign: admin always; else match `roles` (user.role) or `departments`.
 // ─────────────────────────────────────────────────────────────────────────
 
-// Tool Box Equipment List (from the Tool Box Equipment Verification forms) —
-// the dropdown of items for the Maintenance Sign In/Out sheet.
-export const MAINTENANCE_TOOLBOX_ITEMS = [
-  'Batch Organizer (Lot Numeration)',
-  'Hex Key Set',
-  'Stainless Steel Hammer',
-  'Cleaning Brush',
-  'Pry Bar',
-  'Air Blow Gun',
-  'Caliper',
-  'Rubber Hammer',
-  'Straight Point Tool',
-  '45° Point Pick Tool',
-  'Flat-Head Screwdriver',
-  'Philips Screwdriver',
-  'Double Open-Ended Wrench (08mm-10mm)',
-  'Double Open-Ended Wrench (11mm-13mm)',
-  'Double Open-Ended Wrench (12mm-14mm)',
-  'Double Open-Ended Wrench (13mm-16mm)',
-  'Double Open-Ended Wrench (17mm-19mm)',
-  'Double Open-Ended Wrench (24mm-24mm)',
-  'Pliers',
-  'Adjustable Wrench',
-  'Heat Seal Rubber Stamp (White)',
-  'Cutting Pliers',
-  'Leveler',
-  'Long-Nose Pliers',
-  'Big Roll of Teflon Tape (Brown)',
-  'Small Roll of Teflon Tape (Brown)',
-  'Vinyl Tape (White)',
-  'Electrical Tape (Black)',
-  'Batch Lot Ribbon (Black)',
-  'Batch Lot Ribbon (White)',
-  'Batch Lot Ribbon (Gold)',
+// Items that can be checked in/out on the Maintenance Sign In/Out sheet, grouped
+// into the two source lists (Tool Box Equipment List + Equipment List) from the
+// Tool Box Equipment Verification forms. Rendered as optgroups in the dropdown.
+export const MAINTENANCE_ITEM_GROUPS = [
+  {
+    category: 'Tool Box Equipment List',
+    items: [
+      'Batch Organizer (Lot Numeration)',
+      'Hex Key Set',
+      'Stainless Steel Hammer',
+      'Cleaning Brush',
+      'Pry Bar',
+      'Air Blow Gun',
+      'Caliper',
+      'Rubber Hammer',
+      'Straight Point Tool',
+      '45° Point Pick Tool',
+      'Flat-Head Screwdriver',
+      'Philips Screwdriver',
+      'Double Open-Ended Wrench (08mm-10mm)',
+      'Double Open-Ended Wrench (11mm-13mm)',
+      'Double Open-Ended Wrench (12mm-14mm)',
+      'Double Open-Ended Wrench (13mm-16mm)',
+      'Double Open-Ended Wrench (17mm-19mm)',
+      'Double Open-Ended Wrench (24mm-24mm)',
+      'Pliers',
+      'Adjustable Wrench',
+      'Heat Seal Rubber Stamp (White)',
+      'Cutting Pliers',
+      'Leveler',
+      'Long-Nose Pliers',
+      'Needle Nose Pliers',
+      'Big Roll of Teflon Tape (Brown)',
+      'Small Roll of Teflon Tape (Brown)',
+      'Vinyl Tape (White)',
+      'Electrical Tape (Black)',
+      'Batch Lot Ribbon (Black)',
+      'Batch Lot Ribbon (White)',
+      'Batch Lot Ribbon (Gold)',
+      'Driver Set',
+      'Hex Nuts Assortment Kit',
+      'Wire Strippers',
+      'Scraper',
+      'Digital Multimeter',
+      'Self Adjusting Filter Pliers (2 inch)',
+      'Self Adjusting Filter Pliers (5 inch)',
+    ],
+  },
+  {
+    category: 'Equipment List',
+    items: [
+      'Sealer #39',
+      'Sealer #34',
+      'Sealer #36',
+      'Sealer #33',
+      'Sealer #37',
+      'Sealer #38',
+      'Sealer #0010',
+      'Sealer #3',
+    ],
+  },
 ];
+
+// Flat list (back-compat) — every checkable item, Tool Box first then Equipment.
+export const MAINTENANCE_TOOLBOX_ITEMS = MAINTENANCE_ITEM_GROUPS.flatMap(g => g.items);
 
 export const QMS_TYPES = {
   document_change_request: {

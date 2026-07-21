@@ -87,9 +87,26 @@ function requireType(req, res) {
 // ── config (must precede /:type) ────────────────────────────────────────────
 // Editable Maintenance Sign In/Out item list, stored in the DB and managed in
 // the app. Read helper + admin write endpoint.
+// Returns [{ name, category }] ordered for display. Category groups the dropdown.
 function maintenanceItems(db) {
-  try { return db.prepare('SELECT name FROM maintenance_items ORDER BY sort_order, name').all().map(r => r.name); }
+  try { return db.prepare('SELECT name, category FROM maintenance_items ORDER BY sort_order, name').all(); }
   catch { return []; }
+}
+
+// Build the dropdown `options` for the item field: grouped by category into
+// optgroups, preserving category order of first appearance; uncategorized items
+// fall into a trailing "Other" group.
+function maintenanceItemOptions(rows) {
+  const groups = [];
+  const byCat = new Map();
+  for (const r of rows) {
+    const cat = r.category || 'Other';
+    if (!byCat.has(cat)) { const g = { group: cat, items: [] }; byCat.set(cat, g); groups.push(g); }
+    byCat.get(cat).items.push(r.name);
+  }
+  // A single uncategorized flat list stays flat (no pointless "Other" wrapper).
+  if (groups.length === 1 && groups[0].group === 'Other') return groups[0].items;
+  return groups;
 }
 
 router.get('/maintenance-items', (req, res) => {
@@ -100,15 +117,23 @@ router.put('/maintenance-items', (req, res) => {
   if (!(req.user?.role === 'admin' || req.user?.role === 'supervisor')) {
     return res.status(403).json({ error: 'Only admins or supervisors can edit the item list.' });
   }
-  const items = Array.isArray(req.body?.items)
-    ? [...new Set(req.body.items.map(s => String(s || '').trim()).filter(Boolean))]
-    : null;
-  if (!items) return res.status(400).json({ error: 'items (array) is required' });
+  // Accept either strings (legacy) or { name, category } objects.
+  const raw = Array.isArray(req.body?.items) ? req.body.items : null;
+  if (!raw) return res.status(400).json({ error: 'items (array) is required' });
+  const seen = new Set();
+  const items = [];
+  for (const it of raw) {
+    const name = String((typeof it === 'string' ? it : it?.name) || '').trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const category = typeof it === 'object' && it?.category ? String(it.category).trim() : null;
+    items.push({ name, category: category || null });
+  }
   const db = getDb();
   db.transaction(() => {
     db.prepare('DELETE FROM maintenance_items').run();
-    const ins = db.prepare('INSERT INTO maintenance_items (id, name, sort_order) VALUES (?, ?, ?)');
-    items.forEach((name, i) => ins.run(uuid(), name, i));
+    const ins = db.prepare('INSERT INTO maintenance_items (id, name, sort_order, category) VALUES (?, ?, ?, ?)');
+    items.forEach((it, i) => ins.run(uuid(), it.name, i, it.category));
   })();
   logAudit(req.user, 'update', 'maintenance_items', null, { count: items.length }, null, null);
   res.json({ items });
@@ -116,10 +141,11 @@ router.put('/maintenance-items', (req, res) => {
 
 router.get('/config', (_req, res) => {
   // Inject the current (editable) Maintenance item list into its dropdown field.
-  const items = maintenanceItems(getDb());
+  const rows = maintenanceItems(getDb());
+  const options = maintenanceItemOptions(rows);
   const types = Object.values(QMS_TYPES).map(t => {
-    if (t.key === 'maintenance_sign_out' && items.length) {
-      return { ...t, fields: t.fields.map(f => f.key === 'item_description' ? { ...f, options: items } : f) };
+    if (t.key === 'maintenance_sign_out' && rows.length) {
+      return { ...t, fields: t.fields.map(f => f.key === 'item_description' ? { ...f, options } : f) };
     }
     return t;
   });

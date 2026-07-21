@@ -1343,6 +1343,8 @@ function runMigrations() {
       name TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0
     )`);
+    // Group the dropdown by source list (Tool Box Equipment List / Equipment List).
+    addColumnIfMissing('maintenance_items', 'category', 'TEXT');
   } catch (e) {
     console.warn('[db] maintenance_items unavailable:', e.message);
   }
