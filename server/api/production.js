@@ -2,6 +2,61 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
+import { getChannelByName, postMessageAs } from './comms.js';
+
+// Production teams whose schedule gets published to a matching comms channel.
+// Team name (as stored on assignments) → the channel it maps to.
+const SCHEDULE_TEAM_CHANNELS = [
+  { team: 'Batching', channel: 'batching' },
+  { team: 'Kitting', channel: 'kitting' },
+  { team: 'Stick Pack', channel: 'sticks' },
+  { team: 'Hand Fill', channel: 'hand fill' },
+];
+const SCHED_DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+function schedRowsForTeam(assignments, team) {
+  return assignments
+    .filter(a => a.team === team && a.room_type !== 'cleaning')
+    .sort((a, b) => (a.day_of_week - b.day_of_week) || String(a.room).localeCompare(String(b.room)) || ((a.slot || 0) - (b.slot || 0)));
+}
+function schedFingerprint(rows) {
+  return rows.map(a => `${a.day_of_week}|${a.room}|${a.slot || 0}|${a.mo_number || ''}|${a.product_name || ''}|${a.start_time || ''}|${a.notes || ''}`).join('\n');
+}
+function fmtWeekLabel(weekStart) {
+  try { return new Date(weekStart + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+  catch { return weekStart; }
+}
+function fmtSchedTime(t) {
+  if (!t) return '';
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t));
+  if (!m) return String(t);
+  let h = +m[1]; const mm = m[2]; const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${mm} ${ap}`;
+}
+function teamScheduleMessage(team, rows, weekStart, kind) {
+  const head = `📋 ${team} — production schedule${kind === 'new' ? '' : ' (updated)'} · week of ${fmtWeekLabel(weekStart)}`;
+  if (!rows.length) return `${head}\nNothing scheduled this week.`;
+  const byDay = {};
+  for (const a of rows) (byDay[a.day_of_week] ||= []).push(a);
+  const lines = [head];
+  for (let d = 0; d < 5; d++) {
+    if (!byDay[d]) continue;
+    lines.push(`${SCHED_DAY_NAMES[d]}:`);
+    for (const a of byDay[d]) {
+      const parts = [a.room, a.mo_number ? `MO ${a.mo_number}` : null, a.product_name, fmtSchedTime(a.start_time)].filter(Boolean);
+      lines.push(`  • ${parts.join(' · ')}`);
+      if (a.notes) lines.push(`    ↳ ${a.notes}`);
+    }
+  }
+  return lines.join('\n');
+}
+function combinedScheduleMessage(assignments, weekStart, kind, changedTeams) {
+  const counts = SCHEDULE_TEAM_CHANNELS.map(({ team }) => `${team}: ${schedRowsForTeam(assignments, team).length}`).join(' · ');
+  const head = `📋 Production schedule ${kind === 'new' ? 'published' : 'updated'} · week of ${fmtWeekLabel(weekStart)}`;
+  const changed = changedTeams.length ? `Team updates: ${changedTeams.join(', ')}.` : 'No team-level changes this time.';
+  return `${head}\n${counts}\n${changed}\nOpen ReadyDoc → Schedule for the full grid.`;
+}
 
 const router = Router();
 
@@ -417,8 +472,11 @@ function setSetting(db, key, value) {
               ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`).run(key, value);
 }
 
-// POST /schedule/notify — admin publishes the schedule (kind: 'new' | 'updated')
-router.post('/schedule/notify', requireRole('admin'), (req, res) => {
+// POST /schedule/notify — admin publishes the schedule (kind: 'new' | 'updated').
+// Also posts a per-team schedule overview to each production team's comms
+// channel (only teams whose schedule actually changed since the last publish),
+// plus a combined summary to #production — authored by the publisher.
+router.post('/schedule/notify', requireRole('admin'), async (req, res) => {
   const db = getDb();
   const kind = req.body?.kind === 'new' ? 'new' : 'updated';
   const weekStart = req.body?.week_start || null;
@@ -431,7 +489,33 @@ router.post('/schedule/notify', requireRole('admin'), (req, res) => {
   // The publisher has, by definition, already seen it.
   if (req.user?.id) db.prepare("UPDATE users SET schedule_seen_at = ? WHERE id = ?").run(at, req.user.id);
   logAudit(req.user || 'system', 'notify', 'production_schedule', weekStart || 'week', { kind, week_start: weekStart }, null, null);
-  res.json({ notified_at: at, kind, week_start: weekStart });
+
+  // Best-effort channel publishing — never fail the notify itself.
+  let posted = [];
+  try {
+    if (weekStart && req.user?.id) {
+      const assignments = db.prepare('SELECT * FROM production_schedule WHERE week_start = ?').all(weekStart);
+      const changedTeams = [];
+      for (const { team, channel } of SCHEDULE_TEAM_CHANNELS) {
+        const rows = schedRowsForTeam(assignments, team);
+        const fp = schedFingerprint(rows);
+        const key = `sched_fp_${weekStart}_${team}`;
+        const prev = getSetting(db, key);
+        setSetting(db, key, fp);
+        if (prev === fp) continue;              // unchanged for this team → stay silent
+        if (!rows.length && !prev) continue;    // never had anything → nothing to announce
+        changedTeams.push(team);
+        const ch = getChannelByName(db, channel);
+        if (ch) { await postMessageAs(db, ch, req.user, teamScheduleMessage(team, rows, weekStart, kind)); posted.push(team); }
+      }
+      const prod = getChannelByName(db, 'production');
+      if (prod) await postMessageAs(db, prod, req.user, combinedScheduleMessage(assignments, weekStart, kind, changedTeams));
+    }
+  } catch (e) {
+    console.warn('[schedule] channel publish failed:', e.message);
+  }
+
+  res.json({ notified_at: at, kind, week_start: weekStart, posted_to: posted });
 });
 
 // GET /schedule/notify-status — is there an unseen schedule notice for me?

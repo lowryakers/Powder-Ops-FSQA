@@ -205,6 +205,32 @@ function notifyChannelMessage(db, channel, body, author, excludeUserIds = []) {
   }
 }
 
+// Post a message into a channel as `author`, reusing the normal create path
+// (socket emit, unread bump, grouped push, embedding). Used by other modules —
+// e.g. the production schedule publishing per-team updates. Best-effort: callers
+// should catch. Returns the created message. `getChannelByName` finds the target.
+export function getChannelByName(db, name) {
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const want = norm(name);
+  const rows = db.prepare("SELECT * FROM chat_channels WHERE kind IN ('public','private') AND (archived IS NULL OR archived = 0)").all();
+  return rows.find(c => norm(c.name) === want) || null;
+}
+export async function postMessageAs(db, channel, author, body) {
+  const text = String(body || '').trim();
+  if (!channel || !text) return null;
+  const id = uuid();
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?)').run(id, channel.id, author.id, text, now);
+  db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(channel.id);
+  db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?").run(now, channel.id, author.id);
+  const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
+  emitToChannel(channel.id, 'message:new', message);
+  emitChannelsChanged(db, channel);
+  notifyChannelMessage(db, channel, text, author, []);
+  embedMessage(db, id, channel.id, text);
+  return message;
+}
+
 // ── Channels ──────────────────────────────────────────────────────────────────
 // List channels the user can see: all public + private/DMs they belong to, each
 // with an unread count and (for DMs) the other participant's name.
