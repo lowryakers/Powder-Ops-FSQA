@@ -294,8 +294,13 @@ router.post('/set-password', (req, res) => {
 // Admin-set/reset a user's password (e.g. for imported users, or a lockout).
 router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
   const db = getDb();
-  const { password } = req.body;
+  const { password, admin_password } = req.body;
   if (!password || String(password).length < MIN_PASSWORD) return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD} characters` });
+  // Re-authorize this sensitive action with the acting admin's own password.
+  const admin = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+  if (admin?.password_hash && !verifyPassword(String(admin_password || ''), admin.password_hash)) {
+    return res.status(401).json({ error: 'Your password is incorrect.' });
+  }
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   db.prepare("UPDATE users SET password_hash = ?, pin = NULL, updated_at = datetime('now') WHERE id = ?").run(hashPassword(password), user.id);

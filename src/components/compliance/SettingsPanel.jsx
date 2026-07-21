@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
-import { Plus, Copy, Shield, ChevronDown, ChevronRight, Eye, EyeOff, Users, X } from 'lucide-react';
+import { Plus, Copy, Shield, ChevronDown, ChevronRight, KeyRound, Users, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { DEPARTMENTS, DEPARTMENT_GROUPS, deptLabel } from '../../constants/departments';
 
@@ -174,6 +174,65 @@ function ModuleAccessEditor({ value, onChange, disabled }) {
   );
 }
 
+// Admin-only password reset. One button expands an inline form; the acting
+// admin must re-enter their own password to authorize the change.
+function ResetPasswordControl({ userId, userName }) {
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState('');
+  const [adminPw, setAdminPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const submit = async () => {
+    setErr(null); setMsg(null);
+    if (pw.length < 8) { setErr('New password must be at least 8 characters.'); return; }
+    setBusy(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/users/${userId}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ password: pw, admin_password: adminPw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setErr(data.error || 'Could not reset password.'); return; }
+      setMsg(`Password reset. Share it with ${userName || 'the user'}.`);
+      setPw(''); setAdminPw(''); setOpen(false);
+    } finally { setBusy(false); }
+  };
+
+  if (!open) {
+    return (
+      <div className="mt-1.5">
+        <button type="button" onClick={() => { setOpen(true); setMsg(null); }}
+          className="flex items-center gap-1.5 text-xs font-medium text-powder-600 hover:text-powder-700">
+          <KeyRound size={13} /> Reset password
+        </button>
+        {msg && <p className="text-[11px] text-green-600 mt-1">{msg}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 space-y-1.5 bg-gray-50 border border-gray-200 rounded-lg p-2">
+      <input type="text" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password"
+        className="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm" placeholder="New password (min 8)" />
+      <input type="password" value={adminPw} onChange={e => setAdminPw(e.target.value)} autoComplete="current-password"
+        className="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm" placeholder="Confirm with YOUR password" />
+      {err && <p className="text-[11px] text-red-600">{err}</p>}
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={submit} disabled={busy}
+          className="px-2.5 py-1 bg-powder-600 text-white text-xs font-medium rounded-md hover:bg-powder-700 disabled:opacity-50">
+          {busy ? 'Saving…' : 'Set password'}
+        </button>
+        <button type="button" onClick={() => { setOpen(false); setErr(null); setPw(''); setAdminPw(''); }}
+          className="px-2.5 py-1 text-gray-500 text-xs font-medium rounded-md hover:bg-gray-100">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function UserForm({ initial, onSave, onCancel, canViewPin }) {
   const parseModuleAccess = (val) => {
     if (val == null) return null;
@@ -182,30 +241,12 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
   };
 
   const [form, setForm] = useState(() => ({
-    name: '', pin: '', role: 'operator', department: 'warehouse',
+    name: '', role: 'operator', department: 'warehouse',
     ...initial,
     home_workspace: initial?.home_workspace || 'fsqa',
     module_access: parseModuleAccess(initial?.module_access),
   }));
   const [saving, setSaving] = useState(false);
-  const [pinVisible, setPinVisible] = useState(false);
-  const [currentPin, setCurrentPin] = useState(null);
-  const [pinLoading, setPinLoading] = useState(false);
-
-  const viewCurrentPin = async () => {
-    if (pinVisible) { setPinVisible(false); return; }
-    if (currentPin !== null) { setPinVisible(true); return; }
-    setPinLoading(true);
-    try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/users/${initial.id}/pin`, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) {
-        const data = await res.json();
-        setCurrentPin(data.pin);
-        setPinVisible(true);
-      }
-    } finally { setPinLoading(false); }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -225,24 +266,15 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Adam Bliss" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">{initial?.id ? 'Reset PIN (leave blank to keep)' : 'PIN (optional)'}</label>
-          <input value={form.pin || ''} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, '') })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono tracking-widest"
-            placeholder={initial?.id ? '••••' : 'User sets on first login'} maxLength={8} inputMode="numeric" />
-          {!initial?.id && <p className="text-[10px] text-gray-400 mt-0.5">Leave blank — user will create their PIN on first sign-in.</p>}
-          {initial?.id && canViewPin && (
-            <div className="flex items-center gap-2 mt-1.5">
-              <button type="button" onClick={viewCurrentPin} disabled={pinLoading}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-powder-600 disabled:opacity-50">
-                {pinVisible ? <EyeOff size={13} /> : <Eye size={13} />}
-                {pinLoading ? 'Loading...' : pinVisible ? 'Hide current PIN' : 'View current PIN'}
-              </button>
-              {pinVisible && (
-                <span className="font-mono text-sm font-semibold text-gray-900 tracking-widest bg-gray-100 px-2 py-0.5 rounded">
-                  {currentPin || 'Not set'}
-                </span>
-              )}
-            </div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Password</label>
+          {initial?.id ? (
+            canViewPin ? (
+              <ResetPasswordControl userId={initial.id} userName={initial.name} />
+            ) : (
+              <p className="text-[11px] text-gray-400 mt-2">Only an admin can reset passwords.</p>
+            )
+          ) : (
+            <p className="text-[11px] text-gray-400 mt-2">The user creates their own password the first time they sign in.</p>
           )}
         </div>
         <div>
@@ -488,7 +520,7 @@ function BulkAddModal({ onClose, onDone }) {
         </div>
         {result ? (
           <div className="space-y-3">
-            <div className="text-sm bg-green-50 border border-green-200 rounded-lg p-3 text-green-800">Added {result.created} user{result.created === 1 ? '' : 's'}. They’ll set a PIN on first sign-in.</div>
+            <div className="text-sm bg-green-50 border border-green-200 rounded-lg p-3 text-green-800">Added {result.created} user{result.created === 1 ? '' : 's'}. They’ll set their password on first sign-in.</div>
             <button onClick={onDone} className="w-full px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">Done</button>
           </div>
         ) : (
@@ -709,7 +741,7 @@ export default function SettingsPanel() {
                 <h3 className="font-semibold text-gray-900">Auditor Portal</h3>
                 <p className="text-sm text-gray-500">Read-only compliance view with export functionality. Give this link to auditors.</p>
                 <code className="text-xs text-purple-600 mt-1 block">{auditorUrl}</code>
-                <p className="text-xs text-gray-400 mt-1">Login: auditor@powder-ops.com / PIN: 9999</p>
+                <p className="text-xs text-gray-400 mt-1">Auditor signs in as <span className="font-medium">auditor@powder-ops.com</span> and sets a password on first sign-in.</p>
               </div>
               <button onClick={() => copyUrl(auditorUrl)} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 flex items-center gap-1">
                 <Copy size={14} /> {copiedUrl === auditorUrl ? 'Copied!' : 'Copy'}

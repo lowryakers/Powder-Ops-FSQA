@@ -134,12 +134,21 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
   // Reflect total unread on the installed PWA's home-screen icon (Badging API).
   useEffect(() => { setAppBadge(commsUnread); }, [commsUnread]);
   // All groups expanded by default — users prefer seeing every module at once.
-  // (Groups are still individually collapsible.)
+  // (Groups are still individually collapsible.) Collapse state is remembered
+  // per-user across sessions via localStorage.
   const [openGroups, setOpenGroups] = useState(() => {
     const initial = {};
     NAV_GROUPS.forEach(g => { initial[g.label] = true; });
+    try {
+      const saved = JSON.parse(localStorage.getItem('sidebar_open_groups') || '{}');
+      for (const k of Object.keys(saved)) if (k in initial) initial[k] = !!saved[k];
+    } catch { /* ignore malformed */ }
     return initial;
   });
+
+  useEffect(() => {
+    try { localStorage.setItem('sidebar_open_groups', JSON.stringify(openGroups)); } catch { /* quota */ }
+  }, [openGroups]);
 
   const toggleGroup = (label) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
@@ -178,6 +187,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
       <div className="flex-1 py-2 space-y-0.5">
         {NAV_GROUPS.map((group) => {
           const visibleItems = group.items.filter(i => {
+            if (i.id === 'settings') return false; // lives in the top-right gear icon
             if (i.adminOnly && user.role !== 'admin') return false;
             if (i.aiOnly && !aiOn) return false;
             return canViewModule(user, i.id);
@@ -185,15 +195,28 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
           if (visibleItems.length === 0) return null;
           const isOpen = openGroups[group.label];
           const hasActive = visibleItems.some(i => i.id === activeTab);
+          // Roll up notifications so a collapsed section still surfaces them.
+          const groupBadgeCount = visibleItems.reduce((n, i) => n + (badges?.[i.id] || 0), 0);
+          const groupHasNotice = visibleItems.some(i => i.id === 'production-schedule') && scheduleNotice?.unseen;
 
           return (
             <div key={group.label}>
               <button
                 onClick={() => toggleGroup(group.label)}
-                className={`w-full flex items-center justify-between px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider ${hasActive ? 'text-powder-700' : 'text-gray-400'} hover:text-gray-600`}
+                className={`w-full flex items-center justify-between gap-2 px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider ${hasActive ? 'text-powder-700' : 'text-gray-400'} hover:text-gray-600`}
               >
-                {group.label}
-                <ChevronDown size={12} className={`transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+                <span className="truncate">{group.label}</span>
+                <span className="flex items-center gap-1.5 flex-shrink-0">
+                  {!isOpen && groupBadgeCount > 0 && (
+                    <span className="min-w-[16px] h-[16px] flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold px-1 normal-case">
+                      {groupBadgeCount}
+                    </span>
+                  )}
+                  {!isOpen && !groupBadgeCount && groupHasNotice && (
+                    <span className="h-[8px] w-[8px] rounded-full bg-emerald-500" title="New schedule update" />
+                  )}
+                  <ChevronDown size={12} className={`transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+                </span>
               </button>
               {isOpen && (
                 <div className="space-y-0.5 pb-1">
@@ -810,6 +833,12 @@ function App() {
                 <Home size={18} />
               </button>
               <NotificationBell notifications={notifications} onNavigate={setActiveTab} />
+              {user.role === 'admin' && (
+                <button onClick={() => setActiveTab('settings')} title="Settings"
+                  className={`p-1.5 rounded-lg transition-colors ${resolvedTab === 'settings' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
+                  <Settings size={18} />
+                </button>
+              )}
               <div className="flex items-center gap-2">
                 <div className="h-7 w-7 rounded-full bg-powder-100 flex items-center justify-center text-xs font-bold text-powder-700">
                   {(user.name || '?')[0]}
@@ -830,7 +859,12 @@ function App() {
               <h1 className="text-sm font-bold text-gray-900 truncate">{activeItem?.label || 'Dashboard'}</h1>
             </div>
             <NotificationBell notifications={notifications} onNavigate={setActiveTab} />
-            <span className="text-xs text-gray-400">{user.name}</span>
+            {user.role === 'admin' && (
+              <button onClick={() => setActiveTab('settings')} title="Settings"
+                className={`p-1 rounded-lg transition-colors ${resolvedTab === 'settings' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
+                <Settings size={18} />
+              </button>
+            )}
             <button onClick={logout} className="text-gray-400 hover:text-gray-600" title="Sign Out">
               <LogOut size={16} />
             </button>
