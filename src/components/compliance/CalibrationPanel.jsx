@@ -291,8 +291,41 @@ export default function CalibrationPanel() {
             )}
           </div>
 
-          {/* Instrument table */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          {/* Mobile: card list */}
+          <div className="md:hidden space-y-2">
+            {filtered.map(inst => {
+              const isOverdue = inst.next_due && inst.next_due < today;
+              const stripe = isOverdue ? 'border-l-red-500' : inst.status === 'retired' ? 'border-l-gray-300' : 'border-l-green-500';
+              return (
+                <div key={inst.id} onClick={() => { setEditing(inst); setShowForm(false); }}
+                  className={`bg-white rounded-xl border border-gray-200 border-l-4 ${stripe} p-3 active:bg-gray-50`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-gray-900 text-sm leading-snug">{inst.manufacturer || 'Instrument'}{inst.model ? ` · ${inst.model}` : ''}</div>
+                      {inst.asset_number && <div className="text-[11px] text-gray-400 font-mono">Asset #{inst.asset_number}{inst.serial_number ? ` · SN ${inst.serial_number}` : ''}</div>}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[inst.status]}`}>{inst.status}</span>
+                      <button onClick={e => { e.stopPropagation(); setCalibrating(calibrating?.id === inst.id ? null : inst); }} className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100">Calibrate</button>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                    {inst.room && <span>{inst.room}</span>}
+                    {inst.department && <span>{inst.department}</span>}
+                    {inst.max_capacity && <span>Max {inst.max_capacity}</span>}
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+                    {inst.last_calibrated && <span className="text-gray-400">Last {inst.last_calibrated.split('T')[0]}</span>}
+                    <span className={isOverdue ? 'text-red-600 font-medium' : 'text-gray-400'}>Due {inst.next_due || '—'}{isOverdue ? ' · overdue' : ''}</span>
+                  </div>
+                </div>
+              );
+            })}
+            {filtered.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No instruments found</div>}
+          </div>
+
+          {/* Desktop: instrument table */}
+          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>

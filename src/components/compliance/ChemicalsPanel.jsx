@@ -246,7 +246,58 @@ export default function ChemicalsPanel() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* Mobile: card view */}
+      <div className="md:hidden space-y-2">
+        {filtered.map(c => {
+          const stripe = !c.is_active ? 'border-gray-300' : (c.review_due && c.review_due < today) ? 'border-amber-400' : 'border-green-400';
+          return (
+            <div key={c.id}
+              onClick={isAdmin ? () => { setEditing(c); setShowForm(false); } : undefined}
+              className={`bg-white rounded-xl border border-gray-200 border-l-4 ${stripe} p-3 shadow-sm ${!c.is_active ? 'opacity-60' : ''} ${isAdmin ? 'active:bg-gray-50' : ''}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-gray-900 break-words">{c.name}</div>
+                  {c.manufacturer && <div className="text-xs text-gray-500 break-words">{c.manufacturer}{c.product_code ? ` — ${c.product_code}` : ''}</div>}
+                </div>
+                {!c.is_active ? (
+                  <span className="shrink-0 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs">Inactive</span>
+                ) : c.review_due && c.review_due < today ? (
+                  <span className="shrink-0 inline-flex items-center gap-1 text-amber-700 text-xs font-medium"><AlertTriangle size={12} /> Review</span>
+                ) : (
+                  <span className="shrink-0 px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs">Active</span>
+                )}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+                <span className={`px-2 py-0.5 rounded-full font-medium ${catColor(c.category)}`}>{c.category}</span>
+                {c.sds_number || c.sds_url ? (
+                  c.sds_url
+                    ? <a href={c.sds_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-powder-600 hover:text-powder-700 underline break-all">{c.sds_number ? `SDS ${c.sds_number}` : 'View SDS'}</a>
+                    : <span className="font-mono break-all">SDS {c.sds_number}</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium"><AlertTriangle size={10} /> Missing SDS</span>
+                )}
+                {c.is_food_grade && <span className="inline-flex items-center gap-1 text-green-700"><ShieldCheck size={12} /> Food grade{c.nsf_rating ? ` (${c.nsf_rating})` : ''}</span>}
+                {c.max_concentration && <span>Conc: {c.max_concentration}</span>}
+                {c.location_for_use && <span className="text-gray-400 break-words">{c.location_for_use}</span>}
+              </div>
+              {isAdmin && (
+                <div className="mt-2 flex justify-end">
+                  <button onClick={e => { e.stopPropagation(); handleToggleActive(c); }}
+                    className={`px-2 py-0.5 rounded text-xs ${c.is_active ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}>
+                    {c.is_active ? 'Deactivate' : 'Activate'}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-gray-400 text-sm">No chemicals registered yet</div>
+        )}
+      </div>
+
+      {/* Desktop: table view */}
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>

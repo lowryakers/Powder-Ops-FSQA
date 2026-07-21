@@ -34,7 +34,31 @@ export default function RunLog({ runs }) {
           </button>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      {/* Mobile: card view */}
+      <div className="md:hidden divide-y divide-gray-100">
+        {pageRuns.map((r, i) => (
+          <div key={i} className="p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1 font-medium text-gray-900 break-words">{r.product}</div>
+              <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white" style={{ backgroundColor: getTeamColor(r.team) }}>{r.team}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+              <span>{r.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+              {r.mo && <span>MO {r.mo}</span>}
+              <span>Qty {r.quantity.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+              <span>{r.people ?? '–'}p</span>
+              <span>{r.duration ? `${r.duration.toFixed(1)}h` : '–'}</span>
+              {r.unitsPerMinute ? <span>{r.unitsPerMinute.toFixed(1)} U/min</span> : null}
+              {r.unitsPerManHour ? <span>{r.unitsPerManHour.toFixed(0)} U/man-hr</span> : null}
+            </div>
+            {r.notes && <div className="mt-1.5 text-xs text-gray-500 break-words">{r.notes}</div>}
+          </div>
+        ))}
+        {pageRuns.length === 0 && <div className="p-8 text-center text-sm text-gray-400">No runs</div>}
+      </div>
+
+      {/* Desktop: table view */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 text-left">

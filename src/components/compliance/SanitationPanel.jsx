@@ -252,7 +252,48 @@ export default function SanitationPanel() {
 
       {showForm && <RecordForm equipment={equipment} chemicals={chemicals} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* Mobile: card view */}
+      <div className="md:hidden space-y-2">
+        {(records || []).map(r => {
+          const isExpanded = expandedId === r.id;
+          const stripe = r.result === 'pass' ? 'border-green-400' : r.result === 'fail' ? 'border-red-400' : 'border-gray-300';
+          return (
+            <div key={r.id} className={`bg-white rounded-xl border border-gray-200 border-l-4 ${stripe} shadow-sm overflow-hidden`}>
+              <div onClick={() => setExpandedId(isExpanded ? null : r.id)} className="p-3 active:bg-gray-50">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1 font-medium text-gray-900 break-words">{r.area}</div>
+                  <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_COLORS[r.result]}`}>{r.result}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+                  <span className={`px-2 py-0.5 rounded-full ${TYPE_COLORS[r.type]}`}>{TYPE_LABELS[r.type]}</span>
+                  {r.equipment_name && <span className="break-words">{r.equipment_name}</span>}
+                  <span>{r.performed_by}</span>
+                  <span className="text-gray-400">{new Date(r.performed_at).toLocaleString()}</span>
+                  {r.atp_reading != null && <span>ATP: {r.atp_reading}</span>}
+                </div>
+                <div className="mt-1.5">
+                  {r.verified_by ? (
+                    <span className="text-green-600 text-xs"><CheckCircle size={12} className="inline mr-1" />Verified by {r.verified_by}</span>
+                  ) : (
+                    <button onClick={(e) => { e.stopPropagation(); handleVerify(r.id); }} className="text-xs text-powder-600 hover:underline">Verify</button>
+                  )}
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="border-t border-gray-100">
+                  <table className="w-full"><tbody><SanitationDetail record={r} onClose={() => setExpandedId(null)} /></tbody></table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {(!records || records.length === 0) && (
+          <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-gray-500 text-sm">No sanitation records yet</div>
+        )}
+      </div>
+
+      {/* Desktop: table view */}
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">

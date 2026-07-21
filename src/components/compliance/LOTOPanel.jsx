@@ -409,7 +409,24 @@ export default function LOTOPanel() {
       )}
 
       {tab === 'history' && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <>
+        {/* Mobile: card list */}
+        <div className="md:hidden space-y-2">
+          {(executions || []).map(ex => (
+            <div key={ex.id} className={`bg-white rounded-xl border border-gray-200 border-l-4 ${ex.status === 'released' ? 'border-l-green-500' : 'border-l-red-500'} p-3`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="font-semibold text-gray-900 text-sm min-w-0">{ex.equipment_name}</div>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${STATUS_COLORS[ex.status]}`}>{ex.status}</span>
+              </div>
+              {ex.reason && <div className="mt-1 text-xs text-gray-500 line-clamp-2">{ex.reason}</div>}
+              <div className="mt-0.5 text-[11px] text-gray-400">Locked by {ex.locked_by} · {new Date(ex.locked_at).toLocaleString()}</div>
+              {ex.released_by && <div className="text-[11px] text-gray-400">Released by {ex.released_by} · {new Date(ex.released_at).toLocaleString()}</div>}
+            </div>
+          ))}
+          {(!executions || executions.length === 0) && <div className="text-center py-8 text-gray-400 text-sm">No LOTO executions recorded</div>}
+        </div>
+        {/* Desktop: table */}
+        <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -438,6 +455,7 @@ export default function LOTOPanel() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

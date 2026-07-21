@@ -194,7 +194,42 @@ export default function QualitySchedulesPanel() {
           {canManage && <p className="text-xs text-gray-400 mt-1">Create one to start feeding recurring checks into the QA task queue.</p>}
         </div>
       ) : (
-        <div className="overflow-x-auto border border-gray-200 rounded-xl">
+        <>
+        {/* Mobile: card view */}
+        <div className="md:hidden space-y-2">
+          {rows.map(s => (
+            <div key={s.id}
+              onClick={canManage ? () => setEditing(s) : undefined}
+              className={`bg-white rounded-xl border border-gray-200 border-l-4 ${s.is_active ? 'border-green-400' : 'border-gray-300'} p-3 shadow-sm ${s.is_active ? '' : 'opacity-60'} ${canManage ? 'active:bg-gray-50' : ''}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-gray-900 break-words">{s.title}</div>
+                  {s.description && <div className="text-xs text-gray-500 break-words">{s.description}</div>}
+                </div>
+                {s.is_active ? (
+                  <span className="shrink-0 inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full"><CheckCircle2 size={12} /> Active</span>
+                ) : (
+                  <span className="shrink-0 inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full"><PauseCircle size={12} /> Paused</span>
+                )}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+                {s.module_id && <span>{s.module_id}</span>}
+                <span>{freqDescription(s.frequency_type, s.frequency_value)}</span>
+                <span>Next: {s.next_due || '—'}</span>
+                <span className="text-gray-400">Last: {s.last_completed ? s.last_completed.split('T')[0] : '—'}</span>
+              </div>
+              {canManage && (
+                <div className="mt-2 flex justify-end gap-3">
+                  <button onClick={e => { e.stopPropagation(); setEditing(s); }} className="text-gray-400 hover:text-powder-600" title="Edit"><Pencil size={16} /></button>
+                  <button onClick={e => { e.stopPropagation(); remove(s); }} className="text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={16} /></button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop: table view */}
+        <div className="hidden md:block overflow-x-auto border border-gray-200 rounded-xl">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
               <tr>
@@ -236,6 +271,7 @@ export default function QualitySchedulesPanel() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {editing && (

@@ -477,8 +477,46 @@ function LogTable({ user }) {
       {loading && <div className="text-center py-8 text-gray-500 text-sm">Loading entries...</div>}
       {error && <div className="text-center py-8 text-red-600 text-sm">{error}</div>}
 
+      {/* Mobile: card view */}
       {!loading && !error && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="md:hidden space-y-2">
+          {filtered.length === 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-500">No entries found.</div>
+          )}
+          {filtered.map(entry => (
+            <div key={entry.id} className={`bg-white rounded-xl border border-gray-200 border-l-4 ${entry.qa_signoff_by ? 'border-green-400' : 'border-yellow-400'} p-3 shadow-sm`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-gray-900 break-words">{entry.product_name}</div>
+                  <div className="text-xs text-gray-500">{formatDate(entry.date)} · {entry.team} · {entry.room}</div>
+                </div>
+                {entry.qa_signoff_by ? (
+                  <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"><CheckCircle size={12} /> Signed</span>
+                ) : canSignoff ? (
+                  <button type="button" onClick={() => setSignoffEntry(entry)} className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 hover:bg-yellow-200"><Clock size={12} /> Pending QA</button>
+                ) : (
+                  <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"><Clock size={12} /> Pending</span>
+                )}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+                {entry.mo_number && <span>MO {entry.mo_number}</span>}
+                {entry.lot_number && <span>Lot {entry.lot_number}</span>}
+                <span>{formatTime(entry.start_time)}–{formatTime(entry.end_time)}</span>
+                {entry.duration_hours != null && <span>{Number(entry.duration_hours).toFixed(1)}h</span>}
+                <span>Qty {Number(entry.quantity_completed).toLocaleString()}</span>
+                <span>{entry.people_count}p</span>
+                {entry.units_per_hour != null && <span>{Number(entry.units_per_hour).toLocaleString(undefined, { maximumFractionDigits: 1 })}/h</span>}
+              </div>
+              {entry.qa_signoff_by && <div className="mt-1 text-xs text-green-600">QA: {entry.qa_signoff_by}</div>}
+              {entry.notes && <div className="mt-2 text-xs text-gray-700 bg-gray-50 rounded-lg px-2 py-1.5 break-words"><span className="font-medium text-gray-900">Notes:</span> {entry.notes}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Desktop: table view */}
+      {!loading && !error && (
+        <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
