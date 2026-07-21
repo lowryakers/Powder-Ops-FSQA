@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X, ListChecks, QrCode } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
 import FileUpload from '../FileUpload';
+import { deptLabel } from '../../constants/departments';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
 
@@ -145,9 +146,10 @@ function WOForm({ equipment, technicians, onSave, onCancel, user }) {
     try { await onSave(form); } finally { setSaving(false); }
   };
 
+  const noun = isMaintenance ? 'Work Order' : 'Task';
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-      <h3 className="font-semibold text-gray-900">New Task</h3>
+      <h3 className="font-semibold text-gray-900">New {noun}</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Team *</label>
@@ -186,10 +188,18 @@ function WOForm({ equipment, technicians, onSave, onCancel, user }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Assign to (direct report)</label>
-          <select value={form.assigned_to} onChange={e => setForm({ ...form, assigned_to: e.target.value })}
+          <select value={form.assigned_to}
+            onChange={e => {
+              const name = e.target.value;
+              // Auto-set the team to the assignee's own department so the task
+              // lands with the right group (only when that dept maps to a team).
+              const tech = (technicians || []).find(t => t.name === name);
+              const dept = tech?.department;
+              setForm(f => ({ ...f, assigned_to: name, task_group: (dept && teamOptions.some(g => g.value === dept)) ? dept : f.task_group }));
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             <option value="">Unassigned (whole team)</option>
-            {(technicians || []).map(t => <option key={t.id} value={t.name}>{t.name} ({t.role})</option>)}
+            {(technicians || []).map(t => <option key={t.id} value={t.name}>{t.name} ({t.role}{t.department ? ` · ${deptLabel(t.department)}` : ''})</option>)}
           </select>
         </div>
         <div className="sm:col-span-2">
@@ -201,7 +211,7 @@ function WOForm({ equipment, technicians, onSave, onCancel, user }) {
       <FileUpload files={form.attachments} onChange={attachments => setForm({ ...form, attachments })} />
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
-          {saving ? 'Creating...' : 'Create Task'}
+          {saving ? 'Creating...' : `Create ${noun}`}
         </button>
         <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
       </div>

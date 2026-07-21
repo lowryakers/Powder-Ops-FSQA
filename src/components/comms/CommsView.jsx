@@ -796,16 +796,24 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   // Force scroll-to-bottom when a channel is opened (messages load async).
   useEffect(() => { justOpenedRef.current = true; setShowJump(false); }, [activeId]);
   // On new messages, follow only if the reader is already near the bottom (so we
-  // don't yank them down while they're reading history); always land at bottom
-  // right after opening a channel.
+  // don't yank them down while they're reading history); always land firmly on
+  // the latest message right after opening a channel.
   useEffect(() => {
     const el = scrollRef.current; if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (justOpenedRef.current || near) {
-      el.scrollTop = el.scrollHeight;
+    if (justOpenedRef.current) {
+      // Re-pin across a couple of frames so late layout (avatars, images,
+      // attachments changing height) can't leave a gap that would otherwise pop
+      // a needless "Jump to latest".
+      const pin = () => { const n = scrollRef.current; if (n) n.scrollTop = n.scrollHeight; };
+      pin();
+      requestAnimationFrame(pin);
+      setTimeout(pin, 80);
       justOpenedRef.current = false;
       setShowJump(false);
+      return;
     }
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (near) { el.scrollTop = el.scrollHeight; setShowJump(false); }
   }, [messages]);
   const onMessagesScroll = () => {
     const el = scrollRef.current; if (!el) return;
