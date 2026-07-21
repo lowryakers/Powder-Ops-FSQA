@@ -608,7 +608,45 @@ export default function DisposalsPanel() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-gray-400"><FileText size={36} className="mx-auto mb-2 text-gray-300" /><p className="text-sm">No disposals found.{canEdit ? ' Create one or import your log.' : ''}</p></div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <>
+        {/* Mobile: card list */}
+        <div className="md:hidden space-y-2">
+          {filtered.map((r, i) => {
+            const draft = r._d?.status === 'draft';
+            return (
+              <div key={r.id || i} onClick={() => setViewing(r._d)}
+                className={`bg-white rounded-xl border border-gray-200 border-l-4 ${draft ? 'border-l-amber-500' : 'border-l-emerald-500'} p-3 active:bg-gray-50 ${selected.has(r.disposal_id) ? 'ring-2 ring-powder-300' : ''}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-gray-900 text-sm leading-snug">{r.item_name || '—'}</div>
+                    {r.category && <div className="text-[10px] text-gray-400">{CAT_LABEL[r.category] || r.category}</div>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {draft ? <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Draft</span> : <ApprovalBadge d={r._d} />}
+                    {canEdit && (
+                      <button onClick={e => { e.stopPropagation(); toggleDisp(r.disposal_id); }} className="text-gray-300 hover:text-powder-600" title={selected.has(r.disposal_id) ? 'Deselect' : 'Select'}>
+                        {selected.has(r.disposal_id) ? <CheckSquare size={16} className="text-powder-600" /> : <Square size={16} />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                  {r.item_number && <span>Part <span className="font-medium text-gray-700">{r.item_number}</span></span>}
+                  {r.lot_number && <span>Lot <span className="font-medium text-gray-700">{r.lot_number}</span></span>}
+                  {r.quantity && <span>Qty {r.quantity}</span>}
+                </div>
+                {r.reason_disposed && <div className="mt-0.5 text-xs text-gray-500 line-clamp-2">{r.reason_disposed}</div>}
+                <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-400">
+                  {r.disposal_number && <span>Disposal {r.disposal_number}</span>}
+                  {r.document_rev && <span>Rev {r.document_rev}</span>}
+                  {r.date_disposed && <span>{r.date_disposed}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {/* Desktop: full table */}
+        <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead className="bg-gray-50 border-b border-gray-200">
@@ -661,6 +699,7 @@ export default function DisposalsPanel() {
             </table>
           </div>
         </div>
+        </>
       )}
 
       {creating && <DisposalForm onSave={handleCreate} onCancel={() => setCreating(false)} />}
