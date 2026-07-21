@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -180,6 +180,8 @@ function ChannelDetails({ channel, me, users, onClose, onChanged }) {
   const [name, setName] = useState(channel.name);
   const isAdmin = me?.role === 'admin';
   const members = data?.members || [];
+  const myRole = members.find(m => m.user_id === me?.id)?.role;
+  const canManage = isAdmin || myRole === 'owner'; // owner can rename + manage members
   const memberIds = new Set(members.map(m => m.user_id));
   const candidates = (users || []).filter(u => u.is_active && !memberIds.has(u.id));
   const depts = [...new Set(candidates.map(u => u.department).filter(Boolean))].sort();
@@ -201,7 +203,7 @@ function ChannelDetails({ channel, me, users, onClose, onChanged }) {
             ) : (
               <h3 className="text-base font-semibold text-gray-900 truncate">{channel.name}</h3>
             )}
-            {isAdmin && !renaming && <button onClick={() => { setName(channel.name); setRenaming(true); }} className="text-gray-300 hover:text-powder-600"><Edit2 size={13} /></button>}
+            {canManage && !renaming && <button onClick={() => { setName(channel.name); setRenaming(true); }} className="text-gray-300 hover:text-powder-600" data-tip="Rename"><Edit2 size={13} /></button>}
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
@@ -260,11 +262,19 @@ function ChannelDetails({ channel, me, users, onClose, onChanged }) {
                   </div>
                   <span className="text-sm text-gray-800 flex-1">{m.name}{m.user_id === me.id ? ' (you)' : ''}</span>
                   {m.role === 'owner' && <span className="text-[10px] uppercase text-gray-400">owner</span>}
-                  {isAdmin && m.user_id !== me.id && <button onClick={() => removeMember(m.user_id)} className="text-gray-300 hover:text-red-500" title="Remove from channel"><UserMinus size={14} /></button>}
+                  {canManage && m.user_id !== me.id && <button onClick={() => removeMember(m.user_id)} className="text-gray-300 hover:text-red-500" data-tip="Remove" data-tip-left><UserMinus size={14} /></button>}
                 </div>
               ))}
             </div>
           </div>
+
+          {/* Leave — anyone can leave a private/group conversation they're in. */}
+          {channel.kind !== 'public' && memberIds.has(me.id) && (
+            <button onClick={async () => { await removeMember(me.id); onClose(); }}
+              className="flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
+              <LogOut size={14} /> Leave {myRole === 'owner' ? 'group' : 'conversation'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -570,6 +580,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   const [newChannel, setNewChannel] = useState(false);
   const [dmSearch, setDmSearch] = useState('');
   const [dmSelected, setDmSelected] = useState([]); // user ids picked for a new (group) DM
+  const [dmGroupName, setDmGroupName] = useState(''); // optional name → makes it a managed group
   const [showDmPicker, setShowDmPicker] = useState(false);
   const [typers, setTypers] = useState([]); // {user_id, user_name, at} of people typing in the active channel
   const [pending, setPending] = useState([]); // uploaded-but-unsent attachments for the composer
@@ -883,11 +894,17 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   const toggleDmPick = (id) => setDmSelected(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
   const startDm = async () => {
     if (!dmSelected.length) return;
-    // One person → the 1:1 endpoint; multiple → a group DM.
-    const ch = dmSelected.length === 1
-      ? await apiPost(`/comms/dm/${dmSelected[0]}`, {})
-      : await apiPost('/comms/dm', { user_ids: dmSelected });
-    setShowDmPicker(false); setDmSearch(''); setDmSelected([]);
+    let ch;
+    if (dmSelected.length === 1) {
+      ch = await apiPost(`/comms/dm/${dmSelected[0]}`, {}); // 1:1 DM
+    } else if (dmGroupName.trim()) {
+      // Named multi-person group → a private, member-managed channel (Slack-style
+      // group): the creator owns it and can add/remove people and rename later.
+      ch = await apiPost('/comms/channels', { name: dmGroupName.trim(), kind: 'private', member_ids: dmSelected });
+    } else {
+      ch = await apiPost('/comms/dm', { user_ids: dmSelected }); // unnamed group DM
+    }
+    setShowDmPicker(false); setDmSearch(''); setDmSelected([]); setDmGroupName('');
     await refreshChannels();
     openChannel(ch.id);
   };
@@ -1116,10 +1133,19 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                     );
                   })}
                 </div>
+                {dmSelected.length > 1 && (
+                  <input value={dmGroupName} onChange={e => setDmGroupName(e.target.value)} placeholder="Group name (optional)…"
+                    className="w-full px-2 py-1 border border-gray-300 rounded text-xs mt-1" />
+                )}
                 <button onClick={startDm} disabled={!dmSelected.length}
                   className="w-full mt-1 px-2 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700 disabled:opacity-40">
-                  {dmSelected.length <= 1 ? 'Message' : `Start group DM (${dmSelected.length})`}{dmSelected.length === 1 ? ' 1 person' : ''}
+                  {dmSelected.length <= 1 ? 'Message 1 person'
+                    : dmGroupName.trim() ? `Create “${dmGroupName.trim()}” group (${dmSelected.length})`
+                    : `Start group message (${dmSelected.length})`}
                 </button>
+                {dmSelected.length > 1 && (
+                  <p className="text-[10px] text-gray-400 mt-1 px-0.5">Name it to make a group you can rename and add/remove people from later.</p>
+                )}
               </div>
             )}
             <div className="space-y-0.5">

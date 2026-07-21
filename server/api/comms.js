@@ -92,6 +92,12 @@ function getChannelAny(db, id) {
 function isMember(db, channelId, userId) {
   return !!db.prepare('SELECT 1 FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId);
 }
+// The caller's role within a channel ('owner' | 'member' | null). Group/private
+// channels let their owner self-manage members and rename, without platform admin.
+function channelRole(db, channelId, userId) {
+  const row = db.prepare('SELECT role FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId);
+  return row?.role || null;
+}
 // Access model: admins can reach every channel (to administer). Everyone else
 // only sees channels they're a member of — public no longer means "everyone",
 // so operators are confined to the channels they've been added to (their dept +
@@ -422,21 +428,27 @@ router.post('/admin/reset-unread', requireRole('admin'), (req, res) => {
 
 // ── Channel administration (admin only) ──────────────────────────────────────
 // Rename, change privacy (public ↔ private), edit topic, or archive/unarchive.
-router.put('/channels/:id', requireRole('admin'), (req, res) => {
+router.put('/channels/:id', (req, res) => {
   const db = getDb();
   const channel = getChannelAny(db, req.params.id);
   if (!channel) return res.status(404).json({ error: 'Channel not found' });
   if (channel.kind === 'dm') return res.status(400).json({ error: 'Direct messages cannot be edited' });
+  // Platform admins can edit any channel; a channel's owner can rename / set the
+  // topic / post policy of their own group, but privacy + archive stay admin-only.
+  const isAdmin = req.user.role === 'admin';
+  const isOwner = channelRole(db, channel.id, req.user.id) === 'owner';
+  if (!isAdmin && !isOwner) return res.status(403).json({ error: 'Only the group owner or an admin can change this' });
   const { name, kind, topic, archived, post_policy } = req.body;
-  const newKind = kind === 'private' ? 'private' : kind === 'public' ? 'public' : channel.kind;
+  const newKind = isAdmin ? (kind === 'private' ? 'private' : kind === 'public' ? 'public' : channel.kind) : channel.kind;
   const newPolicy = post_policy === 'admins' ? 'admins' : post_policy === 'all' ? 'all' : (channel.post_policy || 'all');
   let cleanName = channel.name;
   if (name !== undefined && name !== null && String(name).trim()) {
     cleanName = String(name).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || channel.name;
   }
+  const newArchived = (isAdmin && archived !== undefined) ? (archived ? 1 : 0) : channel.archived;
   db.prepare(`UPDATE chat_channels SET name = ?, kind = ?, topic = ?, archived = ?, post_policy = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(cleanName, newKind, topic !== undefined ? (topic || null) : channel.topic,
-      archived !== undefined ? (archived ? 1 : 0) : channel.archived, newPolicy, channel.id);
+      newArchived, newPolicy, channel.id);
   // Making a channel private: ensure the admin who owns it stays a member so it
   // doesn't vanish from everyone. Existing members are preserved either way.
   if (newKind === 'private' && channel.kind === 'public') {
@@ -477,11 +489,16 @@ router.delete('/channels/:id', requireRole('admin'), (req, res) => {
   res.json({ deleted: channel.id });
 });
 
-// Remove a member from a private channel.
-router.delete('/channels/:id/members/:userId', requireRole('admin'), (req, res) => {
+// Remove a member from a private/group channel. Admins manage any channel; a
+// group owner can remove others; anyone can remove themselves (leave).
+router.delete('/channels/:id/members/:userId', (req, res) => {
   const db = getDb();
   const channel = getChannelAny(db, req.params.id);
   if (!channel) return res.status(404).json({ error: 'Channel not found' });
+  const isAdmin = req.user.role === 'admin';
+  const isOwner = channelRole(db, channel.id, req.user.id) === 'owner';
+  const isSelf = req.params.userId === req.user.id;
+  if (!isAdmin && !isOwner && !isSelf) return res.status(403).json({ error: 'Not allowed' });
   const info = db.prepare('DELETE FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').run(channel.id, req.params.userId);
   if (info.changes) emitChannelsRefresh();
   res.json({ removed: info.changes });
