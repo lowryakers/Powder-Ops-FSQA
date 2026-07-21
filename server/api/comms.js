@@ -217,7 +217,10 @@ router.get('/channels', (req, res) => {
   `).all(me);
 
   const out = rows.map(c => {
-    const unread = db.prepare(
+    // Only channels you've actually joined get an unread count. Admins can SEE
+    // every channel, but a channel they never joined shouldn't dump its whole
+    // (imported) history on them as unread.
+    const unread = !c.membership_id ? 0 : db.prepare(
       `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND user_id != ?
        AND (? IS NULL OR created_at > ?)`
     ).get(c.id, me, c.last_read_at, c.last_read_at).n;
@@ -497,6 +500,26 @@ router.post('/channels/:id/read', (req, res) => {
     db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)')
       .run(uuid(), channel.id, req.user.id, 'member', now);
   }
+  res.json({ ok: true });
+});
+
+// Mark a specific message (and everything after it) as unread again. Sets the
+// caller's last_read to just before this message.
+router.post('/messages/:id/unread', (req, res) => {
+  const db = getDb();
+  const msg = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(req.params.id);
+  if (!msg) return res.status(404).json({ error: 'Message not found' });
+  const channel = getChannel(db, msg.channel_id);
+  if (!channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')) return res.status(404).json({ error: 'Not found' });
+  // Newest message strictly before the target; a floor if it's the first.
+  const prev = db.prepare('SELECT MAX(created_at) t FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND created_at < ?')
+    .get(channel.id, msg.created_at).t || '1970-01-01 00:00:00.000';
+  const info = db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?').run(prev, channel.id, req.user.id);
+  if (info.changes === 0 && channel.kind === 'public') {
+    db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)')
+      .run(uuid(), channel.id, req.user.id, 'member', prev);
+  }
+  emitChannelsChanged(db, channel);
   res.json({ ok: true });
 });
 

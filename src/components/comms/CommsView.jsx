@@ -30,6 +30,7 @@ function renderBody(text, users, meName) {
 
   const names = (users || []).map(u => u.name).filter(Boolean).sort((a, b) => b.length - a.length);
   const parts = [
+    'https?:\\/\\/[^\\s<]+',     // clickable URL (matched first)
     names.length ? '@(?:' + names.map(escapeRe).join('|') + ')' : null,
     '@channel', '@here',
     '\\*(?=\\S)[^*\\n]*?\\S\\*', // *bold*
@@ -41,7 +42,17 @@ function renderBody(text, users, meName) {
   const out = []; let last = 0, m, k = 0;
   while ((m = re.exec(s)) !== null) {
     if (m.index > last) out.push(s.slice(last, m.index));
-    const tok = m[0];
+    let tok = m[0];
+    if (/^https?:\/\//.test(tok)) {
+      // Don't swallow trailing sentence punctuation into the link.
+      let trail = '';
+      const tm = tok.match(/[.,;:!?)\]}"']+$/);
+      if (tm) { trail = tm[0]; tok = tok.slice(0, -trail.length); }
+      out.push(<a key={k++} href={tok} target="_blank" rel="noopener noreferrer" className="text-powder-700 underline break-all hover:text-powder-800">{tok}</a>);
+      if (trail) out.push(trail);
+      last = m.index + m[0].length;
+      continue;
+    }
     if (tok[0] === '@') {
       const nm = tok.slice(1);
       const isMe = meName && nm.toLowerCase() === meName.toLowerCase();
@@ -425,7 +436,7 @@ function EmojiPicker({ onPick, onClose, align = 'right', vertical = 'down' }) {
   );
 }
 
-function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, canTranslate, viewerLang, onTranslate, autoTranslate, mentionUsers }) {
+function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, canTranslate, viewerLang, onTranslate, autoTranslate, mentionUsers }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.body || '');
@@ -518,6 +529,9 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, canTran
           <button onClick={() => setShowEmoji(s => !s)} className="p-1 text-gray-400 hover:text-gray-600" title="React"><Smile size={14} /></button>
           {onReply && <button onClick={() => onReply(m)} className="p-1 text-gray-400 hover:text-gray-600" title="Reply in thread"><MessageSquare size={13} /></button>}
           {canTranslate && m.body && !translated && <button onClick={doTranslate} className="p-1 text-gray-400 hover:text-gray-600" title="Translate"><Languages size={13} /></button>}
+          {onMarkUnread && <button onClick={() => onMarkUnread(m)} className="p-1 text-gray-400 hover:text-powder-600" title="Mark unread from here">
+            <span className="block h-2.5 w-2.5 rounded-full border-2 border-current" />
+          </button>}
           {mine && <button onClick={() => { setDraft(m.body || ''); setEditing(true); }} className="p-1 text-gray-400 hover:text-gray-600" title="Edit"><Edit2 size={13} /></button>}
           {(mine) && <button onClick={() => onDelete(m)} className="p-1 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>}
           {showEmoji && <EmojiPicker onPick={(e) => { onReact(m, e); setShowEmoji(false); }} onClose={() => setShowEmoji(false)} />}
@@ -853,6 +867,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   };
 
   const markAllRead = async () => { await apiPost('/comms/read-all', {}); refreshChannels(); };
+  const markUnread = async (m) => { try { await apiPost(`/comms/messages/${m.id}/unread`, {}); refreshChannels(); } catch { /* ignore */ } };
 
   const toggleDmPick = (id) => setDmSelected(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
   const startDm = async () => {
@@ -1162,7 +1177,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                   return (
                     <div key={m.id}>
                       {showDay && <DateDivider iso={m.created_at} />}
-                      <Message m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg} onReply={setReplyTo}
+                      <Message m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg} onReply={setReplyTo} onMarkUnread={markUnread}
                         canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} autoTranslate={autoTranslate} mentionUsers={users} />
                     </div>
                   );
