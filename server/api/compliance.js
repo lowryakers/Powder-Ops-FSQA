@@ -230,7 +230,7 @@ router.get('/notifications', (req, res) => {
       const drows = db.prepare('SELECT approvals, paper_record FROM disposals').all();
       disposalsPending = drows.filter(d => {
         if (d.paper_record) return false;
-        let a = {}; try { a = JSON.parse(d.approvals || '{}'); } catch { a = {}; }
+        let a; try { a = JSON.parse(d.approvals || '{}'); } catch { a = {}; }
         return !a.ops_manager || !a.quality_control;
       }).length;
     } catch { /* table optional */ }
