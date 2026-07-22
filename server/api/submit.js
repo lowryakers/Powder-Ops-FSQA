@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
-import { getType } from '../qms-config.js';
+import { getType, CHEMICAL_USE_SPECS } from '../qms-config.js';
 
 const router = Router();
 
@@ -151,27 +151,56 @@ router.post('/component-signout', (req, res) => {
   res.status(201).json({ ok: true, record_number: number, direction: data.direction });
 });
 
-// ── Maintenance Sign In/Out kiosk ─────────────────────────────────────────────
-// The editable tool list (same one managed in the app) for the kiosk dropdown.
+// ── Equipment/Tool/Chemical Sign In-Out kiosk ────────────────────────────────
+// The editable item list (same one managed in the app) plus the approved
+// chemical registry, grouped for the kiosk dropdown. `chemicals` tells the
+// kiosk which items need a use specification.
 router.get('/maintenance-items', (_req, res) => {
   const db = getDb();
-  let items = [];
-  try { items = db.prepare('SELECT name FROM maintenance_items ORDER BY sort_order, name').all().map(r => r.name); } catch { /* table optional */ }
-  res.json({ items });
+  let rows = [];
+  try { rows = db.prepare('SELECT name, category FROM maintenance_items ORDER BY sort_order, name').all(); } catch { /* table optional */ }
+  let chemicals = [];
+  try { chemicals = db.prepare('SELECT name FROM approved_chemicals ORDER BY name').all().map(r => r.name); } catch { /* table optional */ }
+  const have = new Set(rows.map(r => r.name));
+  const merged = [...rows, ...chemicals.filter(n => !have.has(n)).map(name => ({ name, category: 'Chemicals' }))];
+  const groups = [];
+  const byCat = new Map();
+  for (const r of merged) {
+    const cat = r.category || 'Other';
+    if (!byCat.has(cat)) { const g = { group: cat, items: [] }; byCat.set(cat, g); groups.push(g); }
+    byCat.get(cat).items.push(r.name);
+  }
+  res.json({ items: merged.map(r => r.name), groups, chemicals, use_specs: CHEMICAL_USE_SPECS });
 });
 
-// Sign a tool out from the floor kiosk — creates a record (status Out) awaiting
-// the in-app QA return/review. `employee_name` is the typed name at the kiosk.
-// Accepts a single item_description or an items[] array — one record per item.
+// Sign items out from the floor kiosk — creates a record (status Out) per item,
+// awaiting the in-app QA return/review. `employee_name` is the typed name.
+// items[] entries are strings or { name, qty, use_spec }; a chemical from the
+// approved registry must carry a use_spec. tool_box applies to the whole batch.
 router.post('/maintenance-signout', (req, res) => {
   const db = getDb();
   const cfg = getType('maintenance_sign_out');
-  const { employee_name, item_description, items, asset_tag, condition_out, time_out } = req.body;
+  const { employee_name, item_description, items, asset_tag, condition_out, time_out, tool_box, use_spec, qty } = req.body;
   const name = (employee_name || '').trim();
-  const list = (Array.isArray(items) && items.length ? items : [item_description])
-    .map(i => (i || '').trim()).filter(Boolean);
+  const list = (Array.isArray(items) && items.length ? items : [{ name: item_description, qty, use_spec }])
+    .map(i => typeof i === 'string' ? { name: i.trim() } : { name: (i?.name || '').trim(), qty: i?.qty, use_spec: i?.use_spec })
+    .filter(i => i.name);
   if (!name || !list.length) return res.status(400).json({ error: 'Item and your name are required.' });
   if (list.length > 25) return res.status(400).json({ error: 'Too many items in one sign-out.' });
+
+  let chemicals = new Set();
+  try { chemicals = new Set(db.prepare('SELECT name FROM approved_chemicals').all().map(r => r.name)); } catch { /* optional */ }
+  for (const i of list) {
+    if (chemicals.has(i.name)) {
+      if (!CHEMICAL_USE_SPECS.includes(i.use_spec)) {
+        return res.status(400).json({ error: `"${i.name}" is a chemical — pick its use specification (${CHEMICAL_USE_SPECS.join(', ')}).` });
+      }
+    } else {
+      i.use_spec = undefined; // use spec only applies to chemicals
+    }
+    const q = Number(i.qty);
+    i.qty = Number.isFinite(q) && q > 0 ? q : 1;
+  }
 
   const created = [];
   const insert = db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, created_by)
@@ -182,32 +211,23 @@ router.post('/maintenance-signout', (req, res) => {
       const number = nextNumber(db, cfg);
       const data = {
         employee_name: name,
-        item_description: item,
+        item_description: item.name,
+        qty: item.qty,
+        tool_box: (tool_box || '').trim(),
+        ...(item.use_spec ? { use_spec: item.use_spec } : {}),
         asset_tag: (list.length === 1 && asset_tag) || '',
         condition_out: condition_out === 'Bad' ? 'Bad' : 'Good',
         time_out: time_out || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       insert.run(id, number, today(), JSON.stringify(data), name);
       logAudit(name, 'submit_public', 'maintenance_sign_out', id,
-        { record_number: number, item_description: item, via: 'kiosk' }, null, null, item);
-      created.push({ record_number: number, item_description: item });
+        { record_number: number, item_description: item.name, qty: item.qty, tool_box: data.tool_box, use_spec: item.use_spec, via: 'kiosk' }, null, null, item.name);
+      created.push({ record_number: number, item_description: item.name, qty: item.qty });
     }
   })();
 
   res.status(201).json({ ok: true, created, record_number: created[0].record_number, item_description: created[0].item_description });
 });
 
-// Public "currently out" list for the kiosk — just the item and checkout date.
-router.get('/maintenance-out', (req, res) => {
-  const db = getDb();
-  const rows = db.prepare(`SELECT record_date, data FROM qms_records
-    WHERE record_type = 'maintenance_sign_out' AND status = 'out'
-    ORDER BY record_date DESC, created_at DESC LIMIT 100`).all();
-  res.json(rows.map(r => {
-    let d = {};
-    try { d = JSON.parse(r.data || '{}'); } catch { /* ignore */ }
-    return { item_description: d.item_description || '—', record_date: r.record_date };
-  }));
-});
 
 export default router;

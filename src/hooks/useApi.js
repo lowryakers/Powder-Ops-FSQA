@@ -2,7 +2,18 @@ import { useState, useEffect, useCallback } from 'react';
 
 const BASE = '/api';
 
+// While an admin previews the app as another user ("View as"), writes are
+// blocked client-side: the API would still act as the admin, so any change made
+// from inside the preview would be mis-attributed. Set/cleared by AuthProvider.
+let viewAsName = null;
+export function setViewAsWriteGuard(name) { viewAsName = name || null; }
+
 async function apiFetch(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  if (viewAsName && method !== 'GET') {
+    window.dispatchEvent(new CustomEvent('view-as-blocked'));
+    throw new Error(`Read-only preview — exit "Viewing as ${viewAsName}" to make changes.`);
+  }
   const token = localStorage.getItem('auth_token');
   const headers = {
     'Content-Type': 'application/json',
@@ -63,6 +74,10 @@ export async function apiDelete(path) {
 }
 
 export async function apiUpload(path, formData) {
+  if (viewAsName) {
+    window.dispatchEvent(new CustomEvent('view-as-blocked'));
+    throw new Error(`Read-only preview — exit "Viewing as ${viewAsName}" to make changes.`);
+  }
   const token = localStorage.getItem('auth_token');
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;

@@ -1,10 +1,15 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { setViewAsWriteGuard } from './useApi';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Admin "View as": the whole app renders with this user's role/department/
+  // module access. UI-only — requests still authenticate as the real admin, so
+  // useApi blocks writes while active (attribution must stay truthful).
+  const [viewAs, setViewAs] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
@@ -40,11 +45,31 @@ export function AuthProvider({ children }) {
       await fetch('/api/users/logout', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
     }
     localStorage.removeItem('auth_token');
+    setViewAs(null);
+    setViewAsWriteGuard(null);
     setUser(null);
   }, []);
 
+  const startViewAs = useCallback((target) => {
+    if (!target || user?.role !== 'admin') return;
+    setViewAs(target);
+    setViewAsWriteGuard(target.name);
+  }, [user]);
+
+  const stopViewAs = useCallback(() => {
+    setViewAs(null);
+    setViewAsWriteGuard(null);
+  }, []);
+
+  // The user the app RENDERS as. Impersonation keeps the target's own role,
+  // department, and module_access so nav/gating match what they'd really see.
+  const effectiveUser = viewAs && user ? {
+    ...viewAs,
+    role: viewAs.role === 'admin' ? 'operator' : (viewAs.role || 'operator'),
+  } : user;
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginWithToken, logout }}>
+    <AuthContext.Provider value={{ user: effectiveUser, realUser: user, viewAs, startViewAs, stopViewAs, loading, login, loginWithToken, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1102,6 +1102,22 @@ try {
         })();
         console.log(`[migrate] Maintenance items: categorized existing + added ${added} new`);
       }
+      // v4: add any items introduced since v3 (e.g. Extension Cord) to
+      // existing installs, keeping custom items untouched.
+      const flag4 = db.prepare("SELECT value FROM app_settings WHERE key = 'maint_items_v4'").get();
+      if (!flag4) {
+        const has = db.prepare('SELECT 1 FROM maintenance_items WHERE name = ?');
+        const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) m FROM maintenance_items').get().m;
+        const ins = db.prepare('INSERT INTO maintenance_items (id, name, sort_order, category) VALUES (?, ?, ?, ?)');
+        let added = 0, next = maxOrder + 1;
+        db.transaction(() => {
+          for (const it of flat) {
+            if (!has.get(it.name)) { ins.run(uuid(), it.name, next++, it.category); added++; }
+          }
+          db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('maint_items_v4', '1', datetime('now'))").run();
+        })();
+        if (added) console.log(`[migrate] Maintenance items v4: added ${added} new item(s)`);
+      }
     }
   }
 } catch (e) {

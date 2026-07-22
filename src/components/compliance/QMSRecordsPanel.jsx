@@ -136,33 +136,53 @@ function FieldInput({ f, value, onChange }) {
   return <input value={value || ''} onChange={e => onChange(e.target.value)} className={base} />;
 }
 
-// Chip multi-pick fed by the same (possibly grouped) options as a select.
-function MultiPickInput({ f, value, onChange }) {
-  const arr = Array.isArray(value) ? value : value ? [value] : [];
+// Multi-pick fed by the same (possibly grouped) options as a select. Each
+// picked item carries a qty, and items from the "Chemicals" group require a
+// use specification. Value shape: [{ name, qty, use_spec }].
+function MultiPickInput({ f, value, onChange, useSpecOptions = [] }) {
+  const arr = Array.isArray(value) ? value : [];
   const grouped = Array.isArray(f.options) && f.options.some(o => o && typeof o === 'object' && Array.isArray(o.items));
-  const add = (o) => { if (o && !arr.includes(o)) onChange([...arr, o]); };
-  const remove = (o) => onChange(arr.filter(x => x !== o));
+  const chemicalSet = useMemo(() => {
+    if (!grouped) return new Set();
+    const g = f.options.find(o => o.group === 'Chemicals');
+    return new Set(g ? g.items : []);
+  }, [f.options, grouped]);
+  const names = arr.map(x => x.name);
+  const add = (o) => { if (o && !names.includes(o)) onChange([...arr, { name: o, qty: 1, use_spec: '' }]); };
+  const patch = (name, p) => onChange(arr.map(x => x.name === name ? { ...x, ...p } : x));
+  const remove = (name) => onChange(arr.filter(x => x.name !== name));
   return (
     <div className="space-y-1.5">
-      {arr.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {arr.map(o => (
-            <span key={o} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 bg-powder-50 border border-powder-200 text-powder-800 rounded-lg text-xs">
-              {o}
-              <button type="button" onClick={() => remove(o)} className="p-0.5 hover:bg-powder-100 rounded"><X size={11} /></button>
-            </span>
-          ))}
+      {arr.map(x => (
+        <div key={x.name} className="rounded-lg border border-powder-200 bg-powder-50 px-2.5 py-1.5">
+          <div className="flex items-center gap-2">
+            <span className="flex-1 min-w-0 text-sm text-powder-900 truncate">{x.name}</span>
+            <label className="flex items-center gap-1 text-[11px] text-gray-500 shrink-0">
+              Qty
+              <input type="number" min="1" value={x.qty}
+                onChange={e => patch(x.name, { qty: e.target.value })}
+                className="w-14 px-1.5 py-1 border border-gray-300 rounded text-sm text-center bg-white" />
+            </label>
+            <button type="button" onClick={() => remove(x.name)} className="p-0.5 text-powder-400 hover:text-red-500 shrink-0"><X size={13} /></button>
+          </div>
+          {chemicalSet.has(x.name) && (
+            <select value={x.use_spec || ''} onChange={e => patch(x.name, { use_spec: e.target.value })}
+              className={`mt-1 w-full px-2 py-1.5 border rounded text-xs bg-white ${x.use_spec ? 'border-gray-300' : 'border-amber-400'}`}>
+              <option value="">Use specification (required for chemicals)…</option>
+              {useSpecOptions.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
         </div>
-      )}
+      ))}
       <select value="" onChange={e => add(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
         <option value="">{arr.length ? 'Add another item…' : 'Select item(s)…'}</option>
         {grouped
           ? f.options.map(g => (
               <optgroup key={g.group} label={g.group}>
-                {g.items.filter(o => !arr.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
+                {g.items.filter(o => !names.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
               </optgroup>
             ))
-          : f.options.filter(o => !arr.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
+          : f.options.filter(o => !names.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
       </select>
       {arr.length > 1 && <p className="text-[11px] text-gray-400">One sign-out record is created per item.</p>}
     </div>
@@ -213,14 +233,20 @@ function RecordForm({ cfg, initial, onSave, onCancel }) {
         </div>
 
         <div className="grid sm:grid-cols-2 gap-3">
-          {cfg.fields.map(f => (
-            <div key={f.key} className={f.type === 'textarea' || f.type === 'multiselect' || f.key === multiItemKey ? 'sm:col-span-2' : ''}>
-              {f.type !== 'checkbox' && <label className="block text-xs font-medium text-gray-700 mb-1">{f.label}{f.key === multiItemKey ? ' (one or more)' : ''}</label>}
-              {f.key === multiItemKey
-                ? <MultiPickInput f={f} value={form[f.key]} onChange={v => set(f.key, v)} />
-                : <FieldInput f={f} value={form[f.key]} onChange={v => set(f.key, v)} />}
-            </div>
-          ))}
+          {cfg.fields.map(f => {
+            // In multi-item create mode, qty and use-spec live on each picked
+            // item row instead of as standalone fields.
+            if (multiItemKey && (f.key === 'qty' || f.key === 'use_spec')) return null;
+            return (
+              <div key={f.key} className={f.type === 'textarea' || f.type === 'multiselect' || f.key === multiItemKey ? 'sm:col-span-2' : ''}>
+                {f.type !== 'checkbox' && <label className="block text-xs font-medium text-gray-700 mb-1">{f.label}{f.key === multiItemKey ? ' (one or more)' : ''}</label>}
+                {f.key === multiItemKey
+                  ? <MultiPickInput f={f} value={form[f.key]} onChange={v => set(f.key, v)}
+                      useSpecOptions={cfg.fields.find(x => x.key === 'use_spec')?.options || []} />
+                  : <FieldInput f={f} value={form[f.key]} onChange={v => set(f.key, v)} />}
+              </div>
+            );
+          })}
         </div>
 
         <div className="grid sm:grid-cols-2 gap-3">
@@ -444,7 +470,7 @@ function ManageItemsModal({ onDone, onClose }) {
           <h3 className="font-semibold text-gray-900">Manage Item List</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
-        <p className="text-xs text-gray-500">The dropdown of items for the Maintenance Sign In/Out form. The category groups them in the dropdown. Changes apply to new sign-outs; existing records keep what was recorded.</p>
+        <p className="text-xs text-gray-500">The dropdown of items for the Sign In-Out form. The category groups them in the dropdown. Chemicals from the approved registry are added automatically and can't be edited here. Changes apply to new sign-outs; existing records keep what was recorded.</p>
         {items === null ? <p className="text-sm text-gray-400 py-4 text-center">Loading…</p> : (
           <div className="space-y-1.5 max-h-[55vh] overflow-y-auto">
             {items.map((it, i) => (
@@ -721,13 +747,20 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
 
   const handleCreate = async (form) => {
     // Multi-item sign-out: one record per picked item (numbers auto-assigned).
+    // Entries are { name, qty, use_spec } — use_spec only set for chemicals.
     const items = Array.isArray(form.item_description) ? form.item_description : null;
     if (items) {
       if (!items.length) { flash('Pick at least one item.'); return; }
-      for (const item of items) {
-        await apiPost(`/qms/${recordType}`, { ...form, item_description: item, record_number: items.length > 1 ? '' : form.record_number });
+      for (const it of items) {
+        await apiPost(`/qms/${recordType}`, {
+          ...form,
+          item_description: it.name,
+          qty: Number(it.qty) > 0 ? Number(it.qty) : 1,
+          use_spec: it.use_spec || '',
+          record_number: items.length > 1 ? '' : form.record_number,
+        });
       }
-      flash(items.length > 1 ? `Signed out ${items.length} items.` : null);
+      if (items.length > 1) flash(`Signed out ${items.length} items.`);
     } else {
       await apiPost(`/qms/${recordType}`, form);
     }
@@ -774,8 +807,9 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
         </div>
       )}
 
-      {/* Quick glance list: what's out right now — just the item and date. */}
-      {recordType === 'maintenance_sign_out' && (() => {
+      {/* Quick glance list: what's out right now — just the item and date.
+          Requested specifically for Ricardo's view; hidden for everyone else. */}
+      {recordType === 'maintenance_sign_out' && (user?.name || '').toLowerCase().startsWith('ricardo') && (() => {
         const outNow = (records || []).filter(r => r.status === 'out');
         if (!outNow.length) return null;
         return (
@@ -784,7 +818,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
             <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
               {outNow.map(r => (
                 <div key={r.id} className="flex items-center justify-between gap-2 px-4 py-1.5 text-sm">
-                  <span className="text-gray-800 min-w-0 truncate">{r.item_description}</span>
+                  <span className="text-gray-800 min-w-0 truncate">{Number(r.qty) > 1 ? `${r.qty}× ` : ''}{r.item_description}</span>
                   <span className="text-gray-400 text-xs shrink-0">{r.record_date}</span>
                 </div>
               ))}

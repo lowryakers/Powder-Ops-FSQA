@@ -2,20 +2,14 @@
 
 ## Deferred / future work — remind the user when relevant
 
-### Phase 3: Team Activity / efficiency dashboard  (PAUSED — do not build without asking)
-The user paused this and asked to be **reminded whenever we touch anything similar or relevant.**
+### Phase 3: Team Activity / efficiency dashboard  (SHIPPED — user approved 2026-07-22)
+Live as the admin-only "Team Activity" view (System group): `server/api/activity.js` (requireRole admin)
++ `TeamActivityPanel.jsx`. Metrics come from work-order timing (operational tables, NOT the audit log):
+completed/on-time/overdue/avg-cycle KPIs, weekly trend, by-department and by-person tables over 30/90/365d.
+Whole view is admin-gated, which satisfies the agreed sensitivity guard (per-person detail never shown to
+non-admins). If it's ever opened to supervisors, re-apply aggregate-by-default with admin-only drill-down.
 
-**Surface the reminder when work touches any of:**
-- The Production Dashboard, Production KPIs, or any new dashboard/analytics/reporting view.
-- The audit log, or anything about "who did what," activity tracking, or productivity/efficiency metrics.
-- Task-timing data (work orders, checklist submissions, production entries — `created_at` → `completed_at`/`completed_by`), or any per-person / per-team performance rollup.
-
-**When reminding, restate the agreed shape so the decision is easy:**
-- Build it as a **new "Team Activity" view** (Compliance/admin area) — *not* folded into the Production Dashboard (different audience: operational "on track today" vs. managerial "how is the team performing").
-- Metrics come from the **operational task-timing tables, not the audit log.** The audit log is the immutable compliance trail; Phase 1 gave it cleaner actor identity to help *correlate*, but the numbers come from work orders / submissions / production entries.
-- **Sensitivity guard:** aggregate-by-default (team/department/shift rollups) with **admin-gated** drill-down to individual detail, to avoid a per-person surveillance/scoreboard feel.
-
-### Comms → compliance-record crossover  (DEFERRED — later phase, remind when relevant)
+### Comms → compliance-record crossover  (DEFERRED — re-confirmed 2026-07-22, keep reminding when relevant)
 The user wants the ability to promote a chat message into a compliance record (e.g. a message becomes
 a deviation / CAPA / NC entry, or gets attached to one) but judged it "overly complex" for now and asked
 to be **reminded when something relevant comes up or where it would fit naturally.**

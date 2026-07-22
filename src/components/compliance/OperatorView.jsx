@@ -774,16 +774,16 @@ const DEPT_KEYS = [
 ];
 
 export default function OperatorView() {
-  const { user: authUser } = useAuth() || {};
+  // "View as" is app-wide now (useAuth): while an admin previews as someone,
+  // `user` here IS that person (role/department/access), and writes are blocked
+  // globally. This view keeps a picker to start the preview, plus its toasts.
+  const { user: authUser, viewAs, startViewAs } = useAuth() || {};
   const authIsAdmin = authUser?.role === 'admin';
-  // "View as": an admin can preview exactly what a specific non-admin operator
-  // sees. While active, the view is that person's (role/department), read-only.
-  const [viewAs, setViewAs] = useState(null); // { id, name, department } or null
   const [showViewAsPicker, setShowViewAsPicker] = useState(false);
-  const user = viewAs ? { ...authUser, role: 'operator', name: viewAs.name, department: viewAs.department } : authUser;
-  // Only admins (acting as themselves) may browse other departments. Everyone
-  // else — and an admin impersonating an operator — is locked to one department.
-  const isAdmin = !viewAs && authIsAdmin;
+  const user = authUser;
+  // Only admins (acting as themselves) may browse other departments; an admin
+  // previewing an operator is locked to that person's department like they are.
+  const isAdmin = authIsAdmin;
   const userDept = user?.department || 'warehouse';
   // Language is owned here so the EN/ES toggle is available in every context the
   // Operator View appears (standalone layout and the in-app tab). Shares the
@@ -792,9 +792,9 @@ export default function OperatorView() {
   const changeLang = (l) => { setLang(l); localStorage.setItem('op_lang', l); };
   const t = useMemo(() => createTranslator(lang), [lang]);
   const [adminViewDept, setAdminViewDept] = useState('all');
-  // The department whose tasks we load: the impersonated person's, else the
-  // admin's chosen filter, else the viewer's own department.
-  const viewDept = viewAs ? (viewAs.department || 'warehouse') : (authIsAdmin ? adminViewDept : userDept);
+  // The department whose tasks we load: the admin's chosen filter, else the
+  // viewer's own department (which, while previewing, is that person's).
+  const viewDept = authIsAdmin ? adminViewDept : userDept;
   const groupParam = viewDept === 'all' ? '' : `?group=${viewDept}`;
   const { data: tasks, loading, refresh } = useApiGet(`/pm/operator-tasks${groupParam}`);
   const { data: technicians } = useApiGet('/users/technicians');
@@ -872,6 +872,8 @@ export default function OperatorView() {
   const [freqFilter, setFreqFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState('');
+  // Tap a stat tile to show only that bucket ('' = all).
+  const [bucketFilter, setBucketFilter] = useState('');
   const [toast, setToast] = useState(null);
   const [batchMode, setBatchMode] = useState(false);
   const [batchSelected, setBatchSelected] = useState(new Set());
@@ -1051,16 +1053,9 @@ export default function OperatorView() {
         </div>
       </div>
 
-      {/* View as operator (admin): preview exactly what a specific person sees */}
-      {authIsAdmin && (viewAs ? (
-        <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-          <div className="flex items-center gap-2 text-sm text-amber-800 min-w-0">
-            <CircleDot size={15} className="shrink-0" />
-            <span className="truncate">Viewing as <span className="font-semibold">{viewAs.name}</span>{viewAs.department ? ` · ${viewAs.department.replace(/_/g, ' ')}` : ''} — read only</span>
-          </div>
-          <button onClick={() => { setViewAs(null); setShowViewAsPicker(false); }} className="shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-amber-700 border border-amber-200 hover:bg-amber-100">Exit</button>
-        </div>
-      ) : (
+      {/* View as (admin): switches the WHOLE app — nav, shortcuts, permissions —
+          to that person's view. The floating amber bar (App) shows Exit. */}
+      {authIsAdmin && (
         <div className="relative">
           <button onClick={() => setShowViewAsPicker(v => !v)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200">
             <Search size={14} /> View as operator…
@@ -1071,7 +1066,7 @@ export default function OperatorView() {
               <div className="absolute left-0 mt-1 w-64 max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
                 {viewAsCandidates.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No operators found</div>}
                 {viewAsCandidates.map(u => (
-                  <button key={u.id} onClick={() => { setViewAs({ id: u.id, name: u.name, department: u.department }); setShowViewAsPicker(false); }}
+                  <button key={u.id} onClick={() => { startViewAs?.(u); setShowViewAsPicker(false); }}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between gap-2">
                     <span className="text-gray-800 truncate">{u.name}</span>
                     <span className="text-[11px] text-gray-400 shrink-0">{(u.department || '').replace(/_/g, ' ')}</span>
@@ -1081,7 +1076,7 @@ export default function OperatorView() {
             </>
           )}
         </div>
-      ))}
+      )}
 
       {/* Admin department toggle */}
       {isAdmin && (
@@ -1119,24 +1114,22 @@ export default function OperatorView() {
         )}
       </div>
 
-      {/* Quick stats bar */}
+      {/* Quick stats bar — tap a tile to show only that bucket, tap again for all */}
       <div className="grid grid-cols-4 gap-2">
-        <div className={`rounded-xl p-2.5 text-center ${overdue.length > 0 ? 'bg-red-50 border border-red-200' : 'bg-gray-50 border border-gray-100'}`}>
-          <p className={`text-lg font-bold ${overdue.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overdue.length}</p>
-          <p className="text-[10px] font-medium text-gray-500 uppercase">{t('overdue_label')}</p>
-        </div>
-        <div className={`rounded-xl p-2.5 text-center ${today.length > 0 ? 'bg-powder-50 border border-powder-200' : 'bg-gray-50 border border-gray-100'}`}>
-          <p className={`text-lg font-bold ${today.length > 0 ? 'text-powder-600' : 'text-gray-400'}`}>{today.length}</p>
-          <p className="text-[10px] font-medium text-gray-500 uppercase">{t('today_label')}</p>
-        </div>
-        <div className="rounded-xl p-2.5 text-center bg-gray-50 border border-gray-100">
-          <p className="text-lg font-bold text-gray-600">{thisWeek.length}</p>
-          <p className="text-[10px] font-medium text-gray-500 uppercase">{t('this_week')}</p>
-        </div>
-        <div className="rounded-xl p-2.5 text-center bg-gray-50 border border-gray-100">
-          <p className="text-lg font-bold text-gray-400">{upcoming.length}</p>
-          <p className="text-[10px] font-medium text-gray-500 uppercase">{t('later')}</p>
-        </div>
+        {[
+          { key: 'overdue', count: overdue.length, label: t('overdue_label'), hot: 'bg-red-50 border-red-200', num: 'text-red-600' },
+          { key: 'today', count: today.length, label: t('today_label'), hot: 'bg-powder-50 border-powder-200', num: 'text-powder-600' },
+          { key: 'thisWeek', count: thisWeek.length, label: t('this_week'), hot: 'bg-gray-50 border-gray-100', num: 'text-gray-600' },
+          { key: 'upcoming', count: upcoming.length, label: t('later'), hot: 'bg-gray-50 border-gray-100', num: 'text-gray-400' },
+        ].map(tile => (
+          <button key={tile.key} onClick={() => setBucketFilter(b => b === tile.key ? '' : tile.key)}
+            className={`rounded-xl p-2.5 text-center border transition-all ${
+              bucketFilter === tile.key ? 'ring-2 ring-gray-800 ring-offset-1 bg-white border-gray-300'
+              : tile.count > 0 ? tile.hot : 'bg-gray-50 border-gray-100'}`}>
+            <p className={`text-lg font-bold ${tile.count > 0 ? tile.num : 'text-gray-400'}`}>{tile.count}</p>
+            <p className="text-[10px] font-medium text-gray-500 uppercase">{tile.label}</p>
+          </button>
+        ))}
       </div>
 
       {/* Collapsible filter row */}
@@ -1163,8 +1156,10 @@ export default function OperatorView() {
           <p className="text-gray-500 text-sm">{t('no_prefix')} {freqFilter !== 'all' ? t(freqFilter) + ' ' : ''}{t('no_tasks_pending')}</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {overdue.length > 0 && (
+        /* key remounts sections when the bucket filter changes so a filtered
+           section always opens expanded */
+        <div className="space-y-2" key={bucketFilter}>
+          {overdue.length > 0 && (!bucketFilter || bucketFilter === 'overdue') && (
             <SectionHeader icon={AlertTriangle} title={t('section_overdue')} count={overdue.length} color="bg-red-500" defaultOpen={true}>
               {overdue.map(tk => (
                 <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
@@ -1172,7 +1167,7 @@ export default function OperatorView() {
             </SectionHeader>
           )}
 
-          {today.length > 0 && (
+          {today.length > 0 && (!bucketFilter || bucketFilter === 'today') && (
             <SectionHeader icon={CircleDot} title={t('section_due_today')} count={today.length} color="bg-powder-600" defaultOpen={true}>
               {today.map(tk => (
                 <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
@@ -1180,16 +1175,16 @@ export default function OperatorView() {
             </SectionHeader>
           )}
 
-          {thisWeek.length > 0 && (
-            <SectionHeader icon={CalendarDays} title={t('section_this_week')} count={thisWeek.length} color="bg-gray-500" defaultOpen={overdue.length + today.length < 10}>
+          {thisWeek.length > 0 && (!bucketFilter || bucketFilter === 'thisWeek') && (
+            <SectionHeader icon={CalendarDays} title={t('section_this_week')} count={thisWeek.length} color="bg-gray-500" defaultOpen={bucketFilter === 'thisWeek' || overdue.length + today.length < 10}>
               {thisWeek.map(tk => (
                 <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
               ))}
             </SectionHeader>
           )}
 
-          {upcoming.length > 0 && (
-            <SectionHeader icon={Clock} title={t('section_upcoming')} count={upcoming.length} color="bg-gray-400" defaultOpen={overdue.length + today.length + thisWeek.length < 5}>
+          {upcoming.length > 0 && (!bucketFilter || bucketFilter === 'upcoming') && (
+            <SectionHeader icon={Clock} title={t('section_upcoming')} count={upcoming.length} color="bg-gray-400" defaultOpen={bucketFilter === 'upcoming' || overdue.length + today.length + thisWeek.length < 5}>
               {upcoming.map(tk => (
                 <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
               ))}

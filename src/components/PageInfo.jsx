@@ -35,9 +35,9 @@ const MODULE_INFO = {
     sqf: 'Accountability for items entering production areas (foreign-material control, SQF 11.7).',
   },
   'maintenance-signout': {
-    what: 'Check in/out for tools, sealers, and calibration weights, grouped by source list, with condition on issue and return.',
-    links: 'Item list managed in-app; kiosk mode; calibration weights also live in the Calibration log.',
-    sqf: 'Tool accountability prevents foreign-material hazards from maintenance activities (SQF 11.7.5).',
+    what: 'Check in/out for tools, sealers, calibration weights, and approved chemicals — multiple items per sign-out with qty, tool box #, and (for chemicals) a required use specification.',
+    links: 'Item list managed in-app; chemicals sync from the Chemicals registry; kiosk mode; calibration weights also live in the Calibration log.',
+    sqf: 'Tool and chemical accountability prevents foreign-material and chemical hazards from maintenance activities (SQF 11.7.5, 11.6.4).',
   },
   'knife-accountability': {
     what: 'Knife / razor blade / scissor issue-and-return log against a controlled masterlist.',

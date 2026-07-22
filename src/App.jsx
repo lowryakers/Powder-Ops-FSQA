@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -64,7 +64,7 @@ const NAV_GROUPS = [
     label: 'Warehouse',
     items: [
       { id: 'component-signout', label: 'Component Sign In/Out', icon: PackageCheck },
-      { id: 'maintenance-signout', label: 'Maintenance Sign In/Out', icon: Wrench },
+      { id: 'maintenance-signout', label: 'Equipment/Tool/Chemical Sign In-Out', icon: Wrench },
       { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor', icon: Scissors },
     ],
   },
@@ -412,8 +412,55 @@ function ChangePasswordModal({ onClose }) {
   );
 }
 
-// Top-right account menu: name/avatar → Change password / Sign out.
-function AccountMenu({ user, onChangePassword, onLogout }) {
+// Floating "Viewing as" pill — shown while an admin previews the app as
+// another user. Everything renders with that user's access; writes are blocked.
+function ViewAsBar({ viewAs, onExit }) {
+  if (!viewAs) return null;
+  return (
+    <div className="fixed bottom-16 md:bottom-4 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2.5 bg-amber-500 text-white rounded-full pl-4 pr-1.5 py-1.5 shadow-lg whitespace-nowrap">
+      <Eye size={15} className="shrink-0" />
+      <span className="text-sm font-semibold">Viewing as {viewAs.name} <span className="font-normal opacity-80">· read-only</span></span>
+      <button onClick={onExit} className="px-3 py-1 bg-white/25 hover:bg-white/35 rounded-full text-xs font-bold">Exit</button>
+    </div>
+  );
+}
+
+// Admin picker: choose any active non-admin user to preview the app as.
+function ViewAsPickerModal({ onPick, onClose }) {
+  const { data: users } = useApiGet('/users');
+  const [q, setQ] = useState('');
+  const list = (users || [])
+    .filter(u => u.is_active && u.role !== 'admin')
+    .filter(u => !q || u.name.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="fixed inset-0 bg-black/30 z-[80] flex items-start justify-center p-4 pt-[12vh]" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
+          <Eye size={16} className="text-amber-500" />
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="View the app as…"
+            className="flex-1 text-sm outline-none bg-transparent" />
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={16} className="text-gray-400" /></button>
+        </div>
+        <div className="max-h-80 overflow-y-auto py-1">
+          {list.length === 0 && <div className="px-4 py-6 text-center text-gray-400 text-sm">No matching users</div>}
+          {list.map(u => (
+            <button key={u.id} onClick={() => onPick(u)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50">
+              <span className="text-gray-800 truncate">{u.name}</span>
+              <span className="text-[11px] text-gray-400 shrink-0 capitalize">{u.role}{u.department ? ` · ${deptLabel(u.department)}` : ''}</span>
+            </button>
+          ))}
+        </div>
+        <p className="px-3 py-2 border-t border-gray-100 text-[11px] text-gray-400">
+          The whole app — sidebar, shortcuts, permissions — renders exactly as this person sees it. Read-only until you exit.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// Top-right account menu: name/avatar → View as / Change password / Sign out.
+function AccountMenu({ user, onChangePassword, onLogout, onViewAs }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -436,6 +483,11 @@ function AccountMenu({ user, onChangePassword, onLogout }) {
             <div className="text-sm font-medium text-gray-900 truncate">{user.name}</div>
             <div className="text-[11px] text-gray-400 capitalize">{user.role}</div>
           </div>
+          {onViewAs && (
+            <button onClick={() => { setOpen(false); onViewAs(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+              <Eye size={15} className="text-gray-400" /> View as user…
+            </button>
+          )}
           <button onClick={() => { setOpen(false); onChangePassword(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
             <KeyRound size={15} className="text-gray-400" /> Change password
           </button>
@@ -647,8 +699,9 @@ function InstallPrompt() {
 }
 
 function App() {
-  const { user, loading, login, loginWithToken, logout } = useAuth();
+  const { user, realUser, viewAs, startViewAs, stopViewAs, loading, login, loginWithToken, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showViewAsPicker, setShowViewAsPicker] = useState(false);
   const [workspace, setWorkspace] = useState('fsqa');
   // Cross-link request from a module → a specific comms channel, remembering
   // where to return. Set by an 'open-comms-channel' event (e.g. from Schedule).
@@ -918,6 +971,7 @@ function App() {
         homePref={homePref}
         onSetHome={setHome}
       />
+      <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
       <UpdateBanner />
     </>;
   }
@@ -958,6 +1012,7 @@ function App() {
           <OperatorView />
         </main>
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+        <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
         <UpdateBanner />
       </div>
     );
@@ -1006,7 +1061,8 @@ function App() {
                   <Settings size={18} />
                 </button>
               )}
-              <AccountMenu user={user} onChangePassword={() => setShowChangePw(true)} onLogout={logout} />
+              <AccountMenu user={user} onChangePassword={() => setShowChangePw(true)} onLogout={logout}
+                onViewAs={realUser?.role === 'admin' && !viewAs ? () => setShowViewAsPicker(true) : null} />
             </div>
           </div>
         </header>
@@ -1078,6 +1134,8 @@ function App() {
 
       <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} />
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+      {showViewAsPicker && <ViewAsPickerModal onPick={(u) => { setShowViewAsPicker(false); startViewAs(u); }} onClose={() => setShowViewAsPicker(false)} />}
+      <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
       <UpdateBanner />
       <InstallPrompt />
     </div>

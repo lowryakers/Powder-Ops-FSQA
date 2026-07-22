@@ -109,6 +109,19 @@ function maintenanceItemOptions(rows) {
   return groups;
 }
 
+// Chemicals from the approved registry are checkable-out items too. They're
+// merged in at read time (never stored in maintenance_items) so the sign-out
+// dropdown always tracks the registry.
+export function activeChemicalNames(db) {
+  try { return db.prepare('SELECT name FROM approved_chemicals ORDER BY name').all().map(r => r.name); }
+  catch { return []; }
+}
+function withChemicals(db, rows) {
+  const have = new Set(rows.map(r => r.name));
+  const chems = activeChemicalNames(db).filter(n => !have.has(n));
+  return [...rows, ...chems.map(name => ({ name, category: 'Chemicals' }))];
+}
+
 router.get('/maintenance-items', (req, res) => {
   res.json({ items: maintenanceItems(getDb()) });
 });
@@ -140,11 +153,14 @@ router.put('/maintenance-items', (req, res) => {
 });
 
 router.get('/config', (_req, res) => {
-  // Inject the current (editable) Maintenance item list into its dropdown field.
-  const rows = maintenanceItems(getDb());
-  const options = maintenanceItemOptions(rows);
+  // Inject the current (editable) sign-out item list — plus the approved
+  // chemical registry — into the Item Description dropdown field.
+  const db = getDb();
+  const rows = maintenanceItems(db);
+  const merged = rows.length ? withChemicals(db, rows) : [];
+  const options = maintenanceItemOptions(merged);
   const types = Object.values(QMS_TYPES).map(t => {
-    if (t.key === 'maintenance_sign_out' && rows.length) {
+    if (t.key === 'maintenance_sign_out' && merged.length) {
       return { ...t, fields: t.fields.map(f => f.key === 'item_description' ? { ...f, options } : f) };
     }
     return t;

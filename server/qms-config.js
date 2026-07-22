@@ -58,6 +58,7 @@ export const MAINTENANCE_ITEM_GROUPS = [
       'Digital Multimeter',
       'Self Adjusting Filter Pliers (2 inch)',
       'Self Adjusting Filter Pliers (5 inch)',
+      'Extension Cord',
     ],
   },
   {
@@ -93,6 +94,10 @@ export const MAINTENANCE_ITEM_GROUPS = [
 
 // Flat list (back-compat) — every checkable item, Tool Box first then Equipment.
 export const MAINTENANCE_TOOLBOX_ITEMS = MAINTENANCE_ITEM_GROUPS.flatMap(g => g.items);
+
+// How a checked-out chemical will be used — required when the item is a
+// chemical from the approved registry (GMP: intended-use must be recorded).
+export const CHEMICAL_USE_SPECS = ['Food Contact', 'Non-Food Contact', 'Food Grade', 'Non-Food Grade'];
 
 export const QMS_TYPES = {
   document_change_request: {
@@ -410,8 +415,8 @@ export const QMS_TYPES = {
 
   maintenance_sign_out: {
     key: 'maintenance_sign_out',
-    label: 'Maintenance Sign In/Out',
-    singular: 'Maintenance Sign-Out',
+    label: 'Equipment/Tool/Chemical Sign In-Out',
+    singular: 'Sign-Out',
     short: 'MSO',
     moduleId: 'maintenance-signout',
     formCode: 'Form 703-01',
@@ -420,18 +425,22 @@ export const QMS_TYPES = {
     primaryField: 'item_description',
     dateLabel: 'Date',
     kioskPath: '/kiosk/maintenance',
-    kioskTagline: 'Scan to Sign Out a Tool',
-    // A tool is signed out (Out), then returned (Returned).
+    kioskTagline: 'Scan to Sign Out an Item',
+    // An item is signed out (Out), then returned (Returned).
     statuses: [
       { value: 'out', label: 'Out', tone: 'amber' },
       { value: 'returned', label: 'Returned', tone: 'green', done: true },
     ],
     defaultStatus: 'out',
-    // Fields mirror Form 703-01 (Maintenance Sign-Out Sheet). Item Description is
-    // a dropdown of the Tool Box Equipment List (Tool Box Equipment Verification).
+    // Fields mirror Form 703-01 (Sign-Out Sheet). Item Description is a grouped
+    // dropdown: tool box lists + equipment + calibration weights + the approved
+    // chemical registry (chemicals require a use specification).
     fields: [
       { key: 'employee_name', label: 'Employee Name', type: 'text' },
       { key: 'item_description', label: 'Item Description', type: 'select', options: MAINTENANCE_TOOLBOX_ITEMS },
+      { key: 'qty', label: 'Qty', type: 'number' },
+      { key: 'tool_box', label: 'Tool Box #', type: 'text' },
+      { key: 'use_spec', label: 'Use Specification (chemicals)', type: 'select', options: CHEMICAL_USE_SPECS },
       { key: 'asset_tag', label: 'Asset Tag', type: 'text' },
       { key: 'condition_out', label: 'Condition (Good / Bad)', type: 'select', options: ['Good', 'Bad'] },
       { key: 'time_out', label: 'Time Out', type: 'text' },
@@ -442,7 +451,7 @@ export const QMS_TYPES = {
       { key: 'comments', label: 'Comments', type: 'textarea' },
       { key: 'retrieved_by', label: 'Retrieved By (QA)', type: 'text' },
     ],
-    logColumns: ['record_number', 'item_description', 'asset_tag', 'employee_name', 'condition_out', 'record_date', 'status', 'approvals'],
+    logColumns: ['record_number', 'item_description', 'qty', 'tool_box', 'use_spec', 'employee_name', 'record_date', 'status', 'approvals'],
     approvals: [
       { key: 'quality', label: 'Reviewed by QA', required: true, departments: ['qa'] },
     ],
