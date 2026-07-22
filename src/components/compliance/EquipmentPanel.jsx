@@ -336,7 +336,7 @@ function BulkEditBar({ selected, equipment, onApply, onCancel }) {
   const selectedNames = equipment.filter(e => selected.has(e.id)).map(e => e.name);
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-powder-500 shadow-2xl z-50 p-4">
+    <div className="fixed bottom-14 md:bottom-0 left-0 right-0 bg-white border-t-2 border-powder-500 shadow-2xl z-50 p-4 safe-area-bottom">
       <div className="max-w-6xl mx-auto space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

@@ -340,19 +340,69 @@ function ChannelDetails({ channel, me, users, onClose, onChanged }) {
 }
 
 // Thread drawer: a parent message and its replies, with a reply composer.
-function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef, storageOn }) {
+// ── @mention autocomplete (shared by the channel composer and thread replies) ──
+// Slack-style: type @ plus any letters; matching is case-insensitive, and names
+// whose first/last name starts with what you've typed rank first. An empty
+// query (just "@") lists everyone in the channel.
+function filterMentionPool(pool, query, meId) {
+  if (query === null) return [];
+  const q = query.toLowerCase();
+  const hits = (pool || []).filter(u => u.id !== meId && u.name.toLowerCase().includes(q));
+  hits.sort((a, b) => {
+    const ap = a.name.toLowerCase().split(/\s+/).some(p => p.startsWith(q)) ? 0 : 1;
+    const bp = b.name.toLowerCase().split(/\s+/).some(p => p.startsWith(q)) ? 0 : 1;
+    return ap - bp || a.name.localeCompare(b.name);
+  });
+  return hits.slice(0, 6);
+}
+function detectMentionQuery(e) {
+  const val = e.target.value;
+  const caret = e.target.selectionStart ?? val.length;
+  const mm = /(?:^|\s)@([^\s@]*)$/.exec(val.slice(0, caret));
+  return mm ? mm[1] : null;
+}
+function MentionDropdown({ matches, hi, onHover, onPick }) {
+  if (!matches.length) return null;
+  return (
+    <div className="absolute bottom-full mb-1 left-3 right-3 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-20 max-h-48 overflow-y-auto">
+      {matches.map((u, idx) => (
+        <button key={u.id} onMouseEnter={() => onHover(idx)}
+          onMouseDown={e => { e.preventDefault(); onPick(u.name); }}
+          className={`w-full text-left px-3 py-1.5 text-sm ${idx === hi ? 'bg-powder-50' : 'hover:bg-gray-50'}`}>
+          <span className="font-medium text-gray-800">@{u.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef, storageOn }) {
   const [thread, setThread] = useState(null);
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState([]); // uploaded-but-unsent attachments
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const replyRef = useRef(null);
   const endRef = useRef(null);
+  // @mention autocomplete for the reply box (same behavior as the composer).
+  const [mQuery, setMQuery] = useState(null);
+  const [mHi, setMHi] = useState(0);
+  const mMatches = useMemo(
+    () => filterMentionPool(members?.length ? members : mentionUsers, mQuery, me.id),
+    [members, mentionUsers, mQuery, me.id]);
+  const insertReplyMention = (name) => {
+    const ta = replyRef.current;
+    const caret = ta ? ta.selectionStart : body.length;
+    const before = body.slice(0, caret).replace(/@([^\s@]*)$/, '@' + name + ' ');
+    const after = body.slice(caret);
+    setBody(before + after);
+    setMQuery(null);
+    requestAnimationFrame(() => { if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); } });
+  };
 
-  const onPickFiles = async (e) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    if (!files.length) return;
+  const uploadFiles = async (files) => {
+    if (!files.length || !storageOn) return;
     setUploading(true);
     try {
       const fd = new FormData();
@@ -361,6 +411,12 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, view
       setPending(p => [...p, ...uploaded]);
     } catch (err) { alert(err.message || 'Upload failed'); }
     finally { setUploading(false); }
+  };
+  const onPickFiles = (e) => { const files = Array.from(e.target.files || []); e.target.value = ''; uploadFiles(files); };
+  // Paste an image/screenshot straight into the reply (text pastes normally).
+  const onReplyPaste = (e) => {
+    const files = Array.from(e.clipboardData?.files || []);
+    if (files.length && storageOn) { e.preventDefault(); uploadFiles(files); }
   };
   const removePending = (id) => setPending(p => p.filter(x => x.id !== id));
 
@@ -417,7 +473,8 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, view
             canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />)}
           <div ref={endRef} />
         </div>
-        <div className="border-t border-gray-200 p-3 shrink-0">
+        <div className="border-t border-gray-200 p-3 shrink-0 relative">
+          <MentionDropdown matches={mMatches} hi={mHi} onHover={setMHi} onPick={insertReplyMention} />
           {(pending.length > 0 || uploading) && (
             <div className="flex flex-wrap gap-2 mb-2">
               {pending.map(p => (
@@ -438,8 +495,18 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, canTranslate, view
                   className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Attach files"><Paperclip size={16} /></button>
               </>
             )}
-            <textarea value={body} onChange={e => setBody(e.target.value)} rows={1}
-              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
+            <textarea ref={replyRef} value={body}
+              onChange={e => { setBody(e.target.value); setMQuery(detectMentionQuery(e)); setMHi(0); }}
+              onPaste={onReplyPaste} rows={1}
+              onKeyDown={e => {
+                if (mMatches.length) {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setMHi(h => Math.min(h + 1, mMatches.length - 1)); return; }
+                  if (e.key === 'ArrowUp') { e.preventDefault(); setMHi(h => Math.max(h - 1, 0)); return; }
+                  if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertReplyMention(mMatches[mHi]?.name || mMatches[0].name); return; }
+                  if (e.key === 'Escape') { setMQuery(null); return; }
+                }
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+              }}
               placeholder="Reply…" className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />
             <button onClick={send} disabled={sending || (!body.trim() && !pending.length)} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
           </div>
@@ -656,7 +723,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   );
 }
 
-export default function CommsView({ user, onExit, onGoToSchedule, openChannelName, openChannelId, openMessageId, backLabel, onBackToModule, homePref, onSetHome }) {
+export default function CommsView({ user, onExit, onGoToSchedule, openChannelName, openChannelId, openMessageId, backLabel, onBackToModule, homePref, onSetHome, bottomNavPadding = false }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
@@ -912,10 +979,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     } catch { setBody(text); setPending(pending); }
   };
 
-  const onPickFiles = async (e) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    if (!files.length || !active) return;
+  const uploadFiles = async (files) => {
+    if (!files.length || !active || !storageOn) return;
     setUploading(true);
     try {
       const fd = new FormData();
@@ -924,6 +989,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
       setPending(p => [...p, ...uploaded]);
     } catch (err) { alert(err.message || 'Upload failed'); }
     finally { setUploading(false); }
+  };
+  const onPickFiles = (e) => { const files = Array.from(e.target.files || []); e.target.value = ''; uploadFiles(files); };
+  // Paste an image/screenshot straight into the composer (text pastes normally).
+  const onComposerPaste = (e) => {
+    const files = Array.from(e.clipboardData?.files || []);
+    if (files.length && storageOn) { e.preventDefault(); uploadFiles(files); }
   };
   const removePending = (id) => setPending(p => p.filter(x => x.id !== id));
   const react = async (m, emoji) => { const updated = await apiPost(`/comms/messages/${m.id}/reactions`, { emoji }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
@@ -935,9 +1006,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     const val = e.target.value;
     setBody(val);
     // @mention autocomplete: detect an @token immediately before the caret.
-    const caret = e.target.selectionStart ?? val.length;
-    const mm = /(?:^|\s)@([^\s@]*)$/.exec(val.slice(0, caret));
-    setMentionQuery(mm ? mm[1] : null);
+    setMentionQuery(detectMentionQuery(e));
+    setMentionHi(0);
+    // eslint-disable-next-line react-hooks/purity -- event handler (typing throttle), not render
     const now = Date.now();
     if (activeId && socketRef.current && now - lastTypeSent.current > 1500) {
       lastTypeSent.current = now;
@@ -945,13 +1016,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     }
   };
 
+  const [mentionHi, setMentionHi] = useState(0);
   const mentionMatches = useMemo(() => {
-    if (mentionQuery === null) return [];
-    const q = mentionQuery.toLowerCase();
     // Suggest channel members first (they can see the channel); fall back to all
     // users only if member list hasn't loaded.
     const pool = channelMembers.length ? channelMembers : (users || []);
-    return pool.filter(u => u.id !== user.id && u.name.toLowerCase().includes(q)).slice(0, 6);
+    return filterMentionPool(pool, mentionQuery, user.id);
   }, [mentionQuery, channelMembers, users, user.id]);
 
   // People typed as @Name who match a real user but aren't in this channel —
@@ -1185,7 +1255,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   };
 
   return (
-    <div className="fixed inset-0 bg-white flex flex-col">
+    // bottomNavPadding: the app keeps its bottom tab bar visible under Messages
+    // (users who navigate by quick tabs), so leave room for it on phones.
+    <div className={`fixed inset-0 bg-white flex flex-col ${bottomNavPadding ? 'pb-14 md:pb-0' : ''}`}>
       {/* top bar */}
       <div className="flex items-center gap-3 px-4 h-12 border-b border-gray-200 shrink-0">
         {onBackToModule ? (
@@ -1475,16 +1547,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                 </div>
               ) : (
               <div className="border-t border-gray-200 p-3 shrink-0 relative">
-                {mentionMatches.length > 0 && (
-                  <div className="absolute bottom-full mb-1 left-3 right-3 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-20 max-h-48 overflow-y-auto">
-                    {mentionMatches.map((u, idx) => (
-                      <button key={u.id} onMouseDown={e => { e.preventDefault(); insertMention(u.name); }}
-                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-powder-50 ${idx === 0 ? 'bg-gray-50' : ''}`}>
-                        <span className="font-medium text-gray-800">@{u.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <MentionDropdown matches={mentionMatches} hi={mentionHi} onHover={setMentionHi} onPick={insertMention} />
                 <div className="h-4 px-1 mb-0.5 text-[11px] text-gray-400 italic">
                   {typers.length === 1 ? `${typers[0].user_name} is typing…`
                     : typers.length === 2 ? `${typers[0].user_name} and ${typers[1].user_name} are typing…`
@@ -1529,10 +1592,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                         onPick={(e) => { setBody(b => b + e); setShowComposerEmoji(false); composerRef.current?.focus(); }} />
                     )}
                   </div>
-                  <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1}
+                  <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1} onPaste={onComposerPaste}
                     onKeyDown={e => {
-                      // While the @mention menu is open, Enter/Tab picks the top match.
-                      if (mentionMatches.length && (e.key === 'Enter' || e.key === 'Tab')) { e.preventDefault(); insertMention(mentionMatches[0].name); return; }
+                      // While the @mention menu is open: arrows move, Enter/Tab picks.
+                      if (mentionMatches.length) {
+                        if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHi(h => Math.min(h + 1, mentionMatches.length - 1)); return; }
+                        if (e.key === 'ArrowUp') { e.preventDefault(); setMentionHi(h => Math.max(h - 1, 0)); return; }
+                        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(mentionMatches[mentionHi]?.name || mentionMatches[0].name); return; }
+                      }
                       if (e.key === 'Escape' && mentionQuery !== null) { setMentionQuery(null); return; }
                       // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).
                     }}
@@ -1552,7 +1619,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
       {newChannel && <NewChannelModal users={users} me={user} onClose={() => setNewChannel(false)} onCreated={(ch) => { setNewChannel(false); refreshChannels(); openChannel(ch.id); }} />}
       {showSettings && <CommsSettings users={users} onClose={() => setShowSettings(false)} onChanged={refreshChannels} />}
       {showDetails && active && active.kind !== 'dm' && <ChannelDetails channel={active} me={user} users={users} onClose={() => setShowDetails(false)} onChanged={refreshChannels} />}
-      {replyTo && <ThreadPanel parent={replyTo} me={user} channelName={active?.kind === 'dm' ? active.name : '#' + (active?.name || '')} mentionUsers={users}
+      {replyTo && <ThreadPanel parent={replyTo} me={user} channelName={active?.kind === 'dm' ? active.name : '#' + (active?.name || '')} mentionUsers={users} members={channelMembers}
         canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} socketRef={socketRef} storageOn={storageOn}
         onClose={() => setReplyTo(null)} onChanged={() => loadMessages(activeId)} />}
     </div>

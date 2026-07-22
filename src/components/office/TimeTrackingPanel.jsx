@@ -12,7 +12,7 @@ const typeMeta = (v) => TYPES.find(t => t.value === v) || TYPES[2];
 
 // Absence/tardy form — supervisors report for any employee; Spanish is fine
 // (the log auto-translates for the admin).
-function AdjustmentForm({ employees, onCreated }) {
+export function AdjustmentForm({ employees, onCreated }) {
   const today = new Date().toISOString().slice(0, 10);
   const blank = { employee_name: '', adjustment_type: 'absent', adjustment_date: today, message: '', details: '' };
   const [form, setForm] = useState(blank);

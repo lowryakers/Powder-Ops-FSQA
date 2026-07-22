@@ -1195,7 +1195,8 @@ export default function OperatorView() {
 
       {/* Batch complete floating bar */}
       {batchMode && batchSelected.size > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg p-4 z-40">
+        // bottom-14: sits above the mobile bottom tab bar so Complete is never hidden
+        <div className="fixed bottom-14 md:bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg p-4 z-50 safe-area-bottom">
           <div className="max-w-3xl mx-auto flex items-center gap-3">
             <p className="text-sm font-semibold text-gray-700 flex-1">{batchSelected.size} {batchSelected.size > 1 ? t('tasks_word') : t('task_word')} {t('tasks_selected')}</p>
             <button onClick={() => { setBatchSelected(new Set()); }}

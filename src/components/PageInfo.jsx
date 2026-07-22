@@ -39,6 +39,11 @@ const MODULE_INFO = {
     links: 'Item list managed in-app; chemicals sync from the Chemicals registry; kiosk mode; calibration weights also live in the Calibration log.',
     sqf: 'Tool and chemical accountability prevents foreign-material and chemical hazards from maintenance activities (SQF 11.7.5, 11.6.4).',
   },
+  'office-requests': {
+    what: 'Submit a supply order request or an absence/tardy report. Submissions land in the admin Supply Orders and Time Tracking logs.',
+    links: 'Available to every supervisor; admins review in the Office modules.',
+    sqf: 'Operational support — keeps purchasing and attendance records centralized.',
+  },
   'currently-out': {
     what: 'At-a-glance list of everything currently checked out — qty, item, who, tool box, and the date it went out.',
     links: 'Records come from the Equipment/Tool/Chemical Sign In-Out module; returns are completed there by QA.',

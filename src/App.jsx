@@ -44,6 +44,7 @@ import PageInfo from './components/PageInfo.jsx';
 import SupplyOrdersPanel from './components/office/SupplyOrdersPanel.jsx';
 import TimeTrackingPanel from './components/office/TimeTrackingPanel.jsx';
 import CheckedOutPanel from './components/compliance/CheckedOutPanel.jsx';
+import OfficeRequestsPanel from './components/office/OfficeRequestsPanel.jsx';
 
 const NAV_GROUPS = [
   {
@@ -115,8 +116,11 @@ const NAV_GROUPS = [
   {
     label: 'Office',
     items: [
-      { id: 'supply-orders', label: 'Supply Orders', icon: ShoppingCart, roles: ['admin', 'supervisor'] },
-      { id: 'time-tracking', label: 'Time Tracking', icon: AlarmClock, roles: ['admin', 'supervisor'] },
+      // Supervisors submit through the form-only Requests pseudo-module; the
+      // full modules (logs, invoices, stats) are admin workspaces.
+      { id: 'office-requests', label: 'Requests', icon: ShoppingCart },
+      { id: 'supply-orders', label: 'Supply Orders', icon: ShoppingCart, adminOnly: true },
+      { id: 'time-tracking', label: 'Time Tracking', icon: AlarmClock, adminOnly: true },
     ],
   },
   {
@@ -140,6 +144,19 @@ function hasExplicitGrant(u, id) {
   return Array.isArray(ma) ? ma.includes(id) : !!ma[id];
 }
 const canSeeCheckedOut = (u) => isRicardo(u) || hasExplicitGrant(u, 'currently-out');
+
+// "Requests" (supply order + time tracking forms) is for every supervisor,
+// regardless of how their module access is trimmed — it's how they submit.
+const canSeeOfficeRequests = (u) => u?.role === 'supervisor';
+
+// Does this user's bottom tab bar include a Messages tab? If so, the bar stays
+// visible inside the Messages workspace too — those users navigate by tabs.
+function wantsMessagesTab(u) {
+  let w = u?.quick_tabs;
+  if (typeof w === 'string') { try { w = JSON.parse(w); } catch { w = null; } }
+  if (!Array.isArray(w) || !w.length) return isRicardo(u);
+  return w.includes('messages');
+}
 
 function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotice, onOpenComms }) {
   const { data: aiStatus } = useApiGet('/ai/status');
@@ -212,6 +229,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
           const visibleItems = group.items.filter(i => {
             if (i.id === 'settings') return false; // lives in the top-right gear icon
             if (i.id === 'currently-out') return canSeeCheckedOut(user);
+            if (i.id === 'office-requests') return canSeeOfficeRequests(user);
             if (i.adminOnly && user.role !== 'admin') return false;
             if (i.roles && !i.roles.includes(user.role)) return false;
             if (i.aiOnly && !aiOn) return false;
@@ -524,6 +542,10 @@ function accessibleNavItems(user, aiOn) {
         if (canSeeCheckedOut(user)) flat.push({ ...i, group: g.label });
         continue;
       }
+      if (i.id === 'office-requests') {
+        if (canSeeOfficeRequests(user)) flat.push({ ...i, group: g.label });
+        continue;
+      }
       if (i.adminOnly && user.role !== 'admin') continue;
       if (i.roles && !i.roles.includes(user.role)) continue;
       if (i.aiOnly && !aiOn) continue;
@@ -645,7 +667,7 @@ function MobileBottomNav({ activeTab, setActiveTab, user, onOpenComms }) {
     <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-bottom">
       <div className="flex">
         {quickTabs.map(tab => {
-          const isActive = !tab.isMessages && activeTab === tab.id;
+          const isActive = tab.isMessages ? activeTab === '__messages' : activeTab === tab.id;
           return (
             <button
               key={tab.id}
@@ -985,6 +1007,7 @@ function App() {
 
   // Messages workspace — full-screen, separable from the FSQA workspace.
   if (workspace === 'comms') {
+    const keepBar = wantsMessagesTab(user);
     return <>
       <CommsView
         user={user}
@@ -997,7 +1020,13 @@ function App() {
         onBackToModule={commsLink?.from ? () => { setWorkspace('fsqa'); setActiveTab(commsLink.from); setCommsLink(null); } : null}
         homePref={homePref}
         onSetHome={setHome}
+        bottomNavPadding={keepBar}
       />
+      {keepBar && (
+        <MobileBottomNav activeTab="__messages" user={user}
+          setActiveTab={(id) => { setWorkspace('fsqa'); setCommsLink(null); setActiveTab(id); }}
+          onOpenComms={() => {}} />
+      )}
       <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
       <UpdateBanner />
     </>;
@@ -1010,6 +1039,10 @@ function App() {
   effectiveModules = canSeeCheckedOut(user)
     ? (effectiveModules.includes('currently-out') ? effectiveModules : [...effectiveModules, 'currently-out'])
     : effectiveModules.filter(id => id !== 'currently-out');
+  // "Requests" is always available to supervisors, never to anyone else.
+  effectiveModules = canSeeOfficeRequests(user)
+    ? (effectiveModules.includes('office-requests') ? effectiveModules : [...effectiveModules, 'office-requests'])
+    : effectiveModules.filter(id => id !== 'office-requests');
   const operatorOnly = effectiveModules.length === 1 && effectiveModules[0] === 'operator';
 
   // If user only has operator view access, render the standalone operator layout
@@ -1135,6 +1168,7 @@ function App() {
           {resolvedTab === 'dashboard' && <ComplianceDashboard />}
           {resolvedTab === 'ask-ai' && <AiAskPanel />}
           {resolvedTab === 'operator' && <OperatorView />}
+          {resolvedTab === 'office-requests' && <OfficeRequestsPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}

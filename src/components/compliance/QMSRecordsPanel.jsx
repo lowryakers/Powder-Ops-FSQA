@@ -155,9 +155,11 @@ function MultiPickInput({ f, value, onChange, useSpecOptions = [] }) {
     <div className="space-y-1.5">
       {arr.map(x => (
         <div key={x.name} className="rounded-lg border border-powder-200 bg-powder-50 px-2.5 py-1.5">
-          <div className="flex items-center gap-2">
-            <span className="flex-1 min-w-0 text-sm text-powder-900 truncate">{x.name}</span>
-            <label className="flex items-center gap-1 text-[11px] text-gray-500 shrink-0">
+          {/* flex-wrap + min-w: long item names wrap onto their own line on
+              phones instead of pushing the qty control off-screen */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="flex-1 min-w-[140px] text-sm text-powder-900 break-words">{x.name}</span>
+            <label className="flex items-center gap-1 text-[11px] text-gray-500 shrink-0 ml-auto">
               Qty
               <input type="number" min="1" value={x.qty}
                 onChange={e => patch(x.name, { qty: e.target.value })}

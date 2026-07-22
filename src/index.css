@@ -57,6 +57,12 @@ body {
   overscroll-behavior: contain;
 }
 
+/* Forms must shrink instead of spilling past the screen edge on phones: long
+   dropdown options / values can't force a control wider than its column, and
+   nothing scrolls the page sideways (tables scroll inside their own wrapper). */
+select, input, textarea { min-width: 0; max-width: 100%; }
+body { overflow-x: hidden; }
+
 @media (max-width: 640px) {
   .mobile-card {
     padding: 1rem;

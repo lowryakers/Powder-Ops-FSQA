@@ -1,29 +1,161 @@
 import { useState, Fragment } from 'react';
-import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, Clock } from 'lucide-react';
+import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import { useAuth } from '../../hooks/useAuth';
+import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList, Settings2 } from 'lucide-react';
+
+// Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
+const RECLEAN_ACTION_META = {
+  dismissed: { title: 'Dismiss re-clean flag', hint: 'Why is no re-clean needed? (required — this is recorded for the audit trail)', requireReason: true },
+  na: { title: 'Mark N/A', hint: 'Optional note (e.g. room repurposed, rule not applicable this cycle).', requireReason: false },
+  not_in_use: { title: 'Mark not in use', hint: 'Optional note. The flag re-arms automatically if the room is used again.', requireReason: false },
+};
+function RecleanActionModal({ room, action, onDone, onClose }) {
+  const meta = RECLEAN_ACTION_META[action];
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const go = async () => {
+    setBusy(true); setErr(null);
+    try { await apiPost('/sanitation/reclean-actions', { room, action, reason }); onDone(); onClose(); }
+    catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-3">
+        <h3 className="font-semibold text-gray-900">{meta.title} — {room}</h3>
+        <p className="text-xs text-gray-500">{meta.hint}</p>
+        <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} rows={3}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Reason…" />
+        {err && <p className="text-xs text-red-600">{err}</p>}
+        <div className="flex gap-2">
+          <button onClick={go} disabled={busy || (meta.requireReason && !reason.trim())}
+            className="flex-1 px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
+            {busy ? 'Saving…' : 'Confirm'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // SQF/NSF 72-hour idle rule: rooms whose last passed clean is 72h+ old (unused
-// since) need a re-clean before use; rooms used after their last clean are dirty.
-function RecleanBanner() {
-  const { data } = useApiGet('/sanitation/reclean-status');
-  const flagged = (data?.rooms || []).filter(r => r.status === 'expired_72h' || r.status === 'dirty');
-  if (!flagged.length) return null;
+// since) need a re-clean before use; rooms used after their last clean are
+// dirty. Flags can be assigned to Cleaning, dismissed with a reason, or marked
+// N/A / not in use — and which rooms the rule applies to is manageable.
+function RecleanSection() {
+  const { user } = useAuth() || {};
+  const canManage = user?.role === 'admin' || user?.role === 'supervisor' || user?.department === 'qa';
+  const { data, refresh } = useApiGet('/sanitation/reclean-status');
+  const [modal, setModal] = useState(null); // { room, action }
+  const [manage, setManage] = useState(false);
+  const [busyRoom, setBusyRoom] = useState(null);
+
+  const rooms = data?.rooms || [];
+  const open = rooms.filter(r => r.needs_attention);
+  const handled = rooms.filter(r => (r.status === 'expired_72h' || r.status === 'dirty') && r.applicable && r.action);
+
+  const assign = async (room) => {
+    setBusyRoom(room);
+    try { await apiPost('/sanitation/reclean-assign', { room }); refresh(); }
+    catch (e) { alert(e.message); }
+    finally { setBusyRoom(null); }
+  };
+  const undo = async (r) => {
+    await apiFetch(`/sanitation/reclean-actions/${r.action.id}`, { method: 'DELETE' });
+    refresh();
+  };
+  const setApplicable = async (room, applicable) => {
+    await apiPut('/sanitation/reclean-rooms', { room, applicable });
+    refresh();
+  };
+
+  if (!open.length && !handled.length && !manage) {
+    // Nothing flagged — just offer the room-list manager to those who can use it.
+    return canManage ? (
+      <div className="flex justify-end">
+        <button onClick={() => setManage(true)} className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600">
+          <Settings2 size={12} /> Manage 72h re-clean rooms
+        </button>
+      </div>
+    ) : null;
+  }
+
+  const ACTION_LABEL = { dismissed: 'Dismissed', na: 'N/A', not_in_use: 'Not in use', assigned: 'Assigned to Cleaning' };
+
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 mb-1.5">
-        <AlertTriangle size={15} /> Re-clean required before next use ({flagged.length})
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {flagged.map(r => (
-          <span key={r.room} className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-amber-200 rounded-lg text-xs text-gray-700">
-            <span className="font-medium">{r.room}</span>
-            {r.status === 'expired_72h'
-              ? <span className="text-amber-700 inline-flex items-center gap-0.5"><Clock size={11} /> idle {r.hours_since_clean}h since clean (72h rule)</span>
-              : <span className="text-red-600">used after last clean</span>}
-          </span>
-        ))}
-      </div>
-      <p className="text-[11px] text-amber-700 mt-1.5">SQF/NSF 72-hour rule: a cleaned room or line that sits idle 72+ hours requires a fresh clean before production.</p>
+    <div className="space-y-2">
+      {(open.length > 0 || handled.length > 0) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+              <AlertTriangle size={15} /> Re-clean required before next use{open.length > 0 && ` (${open.length})`}
+            </div>
+            {canManage && (
+              <button onClick={() => setManage(m => !m)} className="flex items-center gap-1 text-[11px] text-amber-700 hover:text-amber-900">
+                <Settings2 size={12} /> Manage rooms
+              </button>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            {open.map(r => (
+              <div key={r.room} className="bg-white border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap">
+                <div className="min-w-[140px] flex-1">
+                  <span className="text-sm font-medium text-gray-800">{r.room}</span>
+                  <span className="block text-[11px] text-gray-500">
+                    {r.status === 'expired_72h' ? `idle ${r.hours_since_clean}h since clean (72h rule)` : 'used after last clean'}
+                  </span>
+                </div>
+                {canManage && (
+                  <div className="flex items-center gap-1.5 flex-wrap ml-auto">
+                    <button onClick={() => assign(r.room)} disabled={busyRoom === r.room}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 disabled:opacity-50">
+                      <ClipboardList size={12} /> {busyRoom === r.room ? 'Assigning…' : 'Assign to Cleaning'}
+                    </button>
+                    <button onClick={() => setModal({ room: r.room, action: 'dismissed' })}
+                      className="px-2.5 py-1 bg-white border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50">Dismiss…</button>
+                    <button onClick={() => setModal({ room: r.room, action: 'na' })}
+                      className="px-2 py-1 text-gray-400 hover:text-gray-600 rounded-lg text-xs">N/A</button>
+                    <button onClick={() => setModal({ room: r.room, action: 'not_in_use' })}
+                      className="px-2 py-1 text-gray-400 hover:text-gray-600 rounded-lg text-xs whitespace-nowrap">Not in use</button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {handled.map(r => (
+              <div key={r.room} className="bg-white/60 border border-gray-200 rounded-lg px-3 py-1.5 flex items-center gap-2 text-[11px] text-gray-500 flex-wrap">
+                <span className="font-medium text-gray-600">{r.room}</span>
+                <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{ACTION_LABEL[r.action.action]}</span>
+                {r.action.reason && <span className="italic truncate max-w-[260px]">“{r.action.reason}”</span>}
+                <span className="text-gray-400">{r.action.by}</span>
+                {canManage && <button onClick={() => undo(r)} className="ml-auto text-gray-400 hover:text-red-500">undo</button>}
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-amber-700">SQF/NSF 72-hour rule: a cleaned room or line that sits idle 72+ hours requires a fresh clean before production. Dismissals and N/As are recorded in the audit trail.</p>
+        </div>
+      )}
+
+      {manage && canManage && (
+        <div className="bg-white border border-gray-200 rounded-xl p-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-gray-700">Rooms the 72-hour rule applies to</p>
+            <button onClick={() => setManage(false)} className="text-gray-400 hover:text-gray-600"><X size={15} /></button>
+          </div>
+          <p className="text-[11px] text-gray-400 mb-2">Only SQF/NSF-relevant production rooms should be checked. Non-food areas (restrooms, breakroom, offices…) are off by default.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
+            {rooms.map(r => (
+              <label key={r.room} className="flex items-center gap-2 text-sm text-gray-700 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={r.applicable} onChange={e => setApplicable(r.room, e.target.checked)}
+                  className="rounded border-gray-300 text-powder-600" />
+                <span className="truncate">{r.room}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {modal && <RecleanActionModal room={modal.room} action={modal.action} onDone={refresh} onClose={() => setModal(null)} />}
     </div>
   );
 }
@@ -276,7 +408,7 @@ export default function SanitationPanel() {
         </button>
       </div>
 
-      <RecleanBanner />
+      <RecleanSection />
 
       {showForm && <RecordForm equipment={equipment} chemicals={chemicals} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
 

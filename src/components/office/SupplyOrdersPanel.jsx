@@ -14,7 +14,7 @@ const STATUS_META = {
 
 // Request form — supervisors + admins. Autocompletes from order history so a
 // repeat item fills supplier/link/uom/label in one pick.
-function OrderForm({ items, onCreated }) {
+export function OrderForm({ items, onCreated }) {
   const blank = { item_name: '', qty: '', uom: '', supplier: '', link: '', label: '', urgent: false, notes: '' };
   const [form, setForm] = useState(blank);
   const [saving, setSaving] = useState(false);
@@ -101,7 +101,7 @@ function OrderForm({ items, onCreated }) {
 }
 
 // Frequently ordered: one-click "Order again" for the admin's ad-hoc repeats.
-function QuickReorder({ items, onCreated }) {
+export function QuickReorder({ items, onCreated }) {
   const top = (items || []).filter(i => i.times_ordered > 1).slice(0, 10);
   const [busy, setBusy] = useState(null);
   if (!top.length) return null;

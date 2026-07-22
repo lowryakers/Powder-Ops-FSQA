@@ -848,6 +848,31 @@ function runMigrations() {
   addColumnIfMissing('production_schedule', 'flavor_approved_by', 'TEXT');
   addColumnIfMissing('production_schedule', 'flavor_approved_at', 'TEXT');
 
+  // 72-hour re-clean workflow: per-room applicability overrides plus the
+  // dismiss / N-A / not-in-use / task-assigned actions taken on a flag. An
+  // action is bound to a flag_key (room + last clean + last use) so a new
+  // clean or use naturally re-arms the flag.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reclean_rooms (
+      room TEXT PRIMARY KEY,
+      applicable INTEGER NOT NULL DEFAULT 1,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS reclean_actions (
+      id TEXT PRIMARY KEY,
+      room TEXT NOT NULL,
+      flag_key TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('dismissed','na','not_in_use','assigned')),
+      reason TEXT,
+      work_order_id TEXT,
+      created_by TEXT,
+      created_by_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_reclean_actions_room ON reclean_actions(room, created_at);
+  `);
+
   // Post-repair hygiene clearance
   addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
   addColumnIfMissing('work_orders', 'clearance_status', 'TEXT');

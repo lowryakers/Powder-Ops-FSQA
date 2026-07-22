@@ -105,9 +105,9 @@ export default function MaintenanceKiosk() {
               <div className="space-y-1.5 mb-2">
                 {picked.map(p => (
                   <div key={p.name} className="rounded-xl border border-powder-200 bg-powder-50 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <span className="flex-1 min-w-0 text-sm text-powder-900 font-medium truncate">{p.name}</span>
-                      <label className="flex items-center gap-1 text-xs text-gray-500 shrink-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="flex-1 min-w-[140px] text-sm text-powder-900 font-medium break-words">{p.name}</span>
+                      <label className="flex items-center gap-1 text-xs text-gray-500 shrink-0 ml-auto">
                         Qty
                         <input type="number" min="1" value={p.qty}
                           onChange={e => patchItem(p.name, { qty: e.target.value })}

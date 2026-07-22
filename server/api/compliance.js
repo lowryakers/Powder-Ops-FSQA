@@ -255,10 +255,10 @@ router.get('/notifications', (req, res) => {
   if (disposalsPending > 0) items.push({ id: 'disposal-approvals', tab: 'disposals', severity: 'warning', label: `${disposalsPending} disposal${disposalsPending > 1 ? 's' : ''} awaiting Ops/QA sign-off` });
   if (coaPending > 0) items.push({ id: 'coa-pending', tab: 'coa', severity: 'info', label: `${coaPending} lab request${coaPending > 1 ? 's' : ''} awaiting results` });
 
-  // 72-hour idle rule: rooms needing a re-clean before use (expired or used
-  // after their last passed clean) badge the Sanitation module.
+  // 72-hour idle rule: applicable rooms needing a re-clean that nobody has
+  // handled yet (not dismissed / N-A'd / assigned) badge the Sanitation module.
   try {
-    const flagged = recleanRooms(db).filter(r => r.status === 'expired_72h' || r.status === 'dirty').length;
+    const flagged = recleanRooms(db).filter(r => r.needs_attention).length;
     if (flagged > 0) items.push({ id: 'sanitation-reclean', tab: 'sanitation', severity: 'warning', label: `${flagged} room${flagged > 1 ? 's' : ''} need${flagged > 1 ? '' : 's'} re-cleaning (72h rule / used since clean)` });
   } catch { /* optional tables */ }
 
