@@ -838,6 +838,9 @@ function runMigrations() {
   addColumnIfMissing('work_orders', 'attachments', "TEXT DEFAULT '[]'");
   addColumnIfMissing('equipment', 'maintenance_tasks', "TEXT DEFAULT '{}'");
   addColumnIfMissing('users', 'department', "TEXT DEFAULT 'warehouse'");
+  // Per-user mobile bottom-bar tabs (JSON array of module ids / 'messages');
+  // null = role-aware default picks.
+  addColumnIfMissing('users', 'quick_tabs', 'TEXT');
   addColumnIfMissing('pm_schedules', 'task_group', "TEXT DEFAULT 'warehouse'");
   addColumnIfMissing('work_orders', 'task_group', "TEXT DEFAULT 'warehouse'");
 

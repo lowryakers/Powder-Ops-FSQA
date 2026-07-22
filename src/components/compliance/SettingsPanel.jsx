@@ -68,6 +68,7 @@ const MODULE_GROUPS = [
       { id: 'on-hold', label: 'On Hold' },
       { id: 'component-signout', label: 'Component Sign In/Out' },
       { id: 'maintenance-signout', label: 'Equipment/Tool/Chemical Sign In-Out' },
+      { id: 'currently-out', label: 'Checked Out (summary view)' },
       { id: 'organoleptic', label: 'Organoleptic Sensory' },
       { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor' },
     ],
@@ -238,11 +239,61 @@ function ResetPasswordControl({ userId, userName }) {
   );
 }
 
+// Per-user mobile bottom-bar tabs. Tap to add (in order, up to 4), tap again to
+// remove. Empty = the automatic role-aware picks.
+const QUICK_TAB_OPTIONS = [
+  { id: 'messages', label: 'Messages' },
+  { id: 'operator', label: 'Operator View' },
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'production-schedule', label: 'Schedule' },
+  { id: 'production-log', label: 'Production Log' },
+  { id: 'pm', label: 'Task Center' },
+  { id: 'maintenance-signout', label: 'Sign In-Out' },
+  { id: 'currently-out', label: 'Checked Out' },
+  { id: 'component-signout', label: 'Component Sign In/Out' },
+  { id: 'sanitation', label: 'Sanitation' },
+  { id: 'coa', label: 'COA / Lab Testing' },
+  { id: 'supply-orders', label: 'Supply Orders' },
+  { id: 'time-tracking', label: 'Time Tracking' },
+];
+function QuickTabsEditor({ value, onChange }) {
+  const picked = Array.isArray(value) ? value : [];
+  const toggle = (id) => {
+    if (picked.includes(id)) onChange(picked.filter(x => x !== id));
+    else if (picked.length < 4) onChange([...picked, id]);
+  };
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="block text-xs font-medium text-gray-700">Mobile bottom-bar tabs <span className="text-gray-400 font-normal">(order = tap order, max 4)</span></label>
+        {picked.length > 0 && <button type="button" onClick={() => onChange([])} className="text-[11px] text-gray-400 hover:text-gray-600">Reset to automatic</button>}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {QUICK_TAB_OPTIONS.map(o => {
+          const idx = picked.indexOf(o.id);
+          return (
+            <button key={o.id} type="button" onClick={() => toggle(o.id)}
+              className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${idx >= 0 ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+              {idx >= 0 && <span className="font-bold mr-1">{idx + 1}</span>}{o.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-gray-400">Empty = automatic picks based on what this user can access. Only accessible modules will actually show.</p>
+    </div>
+  );
+}
+
 function UserForm({ initial, onSave, onCancel, canViewPin }) {
   const parseModuleAccess = (val) => {
     if (val == null) return null;
     if (typeof val === 'string') { try { return JSON.parse(val); } catch { return null; } }
     return val; // already an array (legacy) or object
+  };
+  const parseQuickTabs = (val) => {
+    if (!val) return [];
+    if (typeof val === 'string') { try { return JSON.parse(val) || []; } catch { return []; } }
+    return Array.isArray(val) ? val : [];
   };
 
   const [form, setForm] = useState(() => ({
@@ -250,6 +301,7 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
     ...initial,
     home_workspace: initial?.home_workspace || 'fsqa',
     module_access: parseModuleAccess(initial?.module_access),
+    quick_tabs: parseQuickTabs(initial?.quick_tabs),
   }));
   const [saving, setSaving] = useState(false);
 
@@ -318,6 +370,8 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
       {isAdmin && (
         <p className="text-[11px] text-gray-400 italic -mt-1">Admins default to full access — uncheck "Full access" to hide specific modules from this admin. Settings always stays enabled.</p>
       )}
+
+      <QuickTabsEditor value={form.quick_tabs} onChange={(val) => setForm({ ...form, quick_tabs: val })} />
 
       <div className="flex items-center gap-4 mt-1">
         <label className="flex items-center gap-2 text-sm">

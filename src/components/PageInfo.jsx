@@ -39,6 +39,11 @@ const MODULE_INFO = {
     links: 'Item list managed in-app; chemicals sync from the Chemicals registry; kiosk mode; calibration weights also live in the Calibration log.',
     sqf: 'Tool and chemical accountability prevents foreign-material and chemical hazards from maintenance activities (SQF 11.7.5, 11.6.4).',
   },
+  'currently-out': {
+    what: 'At-a-glance list of everything currently checked out — qty, item, who, tool box, and the date it went out.',
+    links: 'Records come from the Equipment/Tool/Chemical Sign In-Out module; returns are completed there by QA.',
+    sqf: 'Supports tool and chemical accountability (SQF 11.7.5) with a fast floor-level check.',
+  },
   'knife-accountability': {
     what: 'Knife / razor blade / scissor issue-and-return log against a controlled masterlist.',
     links: 'Kiosk mode for the floor; masterlist seeded from the paper log.',

@@ -122,7 +122,7 @@ router.get('/supply/invoices', async (req, res) => {
   res.json(out);
 });
 
-router.post('/supply/invoices', invoiceUpload.array('files', 5), async (req, res) => {
+router.post('/supply/invoices', invoiceUpload.array('files', 20), async (req, res) => {
   if (!requireAdmin(req, res)) return;
   if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
   const db = getDb();

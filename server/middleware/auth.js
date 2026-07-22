@@ -58,6 +58,29 @@ export function authenticate(req, res, next) {
   }
 
   req.user = user;
+
+  // Admin "View as" preview: an admin's READ requests can be scoped to another
+  // user so lists (e.g. comms channels) show what that person sees. Reads only
+  // — writes always act (and are attributed) as the real signed-in admin.
+  // Handlers can check req.impersonated to withhold private content (DMs).
+  const viewAsId = req.headers['x-view-as'];
+  if (viewAsId && req.method === 'GET' && user.role === 'admin') {
+    const db = getDb();
+    const target = db.prepare('SELECT id, name, role, department, module_access, is_active FROM users WHERE id = ? AND is_active = 1').get(viewAsId);
+    if (target && target.role !== 'admin') {
+      req.user = {
+        id: target.id,
+        name: target.name,
+        role: target.role,
+        department: target.department,
+        module_access: parseModuleAccess(target.module_access),
+        is_active: target.is_active,
+      };
+      req.impersonated = true;
+      req.realAdmin = user;
+    }
+  }
+
   next();
 }
 

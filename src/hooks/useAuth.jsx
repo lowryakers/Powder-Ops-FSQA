@@ -58,7 +58,7 @@ export function AuthProvider({ children }) {
     if (typeof ma === 'string') { try { ma = JSON.parse(ma); } catch { ma = null; } }
     const normalized = { ...target, module_access: ma ?? null };
     setViewAs(normalized);
-    setViewAsWriteGuard(normalized.name);
+    setViewAsWriteGuard({ id: normalized.id, name: normalized.name });
   }, [user]);
 
   const stopViewAs = useCallback(() => {

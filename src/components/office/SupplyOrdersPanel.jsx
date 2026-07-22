@@ -306,20 +306,77 @@ function OrdersLog({ refreshKey, onChanged }) {
   );
 }
 
+function EditInvoiceModal({ inv, onClose, onSaved }) {
+  const [form, setForm] = useState({ supplier: inv.supplier || '', invoice_date: inv.invoice_date || '', total: inv.total ?? '', notes: inv.notes || '' });
+  const save = async () => {
+    await apiPut(`/office/supply/invoices/${inv.id}`, { ...form, total: form.total === '' ? null : Number(form.total) });
+    onSaved(); onClose();
+  };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900 truncate">{inv.filename}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-xs font-medium text-gray-700 mb-1">Supplier</label>
+            <input value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+          <div><label className="block text-xs font-medium text-gray-700 mb-1">Invoice date</label>
+            <input type="date" value={form.invoice_date} onChange={e => setForm({ ...form, invoice_date: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+          <div><label className="block text-xs font-medium text-gray-700 mb-1">Total ($)</label>
+            <input type="number" step="0.01" value={form.total} onChange={e => setForm({ ...form, total: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+          <div><label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
+            <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={save} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">Save</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// One repository for every invoice: multi-file upload, search, supplier filter,
+// sortable columns. Tag supplier/date/total on a row (pencil) to make the
+// filters more useful for accounting later.
 function InvoiceRepo() {
   const [q, setQ] = useState('');
+  const [supplierFilter, setSupplierFilter] = useState('');
+  const [sortField, setSortField] = useState('date');
+  const [sortDir, setSortDir] = useState('desc');
   const { data: invoices, refresh } = useApiGet(`/office/supply/invoices${q ? `?q=${encodeURIComponent(q)}` : ''}`, [q]);
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const suppliers = useMemo(() => [...new Set((invoices || []).map(i => i.supplier).filter(Boolean))].sort(), [invoices]);
+  const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir(f === 'date' || f === 'total' ? 'desc' : 'asc'); } };
+  const list = useMemo(() => {
+    let l = invoices || [];
+    if (supplierFilter) l = l.filter(i => (i.supplier || '') === supplierFilter);
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const val = (i) => {
+      if (sortField === 'total') return Number(i.total ?? -Infinity);
+      if (sortField === 'date') return i.invoice_date || (i.created_at || '').slice(0, 10);
+      return String(i[sortField === 'file' ? 'filename' : sortField] ?? '').toLowerCase();
+    };
+    return [...l].sort((a, b) => { const av = val(a), bv = val(b); return av < bv ? -dir : av > bv ? dir : 0; });
+  }, [invoices, supplierFilter, sortField, sortDir]);
+
   const upload = async (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     if (!files.length) return;
     setUploading(true);
     try {
-      const fd = new FormData();
-      for (const f of files) fd.append('files', f);
-      await apiUpload('/office/supply/invoices', fd);
+      // The server takes up to 20 per request; batch beyond that transparently.
+      for (let i = 0; i < files.length; i += 20) {
+        const fd = new FormData();
+        for (const f of files.slice(i, i + 20)) fd.append('files', f);
+        await apiUpload('/office/supply/invoices', fd);
+      }
       refresh();
     } catch (err) { alert(err.message || 'Upload failed'); }
     finally { setUploading(false); }
@@ -329,6 +386,7 @@ function InvoiceRepo() {
     await apiFetch(`/office/supply/invoices/${inv.id}`, { method: 'DELETE' });
     refresh();
   };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
@@ -337,26 +395,83 @@ function InvoiceRepo() {
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search filename, supplier, notes…"
             className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm" />
         </div>
+        {suppliers.length > 0 && (
+          <select value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}
+            className="px-2.5 py-2 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
+            <option value="">Supplier: all</option>
+            {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
         <input ref={fileRef} type="file" multiple className="hidden" onChange={upload} accept=".pdf,.png,.jpg,.jpeg,.heic,.webp" />
         <button onClick={() => fileRef.current?.click()} disabled={uploading}
           className="flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
           <Upload size={15} /> {uploading ? 'Uploading…' : 'Upload invoices'}
         </button>
       </div>
-      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-        {(invoices || []).map(inv => (
-          <div key={inv.id} className="flex items-center gap-3 px-4 py-2.5">
-            <FileText size={18} className="text-powder-600 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <a href={inv.url || undefined} target="_blank" rel="noreferrer" className="text-sm font-medium text-gray-900 hover:text-powder-700 break-all">{inv.filename}</a>
-              <div className="text-xs text-gray-400">{[inv.supplier, inv.invoice_date, inv.total != null ? `$${Number(inv.total).toFixed(2)}` : null, inv.uploaded_by].filter(Boolean).join(' · ')}</div>
+
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-2">
+        {list.map(inv => (
+          <div key={inv.id} className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
+            <div className="flex items-start gap-2.5">
+              <FileText size={18} className="text-powder-600 shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <a href={inv.url || undefined} target="_blank" rel="noreferrer" className="text-sm font-medium text-gray-900 break-all">{inv.filename}</a>
+                <div className="text-xs text-gray-400 mt-0.5">{[inv.supplier, inv.invoice_date, inv.total != null ? `$${Number(inv.total).toFixed(2)}` : null].filter(Boolean).join(' · ') || 'No details tagged'}</div>
+                <div className="text-[11px] text-gray-400">{inv.uploaded_by} · {(inv.created_at || '').slice(0, 10)}</div>
+              </div>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button onClick={() => setEditing(inv)} className="p-1.5 text-gray-400 hover:text-powder-600"><Pencil size={14} /></button>
+                <button onClick={() => del(inv)} className="p-1.5 text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
+              </div>
             </div>
-            {inv.url && <a href={inv.url} target="_blank" rel="noreferrer" className="p-1.5 text-gray-400 hover:text-powder-600" data-tip="Download"><Download size={15} /></a>}
-            <button onClick={() => del(inv)} className="p-1.5 text-gray-400 hover:text-red-500" data-tip="Delete"><Trash2 size={15} /></button>
           </div>
         ))}
-        {(invoices || []).length === 0 && <div className="px-4 py-10 text-center text-sm text-gray-400">No invoices yet. Upload PDFs or photos — everything is searchable for accounting later.</div>}
+        {list.length === 0 && <div className="bg-white rounded-xl border border-gray-200 px-4 py-10 text-center text-sm text-gray-400">No invoices yet. Upload PDFs or photos — everything is searchable for accounting later.</div>}
       </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <SortHeader label="File" field="file" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Supplier" field="supplier" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Date" field="date" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Total" field="total" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Uploaded by" field="uploaded_by" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <th className="px-3 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {list.map(inv => (
+                <tr key={inv.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-3 py-2.5 w-full">
+                    <a href={inv.url || undefined} target="_blank" rel="noreferrer" className="flex items-center gap-2 font-medium text-gray-900 hover:text-powder-700">
+                      <FileText size={15} className="text-powder-600 shrink-0" /><span className="break-all">{inv.filename}</span>
+                    </a>
+                    {inv.notes && <div className="text-[11px] text-gray-400 ml-6">{inv.notes}</div>}
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{inv.supplier || '—'}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{inv.invoice_date || (inv.created_at || '').slice(0, 10)}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{inv.total != null ? `$${Number(inv.total).toFixed(2)}` : '—'}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{inv.uploaded_by || '—'}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                    <div className="flex items-center gap-1 justify-end">
+                      {inv.url && <a href={inv.url} target="_blank" rel="noreferrer" className="p-1.5 text-gray-400 hover:text-powder-600" data-tip="Download"><Download size={14} /></a>}
+                      <button onClick={() => setEditing(inv)} className="p-1.5 text-gray-400 hover:text-powder-600" data-tip="Tag supplier/date/total"><Pencil size={14} /></button>
+                      <button onClick={() => del(inv)} className="p-1.5 text-gray-400 hover:text-red-500" data-tip="Delete"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {list.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No invoices yet. Upload PDFs or photos — everything is searchable for accounting later.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {editing && <EditInvoiceModal inv={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
     </div>
   );
 }

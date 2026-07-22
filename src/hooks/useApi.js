@@ -3,21 +3,24 @@ import { useState, useEffect, useCallback } from 'react';
 const BASE = '/api';
 
 // While an admin previews the app as another user ("View as"), writes are
-// blocked client-side: the API would still act as the admin, so any change made
-// from inside the preview would be mis-attributed. Set/cleared by AuthProvider.
-let viewAsName = null;
-export function setViewAsWriteGuard(name) { viewAsName = name || null; }
+// blocked client-side (the API would still act as the admin, so any change
+// made from inside the preview would be mis-attributed), and reads carry an
+// X-View-As header so the server scopes lists (e.g. comms channels) to the
+// previewed user. Set/cleared by AuthProvider.
+let viewAsUser = null; // { id, name } | null
+export function setViewAsWriteGuard(target) { viewAsUser = target || null; }
 
 async function apiFetch(path, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
-  if (viewAsName && method !== 'GET') {
+  if (viewAsUser && method !== 'GET') {
     window.dispatchEvent(new CustomEvent('view-as-blocked'));
-    throw new Error(`Read-only preview — exit "Viewing as ${viewAsName}" to make changes.`);
+    throw new Error(`Read-only preview — exit "Viewing as ${viewAsUser.name}" to make changes.`);
   }
   const token = localStorage.getItem('auth_token');
   const headers = {
     'Content-Type': 'application/json',
     ...(token && { Authorization: `Bearer ${token}` }),
+    ...(viewAsUser && { 'X-View-As': viewAsUser.id }),
     ...options.headers,
   };
 
@@ -74,9 +77,9 @@ export async function apiDelete(path) {
 }
 
 export async function apiUpload(path, formData) {
-  if (viewAsName) {
+  if (viewAsUser) {
     window.dispatchEvent(new CustomEvent('view-as-blocked'));
-    throw new Error(`Read-only preview — exit "Viewing as ${viewAsName}" to make changes.`);
+    throw new Error(`Read-only preview — exit "Viewing as ${viewAsUser.name}" to make changes.`);
   }
   const token = localStorage.getItem('auth_token');
   const headers = {};

@@ -112,7 +112,13 @@ function canAccess(db, channel, userId, isAdmin = false) {
 function requireChannel(req, res) {
   const db = getDb();
   const channel = getChannel(db, req.params.id || req.params.channelId);
-  if (!channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')) { res.status(404).json({ error: 'Channel not found' }); return null; }
+  // "View as" previews never open direct messages — an admin previewing a
+  // user's workspace sees their channels, not their private conversations.
+  if (!channel || (req.impersonated && channel.kind === 'dm') ||
+      !canAccess(db, channel, req.user.id, req.user.role === 'admin')) {
+    res.status(404).json({ error: 'Channel not found' });
+    return null;
+  }
   return channel;
 }
 
@@ -242,13 +248,15 @@ router.get('/channels', (req, res) => {
   // Everyone — admins included — only sees channels they belong to, so admins
   // aren't buried under every channel. Channel administration (all channels)
   // happens through GET /admin/channels + the Comms settings panel instead.
-  const rows = db.prepare(`
+  let rows = db.prepare(`
     SELECT c.*, m.last_read_at, m.id AS membership_id
     FROM chat_channels c
     LEFT JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
     WHERE c.archived = 0 AND m.user_id IS NOT NULL
     ORDER BY c.is_default DESC, c.sort_order, c.kind, c.name
   `).all(me);
+  // "View as" preview: hide the previewed user's direct messages entirely.
+  if (req.impersonated) rows = rows.filter(c => c.kind !== 'dm');
 
   const out = rows.map(c => {
     // Only channels you've actually joined get an unread count. Admins can SEE
@@ -940,13 +948,15 @@ function channelLabel(db, channel, me) {
 }
 
 // Turn ranked message ids into access-checked result rows (order preserved).
-function resultsFor(db, me, messageIds, limit = 40, isAdmin = false) {
+// noDms: "View as" previews exclude direct-message content entirely.
+function resultsFor(db, me, messageIds, limit = 40, isAdmin = false, noDms = false) {
   const out = [];
   for (const id of messageIds) {
     const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND deleted_at IS NULL').get(id);
     if (!m) continue;
     const channel = getChannel(db, m.channel_id);
     if (!canAccess(db, channel, me, isAdmin)) continue;
+    if (noDms && channel.kind === 'dm') continue;
     out.push({
       id: m.id, channel_id: m.channel_id, channel_kind: channel.kind, channel_name: channelLabel(db, channel, me),
       user_name: userName(db, m.user_id), body: m.body, created_at: m.created_at,
@@ -993,7 +1003,7 @@ router.get('/search', async (req, res) => {
     const isAdmin = req.user.role === 'admin';
     const semantic = req.query.mode === 'semantic' && voyageEnabled();
     const ids = semantic ? await semanticHits(db, me, q, 40, isAdmin) : keywordHits(db, q);
-    res.json(resultsFor(db, me, ids, 40, isAdmin));
+    res.json(resultsFor(db, me, ids, 40, isAdmin, !!req.impersonated));
   } catch (e) {
     res.status(502).json({ error: e.message || 'Search failed' });
   }

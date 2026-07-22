@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -43,6 +43,7 @@ import UpdateBanner from './components/UpdateBanner.jsx';
 import PageInfo from './components/PageInfo.jsx';
 import SupplyOrdersPanel from './components/office/SupplyOrdersPanel.jsx';
 import TimeTrackingPanel from './components/office/TimeTrackingPanel.jsx';
+import CheckedOutPanel from './components/compliance/CheckedOutPanel.jsx';
 
 const NAV_GROUPS = [
   {
@@ -65,6 +66,7 @@ const NAV_GROUPS = [
     items: [
       { id: 'component-signout', label: 'Component Sign In/Out', icon: PackageCheck },
       { id: 'maintenance-signout', label: 'Equipment/Tool/Chemical Sign In-Out', icon: Wrench },
+      { id: 'currently-out', label: 'Checked Out', icon: PackageSearch },
       { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor', icon: Scissors },
     ],
   },
@@ -127,6 +129,17 @@ const NAV_GROUPS = [
     ],
   },
 ];
+
+// "Checked Out" is an opt-in summary view: visible to Ricardo by default (built
+// for his floor check) and to anyone explicitly granted the 'currently-out'
+// module in Settings — hidden for everyone else to keep sidebars lean.
+const isRicardo = (u) => (u?.name || '').toLowerCase().startsWith('ricardo');
+function hasExplicitGrant(u, id) {
+  const ma = u?.module_access;
+  if (!ma) return false;
+  return Array.isArray(ma) ? ma.includes(id) : !!ma[id];
+}
+const canSeeCheckedOut = (u) => isRicardo(u) || hasExplicitGrant(u, 'currently-out');
 
 function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotice, onOpenComms }) {
   const { data: aiStatus } = useApiGet('/ai/status');
@@ -198,6 +211,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
         {NAV_GROUPS.map((group) => {
           const visibleItems = group.items.filter(i => {
             if (i.id === 'settings') return false; // lives in the top-right gear icon
+            if (i.id === 'currently-out') return canSeeCheckedOut(user);
             if (i.adminOnly && user.role !== 'admin') return false;
             if (i.roles && !i.roles.includes(user.role)) return false;
             if (i.aiOnly && !aiOn) return false;
@@ -506,6 +520,10 @@ function accessibleNavItems(user, aiOn) {
   const flat = [];
   for (const g of NAV_GROUPS) {
     for (const i of g.items) {
+      if (i.id === 'currently-out') {
+        if (canSeeCheckedOut(user)) flat.push({ ...i, group: g.label });
+        continue;
+      }
       if (i.adminOnly && user.role !== 'admin') continue;
       if (i.roles && !i.roles.includes(user.role)) continue;
       if (i.aiOnly && !aiOn) continue;
@@ -591,38 +609,47 @@ function ModuleSearch({ user, onNavigate }) {
   );
 }
 
-const MOBILE_TAB_LABELS = { dashboard: 'Home', operator: 'Operator', pm: 'Tasks', 'production-schedule': 'Schedule', 'production-log': 'Production', capa: 'CAPA', sanitation: 'Sanitation' };
+const MOBILE_TAB_LABELS = { dashboard: 'Home', operator: 'Operator', pm: 'Tasks', 'production-schedule': 'Schedule', 'production-log': 'Production', capa: 'CAPA', sanitation: 'Sanitation', 'currently-out': 'Checked Out', 'maintenance-signout': 'Sign In-Out', messages: 'Messages' };
 
-function MobileBottomNav({ activeTab, setActiveTab, user }) {
-  // Role-aware quick-tabs: prefer the modules most people use day-to-day, but
-  // only ones this user can open, and fall back to their first accessible
-  // modules so a warehouse operator gets useful tabs instead of CAPA/Sanitation.
+function MobileBottomNav({ activeTab, setActiveTab, user, onOpenComms }) {
+  // Bottom-bar tabs, in priority order: the user's own picks (set per-user in
+  // Settings, may include the special 'messages' workspace), else Ricardo's
+  // floor default, else role-aware auto-picks from accessible modules.
   const quickTabs = useMemo(() => {
     const flat = accessibleNavItems(user, false);
     const byId = Object.fromEntries(flat.map(i => [i.id, i]));
-    const preferred = ['dashboard', 'operator', 'pm', 'production-schedule', 'production-log', 'capa', 'sanitation'];
+    let wanted = user.quick_tabs;
+    if (typeof wanted === 'string') { try { wanted = JSON.parse(wanted); } catch { wanted = null; } }
+    if (!Array.isArray(wanted) || !wanted.length) {
+      wanted = isRicardo(user) ? ['operator', 'production-schedule', 'messages', 'currently-out'] : null;
+    }
+
     const picked = [];
     const seen = new Set();
-    for (const id of preferred) {
-      if (byId[id] && !seen.has(id)) { picked.push(byId[id]); seen.add(id); }
-      if (picked.length === 4) break;
+    const push = (id) => {
+      if (picked.length >= 4 || seen.has(id)) return;
+      if (id === 'messages') { picked.push({ id: 'messages', icon: MessageSquare, isMessages: true }); seen.add(id); return; }
+      if (byId[id]) { picked.push(byId[id]); seen.add(id); }
+    };
+
+    if (wanted) wanted.forEach(push);
+    if (!picked.length) {
+      // Auto mode (or none of the custom picks were accessible).
+      ['dashboard', 'operator', 'pm', 'production-schedule', 'production-log', 'capa', 'sanitation'].forEach(push);
+      for (const it of flat) { if (picked.length >= 4) break; push(it.id); }
     }
-    for (const it of flat) {
-      if (picked.length === 4) break;
-      if (!seen.has(it.id)) { picked.push(it); seen.add(it.id); }
-    }
-    return picked.slice(0, 4).map(i => ({ id: i.id, label: MOBILE_TAB_LABELS[i.id] || i.label, icon: i.icon }));
+    return picked.slice(0, 4).map(i => ({ ...i, label: MOBILE_TAB_LABELS[i.id] || i.label }));
   }, [user]);
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-bottom">
       <div className="flex">
         {quickTabs.map(tab => {
-          const isActive = activeTab === tab.id;
+          const isActive = !tab.isMessages && activeTab === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => tab.isMessages ? onOpenComms?.() : setActiveTab(tab.id)}
               className={`flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium ${
                 isActive ? 'text-powder-600' : 'text-gray-400'
               }`}
@@ -978,7 +1005,11 @@ function App() {
 
   // Determine effective accessible modules for this user
   const allModuleIds = NAV_GROUPS.flatMap(g => g.items).filter(i => (!i.adminOnly || user.role === 'admin') && (!i.roles || i.roles.includes(user.role))).map(i => i.id);
-  const effectiveModules = visibleModuleIds(user, allModuleIds);
+  let effectiveModules = visibleModuleIds(user, allModuleIds);
+  // "Checked Out" follows its own opt-in rule rather than plain module access.
+  effectiveModules = canSeeCheckedOut(user)
+    ? (effectiveModules.includes('currently-out') ? effectiveModules : [...effectiveModules, 'currently-out'])
+    : effectiveModules.filter(id => id !== 'currently-out');
   const operatorOnly = effectiveModules.length === 1 && effectiveModules[0] === 'operator';
 
   // If user only has operator view access, render the standalone operator layout
@@ -1130,6 +1161,7 @@ function App() {
           {resolvedTab === 'on-hold' && <QMSRecordsPanel recordType="on_hold" moduleId="on-hold" />}
           {resolvedTab === 'component-signout' && <QMSRecordsPanel recordType="component_sign_out" moduleId="component-signout" />}
           {resolvedTab === 'maintenance-signout' && <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" />}
+          {resolvedTab === 'currently-out' && <CheckedOutPanel />}
           {resolvedTab === 'organoleptic' && <QMSRecordsPanel recordType="organoleptic" moduleId="organoleptic" />}
           {resolvedTab === 'knife-accountability' && <QMSRecordsPanel recordType="knife_accountability" moduleId="knife-accountability" />}
           {resolvedTab === 'training' && <TrainingPanel />}
@@ -1140,7 +1172,7 @@ function App() {
         </main>
       </div>
 
-      <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} />
+      <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onOpenComms={() => setWorkspace('comms')} />
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
       {showViewAsPicker && <ViewAsPickerModal onPick={(u) => { setShowViewAsPicker(false); startViewAs(u); }} onClose={() => setShowViewAsPicker(false)} />}
       <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />

@@ -666,7 +666,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   const translateOn = !!commsStatus?.translate;
   const pushOn = !!commsStatus?.push;
   const [viewerLang, setViewerLang] = useState(() => localStorage.getItem('op_lang') || 'en');
-  const [autoTranslate, setAutoTranslate] = useState(false);
+  // One-tap translation mode: tapping EN or ES translates the whole channel to
+  // that language ("Original" turns it off). Remembered across sessions.
+  const [autoTranslate, setAutoTranslate] = useState(() => (localStorage.getItem('comms_translate_mode') || 'off') !== 'off');
+  const [translatingNow, setTranslatingNow] = useState(false);
   const [autoTrans, setAutoTrans] = useState({}); // `${messageId}:${lang}` -> translated text (null = failed, skip)
   const [highlightId, setHighlightId] = useState(null); // deep-linked message flash
   const [pushSubscribed, setPushSubscribed] = useState(false);
@@ -977,6 +980,22 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     return r.text;
   }, []);
   const setLang = (l) => { setViewerLang(l); localStorage.setItem('op_lang', l); };
+  // Segmented control: Original (off) / EN / ES — one tap does everything.
+  const setTranslateMode = (mode) => {
+    if (mode === 'off') {
+      setAutoTranslate(false);
+    } else {
+      setAutoTranslate(true);
+      setLang(mode);
+    }
+    localStorage.setItem('comms_translate_mode', mode);
+  };
+  useEffect(() => {
+    // Restore the remembered language for translate mode on first load.
+    const mode = localStorage.getItem('comms_translate_mode');
+    if (mode === 'en' || mode === 'es') setViewerLang(mode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Channel auto-translate: batch-translate everything on screen in ONE request
   // (the old per-message burst rate-limited and looked broken). Cache-aware on
@@ -987,6 +1006,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     const need = messages.filter(m => m.body && !m.deleted && autoTrans[`${m.id}:${viewerLang}`] === undefined).map(m => m.id);
     if (!need.length || translatingBatch.current) return;
     translatingBatch.current = true;
+    setTranslatingNow(true);
     let cancelled = false;
     (async () => {
       try {
@@ -998,7 +1018,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
           return n;
         });
       } catch { /* retried on next messages/lang change */ }
-      finally { translatingBatch.current = false; }
+      finally { translatingBatch.current = false; setTranslatingNow(false); }
     })();
     return () => { cancelled = true; };
   }, [autoTranslate, viewerLang, messages, activeId, translateOn]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1408,14 +1428,18 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                 )}
                 {translateOn && (
                   <div className="ml-auto flex items-center gap-1.5">
-                    <button onClick={() => setAutoTranslate(v => !v)} title="Translate all messages"
-                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border ${autoTranslate ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
-                      <Languages size={13} /> Translate
-                    </button>
-                    <div className="flex border border-gray-200 rounded-lg overflow-hidden">
-                      {['en', 'es'].map(l => (
-                        <button key={l} onClick={() => setLang(l)} className={`px-2 py-1 text-[10px] font-bold ${viewerLang === l ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>{l.toUpperCase()}</button>
-                      ))}
+                    {translatingNow && <span className="text-[10px] text-gray-400 hidden sm:inline">Translating…</span>}
+                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden" title="Show messages in their original language, or translate everything to English / Spanish">
+                      <Languages size={13} className="text-gray-400 ml-1.5 mr-0.5" />
+                      {[['off', 'Original'], ['en', 'EN'], ['es', 'ES']].map(([mode, label]) => {
+                        const active = mode === 'off' ? !autoTranslate : (autoTranslate && viewerLang === mode);
+                        return (
+                          <button key={mode} onClick={() => setTranslateMode(mode)}
+                            className={`px-2 py-1 text-[10px] font-bold ${active ? 'bg-powder-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                            {label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
