@@ -32,6 +32,7 @@ import DocumentRegistry from './components/compliance/DocumentRegistry.jsx';
 import OrgChart from './components/compliance/OrgChart.jsx';
 import DisposalsPanel from './components/compliance/DisposalsPanel.jsx';
 import QMSRecordsPanel from './components/compliance/QMSRecordsPanel.jsx';
+import KnifePanel from './components/compliance/KnifePanel.jsx';
 import TrainingPanel from './components/compliance/TrainingPanel.jsx';
 import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
 import ProductionLog from './components/compliance/ProductionLog.jsx';
@@ -1198,7 +1199,7 @@ function App() {
           {resolvedTab === 'maintenance-signout' && <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" />}
           {resolvedTab === 'currently-out' && <CheckedOutPanel />}
           {resolvedTab === 'organoleptic' && <QMSRecordsPanel recordType="organoleptic" moduleId="organoleptic" />}
-          {resolvedTab === 'knife-accountability' && <QMSRecordsPanel recordType="knife_accountability" moduleId="knife-accountability" />}
+          {resolvedTab === 'knife-accountability' && <KnifePanel />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}

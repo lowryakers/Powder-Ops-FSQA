@@ -50,8 +50,8 @@ const MODULE_INFO = {
     sqf: 'Supports tool and chemical accountability (SQF 11.7.5) with a fast floor-level check.',
   },
   'knife-accountability': {
-    what: 'Knife / razor blade / scissor issue-and-return log against a controlled masterlist.',
-    links: 'Kiosk mode for the floor; masterlist seeded from the paper log.',
+    what: 'Knife / razor blade / scissor control: a per-transaction Sign In/Out Log (each check-out is a record closed on return, then reviewed by QA) plus the controlled Master List of registered tools.',
+    links: 'Kiosk mode for the floor auto-creates log entries; masterlist seeded from the paper log.',
     sqf: 'Sharp-object control is a core foreign-material prevention program (SQF 11.7.4).',
   },
   pm: {

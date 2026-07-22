@@ -52,7 +52,10 @@ export default function KnifeKiosk() {
             Knife {result.tool_id} {isOut ? 'Checked Out' : 'Checked In'}
           </h1>
           <p className="text-gray-600 mb-1">{isOut ? `Issued to ${name.trim()}` : `Returned by ${name.trim()}`}</p>
-          <p className="text-sm text-gray-500 mb-6">Condition recorded: <span className="font-medium">{result.condition}</span></p>
+          <p className="text-sm text-gray-500 mb-1">Condition recorded: <span className="font-medium">{result.condition}</span></p>
+          {result.record_number && (
+            <p className="text-xs text-gray-400 mb-6">Logged as {result.record_number} — pending QA review</p>
+          )}
           <button onClick={reset} className="px-6 py-3 bg-powder-600 text-white rounded-xl font-bold hover:bg-powder-700">
             Done
           </button>

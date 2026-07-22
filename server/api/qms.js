@@ -159,9 +159,18 @@ router.get('/config', (_req, res) => {
   const rows = maintenanceItems(db);
   const merged = rows.length ? withChemicals(db, rows) : [];
   const options = maintenanceItemOptions(merged);
+  // Registered (non-decommissioned) knives → the sign-out log's tool dropdown.
+  let knifeIds = [];
+  try {
+    knifeIds = db.prepare("SELECT record_number, data FROM qms_records WHERE record_type = 'knife_accountability' AND (status IS NULL OR status != 'decommissioned') ORDER BY record_number").all()
+      .map(r => { try { return JSON.parse(r.data || '{}').tool_id || r.record_number; } catch { return r.record_number; } });
+  } catch { /* table optional */ }
   const types = Object.values(QMS_TYPES).map(t => {
     if (t.key === 'maintenance_sign_out' && merged.length) {
       return { ...t, fields: t.fields.map(f => f.key === 'item_description' ? { ...f, options } : f) };
+    }
+    if (t.key === 'knife_sign_out' && knifeIds.length) {
+      return { ...t, fields: t.fields.map(f => f.key === 'tool_id' ? { ...f, options: knifeIds } : f) };
     }
     return t;
   });

@@ -308,6 +308,49 @@ export const QMS_TYPES = {
     approvals: [],
   },
 
+  // Per-transaction accountability log (Form 440-02): one record per check-out,
+  // closed on check-in, QA-reviewed — mirrors the Equipment/Tool/Chemical
+  // Sign In-Out flow. Records are auto-created by the knife kiosk; the master
+  // list above stays the per-tool registry.
+  knife_sign_out: {
+    key: 'knife_sign_out',
+    label: 'Knife / Blade Sign In-Out Log',
+    singular: 'Sign-Out',
+    short: 'KSO',
+    moduleId: 'knife-accountability',
+    formCode: 'Form 440-02',
+    numberPrefix: 'KA-',
+    numberPad: 3,
+    primaryField: 'tool_id',
+    dateLabel: 'Date',
+    kioskPath: '/kiosk/knife',
+    kioskTagline: 'Scan to Sign In / Out',
+    statuses: [
+      { value: 'out', label: 'Out', tone: 'amber' },
+      { value: 'returned', label: 'Returned', tone: 'green', done: true },
+    ],
+    defaultStatus: 'out',
+    // tool_id options are injected from the registered (non-decommissioned)
+    // master list in /api/qms/config, like the maintenance item dropdown.
+    fields: [
+      { key: 'tool_id', label: 'Knife / Razor Blade / Scissor #', type: 'select', options: [] },
+      { key: 'employee_name', label: 'Employee Name', type: 'text' },
+      { key: 'condition_out', label: 'Condition Out (Good / Bad)', type: 'select', options: ['Good', 'Bad'] },
+      { key: 'time_out', label: 'Time Out', type: 'text' },
+      { key: 'issued_by', label: 'Issued By (QA)', type: 'text' },
+      { key: 'return_date', label: 'Return Date', type: 'date' },
+      { key: 'return_time', label: 'Return Time', type: 'text' },
+      { key: 'condition_returned', label: 'Returned Condition (Good / Bad)', type: 'select', options: ['Good', 'Bad'] },
+      { key: 'returned_by', label: 'Returned By', type: 'text' },
+      { key: 'retrieved_by', label: 'Retrieved By (QA)', type: 'text' },
+      { key: 'comments', label: 'Comments', type: 'textarea' },
+    ],
+    logColumns: ['record_number', 'tool_id', 'employee_name', 'condition_out', 'condition_returned', 'record_date', 'status', 'approvals'],
+    approvals: [
+      { key: 'quality', label: 'Reviewed by QA', required: true, departments: ['qa'] },
+    ],
+  },
+
   organoleptic: {
     key: 'organoleptic',
     label: 'Organoleptic Sensory Test',

@@ -68,8 +68,10 @@ router.get('/knife-list', (_req, res) => {
 });
 
 // Check a knife out (Available → Issued) or back in (Issued → Available). The
-// tool record holds current state (so the Master List stays accurate) and every
-// transaction is written to the immutable audit trail for full history.
+// tool record holds current state (so the Master List stays accurate) and each
+// check-out opens a knife_sign_out log record (Form 440-02) that the check-in
+// closes — the log record then awaits the in-app QA review sign-off, mirroring
+// the Equipment/Tool/Chemical Sign In-Out flow.
 router.post('/knife', (req, res) => {
   const db = getDb();
   const { record_id, person, condition } = req.body;
@@ -84,6 +86,9 @@ router.post('/knife', (req, res) => {
   const wasIssued = row.status === 'issued';
   const action = wasIssued ? 'in' : 'out';
   const cond = condition === 'Bad' ? 'Bad' : 'Good';
+  const toolId = data.tool_id || row.record_number;
+  const logCfg = getType('knife_sign_out');
+  const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   if (wasIssued) {
     // Check in: clear the holder, record who returned it + condition.
@@ -97,13 +102,46 @@ router.post('/knife', (req, res) => {
     data.returned_by = '';
   }
 
-  db.prepare("UPDATE qms_records SET status = ?, data = ?, record_date = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(wasIssued ? 'available' : 'issued', JSON.stringify(data), today(), record_id);
+  let logNumber = null;
+  db.transaction(() => {
+    db.prepare("UPDATE qms_records SET status = ?, data = ?, record_date = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(wasIssued ? 'available' : 'issued', JSON.stringify(data), today(), record_id);
+
+    if (wasIssued) {
+      // Close the open sign-out log entry for this tool (latest first). A tool
+      // issued before the log existed has none — record the return standalone
+      // so the accountability log still shows it.
+      const open = db.prepare(`SELECT * FROM qms_records WHERE record_type = 'knife_sign_out' AND status = 'out'
+        AND json_extract(data, '$.tool_id') = ? ORDER BY created_at DESC LIMIT 1`).get(toolId);
+      if (open) {
+        const logData = parseJson(open.data, {});
+        logData.condition_returned = cond;
+        logData.return_date = today();
+        logData.return_time = nowTime();
+        logData.returned_by = name;
+        db.prepare("UPDATE qms_records SET status = 'returned', data = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(JSON.stringify(logData), open.id);
+        logNumber = open.record_number;
+      } else {
+        const id = uuid();
+        logNumber = nextNumber(db, logCfg);
+        const logData = { tool_id: toolId, employee_name: name, condition_returned: cond, return_date: today(), return_time: nowTime(), returned_by: name };
+        db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, created_by)
+          VALUES (?, 'knife_sign_out', ?, ?, 'returned', ?, 0, ?)`).run(id, logNumber, today(), JSON.stringify(logData), name);
+      }
+    } else {
+      const id = uuid();
+      logNumber = nextNumber(db, logCfg);
+      const logData = { tool_id: toolId, employee_name: name, condition_out: cond, time_out: nowTime() };
+      db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, created_by)
+        VALUES (?, 'knife_sign_out', ?, ?, 'out', ?, 0, ?)`).run(id, logNumber, today(), JSON.stringify(logData), name);
+    }
+  })();
 
   logAudit(name, action === 'out' ? 'knife_check_out' : 'knife_check_in', 'knife_accountability', record_id,
-    { tool_id: data.tool_id || row.record_number, condition: cond, via: 'kiosk' }, null, null, data.tool_id || row.record_number);
+    { tool_id: toolId, condition: cond, sign_out_record: logNumber, via: 'kiosk' }, null, null, toolId);
 
-  res.status(201).json({ ok: true, action, tool_id: data.tool_id || row.record_number, condition: cond });
+  res.status(201).json({ ok: true, action, tool_id: toolId, condition: cond, record_number: logNumber });
 });
 
 // ── Component Sign In/Out kiosk ───────────────────────────────────────────────
