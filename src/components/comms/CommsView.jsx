@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -617,6 +617,28 @@ const QUICK_EMOJIS = ['👍', '✅', '🙏', '😂', '😮', '❤️'];
 
 // Slack-style bottom sheet for a message on mobile: quick reactions up top,
 // then the actions (reply / copy / translate / mark unread / edit / delete).
+// Compact row inside the desktop 3-dot message menu.
+function MenuRow({ icon: Icon, label, danger, act, onAction }) {
+  return (
+    <button onClick={() => onAction(act)}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left ${danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-50'}`}>
+      {Icon ? <Icon size={14} className={danger ? 'text-red-500' : 'text-gray-400'} />
+        : <span className="block h-2.5 w-2.5 ml-0.5 mr-0.5 rounded-full border-2 border-gray-400" />}
+      {label}
+    </button>
+  );
+}
+
+// Slack's red "unread starts here" line.
+function NewDivider() {
+  return (
+    <div className="flex items-center gap-2 px-4 my-1">
+      <div className="flex-1 h-px bg-red-400" />
+      <span className="text-[10px] font-bold text-red-500 uppercase tracking-wide">New</span>
+    </div>
+  );
+}
+
 function SheetRow({ icon: Icon, label, danger, act, onAction }) {
   return (
     <button onClick={() => onAction(act)}
@@ -676,6 +698,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   const [translated, setTranslated] = useState(null);
   const [translating, setTranslating] = useState(false);
   const [sheet, setSheet] = useState(false); // mobile long-press action sheet
+  const [menuOpen, setMenuOpen] = useState(false); // desktop 3-dot menu
   const [lightbox, setLightbox] = useState(null); // index into m.attachments
   const mine = m.user_id === me.id;
 
@@ -720,6 +743,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   };
   const handleSheetAction = (act) => {
     setSheet(false);
+    setMenuOpen(false);
     if (act === 'reply' && onReply) onReply(m);
     else if (act === 'copy') { try { navigator.clipboard?.writeText(displayBody || m.body || ''); } catch { /* ignore */ } }
     else if (act === 'translate') doTranslate();
@@ -730,7 +754,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
 
   return (
     <div onClick={onRowClick} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
-      className={`msg-row group flex gap-2 px-4 py-1.5 hover:bg-gray-50 transition-colors ${highlighted ? 'bg-amber-50 ring-1 ring-inset ring-amber-300' : ''}`}>
+      className={`msg-row group relative flex gap-2 px-4 py-1.5 hover:bg-gray-50 transition-colors ${highlighted ? 'bg-amber-50 ring-1 ring-inset ring-amber-300' : ''}`}>
       <div className="h-8 w-8 rounded-lg bg-powder-100 text-powder-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
         {m.user_name?.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
       </div>
@@ -793,18 +817,31 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
           </button>
         )}
       </div>
-      {/* Desktop hover actions only — on phones everything lives in the
-          long-press sheet, so messages get the full width. */}
+      {/* Desktop hover pill (Slack-style): suggested reactions, full picker,
+          reply, and a 3-dot menu with the rest. On phones everything lives in
+          the long-press sheet, so messages get the full width. */}
       {!m.deleted && (
-        <div className="relative hidden md:flex opacity-0 group-hover:opacity-100 items-start gap-1 shrink-0">
-          <button onClick={() => setShowEmoji(s => !s)} className="p-1 text-gray-400 hover:text-gray-600" data-tip="React"><Smile size={14} /></button>
-          {onReply && <button onClick={() => onReply(m)} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Reply in thread"><MessageSquare size={13} /></button>}
-          {canTranslate && m.body && !translated && <button onClick={doTranslate} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Translate"><Languages size={13} /></button>}
-          {onMarkUnread && <button onClick={() => onMarkUnread(m)} className="p-1 text-gray-400 hover:text-powder-600" data-tip="Mark unread from here">
-            <span className="block h-2.5 w-2.5 rounded-full border-2 border-current" />
-          </button>}
-          {mine && <button onClick={() => { setDraft(m.body || ''); setEditing(true); }} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Edit" data-tip-left><Edit2 size={13} /></button>}
-          {(mine) && <button onClick={() => onDelete(m)} className="p-1 text-gray-400 hover:text-red-500" data-tip="Delete" data-tip-left><Trash2 size={13} /></button>}
+        <div className={`absolute -top-3 right-3 z-10 hidden md:flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg shadow-sm px-1 py-0.5 transition-opacity ${menuOpen || showEmoji ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+          {['✅', '👍', '🙌'].map(e => (
+            <button key={e} onClick={() => onReact(m, e)} className="px-1 py-0.5 text-[15px] hover:bg-gray-100 rounded" data-tip={`React ${e}`}>{e}</button>
+          ))}
+          <button onClick={() => setShowEmoji(s => !s)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" data-tip="More reactions"><Smile size={15} /></button>
+          {onReply && <button onClick={() => onReply(m)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" data-tip="Reply in thread"><MessageSquare size={14} /></button>}
+          <div className="relative">
+            <button onClick={() => setMenuOpen(o => !o)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" data-tip="More actions" data-tip-left><MoreVertical size={14} /></button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1">
+                  <MenuRow icon={Copy} label="Copy text" act="copy" onAction={handleSheetAction} />
+                  {canTranslate && m.body && !translated && <MenuRow icon={Languages} label="Translate" act="translate" onAction={handleSheetAction} />}
+                  {onMarkUnread && <MenuRow icon={null} label="Mark unread from here" act="unread" onAction={handleSheetAction} />}
+                  {mine && <MenuRow icon={Edit2} label="Edit message" act="edit" onAction={handleSheetAction} />}
+                  {mine && <MenuRow icon={Trash2} label="Delete message" danger act="delete" onAction={handleSheetAction} />}
+                </div>
+              </>
+            )}
+          </div>
           {showEmoji && <EmojiPicker onPick={(e) => { onReact(m, e); setShowEmoji(false); }} onClose={() => setShowEmoji(false)} />}
         </div>
       )}
@@ -842,7 +879,17 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   const [activeId, setActiveId] = useState(null);
   // On phones the list and thread can't share the screen — show one at a time.
   const [mobileThread, setMobileThread] = useState(false);
-  const openChannel = (id) => { setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false); };
+  // "New" divider: where the reader left off, captured when the channel opens
+  // (stays put while reading; cleared on switch). '0' = everything is new.
+  const [newMarkerTs, setNewMarkerTs] = useState(null);
+  // Jump-to-date: when set, the message list shows a window starting at that day.
+  const [dateView, setDateView] = useState(null);
+  const openChannel = (id) => {
+    const ch = (channels || []).find(c => c.id === id);
+    setNewMarkerTs(ch && ch.unread > 0 ? (ch.last_read_at || '0') : null);
+    setDateView(null);
+    setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false);
+  };
   // Sidebar channel quick-filter (type to filter, ↑/↓ + Enter to jump).
   const [chanFilter, setChanFilter] = useState('');
   const [chanHi, setChanHi] = useState(0);
@@ -951,7 +998,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
       const target = list.find(c => norm(c.name) === t) || list.find(c => norm(c.name).includes(t));
       if (target) { linkedOpenedRef.current = openChannelName; openChannel(target.id); return; }
     }
-    setActiveId((publicCh.find(c => c.name === 'general') || list[0]).id);
+    // Bare setActiveId (not openChannel) so phones stay on the channel list —
+    // but still capture the unread marker so the New divider shows.
+    const target = publicCh.find(c => c.name === 'general') || list[0];
+    setNewMarkerTs(target.unread > 0 ? (target.last_read_at || '0') : null);
+    setActiveId(target.id);
   }, [list, activeId, openChannelName, openChannelId]); // eslint-disable-line
 
   // A push-notification deep-link can arrive while Comms is already open — open
@@ -1063,6 +1114,22 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     pinnedRef.current = true;
     const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight;
     setShowJump(false);
+  };
+  // Jump to a specific day: load the window starting there and land at its top.
+  const jumpToDate = async (d) => {
+    if (!activeId || !d) return;
+    try {
+      const msgs = await apiFetch(`/comms/channels/${activeId}/messages?date=${d}`);
+      pinnedRef.current = false; // we're reading history, not the live bottom
+      setDateView(d);
+      setMessages(msgs);
+      requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; });
+    } catch { /* ignore */ }
+  };
+  const backToLatest = () => {
+    setDateView(null);
+    pinnedRef.current = true;
+    loadMessages(activeId);
   };
 
   const send = async () => {
@@ -1596,6 +1663,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                     <Users size={13} /> Details
                   </button>
                 )}
+                {/* Jump to a date in this channel's history */}
+                <label className={`${translateOn ? '' : 'ml-auto '}relative p-1.5 rounded-lg cursor-pointer ${dateView ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`} data-tip="Jump to date">
+                  <CalendarDays size={15} />
+                  <input type="date" value={dateView || ''} onChange={e => e.target.value && jumpToDate(e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                </label>
                 {translateOn && (
                   <div className="ml-auto flex items-center gap-1.5">
                     {translatingNow && <span className="text-[10px] text-gray-400 hidden sm:inline">Translating…</span>}
@@ -1619,9 +1692,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                 {messages.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello 👋</p>}
                 {messages.map((m, i) => {
                   const showDay = i === 0 || dayKey(m.created_at) !== dayKey(messages[i - 1].created_at);
+                  const firstNew = newMarkerTs !== null && !dateView && m.created_at > newMarkerTs &&
+                    (i === 0 || messages[i - 1].created_at <= newMarkerTs);
                   return (
                     <div key={m.id} data-mid={m.id}>
                       {showDay && <DateDivider iso={m.created_at} />}
+                      {firstNew && <NewDivider />}
                       <Message m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg} onReply={setReplyTo} onMarkUnread={markUnread}
                         canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage}
                         autoText={autoTranslate ? autoTrans[`${m.id}:${viewerLang}`] : null}
@@ -1631,7 +1707,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                 })}
                 </div>
               </div>
-              {showJump && (
+              {dateView ? (
+                <div className="relative">
+                  <button onClick={backToLatest}
+                    className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-semibold rounded-full shadow-lg hover:bg-gray-800 whitespace-nowrap">
+                    Viewing from {dateView} · Back to latest <ChevronDown size={13} />
+                  </button>
+                </div>
+              ) : showJump && (
                 <div className="relative">
                   <button onClick={jumpToLatest}
                     className="absolute bottom-2 right-4 z-10 flex items-center gap-1 px-3 py-1.5 bg-powder-600 text-white text-xs font-semibold rounded-full shadow-lg hover:bg-powder-700">

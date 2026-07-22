@@ -291,6 +291,8 @@ router.get('/channels', (req, res) => {
       post_policy: c.post_policy || 'all', is_default: !!c.is_default,
       section_id: c.section_id || null, sort_order: c.sort_order || 0,
       last_activity: lastActivity,
+      // Where the reader left off — drives the "New" divider line client-side.
+      last_read_at: c.last_read_at || null,
     };
   });
   res.json(out);
@@ -665,6 +667,14 @@ async function serialize(db, m) {
 router.get('/channels/:id/messages', async (req, res) => {
   const channel = requireChannel(req, res); if (!channel) return;
   const db = getDb();
+  // Jump-to-date: return the window starting at that day (oldest first) so the
+  // client can land the reader at the top of it.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '')) {
+    const limit = Math.min(parseInt(req.query.limit) || 200, 400);
+    const rows = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL AND created_at >= ? ORDER BY created_at ASC LIMIT ?')
+      .all(channel.id, req.query.date, limit);
+    return res.json(await Promise.all(rows.map(m => serialize(db, m))));
+  }
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const before = req.query.before;
   let sql = 'SELECT * FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL';
