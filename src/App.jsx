@@ -706,16 +706,17 @@ function App() {
   //     load AND whenever the app is foregrounded (iOS opens at start_url and
   //     drops the query string, so this is the path that actually fires there).
   //  3. A postMessage from the SW when a window is already open.
-  const openFromNotification = useCallback((channelId) => {
+  const openFromNotification = useCallback((channelId, messageId = null) => {
     if (!channelId) return;
-    setCommsLink({ channelId, from: null, fromLabel: 'Back' });
+    setCommsLink({ channelId, messageId: messageId || null, from: null, fromLabel: 'Back' });
     setWorkspace('comms');
   }, []);
 
   useEffect(() => {
-    const c = new URLSearchParams(window.location.search).get('c');
+    const params = new URLSearchParams(window.location.search);
+    const c = params.get('c');
     if (c) {
-      openFromNotification(c);
+      openFromNotification(c, params.get('m'));
       window.history.replaceState({}, '', window.location.pathname);
     }
     let cancelled = false;
@@ -726,8 +727,8 @@ function App() {
         const res = await cache.match('/__pending_nav');
         if (!res) return;
         await cache.delete('/__pending_nav');
-        const { channelId, ts } = await res.json();
-        if (!cancelled && channelId && Date.now() - ts < 5 * 60 * 1000) openFromNotification(channelId);
+        const { channelId, messageId, ts } = await res.json();
+        if (!cancelled && channelId && Date.now() - ts < 5 * 60 * 1000) openFromNotification(channelId, messageId);
       } catch { /* ignore */ }
     };
     checkPending();
@@ -739,7 +740,7 @@ function App() {
   // Notification tapped while the app is already open: the SW posts the channel.
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
-    const onMsg = (e) => { if (e.data?.type === 'open-channel') openFromNotification(e.data.channelId); };
+    const onMsg = (e) => { if (e.data?.type === 'open-channel') openFromNotification(e.data.channelId, e.data.messageId); };
     navigator.serviceWorker.addEventListener('message', onMsg);
     return () => navigator.serviceWorker.removeEventListener('message', onMsg);
   }, [openFromNotification]);
@@ -899,6 +900,7 @@ function App() {
         onGoToSchedule={canViewModule(user, 'production-schedule') ? () => { setWorkspace('fsqa'); setActiveTab('production-schedule'); } : null}
         openChannelName={commsLink?.channel}
         openChannelId={commsLink?.channelId}
+        openMessageId={commsLink?.messageId}
         backLabel={commsLink?.from ? commsLink.fromLabel : null}
         onBackToModule={commsLink?.from ? () => { setWorkspace('fsqa'); setActiveTab(commsLink.from); setCommsLink(null); } : null}
         homePref={homePref}

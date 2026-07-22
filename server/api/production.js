@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
-import { getChannelByName, postMessageAs } from './comms.js';
+import { getChannelByName, postMessageAs, getModuleLinks } from './comms.js';
 
 // Production teams whose schedule gets published to a matching comms channel.
 // Team name (as stored on assignments) → the channel it maps to.
@@ -508,7 +508,10 @@ router.post('/schedule/notify', requireRole('admin'), async (req, res) => {
         const ch = getChannelByName(db, channel);
         if (ch) { await postMessageAs(db, ch, req.user, teamScheduleMessage(team, rows, weekStart, kind)); posted.push(team); }
       }
-      const prod = getChannelByName(db, 'production_schedule');
+      // Combined summary goes to the admin-configured channel for the Schedule
+      // module (Messages → module links); default #production_schedule.
+      const summaryName = getModuleLinks(db)['production-schedule'] ?? 'production_schedule';
+      const prod = summaryName ? getChannelByName(db, summaryName) : null;
       if (prod) await postMessageAs(db, prod, req.user, combinedScheduleMessage(assignments, weekStart, kind, changedTeams));
     }
   } catch (e) {

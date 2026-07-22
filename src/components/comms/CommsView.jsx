@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -95,22 +95,80 @@ function DateDivider({ iso }) {
 }
 const fmtSize = (n) => { if (!n && n !== 0) return ''; if (n < 1024) return n + ' B'; if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB'; return (n / 1024 / 1024).toFixed(1) + ' MB'; };
 
-function Attachment({ a }) {
+function Attachment({ a, onOpen }) {
   if (a.is_image && a.url) {
     return (
-      <a href={a.url} target="_blank" rel="noreferrer" className="block mt-1 max-w-xs">
+      <button type="button" onClick={onOpen} className="block mt-1 max-w-xs text-left">
         <img src={a.url} alt={a.filename} className="rounded-lg border border-gray-200 max-h-64 object-contain" />
-      </a>
+      </button>
     );
   }
   return (
-    <a href={a.url || undefined} target="_blank" rel="noreferrer" download={a.filename}
-      className="mt-1 inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 max-w-xs">
+    <button type="button" onClick={onOpen}
+      className="mt-1 inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 max-w-xs text-left">
       <FileText size={16} className="text-powder-600 shrink-0" />
       <span className="text-sm text-gray-800 truncate">{a.filename}</span>
       <span className="text-[10px] text-gray-400 shrink-0">{fmtSize(a.size)}</span>
       <Download size={13} className="text-gray-400 shrink-0" />
-    </a>
+    </button>
+  );
+}
+
+// Full-screen viewer for a message's attachments: ← → (buttons, keys, or swipe)
+// move through every file without closing; Esc / backdrop / ✕ closes. Non-image
+// files show a download card so mixed sets still page smoothly.
+function Lightbox({ atts, index, onNav, onClose }) {
+  const a = atts[index];
+  const touchX = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowRight') onNav(1);
+      else if (e.key === 'ArrowLeft') onNav(-1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onNav, onClose]);
+  if (!a) return null;
+  return (
+    <div className="fixed inset-0 bg-black/85 z-[70] flex items-center justify-center" onClick={onClose}
+      onTouchStart={e => { touchX.current = e.touches[0]?.clientX ?? null; }}
+      onTouchEnd={e => {
+        if (touchX.current == null) return;
+        const dx = (e.changedTouches[0]?.clientX ?? touchX.current) - touchX.current;
+        touchX.current = null;
+        if (Math.abs(dx) > 50) onNav(dx < 0 ? 1 : -1);
+      }}>
+      <button onClick={e => { e.stopPropagation(); onClose(); }} className="absolute top-3 right-3 p-2 text-white/70 hover:text-white z-10"><X size={24} /></button>
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 text-white/70 text-sm select-none">
+        {index + 1} / {atts.length} · <span className="text-white/90">{a.filename}</span>
+      </div>
+      {atts.length > 1 && (
+        <button onClick={e => { e.stopPropagation(); onNav(-1); }}
+          className="absolute left-2 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 text-white hover:bg-white/25 z-10"><ChevronLeft size={26} /></button>
+      )}
+      {atts.length > 1 && (
+        <button onClick={e => { e.stopPropagation(); onNav(1); }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 text-white hover:bg-white/25 z-10"><ChevronRight size={26} /></button>
+      )}
+      <div className="max-w-[92vw] max-h-[84vh]" onClick={e => e.stopPropagation()}>
+        {a.is_image && a.url ? (
+          <img src={a.url} alt={a.filename} className="max-w-[92vw] max-h-[84vh] object-contain rounded-lg" />
+        ) : (
+          <div className="bg-white rounded-xl p-6 flex flex-col items-center gap-3 min-w-[260px]">
+            <FileText size={40} className="text-powder-600" />
+            <div className="text-sm font-medium text-gray-900 text-center break-all max-w-[70vw]">{a.filename}</div>
+            <div className="text-xs text-gray-400">{fmtSize(a.size)}</div>
+            <a href={a.url || undefined} target="_blank" rel="noreferrer" download={a.filename}
+              className="mt-1 flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
+              <Download size={15} /> Download / open
+            </a>
+          </div>
+        )}
+      </div>
+      <a href={a.url || undefined} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+        className="absolute bottom-4 right-4 text-white/60 hover:text-white text-xs underline">Open in new tab</a>
+    </div>
   );
 }
 
@@ -487,12 +545,14 @@ function EmojiPicker({ onPick, onClose, align = 'right', vertical = 'down' }) {
   );
 }
 
-function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, canTranslate, viewerLang, onTranslate, autoTranslate, mentionUsers }) {
+function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, canTranslate, viewerLang, onTranslate, autoText, highlighted, mentionUsers }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.body || '');
   const [translated, setTranslated] = useState(null);
   const [translating, setTranslating] = useState(false);
+  const [tapped, setTapped] = useState(false); // mobile: tap a message to reveal actions
+  const [lightbox, setLightbox] = useState(null); // index into m.attachments
   const mine = m.user_id === me.id;
 
   const doTranslate = useCallback(async () => {
@@ -502,23 +562,21 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
     finally { setTranslating(false); }
   }, [translating, translated, onTranslate, m, viewerLang]);
 
-  // Channel-level "translate everything" + language changes. Keyed only on the
-  // toggle and language so a manual translate (which mutates local state) is not
-  // wiped. Auto on → translate; auto off / lang change → clear so the next
-  // request uses the current language.
-  useEffect(() => {
-    let cancelled = false;
-    if (autoTranslate && canTranslate && m.body && !m.deleted) {
-      (async () => { try { const t = await onTranslate(m, viewerLang); if (!cancelled) setTranslated(t); } catch { /* ignore */ } })();
-    } else {
-      setTranslated(null);
-    }
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoTranslate, viewerLang]);
+  // Channel-level auto-translate arrives pre-batched from the parent (autoText);
+  // a manual per-message translate (translated) always wins.
+  const displayBody = translated ?? (autoText || m.body);
+  const isAutoTranslated = !translated && autoText && autoText !== m.body;
+
+  const onRowClick = (e) => {
+    // Reveal/hide the action bar on tap (touch devices have no hover). Ignore
+    // taps on interactive elements so buttons/links behave normally.
+    if (e.target.closest('a, button, input, textarea, select')) return;
+    setTapped(t => !t);
+  };
 
   return (
-    <div className="group flex gap-2 px-4 py-1.5 hover:bg-gray-50">
+    <div onClick={onRowClick}
+      className={`group flex gap-2 px-4 py-1.5 hover:bg-gray-50 transition-colors ${highlighted ? 'bg-amber-50 ring-1 ring-inset ring-amber-300' : ''}`}>
       <div className="h-8 w-8 rounded-lg bg-powder-100 text-powder-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
         {m.user_name?.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
       </div>
@@ -539,20 +597,26 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
         ) : (
           m.body && (
             <div>
-              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{renderBody(translated ?? m.body, mentionUsers, me.name)}</p>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{renderBody(displayBody, mentionUsers, me.name)}</p>
               {translating && <span className="text-[11px] text-gray-400 italic">Translating…</span>}
               {translated && (
                 <button onClick={() => setTranslated(null)} className="text-[11px] text-powder-600 hover:underline">
                   Translated to {viewerLang === 'en' ? 'English' : 'Spanish'} · Show original
                 </button>
               )}
+              {isAutoTranslated && <span className="text-[11px] text-gray-400 italic">translated</span>}
             </div>
           )
         )}
         {!m.deleted && m.attachments?.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {m.attachments.map(a => <Attachment key={a.id} a={a} />)}
+            {m.attachments.map((a, i) => <Attachment key={a.id} a={a} onOpen={() => setLightbox(i)} />)}
           </div>
+        )}
+        {lightbox !== null && m.attachments?.length > 0 && (
+          <Lightbox atts={m.attachments} index={lightbox}
+            onNav={(d) => setLightbox(i => (i + d + m.attachments.length) % m.attachments.length)}
+            onClose={() => setLightbox(null)} />
         )}
         {m.reactions?.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
@@ -576,7 +640,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
         )}
       </div>
       {!m.deleted && (
-        <div className="relative opacity-0 group-hover:opacity-100 flex items-start gap-1 shrink-0">
+        <div className={`relative ${tapped ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 flex items-start gap-1 shrink-0`}>
           <button onClick={() => setShowEmoji(s => !s)} className="p-1 text-gray-400 hover:text-gray-600" data-tip="React"><Smile size={14} /></button>
           {onReply && <button onClick={() => onReply(m)} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Reply in thread"><MessageSquare size={13} /></button>}
           {canTranslate && m.body && !translated && <button onClick={doTranslate} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Translate"><Languages size={13} /></button>}
@@ -592,7 +656,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   );
 }
 
-export default function CommsView({ user, onExit, onGoToSchedule, openChannelName, openChannelId, backLabel, onBackToModule, homePref, onSetHome }) {
+export default function CommsView({ user, onExit, onGoToSchedule, openChannelName, openChannelId, openMessageId, backLabel, onBackToModule, homePref, onSetHome }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
@@ -603,6 +667,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   const pushOn = !!commsStatus?.push;
   const [viewerLang, setViewerLang] = useState(() => localStorage.getItem('op_lang') || 'en');
   const [autoTranslate, setAutoTranslate] = useState(false);
+  const [autoTrans, setAutoTrans] = useState({}); // `${messageId}:${lang}` -> translated text (null = failed, skip)
+  const [highlightId, setHighlightId] = useState(null); // deep-linked message flash
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [activeId, setActiveId] = useState(null);
@@ -704,9 +770,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   // Schedule's "Discuss" → #production) wins, else #general, else the first.
   useEffect(() => {
     if (activeId || !list.length) return;
-    // From a push notification: open the exact channel by id.
+    // From a push notification: open the exact channel by id. Use openChannel()
+    // (not bare setActiveId) so phones land in the conversation, not the list.
     if (openChannelId && linkedOpenedRef.current !== openChannelId && list.some(c => c.id === openChannelId)) {
-      linkedOpenedRef.current = openChannelId; setActiveId(openChannelId); return;
+      linkedOpenedRef.current = openChannelId; openChannel(openChannelId); return;
     }
     if (openChannelName && linkedOpenedRef.current !== openChannelName) {
       // Tolerate underscores / hyphens / spacing differences (e.g. a link to
@@ -714,7 +781,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
       const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const t = norm(openChannelName);
       const target = list.find(c => norm(c.name) === t) || list.find(c => norm(c.name).includes(t));
-      if (target) { linkedOpenedRef.current = openChannelName; setActiveId(target.id); return; }
+      if (target) { linkedOpenedRef.current = openChannelName; openChannel(target.id); return; }
     }
     setActiveId((publicCh.find(c => c.name === 'general') || list[0]).id);
   }, [list, activeId, openChannelName, openChannelId]); // eslint-disable-line
@@ -796,33 +863,36 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     return () => clearInterval(t);
   }, [typers.length]);
 
-  // Force scroll-to-bottom when a channel is opened (messages load async).
-  useEffect(() => { justOpenedRef.current = true; setShowJump(false); }, [activeId]);
-  // On new messages, follow only if the reader is already near the bottom (so we
-  // don't yank them down while they're reading history); always land firmly on
-  // the latest message right after opening a channel.
+  // "Pinned to latest" scroll model. A channel opens pinned to the newest
+  // message and STAYS pinned through async loads and late layout (images,
+  // avatars) via a ResizeObserver on the content — the previous frame-based pin
+  // was consumed by the empty-list render on channel switch, which is why
+  // channels kept opening on old messages. Scrolling up unpins (reading
+  // history); scrolling back near the bottom re-pins.
+  const pinnedRef = useRef(true);
+  useEffect(() => { pinnedRef.current = true; justOpenedRef.current = true; setShowJump(false); }, [activeId]);
   useEffect(() => {
     const el = scrollRef.current; if (!el) return;
-    if (justOpenedRef.current) {
-      // Re-pin across a couple of frames so late layout (avatars, images,
-      // attachments changing height) can't leave a gap that would otherwise pop
-      // a needless "Jump to latest".
-      const pin = () => { const n = scrollRef.current; if (n) n.scrollTop = n.scrollHeight; };
-      pin();
-      requestAnimationFrame(pin);
-      setTimeout(pin, 80);
-      justOpenedRef.current = false;
-      setShowJump(false);
-      return;
-    }
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (near) { el.scrollTop = el.scrollHeight; setShowJump(false); }
+    const content = el.firstElementChild;
+    const pin = () => { if (pinnedRef.current && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; };
+    pin();
+    const ro = new ResizeObserver(pin);
+    if (content) ro.observe(content);
+    ro.observe(el); // container resizes (keyboard opening on mobile) re-pin too
+    return () => ro.disconnect();
+  }, [activeId]);
+  useEffect(() => {
+    const el = scrollRef.current; if (!el) return;
+    if (pinnedRef.current) { el.scrollTop = el.scrollHeight; setShowJump(false); }
   }, [messages]);
   const onMessagesScroll = () => {
     const el = scrollRef.current; if (!el) return;
-    setShowJump(el.scrollHeight - el.scrollTop - el.clientHeight > 240);
+    const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    pinnedRef.current = fromBottom < 120;
+    setShowJump(fromBottom > 240);
   };
   const jumpToLatest = () => {
+    pinnedRef.current = true;
     const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight;
     setShowJump(false);
   };
@@ -907,6 +977,67 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     return r.text;
   }, []);
   const setLang = (l) => { setViewerLang(l); localStorage.setItem('op_lang', l); };
+
+  // Channel auto-translate: batch-translate everything on screen in ONE request
+  // (the old per-message burst rate-limited and looked broken). Cache-aware on
+  // the server; results accumulate in autoTrans keyed by message+lang.
+  const translatingBatch = useRef(false);
+  useEffect(() => {
+    if (!autoTranslate || !translateOn || !activeId || !messages.length) return;
+    const need = messages.filter(m => m.body && !m.deleted && autoTrans[`${m.id}:${viewerLang}`] === undefined).map(m => m.id);
+    if (!need.length || translatingBatch.current) return;
+    translatingBatch.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiPost(`/comms/channels/${activeId}/translate`, { ids: need, lang: viewerLang });
+        if (cancelled) return;
+        setAutoTrans(prev => {
+          const n = { ...prev };
+          for (const id of need) n[`${id}:${viewerLang}`] = r.translations[id] ?? null;
+          return n;
+        });
+      } catch { /* retried on next messages/lang change */ }
+      finally { translatingBatch.current = false; }
+    })();
+    return () => { cancelled = true; };
+  }, [autoTranslate, viewerLang, messages, activeId, translateOn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Deep link from a push notification: land on the exact message. If it's a
+  // thread reply, open the thread drawer too. Highlight briefly either way.
+  const pendingMsgRef = useRef(null);
+  useEffect(() => { if (openMessageId) pendingMsgRef.current = openMessageId; }, [openMessageId]);
+  useEffect(() => {
+    const mid = pendingMsgRef.current;
+    if (!mid || !activeId || !messages.length) return;
+    const inList = messages.find(x => x.id === mid);
+    const finish = (targetId) => {
+      pendingMsgRef.current = null;
+      pinnedRef.current = false; // we're navigating to a specific spot, not the bottom
+      setHighlightId(targetId);
+      requestAnimationFrame(() => {
+        document.querySelector(`[data-mid="${targetId}"]`)?.scrollIntoView({ block: 'center' });
+      });
+      setTimeout(() => setHighlightId(null), 3000);
+    };
+    if (inList) { finish(mid); return; }
+    // Not in the main list — likely a thread reply. Resolve its parent and open
+    // the thread drawer on it.
+    (async () => {
+      try {
+        const m = await apiFetch(`/comms/messages/${mid}`);
+        if (m.channel_id !== activeId) return; // channel changed underneath us
+        if (m.parent_id) {
+          const parent = messages.find(x => x.id === m.parent_id) || await apiFetch(`/comms/messages/${m.parent_id}`);
+          pendingMsgRef.current = null;
+          setReplyTo(parent);
+          if (messages.some(x => x.id === m.parent_id)) finish(m.parent_id);
+        } else {
+          pendingMsgRef.current = null; // older than the loaded window; give up quietly
+        }
+      } catch { pendingMsgRef.current = null; }
+    })();
+  }, [messages, activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pushSupported = ('serviceWorker' in navigator) && ('PushManager' in window);
 
@@ -1290,17 +1421,21 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                 )}
               </div>
               <div ref={scrollRef} onScroll={onMessagesScroll} className="flex-1 overflow-y-auto py-2">
+                <div>{/* single wrapper so the pinned-scroll ResizeObserver sees content height */}
                 {messages.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello 👋</p>}
                 {messages.map((m, i) => {
                   const showDay = i === 0 || dayKey(m.created_at) !== dayKey(messages[i - 1].created_at);
                   return (
-                    <div key={m.id}>
+                    <div key={m.id} data-mid={m.id}>
                       {showDay && <DateDivider iso={m.created_at} />}
                       <Message m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg} onReply={setReplyTo} onMarkUnread={markUnread}
-                        canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} autoTranslate={autoTranslate} mentionUsers={users} />
+                        canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage}
+                        autoText={autoTranslate ? autoTrans[`${m.id}:${viewerLang}`] : null}
+                        highlighted={highlightId === m.id} mentionUsers={users} />
                     </div>
                   );
                 })}
+                </div>
               </div>
               {showJump && (
                 <div className="relative">

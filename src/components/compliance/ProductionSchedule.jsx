@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect, forwardRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
-import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock, MessageSquare } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock } from 'lucide-react';
+import DiscussLink from '../DiscussLink.jsx';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -1177,13 +1178,7 @@ export default function ProductionSchedule({ user }) {
         </h2>
 
         <div className="flex items-center gap-1.5 shrink-0">
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent('open-comms-channel', { detail: { channel: 'production_schedule', from: 'production-schedule', fromLabel: 'Schedule' } }))}
-          className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1.5"
-          title="Discuss this schedule in Messages"
-        >
-          <MessageSquare size={14} /> <span className="hidden sm:inline">Discuss</span>
-        </button>
+        <DiscussLink moduleId="production-schedule" defaultChannel="production_schedule" fromLabel="Schedule" isAdmin={canEdit} />
         {canEdit && (
           <div className="relative">
             <button
