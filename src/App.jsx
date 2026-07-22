@@ -40,6 +40,7 @@ import ProductionDashboard from './components/compliance/ProductionDashboard.jsx
 import COAPanel from './components/compliance/COAPanel.jsx';
 import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
+import PageInfo from './components/PageInfo.jsx';
 
 const NAV_GROUPS = [
   {
@@ -977,7 +978,10 @@ function App() {
         {/* Desktop top bar */}
         <header className="hidden md:block bg-white border-b border-gray-200 sticky top-0 z-30">
           <div className="px-6 lg:px-8 py-2.5 flex items-center justify-between max-w-7xl mx-auto">
-            <h1 className="text-sm font-semibold text-gray-700">{activeItem?.label || 'Dashboard'}</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-sm font-semibold text-gray-700">{activeItem?.label || 'Dashboard'}</h1>
+              <PageInfo moduleId={resolvedTab} title={activeItem?.label || 'Dashboard'} />
+            </div>
             <div className="flex items-center gap-3">
               <ModuleSearch user={user} onNavigate={setActiveTab} />
               <button onClick={() => setHome('fsqa')} data-tip={homePref === 'fsqa' ? 'ReadyDoc is your home screen' : 'Make ReadyDoc your home screen'}
@@ -1003,7 +1007,10 @@ function App() {
               <Menu size={22} />
             </button>
             <div className="flex-1 min-w-0">
-              <h1 className="text-sm font-bold text-gray-900 truncate">{activeItem?.label || 'Dashboard'}</h1>
+              <div className="flex items-center gap-1 min-w-0">
+                <h1 className="text-sm font-bold text-gray-900 truncate">{activeItem?.label || 'Dashboard'}</h1>
+                <PageInfo moduleId={resolvedTab} title={activeItem?.label || 'Dashboard'} />
+              </div>
             </div>
             <NotificationBell notifications={notifications} onNavigate={setActiveTab} />
             {user.role === 'admin' && (

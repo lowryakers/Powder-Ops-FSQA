@@ -1,6 +1,32 @@
 import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, CheckCircle, Eye, X, Check, XCircle } from 'lucide-react';
+import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, Clock } from 'lucide-react';
+
+// SQF/NSF 72-hour idle rule: rooms whose last passed clean is 72h+ old (unused
+// since) need a re-clean before use; rooms used after their last clean are dirty.
+function RecleanBanner() {
+  const { data } = useApiGet('/sanitation/reclean-status');
+  const flagged = (data?.rooms || []).filter(r => r.status === 'expired_72h' || r.status === 'dirty');
+  if (!flagged.length) return null;
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 mb-1.5">
+        <AlertTriangle size={15} /> Re-clean required before next use ({flagged.length})
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {flagged.map(r => (
+          <span key={r.room} className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-amber-200 rounded-lg text-xs text-gray-700">
+            <span className="font-medium">{r.room}</span>
+            {r.status === 'expired_72h'
+              ? <span className="text-amber-700 inline-flex items-center gap-0.5"><Clock size={11} /> idle {r.hours_since_clean}h since clean (72h rule)</span>
+              : <span className="text-red-600">used after last clean</span>}
+          </span>
+        ))}
+      </div>
+      <p className="text-[11px] text-amber-700 mt-1.5">SQF/NSF 72-hour rule: a cleaned room or line that sits idle 72+ hours requires a fresh clean before production.</p>
+    </div>
+  );
+}
 
 const TYPE_LABELS = { pre_op: 'Pre-Op', post_op: 'Post-Op', mid_shift: 'Mid-Shift', deep_clean: 'Deep Clean', emergency: 'Emergency' };
 const TYPE_COLORS = { pre_op: 'bg-blue-100 text-blue-800', post_op: 'bg-purple-100 text-purple-800', mid_shift: 'bg-yellow-100 text-yellow-800', deep_clean: 'bg-teal-100 text-teal-800', emergency: 'bg-red-100 text-red-800' };
@@ -249,6 +275,8 @@ export default function SanitationPanel() {
           <Plus size={16} /> New Record
         </button>
       </div>
+
+      <RecleanBanner />
 
       {showForm && <RecordForm equipment={equipment} chemicals={chemicals} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
 

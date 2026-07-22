@@ -22,6 +22,39 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// SQF/NSF 72-hour idle rule: a cleaned room whose clean is 72h+ old (with no
+// newer clean) must be re-cleaned before use, and any room used after its last
+// clean is dirty. Rooms come from wherever they appear (production entries,
+// schedule, sanitation history). Registered before /:id so it isn't shadowed.
+router.get('/reclean-status', (req, res) => {
+  const db = getDb();
+  const rooms = new Set();
+  try { db.prepare("SELECT DISTINCT room FROM production_entries WHERE room IS NOT NULL").all().forEach(r => rooms.add(r.room)); } catch { /* optional */ }
+  try { db.prepare("SELECT DISTINCT room FROM production_schedule WHERE room IS NOT NULL AND room_type != 'cleaning'").all().forEach(r => rooms.add(r.room)); } catch { /* optional */ }
+  try { db.prepare('SELECT DISTINCT area FROM sanitation_records').all().forEach(r => rooms.add(r.area)); } catch { /* optional */ }
+  const lastClean = db.prepare("SELECT MAX(performed_at) t FROM sanitation_records WHERE area = ? AND result = 'pass'");
+  const lastUse = db.prepare('SELECT MAX(date) t FROM production_entries WHERE room = ?');
+  const now = Date.now();
+  const out = [];
+  for (const room of rooms) {
+    const clean = lastClean.get(room).t;
+    const used = lastUse.get(room).t;
+    let status, hoursIdle = null;
+    if (!clean) {
+      status = used ? 'no_clean_on_record' : 'unknown';
+    } else if (used && used > clean.slice(0, 10)) {
+      status = 'dirty'; // used after the last passed clean
+    } else {
+      hoursIdle = Math.floor((now - new Date(clean.replace(' ', 'T') + 'Z').getTime()) / 3600000);
+      status = hoursIdle >= 72 ? 'expired_72h' : 'clean';
+    }
+    out.push({ room, status, last_clean: clean, last_use: used, hours_since_clean: hoursIdle });
+  }
+  const order = { expired_72h: 0, dirty: 1, no_clean_on_record: 2, clean: 3, unknown: 4 };
+  out.sort((a, b) => order[a.status] - order[b.status] || a.room.localeCompare(b.room));
+  res.json({ rooms: out, rule_hours: 72 });
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const record = db.prepare(`SELECT sr.*, e.name as equipment_name

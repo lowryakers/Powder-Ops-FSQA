@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
+import { QMS_TYPES } from '../qms-config.js';
 
 const router = Router();
 
@@ -204,6 +205,38 @@ router.get('/notifications', (req, res) => {
   let pendingQA = 0;
   try { pendingQA = db.prepare("SELECT COUNT(*) as c FROM production_entries WHERE qa_signoff_by IS NULL").get().c; } catch {}
 
+  // Pending in-system approvals across the QMS logs + disposals + COA, routed
+  // to the people who can act on them (QA / Document Control / supervisors /
+  // admins) so nothing sits isolated inside a module.
+  const role = req.user?.role, dept = req.user?.department;
+  const isApprover = role === 'admin' || role === 'supervisor' || ['qa', 'document_control'].includes(dept);
+  let qmsPending = [], disposalsPending = 0, coaPending = 0;
+  if (isApprover) {
+    try {
+      const rows = db.prepare('SELECT record_type, approvals, paper_record FROM qms_records').all();
+      const counts = {};
+      for (const r of rows) {
+        if (r.paper_record) continue;
+        const cfg = QMS_TYPES[r.record_type];
+        const required = (cfg?.approvals || []).filter(a => a.required);
+        if (!required.length) continue;
+        let approvals = {};
+        try { approvals = JSON.parse(r.approvals || '{}'); } catch { approvals = {}; }
+        if (required.some(a => !approvals[a.key])) counts[r.record_type] = (counts[r.record_type] || 0) + 1;
+      }
+      qmsPending = Object.entries(counts).map(([type, c]) => ({ type, count: c, cfg: QMS_TYPES[type] }));
+    } catch { /* table optional */ }
+    try {
+      const drows = db.prepare('SELECT approvals, paper_record FROM disposals').all();
+      disposalsPending = drows.filter(d => {
+        if (d.paper_record) return false;
+        let a = {}; try { a = JSON.parse(d.approvals || '{}'); } catch { a = {}; }
+        return !a.ops_manager || !a.quality_control;
+      }).length;
+    } catch { /* table optional */ }
+    try { coaPending = db.prepare("SELECT COUNT(*) as c FROM coa_requests WHERE status IN ('pending','sent')").get().c; } catch { /* optional */ }
+  }
+
   const items = [];
   if (overdueWOs > 0) items.push({ id: 'pm-overdue', tab: 'pm', severity: 'critical', label: `${overdueWOs} overdue PM work order${overdueWOs > 1 ? 's' : ''}` });
   if (dueSoonWOs > 0) items.push({ id: 'pm-due-soon', tab: 'pm', severity: 'warning', label: `${dueSoonWOs} PM work order${dueSoonWOs > 1 ? 's' : ''} due within 7 days` });
@@ -215,6 +248,11 @@ router.get('/notifications', (req, res) => {
   if (flaggedIssues > 0) items.push({ id: 'flagged', tab: 'pm', severity: 'critical', label: `${flaggedIssues} flagged issue${flaggedIssues > 1 ? 's' : ''} requiring attention` });
   if (sopReviewDue > 0) items.push({ id: 'sop-review', tab: 'sops', severity: 'info', label: `${sopReviewDue} SOP${sopReviewDue > 1 ? 's' : ''} past review date` });
   if (pendingQA > 0) items.push({ id: 'production-qa', tab: 'production-log', severity: 'warning', label: `${pendingQA} production entr${pendingQA > 1 ? 'ies' : 'y'} pending QA sign-off` });
+  for (const q of qmsPending) {
+    items.push({ id: `qms-approval-${q.type}`, tab: q.cfg?.moduleId || 'deviations', severity: 'warning', label: `${q.count} ${q.cfg?.label || q.type} record${q.count > 1 ? 's' : ''} awaiting approval` });
+  }
+  if (disposalsPending > 0) items.push({ id: 'disposal-approvals', tab: 'disposals', severity: 'warning', label: `${disposalsPending} disposal${disposalsPending > 1 ? 's' : ''} awaiting Ops/QA sign-off` });
+  if (coaPending > 0) items.push({ id: 'coa-pending', tab: 'coa', severity: 'info', label: `${coaPending} lab request${coaPending > 1 ? 's' : ''} awaiting results` });
 
   const badges = {};
   for (const item of items) {
