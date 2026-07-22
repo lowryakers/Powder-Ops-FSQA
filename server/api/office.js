@@ -2,26 +2,85 @@ import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
-import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
-import { aiEnabled, translateText } from '../ai.js';
+import { storageEnabled, putObject, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
+import { aiEnabled, translateText, transcribeImage } from '../ai.js';
+import { extractPdfText } from './documents.js';
 
 // Office Ops: supply ordering + time tracking (replaces two Monday boards).
-// Submitting is open to supervisors + admins; managing the logs is admin-only
-// (Marnee). Invoices upload to R2 when storage is configured.
+// Submitting is open to supervisors + admins (or anyone explicitly granted the
+// Requests module); managing the logs is admin-only (Marnee). Invoices upload
+// to R2 when storage is configured and their contents are indexed for search.
 
 const router = Router();
-const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 5 } });
+const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 20 } });
 
 function canSubmit(req) {
-  return req.user?.role === 'admin' || req.user?.role === 'supervisor';
+  const u = req.user;
+  if (u?.role === 'admin' || u?.role === 'supervisor') return true;
+  // Explicit "Requests" module grant (set per user in Settings).
+  const ma = u?.module_access;
+  if (Array.isArray(ma)) return ma.includes('office-requests');
+  return !!(ma && ma['office-requests']);
 }
 function requireSubmit(req, res) {
-  if (!canSubmit(req)) { res.status(403).json({ error: 'Only supervisors and admins can use this form.' }); return false; }
+  if (!canSubmit(req)) { res.status(403).json({ error: 'Only supervisors, admins, or users granted the Requests module can use this form.' }); return false; }
   return true;
 }
 function requireAdmin(req, res) {
   if (req.user?.role !== 'admin') { res.status(403).json({ error: 'Admin only.' }); return false; }
   return true;
+}
+
+// ── Invoice content indexing ─────────────────────────────────────────────────
+// Same idea as the SOP/Job-Description importer: pull the text out of each
+// uploaded file so search covers what's INSIDE the invoice, not just its
+// filename. PDFs go through pdfjs; photos/scans go through AI vision OCR.
+// Failures store '' so a broken file isn't retried forever.
+async function extractInvoiceText(buffer, contentType, filename) {
+  try {
+    const isPdf = /pdf/i.test(contentType || '') || /\.pdf$/i.test(filename || '');
+    if (isPdf) {
+      // extractPdfText returns { text, pages }. Scanned PDFs with no text
+      // layer yield '' — nothing else to try without page rendering.
+      const res = await extractPdfText(buffer);
+      const text = typeof res === 'string' ? res : (res?.text || '');
+      return text.trim().slice(0, 20000);
+    }
+    if (/^image\//i.test(contentType || '') && aiEnabled()) {
+      const mediaTypes = { 'image/jpeg': 'image/jpeg', 'image/jpg': 'image/jpeg', 'image/png': 'image/png', 'image/webp': 'image/webp', 'image/gif': 'image/gif' };
+      const mt = mediaTypes[(contentType || '').toLowerCase()];
+      if (mt) {
+        const text = await transcribeImage(buffer, mt);
+        return (text || '').trim().slice(0, 20000);
+      }
+    }
+  } catch (e) {
+    console.warn('[invoices] text extraction failed:', e.message);
+  }
+  return '';
+}
+
+function saveInvoiceText(db, id, text) {
+  try { db.prepare('UPDATE supply_invoices SET extracted_text = ? WHERE id = ?').run(text ?? '', id); } catch { /* column optional */ }
+}
+
+// Index any invoices uploaded before content indexing existed (or whose
+// extraction previously failed at upload time). Runs once per boot, off the
+// startup path; capped so a huge backlog spreads across restarts.
+export async function backfillInvoiceText() {
+  if (!storageEnabled()) return;
+  const db = getDb();
+  let rows;
+  try { rows = db.prepare('SELECT id, storage_key, content_type, filename FROM supply_invoices WHERE extracted_text IS NULL ORDER BY created_at DESC LIMIT 100').all(); } catch { return; }
+  if (!rows?.length) return;
+  let done = 0;
+  for (const r of rows) {
+    const buf = await getObjectBuffer(r.storage_key);
+    const text = buf ? await extractInvoiceText(buf, r.content_type, r.filename) : '';
+    saveInvoiceText(db, r.id, text);
+    if (text) done++;
+  }
+  console.log(`[invoices] Indexed contents of ${rows.length} invoice file(s) (${done} with text)`);
 }
 
 // ── Supply orders ────────────────────────────────────────────────────────────
@@ -115,7 +174,8 @@ router.get('/supply/invoices', async (req, res) => {
   const { q } = req.query;
   let sql = 'SELECT * FROM supply_invoices WHERE 1=1';
   const params = [];
-  if (q) { sql += ' AND (filename LIKE ? OR supplier LIKE ? OR notes LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  // Search covers the indexed file contents too (what's written INSIDE the invoice).
+  if (q) { sql += ' AND (filename LIKE ? OR supplier LIKE ? OR notes LIKE ? OR extracted_text LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   sql += ' ORDER BY COALESCE(invoice_date, created_at) DESC LIMIT 500';
   const rows = db.prepare(sql).all(...params);
   const out = await Promise.all(rows.map(async r => ({ ...r, url: await presignGet(r.storage_key, r.filename).catch(() => null) })));
@@ -138,6 +198,10 @@ router.post('/supply/invoices', invoiceUpload.array('files', 20), async (req, re
       .run(id, f.originalname, key, f.size, f.mimetype, req.body.supplier || null, req.body.invoice_date || null,
         req.body.total ? Number(req.body.total) : null, req.body.notes || null, req.user.name);
     created.push(db.prepare('SELECT * FROM supply_invoices WHERE id = ?').get(id));
+    // Index the file's contents in the background so upload stays snappy.
+    extractInvoiceText(f.buffer, f.mimetype, f.originalname)
+      .then(text => saveInvoiceText(getDb(), id, text))
+      .catch(() => saveInvoiceText(getDb(), id, ''));
   }
   logAudit(req.user, 'create', 'supply_invoice', created[0].id, { count: created.length }, null, null);
   res.status(201).json(created);

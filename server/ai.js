@@ -110,6 +110,26 @@ export async function generateTestQuestions({ title, description, sopText, count
 // Translate one or more strings to Spanish, preserving Markdown/formatting.
 // Returns an array aligned to the input array. Meant to be reviewed/edited by a
 // human before it's relied on for compliance.
+// OCR an image (photo/scan of an invoice or receipt) via vision. Returns the
+// transcribed plain text, or null when AI is not configured / nothing legible.
+export async function transcribeImage(buffer, mediaType) {
+  const c = getClient();
+  if (!c) return null;
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 2000,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: buffer.toString('base64') } },
+        { type: 'text', text: 'Transcribe ALL text visible in this document image (it is an invoice or receipt). Output plain text only — supplier name, dates, invoice/PO numbers, every line item, and every amount you can read. No commentary, no formatting markup.' },
+      ],
+    }],
+  });
+  const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+  return text || null;
+}
+
 export async function translateToSpanish(items) {
   const c = getClient();
   if (!c) throw new Error('AI is not configured');

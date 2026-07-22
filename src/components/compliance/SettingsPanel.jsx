@@ -60,6 +60,15 @@ const MODULE_GROUPS = [
     ],
   },
   {
+    label: 'Office',
+    modules: [
+      // Requests is automatic for every supervisor; granting it here extends
+      // the Supply Order + Time Tracking forms to a non-supervisor (e.g. office
+      // staff). The full Supply Orders / Time Tracking modules stay admin-only.
+      { id: 'office-requests', label: 'Requests (Supply Order + Time forms)' },
+    ],
+  },
+  {
     label: 'Quality Records',
     modules: [
       { id: 'dcr', label: 'Document Change Requests' },

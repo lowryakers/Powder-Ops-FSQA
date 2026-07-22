@@ -44,7 +44,7 @@ import { pushEnabled } from './server/push.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
 import coaRoutes from './server/api/coa.js';
-import officeRoutes from './server/api/office.js';
+import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries } from './server/production-seed.js';
 import { seedTrainingCourses } from './server/training-seed.js';
@@ -1310,6 +1310,8 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`[server] FSQA Compliance Platform running on port ${PORT} (build ${BUILD_VERSION})`);
   // Backfill message embeddings in the background (no-op unless Voyage is configured).
   backfillEmbeddings().catch(e => console.warn('[comms] embedding backfill error:', e.message));
+  // Index the contents of previously-uploaded invoices (no-op unless storage is on).
+  backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).
   try {

@@ -63,6 +63,19 @@ export async function presignGet(key, filename) {
   return getSignedUrl(c, cmd, { expiresIn: DOWNLOAD_TTL_SECONDS });
 }
 
+// Read an object back as a Buffer (used to index invoice contents), or null
+// when storage is off or the object is missing.
+export async function getObjectBuffer(key) {
+  const c = getClient();
+  if (!c) return null;
+  try {
+    const res = await c.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+    const chunks = [];
+    for await (const chunk of res.Body) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  } catch { return null; }
+}
+
 export async function deleteObject(key) {
   const c = getClient();
   if (!c) return;

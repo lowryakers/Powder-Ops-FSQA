@@ -146,8 +146,9 @@ function hasExplicitGrant(u, id) {
 const canSeeCheckedOut = (u) => isRicardo(u) || hasExplicitGrant(u, 'currently-out');
 
 // "Requests" (supply order + time tracking forms) is for every supervisor,
-// regardless of how their module access is trimmed — it's how they submit.
-const canSeeOfficeRequests = (u) => u?.role === 'supervisor';
+// regardless of how their module access is trimmed — plus anyone explicitly
+// granted the module in Settings (e.g. office staff who submit orders).
+const canSeeOfficeRequests = (u) => u?.role === 'supervisor' || hasExplicitGrant(u, 'office-requests');
 
 // Does this user's bottom tab bar include a Messages tab? If so, the bar stays
 // visible inside the Messages workspace too — those users navigate by tabs.

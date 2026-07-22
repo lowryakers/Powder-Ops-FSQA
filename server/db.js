@@ -848,6 +848,10 @@ function runMigrations() {
   addColumnIfMissing('production_schedule', 'flavor_approved_by', 'TEXT');
   addColumnIfMissing('production_schedule', 'flavor_approved_at', 'TEXT');
 
+  // Invoice content search: text pulled from the uploaded file (PDF text layer
+  // or vision OCR). NULL = not yet indexed; '' = indexed, nothing extractable.
+  addColumnIfMissing('supply_invoices', 'extracted_text', 'TEXT');
+
   // 72-hour re-clean workflow: per-room applicability overrides plus the
   // dismiss / N-A / not-in-use / task-assigned actions taken on a flag. An
   // action is bound to a flag_key (room + last clean + last use) so a new

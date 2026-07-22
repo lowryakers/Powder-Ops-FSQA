@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -612,13 +612,70 @@ function EmojiPicker({ onPick, onClose, align = 'right', vertical = 'down' }) {
   );
 }
 
+// Quick-reaction row shown at the top of the mobile action sheet.
+const QUICK_EMOJIS = ['👍', '✅', '🙏', '😂', '😮', '❤️'];
+
+// Slack-style bottom sheet for a message on mobile: quick reactions up top,
+// then the actions (reply / copy / translate / mark unread / edit / delete).
+function SheetRow({ icon: Icon, label, danger, act, onAction }) {
+  return (
+    <button onClick={() => onAction(act)}
+      className={`w-full flex items-center gap-3 px-3 h-12 rounded-xl text-[15px] text-left ${danger ? 'text-red-600' : 'text-gray-800'} active:bg-gray-100`}>
+      {Icon ? <Icon size={19} className={danger ? 'text-red-500' : 'text-gray-400'} />
+        : <span className="block h-3 w-3 ml-0.5 mr-1 rounded-full border-2 border-gray-400" />}
+      {label}
+    </button>
+  );
+}
+
+function MessageActionSheet({ preview, mine, canReply, canTranslate, canMarkUnread, onClose, onReact, onAction }) {
+  const [showAll, setShowAll] = useState(false);
+  return (
+    <div className="fixed inset-0 z-[80] flex flex-col justify-end md:hidden" onClick={e => { e.stopPropagation(); onClose(); }}>
+      <div className="absolute inset-0 bg-black/40" />
+      <div className="relative bg-white rounded-t-2xl px-3 pt-2 pb-8 animate-sheet-up max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="mx-auto h-1 w-10 rounded-full bg-gray-300 mb-2.5" />
+        {preview && <p className="text-xs text-gray-400 truncate px-1.5 mb-2.5">{preview}</p>}
+        <div className="flex items-center justify-between px-1 mb-2">
+          {QUICK_EMOJIS.map(e => (
+            <button key={e} onClick={() => onReact(e)} className="h-11 w-11 rounded-full bg-gray-50 active:bg-gray-200 text-2xl flex items-center justify-center">{e}</button>
+          ))}
+          <button onClick={() => setShowAll(s => !s)} className={`h-11 w-11 rounded-full flex items-center justify-center ${showAll ? 'bg-powder-100 text-powder-600' : 'bg-gray-50 text-gray-500'}`}>
+            <Smile size={20} />
+          </button>
+        </div>
+        {showAll && (
+          <div className="max-h-44 overflow-y-auto mb-2 border border-gray-100 rounded-xl p-1.5">
+            {PICKER_GROUPS.map(g => (
+              <div key={g.label} className="mb-1">
+                <div className="text-[10px] font-bold uppercase text-gray-400 px-1">{g.label}</div>
+                <div className="grid grid-cols-8 gap-0.5">
+                  {g.emojis.map((e, i) => <button key={g.label + i} onClick={() => onReact(e)} className="p-1 text-xl">{e}</button>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="border-t border-gray-100 pt-1">
+          {canReply && <SheetRow icon={MessageSquare} label="Reply in thread" act="reply" onAction={onAction} />}
+          <SheetRow icon={Copy} label="Copy text" act="copy" onAction={onAction} />
+          {canTranslate && <SheetRow icon={Languages} label="Translate" act="translate" onAction={onAction} />}
+          {canMarkUnread && <SheetRow icon={null} label="Mark unread from here" act="unread" onAction={onAction} />}
+          {mine && <SheetRow icon={Edit2} label="Edit message" act="edit" onAction={onAction} />}
+          {mine && <SheetRow icon={Trash2} label="Delete message" danger act="delete" onAction={onAction} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, canTranslate, viewerLang, onTranslate, autoText, highlighted, mentionUsers }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.body || '');
   const [translated, setTranslated] = useState(null);
   const [translating, setTranslating] = useState(false);
-  const [tapped, setTapped] = useState(false); // mobile: tap a message to reveal actions
+  const [sheet, setSheet] = useState(false); // mobile long-press action sheet
   const [lightbox, setLightbox] = useState(null); // index into m.attachments
   const mine = m.user_id === me.id;
 
@@ -634,16 +691,46 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   const displayBody = translated ?? (autoText || m.body);
   const isAutoTranslated = !translated && autoText && autoText !== m.body;
 
+  // Mobile interaction (Slack-style): quick tap opens the thread; a long-press
+  // (held still ~450ms) opens the action sheet. Desktop keeps the hover bar.
+  const pressTimer = useRef(null);
+  const pressPos = useRef(null);
+  const suppressClick = useRef(false);
+  const onTouchStart = (e) => {
+    if (m.deleted || editing) return;
+    const t = e.touches?.[0];
+    if (!t) return;
+    pressPos.current = { x: t.clientX, y: t.clientY };
+    pressTimer.current = setTimeout(() => { pressTimer.current = null; suppressClick.current = true; setSheet(true); }, 450);
+  };
+  const onTouchMove = (e) => {
+    if (!pressTimer.current || !pressPos.current) return;
+    const t = e.touches?.[0];
+    if (!t) return;
+    if (Math.abs(t.clientX - pressPos.current.x) > 10 || Math.abs(t.clientY - pressPos.current.y) > 10) {
+      clearTimeout(pressTimer.current); pressTimer.current = null;
+    }
+  };
+  const onTouchEnd = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
   const onRowClick = (e) => {
-    // Reveal/hide the action bar on tap (touch devices have no hover). Ignore
-    // taps on interactive elements so buttons/links behave normally.
     if (e.target.closest('a, button, input, textarea, select')) return;
-    setTapped(t => !t);
+    if (suppressClick.current) { suppressClick.current = false; return; }
+    // Touch: tap opens the thread (like Slack). Desktop uses the hover bar.
+    if (window.matchMedia?.('(hover: none)').matches && onReply && !m.deleted && !editing) onReply(m);
+  };
+  const handleSheetAction = (act) => {
+    setSheet(false);
+    if (act === 'reply' && onReply) onReply(m);
+    else if (act === 'copy') { try { navigator.clipboard?.writeText(displayBody || m.body || ''); } catch { /* ignore */ } }
+    else if (act === 'translate') doTranslate();
+    else if (act === 'unread' && onMarkUnread) onMarkUnread(m);
+    else if (act === 'edit') { setDraft(m.body || ''); setEditing(true); }
+    else if (act === 'delete') onDelete(m);
   };
 
   return (
-    <div onClick={onRowClick}
-      className={`group flex gap-2 px-4 py-1.5 hover:bg-gray-50 transition-colors ${highlighted ? 'bg-amber-50 ring-1 ring-inset ring-amber-300' : ''}`}>
+    <div onClick={onRowClick} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
+      className={`msg-row group flex gap-2 px-4 py-1.5 hover:bg-gray-50 transition-colors ${highlighted ? 'bg-amber-50 ring-1 ring-inset ring-amber-300' : ''}`}>
       <div className="h-8 w-8 rounded-lg bg-powder-100 text-powder-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
         {m.user_name?.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
       </div>
@@ -691,7 +778,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
               const reacted = r.users.includes(me.id);
               return (
                 <button key={r.emoji} onClick={() => reacted ? onUnreact(m, r.emoji) : onReact(m, r.emoji)}
-                  className={`px-1.5 py-0.5 rounded-full text-xs border ${reacted ? 'bg-powder-50 border-powder-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
+                  className={`px-2 py-1 text-sm md:px-1.5 md:py-0.5 md:text-xs rounded-full border ${reacted ? 'bg-powder-50 border-powder-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
                   {r.emoji} {r.count}
                 </button>
               );
@@ -706,8 +793,10 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
           </button>
         )}
       </div>
+      {/* Desktop hover actions only — on phones everything lives in the
+          long-press sheet, so messages get the full width. */}
       {!m.deleted && (
-        <div className={`relative ${tapped ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 flex items-start gap-1 shrink-0`}>
+        <div className="relative hidden md:flex opacity-0 group-hover:opacity-100 items-start gap-1 shrink-0">
           <button onClick={() => setShowEmoji(s => !s)} className="p-1 text-gray-400 hover:text-gray-600" data-tip="React"><Smile size={14} /></button>
           {onReply && <button onClick={() => onReply(m)} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Reply in thread"><MessageSquare size={13} /></button>}
           {canTranslate && m.body && !translated && <button onClick={doTranslate} className="p-1 text-gray-400 hover:text-gray-600" data-tip="Translate"><Languages size={13} /></button>}
@@ -718,6 +807,15 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
           {(mine) && <button onClick={() => onDelete(m)} className="p-1 text-gray-400 hover:text-red-500" data-tip="Delete" data-tip-left><Trash2 size={13} /></button>}
           {showEmoji && <EmojiPicker onPick={(e) => { onReact(m, e); setShowEmoji(false); }} onClose={() => setShowEmoji(false)} />}
         </div>
+      )}
+      {sheet && !m.deleted && (
+        <MessageActionSheet
+          preview={`${m.user_name}: ${(displayBody || '').slice(0, 80)}`}
+          mine={mine} canReply={!!onReply} canTranslate={canTranslate && !!m.body && !translated} canMarkUnread={!!onMarkUnread}
+          onClose={() => setSheet(false)}
+          onReact={(e) => { setSheet(false); onReact(m, e); }}
+          onAction={handleSheetAction}
+        />
       )}
     </div>
   );

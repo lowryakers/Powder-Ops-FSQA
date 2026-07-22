@@ -99,6 +99,24 @@ body { overflow-x: hidden; }
   animation: fade-in 0.25s ease-out;
 }
 
+/* Bottom action sheet (mobile message actions) slide-up. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.animate-sheet-up { animation: sheet-up 0.22s ease-out; }
+
+/* On touch screens, message rows are tap/long-press targets — suppress the
+   native text-selection magnifier and link callout (the action sheet has an
+   explicit "Copy text" instead). */
+@media (pointer: coarse) {
+  .msg-row, .msg-row * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
 /* Hide scrollbars on horizontally-scrollable chip/tab strips (still scrollable). */
 .no-scrollbar {
   -ms-overflow-style: none;

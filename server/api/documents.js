@@ -90,7 +90,8 @@ function clusterColumns(starts, tol) {
 
 // Pull text out of a PDF, reconstructing tables from text x/y positions so
 // ruled SOP tables come through as Markdown tables instead of jumbled text.
-async function extractPdfText(buffer) {
+// Exported: also indexes uploaded supply invoices for content search.
+export async function extractPdfText(buffer) {
   const pdfDoc = await getDocument({ data: new Uint8Array(buffer) }).promise;
   const parts = [];
   for (let p = 1; p <= pdfDoc.numPages; p++) {
