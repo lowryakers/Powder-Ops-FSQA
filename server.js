@@ -44,6 +44,7 @@ import { pushEnabled } from './server/push.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
 import coaRoutes from './server/api/coa.js';
+import officeRoutes from './server/api/office.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries } from './server/production-seed.js';
 import { seedTrainingCourses } from './server/training-seed.js';
@@ -420,6 +421,42 @@ try {
   } catch (e) {
     console.warn('[seed] Could not seed calibration weights:', e.message);
   }
+}
+
+// One-time import of the Monday.com Supply Orders + Time Tracking boards
+// (exported to JSON seeds). Flag-guarded so it never duplicates.
+try {
+  const flag = db.prepare("SELECT value FROM app_settings WHERE key = 'office_seeded'").get();
+  if (!flag) {
+    let nOrders = 0, nTime = 0;
+    try {
+      const orders = JSON.parse(readFileSync(path.join(__dirname, 'server', 'supply-orders-seed.json'), 'utf-8'));
+      const ins = db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, link, supplier, urgent, label, status, total, eta, invoice_link, submitted_at)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`);
+      db.transaction(() => {
+        for (const o of orders) {
+          ins.run(uuid(), o.item_name, o.qty, o.uom, o.link, o.supplier, o.urgent ? 1 : 0, o.label,
+            o.status || 'received', o.total, o.eta, o.invoice_link, o.submitted_at);
+          nOrders++;
+        }
+      })();
+    } catch (e) { console.warn('[seed] supply orders skipped:', e.message); }
+    try {
+      const times = JSON.parse(readFileSync(path.join(__dirname, 'server', 'time-tracking-seed.json'), 'utf-8'));
+      const insT = db.prepare(`INSERT INTO time_adjustments (id, employee_name, adjustment_type, adjustment_date, message, details, submitted_by, status)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+      db.transaction(() => {
+        for (const t of times) {
+          insT.run(uuid(), t.employee_name, t.adjustment_type || 'other', t.adjustment_date, t.message, t.details, t.submitted_by, t.status || 'reviewed');
+          nTime++;
+        }
+      })();
+    } catch (e) { console.warn('[seed] time tracking skipped:', e.message); }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('office_seeded','1',datetime('now'))").run();
+    if (nOrders || nTime) console.log(`[seed] Imported Monday boards: ${nOrders} supply orders, ${nTime} time entries`);
+  }
+} catch (e) {
+  console.warn('[seed] office import skipped:', e.message);
 }
 
 // Seed LOTO procedures for all equipment if none exist
@@ -1070,6 +1107,7 @@ app.use('/api/comms', commsRoutes);
 app.use('/api/mock-recalls', mockRecallRoutes);
 app.use('/api/production', productionRoutes);
 app.use('/api/coa', coaRoutes);
+app.use('/api/office', officeRoutes);
 
 // Version check (used by client to detect updates)
 app.get('/api/version', (_req, res) => {

@@ -1,0 +1,263 @@
+[
+{
+"message": "I have a doctors appointment at 10:00",
+"status": "reviewed",
+"employee_name": "Daniela Servin",
+"adjustment_date": "2026-05-12",
+"details": "I will give an update on how I\u2019m doing after my appointment in order to come in",
+"submitted_by": "Daniela s",
+"adjustment_type": "other"
+},
+{
+"message": "Sick",
+"status": "reviewed",
+"employee_name": "Gricelda Zavala",
+"adjustment_date": "2026-03-23",
+"details": null,
+"submitted_by": null,
+"adjustment_type": "other"
+},
+{
+"message": "Good Morning! Rene will be arriving at 8:00 am",
+"status": "reviewed",
+"employee_name": "Rene Operto",
+"adjustment_date": "2026-03-17",
+"details": "NA",
+"submitted_by": "Bernardo Enciso",
+"adjustment_type": "tardy_leave_early"
+},
+{
+"message": "Buenas tardes, Fernanda agudelo se retira, ya que se siente mal",
+"status": "reviewed",
+"employee_name": "Maria Fernanda Agudelo",
+"adjustment_date": "2026-03-17",
+"details": "Se retira debido a que se siente mal, tiene s\u00edntomas de gripe",
+"submitted_by": "Josefa Moy",
+"adjustment_type": "tardy_leave_early"
+},
+{
+"message": "Entrar\u00e1 a las 8:00",
+"status": "reviewed",
+"employee_name": "Crisitna Turci",
+"adjustment_date": "2026-03-18",
+"details": "Entrar\u00e1 temprano hoy",
+"submitted_by": "Jose Luna",
+"adjustment_type": "other"
+},
+{
+"message": "No asistir\u00e1 el d\u00eda de hoy",
+"status": "reviewed",
+"employee_name": "Maria Fernanda Agudelo",
+"adjustment_date": "2026-03-18",
+"details": "No asistir\u00e1 el d\u00eda de hoy, se encuentra enferma",
+"submitted_by": "Josefa Moy",
+"adjustment_type": "other"
+},
+{
+"message": "Hello Team, I won\u2019t be coming in to work tomorrow due to sickness! I will have my phone on me all day to answer calls or texts.",
+"status": "reviewed",
+"employee_name": "Maria Servin",
+"adjustment_date": "2026-03-19",
+"details": "I have fever and I am really sick",
+"submitted_by": "Maria Servin",
+"adjustment_type": "other"
+},
+{
+"message": "Good morning, Fernanda Agudelo is leaving at 8:00 a.m. due to an emergency. Once she resolves the situation, she will return to her duties.",
+"status": "reviewed",
+"employee_name": "Maria Fernanda Agudelo",
+"adjustment_date": "2026-03-23",
+"details": null,
+"submitted_by": "Josefa",
+"adjustment_type": "other"
+},
+{
+"message": "Maria L\u00f3pez",
+"status": "reviewed",
+"employee_name": "Maria Lopez",
+"adjustment_date": "2026-03-24",
+"details": "No se presentar\u00e1 a trabajar, debido a un dolor de cabeza y pierna, no puede caminar bien",
+"submitted_by": "Jos\u00e9 Luna",
+"adjustment_type": "other"
+},
+{
+"message": "Good morning, Please be informed that Olga Olgu\u00edn is stepping away from her duties due to an emergency.",
+"status": "reviewed",
+"employee_name": "Olga Olguin",
+"adjustment_date": "2026-03-24",
+"details": ".",
+"submitted_by": "Josefa Moy",
+"adjustment_type": "other"
+},
+{
+"message": "Arriving late",
+"status": "reviewed",
+"employee_name": "Maria Servin",
+"adjustment_date": "2026-03-31",
+"details": null,
+"submitted_by": "Mar\u00eda Servin",
+"adjustment_type": "tardy_leave_early"
+},
+{
+"message": "Dayanna Meza Leon",
+"status": "reviewed",
+"employee_name": "Dayana Meza",
+"adjustment_date": "2026-04-15",
+"details": "Will be gone from April 15-18",
+"submitted_by": "Dayanna Meza Leon",
+"adjustment_type": "other"
+},
+{
+"message": "Dayanna Meza Leon",
+"status": "reviewed",
+"employee_name": "Dayana Meza",
+"adjustment_date": "2026-04-03",
+"details": "Won\u2019t be there",
+"submitted_by": "Dayanna M.L",
+"adjustment_type": "other"
+},
+{
+"message": "Fernanda Agudelo no podra asistir\u00e1 el d\u00eda de hoy",
+"status": "reviewed",
+"employee_name": "Maria Fernanda Agudelo",
+"adjustment_date": "2026-04-17",
+"details": null,
+"submitted_by": "Josefa Moy",
+"adjustment_type": "other"
+},
+{
+"message": "Isabel Rodr\u00edguez",
+"status": "reviewed",
+"employee_name": "Isabel Rodriguez",
+"adjustment_date": "2026-04-17",
+"details": "Se retira a las 9:37 AM a una cita m\u00e9dica",
+"submitted_by": "Josefa moy",
+"adjustment_type": "other"
+},
+{
+"message": "Isabel Rodr\u00edguez",
+"status": "reviewed",
+"employee_name": "Isabel Rodriguez",
+"adjustment_date": "2026-04-21",
+"details": "She is not feeling well today. If her condition improves, she will arrive later than her usual time.",
+"submitted_by": "Josefa moy",
+"adjustment_type": "other"
+},
+{
+"message": "Rosaura castro",
+"status": "reviewed",
+"employee_name": "Rosaura Castro",
+"adjustment_date": "2026-04-23",
+"details": "Se retira rosaura a las 4:30",
+"submitted_by": "Josefa moy",
+"adjustment_type": "tardy_leave_early"
+},
+{
+"message": "Maria Servin might come in later",
+"status": "reviewed",
+"employee_name": "Maria Servin",
+"adjustment_date": "2026-04-29",
+"details": "My baby has fever and it\u2019s sick I might come in later",
+"submitted_by": "Mar\u00eda Servin",
+"adjustment_type": "other"
+},
+{
+"message": "I might be coming in late, due to my baby being sick",
+"status": "reviewed",
+"employee_name": "Maria Servin",
+"adjustment_date": "2026-04-30",
+"details": "My baby is sick still, he just doesn\u2019t sleep at nights and he is crying",
+"submitted_by": "Mar\u00eda Servin",
+"adjustment_type": "tardy_leave_early"
+},
+{
+"message": "Mar\u00eda L\u00f3pez",
+"status": "reviewed",
+"employee_name": "Maria Lopez",
+"adjustment_date": "2026-05-04",
+"details": "Mrs. Maria will arrive a little late\u2014after 9:00 AM\u2014as her car broke down.",
+"submitted_by": "Jose Luna",
+"adjustment_type": "tardy_leave_early"
+},
+{
+"message": "Maria Servin",
+"status": "reviewed",
+"employee_name": "Maria Servin",
+"adjustment_date": "2026-05-04",
+"details": "I will be leaving 45 min early due to a dr appointment",
+"submitted_by": "Maria Servin",
+"adjustment_type": "tardy_leave_early"
+},
+{
+"message": "Rosaura castro no asistir\u00e1 el d\u00eda de hoy",
+"status": "reviewed",
+"employee_name": "Rosaura Castro",
+"adjustment_date": "2026-05-06",
+"details": "Cita m\u00e9dica",
+"submitted_by": "Josefa Moy",
+"adjustment_type": "other"
+},
+{
+"message": "Isabel Rodr\u00edguez  llegar\u00e1 un poco tarde",
+"status": "reviewed",
+"employee_name": "Isabel Rodriguez",
+"adjustment_date": "2026-05-06",
+"details": "Llegada tarde",
+"submitted_by": "Josefa Moy",
+"adjustment_type": "tardy_leave_early"
+},
+{
+"message": "Isabel Rodr\u00edguez no podra asistir el d\u00eda de hoy",
+"status": "reviewed",
+"employee_name": "Isabel Rodriguez",
+"adjustment_date": "2026-05-19",
+"details": "Se siente mal",
+"submitted_by": "Jos\u00e9fa Moy",
+"adjustment_type": "other"
+},
+{
+"message": "Elva Espinoza",
+"status": "reviewed",
+"employee_name": "Elva Espinoza",
+"adjustment_date": "2026-06-04",
+"details": "Elva is leaving at 3:30. She doesn't feel well.",
+"submitted_by": "Jos\u00e9 Luna",
+"adjustment_type": "other"
+},
+{
+"message": "Isabel Rodr\u00edguez",
+"status": "reviewed",
+"employee_name": "Isabel Rodriguez",
+"adjustment_date": "2026-06-18",
+"details": "No s\u00e9 present\u00f3 hoy por motivo malestar",
+"submitted_by": "Jos\u00e9fa Moy",
+"adjustment_type": "other"
+},
+{
+"message": "Maria Servin will be arriving late",
+"status": "reviewed",
+"employee_name": "Maria Servin",
+"adjustment_date": "2026-06-23",
+"details": "Yesterday I was doing organoleptic and with carrying the heavy boxes my back and head hurts. I took medicine but my back it\u2019s super sore",
+"submitted_by": "Maria Servin",
+"adjustment_type": "tardy_leave_early"
+},
+{
+"message": "no asisti\u00f3 hoy",
+"status": "reviewed",
+"employee_name": "Isabel Rodriguez",
+"adjustment_date": "2026-06-30",
+"details": "No asisti\u00f3",
+"submitted_by": "Josefa Moy",
+"adjustment_type": "other"
+},
+{
+"message": "Sra Cristina no podr\u00e1s asistir hoy",
+"status": "reviewed",
+"employee_name": "Crisitna Turci",
+"adjustment_date": "2026-07-08",
+"details": "Ms. Cristina will be unable to attend due to severe back pain; she is trying to schedule a medical appointment for the issue.",
+"submitted_by": "Jos\u00e9 Luna",
+"adjustment_type": "other"
+}
+]

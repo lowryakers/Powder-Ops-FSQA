@@ -1349,6 +1349,64 @@ function runMigrations() {
     console.warn('[db] maintenance_items unavailable:', e.message);
   }
 
+  // Office Ops: supply ordering + time tracking (replaces the Monday boards).
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS supply_orders (
+        id TEXT PRIMARY KEY,
+        item_name TEXT NOT NULL,
+        qty REAL,
+        uom TEXT,
+        link TEXT,
+        supplier TEXT,
+        urgent INTEGER NOT NULL DEFAULT 0,
+        label TEXT,
+        status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','ordered','received','paid')),
+        total REAL,
+        eta TEXT,
+        invoice_link TEXT,
+        invoice_id TEXT,
+        notes TEXT,
+        requested_by TEXT,
+        requested_by_id TEXT,
+        submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_supply_orders_status ON supply_orders(status, submitted_at);
+      CREATE TABLE IF NOT EXISTS supply_invoices (
+        id TEXT PRIMARY KEY,
+        filename TEXT NOT NULL,
+        storage_key TEXT NOT NULL,
+        size INTEGER,
+        content_type TEXT,
+        supplier TEXT,
+        invoice_date TEXT,
+        total REAL,
+        notes TEXT,
+        uploaded_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS time_adjustments (
+        id TEXT PRIMARY KEY,
+        employee_name TEXT NOT NULL,
+        employee_id TEXT,
+        adjustment_type TEXT NOT NULL DEFAULT 'other' CHECK (adjustment_type IN ('absent','tardy_leave_early','other')),
+        adjustment_date TEXT,
+        message TEXT,
+        message_en TEXT,
+        details TEXT,
+        submitted_by TEXT,
+        submitted_by_id TEXT,
+        status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','reviewed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_time_adjustments_emp ON time_adjustments(employee_name, adjustment_date);
+    `);
+  } catch (e) {
+    console.warn('[db] office ops tables unavailable:', e.message);
+  }
+
   // Slack import: original message ts for idempotent re-imports.
   addColumnIfMissing('chat_messages', 'external_id', 'TEXT');
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_external ON chat_messages(channel_id, external_id)'); } catch { /* ignore */ }

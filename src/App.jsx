@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -41,6 +41,8 @@ import COAPanel from './components/compliance/COAPanel.jsx';
 import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import PageInfo from './components/PageInfo.jsx';
+import SupplyOrdersPanel from './components/office/SupplyOrdersPanel.jsx';
+import TimeTrackingPanel from './components/office/TimeTrackingPanel.jsx';
 
 const NAV_GROUPS = [
   {
@@ -106,6 +108,13 @@ const NAV_GROUPS = [
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
       { id: 'org-chart', label: 'Org Chart', icon: Network },
+    ],
+  },
+  {
+    label: 'Office',
+    items: [
+      { id: 'supply-orders', label: 'Supply Orders', icon: ShoppingCart, roles: ['admin', 'supervisor'] },
+      { id: 'time-tracking', label: 'Time Tracking', icon: AlarmClock, roles: ['admin', 'supervisor'] },
     ],
   },
   {
@@ -190,6 +199,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
           const visibleItems = group.items.filter(i => {
             if (i.id === 'settings') return false; // lives in the top-right gear icon
             if (i.adminOnly && user.role !== 'admin') return false;
+            if (i.roles && !i.roles.includes(user.role)) return false;
             if (i.aiOnly && !aiOn) return false;
             return canViewModule(user, i.id);
           });
@@ -445,6 +455,7 @@ function accessibleNavItems(user, aiOn) {
   for (const g of NAV_GROUPS) {
     for (const i of g.items) {
       if (i.adminOnly && user.role !== 'admin') continue;
+      if (i.roles && !i.roles.includes(user.role)) continue;
       if (i.aiOnly && !aiOn) continue;
       if (!canViewModule(user, i.id)) continue;
       flat.push({ ...i, group: g.label });
@@ -912,7 +923,7 @@ function App() {
   }
 
   // Determine effective accessible modules for this user
-  const allModuleIds = NAV_GROUPS.flatMap(g => g.items).filter(i => !i.adminOnly || user.role === 'admin').map(i => i.id);
+  const allModuleIds = NAV_GROUPS.flatMap(g => g.items).filter(i => (!i.adminOnly || user.role === 'admin') && (!i.roles || i.roles.includes(user.role))).map(i => i.id);
   const effectiveModules = visibleModuleIds(user, allModuleIds);
   const operatorOnly = effectiveModules.length === 1 && effectiveModules[0] === 'operator';
 
@@ -1029,6 +1040,8 @@ function App() {
           {resolvedTab === 'dashboard' && <ComplianceDashboard />}
           {resolvedTab === 'ask-ai' && <AiAskPanel />}
           {resolvedTab === 'operator' && <OperatorView />}
+          {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
+          {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}
           {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}
           {resolvedTab === 'production-dashboard' && <ProductionDashboard />}
