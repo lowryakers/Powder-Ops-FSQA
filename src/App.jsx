@@ -1018,8 +1018,10 @@ function App() {
     );
   }
 
-  // Show first accessible module if current tab isn't accessible
-  const resolvedTab = effectiveModules.includes(activeTab) ? activeTab : (effectiveModules[0] || 'dashboard');
+  // Show first accessible module if current tab isn't accessible. No silent
+  // dashboard fallback: a user with zero modules gets an empty state instead
+  // of a page they can't actually access.
+  const resolvedTab = effectiveModules.includes(activeTab) ? activeTab : (effectiveModules[0] || null);
   const activeItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.id === resolvedTab);
 
   return (
@@ -1093,6 +1095,12 @@ function App() {
         </header>
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
+          {resolvedTab === null && (
+            <div className="text-center py-20 text-gray-400">
+              <Shield size={36} className="mx-auto mb-3 text-gray-300" />
+              <p className="text-sm">No modules are enabled for this account.</p>
+            </div>
+          )}
           {resolvedTab === 'dashboard' && <ComplianceDashboard />}
           {resolvedTab === 'ask-ai' && <AiAskPanel />}
           {resolvedTab === 'operator' && <OperatorView />}

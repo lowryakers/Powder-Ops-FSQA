@@ -52,8 +52,13 @@ export function AuthProvider({ children }) {
 
   const startViewAs = useCallback((target) => {
     if (!target || user?.role !== 'admin') return;
-    setViewAs(target);
-    setViewAsWriteGuard(target.name);
+    // GET /users returns module_access as the raw JSON string from the DB;
+    // the permission helpers need it parsed (or null = unrestricted).
+    let ma = target.module_access;
+    if (typeof ma === 'string') { try { ma = JSON.parse(ma); } catch { ma = null; } }
+    const normalized = { ...target, module_access: ma ?? null };
+    setViewAs(normalized);
+    setViewAsWriteGuard(normalized.name);
   }, [user]);
 
   const stopViewAs = useCallback(() => {
