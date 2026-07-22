@@ -162,30 +162,52 @@ router.get('/maintenance-items', (_req, res) => {
 
 // Sign a tool out from the floor kiosk — creates a record (status Out) awaiting
 // the in-app QA return/review. `employee_name` is the typed name at the kiosk.
+// Accepts a single item_description or an items[] array — one record per item.
 router.post('/maintenance-signout', (req, res) => {
   const db = getDb();
   const cfg = getType('maintenance_sign_out');
-  const { employee_name, item_description, asset_tag, condition_out, time_out } = req.body;
+  const { employee_name, item_description, items, asset_tag, condition_out, time_out } = req.body;
   const name = (employee_name || '').trim();
-  const item = (item_description || '').trim();
-  if (!name || !item) return res.status(400).json({ error: 'Item and your name are required.' });
+  const list = (Array.isArray(items) && items.length ? items : [item_description])
+    .map(i => (i || '').trim()).filter(Boolean);
+  if (!name || !list.length) return res.status(400).json({ error: 'Item and your name are required.' });
+  if (list.length > 25) return res.status(400).json({ error: 'Too many items in one sign-out.' });
 
-  const id = uuid();
-  const number = nextNumber(db, cfg);
-  const data = {
-    employee_name: name,
-    item_description: item,
-    asset_tag: asset_tag || '',
-    condition_out: condition_out === 'Bad' ? 'Bad' : 'Good',
-    time_out: time_out || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-  };
-  db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, created_by)
-    VALUES (?, 'maintenance_sign_out', ?, ?, 'out', ?, 0, ?)`).run(id, number, today(), JSON.stringify(data), name);
+  const created = [];
+  const insert = db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, created_by)
+    VALUES (?, 'maintenance_sign_out', ?, ?, 'out', ?, 0, ?)`);
+  db.transaction(() => {
+    for (const item of list) {
+      const id = uuid();
+      const number = nextNumber(db, cfg);
+      const data = {
+        employee_name: name,
+        item_description: item,
+        asset_tag: (list.length === 1 && asset_tag) || '',
+        condition_out: condition_out === 'Bad' ? 'Bad' : 'Good',
+        time_out: time_out || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      insert.run(id, number, today(), JSON.stringify(data), name);
+      logAudit(name, 'submit_public', 'maintenance_sign_out', id,
+        { record_number: number, item_description: item, via: 'kiosk' }, null, null, item);
+      created.push({ record_number: number, item_description: item });
+    }
+  })();
 
-  logAudit(name, 'submit_public', 'maintenance_sign_out', id,
-    { record_number: number, item_description: item, via: 'kiosk' }, null, null, item);
+  res.status(201).json({ ok: true, created, record_number: created[0].record_number, item_description: created[0].item_description });
+});
 
-  res.status(201).json({ ok: true, record_number: number, item_description: item });
+// Public "currently out" list for the kiosk — just the item and checkout date.
+router.get('/maintenance-out', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`SELECT record_date, data FROM qms_records
+    WHERE record_type = 'maintenance_sign_out' AND status = 'out'
+    ORDER BY record_date DESC, created_at DESC LIMIT 100`).all();
+  res.json(rows.map(r => {
+    let d = {};
+    try { d = JSON.parse(r.data || '{}'); } catch { /* ignore */ }
+    return { item_description: d.item_description || '—', record_date: r.record_date };
+  }));
 });
 
 export default router;

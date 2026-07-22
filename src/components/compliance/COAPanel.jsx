@@ -781,31 +781,42 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
 }
 
 // ──────── Specification Form ────────
+// New specs take one set of item details plus any number of test-type rows —
+// one spec record is saved per test. Editing an existing spec stays single-row.
+const BLANK_TEST = { test_type: '', specification: '', unit: '', min_value: '', max_value: '', method: '' };
 function SpecForm({ initial, onSave, onCancel }) {
-  const [form, setForm] = useState(initial || {
-    item_number: '', item_description: '', test_type: '', specification: '',
-    unit: '', min_value: '', max_value: '', method: '',
-    sku_number: '', vendor: '', revision: '',
-  });
+  const editing = !!initial?.id;
+  const [form, setForm] = useState(initial || { item_number: '', item_description: '', sku_number: '', vendor: '', revision: '' });
+  const [tests, setTests] = useState(editing
+    ? [{ test_type: initial.test_type, specification: initial.specification || '', unit: initial.unit || '', min_value: initial.min_value ?? '', max_value: initial.max_value ?? '', method: initial.method || '' }]
+    : [{ ...BLANK_TEST }]);
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setTest = (i, k, v) => setTests(ts => ts.map((t, j) => j === i ? { ...t, [k]: v } : t));
+  const addTest = () => setTests(ts => [...ts, { ...BLANK_TEST }]);
+  const removeTest = (i) => setTests(ts => ts.length > 1 ? ts.filter((_, j) => j !== i) : ts);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await onSave({
+      const rows = tests.filter(t => t.test_type).map(t => ({
         ...form,
-        min_value: form.min_value !== '' ? parseFloat(form.min_value) : null,
-        max_value: form.max_value !== '' ? parseFloat(form.max_value) : null,
-      });
+        ...t,
+        min_value: t.min_value !== '' && t.min_value != null ? parseFloat(t.min_value) : null,
+        max_value: t.max_value !== '' && t.max_value != null ? parseFloat(t.max_value) : null,
+      }));
+      if (editing) await onSave(rows[0]);
+      else await onSave(rows);
     } finally { setSaving(false); }
   };
 
+  const usedTypes = tests.map(t => t.test_type).filter(Boolean);
+
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-      <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit Specification' : 'Add Specification'}</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <h3 className="font-semibold text-gray-900">{editing ? 'Edit Specification' : 'Add Specifications'}</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Item # *</label>
           <input required value={form.item_number} onChange={e => set('item_number', e.target.value)}
@@ -831,45 +842,67 @@ function SpecForm({ initial, onSave, onCancel }) {
           <input value={form.revision || ''} onChange={e => set('revision', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. V1" />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Test Type *</label>
-          <select value={form.test_type} onChange={e => set('test_type', e.target.value)} required
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">Select...</option>
-            {TEST_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Specification</label>
-          <input value={form.specification || ''} onChange={e => set('specification', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. NMT 1.0" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Min Value</label>
-          <input type="number" step="any" value={form.min_value ?? ''} onChange={e => set('min_value', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Max Value</label>
-          <input type="number" step="any" value={form.max_value ?? ''} onChange={e => set('max_value', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Unit</label>
-          <input value={form.unit || ''} onChange={e => set('unit', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. ppm, cfu/g" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Method</label>
-          <input value={form.method || ''} onChange={e => set('method', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. USP <2021>" />
-        </div>
       </div>
+
+      <div className="space-y-2">
+        {tests.map((t, i) => (
+          <div key={i} className="border border-gray-200 rounded-lg p-3 bg-gray-50/60">
+            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Test Type *</label>
+                <select value={t.test_type} onChange={e => setTest(i, 'test_type', e.target.value)} required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  <option value="">Select...</option>
+                  {TEST_TYPES.map(tt => <option key={tt} value={tt} disabled={tt !== t.test_type && usedTypes.includes(tt)}>{tt}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Specification</label>
+                <input value={t.specification} onChange={e => setTest(i, 'specification', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. NMT 1.0" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Min Value</label>
+                <input type="number" step="any" value={t.min_value ?? ''} onChange={e => setTest(i, 'min_value', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Max Value</label>
+                <input type="number" step="any" value={t.max_value ?? ''} onChange={e => setTest(i, 'max_value', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Unit</label>
+                <input value={t.unit} onChange={e => setTest(i, 'unit', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. ppm, cfu/g" />
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Method</label>
+                  <input value={t.method} onChange={e => setTest(i, 'method', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. USP <2021>" />
+                </div>
+                {!editing && tests.length > 1 && (
+                  <button type="button" onClick={() => removeTest(i)} className="p-2 text-gray-300 hover:text-red-500" title="Remove test">
+                    <Trash2 size={15} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+        {!editing && (
+          <button type="button" onClick={addTest} className="flex items-center gap-1.5 text-sm text-powder-600 hover:underline font-medium">
+            <Plus size={15} /> Add another test type
+          </button>
+        )}
+      </div>
+
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
         <button type="submit" disabled={saving}
           className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
-          {saving ? 'Saving...' : 'Save Specification'}
+          {saving ? 'Saving...' : editing ? 'Save Specification' : `Save ${tests.filter(t => t.test_type).length || ''} Specification${tests.filter(t => t.test_type).length === 1 ? '' : 's'}`}
         </button>
       </div>
     </form>
@@ -1085,7 +1118,9 @@ export default function COAPanel() {
     if (editItem?.id) {
       await apiPut(`/coa/specifications/${editItem.id}`, form);
     } else {
-      await apiPost('/coa/specifications', form);
+      // New specs arrive as an array — one record per test type.
+      const rows = Array.isArray(form) ? form : [form];
+      for (const row of rows) await apiPost('/coa/specifications', row);
     }
     setShowForm(false);
     setEditItem(null);

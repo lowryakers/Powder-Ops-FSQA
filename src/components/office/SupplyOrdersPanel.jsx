@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, Search, Repeat, Trash2, Upload, FileText, Download, Check, AlertTriangle, ExternalLink, Pencil, X } from 'lucide-react';
+import { Search, Repeat, Trash2, Upload, FileText, Download, AlertTriangle, ExternalLink, Pencil, X, ChevronUp, ChevronDown } from 'lucide-react';
 
 const LABELS = ['Warehouse/Production', 'Cleaning', 'Break room', 'Maintenance', 'Office'];
 const STATUS_FLOW = ['new', 'ordered', 'received', 'paid'];
@@ -161,17 +161,39 @@ function EditOrderModal({ order, onClose, onSaved }) {
   );
 }
 
+function SortHeader({ label, field, sortField, sortDir, onSort, className = '' }) {
+  return (
+    <th onClick={() => onSort(field)}
+      className={`text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${className}`}>
+      <span className="inline-flex items-center gap-1">{label}{sortField === field && (sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}</span>
+    </th>
+  );
+}
+
 function OrdersLog({ refreshKey, onChanged }) {
   const [statusFilter, setStatusFilter] = useState('open');
+  const [labelFilter, setLabelFilter] = useState('');
   const [q, setQ] = useState('');
+  const [sortField, setSortField] = useState('submitted_at');
+  const [sortDir, setSortDir] = useState('desc');
   const query = statusFilter === 'open' ? '' : statusFilter === 'all' ? '' : `status=${statusFilter}`;
   const { data: orders, refresh } = useApiGet(`/office/supply/orders?${query}${q ? `&q=${encodeURIComponent(q)}` : ''}`, [statusFilter, q, refreshKey]);
   const [editing, setEditing] = useState(null);
+  const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir(f === 'submitted_at' || f === 'total' ? 'desc' : 'asc'); } };
   const list = useMemo(() => {
     let l = orders || [];
     if (statusFilter === 'open') l = l.filter(o => o.status === 'new' || o.status === 'ordered');
-    return l;
-  }, [orders, statusFilter]);
+    if (labelFilter) l = l.filter(o => (o.label || '') === labelFilter);
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const val = (o) => {
+      if (sortField === 'qty' || sortField === 'total') return Number(o[sortField] ?? -Infinity);
+      if (sortField === 'status') return STATUS_FLOW.indexOf(o.status);
+      if (sortField === 'requested_by') return `${o.requested_by || ''}`.toLowerCase();
+      if (sortField === 'submitted_at') return o.submitted_at || '';
+      return String(o[sortField] ?? '').toLowerCase();
+    };
+    return [...l].sort((a, b) => { const av = val(a), bv = val(b); return av < bv ? -dir : av > bv ? dir : 0; });
+  }, [orders, statusFilter, labelFilter, sortField, sortDir]);
 
   const advance = async (o) => {
     const next = STATUS_META[o.status]?.next;
@@ -192,6 +214,11 @@ function OrdersLog({ refreshKey, onChanged }) {
           <button key={v} onClick={() => setStatusFilter(v)}
             className={`px-2.5 py-1 rounded-lg text-xs font-medium ${statusFilter === v ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{l}</button>
         ))}
+        <select value={labelFilter} onChange={e => setLabelFilter(e.target.value)}
+          className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
+          <option value="">For: all</option>
+          {LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
         <div className="relative flex-1 min-w-[180px]">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search item, supplier…"
@@ -233,9 +260,14 @@ function OrdersLog({ refreshKey, onChanged }) {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                {['Item', 'Qty', 'Supplier', 'For', 'Requested', 'Total', 'Status', ''].map(h => (
-                  <th key={h} className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">{h}</th>
-                ))}
+                <SortHeader label="Item" field="item_name" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Qty" field="qty" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Supplier" field="supplier" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="For" field="label" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Requested" field="submitted_at" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Total" field="total" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Status" field="status" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <th className="px-3 py-2.5" />
               </tr>
             </thead>
             <tbody>

@@ -459,6 +459,125 @@ try {
   console.warn('[seed] office import skipped:', e.message);
 }
 
+// ── PM consolidation v1 (approved cleanup) ──
+// (a) Deactivate exact duplicate schedules (same machine + title + frequency,
+//     plus copies pointing at duplicate equipment entries sharing name+asset#).
+// (b) Fold per-machine DAILY PMs into one daily checklist per (team, room) —
+//     one line per machine — so the team/assignee stays exactly the same.
+// (c) Demote inspection-only WEEKLY schedules with a clean 90-day completion
+//     history (≥2 completions, nothing noted) to monthly.
+// The full list of changes is stored in app_settings.pm_consolidation_v1.
+try {
+  const flag = db.prepare("SELECT value FROM app_settings WHERE key = 'pm_consolidation_v1'").get();
+  if (!flag) {
+    const report = { deduped: [], consolidated: [], demoted: [] };
+    const deactivate = db.prepare("UPDATE pm_schedules SET is_active=0, updated_at=datetime('now') WHERE id=?");
+    const cancelOpen = db.prepare("UPDATE work_orders SET status='cancelled', updated_at=datetime('now') WHERE pm_schedule_id=? AND status IN ('open','in_progress','overdue')");
+    const retire = (schedId) => { deactivate.run(schedId); cancelOpen.run(schedId); };
+
+    db.transaction(() => {
+      // (a) exact duplicates on the same equipment row — keep the oldest copy
+      const dupSame = db.prepare(`
+        SELECT equipment_id, title, frequency_type, COUNT(*) n FROM pm_schedules
+        WHERE is_active = 1 GROUP BY equipment_id, title, frequency_type HAVING n > 1`).all();
+      for (const g of dupSame) {
+        const rows = db.prepare(`SELECT id FROM pm_schedules WHERE is_active=1 AND equipment_id=? AND title=? AND frequency_type=?
+          ORDER BY created_at, id`).all(g.equipment_id, g.title, g.frequency_type);
+        for (const r of rows.slice(1)) { retire(r.id); report.deduped.push(`${g.frequency_type}: ${g.title}`); }
+      }
+      // duplicates across duplicate equipment entries (same name AND same asset #)
+      const dupCross = db.prepare(`
+        SELECT ps.title, ps.frequency_type, e.name eq_name, e.asset_id, COUNT(*) n
+        FROM pm_schedules ps JOIN equipment e ON e.id = ps.equipment_id
+        WHERE ps.is_active = 1 AND e.asset_id IS NOT NULL AND e.asset_id != ''
+        GROUP BY ps.title, ps.frequency_type, e.name, e.asset_id HAVING n > 1`).all();
+      for (const g of dupCross) {
+        const rows = db.prepare(`
+          SELECT ps.id FROM pm_schedules ps JOIN equipment e ON e.id = ps.equipment_id
+          WHERE ps.is_active=1 AND ps.title=? AND ps.frequency_type=? AND e.name=? AND e.asset_id=?
+          ORDER BY ps.created_at, ps.id`).all(g.title, g.frequency_type, g.eq_name, g.asset_id);
+        for (const r of rows.slice(1)) { retire(r.id); report.deduped.push(`${g.frequency_type}: ${g.title} (dup equipment entry)`); }
+      }
+
+      // (b) consolidate dailies into one checklist per (team, room/location)
+      const dailies = db.prepare(`
+        SELECT ps.id, ps.title, ps.procedure_steps, ps.task_group, ps.equipment_id,
+               e.name eq_name, e.asset_id,
+               COALESCE(NULLIF(e.room,''), NULLIF(e.location,''), 'Facility') place
+        FROM pm_schedules ps JOIN equipment e ON e.id = ps.equipment_id
+        WHERE ps.is_active = 1 AND ps.frequency_type = 'daily'
+        ORDER BY e.name, e.asset_id`).all();
+      const groups = new Map();
+      for (const s of dailies) {
+        const key = `${s.task_group || 'warehouse'}||${s.place}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(s);
+      }
+      const placeTeams = new Map();
+      for (const key of groups.keys()) {
+        const place = key.split('||')[1];
+        placeTeams.set(place, (placeTeams.get(place) || 0) + 1);
+      }
+      const insSched = db.prepare(`
+        INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, task_group, is_active)
+        VALUES (?, ?, ?, ?, 'daily', 1, ?, ?, 1)`);
+      const insWO = db.prepare(`
+        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open')`);
+      for (const [key, rows] of groups) {
+        if (rows.length < 2) continue; // singletons stay as-is
+        const [team, place] = key.split('||');
+        const teamLabel = team.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const title = `Daily PM Checklist — ${place}` + (placeTeams.get(place) > 1 ? ` (${teamLabel})` : '');
+        const steps = rows.map(s => {
+          let tasks = [];
+          try { tasks = JSON.parse(s.procedure_steps || '[]'); } catch { /* keep empty */ }
+          const label = s.eq_name + (s.asset_id ? ` #${s.asset_id}` : '');
+          return `${label} — ${tasks.join('; ') || 'Daily check'}`;
+        });
+        const schedId = uuid();
+        insSched.run(schedId, rows[0].equipment_id, title,
+          `Consolidated daily checks for ${rows.length} equipment items in ${place}. One line per machine; replaces the individual daily PM tasks.`,
+          JSON.stringify(steps), team);
+        for (const s of rows) retire(s.id);
+        const due = new Date();
+        while (due.getDay() === 0 || due.getDay() === 6) due.setDate(due.getDate() + 1);
+        insWO.run(uuid(), schedId, rows[0].equipment_id, title, due.toISOString().split('T')[0], JSON.stringify(steps), team);
+        report.consolidated.push(`${title}: ${rows.length} machines`);
+      }
+
+      // (c) weekly → monthly for inspection-only schedules with a clean history
+      const INSPECT = /\b(inspect|check|verify|look|listen|test|examine|monitor|ensure|confirm|observe)\b/i;
+      const ACTION = /\b(lubricat|grease|oil|replace|calibrat|tighten|adjust|drain|change|clean|sanitiz|empty|refill|repair|flush)\b/i;
+      const weeklies = db.prepare("SELECT * FROM pm_schedules WHERE is_active=1 AND frequency_type='weekly'").all();
+      const hist = db.prepare(`
+        SELECT COUNT(*) done, SUM(CASE WHEN COALESCE(TRIM(notes),'') != '' THEN 1 ELSE 0 END) noted
+        FROM work_orders WHERE pm_schedule_id=? AND status='completed' AND completed_at >= datetime('now','-90 days')`);
+      for (const s of weeklies) {
+        let tasks = [];
+        try { tasks = JSON.parse(s.procedure_steps || '[]'); } catch { /* keep empty */ }
+        if (!tasks.length) continue;
+        if (!tasks.every(t => INSPECT.test(t) && !ACTION.test(t))) continue;
+        const h = hist.get(s.id);
+        if ((h.done || 0) < 2 || (h.noted || 0) > 0) continue;
+        db.prepare("UPDATE pm_schedules SET frequency_type='monthly', updated_at=datetime('now') WHERE id=?").run(s.id);
+        report.demoted.push(s.title);
+      }
+
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pm_consolidation_v1', ?, datetime('now'))")
+        .run(JSON.stringify({ at: new Date().toISOString(), ...report }));
+    })();
+    if (report.deduped.length || report.consolidated.length || report.demoted.length) {
+      console.log(`[migrate] PM consolidation: removed ${report.deduped.length} duplicate schedules, ` +
+        `built ${report.consolidated.length} daily checklists, demoted ${report.demoted.length} weeklies to monthly`);
+      for (const line of report.consolidated) console.log(`[migrate]   ${line}`);
+      for (const line of report.demoted) console.log(`[migrate]   weekly→monthly: ${line}`);
+    }
+  }
+} catch (e) {
+  console.warn('[migrate] PM consolidation skipped:', e.message);
+}
+
 // Seed LOTO procedures for all equipment if none exist
 const lotoCount = db.prepare('SELECT COUNT(*) as c FROM loto_procedures').get().c;
 if (lotoCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c > 0) {

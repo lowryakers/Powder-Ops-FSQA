@@ -14,3 +14,5 @@ _test*.cjs
 _shot*.mjs
 _pdf*.mjs
 *.db
+*.db-shm
+*.db-wal

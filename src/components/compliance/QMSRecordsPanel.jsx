@@ -136,11 +136,48 @@ function FieldInput({ f, value, onChange }) {
   return <input value={value || ''} onChange={e => onChange(e.target.value)} className={base} />;
 }
 
+// Chip multi-pick fed by the same (possibly grouped) options as a select.
+function MultiPickInput({ f, value, onChange }) {
+  const arr = Array.isArray(value) ? value : value ? [value] : [];
+  const grouped = Array.isArray(f.options) && f.options.some(o => o && typeof o === 'object' && Array.isArray(o.items));
+  const add = (o) => { if (o && !arr.includes(o)) onChange([...arr, o]); };
+  const remove = (o) => onChange(arr.filter(x => x !== o));
+  return (
+    <div className="space-y-1.5">
+      {arr.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {arr.map(o => (
+            <span key={o} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 bg-powder-50 border border-powder-200 text-powder-800 rounded-lg text-xs">
+              {o}
+              <button type="button" onClick={() => remove(o)} className="p-0.5 hover:bg-powder-100 rounded"><X size={11} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+      <select value="" onChange={e => add(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+        <option value="">{arr.length ? 'Add another item…' : 'Select item(s)…'}</option>
+        {grouped
+          ? f.options.map(g => (
+              <optgroup key={g.group} label={g.group}>
+                {g.items.filter(o => !arr.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
+              </optgroup>
+            ))
+          : f.options.filter(o => !arr.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+      {arr.length > 1 && <p className="text-[11px] text-gray-400">One sign-out record is created per item.</p>}
+    </div>
+  );
+}
+
 /* ───────── Create / edit form ───────── */
 function RecordForm({ cfg, initial, onSave, onCancel }) {
+  // Sign-outs can check out several items at once — the item field becomes a
+  // multi-pick and one record is created per item (create mode only).
+  const multiItemKey = cfg.key === 'maintenance_sign_out' && !initial?.id ? 'item_description' : null;
   const [form, setForm] = useState(() => {
-    const base = { record_number: initial?.record_number || '', record_date: initial?.record_date || '', notes: initial?.notes || '', paper_record: !!initial?.paper_record, document_url: initial?.document_url || '', status: initial?.status || cfg.defaultStatus || '' };
-    for (const f of cfg.fields) base[f.key] = initial?.[f.key] ?? (f.type === 'checkbox' ? false : f.type === 'multiselect' ? [] : '');
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const base = { record_number: initial?.record_number || '', record_date: initial?.record_date || (initial?.id ? '' : todayStr), notes: initial?.notes || '', paper_record: !!initial?.paper_record, document_url: initial?.document_url || '', status: initial?.status || cfg.defaultStatus || '' };
+    for (const f of cfg.fields) base[f.key] = initial?.[f.key] ?? (f.type === 'checkbox' ? false : (f.type === 'multiselect' || f.key === multiItemKey) ? [] : '');
     return base;
   });
   const [saving, setSaving] = useState(false);
@@ -177,9 +214,11 @@ function RecordForm({ cfg, initial, onSave, onCancel }) {
 
         <div className="grid sm:grid-cols-2 gap-3">
           {cfg.fields.map(f => (
-            <div key={f.key} className={f.type === 'textarea' || f.type === 'multiselect' ? 'sm:col-span-2' : ''}>
-              {f.type !== 'checkbox' && <label className="block text-xs font-medium text-gray-700 mb-1">{f.label}</label>}
-              <FieldInput f={f} value={form[f.key]} onChange={v => set(f.key, v)} />
+            <div key={f.key} className={f.type === 'textarea' || f.type === 'multiselect' || f.key === multiItemKey ? 'sm:col-span-2' : ''}>
+              {f.type !== 'checkbox' && <label className="block text-xs font-medium text-gray-700 mb-1">{f.label}{f.key === multiItemKey ? ' (one or more)' : ''}</label>}
+              {f.key === multiItemKey
+                ? <MultiPickInput f={f} value={form[f.key]} onChange={v => set(f.key, v)} />
+                : <FieldInput f={f} value={form[f.key]} onChange={v => set(f.key, v)} />}
             </div>
           ))}
         </div>
@@ -680,7 +719,20 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
   const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir('asc'); } };
   const sh = { sortField, sortDir, onSort };
 
-  const handleCreate = async (form) => { await apiPost(`/qms/${recordType}`, form); setCreating(false); refresh(); };
+  const handleCreate = async (form) => {
+    // Multi-item sign-out: one record per picked item (numbers auto-assigned).
+    const items = Array.isArray(form.item_description) ? form.item_description : null;
+    if (items) {
+      if (!items.length) { flash('Pick at least one item.'); return; }
+      for (const item of items) {
+        await apiPost(`/qms/${recordType}`, { ...form, item_description: item, record_number: items.length > 1 ? '' : form.record_number });
+      }
+      flash(items.length > 1 ? `Signed out ${items.length} items.` : null);
+    } else {
+      await apiPost(`/qms/${recordType}`, form);
+    }
+    setCreating(false); refresh();
+  };
   const handleUpdate = async (form) => { const res = await apiPut(`/qms/${recordType}/${editing.id}`, form); setEditing(null); setViewing(res); refresh(); };
   const handleDelete = async (rec) => { if (!window.confirm(`Delete ${rec.record_number || 'this record'}?`)) return; await apiFetch(`/qms/${recordType}/${rec.id}`, { method: 'DELETE' }); setViewing(null); refresh(); };
   const handleSign = async (id, role) => { const res = await apiPost(`/qms/${recordType}/${id}/approve`, { role }); setViewing(res); refresh(); };
@@ -721,6 +773,25 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
           <button onClick={clearSelection} className="px-3 py-1.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Clear</button>
         </div>
       )}
+
+      {/* Quick glance list: what's out right now — just the item and date. */}
+      {recordType === 'maintenance_sign_out' && (() => {
+        const outNow = (records || []).filter(r => r.status === 'out');
+        if (!outNow.length) return null;
+        return (
+          <div className="bg-white rounded-xl border border-amber-200 overflow-hidden">
+            <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-sm font-semibold text-amber-800">Currently out ({outNow.length})</div>
+            <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+              {outNow.map(r => (
+                <div key={r.id} className="flex items-center justify-between gap-2 px-4 py-1.5 text-sm">
+                  <span className="text-gray-800 min-w-0 truncate">{r.item_description}</span>
+                  <span className="text-gray-400 text-xs shrink-0">{r.record_date}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white rounded-xl border border-gray-200 p-3"><p className="text-2xl font-bold text-gray-900">{records?.length || 0}</p><p className="text-xs text-gray-500">Total records</p></div>

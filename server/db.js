@@ -841,6 +841,10 @@ function runMigrations() {
   addColumnIfMissing('pm_schedules', 'task_group', "TEXT DEFAULT 'warehouse'");
   addColumnIfMissing('work_orders', 'task_group', "TEXT DEFAULT 'warehouse'");
 
+  // Flavor approval on a scheduled manufacturing order
+  addColumnIfMissing('production_schedule', 'flavor_approved_by', 'TEXT');
+  addColumnIfMissing('production_schedule', 'flavor_approved_at', 'TEXT');
+
   // Post-repair hygiene clearance
   addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
   addColumnIfMissing('work_orders', 'clearance_status', 'TEXT');

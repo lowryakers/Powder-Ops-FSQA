@@ -324,6 +324,23 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
   const [showNextWeek, setShowNextWeek] = useState(false);
   const [setupDownstream, setSetupDownstream] = useState(roomType === 'batching' && !cell?.id);
   const [saving, setSaving] = useState(false);
+  const [flavorBusy, setFlavorBusy] = useState(false);
+
+  // Flavor sign-off on this MO — approving announces it in #batching and
+  // #document_control; undo just clears the flag.
+  const handleFlavor = async (approved) => {
+    if (!cell?.id) return;
+    setFlavorBusy(true);
+    try {
+      await apiPost(`/production/schedule/${cell.id}/flavor-approve`, { approved });
+      onSaved();
+      onClose();
+    } catch (err) {
+      console.error('Flavor approve failed:', err);
+    } finally {
+      setFlavorBusy(false);
+    }
+  };
 
   const otherDays = DAYS.map((_, i) => i).filter(i => i !== dayIndex);
   const isBatching = roomType === 'batching';
@@ -447,6 +464,27 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
               placeholder="Optional notes..."
             />
           </div>
+          {cell?.id && (form.mo_number || form.product_name) && (
+            <div className={`rounded-lg border px-3 py-2 ${cell.flavor_approved_at ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+              {cell.flavor_approved_at ? (
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className="text-green-700 font-medium flex items-center gap-1.5 min-w-0">
+                    <Check size={14} className="shrink-0" /> Flavor approved by {cell.flavor_approved_by || '—'}
+                  </span>
+                  <button type="button" onClick={() => handleFlavor(false)} disabled={flavorBusy}
+                    className="text-xs text-gray-400 hover:text-red-500 shrink-0">undo</button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-gray-500">Flavor sign-off posts to #batching and #document_control.</span>
+                  <button type="button" onClick={() => handleFlavor(true)} disabled={flavorBusy}
+                    className="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50 shrink-0">
+                    {flavorBusy ? 'Approving…' : 'Flavor Approved'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-medium text-gray-700">Repeat on other days</label>
@@ -902,6 +940,11 @@ function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay
                           {a.team && <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color }}>{a.team}</div>}
                           {a.mo_number && <div className="text-sm font-semibold text-gray-900">{a.mo_number}</div>}
                           {a.product_name && <div className="text-sm text-gray-600">{a.product_name}</div>}
+                          {a.flavor_approved_at && (
+                            <div className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded px-1 py-px">
+                              <Check size={9} /> Flavor approved
+                            </div>
+                          )}
                           {a.start_time && <div className="flex items-center gap-1 text-[11px] text-gray-400"><Clock size={9} /> {fmtTime(a.start_time)}</div>}
                         </div>
                       );
@@ -1110,6 +1153,11 @@ export default function ProductionSchedule({ user }) {
                   )}
                   {a.mo_number && <div className="font-semibold text-gray-900">{a.mo_number}</div>}
                   {a.product_name && <div className="text-gray-600">{a.product_name}</div>}
+                  {a.flavor_approved_at && (
+                    <div className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded px-1 py-px" title={`Flavor approved by ${a.flavor_approved_by || ''}`}>
+                      <Check size={9} className="shrink-0" /> Flavor
+                    </div>
+                  )}
                   {a.start_time && (
                     <div className="flex items-center gap-1 text-gray-400 text-[11px]">
                       <Clock size={9} className="shrink-0" />{fmtTime(a.start_time)}

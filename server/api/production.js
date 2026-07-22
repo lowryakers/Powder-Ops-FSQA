@@ -308,6 +308,10 @@ router.post('/schedule', (req, res) => {
       UPDATE production_schedule SET room_type = ?, team = ?, mo_number = ?, product_name = ?, start_time = ?, notes = ?, updated_by = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(room_type || 'production', team || null, mo_number || null, product_name || null, start_time || null, notes || null, updated_by || null, existing.id);
+    // A different MO in this cell invalidates any prior flavor approval.
+    if ((existing.mo_number || '') !== (mo_number || '') && existing.flavor_approved_at) {
+      db.prepare('UPDATE production_schedule SET flavor_approved_by = NULL, flavor_approved_at = NULL WHERE id = ?').run(existing.id);
+    }
     const updated = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(existing.id);
     logAudit(updated_by || 'system', 'update', 'production_schedule', existing.id, req.body, existing, updated);
     res.json(updated);
@@ -321,6 +325,42 @@ router.post('/schedule', (req, res) => {
     logAudit(updated_by || 'system', 'create', 'production_schedule', id, req.body, null, created);
     res.status(201).json(created);
   }
+});
+
+// POST /schedule/:id/flavor-approve — mark the scheduled MO's flavor approved
+// and announce it in #batching + #document_control. { approved: false } clears.
+router.post('/schedule/:id/flavor-approve', async (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Assignment not found' });
+  const u = req.user || {};
+  const allowed = u.role === 'admin' || u.role === 'supervisor' || ['qa', 'document_control'].includes(u.department);
+  if (!allowed) return res.status(403).json({ error: 'Not authorized to approve flavors' });
+
+  if (req.body?.approved === false) {
+    db.prepare("UPDATE production_schedule SET flavor_approved_by = NULL, flavor_approved_at = NULL, updated_at = datetime('now') WHERE id = ?").run(row.id);
+    const cleared = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(row.id);
+    logAudit(req.user, 'update', 'production_schedule', row.id, { flavor_approved: false, mo_number: row.mo_number }, row, cleared);
+    return res.json(cleared);
+  }
+
+  db.prepare("UPDATE production_schedule SET flavor_approved_by = ?, flavor_approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(u.name || 'system', row.id);
+  const updated = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(row.id);
+  logAudit(req.user, 'update', 'production_schedule', row.id, { flavor_approved: true, mo_number: row.mo_number }, row, updated);
+
+  try {
+    const dayName = SCHED_DAY_NAMES[row.day_of_week] || '';
+    const parts = [row.mo_number ? `MO ${row.mo_number}` : null, row.product_name, [dayName, row.room].filter(Boolean).join(' · '), `week of ${fmtWeekLabel(row.week_start)}`].filter(Boolean);
+    const msg = `✅ Flavor Approved — ${parts.join(' · ')}\nApproved by ${u.name || 'ReadyDoc'}.`;
+    for (const chName of ['batching', 'document control']) {
+      const ch = getChannelByName(db, chName);
+      if (ch) await postMessageAs(db, ch, u, msg);
+    }
+  } catch (e) {
+    console.warn('[schedule] flavor-approve announcement failed:', e.message);
+  }
+
+  res.json(updated);
 });
 
 // POST /schedule/duplicate-day — copy one day's assignments/cleaning to other days of the same week

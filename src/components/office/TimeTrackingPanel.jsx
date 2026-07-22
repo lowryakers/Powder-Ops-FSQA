@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Check, Languages, Trash2, UserX, Clock, HelpCircle } from 'lucide-react';
+import { Check, Languages, Trash2, UserX, Clock, HelpCircle, Search, ChevronUp, ChevronDown } from 'lucide-react';
 
 const TYPES = [
   { value: 'absent', label: 'Absent', icon: UserX, tone: 'bg-red-100 text-red-700' },
@@ -73,23 +73,89 @@ function AdjustmentForm({ employees, onCreated }) {
   );
 }
 
+function SortHeader({ label, field, sortField, sortDir, onSort, className = '' }) {
+  return (
+    <th onClick={() => onSort(field)}
+      className={`text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${className}`}>
+      <span className="inline-flex items-center gap-1">{label}{sortField === field && (sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}</span>
+    </th>
+  );
+}
+
+// The message shown in the admin log: auto-translated English first, with the
+// original underneath when they differ.
+function EntryMessage({ e, compact = false }) {
+  if (e.message_en && e.message_en !== e.message) {
+    return (
+      <div className={compact ? 'text-sm text-gray-800' : 'mt-1.5 text-sm text-gray-800'}>
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-powder-500 mr-1"><Languages size={10} /> EN</span>
+        {e.message_en}
+        {e.message && <div className="text-xs text-gray-400 mt-0.5 italic">Original: {e.message}</div>}
+      </div>
+    );
+  }
+  const txt = [e.message, e.details].filter(Boolean).join(' — ');
+  return txt ? <p className={compact ? 'text-sm text-gray-800' : 'mt-1.5 text-sm text-gray-800'}>{txt}</p> : <span className="text-gray-300">—</span>;
+}
+
 function AdjustmentsLog() {
   const [employee, setEmployee] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [q, setQ] = useState('');
+  const [sortField, setSortField] = useState('adjustment_date');
+  const [sortDir, setSortDir] = useState('desc');
   const { data: entries, refresh } = useApiGet(`/office/time/adjustments${employee ? `?employee=${encodeURIComponent(employee)}` : ''}`, [employee]);
-  const names = [...new Set((entries || []).map(e => e.employee_name))].sort();
+  const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir(f === 'adjustment_date' ? 'desc' : 'asc'); } };
+
+  const list = useMemo(() => {
+    let l = entries || [];
+    if (typeFilter) l = l.filter(e => e.adjustment_type === typeFilter);
+    if (statusFilter) l = l.filter(e => e.status === statusFilter);
+    const needle = q.toLowerCase().trim();
+    if (needle) l = l.filter(e => [e.employee_name, e.message, e.message_en, e.details, e.submitted_by].filter(Boolean).join(' ').toLowerCase().includes(needle));
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const val = (e) => {
+      if (sortField === 'status') return e.status === 'new' ? 0 : 1;
+      return String(e[sortField] ?? '').toLowerCase();
+    };
+    return [...l].sort((a, b) => { const av = val(a), bv = val(b); return av < bv ? -dir : av > bv ? dir : 0; });
+  }, [entries, typeFilter, statusFilter, q, sortField, sortDir]);
+
   const markReviewed = async (e) => { await apiPut(`/office/time/adjustments/${e.id}`, { status: 'reviewed' }); refresh(); };
   const del = async (e) => {
     if (!confirm(`Delete entry for ${e.employee_name}?`)) return;
     await apiFetch(`/office/time/adjustments/${e.id}`, { method: 'DELETE' });
     refresh();
   };
+
   return (
     <div className="space-y-3">
-      {employee && (
-        <button onClick={() => setEmployee('')} className="text-xs text-powder-600 hover:underline">← All employees (filtering: {employee})</button>
-      )}
-      <div className="space-y-2">
-        {(entries || []).map(e => {
+      <div className="flex items-center gap-2 flex-wrap">
+        {employee && (
+          <button onClick={() => setEmployee('')} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-powder-600 text-white">
+            {employee} ✕
+          </button>
+        )}
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
+          <option value="">Type: all</option>
+          {TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
+          <option value="">Status: all</option>
+          <option value="new">New</option>
+          <option value="reviewed">Reviewed</option>
+        </select>
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, message…"
+            className="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm" />
+        </div>
+      </div>
+
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-2">
+        {list.map(e => {
           const t = typeMeta(e.adjustment_type);
           return (
             <div key={e.id} className={`bg-white rounded-xl border border-gray-200 border-l-4 ${e.status === 'new' ? 'border-powder-400' : 'border-gray-200'} p-3 shadow-sm`}>
@@ -106,20 +172,61 @@ function AdjustmentsLog() {
                   <button onClick={() => del(e)} className="p-1.5 text-gray-300 hover:text-red-500" data-tip="Delete" data-tip-left><Trash2 size={13} /></button>
                 </div>
               </div>
-              {e.message_en && e.message_en !== e.message ? (
-                <div className="mt-1.5 text-sm text-gray-800">
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-powder-500 mr-1"><Languages size={10} /> EN</span>
-                  {e.message_en}
-                  {e.message && <div className="text-xs text-gray-400 mt-0.5 italic">Original: {e.message}</div>}
-                </div>
-              ) : (
-                (e.message || e.details) && <p className="mt-1.5 text-sm text-gray-800">{[e.message, e.details].filter(Boolean).join(' — ')}</p>
-              )}
+              <EntryMessage e={e} />
               <div className="mt-1 text-[11px] text-gray-400">Reported by {e.submitted_by || '—'} · {(e.created_at || '').slice(0, 16).replace('T', ' ')}</div>
             </div>
           );
         })}
-        {(entries || []).length === 0 && <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-gray-400 text-sm">No entries</div>}
+        {list.length === 0 && <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-gray-400 text-sm">No entries</div>}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <SortHeader label="Employee" field="employee_name" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Type" field="adjustment_type" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Date" field="adjustment_date" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <th className="text-left px-3 py-2.5 font-medium text-gray-600">Message</th>
+                <SortHeader label="Reported by" field="submitted_by" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Status" field="status" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <th className="px-3 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {list.map(e => {
+                const t = typeMeta(e.adjustment_type);
+                return (
+                  <tr key={e.id} className={`border-b border-gray-100 hover:bg-gray-50 ${e.status === 'new' ? 'bg-powder-50/40' : ''}`}>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <button onClick={() => setEmployee(e.employee_name)} className="font-medium text-gray-900 hover:text-powder-700">{e.employee_name}</button>
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.tone}`}>{t.label}</span></td>
+                    <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{e.adjustment_date}</td>
+                    <td className="px-3 py-2.5 min-w-[260px] w-full"><EntryMessage e={e} compact /></td>
+                    <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{e.submitted_by || '—'}<div className="text-gray-400">{(e.created_at || '').slice(0, 10)}</div></td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {e.status === 'new'
+                        ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">New</span>
+                        : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 inline-flex items-center gap-1"><Check size={11} /> Reviewed</span>}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                      <div className="flex items-center gap-1 justify-end">
+                        {e.status === 'new' && (
+                          <button onClick={() => markReviewed(e)} className="px-2 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700">Mark reviewed</button>
+                        )}
+                        <button onClick={() => del(e)} className="p-1.5 text-gray-400 hover:text-red-500" data-tip="Delete"><Trash2 size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {list.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No entries</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
