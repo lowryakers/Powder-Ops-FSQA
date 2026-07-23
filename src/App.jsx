@@ -1049,6 +1049,12 @@ function App() {
     return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
   }
 
+  // Auditors only ever see the read-only evidence binder — no matter which
+  // URL they sign in from, and never the operating app or comms.
+  if (user.role === 'auditor') {
+    return <><AuditorView /><UpdateBanner /></>;
+  }
+
   // Slim standalone chat — the target of "Open in window" popouts and the
   // docked side panel's iframe. Renders only the conversation UI (CommsView's
   // compact layout takes over at narrow widths); /chat/<channel> deep-links.
