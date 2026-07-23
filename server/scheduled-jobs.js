@@ -6,6 +6,9 @@
 //    announce in #document_control.
 //  - Monday: expiry digest → #quality (certifications expiring ≤30 days or
 //    expired; calibration instruments due ≤30 days or overdue).
+//  - Daily: Critical Tracking red alert → #quality when the set of RED
+//    program areas changes (new red, or back to clear). Same computation as
+//    the dashboard; no repeat pings while the same areas stay red.
 
 export function startScheduledJobs(db, deps) {
   const tick = () => {
@@ -87,5 +90,28 @@ async function runDue(db, deps) {
       }
       setFlag(db, 'last_expiry_digest_week', week);
     } catch (e) { console.warn('[jobs] expiry digest failed:', e.message); }
+  }
+
+  // Daily critical-programs alert. Runs once per day (first hourly tick),
+  // but only posts when the red set actually changed since the last post.
+  const todayStr = now.toISOString().slice(0, 10);
+  if (deps.computeCritical && getFlag(db, 'last_critical_alert_check') !== todayStr) {
+    try {
+      const { readiness, categories } = deps.computeCritical(db);
+      const redNow = Object.values(categories).filter(c => c.status === 'crit').map(c => c.label).sort();
+      let redBefore = [];
+      try { redBefore = JSON.parse(getFlag(db, 'critical_alerted_set') || '[]'); } catch { redBefore = []; }
+      if (JSON.stringify(redNow) !== JSON.stringify(redBefore)) {
+        const channel = getChannelByName(db, 'quality') || getChannelByName(db, 'general');
+        if (channel) {
+          const msg = redNow.length
+            ? `🚨 Critical Tracking alert — ${redNow.length} program area${redNow.length === 1 ? ' is' : 's are'} RED: ${redNow.join(', ')}. Audit readiness is at ${readiness.score}%. Open Dashboard → Critical Tracking to see the specific items.`
+            : `✅ Critical Tracking — all previously red program areas are resolved. Audit readiness is at ${readiness.score}%.`;
+          await postMessageAs(db, channel, getBotUser(db), msg);
+        }
+        setFlag(db, 'critical_alerted_set', JSON.stringify(redNow));
+      }
+      setFlag(db, 'last_critical_alert_check', todayStr);
+    } catch (e) { console.warn('[jobs] critical alert failed:', e.message); }
   }
 }

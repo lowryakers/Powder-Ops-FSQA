@@ -14,11 +14,11 @@ const STATUS_COLORS = {
 
 const TYPES = ['scale', 'Thermometer', 'Thermocouple', 'pH Meter', 'Pressure Gauge', 'Flow Meter', 'Hygrometer', 'Metal Detector', 'Other'];
 
-function InstrumentForm({ initial, onSave, onCancel }) {
+function InstrumentForm({ initial, ccps, onSave, onCancel }) {
   const [form, setForm] = useState(initial || {
     name: '', type: 'scale', serial_number: '', manufacturer: '', model: '',
     room: '', asset_number: '', max_capacity: '', calibration_frequency: 'annual',
-    department: '', notes: '',
+    department: '', notes: '', haccp_ccp_id: null,
   });
   const [saving, setSaving] = useState(false);
 
@@ -89,6 +89,14 @@ function InstrumentForm({ initial, onSave, onCancel }) {
             {['daily', 'weekly', 'monthly', 'quarterly', 'semi_annual', 'annual'].map(f =>
               <option key={f} value={f}>{f.replace('_', ' ')}</option>
             )}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">HACCP CCP Link</label>
+          <select value={form.haccp_ccp_id || ''} onChange={e => setForm({ ...form, haccp_ccp_id: e.target.value || null })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">None</option>
+            {(ccps || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
         <div>
@@ -182,6 +190,7 @@ export default function CalibrationPanel() {
   const { data: instruments, loading, refresh } = useApiGet('/calibration/instruments');
   const { data: summary } = useApiGet('/calibration/summary');
   const { data: records, refresh: refreshRecords } = useApiGet('/calibration/records');
+  const { data: ccps } = useApiGet('/haccp');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [calibrating, setCalibrating] = useState(null);
@@ -276,8 +285,8 @@ export default function CalibrationPanel() {
         </button>
       </div>
 
-      {(showForm && !editing) && <InstrumentForm onSave={handleCreate} onCancel={() => setShowForm(false)} />}
-      {editing && <InstrumentForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
+      {(showForm && !editing) && <InstrumentForm ccps={ccps} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
+      {editing && <InstrumentForm initial={editing} ccps={ccps} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
 
       {tab === 'instruments' && (
         <>

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square } from 'lucide-react';
+import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square, ShieldCheck } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 
 const TYPES = [
@@ -438,11 +438,105 @@ function BulkEditBar({ selected, equipment, onApply, onCancel }) {
   );
 }
 
+// HACCP CCP definitions: name, hazard, critical limits, monitoring and
+// corrective action — plus how many equipment items / calibration instruments
+// are linked as monitoring evidence (links are set on the equipment form and
+// the calibration instrument form). Feeds the Critical Tracking CCP card.
+const CCP_FIELDS = [
+  ['name', 'CCP Name *', 'e.g. CCP 1 — Metal Detection'],
+  ['hazard_type', 'Hazard Type', 'e.g. Physical — metal fragments'],
+  ['critical_limits', 'Critical Limits *', 'e.g. Fe 1.5mm / NonFe 2.0mm / SS 2.5mm test pieces rejected'],
+  ['monitoring_procedure', 'Monitoring Procedure *', 'e.g. Pass all 3 test pieces at startup, every 2h, and end of run'],
+  ['monitoring_frequency', 'Monitoring Frequency', 'e.g. Startup + every 2 hours'],
+  ['corrective_action', 'Corrective Action *', 'e.g. Stop line, hold back to last good check, notify QA'],
+  ['verification_procedure', 'Verification', 'e.g. QA reviews detector log daily'],
+  ['record_keeping_requirements', 'Records', 'e.g. Metal detector log, calibration certificates'],
+];
+
+function CcpManager({ ccps, equipment, onClose, onChanged }) {
+  const [editing, setEditing] = useState(null); // null | {} (new) | ccp row
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const linkedCount = (id) => (equipment || []).filter(e => e.haccp_ccp_id === id).length;
+
+  const open = (ccp) => { setEditing(ccp || {}); setForm(ccp || {}); setError(null); };
+  const save = async () => {
+    setSaving(true); setError(null);
+    try {
+      if (editing?.id) await apiPut(`/haccp/${editing.id}`, form);
+      else await apiPost('/haccp', form);
+      setEditing(null); onChanged();
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl my-8" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2"><ShieldCheck size={18} className="text-powder-600" /> HACCP Critical Control Points</h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          {!editing && (
+            <>
+              {(ccps || []).length === 0 && (
+                <p className="text-sm text-gray-500">No CCPs defined yet. Add each Critical Control Point from your HACCP plan, then link its monitoring equipment (Equipment form → HACCP CCP Link) and instruments (Calibration → instrument form).</p>
+              )}
+              {(ccps || []).map(c => (
+                <div key={c.id} className="border border-gray-200 rounded-lg px-4 py-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{c.name}</p>
+                    <p className="text-xs text-gray-500">{c.hazard_type || 'hazard not set'} · limits: {c.critical_limits || '—'}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{linkedCount(c.id)} equipment linked</p>
+                  </div>
+                  <button onClick={() => open(c)} className="p-1.5 text-gray-400 hover:text-powder-600 rounded" data-tip="Edit CCP"><Edit2 size={14} /></button>
+                </div>
+              ))}
+              <button onClick={() => open(null)}
+                className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+                <Plus size={16} /> Add CCP
+              </button>
+            </>
+          )}
+          {editing && (
+            <div className="space-y-3">
+              {CCP_FIELDS.map(([key, label, ph]) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">{label}</label>
+                  {['critical_limits', 'monitoring_procedure', 'corrective_action'].includes(key) || key.startsWith('verification') || key.startsWith('record') ? (
+                    <textarea value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })} rows={2}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={ph} />
+                  ) : (
+                    <input value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={ph} />
+                  )}
+                </div>
+              ))}
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setEditing(null)} className="px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button onClick={save} disabled={saving || !form.name}
+                  className="px-5 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-40">
+                  {saving ? 'Saving…' : editing.id ? 'Update CCP' : 'Add CCP'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EquipmentPanel() {
   const { data: equipment, loading, refresh } = useApiGet('/equipment');
-  const { data: ccps } = useApiGet('/haccp');
+  const { data: ccps, refresh: refreshCcps } = useApiGet('/haccp');
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'equipment');
+  const canCcp = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
+  const [showCcps, setShowCcps] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
@@ -574,6 +668,12 @@ export default function EquipmentPanel() {
           }} className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
             <Download size={16} /> Export
           </button>
+          {canCcp && (
+            <button onClick={() => setShowCcps(true)}
+              className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200" data-tip="Define HACCP CCPs and their monitoring evidence">
+              <ShieldCheck size={16} /> Manage CCPs
+            </button>
+          )}
           {canEdit && (
             <button onClick={() => { setShowForm(true); setEditing(null); }}
               className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
@@ -582,6 +682,8 @@ export default function EquipmentPanel() {
           )}
         </div>
       </div>
+
+      {showCcps && <CcpManager ccps={ccps} equipment={equipment} onClose={() => setShowCcps(false)} onChanged={refreshCcps} />}
 
       {/* Search and Filters */}
       <div className="flex flex-wrap gap-2 items-center">

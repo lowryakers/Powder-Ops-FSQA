@@ -65,7 +65,7 @@ export default function CriticalPanel({ onNavigate = () => {} }) {
 
       <div className={`rounded-xl border p-4 flex items-center gap-3 ${overall.ring} ${overall.bg}`}>
         <OverallIcon size={24} className={overall.text} />
-        <div>
+        <div className="flex-1">
           <p className="font-semibold text-gray-900">
             {data.overall === 'ok' ? 'All programs on track' : data.overall === 'warn' ? `${attention.length} area${attention.length === 1 ? '' : 's'} need attention` : 'Critical items need action now'}
           </p>
@@ -73,6 +73,12 @@ export default function CriticalPanel({ onNavigate = () => {} }) {
             {attention.length ? attention.map(c => `${c.label} (${c.count})`).join(' · ') : 'No overdue tasks, unsigned records, expiring certifications, or open holds.'}
           </p>
         </div>
+        {data.readiness && (
+          <div className="text-right shrink-0">
+            <p className={`text-3xl font-extrabold leading-none ${overall.text}`}>{data.readiness.score}%</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">audit readiness</p>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

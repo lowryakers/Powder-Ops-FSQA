@@ -17,7 +17,7 @@ import checklistRoutes from './server/api/checklists.js';
 import calibrationRoutes from './server/api/calibration.js';
 import sanitationRoutes from './server/api/sanitation.js';
 import auditRoutes from './server/api/audit.js';
-import complianceRoutes, { buildBackupZip } from './server/api/compliance.js';
+import complianceRoutes, { buildBackupZip, computeCritical } from './server/api/compliance.js';
 import { startScheduledJobs } from './server/scheduled-jobs.js';
 import lotoRoutes from './server/api/loto.js';
 import userRoutes from './server/api/users.js';
@@ -1405,7 +1405,7 @@ server.listen(PORT, '0.0.0.0', () => {
   // Index the contents of previously-uploaded invoices (no-op unless storage is on).
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical });
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).
   try {

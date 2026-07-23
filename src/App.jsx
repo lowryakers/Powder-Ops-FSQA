@@ -645,6 +645,21 @@ function ModuleSearch({ user, onNavigate }) {
 
 const MOBILE_TAB_LABELS = { dashboard: 'Home', operator: 'Operator', pm: 'Tasks', 'production-schedule': 'Schedule', 'production-log': 'Production', capa: 'CAPA', sanitation: 'Sanitation', 'currently-out': 'Checked Out', 'maintenance-signout': 'Sign In-Out', messages: 'Messages' };
 
+// Audit-readiness chip on the Dashboard tab row — the Phase 3 "one number"
+// view of Critical Tracking. Own component so the fetch only happens for
+// users who can actually see the critical view.
+function ReadinessChip({ onClick }) {
+  const { data } = useApiGet('/compliance/critical');
+  if (!data?.readiness) return null;
+  const tone = data.overall === 'crit' ? 'bg-red-100 text-red-800' : data.overall === 'warn' ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800';
+  return (
+    <button onClick={onClick} data-tip="Audit readiness — open Critical Tracking for the gaps"
+      className={`px-2.5 py-1 rounded-full text-xs font-bold ${tone} hover:opacity-80`}>
+      {data.readiness.score}% audit-ready
+    </button>
+  );
+}
+
 // Dashboard with tabs: Overview for everyone with dashboard access, and
 // Critical Tracking for admins/supervisors or anyone explicitly granted the
 // 'critical-tracking' module in Settings (shareable like any module).
@@ -654,11 +669,14 @@ function DashboardHub({ user, onNavigate, initialTab = 'overview' }) {
   if (!canCritical) return <ComplianceDashboard />;
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-        {[['overview', 'Overview'], ['critical', 'Critical Tracking']].map(([v, l]) => (
-          <button key={v} onClick={() => setTab(v)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{l}</button>
-        ))}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+          {[['overview', 'Overview'], ['critical', 'Critical Tracking']].map(([v, l]) => (
+            <button key={v} onClick={() => setTab(v)}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{l}</button>
+          ))}
+        </div>
+        <ReadinessChip onClick={() => setTab('critical')} />
       </div>
       {tab === 'overview' ? <ComplianceDashboard /> : <CriticalPanel onNavigate={onNavigate} />}
     </div>

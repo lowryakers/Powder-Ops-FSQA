@@ -4,6 +4,13 @@ import { getDb, logAudit } from '../db.js';
 
 const router = Router();
 
+// CCP definitions are food-safety-plan content: writable by admins,
+// supervisors, or QA; readable by anyone authenticated (the equipment form
+// needs the list for its link dropdown).
+function canManageCcps(u) {
+  return !!u && (['admin', 'supervisor'].includes(u.role) || u.department === 'qa');
+}
+
 router.get('/', (_req, res) => {
   const db = getDb();
   const ccps = db.prepare('SELECT * FROM haccp_ccps ORDER BY name').all();
@@ -23,6 +30,7 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', (req, res) => {
+  if (!canManageCcps(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can manage CCPs.' });
   const db = getDb();
   const id = uuid();
   const { name, description, hazard_type, critical_limits, monitoring_procedure, monitoring_frequency, corrective_action, verification_procedure, record_keeping_requirements } = req.body;
@@ -42,6 +50,7 @@ router.post('/', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
+  if (!canManageCcps(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can manage CCPs.' });
   const db = getDb();
   const existing = db.prepare('SELECT * FROM haccp_ccps WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'CCP not found' });

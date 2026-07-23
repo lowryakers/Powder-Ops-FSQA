@@ -11,15 +11,10 @@ const router = Router();
 // One aggregation for the program-health dashboard: every category returns a
 // status (ok/warn/crit), a count, and the top offending items so the fix is
 // one click away. Admin + supervisors.
-router.get('/critical', (req, res) => {
-  // Admins/supervisors always; others need an explicit 'critical-tracking'
-  // grant in their Settings access map (shareable like any module).
-  const ma = req.user?.module_access;
-  const granted = ma && !Array.isArray(ma) && !!ma['critical-tracking'];
-  if (!req.user || (!['admin', 'supervisor'].includes(req.user.role) && !granted)) {
-    return res.status(403).json({ error: 'Critical Tracking is for admins, supervisors, or users granted access in Settings.' });
-  }
-  const db = getDb();
+// Shared by the /critical route and the daily red-alert job in
+// scheduled-jobs.js, so what the dashboard shows and what QA gets pinged
+// about can never drift apart.
+export function computeCritical(db) {
   const today = new Date().toISOString().slice(0, 10);
   const daysBetween = (a, b) => Math.floor((new Date(a) - new Date(b)) / 86400000);
   const cats = {};
@@ -128,9 +123,64 @@ router.get('/critical', (req, res) => {
     items: reclean.slice(0, 8).map(r => ({ title: r.room, detail: r.last_clean ? `last cleaned ${r.last_clean.slice(0, 10)}` : 'no clean on record' })),
   };
 
+  // HACCP / CCP monitoring evidence: each defined CCP with its linked
+  // equipment + calibration instruments, checked for the evidence an auditor
+  // asks for — current PMs on the equipment and in-date calibration.
+  try {
+    const ccps = db.prepare('SELECT id, name, hazard_type FROM haccp_ccps ORDER BY name').all();
+    const ccpItems = [];
+    let worst = 'ok';
+    const bump = (s) => { if (s === 'crit') worst = 'crit'; else if (s === 'warn' && worst === 'ok') worst = 'warn'; };
+    for (const ccp of ccps) {
+      const eq = db.prepare('SELECT id, name FROM equipment WHERE haccp_ccp_id = ?').all(ccp.id);
+      const inst = db.prepare("SELECT name, next_due FROM calibration_instruments WHERE haccp_ccp_id = ? AND status != 'retired'").all(ccp.id);
+      const eqIds = eq.map(e => e.id);
+      let overduePm = 0;
+      if (eqIds.length) {
+        const ph = eqIds.map(() => '?').join(',');
+        overduePm = db.prepare(`SELECT COUNT(*) c FROM work_orders WHERE status = 'open' AND due_date < ? AND equipment_id IN (${ph})`).get(today, ...eqIds).c;
+      }
+      const overdueCal = inst.filter(i => i.next_due && i.next_due < today).length;
+      const unlinked = eq.length === 0 && inst.length === 0;
+      const status = (overduePm || overdueCal) ? 'crit' : unlinked ? 'warn' : 'ok';
+      bump(status);
+      const parts = [`${eq.length} equipment`, `${inst.length} instrument${inst.length === 1 ? '' : 's'}`];
+      if (overduePm) parts.push(`${overduePm} overdue PM${overduePm === 1 ? '' : 's'}`);
+      if (overdueCal) parts.push(`${overdueCal} calibration overdue`);
+      if (unlinked) parts.push('no equipment/instruments linked');
+      if (status === 'ok') parts.push('evidence current');
+      ccpItems.push({ title: `${ccp.name}${ccp.hazard_type ? ` (${ccp.hazard_type})` : ''}`, detail: parts.join(' · ') });
+    }
+    if (!ccps.length) {
+      ccpItems.push({ title: 'No CCPs defined yet', detail: 'Add them under Equipment → Manage CCPs and link the monitoring equipment/instruments.' });
+    }
+    cats.ccp = {
+      label: 'HACCP / CCP Monitoring', module: 'equipment',
+      count: ccps.length,
+      status: ccps.length ? worst : 'warn',
+      items: ccpItems.slice(0, 8),
+    };
+  } catch { /* optional tables */ }
+
   const statuses = Object.values(cats).map(c => c.status);
   const overall = statuses.includes('crit') ? 'crit' : statuses.includes('warn') ? 'warn' : 'ok';
-  res.json({ overall, generated_at: new Date().toISOString(), categories: cats });
+  // Audit-readiness: each program area contributes fully when green, half
+  // when amber, nothing when red. Deliberately blunt — it moves when and only
+  // when program health moves.
+  const score = statuses.length ? Math.round((statuses.reduce((s, st) => s + (st === 'ok' ? 1 : st === 'warn' ? 0.5 : 0), 0) / statuses.length) * 100) : 100;
+  const gaps = Object.values(cats).filter(c => c.status !== 'ok').map(c => ({ label: c.label, status: c.status, count: c.count }));
+  return { overall, readiness: { score, gaps }, generated_at: new Date().toISOString(), categories: cats };
+}
+
+router.get('/critical', (req, res) => {
+  // Admins/supervisors always; others need an explicit 'critical-tracking'
+  // grant in their Settings access map (shareable like any module).
+  const ma = req.user?.module_access;
+  const granted = ma && !Array.isArray(ma) && !!ma['critical-tracking'];
+  if (!req.user || (!['admin', 'supervisor'].includes(req.user.role) && !granted)) {
+    return res.status(403).json({ error: 'Critical Tracking is for admins, supervisors, or users granted access in Settings.' });
+  }
+  res.json(computeCritical(getDb()));
 });
 
 // ── Full data backup ─────────────────────────────────────────────────────────
