@@ -1,5 +1,12 @@
 # Powder Ops FSQA — working notes
 
+## Flavor approvals via SMS (Danny)
+`flavor_approval` QMS type + FlavorPanel ("Text for approval" row action) → magic link `/approve/<token>`
+(public, single-use, ApprovePage.jsx) → decision updates the record + announces in #batching.
+**SMS auto-send needs env:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `FLAVOR_APPROVER_PHONE`
+(optional `APP_BASE_URL`, default start.powder-ops.com). Without them the link is shown for manual texting.
+Future: text-to-AI query layer for Danny rides on the same Twilio setup (inbound webhook needed then).
+
 ## Deferred / future work — remind the user when relevant
 
 ### Phase 3: Team Activity / efficiency dashboard  (SHIPPED — user approved 2026-07-22)

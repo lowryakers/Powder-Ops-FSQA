@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Edit2, Trash2, X, Network, Settings2, FileText } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Network, Settings2, FileText, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import './OrgChart.css';
 
 const DEPARTMENTS = ['executive', 'quality', 'production', 'sanitation', 'maintenance', 'warehouse', 'admin', 'other'];
@@ -247,6 +247,19 @@ export default function OrgChart() {
   };
   const handleSaveMeta = async (form) => { await apiPut('/org/meta', form); setEditMeta(false); refresh(); };
 
+  // Viewing controls: zoom in/out plus one-click fit-to-width, so a wide chart
+  // is readable without endless sideways scrolling. Uses the CSS zoom property
+  // (affects layout, so the scrollbar shrinks with the chart).
+  const [zoom, setZoom] = useState(1);
+  const chartWrapRef = useRef(null);
+  const chartRef = useRef(null);
+  const fitToWidth = () => {
+    const wrap = chartWrapRef.current, chart = chartRef.current;
+    if (!wrap || !chart) return;
+    const natural = chart.scrollWidth / zoom;
+    setZoom(Math.max(0.35, Math.min(1, +( (wrap.clientWidth - 24) / natural ).toFixed(2))));
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -258,16 +271,24 @@ export default function OrgChart() {
             {meta?.effective_date ? ` · ${meta.effective_date}` : ''}
           </p>
         </div>
-        {canEdit && (
-          <div className="flex items-center gap-2">
-            <button onClick={() => setEditMeta(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
-              <Settings2 size={15} /> Details
-            </button>
-            <button onClick={() => setAdding({ _defaultParent: '', parentTitle: null })} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
-              <Plus size={16} /> Add Position
-            </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-1">
+            <button onClick={() => setZoom(z => Math.max(0.35, +(z - 0.1).toFixed(2)))} className="p-1.5 text-gray-500 hover:bg-white rounded-md" data-tip="Zoom out"><ZoomOut size={15} /></button>
+            <button onClick={() => setZoom(1)} className="px-1.5 text-xs font-medium text-gray-600 hover:bg-white rounded-md min-w-[3rem]" data-tip="Reset to 100%">{Math.round(zoom * 100)}%</button>
+            <button onClick={() => setZoom(z => Math.min(1.5, +(z + 0.1).toFixed(2)))} className="p-1.5 text-gray-500 hover:bg-white rounded-md" data-tip="Zoom in"><ZoomIn size={15} /></button>
+            <button onClick={fitToWidth} className="p-1.5 text-gray-500 hover:bg-white rounded-md" data-tip="Fit whole chart to screen width"><Maximize2 size={15} /></button>
           </div>
-        )}
+          {canEdit && (
+            <>
+              <button onClick={() => setEditMeta(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+                <Settings2 size={15} /> Details
+              </button>
+              <button onClick={() => setAdding({ _defaultParent: '', parentTitle: null })} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
+                <Plus size={16} /> Add Position
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -278,9 +299,9 @@ export default function OrgChart() {
           <p className="text-sm">No positions yet.{canEdit ? ' Click "Add Position" to start building the chart.' : ''}</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <div ref={chartWrapRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
           {canEdit && <p className="text-[11px] text-gray-400 px-4 pt-3">Tip: drag a position onto another to change its reporting line. Hover a box for add/edit/remove.</p>}
-          <div className="orgtree min-w-full">
+          <div ref={chartRef} className="orgtree min-w-full" style={{ zoom }}>
             <ul>
               {roots.map(r => (
                 <TreeNode key={r.id} node={r} canEdit={canEdit} dnd={dnd}

@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
+import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
+import { smsEnabled, sendSms, approverPhone, appBaseUrl } from '../sms.js';
 import { nextDisposalNumber } from './disposals.js';
 import { QMS_TYPES, getType, canSignApproval } from '../qms-config.js';
 
@@ -185,6 +187,33 @@ router.get('/config', (_req, res) => {
     return t;
   });
   res.json({ types });
+});
+
+// ── Flavor approval: text the taste-test request to the approver ─────────────
+// Generates (or reuses) the record's magic approval token and, when Twilio is
+// configured, texts the link to the flavor approver (Danny). Always returns
+// the link so it can be sent manually from any phone when SMS is off.
+router.post('/flavor_approval/:id/send', async (req, res) => {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM qms_records WHERE id = ? AND record_type = 'flavor_approval'").get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (row.status !== 'pending') return res.status(400).json({ error: 'This request has already been decided.' });
+  const data = parseJson(row.data, {});
+  if (!data.approval_token) {
+    data.approval_token = crypto.randomBytes(24).toString('base64url');
+    db.prepare("UPDATE qms_records SET data = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(data), row.id);
+  }
+  const link = `${appBaseUrl()}/approve/${data.approval_token}`;
+  const summary = [data.product_name, data.lot_number && `Lot ${data.lot_number}`, data.work_order && `WO ${data.work_order}`].filter(Boolean).join(' · ');
+  let texted = false, smsError = null;
+  if (smsEnabled() && approverPhone()) {
+    try {
+      await sendSms(approverPhone(), `Powder Ops — flavor approval needed: ${summary}. Tap to approve or deny: ${link}`);
+      texted = true;
+      logAudit(req.user, 'qms_updated', 'flavor_approval', row.id, { record_number: row.record_number, texted_to_approver: true });
+    } catch (e) { smsError = e.message; }
+  }
+  res.json({ ok: true, link, texted, sms_configured: smsEnabled() && !!approverPhone(), sms_error: smsError });
 });
 
 // ── list + summary ──────────────────────────────────────────────────────────

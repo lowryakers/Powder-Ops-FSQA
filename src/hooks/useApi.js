@@ -76,7 +76,7 @@ export async function apiDelete(path) {
   return apiFetch(path, { method: 'DELETE' });
 }
 
-export async function apiUpload(path, formData) {
+export async function apiUpload(path, formData, method = 'POST') {
   if (viewAsUser) {
     window.dispatchEvent(new CustomEvent('view-as-blocked'));
     throw new Error(`Read-only preview — exit "Viewing as ${viewAsUser.name}" to make changes.`);
@@ -85,7 +85,7 @@ export async function apiUpload(path, formData) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: formData });
+  const res = await fetch(`${BASE}${path}`, { method, headers, body: formData });
   if (!res.ok) {
     if (res.status === 401) {
       localStorage.removeItem('auth_token');

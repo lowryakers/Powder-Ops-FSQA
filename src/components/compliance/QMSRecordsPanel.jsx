@@ -671,7 +671,9 @@ function ConfirmDeleteModal({ count, noun, onConfirm, onClose }) {
 }
 
 /* ───────── Panel ───────── */
-export default function QMSRecordsPanel({ recordType, moduleId }) {
+// `rowAction` (optional): { label, icon, show(rec), run(rec) } renders an extra
+// per-row button in the log — e.g. Flavor Approvals' "Text for approval".
+export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null }) {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, moduleId);
   const isAdmin = user?.role === 'admin';
@@ -886,6 +888,12 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
                       {c1 && <div className="text-xs text-gray-600 leading-snug">{displayValue(cfg, rec, c1)}</div>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {rowAction && canEdit && (!rowAction.show || rowAction.show(rec)) && (
+                        <button onClick={e => { e.stopPropagation(); rowAction.run(rec); }}
+                          className="flex items-center gap-1 px-2 py-1 bg-powder-600 text-white rounded-lg text-[11px] font-medium hover:bg-powder-700">
+                          {rowAction.icon && <rowAction.icon size={11} />} {rowAction.label}
+                        </button>
+                      )}
                       {badgeCol === 'status' && <StatusBadge cfg={cfg} rec={rec} />}
                       {badgeCol === 'approvals' && <ApprovalBadge cfg={cfg} rec={rec} />}
                       {badgeCol === 'result' && <ResultBadge cfg={cfg} rec={rec} />}
@@ -921,6 +929,7 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
                     </th>
                   )}
                   {cfg.logColumns.map(col => <SortTh key={col} label={fieldLabel(cfg, col)} field={col} {...sh} align={(col === 'approvals' || col === 'status' || col === 'result') ? 'center' : 'left'} />)}
+                  {rowAction && canEdit && <th className="px-2 py-2" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
@@ -938,6 +947,16 @@ export default function QMSRecordsPanel({ recordType, moduleId }) {
                       const primary = ci === 0 || col === cfg.primaryField;
                       return <td key={col} className={`px-2 py-2 ${primary ? 'font-medium text-gray-900' : 'text-gray-600'} ${col === 'record_number' ? 'whitespace-nowrap' : ''}`}>{displayValue(cfg, rec, col)}</td>;
                     })}
+                    {rowAction && canEdit && (
+                      <td className="px-2 py-2 whitespace-nowrap text-right" onClick={e => e.stopPropagation()}>
+                        {(!rowAction.show || rowAction.show(rec)) && (
+                          <button onClick={() => rowAction.run(rec)}
+                            className="flex items-center gap-1 px-2 py-1 bg-powder-600 text-white rounded-lg text-[11px] font-medium hover:bg-powder-700 ml-auto">
+                            {rowAction.icon && <rowAction.icon size={11} />} {rowAction.label}
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

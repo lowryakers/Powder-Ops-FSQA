@@ -1,9 +1,49 @@
 import { Router } from 'express';
+import AdmZip from 'adm-zip';
 import { getDb } from '../db.js';
 import { QMS_TYPES } from '../qms-config.js';
 import { recleanRooms } from './sanitation.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
+
+// ── Full data backup ─────────────────────────────────────────────────────────
+// Admin-only ZIP of every application table as CSV — the "if the tool ever
+// crashes we still have every form and every check on paper" export. Secrets
+// and machine-only tables (sessions, push subscriptions, embeddings, FTS
+// shadows) are excluded; BLOB columns are dropped.
+const BACKUP_EXCLUDE = /^(sqlite_|sessions$|chat_push_subscriptions$|chat_message_embeddings$|chat_messages_fts)/;
+const csvCell = (v) => {
+  if (v == null) return '';
+  if (Buffer.isBuffer(v)) return '';
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+};
+router.get('/export-all', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const zip = new AdmZip();
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()
+    .map(t => t.name).filter(n => !BACKUP_EXCLUDE.test(n));
+  let total = 0;
+  for (const table of tables) {
+    let rows;
+    try { rows = db.prepare(`SELECT * FROM "${table}"`).all(); } catch { continue; }
+    const cols = rows.length ? Object.keys(rows[0]) : db.prepare(`PRAGMA table_info("${table}")`).all().map(c => c.name);
+    // Drop password/PIN columns from the users export.
+    const keep = cols.filter(c => !/password|pin/i.test(c) || table !== 'users');
+    const lines = [keep.join(',')];
+    for (const r of rows) lines.push(keep.map(c => csvCell(r[c])).join(','));
+    zip.addFile(`${table}.csv`, Buffer.from(lines.join('\r\n'), 'utf8'));
+    total += rows.length;
+  }
+  zip.addFile('README.txt', Buffer.from(
+    `Powder Ops ReadyDoc full data backup\nGenerated: ${new Date().toISOString()} by ${req.user.name}\n` +
+    `${tables.length} tables, ${total} rows. Each CSV opens in Excel; JSON columns (data, procedure_steps, approvals) hold structured form contents.\n`, 'utf8'));
+  const name = `readydoc-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+  res.send(zip.toBuffer());
+});
 
 router.get('/dashboard', (_req, res) => {
   const db = getDb();

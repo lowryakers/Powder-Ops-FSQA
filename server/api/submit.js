@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { getType, CHEMICAL_USE_SPECS } from '../qms-config.js';
+import { getChannelByName, postMessageAs } from './comms.js';
 
 const router = Router();
 
@@ -142,6 +143,57 @@ router.post('/knife', (req, res) => {
     { tool_id: toolId, condition: cond, sign_out_record: logNumber, via: 'kiosk' }, null, null, toolId);
 
   res.status(201).json({ ok: true, action, tool_id: toolId, condition: cond, record_number: logNumber });
+});
+
+// ── Flavor approval by magic link ─────────────────────────────────────────────
+// The approver (Danny) gets a texted link with a long random token — no login.
+// GET shows the request; POST records the decision, closes the token, and
+// announces the result in #batching.
+function flavorByToken(db, token) {
+  if (!token || token.length < 20) return null;
+  const rows = db.prepare("SELECT * FROM qms_records WHERE record_type = 'flavor_approval' AND status = 'pending'").all();
+  return rows.find(r => parseJson(r.data, {}).approval_token === token) || null;
+}
+
+router.get('/flavor-approval/:token', (req, res) => {
+  const db = getDb();
+  const row = flavorByToken(db, req.params.token);
+  if (!row) return res.status(404).json({ error: 'This approval link is invalid or already used.' });
+  const d = parseJson(row.data, {});
+  res.json({
+    record_number: row.record_number,
+    product_name: d.product_name, lot_number: d.lot_number, work_order: d.work_order,
+    batched_on: d.batched_on, sample_quantity: d.sample_quantity,
+  });
+});
+
+router.post('/flavor-approval/:token', async (req, res) => {
+  const db = getDb();
+  const row = flavorByToken(db, req.params.token);
+  if (!row) return res.status(404).json({ error: 'This approval link is invalid or already used.' });
+  const decision = req.body?.decision === 'denied' ? 'denied' : req.body?.decision === 'approved' ? 'approved' : null;
+  if (!decision) return res.status(400).json({ error: 'Decision must be approved or denied.' });
+  const d = parseJson(row.data, {});
+  d.decided_by = (req.body?.name || '').trim() || 'Danny Augustyn';
+  d.decision_date = today();
+  if (req.body?.comments) d.comments = String(req.body.comments).slice(0, 500);
+  delete d.approval_token; // single use
+  db.prepare("UPDATE qms_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(decision, JSON.stringify(d), row.id);
+  logAudit(d.decided_by, decision === 'approved' ? 'flavor_approved' : 'flavor_denied', 'flavor_approval', row.id,
+    { record_number: row.record_number, product: d.product_name, lot: d.lot_number, via: 'sms-link' }, null, null, d.product_name);
+  // Announce in #batching so the floor knows immediately.
+  try {
+    const channel = getChannelByName(db, 'batching') || getChannelByName(db, 'general');
+    const author = db.prepare("SELECT id, name FROM users WHERE name LIKE 'Danny%' AND is_active = 1 LIMIT 1").get()
+      || db.prepare("SELECT id, name FROM users WHERE role = 'admin' LIMIT 1").get();
+    if (channel && author) {
+      const emoji = decision === 'approved' ? '✅' : '❌';
+      await postMessageAs(db, channel, author,
+        `${emoji} Flavor ${decision}: ${d.product_name || row.record_number}${d.lot_number ? ` (Lot ${d.lot_number})` : ''} — ${d.decided_by} via text${d.comments ? ` — "${d.comments}"` : ''}`);
+    }
+  } catch { /* best-effort */ }
+  res.json({ ok: true, decision, record_number: row.record_number });
 });
 
 // ── Component Sign In/Out kiosk ───────────────────────────────────────────────

@@ -56,6 +56,7 @@ const MODULE_GROUPS = [
       { id: 'org-chart', label: 'Org Chart' },
       { id: 'disposals', label: 'Disposals' },
       { id: 'training', label: 'Training Records' },
+      { id: 'certifications', label: 'Certifications' },
       { id: 'recall', label: 'Mock Recall' },
     ],
   },
@@ -79,6 +80,7 @@ const MODULE_GROUPS = [
       { id: 'maintenance-signout', label: 'Equipment/Tool/Chemical Sign In-Out' },
       { id: 'currently-out', label: 'Checked Out (summary view)' },
       { id: 'organoleptic', label: 'Organoleptic Sensory' },
+      { id: 'flavor-approvals', label: 'Flavor Approvals' },
       { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor' },
     ],
   },
@@ -696,6 +698,36 @@ function TemplateTools({ current, onApply }) {
   );
 }
 
+// Downloads the admin full-data ZIP (auth header required, so plain <a> won't do).
+function BackupDownloadButton() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const download = async () => {
+    setBusy(true); setError('');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/compliance/export-all', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `readydoc-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="text-right">
+      <button onClick={download} disabled={busy}
+        className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50 whitespace-nowrap">
+        {busy ? 'Preparing…' : 'Download backup (ZIP)'}
+      </button>
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+}
+
 function BulkAccessModal({ users, onClose, onDone }) {
   const [selected, setSelected] = useState({});
   // Merge mode (default): `access` holds only the changes to apply. Overwrite
@@ -880,6 +912,18 @@ export default function SettingsPanel() {
 
       {bulkAdd && <BulkAddModal onClose={() => setBulkAdd(false)} onDone={() => { setBulkAdd(false); refresh(); }} />}
       {bulkAccess && <BulkAccessModal users={users || []} onClose={() => setBulkAccess(false)} onDone={() => { setBulkAccess(false); refresh(); }} />}
+
+      {/* Data backup */}
+      <div className="space-y-3">
+        <h2 className="text-xl font-bold text-gray-900">Data Backup</h2>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-gray-900">Full data export</h3>
+            <p className="text-sm text-gray-500 max-w-xl">Every form, log, and check as a ZIP of spreadsheets (CSV) — download periodically so a physical/offline copy of all records exists even if the tool goes down. Excludes passwords and message notification internals.</p>
+          </div>
+          <BackupDownloadButton />
+        </div>
+      </div>
 
       {/* Links Section */}
       <div className="space-y-4">

@@ -559,6 +559,11 @@ router.post('/channels/:id/read', (req, res) => {
     db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)')
       .run(uuid(), channel.id, req.user.id, 'member', now);
   }
+  // Reading here clears this channel's lingering notifications on the user's
+  // OTHER devices (a silent push the service worker turns into close()).
+  if (pushEnabled()) {
+    pushToUser(req.user.id, { dismiss: `channel-${channel.id}`, channelId: channel.id }).catch(() => {});
+  }
   res.json({ ok: true });
 });
 

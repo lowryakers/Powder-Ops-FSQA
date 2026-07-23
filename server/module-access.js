@@ -23,11 +23,11 @@ export const ALL_MODULE_IDS = [
   'pm', 'equipment', 'calibration', 'loto',
   'sanitation', 'chemicals', 'hygienic', 'coa',
   'capa', 'sops', 'work-instructions', 'job-descriptions', 'org-chart',
-  'disposals', 'training', 'recall',
+  'disposals', 'training', 'certifications', 'recall',
   'office-requests',
   'dcr', 'deviations', 'non-conformance', 'on-hold',
   'component-signout', 'maintenance-signout', 'currently-out', 'organoleptic',
-  'knife-accountability',
+  'knife-accountability', 'flavor-approvals',
 ];
 
 export function moduleLevel(user, moduleId) {

@@ -456,6 +456,40 @@ export const QMS_TYPES = {
     },
   },
 
+  // Flavor Approval (paper Form replacement): batching submits a sample for
+  // taste testing; Danny approves or denies — in-app, or from his phone via a
+  // texted magic link (no login). See /api/submit/flavor-approval/:token.
+  flavor_approval: {
+    key: 'flavor_approval',
+    label: 'Flavor Approvals',
+    singular: 'Flavor Approval',
+    short: 'FA',
+    moduleId: 'flavor-approvals',
+    formCode: 'Flavor Approval Form',
+    numberPrefix: 'FA-',
+    numberPad: 3,
+    primaryField: 'product_name',
+    dateLabel: 'Date',
+    statuses: [
+      { value: 'pending', label: 'Awaiting Taste Test', tone: 'amber' },
+      { value: 'approved', label: 'Flavor Approved', tone: 'green', done: true },
+      { value: 'denied', label: 'Flavor Denied', tone: 'red', done: true },
+    ],
+    defaultStatus: 'pending',
+    fields: [
+      { key: 'product_name', label: 'Product Name', type: 'text' },
+      { key: 'lot_number', label: 'Lot Number', type: 'text' },
+      { key: 'work_order', label: 'Work Order', type: 'text' },
+      { key: 'batched_on', label: 'Batched On', type: 'date' },
+      { key: 'sample_quantity', label: 'Sample Quantity', type: 'text' },
+      { key: 'decided_by', label: 'Approved / Denied By', type: 'text' },
+      { key: 'decision_date', label: 'Decision Date', type: 'date' },
+      { key: 'comments', label: 'Comments', type: 'textarea' },
+    ],
+    logColumns: ['record_number', 'product_name', 'lot_number', 'work_order', 'batched_on', 'decided_by', 'record_date', 'status'],
+    approvals: [],
+  },
+
   maintenance_sign_out: {
     key: 'maintenance_sign_out',
     label: 'Equipment/Tool/Chemical Sign In-Out',

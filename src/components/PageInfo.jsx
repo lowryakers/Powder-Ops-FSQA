@@ -49,6 +49,16 @@ const MODULE_INFO = {
     links: 'Records come from the Equipment/Tool/Chemical Sign In-Out module; returns are completed there by QA.',
     sqf: 'Supports tool and chemical accountability (SQF 11.7.5) with a fast floor-level check.',
   },
+  'flavor-approvals': {
+    what: 'Flavor taste-test approvals (replaces the paper Flavor Approval Form): batching submits a sample, and the approver signs off in-app or from a texted one-tap link — no login needed. Decisions are announced in #batching.',
+    links: 'Pairs with the Schedule\'s Flavor Approved flow and the batching channel.',
+    sqf: 'Documents organoleptic release decisions with an audit trail of who approved and when.',
+  },
+  certifications: {
+    what: 'Per-person professional certifications (PCQI, HACCP, SQF Practitioner, …) with the actual certificate files attached and expiry tracking — expired or expiring-soon certs are flagged.',
+    links: 'Complements Training Records; files stored alongside other documents.',
+    sqf: 'Evidence of qualified personnel (SQF 2.9 / PCQI requirements) ready to hand an auditor.',
+  },
   'knife-accountability': {
     what: 'Knife / razor blade / scissor control: a per-transaction Sign In/Out Log (each check-out is a record closed on return, then reviewed by QA) plus the controlled Master List of registered tools.',
     links: 'Kiosk mode for the floor auto-creates log entries; masterlist seeded from the paper log.',

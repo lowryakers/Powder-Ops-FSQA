@@ -1,6 +1,6 @@
 /* Powder Ops service worker — app-shell caching (Phase 5c) + web push (Phase 5d).
    Bump CACHE_VERSION to force clients onto a new shell. */
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const SHELL_CACHE = `powder-shell-${CACHE_VERSION}`;
 const OFFLINE_URL = '/';
 
@@ -55,6 +55,18 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('push', (event) => {
   let data;
   try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data && event.data.text() }; }
+  // Silent dismissal: reading a channel on one device clears its lingering
+  // notifications on the others (channel tag + any mention pointing into it).
+  if (data.dismiss) {
+    event.waitUntil((async () => {
+      const shown = await self.registration.getNotifications();
+      for (const n of shown) {
+        const url = (n.data && n.data.url) || '';
+        if (n.tag === data.dismiss || url.includes('c=' + data.channelId)) n.close();
+      }
+    })());
+    return;
+  }
   const title = data.title || 'Powder Ops';
   const options = {
     body: data.body || '',

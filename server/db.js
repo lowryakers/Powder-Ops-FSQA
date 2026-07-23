@@ -877,6 +877,28 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_reclean_actions_room ON reclean_actions(room, created_at);
   `);
 
+  // Certifications: per-person professional certs (PCQI, HACCP, ...) with the
+  // actual certificate file stored in R2 (storage-gated, like invoices).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS certifications (
+      id TEXT PRIMARY KEY,
+      person_name TEXT NOT NULL,
+      cert_type TEXT NOT NULL,
+      issuer TEXT,
+      cert_number TEXT,
+      issued_date TEXT,
+      expiry_date TEXT,
+      notes TEXT,
+      filename TEXT,
+      storage_key TEXT,
+      content_type TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_certifications_person ON certifications(person_name);
+  `);
+
   // Post-repair hygiene clearance
   addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
   addColumnIfMissing('work_orders', 'clearance_status', 'TEXT');

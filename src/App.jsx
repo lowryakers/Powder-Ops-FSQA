@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -33,6 +33,9 @@ import OrgChart from './components/compliance/OrgChart.jsx';
 import DisposalsPanel from './components/compliance/DisposalsPanel.jsx';
 import QMSRecordsPanel from './components/compliance/QMSRecordsPanel.jsx';
 import KnifePanel from './components/compliance/KnifePanel.jsx';
+import FlavorPanel from './components/compliance/FlavorPanel.jsx';
+import CertificationsPanel from './components/compliance/CertificationsPanel.jsx';
+import ApprovePage from './components/ApprovePage.jsx';
 import TrainingPanel from './components/compliance/TrainingPanel.jsx';
 import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
 import ProductionLog from './components/compliance/ProductionLog.jsx';
@@ -88,6 +91,7 @@ const NAV_GROUPS = [
       { id: 'quality-schedules', label: 'Quality Schedules', icon: CalendarClock },
       { id: 'hygienic', label: 'Hygienic Design', icon: ClipboardCheck },
       { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
+      { id: 'flavor-approvals', label: 'Flavor Approvals', icon: Sparkles },
       { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
       { id: 'deviations', label: 'Deviations', icon: FileWarning },
       { id: 'non-conformance', label: 'Non-Conformance', icon: ShieldAlert },
@@ -110,6 +114,7 @@ const NAV_GROUPS = [
       { id: 'work-instructions', label: 'Work Instructions', icon: ListChecks },
       { id: 'job-descriptions', label: 'Job Descriptions', icon: BriefcaseBusiness },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
+      { id: 'certifications', label: 'Certifications', icon: BadgeCheck },
       { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
       { id: 'org-chart', label: 'Org Chart', icon: Network },
     ],
@@ -910,6 +915,11 @@ function App() {
     return <><KnifeKiosk /><UpdateBanner /></>;
   }
 
+  // Flavor-approval magic link (texted to the approver) — public, token-gated.
+  if (path.startsWith('/approve/')) {
+    return <ApprovePage token={path.split('/')[2] || ''} />;
+  }
+
   if (path === '/kiosk/components') {
     return <><ComponentKiosk /><UpdateBanner /></>;
   }
@@ -1055,6 +1065,7 @@ function App() {
       <CommsView
         user={user}
         onExit={() => { setWorkspace('fsqa'); setCommsLink(null); }}
+        onSplitScreen={() => { if (!dockChat) toggleDockChat(); setWorkspace('fsqa'); setCommsLink(null); }}
         onGoToSchedule={canViewModule(user, 'production-schedule') ? () => { setWorkspace('fsqa'); setActiveTab('production-schedule'); } : null}
         openChannelName={commsLink?.channel}
         openChannelId={commsLink?.channelId}
@@ -1245,6 +1256,8 @@ function App() {
           {resolvedTab === 'maintenance-signout' && <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" />}
           {resolvedTab === 'currently-out' && <CheckedOutPanel />}
           {resolvedTab === 'organoleptic' && <QMSRecordsPanel recordType="organoleptic" moduleId="organoleptic" />}
+          {resolvedTab === 'flavor-approvals' && <FlavorPanel />}
+          {resolvedTab === 'certifications' && <CertificationsPanel />}
           {resolvedTab === 'knife-accountability' && <KnifePanel />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}

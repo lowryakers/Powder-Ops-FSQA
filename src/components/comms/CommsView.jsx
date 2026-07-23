@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2 } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -376,9 +376,25 @@ function MentionDropdown({ matches, hi, onHover, onPick }) {
   );
 }
 
+// ── Drafts (Slack-style) ─────────────────────────────────────────────────────
+// Unsent composer text survives navigating away — keyed by channel id (main
+// composer) or `thread:<parentId>` (replies), stored per device. A Drafts
+// section at the top of the channel list gets you back to them.
+const DRAFTS_LS = 'comms_drafts';
+function readDrafts() { try { return JSON.parse(localStorage.getItem(DRAFTS_LS) || '{}'); } catch { return {}; } }
+function writeDraft(key, text) {
+  if (!key) return;
+  const d = readDrafts();
+  if (text && text.trim()) d[key] = { text, at: Date.now() };
+  else if (d[key]) delete d[key];
+  else return; // nothing changed
+  try { localStorage.setItem(DRAFTS_LS, JSON.stringify(d)); } catch { /* full */ }
+  window.dispatchEvent(new CustomEvent('comms-drafts-changed'));
+}
+
 function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef, storageOn }) {
   const [thread, setThread] = useState(null);
-  const [body, setBody] = useState('');
+  const [body, setBody] = useState(() => readDrafts()[`thread:${parent.id}`]?.text || '');
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState([]); // uploaded-but-unsent attachments
   const [uploading, setUploading] = useState(false);
@@ -445,7 +461,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
     setSending(true);
     try {
       await apiPost(`/comms/channels/${parent.channel_id}/messages`, { body: text, parent_id: parent.id, attachment_ids });
-      setBody(''); setPending([]); await load(); onChanged?.();
+      setBody(''); writeDraft(`thread:${parent.id}`, ''); setPending([]); await load(); onChanged?.();
     } finally { setSending(false); }
   };
 
@@ -496,7 +512,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
               </>
             )}
             <textarea ref={replyRef} value={body}
-              onChange={e => { setBody(e.target.value); setMQuery(detectMentionQuery(e)); setMHi(0); }}
+              onChange={e => { setBody(e.target.value); writeDraft(`thread:${parent.id}`, e.target.value); setMQuery(detectMentionQuery(e)); setMHi(0); }}
               onPaste={onReplyPaste} rows={1}
               onKeyDown={e => {
                 if (mMatches.length) {
@@ -924,7 +940,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   );
 }
 
-export default function CommsView({ user, onExit, onGoToSchedule, openChannelName, openChannelId, openMessageId, backLabel, onBackToModule, homePref, onSetHome, bottomNavPadding = false }) {
+export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen, openChannelName, openChannelId, openMessageId, backLabel, onBackToModule, homePref, onSetHome, bottomNavPadding = false }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
@@ -1089,6 +1105,24 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   }, [refreshChannels]);
 
   useEffect(() => { setMessages([]); setTypers([]); setPending([]); loadMessages(activeId); }, [activeId, loadMessages]);
+  // Restore this conversation's draft (typed text was saved as you navigated away).
+  useEffect(() => { setBody(readDrafts()[activeId]?.text || ''); }, [activeId]);
+  // Live view of all drafts for the sidebar section + channel-row pencils.
+  const [drafts, setDrafts] = useState(readDrafts);
+  useEffect(() => {
+    const onChange = () => setDrafts(readDrafts());
+    window.addEventListener('comms-drafts-changed', onChange);
+    return () => window.removeEventListener('comms-drafts-changed', onChange);
+  }, []);
+  const channelDrafts = useMemo(() => {
+    const list = [];
+    for (const [key, v] of Object.entries(drafts)) {
+      if (key.startsWith('thread:')) continue; // restored in-place when the thread reopens
+      const ch = (channels || []).find(c => c.id === key);
+      if (ch && v?.text) list.push({ channel: ch, text: v.text, at: v.at });
+    }
+    return list.sort((a, b) => b.at - a.at);
+  }, [drafts, channels]);
 
   // Establish the shared socket once for this view + a global @mention handler.
   useEffect(() => {
@@ -1225,7 +1259,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     const text = body.trim();
     if ((!text && pending.length === 0) || !active) return;
     const attachment_ids = pending.map(p => p.id);
-    setBody(''); setPending([]); setMentionQuery(null);
+    setBody(''); writeDraft(active.id, ''); setPending([]); setMentionQuery(null);
     try {
       const m = await apiPost(`/comms/channels/${active.id}/messages`, { body: text, attachment_ids });
       setMessages(ms => ms.some(x => x.id === m.id) ? ms : [...ms, m]);
@@ -1259,6 +1293,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
   const onBodyChange = (e) => {
     const val = e.target.value;
     setBody(val);
+    writeDraft(activeId, val); // unsent text survives navigation (Slack-style)
     // @mention autocomplete: detect an @token immediately before the caret.
     setMentionQuery(detectMentionQuery(e));
     setMentionHi(0);
@@ -1523,6 +1558,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
           <ArrowLeft size={16} /> <span className="hidden sm:inline">ReadyDoc</span>
         </button>
         )}
+        {onSplitScreen && (
+          <button onClick={onSplitScreen} className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg shrink-0"
+            data-tip="Split screen: dock Messages beside the modules">
+            <Columns2 size={15} /> Split screen
+          </button>
+        )}
         {onGoToSchedule && (
           <button onClick={onGoToSchedule} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg shrink-0" title="Go to the Production Schedule">
             <CalendarDays size={16} /> <span className="hidden sm:inline">Schedule</span>
@@ -1620,6 +1661,24 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
             </div>
           ) : (
           <>
+          {/* Drafts — unsent messages, Slack-style, above everything */}
+          {channelDrafts.length > 0 && (
+            <div>
+              <div className="px-2 mb-1 text-[10px] font-bold uppercase text-amber-600">Drafts</div>
+              <div className="space-y-0.5">
+                {channelDrafts.map(d => (
+                  <button key={'d' + d.channel.id} onClick={() => openChannel(d.channel.id)}
+                    className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-100">
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-gray-800">
+                      <Edit2 size={12} className="text-amber-500 shrink-0" />
+                      <span className="truncate">{d.channel.kind === 'public' ? `#${d.channel.name}` : (d.channel.name || 'Direct message')}</span>
+                    </span>
+                    <span className="block pl-5 text-[11px] text-gray-400 truncate">{d.text}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Unread — everything with new messages, floated to the top */}
           {unreadList.length > 0 && (
             <div>
