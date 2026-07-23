@@ -59,6 +59,11 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `/push/key|subscribe|unsubscribe`; pushes on @mention and DM; prunes dead subs on 404/410. Bell toggle in
     comms header. **Env:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (generate once with
     `npx web-push generate-vapid-keys`).
+    **NEVER send data-only ("silent") pushes** — every push must end in `showNotification()`, or Android
+    Chrome shows a generic fallback notification (this was the 2026-07 "phantom notifications" bug: a
+    cross-device dismiss push on channel read). Same-device notification clearing is done client-side via
+    `registration.getNotifications()` in CommsView (`clearChannelNotifications`); cross-device clearing is
+    not possible with web push.
   - **Capacitor** later only if App/Play Store listings are wanted (PWA covers install + push now).
   - **Auth (DONE):** replaced PIN with **passwords** (scrypt in `server/api/users.js`; `users.password_hash`).
     Login `{name,password}`; no password yet → `needs_password_setup`. `/set-password` (existing staff confirm
