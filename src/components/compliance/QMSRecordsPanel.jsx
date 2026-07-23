@@ -698,6 +698,26 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
   const [msg, setMsg] = useState(null);
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(null), 6000); };
 
+  // Bulk QA review for routine sign-out logs: signs every RETURNED record with
+  // Good condition that still lacks the QA signature. Bad-condition or still-out
+  // records are skipped and stay individual (and every other record type has no
+  // bulk path at all), so the audit-critical reviews remain deliberate.
+  const BULK_TYPES = ['maintenance_sign_out', 'knife_sign_out'];
+  const canBulkSign = BULK_TYPES.includes(recordType) && user && (user.role === 'admin' || user.department === 'qa');
+  const bulkPendingCount = useMemo(() => {
+    if (!canBulkSign || !cfg) return 0;
+    return (records || []).filter(r => !r.paper_record && !r.approvals?.quality
+      && r.status === 'returned' && r.condition_out !== 'Bad' && r.condition_returned !== 'Bad').length;
+  }, [canBulkSign, cfg, records]);
+  const bulkSign = async () => {
+    if (!window.confirm(`Sign "Reviewed by QA" on ${bulkPendingCount} routine returned record${bulkPendingCount === 1 ? '' : 's'} (Good condition only)? Bad-condition and still-out records are skipped.`)) return;
+    try {
+      const res = await apiPost(`/qms/${recordType}/bulk-approve`, {});
+      flash(`Signed ${res.signed} routine record${res.signed === 1 ? '' : 's'}.${res.skipped ? ` ${res.skipped} skipped (bad condition / still out) — review those individually.` : ''}`);
+      refresh();
+    } catch (e) { flash(e.message); }
+  };
+
   const filtered = useMemo(() => {
     if (!cfg) return [];
     const q = search.toLowerCase().trim();
@@ -793,6 +813,12 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
         </div>
         {canEdit && (
           <div className="flex items-center gap-2 flex-wrap">
+            {canBulkSign && bulkPendingCount > 0 && (
+              <button onClick={bulkSign} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700"
+                data-tip="Signs every returned, Good-condition record still awaiting QA. Bad-condition or still-out records stay individual.">
+                <CheckSquare size={15} /> QA sign-off: {bulkPendingCount} routine
+              </button>
+            )}
             {cfg.kioskPath && <button onClick={() => setShowQr(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><QrCode size={15} /> Kiosk QR</button>}
             {recordType === 'maintenance_sign_out' && <button onClick={() => setManagingItems(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><ListChecks size={15} /> Manage Items</button>}
             <button onClick={() => setAttaching(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Paperclip size={15} /> Attach Forms</button>

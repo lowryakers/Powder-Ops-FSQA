@@ -380,6 +380,43 @@ router.post('/:type/:id/approve', (req, res) => {
   res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
 });
 
+// Bulk QA review — ROUTINE records only. Limited to the high-volume sign-out
+// logs, and within them only records where the item came back and both
+// conditions were Good. Anything critical (bad condition, still out, or any
+// other record type — deviations, NCs, holds…) must be signed individually so
+// the audit trail shows deliberate review. Each signature is still a full
+// per-record e-signature with attestation, marked as batch-reviewed.
+const BULK_APPROVE = {
+  maintenance_sign_out: { role: 'quality', routine: (r) => r.status === 'returned' && r.condition_out !== 'Bad' && r.condition_returned !== 'Bad' },
+  knife_sign_out: { role: 'quality', routine: (r) => r.status === 'returned' && r.condition_out !== 'Bad' && r.condition_returned !== 'Bad' },
+};
+router.post('/:type/bulk-approve', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const rule = BULK_APPROVE[cfg.key];
+  if (!rule) return res.status(400).json({ error: 'Bulk sign-off is only available for routine sign-out logs.' });
+  const appr = cfg.approvals.find(a => a.key === rule.role);
+  if (!appr || !canSignApproval(req.user, appr)) return res.status(403).json({ error: 'You are not authorized to sign this approval.' });
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM qms_records WHERE record_type = ?').all(cfg.key);
+  let signed = 0, skipped = 0;
+  const attestation = `I certify that I have reviewed this ${(cfg.singular || 'record').toLowerCase()} as part of a batch review of routine returned items in good condition, and approve it in the capacity of ${appr.label}.`;
+  const upd = db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?");
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      if (row.paper_record) continue;
+      const flat = flatten(row);
+      if (flat.approvals[rule.role]) continue; // already signed
+      if (!rule.routine(flat)) { skipped++; continue; }
+      const approvals = { ...flat.approvals, [rule.role]: { name: req.user.name, user_id: req.user.id, role: req.user.role, signed_at: new Date().toISOString(), attestation, batch: true } };
+      upd.run(JSON.stringify(approvals), row.id);
+      logAudit(req.user, `qms_signed_${rule.role}`, cfg.key, row.id, { record_number: flat.record_number, batch: true });
+      signed++;
+    }
+  });
+  tx();
+  res.json({ signed, skipped });
+});
+
 router.delete('/:type/:id/approve/:role', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
   const db = getDb();

@@ -193,7 +193,21 @@ function OrdersLog({ refreshKey, onChanged }) {
       if (sortField === 'submitted_at') return o.submitted_at || '';
       return String(o[sortField] ?? '').toLowerCase();
     };
-    return [...l].sort((a, b) => { const av = val(a), bv = val(b); return av < bv ? -dir : av > bv ? dir : 0; });
+    // Needs-action first: urgent open orders pin to the very top, then new
+    // (unordered) requests, then everything else in the chosen sort order —
+    // so what Marnee has to act on is always the first thing on screen.
+    const actionRank = (o) => {
+      const open = o.status === 'new' || o.status === 'ordered';
+      if (o.urgent && open) return 0;
+      if (o.status === 'new') return 1;
+      return 2;
+    };
+    return [...l].sort((a, b) => {
+      const ra = actionRank(a), rb = actionRank(b);
+      if (ra !== rb) return ra - rb;
+      const av = val(a), bv = val(b);
+      return av < bv ? -dir : av > bv ? dir : 0;
+    });
   }, [orders, statusFilter, labelFilter, sortField, sortDir]);
 
   const advance = async (o) => {

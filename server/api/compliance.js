@@ -12,8 +12,12 @@ const router = Router();
 // status (ok/warn/crit), a count, and the top offending items so the fix is
 // one click away. Admin + supervisors.
 router.get('/critical', (req, res) => {
-  if (!req.user || !['admin', 'supervisor'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Critical Tracking is for admins and supervisors.' });
+  // Admins/supervisors always; others need an explicit 'critical-tracking'
+  // grant in their Settings access map (shareable like any module).
+  const ma = req.user?.module_access;
+  const granted = ma && !Array.isArray(ma) && !!ma['critical-tracking'];
+  if (!req.user || (!['admin', 'supervisor'].includes(req.user.role) && !granted)) {
+    return res.status(403).json({ error: 'Critical Tracking is for admins, supervisors, or users granted access in Settings.' });
   }
   const db = getDb();
   const today = new Date().toISOString().slice(0, 10);
@@ -80,7 +84,7 @@ router.get('/critical', (req, res) => {
   cats.on_hold = {
     label: 'Product On Hold', module: 'on-hold', count: holds.length,
     status: holds.length === 0 ? 'ok' : 'warn',
-    items: holds.slice(0, 8).map(h => { let d = {}; try { d = JSON.parse(h.data || '{}'); } catch { d = {}; } return { title: `${h.record_number} — ${d.product || 'item'}${d.lot ? ` (Lot ${d.lot})` : ''}`, detail: h.record_date ? `held ${daysBetween(today, h.record_date)}d` : '' }; }),
+    items: holds.slice(0, 8).map(h => { let d; try { d = JSON.parse(h.data || '{}'); } catch { d = {}; } return { title: `${h.record_number} — ${d.product || 'item'}${d.lot ? ` (Lot ${d.lot})` : ''}`, detail: h.record_date ? `held ${daysBetween(today, h.record_date)}d` : '' }; }),
   };
 
   // Certifications expiring/expired
@@ -175,7 +179,7 @@ router.get('/export-all', requireRole('admin'), (req, res) => {
 // Stored automatic backups (weekly Friday job writes them to R2 under backups/).
 router.get('/backups', requireRole('admin'), async (req, res) => {
   const db = getDb();
-  let list = [];
+  let list;
   try { list = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'auto_backups'").get()?.value || '[]'); } catch { list = []; }
   const { presignGet } = await import('../storage.js');
   const out = [];

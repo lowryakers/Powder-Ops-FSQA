@@ -17,6 +17,9 @@ const MODULE_GROUPS = [
     label: 'Overview',
     modules: [
       { id: 'dashboard', label: 'Dashboard' },
+      // Automatic for admins & supervisors; granting it here shares the
+      // Critical Tracking tab (program health) with someone else.
+      { id: 'critical-tracking', label: 'Critical Tracking (auto for supervisors)' },
       { id: 'operator', label: 'Operator View' },
     ],
   },

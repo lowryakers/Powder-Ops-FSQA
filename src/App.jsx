@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -56,7 +56,6 @@ const NAV_GROUPS = [
     label: 'Overview',
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { id: 'critical-tracking', label: 'Critical Tracking', icon: ShieldAlert, roles: ['admin', 'supervisor'] },
       { id: 'operator', label: 'Operator View', icon: HardHat },
     ],
   },
@@ -95,9 +94,9 @@ const NAV_GROUPS = [
       { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
       { id: 'flavor-approvals', label: 'Flavor Approvals', icon: Sparkles },
       { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
-      { id: 'deviations', label: 'Deviations', icon: FileWarning },
-      { id: 'non-conformance', label: 'Non-Conformance', icon: ShieldAlert },
-      { id: 'on-hold', label: 'On Hold', icon: PauseCircle },
+      // One sidebar entry for the three quality-event logs — tabs inside; access
+      // stays granular per underlying module id.
+      { id: 'quality-events', label: 'Quality Events', icon: FileWarning, anyOf: ['deviations', 'non-conformance', 'on-hold'], keywords: 'deviations non-conformance on hold' },
       { id: 'disposals', label: 'Disposals', icon: Trash2 },
       { id: 'recall', label: 'Mock Recall', icon: Package },
     ],
@@ -112,9 +111,8 @@ const NAV_GROUPS = [
   {
     label: 'Document Control',
     items: [
-      { id: 'sops', label: 'SOP Registry', icon: FileText },
-      { id: 'work-instructions', label: 'Work Instructions', icon: ListChecks },
-      { id: 'job-descriptions', label: 'Job Descriptions', icon: BriefcaseBusiness },
+      // One "Documents" entry for SOPs / WIs / Job Descriptions — tabs inside.
+      { id: 'document-control', label: 'Controlled Documents', icon: FileText, anyOf: ['sops', 'work-instructions', 'job-descriptions'], keywords: 'sop work instructions job descriptions' },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'certifications', label: 'Certifications', icon: BadgeCheck },
       { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
@@ -242,13 +240,16 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
             if (i.adminOnly && user.role !== 'admin') return false;
             if (i.roles && !i.roles.includes(user.role)) return false;
             if (i.aiOnly && !aiOn) return false;
+            // Hub items combine several modules — visible if the user can see any.
+            if (i.anyOf) return i.anyOf.some(id => canViewModule(user, id));
             return canViewModule(user, i.id);
           });
           if (visibleItems.length === 0) return null;
           const isOpen = openGroups[group.label];
           const hasActive = visibleItems.some(i => i.id === activeTab);
           // Roll up notifications so a collapsed section still surfaces them.
-          const groupBadgeCount = visibleItems.reduce((n, i) => n + (badges?.[i.id] || 0), 0);
+          const badgeFor = (i) => i.anyOf ? i.anyOf.reduce((n, id) => n + (badges?.[id] || 0), 0) : (badges?.[i.id] || 0);
+          const groupBadgeCount = visibleItems.reduce((n, i) => n + badgeFor(i), 0);
           const groupHasNotice = visibleItems.some(i => i.id === 'production-schedule') && scheduleNotice?.unseen;
 
           return (
@@ -273,7 +274,8 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
               {isOpen && (
                 <div className="space-y-0.5 pb-1">
                   {visibleItems.map((item) => {
-                    const isActive = activeTab === item.id;
+                    const isActive = activeTab === item.id || !!item.anyOf?.includes(activeTab);
+                    const itemBadge = badgeFor(item);
                     return (
                       <button
                         key={item.id}
@@ -291,9 +293,9 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
                             {scheduleNotice.kind === 'new' ? 'New' : 'Updated'}
                           </span>
                         )}
-                        {badges?.[item.id] > 0 && (
+                        {itemBadge > 0 && (
                           <span className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1">
-                            {badges[item.id]}
+                            {itemBadge}
                           </span>
                         )}
                       </button>
@@ -558,7 +560,8 @@ function accessibleNavItems(user, aiOn) {
       if (i.adminOnly && user.role !== 'admin') continue;
       if (i.roles && !i.roles.includes(user.role)) continue;
       if (i.aiOnly && !aiOn) continue;
-      if (!canViewModule(user, i.id)) continue;
+      // Hub entries (anyOf) are visible when any of their sub-modules is.
+      if (i.anyOf ? !i.anyOf.some(id => canViewModule(user, id)) : !canViewModule(user, i.id)) continue;
       flat.push({ ...i, group: g.label });
     }
   }
@@ -581,7 +584,7 @@ function ModuleSearch({ user, onNavigate }) {
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return items;
-    return items.filter(i => i.label.toLowerCase().includes(term) || i.group.toLowerCase().includes(term));
+    return items.filter(i => i.label.toLowerCase().includes(term) || i.group.toLowerCase().includes(term) || (i.keywords || '').includes(term));
   }, [q, items]);
 
   useEffect(() => {
@@ -642,6 +645,65 @@ function ModuleSearch({ user, onNavigate }) {
 
 const MOBILE_TAB_LABELS = { dashboard: 'Home', operator: 'Operator', pm: 'Tasks', 'production-schedule': 'Schedule', 'production-log': 'Production', capa: 'CAPA', sanitation: 'Sanitation', 'currently-out': 'Checked Out', 'maintenance-signout': 'Sign In-Out', messages: 'Messages' };
 
+// Dashboard with tabs: Overview for everyone with dashboard access, and
+// Critical Tracking for admins/supervisors or anyone explicitly granted the
+// 'critical-tracking' module in Settings (shareable like any module).
+function DashboardHub({ user, onNavigate, initialTab = 'overview' }) {
+  const canCritical = user?.role === 'admin' || user?.role === 'supervisor' || hasExplicitGrant(user, 'critical-tracking');
+  const [tab, setTab] = useState(canCritical && initialTab === 'critical' ? 'critical' : 'overview');
+  if (!canCritical) return <ComplianceDashboard />;
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+        {[['overview', 'Overview'], ['critical', 'Critical Tracking']].map(([v, l]) => (
+          <button key={v} onClick={() => setTab(v)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{l}</button>
+        ))}
+      </div>
+      {tab === 'overview' ? <ComplianceDashboard /> : <CriticalPanel onNavigate={onNavigate} />}
+    </div>
+  );
+}
+
+// Sidebar consolidation: several single-purpose registries share one nav entry
+// with tabs inside. Access stays granular — tabs only show sub-modules the
+// user can view, and cross-links to the old module ids land on the right tab.
+const HUB_TABS = {
+  'document-control': [
+    { id: 'sops', label: 'SOPs', render: () => <DocumentRegistry docType="sop" moduleId="sops" title="SOP Registry" typeLabel="SOP" /> },
+    { id: 'work-instructions', label: 'Work Instructions', render: () => <DocumentRegistry docType="work_instruction" moduleId="work-instructions" title="Work Instructions" typeLabel="Work Instruction" /> },
+    { id: 'job-descriptions', label: 'Job Descriptions', render: () => <DocumentRegistry docType="job_description" moduleId="job-descriptions" title="Job Descriptions" typeLabel="Job Description" /> },
+  ],
+  'quality-events': [
+    { id: 'deviations', label: 'Deviations', render: () => <QMSRecordsPanel recordType="deviation" moduleId="deviations" /> },
+    { id: 'non-conformance', label: 'Non-Conformance', render: () => <QMSRecordsPanel recordType="non_conformance" moduleId="non-conformance" /> },
+    { id: 'on-hold', label: 'On Hold', render: () => <QMSRecordsPanel recordType="on_hold" moduleId="on-hold" /> },
+  ],
+};
+// Maps an old module id back to its hub (legacy quick-tab picks, deep links).
+const HUB_OF = Object.fromEntries(Object.entries(HUB_TABS).flatMap(([hub, tabs]) => tabs.map(t => [t.id, hub])));
+
+function ModuleHub({ hubId, user, initialTab, badges }) {
+  const tabs = HUB_TABS[hubId].filter(t => canViewModule(user, t.id));
+  const [tab, setTab] = useState(tabs.some(t => t.id === initialTab) ? initialTab : tabs[0]?.id);
+  if (!tabs.length) return null;
+  const active = tabs.find(t => t.id === tab) || tabs[0];
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit flex-wrap">
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {t.label}
+            {badges?.[t.id] ? <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold align-middle">{badges[t.id]}</span> : null}
+          </button>
+        ))}
+      </div>
+      {active.render()}
+    </div>
+  );
+}
+
 function MobileBottomNav({ activeTab, setActiveTab, user, onOpenComms }) {
   // Bottom-bar tabs, in priority order: the user's own picks (set per-user in
   // Settings, may include the special 'messages' workspace), else Ricardo's
@@ -658,6 +720,8 @@ function MobileBottomNav({ activeTab, setActiveTab, user, onOpenComms }) {
     const picked = [];
     const seen = new Set();
     const push = (id) => {
+      // Old per-module ids consolidated into hubs still work as quick-tab picks.
+      if (!byId[id] && HUB_OF[id]) id = HUB_OF[id];
       if (picked.length >= 4 || seen.has(id)) return;
       if (id === 'messages') { picked.push({ id: 'messages', icon: MessageSquare, isMessages: true }); seen.add(id); return; }
       if (byId[id]) { picked.push(byId[id]); seen.add(id); }
@@ -1094,9 +1158,15 @@ function App() {
     </>;
   }
 
-  // Determine effective accessible modules for this user
-  const allModuleIds = NAV_GROUPS.flatMap(g => g.items).filter(i => (!i.adminOnly || user.role === 'admin') && (!i.roles || i.roles.includes(user.role))).map(i => i.id);
+  // Determine effective accessible modules for this user. Hub nav entries
+  // (anyOf) expand to their underlying module ids so per-module grants and
+  // deep links to the old ids keep working; the hub id itself is then added
+  // whenever any of its sub-modules is visible.
+  const allModuleIds = NAV_GROUPS.flatMap(g => g.items).filter(i => (!i.adminOnly || user.role === 'admin') && (!i.roles || i.roles.includes(user.role))).flatMap(i => i.anyOf ? i.anyOf : [i.id]);
   let effectiveModules = visibleModuleIds(user, allModuleIds);
+  for (const hub of NAV_GROUPS.flatMap(g => g.items).filter(i => i.anyOf)) {
+    if (hub.anyOf.some(id => effectiveModules.includes(id)) && !effectiveModules.includes(hub.id)) effectiveModules = [...effectiveModules, hub.id];
+  }
   // "Checked Out" follows its own opt-in rule rather than plain module access.
   effectiveModules = canSeeCheckedOut(user)
     ? (effectiveModules.includes('currently-out') ? effectiveModules : [...effectiveModules, 'currently-out'])
@@ -1148,7 +1218,7 @@ function App() {
   // dashboard fallback: a user with zero modules gets an empty state instead
   // of a page they can't actually access.
   const resolvedTab = effectiveModules.includes(activeTab) ? activeTab : (effectiveModules[0] || null);
-  const activeItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.id === resolvedTab);
+  const activeItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.id === resolvedTab || !!i.anyOf?.includes(resolvedTab));
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -1232,7 +1302,7 @@ function App() {
               <p className="text-sm">No modules are enabled for this account.</p>
             </div>
           )}
-          {resolvedTab === 'dashboard' && <ComplianceDashboard />}
+          {resolvedTab === 'dashboard' && <DashboardHub user={user} onNavigate={setActiveTab} />}
           {resolvedTab === 'ask-ai' && <AiAskPanel />}
           {resolvedTab === 'operator' && <OperatorView />}
           {resolvedTab === 'office-requests' && <OfficeRequestsPanel />}
@@ -1251,15 +1321,13 @@ function App() {
           {resolvedTab === 'hygienic' && <HygienicDesignPanel />}
           {resolvedTab === 'coa' && <COAPanel />}
           {resolvedTab === 'capa' && <CAPAPanel />}
-          {resolvedTab === 'sops' && <DocumentRegistry docType="sop" moduleId="sops" title="SOP Registry" typeLabel="SOP" />}
-          {resolvedTab === 'work-instructions' && <DocumentRegistry docType="work_instruction" moduleId="work-instructions" title="Work Instructions" typeLabel="Work Instruction" />}
-          {resolvedTab === 'job-descriptions' && <DocumentRegistry docType="job_description" moduleId="job-descriptions" title="Job Descriptions" typeLabel="Job Description" />}
+          {(resolvedTab === 'document-control' || HUB_OF[resolvedTab] === 'document-control') &&
+            <ModuleHub key={`dc-${resolvedTab}`} hubId="document-control" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'org-chart' && <OrgChart />}
           {resolvedTab === 'disposals' && <DisposalsPanel />}
           {resolvedTab === 'dcr' && <QMSRecordsPanel recordType="document_change_request" moduleId="dcr" />}
-          {resolvedTab === 'deviations' && <QMSRecordsPanel recordType="deviation" moduleId="deviations" />}
-          {resolvedTab === 'non-conformance' && <QMSRecordsPanel recordType="non_conformance" moduleId="non-conformance" />}
-          {resolvedTab === 'on-hold' && <QMSRecordsPanel recordType="on_hold" moduleId="on-hold" />}
+          {(resolvedTab === 'quality-events' || HUB_OF[resolvedTab] === 'quality-events') &&
+            <ModuleHub key={`qe-${resolvedTab}`} hubId="quality-events" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'component-signout' && <QMSRecordsPanel recordType="component_sign_out" moduleId="component-signout" />}
           {resolvedTab === 'maintenance-signout' && <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" />}
           {resolvedTab === 'currently-out' && <CheckedOutPanel />}
@@ -1269,7 +1337,7 @@ function App() {
           {resolvedTab === 'knife-accountability' && <KnifePanel />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
-          {resolvedTab === 'critical-tracking' && ['admin', 'supervisor'].includes(user.role) && <CriticalPanel onNavigate={setActiveTab} />}
+          {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}
           {resolvedTab === 'settings' && <SettingsPanel />}
