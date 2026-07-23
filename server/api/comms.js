@@ -602,11 +602,10 @@ router.post('/channels/:id/read', (req, res) => {
     db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)')
       .run(uuid(), channel.id, req.user.id, 'member', now);
   }
-  // Reading here clears this channel's lingering notifications on the user's
-  // OTHER devices (a silent push the service worker turns into close()).
-  if (pushEnabled()) {
-    pushToUser(req.user.id, { dismiss: `channel-${channel.id}`, channelId: channel.id }).catch(() => {});
-  }
+  // NOTE: no cross-device "dismiss" push here. Web push requires every push to
+  // surface a notification; a silent one makes Android show a generic fallback
+  // ("phantom") notification instead. The client clears this channel's
+  // notifications locally on whichever device the channel is viewed on.
   res.json({ ok: true });
 });
 

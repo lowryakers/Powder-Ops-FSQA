@@ -95,11 +95,21 @@ function DateDivider({ iso }) {
 }
 const fmtSize = (n) => { if (!n && n !== 0) return ''; if (n < 1024) return n + ' B'; if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB'; return (n / 1024 / 1024).toFixed(1) + ' MB'; };
 
+// Browsers can't decode HEIC/HEIF (iPhone) or TIFF — treat those "images" as
+// plain files so they get a download card instead of a broken <img>.
+function browserRenderable(a) {
+  const probe = `${a.filename || ''} ${a.content_type || ''}`.toLowerCase();
+  return a.is_image && !/heic|heif|\.tiff?\b|image\/tiff/.test(probe);
+}
+const isPdf = (a) => /\.pdf(\s|$)/i.test(a.filename || '') || (a.content_type || '') === 'application/pdf';
+
 function Attachment({ a, onOpen }) {
-  if (a.is_image && a.url) {
+  const [broken, setBroken] = useState(false);
+  if (browserRenderable(a) && a.url && !broken) {
     return (
       <button type="button" onClick={onOpen} className="block mt-1 max-w-xs text-left">
-        <img src={a.url} alt={a.filename} className="rounded-lg border border-gray-200 max-h-64 object-contain" />
+        <img src={a.url} alt={a.filename} onError={() => setBroken(true)}
+          className="rounded-lg border border-gray-200 max-h-64 object-contain" />
       </button>
     );
   }
@@ -152,16 +162,22 @@ function Lightbox({ atts, index, onNav, onClose }) {
           className="absolute right-2 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 text-white hover:bg-white/25 z-10"><ChevronRight size={26} /></button>
       )}
       <div className="max-w-[92vw] max-h-[84vh]" onClick={e => e.stopPropagation()}>
-        {a.is_image && a.url ? (
-          <img src={a.url} alt={a.filename} className="max-w-[92vw] max-h-[84vh] object-contain rounded-lg" />
+        {browserRenderable(a) && a.url ? (
+          <img src={a.url} alt={a.filename} className="max-w-[92vw] max-h-[84vh] object-contain rounded-lg"
+            onError={e => { e.target.outerHTML = '<div class="bg-white rounded-xl p-6 text-sm text-gray-700">This photo could not be displayed — use Download below to view it.</div>'; }} />
+        ) : isPdf(a) && a.url ? (
+          <iframe src={a.url} title={a.filename} className="w-[92vw] max-w-4xl h-[84vh] bg-white rounded-lg" />
         ) : (
           <div className="bg-white rounded-xl p-6 flex flex-col items-center gap-3 min-w-[260px]">
             <FileText size={40} className="text-powder-600" />
             <div className="text-sm font-medium text-gray-900 text-center break-all max-w-[70vw]">{a.filename}</div>
             <div className="text-xs text-gray-400">{fmtSize(a.size)}</div>
-            <a href={a.url || undefined} target="_blank" rel="noreferrer" download={a.filename}
+            {a.is_image && !browserRenderable(a) && (
+              <div className="text-[11px] text-gray-500 text-center max-w-[280px]">This photo format (HEIC/TIFF) can't be previewed in the browser — download it to view.</div>
+            )}
+            <a href={a.url || undefined} download={a.filename}
               className="mt-1 flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
-              <Download size={15} /> Download / open
+              <Download size={15} /> Download
             </a>
           </div>
         )}
@@ -390,6 +406,21 @@ function writeDraft(key, text) {
   else return; // nothing changed
   try { localStorage.setItem(DRAFTS_LS, JSON.stringify(d)); } catch { /* full */ }
   window.dispatchEvent(new CustomEvent('comms-drafts-changed'));
+}
+
+// Viewing a channel clears its lingering push notifications on THIS device.
+// (Cross-device clearing via a silent push was removed: web push requires each
+// push to show a notification, so the "silent" dismiss made Android surface a
+// phantom generic notification instead.)
+function clearChannelNotifications(channelId) {
+  if (!channelId || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.ready.then(async (reg) => {
+    const shown = await reg.getNotifications();
+    for (const n of shown) {
+      const url = (n.data && n.data.url) || '';
+      if (n.tag === `channel-${channelId}` || url.includes('c=' + channelId)) n.close();
+    }
+  }).catch(() => { /* no SW / not supported */ });
 }
 
 function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef, storageOn }) {
@@ -1101,6 +1132,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       const msgs = await apiFetch(`/comms/channels/${id}/messages`);
       setMessages(msgs);
       apiPost(`/comms/channels/${id}/read`, {}).then(refreshChannels).catch(() => {});
+      clearChannelNotifications(id);
     } catch { /* channel may be inaccessible */ }
   }, [refreshChannels]);
 
@@ -1487,7 +1519,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     finally { setPushBusy(false); }
   };
 
-  const markChannelRead = async (id) => { try { await apiPost(`/comms/channels/${id}/read`, {}); refreshChannels(); } catch { /* ignore */ } };
+  const markChannelRead = async (id) => { try { await apiPost(`/comms/channels/${id}/read`, {}); refreshChannels(); clearChannelNotifications(id); } catch { /* ignore */ } };
   const markUnread = async (m) => { try { await apiPost(`/comms/messages/${m.id}/unread`, {}); refreshChannels(); } catch { /* ignore */ } };
 
   const toggleDmPick = (id) => setDmSelected(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
