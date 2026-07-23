@@ -35,7 +35,7 @@ function issueSession(db, user) {
   expires.setDate(expires.getDate() + 30);
   db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)').run(uuid(), user.id, token, expires.toISOString());
   const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
-  let quickTabs = null;
+  let quickTabs;
   try { quickTabs = user.quick_tabs ? JSON.parse(user.quick_tabs) : null; } catch { quickTabs = null; }
   return { token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess, home_workspace: user.home_workspace || 'fsqa', quick_tabs: quickTabs } };
 }
@@ -61,7 +61,7 @@ router.get('/technicians', (_req, res) => {
 
 router.get('/me', (req, res) => {
   const row = getDb().prepare('SELECT home_workspace, quick_tabs FROM users WHERE id = ?').get(req.user.id) || {};
-  let quickTabs = null;
+  let quickTabs;
   try { quickTabs = row.quick_tabs ? JSON.parse(row.quick_tabs) : null; } catch { quickTabs = null; }
   res.json({ id: req.user.id, name: req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs });
 });
@@ -71,6 +71,23 @@ router.post('/me/home', (req, res) => {
   const w = req.body?.workspace === 'messages' ? 'messages' : 'fsqa';
   getDb().prepare("UPDATE users SET home_workspace = ?, updated_at = datetime('now') WHERE id = ?").run(w, req.user.id);
   res.json({ ok: true, home_workspace: w });
+});
+
+// A user's reusable drawn signature for e-signing documents (COAs). Stored as
+// a PNG data URL; drawn once in the sign modal and reused afterwards.
+const SIGNATURE_RE = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/;
+router.get('/me/signature', (req, res) => {
+  const row = getDb().prepare('SELECT signature_image FROM users WHERE id = ?').get(req.user.id);
+  res.json({ signature: row?.signature_image || null });
+});
+router.post('/me/signature', (req, res) => {
+  const sig = req.body?.signature ?? null;
+  if (sig !== null && (typeof sig !== 'string' || sig.length > 400000 || !SIGNATURE_RE.test(sig))) {
+    return res.status(400).json({ error: 'Signature must be a PNG/JPEG data URL under 300 KB.' });
+  }
+  getDb().prepare("UPDATE users SET signature_image = ?, updated_at = datetime('now') WHERE id = ?").run(sig, req.user.id);
+  logAudit(req.user, 'update', 'user_signature', req.user.id, { cleared: sig === null }, null, null, req.user.name);
+  res.json({ ok: true });
 });
 
 // Self-service password change: confirm the current password, then set a new one.
@@ -147,7 +164,7 @@ router.get('/duplicates', requireRole('admin'), (req, res) => {
 router.get('/access-templates', requireRole('admin'), (_req, res) => {
   const db = getDb();
   const row = db.prepare("SELECT value FROM app_settings WHERE key = 'access_templates'").get();
-  let templates = {};
+  let templates;
   try { templates = row ? JSON.parse(row.value) : {}; } catch { templates = {}; }
   res.json({ templates });
 });
@@ -258,7 +275,7 @@ router.put('/access-templates', requireRole('admin'), (req, res) => {
   const clean = String(name || '').trim().slice(0, 60);
   if (!clean) return res.status(400).json({ error: 'Template name is required' });
   const row = db.prepare("SELECT value FROM app_settings WHERE key = 'access_templates'").get();
-  let templates = {};
+  let templates;
   try { templates = row ? JSON.parse(row.value) : {}; } catch { templates = {}; }
   if (access && typeof access === 'object') templates[clean] = access;
   else delete templates[clean];

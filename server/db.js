@@ -1070,6 +1070,16 @@ function runMigrations() {
   addColumnIfMissing('coa_requests', 'certificate_number', 'TEXT');
   addColumnIfMissing('coa_requests', 'date_of_issuance', 'TEXT');
 
+  // Digital COA sign-off: who signed, when, and a snapshot of the signature
+  // image at signing time (so later changes to a user's saved signature never
+  // alter an already-issued certificate).
+  addColumnIfMissing('coa_requests', 'qa_signed_by', 'TEXT');
+  addColumnIfMissing('coa_requests', 'qa_signed_by_id', 'TEXT');
+  addColumnIfMissing('coa_requests', 'qa_signed_at', 'TEXT');
+  addColumnIfMissing('coa_requests', 'qa_signature', 'TEXT');
+  // A user's reusable drawn signature (PNG data URL), applied when signing.
+  addColumnIfMissing('users', 'signature_image', 'TEXT');
+
   // Multiple schedule lines per room/day (e.g. several Kitting products on the same day)
   addColumnIfMissing('production_schedule', 'slot', 'INTEGER NOT NULL DEFAULT 0');
 

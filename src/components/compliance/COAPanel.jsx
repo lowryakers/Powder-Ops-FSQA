@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square } from 'lucide-react';
+import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square, PenLine } from 'lucide-react';
 
 // Typed-confirmation dialog for permanent, irreversible bulk deletion.
 function ConfirmDeleteModal({ count, onConfirm, onClose }) {
@@ -516,8 +516,120 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
 }
 
 // ──────── Request Detail View ────────
+// Digital sign-off: Maria (QA) draws a signature once and reuses it — no
+// print/sign/scan loop. The drawn image is snapshotted onto the request at
+// signing time and printed on the exported certificate.
+function SignCoaModal({ requestId, onSigned, onClose }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+  const [hasDrawn, setHasDrawn] = useState(false);
+  const [saved, setSaved] = useState(null);       // saved signature data URL
+  const [useSaved, setUseSaved] = useState(false);
+  const [saveMine, setSaveMine] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    apiFetch('/users/me/signature').then(d => {
+      if (d.signature) { setSaved(d.signature); setUseSaved(true); }
+    }).catch(() => {});
+  }, []);
+
+  const pos = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) * (canvasRef.current.width / rect.width), y: (e.clientY - rect.top) * (canvasRef.current.height / rect.height) };
+  };
+  const start = (e) => {
+    e.preventDefault();
+    drawingRef.current = true;
+    const ctx = canvasRef.current.getContext('2d');
+    const p = pos(e);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#1a1a2e';
+    canvasRef.current.setPointerCapture?.(e.pointerId);
+  };
+  const move = (e) => {
+    if (!drawingRef.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext('2d');
+    const p = pos(e);
+    ctx.lineTo(p.x, p.y); ctx.stroke();
+    setHasDrawn(true); setUseSaved(false);
+  };
+  const end = () => { drawingRef.current = false; };
+  const clear = () => {
+    const c = canvasRef.current;
+    c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    setHasDrawn(false);
+  };
+
+  const sign = async () => {
+    setBusy(true); setError(null);
+    try {
+      const body = { save: saveMine };
+      if (useSaved && saved) { /* server falls back to the saved signature */ }
+      else if (hasDrawn) body.signature = canvasRef.current.toDataURL('image/png');
+      else { setError('Draw your signature, or use your saved one.'); setBusy(false); return; }
+      await apiPost(`/coa/requests/${requestId}/sign`, body);
+      onSigned();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2"><PenLine size={17} className="text-powder-600" /> Sign Certificate</h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          {saved && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={useSaved} onChange={e => setUseSaved(e.target.checked)} className="rounded border-gray-300" />
+              <span className="text-sm text-gray-700">Use my saved signature</span>
+            </label>
+          )}
+          {useSaved && saved ? (
+            <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 flex justify-center">
+              <img src={saved} alt="Saved signature" className="h-14 object-contain" />
+            </div>
+          ) : (
+            <div>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg bg-white relative">
+                <canvas ref={canvasRef} width={560} height={180} className="w-full h-[120px] touch-none cursor-crosshair"
+                  onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerLeave={end} />
+                {!hasDrawn && <span className="absolute inset-0 flex items-center justify-center text-xs text-gray-300 pointer-events-none">Sign here with mouse or finger</span>}
+              </div>
+              <div className="flex items-center justify-between mt-1.5">
+                <button onClick={clear} className="text-xs text-gray-500 hover:text-gray-700">Clear</button>
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-600">
+                  <input type="checkbox" checked={saveMine} onChange={e => setSaveMine(e.target.checked)} className="rounded border-gray-300" />
+                  Save as my signature for next time
+                </label>
+              </div>
+            </div>
+          )}
+          <p className="text-[11px] text-gray-500">By signing, you certify the results on this Certificate of Analysis are true and accurate for the lot identified. Your name, the date, and this signature are recorded and printed on the certificate.</p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-2 justify-end">
+            <button onClick={onClose} className="px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-100 rounded-lg">Cancel</button>
+            <button onClick={sign} disabled={busy || (!hasDrawn && !(useSaved && saved))}
+              className="px-5 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-40">
+              {busy ? 'Signing…' : 'Sign Certificate'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   const { data: detail, loading, refresh: refreshDetail } = useApiGet(`/coa/requests/${requestId}`, [requestId]);
+  const { user } = useAuth() || {};
+  const canSign = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
+  const [showSign, setShowSign] = useState(false);
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -663,7 +775,22 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
             className="px-3 py-1.5 text-xs font-medium bg-powder-50 text-powder-700 rounded-lg hover:bg-powder-100 flex items-center gap-1">
             <Download size={12} /> Export Powder Ops COA
           </button>
+          {detail.qa_signed_by ? (
+            <span className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg flex items-center gap-1">
+              <CheckCircle2 size={12} /> Signed by {detail.qa_signed_by} · {(detail.qa_signed_at || '').slice(0, 10)}
+              {user?.role === 'admin' && (
+                <button onClick={async () => { if (confirm('Remove this signature? The certificate will export unsigned.')) { await apiDelete(`/coa/requests/${requestId}/sign`); refreshDetail(); } }}
+                  className="ml-1 text-green-600 hover:text-red-600" title="Remove signature"><X size={11} /></button>
+              )}
+            </span>
+          ) : canSign && (
+            <button onClick={() => setShowSign(true)}
+              className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1">
+              <PenLine size={12} /> Sign Certificate
+            </button>
+          )}
         </div>
+        {showSign && <SignCoaModal requestId={requestId} onClose={() => setShowSign(false)} onSigned={() => { setShowSign(false); refreshDetail(); onRefresh(); }} />}
 
         {/* Test Results */}
         <div>

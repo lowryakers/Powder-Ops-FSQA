@@ -12,6 +12,8 @@ import { requireRole } from '../middleware/auth.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'data', 'coa-files');
 mkdirSync(UPLOAD_DIR, { recursive: true });
+// The real Powder Ops box logo, embedded on exported certificates.
+const LOGO_PATH = path.join(__dirname, '..', 'assets', 'powder-ops-logo.jpg');
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
@@ -473,6 +475,51 @@ router.delete('/files/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// ──────────────── Digital QA sign-off ────────────────
+// Maria (QA) signs the certificate in-app: the signature image (drawn once,
+// reusable) is snapshotted onto the request so the issued PDF carries it —
+// no print/sign/scan loop. Admins can remove a signature if signed in error.
+const SIGNATURE_RE = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/;
+const canSignCoa = (u) => !!u && (['admin', 'supervisor'].includes(u.role) || u.department === 'qa');
+
+router.post('/requests/:id/sign', (req, res) => {
+  if (!canSignCoa(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can sign certificates.' });
+  const db = getDb();
+  const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'COA request not found' });
+
+  let sig = req.body?.signature || null;
+  if (!sig) sig = db.prepare('SELECT signature_image FROM users WHERE id = ?').get(req.user.id)?.signature_image || null;
+  if (!sig) return res.status(400).json({ error: 'Draw a signature first (it can be saved for next time).' });
+  if (typeof sig !== 'string' || sig.length > 400000 || !SIGNATURE_RE.test(sig)) {
+    return res.status(400).json({ error: 'Signature must be a PNG/JPEG data URL under 300 KB.' });
+  }
+  if (req.body?.save) {
+    db.prepare("UPDATE users SET signature_image = ?, updated_at = datetime('now') WHERE id = ?").run(sig, req.user.id);
+  }
+
+  // Issuing details lock in at signing: certificate number and issuance date.
+  const certNum = r.certificate_number || nextCertNumber(db);
+  const today = new Date().toISOString().slice(0, 10);
+  db.prepare(`UPDATE coa_requests SET qa_signed_by = ?, qa_signed_by_id = ?, qa_signed_at = datetime('now'),
+              qa_signature = ?, certificate_number = ?, date_of_issuance = COALESCE(date_of_issuance, ?),
+              updated_at = datetime('now') WHERE id = ?`)
+    .run(req.user.name, req.user.id, sig, certNum, today, req.params.id);
+  logAudit(req.user, 'sign', 'coa_request', req.params.id,
+    { certificate_number: certNum, attestation: 'I certify that the results on this Certificate of Analysis are true and accurate as obtained for the lot identified.' },
+    null, null, `${r.item_description} · Lot ${r.lot_number}`);
+  res.json(db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id));
+});
+
+router.delete('/requests/:id/sign', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'COA request not found' });
+  db.prepare("UPDATE coa_requests SET qa_signed_by = NULL, qa_signed_by_id = NULL, qa_signed_at = NULL, qa_signature = NULL, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  logAudit(req.user, 'unsign', 'coa_request', req.params.id, { previous_signer: r.qa_signed_by }, null, null, `${r.item_description} · Lot ${r.lot_number}`);
+  res.json({ ok: true });
+});
+
 // ──────────────── PDF Export (Facility COA) ────────────────
 
 router.get('/requests/:id/pdf', (req, res) => {
@@ -487,180 +534,186 @@ router.get('/requests/:id/pdf', (req, res) => {
     db.prepare("UPDATE coa_requests SET certificate_number = ?, updated_at = datetime('now') WHERE id = ?").run(certNum, req.params.id);
   }
 
+  // Specification + method come from the COA Specifications registry: by the
+  // result's explicit specification_id when set, else the active spec for
+  // this item + test type.
+  const specById = {};
+  const specByItemTest = {};
+  try {
+    for (const s of db.prepare('SELECT * FROM coa_specifications WHERE is_active = 1').all()) {
+      specById[s.id] = s;
+      specByItemTest[`${s.item_number}|${(s.test_type || '').toLowerCase()}`] = s;
+    }
+  } catch { /* optional */ }
+  const specFor = (tr) => specById[tr.specification_id] || specByItemTest[`${r.item_number}|${(tr.test_type || '').toLowerCase()}`] || null;
+
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
   const fmtDate = (d) => {
     if (!d) return 'N/A';
-    const parts = d.split('-');
+    const parts = String(d).slice(0, 10).split('-');
     if (parts.length === 3) return `${parts[1]}/${parts[2]}/${parts[0]}`;
     return d;
   };
 
-  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 40, bottom: 40, left: 50, right: 50 } });
+  const SLATE = '#3a3a3a';
+  const ORANGE = '#c65d35';
+  const LIGHT = '#f5f3f1';
+  const RULE = '#d8d4d0';
+  const GREEN = '#1a7f37';
+  const RED = '#cc0000';
 
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 42, bottom: 76, left: 50, right: 50 }, bufferPages: true });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="COA_${certNum}_${r.item_description.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="COA_${certNum}_${(r.item_description || 'item').replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
   doc.pipe(res);
 
-  const pageW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const lm = doc.page.margins.left;
+  const pageW = doc.page.width - lm - doc.page.margins.right;
+  const bottomY = () => doc.page.height - doc.page.margins.bottom;
 
-  // ── Logo ──
-  const logoW = 80;
-  const logoX = lm + (pageW - logoW) / 2;
-  const logoH = 100;
-  doc.save();
-  doc.roundedRect(logoX, 40, logoW, logoH, 2).lineWidth(4).strokeColor('#3a3a3a').stroke();
-  doc.fontSize(25).font('Helvetica-Bold').fillColor('#3a3a3a');
-  doc.text('POW', logoX, 52, { width: logoW, align: 'center' });
-  doc.text('DER', logoX, 78, { width: logoW, align: 'center' });
-  doc.fillColor('#c65d35');
-  doc.fontSize(27).text('OPS', logoX, 105, { width: logoW, align: 'center' });
-  doc.restore();
+  // ── Header: real logo + company block + certificate number ──
+  const logoH = 74;
+  try { doc.image(LOGO_PATH, lm, 42, { height: logoH }); } catch { /* logo optional */ }
+  doc.font('Helvetica-Bold').fontSize(15).fillColor(SLATE).text('POWDER OPS', lm + 75, 50, { characterSpacing: 0.5 });
+  doc.font('Helvetica').fontSize(8.5).fillColor('#666')
+    .text('281 E 1600 N, Vineyard, UT 84059', lm + 75, 69)
+    .text('www.powder-ops.com', lm + 75, 81);
+  doc.font('Helvetica').fontSize(8.5).fillColor('#666').text('Certificate No.', lm, 50, { width: pageW, align: 'right' });
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(SLATE).text(String(certNum), lm, 61, { width: pageW, align: 'right' });
 
-  // ── Title ──
-  let y = 155;
-  doc.fontSize(16).font('Helvetica-Bold').fillColor('#000');
-  doc.text('CERTIFICATE OF ANALYSIS', lm, y, { width: pageW, align: 'center' });
-  y += 30;
+  let y = 42 + logoH + 18;
+  doc.font('Helvetica-Bold').fontSize(17).fillColor(SLATE)
+    .text('CERTIFICATE OF ANALYSIS', lm, y, { width: pageW, align: 'center', characterSpacing: 1 });
+  y += 24;
+  doc.moveTo(lm, y).lineTo(lm + pageW, y).lineWidth(2).strokeColor(ORANGE).stroke();
+  y += 14;
 
-  // ── Info Grid ──
-  const col1LabelW = 120;
-  const col1ValW = 160;
-  const col2LabelW = 130;
-  const col2ValW = pageW - col1LabelW - col1ValW - col2LabelW;
-  const col2X = lm + col1LabelW + col1ValW;
-  const rowH = 20;
-
-  function infoRow(label1, val1, label2, val2) {
-    // Label 1
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#333');
-    doc.rect(lm, y, col1LabelW, rowH).fill('#e8e8e8').stroke('#ccc');
-    doc.fillColor('#333').text(label1, lm + 4, y + 5, { width: col1LabelW - 8 });
-    // Value 1
-    doc.rect(lm + col1LabelW, y, col1ValW, rowH).stroke('#ccc');
-    doc.font('Helvetica').fillColor('#000').text(val1 || 'N/A', lm + col1LabelW + 4, y + 5, { width: col1ValW - 8 });
-    // Label 2
-    if (label2) {
-      doc.rect(col2X, y, col2LabelW, rowH).fill('#e8e8e8').stroke('#ccc');
-      doc.font('Helvetica-Bold').fillColor('#333').text(label2, col2X + 4, y + 5, { width: col2LabelW - 8 });
-      doc.rect(col2X + col2LabelW, y, col2ValW, rowH).stroke('#ccc');
-      doc.font('Helvetica').fillColor('#000').text(val2 || 'N/A', col2X + col2LabelW + 4, y + 5, { width: col2ValW - 8 });
-    }
-    y += rowH;
-  }
-
-  infoRow('Product Name:', r.item_description, 'Origin:', r.origin || 'United States');
-  infoRow('Certificate Number:', certNum, 'Supplier:', r.supplier || 'N/A');
-  infoRow('Product Code:', r.product_code || r.item_number, 'Manufacturers Lot #:', r.manufacturer_lot || r.lot_number);
-  infoRow('Received Date:', fmtDate(r.received_date || r.date_sent), 'Expiration Date:', fmtDate(r.product_expiration));
-  // Vendor Lot row (single)
-  doc.rect(lm, y, col1LabelW, rowH).fill('#e8e8e8').stroke('#ccc');
-  doc.font('Helvetica-Bold').fillColor('#333').fontSize(8).text('Vendor Lot:', lm + 4, y + 5, { width: col1LabelW - 8 });
-  doc.rect(lm + col1LabelW, y, col1ValW, rowH).stroke('#ccc');
-  doc.font('Helvetica').fillColor('#000').text(r.vendor_lot || 'N/A', lm + col1LabelW + 4, y + 5, { width: col1ValW - 8 });
-  y += rowH;
-
-  // ── Certification text ──
-  y += 12;
-  doc.fontSize(7.5).font('Helvetica').fillColor('#333');
-  doc.text('The undersigned hereby certifies the following data to be true specifications of the obtained results of tests. This item is an original and is accompanied by this certificate to ensure its authenticity. Any reproduction or duplication of this item is prohibited without prior written consent.', lm, y, { width: pageW, lineGap: 2 });
-  y += 38;
-
-  // ── Test Results Table ──
-  const cols = [
-    { label: 'Test', w: 200 },
-    { label: 'Method', w: 90 },
-    { label: 'UoM', w: 45 },
-    { label: 'Specifications', w: 80 },
-    { label: 'Results', w: 55 },
-    { label: 'Pass/ Fail', w: pageW - 200 - 90 - 45 - 80 - 55 },
+  // ── Sample information grid ──
+  const na = (v) => v || 'N/A';
+  const info = [
+    ['Product Name', na(r.item_description), 'Supplier', na(r.supplier)],
+    ['Lot Number', na(r.lot_number), 'Vendor Lot', na(r.vendor_lot)],
+    ['Product Code', na(r.product_code || r.item_number), 'Manufacturer Lot', na(r.manufacturer_lot)],
+    ['Date Received', fmtDate(r.received_date || r.date_sent), 'Origin', r.origin || 'United States'],
+    ['Date of Analysis', fmtDate(r.date_of_results), 'Expiration Date', fmtDate(r.product_expiration)],
   ];
-
-  // Header row
-  let x = lm;
-  doc.fontSize(8).font('Helvetica-Bold').fillColor('#fff');
-  for (const col of cols) {
-    doc.rect(x, y, col.w, 18).fill('#555').stroke('#444');
-    doc.fillColor('#fff').text(col.label, x + 3, y + 4, { width: col.w - 6 });
-    x += col.w;
+  const halfW = pageW / 2;
+  const labW = 105;
+  doc.fontSize(8.5);
+  for (const [l1, v1, l2, v2] of info) {
+    doc.font('Helvetica-Bold').fillColor('#777').text(l1.toUpperCase(), lm, y, { width: labW });
+    doc.font('Helvetica').fillColor('#111').text(v1, lm + labW, y, { width: halfW - labW - 10 });
+    doc.font('Helvetica-Bold').fillColor('#777').text(l2.toUpperCase(), lm + halfW, y, { width: labW });
+    doc.font('Helvetica').fillColor('#111').text(v2, lm + halfW + labW, y, { width: halfW - labW });
+    y += 16;
+    doc.moveTo(lm, y - 4).lineTo(lm + pageW, y - 4).lineWidth(0.4).strokeColor(RULE).stroke();
   }
-  y += 18;
+  y += 8;
 
-  // Group results by section
-  const microTests = testResults.filter(t => ['Total Aerobic Microbial Count (USP)', 'Total Coliforms (BAM) (MOD)', 'E. Coli BAM (MOD)', 'Salmonella', 'Staphylococcus aureus <2022>', 'Rapid Yeast and Mold'].includes(t.test_type) || t.test_type?.toLowerCase().includes('micro') || t.test_type?.toLowerCase().includes('coli') || t.test_type?.toLowerCase().includes('salmonella') || t.test_type?.toLowerCase().includes('yeast') || t.test_type?.toLowerCase().includes('aerobic'));
-  const hmTests = testResults.filter(t => ['Arsenic', 'Cadmium', 'Mercury', 'Lead'].includes(t.test_type) || t.test_type?.toLowerCase().includes('arsenic') || t.test_type?.toLowerCase().includes('cadmium') || t.test_type?.toLowerCase().includes('mercury') || t.test_type?.toLowerCase().includes('lead'));
-  const otherTests = testResults.filter(t => !microTests.includes(t) && !hmTests.includes(t));
-
-  function sectionHeader(title) {
-    doc.rect(lm, y, pageW, 16).fill('#ddd').stroke('#ccc');
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#333');
-    doc.text(title, lm, y + 3, { width: pageW, align: 'center' });
+  // ── Results table ──
+  const cols = [
+    { label: 'Analysis', w: 158 },
+    { label: 'Method', w: 82 },
+    { label: 'Specification', w: 92 },
+    { label: 'Result', w: 62 },
+    { label: 'Units', w: 48 },
+    { label: 'Pass / Fail', w: pageW - 158 - 82 - 92 - 62 - 48, center: true },
+  ];
+  function tableHeader() {
+    let x = lm;
+    doc.rect(lm, y, pageW, 20).fill(SLATE);
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#fff');
+    for (const c of cols) { doc.text(c.label, x + 6, y + 6, { width: c.w - 12, align: c.center ? 'center' : 'left' }); x += c.w; }
+    y += 20;
+  }
+  const ensureSpace = (h) => { if (y + h > bottomY()) { doc.addPage(); y = doc.page.margins.top; tableHeader(); } };
+  function sectionBand(title) {
+    ensureSpace(60);
+    doc.rect(lm, y, pageW, 16).fill(LIGHT);
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(ORANGE).text(title.toUpperCase(), lm + 6, y + 4, { characterSpacing: 0.6 });
     y += 16;
   }
-
+  let zebra = false;
   function resultRow(tr) {
-    const rh = 18;
-    x = lm;
-    doc.fontSize(7.5).font('Helvetica').fillColor('#000');
-    for (let i = 0; i < cols.length; i++) {
-      doc.rect(x, y, cols[i].w, rh).stroke('#ccc');
-      let val = '';
-      switch (i) {
-        case 0: val = tr.test_type; break;
-        case 1: val = tr.notes || ''; break;
-        case 2: val = tr.unit || ''; break;
-        case 3: val = ''; break;
-        case 4: val = tr.result_value || ''; break;
-        case 5:
-          val = tr.pass_fail === 'pass' ? 'PASS' : tr.pass_fail === 'fail' ? 'FAILED' : 'N/A';
-          if (tr.pass_fail === 'fail') doc.fillColor('#cc0000');
-          break;
-      }
-      doc.text(val, x + 3, y + 4, { width: cols[i].w - 6 });
-      if (i === 5) doc.fillColor('#000');
-      x += cols[i].w;
-    }
+    const spec = specFor(tr);
+    const vals = [
+      tr.test_type || '',
+      spec?.method || tr.notes || '',
+      spec?.specification || '',
+      tr.result_value || '',
+      tr.unit || spec?.unit || '',
+    ];
+    doc.font('Helvetica').fontSize(8.2);
+    let maxH = 0;
+    for (let i = 0; i < 5; i++) maxH = Math.max(maxH, doc.heightOfString(vals[i] || ' ', { width: cols[i].w - 12 }));
+    const rh = Math.max(17, maxH + 10);
+    ensureSpace(rh);
+    if (zebra) doc.rect(lm, y, pageW, rh).fill('#fafafa');
+    zebra = !zebra;
+    let x = lm;
+    doc.font('Helvetica').fontSize(8.2).fillColor('#111');
+    for (let i = 0; i < 5; i++) { doc.text(vals[i], x + 6, y + 5, { width: cols[i].w - 12 }); x += cols[i].w; }
+    const pf = tr.pass_fail === 'pass' ? 'PASS' : tr.pass_fail === 'fail' ? 'FAIL' : 'N/A';
+    doc.font('Helvetica-Bold').fillColor(pf === 'PASS' ? GREEN : pf === 'FAIL' ? RED : '#666')
+      .text(pf, x + 6, y + 5, { width: cols[5].w - 12, align: 'center' });
+    doc.moveTo(lm, y + rh).lineTo(lm + pageW, y + rh).lineWidth(0.4).strokeColor(RULE).stroke();
     y += rh;
   }
 
-  if (microTests.length > 0) {
-    sectionHeader('Rapid Complete Micro');
-    microTests.forEach(resultRow);
-  }
-  if (hmTests.length > 0) {
-    sectionHeader('Heavy Metals');
-    hmTests.forEach(resultRow);
-  }
-  if (otherTests.length > 0) {
-    sectionHeader('Other Tests');
-    otherTests.forEach(resultRow);
-  }
+  const lc = (s) => (s || '').toLowerCase();
+  const microTests = testResults.filter(t => /micro|coli|salmonella|yeast|aerobic|staph|mold|listeria|entero/.test(lc(t.test_type)));
+  const hmTests = testResults.filter(t => /arsenic|cadmium|mercury|lead|heavy metal/.test(lc(t.test_type)));
+  const otherTests = testResults.filter(t => !microTests.includes(t) && !hmTests.includes(t));
 
-  // If no test results, show placeholder
+  tableHeader();
+  if (microTests.length) { sectionBand('Complete Micro'); microTests.forEach(resultRow); }
+  if (hmTests.length) { sectionBand('Heavy Metals'); hmTests.forEach(resultRow); }
+  if (otherTests.length) { sectionBand(microTests.length || hmTests.length ? 'Other Tests' : 'Test Results'); otherTests.forEach(resultRow); }
   if (testResults.length === 0) {
-    y += 10;
-    doc.fontSize(9).font('Helvetica').fillColor('#666');
-    doc.text('No test results recorded. Add test results to generate a complete COA.', lm, y, { width: pageW, align: 'center' });
-    y += 20;
+    y += 12;
+    doc.fontSize(9).font('Helvetica').fillColor('#666')
+      .text('No test results recorded. Add test results to generate a complete COA.', lm, y, { width: pageW, align: 'center' });
+    y += 24;
   }
 
-  // ── Signature area ──
-  y += 30;
-  doc.moveTo(lm, y + 20).lineTo(lm + 150, y + 20).stroke('#999');
-  doc.fontSize(8).font('Helvetica').fillColor('#333');
-  doc.text('Quality Control', lm, y + 25);
+  // ── Certification + signature ──
+  if (y + 130 > bottomY()) { doc.addPage(); y = doc.page.margins.top; }
+  y += 14;
+  doc.font('Helvetica').fontSize(7.6).fillColor('#444');
+  doc.text('The undersigned certifies that the results above are true and accurate as obtained by the referenced methods for the lot identified. This certificate accompanies the original item to ensure authenticity; reproduction without written consent is prohibited.', lm, y, { width: pageW, lineGap: 2 });
+  y += 40;
 
-  // ── Date of Issuance ──
-  y += 55;
-  doc.rect(lm, y, 100, 18).fill('#e8e8e8').stroke('#ccc');
-  doc.font('Helvetica-Bold').fillColor('#333').fontSize(8).text('Date of Issuance:', lm + 4, y + 4);
-  doc.rect(lm + 100, y, 80, 18).stroke('#ccc');
-  doc.font('Helvetica').fillColor('#000').text(fmtDate(r.date_of_issuance) || today, lm + 104, y + 4);
-  y += 18;
-  doc.rect(lm, y, 100, 18).fill('#e8e8e8').stroke('#ccc');
-  doc.font('Helvetica-Bold').fillColor('#333').text('Date Printed:', lm + 4, y + 4);
-  doc.rect(lm + 100, y, 80, 18).stroke('#ccc');
-  doc.font('Helvetica').fillColor('#000').text(today, lm + 104, y + 4);
+  const sigW = 200;
+  // Digital signature applied in-app (snapshot taken at signing time).
+  if (r.qa_signature) {
+    try {
+      const b64 = r.qa_signature.split(',')[1];
+      doc.image(Buffer.from(b64, 'base64'), lm + 10, y - 14, { fit: [sigW - 20, 34] });
+    } catch { /* corrupt image — leave line blank */ }
+  }
+  doc.moveTo(lm, y + 22).lineTo(lm + sigW, y + 22).lineWidth(0.8).strokeColor('#999').stroke();
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(SLATE)
+    .text(r.qa_signed_by ? `${r.qa_signed_by} — Quality` : 'Quality', lm, y + 27);
+  doc.font('Helvetica').fontSize(8).fillColor('#666')
+    .text(r.qa_signed_at ? `Digitally signed ${fmtDate(r.qa_signed_at)}` : 'Powder Ops Quality Assurance', lm, y + 38);
+
+  doc.moveTo(lm + pageW - sigW, y + 22).lineTo(lm + pageW, y + 22).lineWidth(0.8).strokeColor('#999').stroke();
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(SLATE).text('Date of Issuance', lm + pageW - sigW, y + 27);
+  doc.font('Helvetica').fontSize(8).fillColor('#666').text(fmtDate(r.date_of_issuance) === 'N/A' ? today : fmtDate(r.date_of_issuance), lm + pageW - sigW, y + 38);
+
+  // ── Footer on every page (page count known once all pages exist) ──
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    const keepBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    const fy = doc.page.height - 58;
+    doc.moveTo(lm, fy).lineTo(lm + pageW, fy).lineWidth(0.5).strokeColor(RULE).stroke();
+    doc.font('Helvetica').fontSize(6.8).fillColor('#888');
+    doc.text('This Certificate of Analysis represents data for the sample submitted and does not constitute a guarantee of quality for the entire lot from which it was taken.', lm, fy + 6, { width: pageW, align: 'center', lineBreak: false });
+    doc.text(`Powder Ops  ·  281 E 1600 N, Vineyard, UT 84059  ·  ${certNum}  ·  Page ${i - range.start + 1} of ${range.count}`, lm, fy + 18, { width: pageW, align: 'center', lineBreak: false });
+    doc.page.margins.bottom = keepBottom;
+  }
 
   doc.end();
 });
