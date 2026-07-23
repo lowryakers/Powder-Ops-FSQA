@@ -7,6 +7,128 @@ import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
+// ── Critical Tracking (Audit Prep Phase 2) ───────────────────────────────────
+// One aggregation for the program-health dashboard: every category returns a
+// status (ok/warn/crit), a count, and the top offending items so the fix is
+// one click away. Admin + supervisors.
+router.get('/critical', (req, res) => {
+  if (!req.user || !['admin', 'supervisor'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Critical Tracking is for admins and supervisors.' });
+  }
+  const db = getDb();
+  const today = new Date().toISOString().slice(0, 10);
+  const daysBetween = (a, b) => Math.floor((new Date(a) - new Date(b)) / 86400000);
+  const cats = {};
+
+  // Overdue preventive maintenance / tasks
+  const overdueWos = db.prepare(`
+    SELECT wo.id, wo.title, wo.due_date, wo.task_group, e.name AS equipment_name
+    FROM work_orders wo LEFT JOIN equipment e ON e.id = wo.equipment_id
+    WHERE wo.status = 'open' AND wo.due_date < ? ORDER BY wo.due_date LIMIT 200`).all(today);
+  cats.pm_overdue = {
+    label: 'Overdue Tasks / PMs', module: 'pm', count: overdueWos.length,
+    status: overdueWos.length === 0 ? 'ok' : overdueWos.length <= 5 ? 'warn' : 'crit',
+    items: overdueWos.slice(0, 8).map(w => ({ title: `${w.title}${w.equipment_name ? ` — ${w.equipment_name}` : ''}`, detail: `${daysBetween(today, w.due_date)}d overdue · ${w.task_group || ''}` })),
+  };
+
+  // Unsigned required approvals per QMS type
+  const pendingByType = [];
+  try {
+    const rows = db.prepare('SELECT record_type, record_number, record_date, approvals, paper_record, created_at FROM qms_records').all();
+    const grouped = {};
+    for (const r of rows) {
+      if (r.paper_record) continue;
+      const cfg = QMS_TYPES[r.record_type];
+      const required = (cfg?.approvals || []).filter(a => a.required);
+      if (!required.length) continue;
+      let approvals = {};
+      try { approvals = JSON.parse(r.approvals || '{}'); } catch { approvals = {}; }
+      if (required.some(a => !approvals[a.key])) {
+        (grouped[r.record_type] = grouped[r.record_type] || []).push(r);
+      }
+    }
+    for (const [type, list] of Object.entries(grouped)) {
+      const cfg = QMS_TYPES[type];
+      const oldest = list.reduce((m, r) => Math.max(m, daysBetween(today, (r.record_date || r.created_at || today).slice(0, 10))), 0);
+      pendingByType.push({ title: `${cfg?.label || type}: ${list.length} awaiting sign-off`, detail: `oldest ${oldest}d`, module: cfg?.moduleId });
+    }
+  } catch { /* table optional */ }
+  const pendingTotal = pendingByType.reduce((s, p) => s + parseInt(p.title.match(/(\d+) awaiting/)?.[1] || 0, 10), 0);
+  cats.approvals = {
+    label: 'Records Awaiting Required Sign-off', module: null, count: pendingTotal,
+    status: pendingTotal === 0 ? 'ok' : pendingTotal <= 10 ? 'warn' : 'crit',
+    items: pendingByType,
+  };
+
+  // Open CAPAs with age
+  let capas = [];
+  try {
+    capas = db.prepare("SELECT capa_number, title, date_issued, due_date FROM capas WHERE status != 'closed' ORDER BY date_issued").all();
+  } catch { /* optional */ }
+  const oldCapas = capas.filter(c => c.date_issued && daysBetween(today, c.date_issued) > 30);
+  cats.capas = {
+    label: 'Open CAPAs', module: 'capa', count: capas.length,
+    status: capas.length === 0 ? 'ok' : oldCapas.length ? 'crit' : 'warn',
+    items: capas.slice(0, 8).map(c => ({ title: `${c.capa_number} — ${c.title}`, detail: c.date_issued ? `open ${daysBetween(today, c.date_issued)}d${c.due_date ? ` · due ${c.due_date}` : ''}` : '' })),
+  };
+
+  // Product on hold
+  let holds = [];
+  try {
+    holds = db.prepare("SELECT record_number, record_date, data FROM qms_records WHERE record_type = 'on_hold' AND status = 'on_hold' ORDER BY record_date").all();
+  } catch { /* optional */ }
+  cats.on_hold = {
+    label: 'Product On Hold', module: 'on-hold', count: holds.length,
+    status: holds.length === 0 ? 'ok' : 'warn',
+    items: holds.slice(0, 8).map(h => { let d = {}; try { d = JSON.parse(h.data || '{}'); } catch { d = {}; } return { title: `${h.record_number} — ${d.product || 'item'}${d.lot ? ` (Lot ${d.lot})` : ''}`, detail: h.record_date ? `held ${daysBetween(today, h.record_date)}d` : '' }; }),
+  };
+
+  // Certifications expiring/expired
+  let certs = [];
+  try { certs = db.prepare('SELECT person_name, cert_type, expiry_date FROM certifications WHERE expiry_date IS NOT NULL').all(); } catch { /* optional */ }
+  const certAlerts = certs.map(c => ({ ...c, days: -daysBetween(today, c.expiry_date) }))
+    .filter(c => c.days <= 30).sort((a, b) => a.days - b.days);
+  cats.certs = {
+    label: 'Certifications Expiring', module: 'certifications', count: certAlerts.length,
+    status: certAlerts.some(c => c.days < 0) ? 'crit' : certAlerts.length ? 'warn' : 'ok',
+    items: certAlerts.slice(0, 8).map(c => ({ title: `${c.person_name} — ${c.cert_type}`, detail: c.days < 0 ? `EXPIRED ${-c.days}d ago` : `expires in ${c.days}d` })),
+  };
+
+  // Calibration due/overdue
+  let instruments = [];
+  try { instruments = db.prepare("SELECT name, asset_number, next_due FROM calibration_instruments WHERE next_due IS NOT NULL AND status != 'retired'").all(); } catch { /* optional */ }
+  const calAlerts = instruments.map(i => ({ ...i, days: -daysBetween(today, i.next_due) }))
+    .filter(i => i.days <= 30).sort((a, b) => a.days - b.days);
+  cats.calibration = {
+    label: 'Calibration Due', module: 'calibration', count: calAlerts.length,
+    status: calAlerts.some(i => i.days < 0) ? 'crit' : calAlerts.length ? 'warn' : 'ok',
+    items: calAlerts.slice(0, 8).map(i => ({ title: `${i.name}${i.asset_number ? ` #${i.asset_number}` : ''}`, detail: i.days < 0 ? `OVERDUE ${-i.days}d` : `due in ${i.days}d` })),
+  };
+
+  // Flagged task issues still open
+  const flagged = db.prepare(`
+    SELECT wo.title, wo.issue_notes, wo.issue_flagged_by, wo.issue_flagged_at
+    FROM work_orders wo WHERE wo.issue_flagged = 1 AND wo.status = 'open' ORDER BY wo.issue_flagged_at DESC LIMIT 50`).all();
+  cats.issues = {
+    label: 'Open Flagged Issues', module: 'pm', count: flagged.length,
+    status: flagged.length === 0 ? 'ok' : 'warn',
+    items: flagged.slice(0, 8).map(f => ({ title: f.title, detail: `${f.issue_flagged_by || ''} — ${(f.issue_notes || '').slice(0, 60)}` })),
+  };
+
+  // 72-hour re-clean attention
+  let reclean = [];
+  try { reclean = recleanRooms(db).filter(r => r.needs_attention); } catch { /* optional */ }
+  cats.reclean = {
+    label: '72h Re-clean Needed', module: 'sanitation', count: reclean.length,
+    status: reclean.length === 0 ? 'ok' : 'warn',
+    items: reclean.slice(0, 8).map(r => ({ title: r.room, detail: r.last_clean ? `last cleaned ${r.last_clean.slice(0, 10)}` : 'no clean on record' })),
+  };
+
+  const statuses = Object.values(cats).map(c => c.status);
+  const overall = statuses.includes('crit') ? 'crit' : statuses.includes('warn') ? 'warn' : 'ok';
+  res.json({ overall, generated_at: new Date().toISOString(), categories: cats });
+});
+
 // ── Full data backup ─────────────────────────────────────────────────────────
 // Admin-only ZIP of every application table as CSV — the "if the tool ever
 // crashes we still have every form and every check on paper" export. Secrets

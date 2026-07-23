@@ -35,6 +35,7 @@ import QMSRecordsPanel from './components/compliance/QMSRecordsPanel.jsx';
 import KnifePanel from './components/compliance/KnifePanel.jsx';
 import FlavorPanel from './components/compliance/FlavorPanel.jsx';
 import CertificationsPanel from './components/compliance/CertificationsPanel.jsx';
+import CriticalPanel from './components/compliance/CriticalPanel.jsx';
 import ApprovePage from './components/ApprovePage.jsx';
 import TrainingPanel from './components/compliance/TrainingPanel.jsx';
 import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
@@ -55,6 +56,7 @@ const NAV_GROUPS = [
     label: 'Overview',
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'critical-tracking', label: 'Critical Tracking', icon: ShieldAlert, roles: ['admin', 'supervisor'] },
       { id: 'operator', label: 'Operator View', icon: HardHat },
     ],
   },
@@ -1267,6 +1269,7 @@ function App() {
           {resolvedTab === 'knife-accountability' && <KnifePanel />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
+          {resolvedTab === 'critical-tracking' && ['admin', 'supervisor'].includes(user.role) && <CriticalPanel onNavigate={setActiveTab} />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}
           {resolvedTab === 'settings' && <SettingsPanel />}

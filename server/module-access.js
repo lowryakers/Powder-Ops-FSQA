@@ -18,7 +18,7 @@
 
 // Must include every id used in Settings' MODULE_GROUPS (src side).
 export const ALL_MODULE_IDS = [
-  'dashboard', 'operator',
+  'dashboard', 'critical-tracking', 'operator',
   'production-log', 'production-schedule', 'production-dashboard',
   'pm', 'equipment', 'calibration', 'loto',
   'sanitation', 'chemicals', 'hygienic', 'coa',

@@ -49,6 +49,11 @@ const MODULE_INFO = {
     links: 'Records come from the Equipment/Tool/Chemical Sign In-Out module; returns are completed there by QA.',
     sqf: 'Supports tool and chemical accountability (SQF 11.7.5) with a fast floor-level check.',
   },
+  'critical-tracking': {
+    what: 'Program health at a glance: overdue tasks/PMs, records awaiting required sign-off, open CAPAs with age, product on hold, expiring certifications, calibration due, open flagged issues, and 72h re-clean rooms — each linking into the owning module.',
+    links: 'Aggregates live data from every compliance module; admin + supervisors only.',
+    sqf: 'Continuous audit readiness — surfaces exactly what an SQF/NSF auditor would flag, before they do.',
+  },
   'flavor-approvals': {
     what: 'Flavor taste-test approvals (replaces the paper Flavor Approval Form): batching submits a sample, and the approver signs off in-app or from a texted one-tap link — no login needed. Decisions are announced in #batching.',
     links: 'Pairs with the Schedule\'s Flavor Approved flow and the batching channel.',
