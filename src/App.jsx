@@ -863,11 +863,40 @@ function App() {
 
   // Global edge-swipe navigation (mobile). From the left edge: in Messages it
   // steps back one level (thread → channel → channel list → ReadyDoc), handled
-  // inside CommsView via the 'comms-back' event; elsewhere it opens the sidebar.
-  // From the right edge (only in ReadyDoc): opens Messages.
+  // inside CommsView via the 'comms-back' event; elsewhere it opens the sidebar
+  // — following the finger, so the drawer tracks the drag instead of popping in
+  // on release. From the right edge (only in ReadyDoc): opens Messages.
+  const drawerBackdropRef = useRef(null);
+  const drawerPanelRef = useRef(null);
+  const DRAWER_W = 240; // Tailwind w-60
   useEdgeSwipe({
     onSwipeRightFromLeft: () => { if (workspace === 'comms') window.dispatchEvent(new CustomEvent('comms-back')); else setSidebarOpen(true); },
     onSwipeLeftFromRight: () => { if (workspace !== 'comms') setWorkspace('comms'); },
+    onLeftDragStart: () => {
+      if (workspace === 'comms' || sidebarOpen) return false;
+      const panel = drawerPanelRef.current, backdrop = drawerBackdropRef.current;
+      if (!panel || !backdrop) return false;
+      panel.style.transition = 'none';
+      backdrop.style.transition = 'none';
+      return true;
+    },
+    onLeftDragMove: (dx) => {
+      const panel = drawerPanelRef.current, backdrop = drawerBackdropRef.current;
+      if (!panel || !backdrop) return;
+      // Tailwind 4's translate-x utilities use the CSS `translate` property, so
+      // the inline override must too (an inline `transform` would compose with
+      // the class's translate and double the offset).
+      panel.style.translate = `${Math.min(0, -DRAWER_W + dx)}px 0`;
+      backdrop.style.opacity = String(Math.min(1, dx / DRAWER_W));
+    },
+    onLeftDragEnd: (committed) => {
+      const panel = drawerPanelRef.current, backdrop = drawerBackdropRef.current;
+      // Clearing the inline styles hands control back to the classes; the CSS
+      // transition animates from wherever the finger left off.
+      if (panel) { panel.style.transition = ''; panel.style.translate = ''; }
+      if (backdrop) { backdrop.style.transition = ''; backdrop.style.opacity = ''; }
+      if (committed) setSidebarOpen(true);
+    },
   });
 
   if (path === '/submit') {
@@ -1097,15 +1126,16 @@ function App() {
         <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} scheduleNotice={notifications?.scheduleNotice} onOpenComms={() => setWorkspace('comms')} />
       </aside>
 
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute left-0 top-0 bottom-0 w-60 shadow-xl">
-            <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} scheduleNotice={notifications?.scheduleNotice} onOpenComms={() => setWorkspace('comms')} />
-          </div>
+      {/* Mobile sidebar overlay — always mounted so the edge swipe can pull it
+          in following the finger; `sidebarOpen` is the committed state. */}
+      <div className={`fixed inset-0 z-50 md:hidden ${sidebarOpen ? '' : 'pointer-events-none'}`}>
+        <div ref={drawerBackdropRef} onClick={() => setSidebarOpen(false)}
+          className={`absolute inset-0 bg-black/30 transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`} />
+        <div ref={drawerPanelRef}
+          className={`absolute left-0 top-0 bottom-0 w-60 shadow-xl transition-transform duration-200 ease-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} scheduleNotice={notifications?.scheduleNotice} onOpenComms={() => setWorkspace('comms')} />
         </div>
-      )}
+      </div>
 
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col">

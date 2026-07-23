@@ -1132,6 +1132,29 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
     loadMessages(activeId);
   };
 
+  // Type-to-compose: opening a channel focuses the composer (desktop only — on
+  // phones autofocus would pop the keyboard over the conversation), and any
+  // stray printable keystroke is routed into it, so you can pick a channel and
+  // just start typing.
+  useEffect(() => {
+    if (!activeId) return;
+    if (window.matchMedia?.('(hover: none)').matches) return;
+    const t = setTimeout(() => composerRef.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, [activeId]);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.key.length !== 1) return;
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      const ta = composerRef.current;
+      if (!ta || ta.disabled) return;
+      ta.focus(); // the keystroke then lands in the composer
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const send = async () => {
     const text = body.trim();
     if ((!text && pending.length === 0) || !active) return;

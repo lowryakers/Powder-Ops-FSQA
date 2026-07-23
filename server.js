@@ -220,10 +220,14 @@ try {
 // Fix PM schedule and work order titles to match cleaned equipment names
 {
   const FREQ_LABEL = { daily: 'Daily', weekly: 'Weekly', biweekly: 'Bi-Weekly', monthly: 'Monthly', quarterly: 'Quarterly', semi_annual: 'Semi-Annual', annual: 'Annual' };
+  // Skip consolidated checklists — their anchor equipment_id is just one of many
+  // machines, so "normalizing" their title would mislabel a 20-machine checklist
+  // as a single machine's PM (this happened; pm_cleanup_v2 below repairs it).
   const scheds = db.prepare(`
     SELECT ps.id, ps.title, ps.frequency_type, e.name as eq_name, e.asset_id
     FROM pm_schedules ps JOIN equipment e ON ps.equipment_id = e.id
     WHERE ps.task_group IN ('warehouse', 'maintenance')
+      AND (ps.description IS NULL OR ps.description NOT LIKE 'Consolidated daily checks%')
   `).all();
   const updatePM = db.prepare('UPDATE pm_schedules SET title = ? WHERE id = ?');
   const updateWO = db.prepare('UPDATE work_orders SET title = ? WHERE pm_schedule_id = ?');
@@ -576,6 +580,83 @@ try {
   }
 } catch (e) {
   console.warn('[migrate] PM consolidation skipped:', e.message);
+}
+
+// ── PM cleanup v2 ──
+// (a) Restore the titles of the consolidated daily checklists: the unconditional
+//     title normalizer above used to rename them after their anchor equipment
+//     (e.g. a 22-machine checklist showing as "Daily PM — 124 ... Scale").
+// (b) Collapse doubled step text that came in from the original Excel import
+//     ("Power, display, zero/tare check <tab> Power, display, zero/tare check")
+//     across ALL schedules and their open work orders — halves the visual bulk
+//     of the big tasks without changing what's actually checked.
+try {
+  const flag = db.prepare("SELECT value FROM app_settings WHERE key = 'pm_cleanup_v2'").get();
+  if (!flag) {
+    const report = { retitled: [], cleaned: 0 };
+
+    // A phrase of >=2 words repeated back-to-back collapses to one copy.
+    const collapseSeg = (seg) => {
+      const norm = seg.replace(/\s+/g, ' ').trim();
+      const words = norm.split(' ');
+      if (words.length >= 4 && words.length % 2 === 0) {
+        const half = words.length / 2;
+        const a = words.slice(0, half).join(' ');
+        if (a === words.slice(half).join(' ')) return a;
+      }
+      return norm;
+    };
+    // Apply per '; ' item, and after a "Machine #x — " label if present.
+    const cleanStep = (step) => {
+      if (typeof step !== 'string' || step.includes('|')) return step; // structured G/B/X steps untouched
+      const dash = step.indexOf(' — ');
+      const label = dash > 0 ? step.slice(0, dash + 3) : '';
+      const body = dash > 0 ? step.slice(dash + 3) : step;
+      return label + body.split(/;\s*/).map(collapseSeg).filter(Boolean).join('; ');
+    };
+
+    db.transaction(() => {
+      // (a) restore consolidated checklist titles from their description
+      const cons = db.prepare(`SELECT id, title, description, task_group FROM pm_schedules
+        WHERE is_active = 1 AND description LIKE 'Consolidated daily checks%'`).all();
+      const placeOf = (d) => (d.match(/ in (.+)\.\s/) || d.match(/ in (.+)\./) || [])[1] || 'Facility';
+      const placeCounts = new Map();
+      for (const c of cons) placeCounts.set(placeOf(c.description), (placeCounts.get(placeOf(c.description)) || 0) + 1);
+      for (const c of cons) {
+        const place = placeOf(c.description);
+        const teamLabel = (c.task_group || 'warehouse').replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+        const title = `Daily PM Checklist — ${place}` + (placeCounts.get(place) > 1 ? ` (${teamLabel})` : '');
+        if (c.title !== title) {
+          db.prepare("UPDATE pm_schedules SET title = ?, updated_at = datetime('now') WHERE id = ?").run(title, c.id);
+          db.prepare("UPDATE work_orders SET title = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')").run(title, c.id);
+          report.retitled.push(`${c.title} → ${title}`);
+        }
+      }
+
+      // (b) collapse doubled text in every schedule's steps + open work orders
+      const all = db.prepare('SELECT id, procedure_steps FROM pm_schedules WHERE procedure_steps IS NOT NULL').all();
+      for (const s of all) {
+        let steps;
+        try { steps = JSON.parse(s.procedure_steps); } catch { continue; }
+        if (!Array.isArray(steps)) continue;
+        const cleaned = steps.map(cleanStep);
+        if (JSON.stringify(cleaned) !== JSON.stringify(steps)) {
+          db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(cleaned), s.id);
+          db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')").run(JSON.stringify(cleaned), s.id);
+          report.cleaned++;
+        }
+      }
+
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pm_cleanup_v2', ?, datetime('now'))")
+        .run(JSON.stringify({ at: new Date().toISOString(), ...report }));
+    })();
+    if (report.retitled.length || report.cleaned) {
+      console.log(`[migrate] PM cleanup v2: restored ${report.retitled.length} checklist titles, de-duplicated steps on ${report.cleaned} schedules`);
+      for (const line of report.retitled) console.log(`[migrate]   ${line}`);
+    }
+  }
+} catch (e) {
+  console.warn('[migrate] PM cleanup v2 skipped:', e.message);
 }
 
 // Seed LOTO procedures for all equipment if none exist
