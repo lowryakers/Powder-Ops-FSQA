@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
+import { canEditModule } from '../../utils/permissions';
 import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X, ListChecks, QrCode } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
 import FileUpload from '../FileUpload';
@@ -682,6 +683,7 @@ function ClearanceCard({ wo, onClear, user }) {
 export default function PMPanel() {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin';
+  const canEdit = canEditModule(user, 'pm');
   const [groupFilter, setGroupFilter] = useState('all');
   const gp = groupFilter !== 'all' ? `?group=${groupFilter}` : '';
   const { data: metrics, loading: metricsLoading } = useApiGet(`/pm/metrics${gp}`);
@@ -792,10 +794,12 @@ export default function PMPanel() {
             className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
             <QrCode size={15} /> Kiosk QR
           </button>
-          <button onClick={() => setShowWOForm(true)}
-            className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
-            <Plus size={16} /> New Task
-          </button>
+          {canEdit && (
+            <button onClick={() => setShowWOForm(true)}
+              className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+              <Plus size={16} /> New Task
+            </button>
+          )}
         </div>
       </div>
 

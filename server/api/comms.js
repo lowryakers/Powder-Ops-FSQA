@@ -9,6 +9,7 @@ import { aiEnabled, summarizeChat, translateText } from '../ai.js';
 import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
 import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
+import { getType } from '../qms-config.js';
 
 const router = Router();
 
@@ -234,7 +235,10 @@ export async function postMessageAs(db, channel, author, body) {
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
-  notifyChannelMessage(db, channel, text, author, [], id);
+  // @mentions in system-posted messages (issue alerts, schedule updates) notify
+  // like any other mention.
+  const mentioned = recordMentions(db, channel, id, text, author);
+  notifyChannelMessage(db, channel, text, author, mentioned, id);
   embedMessage(db, id, channel.id, text);
   return message;
 }
@@ -841,6 +845,53 @@ router.delete('/messages/:id', async (req, res) => {
   db.prepare('DELETE FROM chat_mentions WHERE message_id = ?').run(ctx.m.id);
   emitToChannel(ctx.channel.id, 'message:update', await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
   res.json({ ok: true });
+});
+
+// ── Message → compliance record ──────────────────────────────────────────────
+// Promote a chat message into a draft QMS record (deviation / non-conformance /
+// on-hold), pre-filled from the message + author + timestamp and back-linked to
+// the source for an audit trail. Channel access is required; the record lands
+// as a draft for the owning module to complete.
+const CONVERT_TYPES = {
+  deviation: (m, authorName) => ({ initiator: authorName, description: m.body }),
+  non_conformance: (m, authorName) => ({ discovered_by: authorName, description: m.body }),
+  on_hold: (m, authorName) => ({ reason: m.body, placed_by: `${new Date().toISOString().slice(0, 10)} ${authorName}` }),
+};
+function nextRecordNumber(db, cfg) {
+  const rows = db.prepare('SELECT record_number FROM qms_records WHERE record_type = ?').all(cfg.key);
+  let max = 0;
+  for (const r of rows) {
+    const m = String(r.record_number || '').match(/\d+/g);
+    if (m) max = Math.max(max, parseInt(m[m.length - 1], 10));
+  }
+  return (cfg.numberPrefix || '') + String(max + 1).padStart(cfg.numberPad || 3, '0');
+}
+router.post('/messages/:id/to-record', (req, res) => {
+  const ctx = ownedMessage(req, res); if (!ctx) return;
+  const db = getDb();
+  const type = String(req.body?.type || '');
+  const build = CONVERT_TYPES[type];
+  const cfg = getType(type);
+  if (!build || !cfg) return res.status(400).json({ error: 'Unsupported record type' });
+  if (ctx.m.deleted_at || !ctx.m.body) return res.status(400).json({ error: 'This message has no content to convert.' });
+
+  const authorName = db.prepare('SELECT name FROM users WHERE id = ?').get(ctx.m.user_id)?.name || 'Unknown';
+  const chanLabel = ctx.channel.kind === 'public' ? `#${ctx.channel.name}` : (ctx.channel.name || 'a direct message');
+  const id = uuid();
+  const number = nextRecordNumber(db, cfg);
+  const data = {
+    ...build(ctx.m, authorName),
+    source_message_id: ctx.m.id,
+    source_channel_id: ctx.channel.id,
+  };
+  const notes = `Created from a chat message in ${chanLabel} — ${authorName}, ${ctx.m.created_at}. Converted by ${req.user.name}.`;
+  db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, notes, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`).run(
+    id, cfg.key, number, new Date().toISOString().slice(0, 10), cfg.defaultStatus || null,
+    JSON.stringify(data), notes, req.user.name);
+  logAudit(req.user, 'qms_created', cfg.key, id,
+    { record_number: number, from_message: ctx.m.id, channel: ctx.channel.name }, null, null, number);
+  res.status(201).json({ ok: true, record_number: number, record_id: id, type: cfg.key, label: cfg.singular, module: cfg.moduleId });
 });
 
 // ── Translation (on-display) ──────────────────────────────────────────────────

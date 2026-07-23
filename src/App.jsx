@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes, ListChecks, BriefcaseBusiness, Network, Trash2, ShieldAlert, PauseCircle, PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -760,6 +760,9 @@ function App() {
   const [homePref, setHomePref] = useState('fsqa');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
+  // Docked chat: a slim Messages panel beside the modules (desktop split screen).
+  const [dockChat, setDockChat] = useState(() => { try { return localStorage.getItem('dock_chat') === '1'; } catch { return false; } });
+  const toggleDockChat = () => setDockChat(d => { const n = !d; try { localStorage.setItem('dock_chat', n ? '1' : '0'); } catch { /* private mode */ } return n; });
   const homeApplied = useRef(false);
 
   // Apply the user's default landing workspace once, on first load after login.
@@ -1036,6 +1039,15 @@ function App() {
     return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
   }
 
+  // Slim standalone chat — the target of "Open in window" popouts and the
+  // docked side panel's iframe. Renders only the conversation UI (CommsView's
+  // compact layout takes over at narrow widths); /chat/<channel> deep-links.
+  if (path.startsWith('/chat')) {
+    const chanFromPath = decodeURIComponent(path.split('/')[2] || '') || null;
+    const chanId = new URLSearchParams(window.location.search).get('cid');
+    return <CommsView user={user} openChannelName={chanFromPath} openChannelId={chanId} onExit={() => { window.location.href = '/'; }} />;
+  }
+
   // Messages workspace — full-screen, separable from the FSQA workspace.
   if (workspace === 'comms') {
     const keepBar = wantsMessagesTab(user);
@@ -1148,6 +1160,10 @@ function App() {
             </div>
             <div className="flex items-center gap-3">
               <ModuleSearch user={user} onNavigate={setActiveTab} />
+              <button onClick={toggleDockChat} data-tip={dockChat ? 'Close the docked Messages panel' : 'Dock Messages beside this module (split screen)'}
+                className={`hidden lg:block p-1.5 rounded-lg transition-colors ${dockChat ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
+                <PanelRight size={18} />
+              </button>
               <button onClick={() => setHome('fsqa')} data-tip={homePref === 'fsqa' ? 'ReadyDoc is your home screen' : 'Make ReadyDoc your home screen'}
                 className={`p-1.5 rounded-lg transition-colors ${homePref === 'fsqa' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
                 <Home size={18} />
@@ -1237,6 +1253,21 @@ function App() {
           {resolvedTab === 'settings' && <SettingsPanel />}
         </main>
       </div>
+
+      {/* Docked Messages panel — split screen: the module stays open on the
+          left while a slim live chat (the /chat standalone view) rides along
+          on the right. Desktop only; state persists across sessions. */}
+      {dockChat && (
+        <aside className="hidden lg:flex flex-col w-[400px] xl:w-[440px] shrink-0 border-l border-gray-200 sticky top-0 h-screen bg-white">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 bg-gray-50">
+            <span className="text-xs font-semibold text-gray-500">Messages</span>
+            <button onClick={toggleDockChat} className="p-1 text-gray-400 hover:text-gray-600 rounded" data-tip="Close docked chat">
+              <X size={14} />
+            </button>
+          </div>
+          <iframe src="/chat" title="Messages" className="flex-1 w-full border-0" />
+        </aside>
+      )}
 
       <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onOpenComms={() => setWorkspace('comms')} />
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}

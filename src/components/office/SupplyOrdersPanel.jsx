@@ -2,6 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Search, Repeat, Trash2, Upload, FileText, Download, AlertTriangle, ExternalLink, Pencil, X, ChevronUp, ChevronDown } from 'lucide-react';
+import FilePreview from '../FilePreview.jsx';
 
 const LABELS = ['Warehouse/Production', 'Cleaning', 'Break room', 'Maintenance', 'Office'];
 const STATUS_FLOW = ['new', 'ordered', 'received', 'paid'];
@@ -387,6 +388,15 @@ function InvoiceRepo() {
     refresh();
   };
 
+  // In-app preview overlay: clicking a filename opens the file right here
+  // (arrow through neighbors) instead of jumping to a browser tab.
+  const [previewIdx, setPreviewIdx] = useState(null);
+  const previewItems = list.filter(i => i.url).map(i => ({ url: i.url, name: i.filename }));
+  const openPreview = (inv) => {
+    const idx = previewItems.findIndex(p => p.url === inv.url);
+    if (idx >= 0) setPreviewIdx(idx);
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
@@ -416,7 +426,7 @@ function InvoiceRepo() {
             <div className="flex items-start gap-2.5">
               <FileText size={18} className="text-powder-600 shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
-                <a href={inv.url || undefined} target="_blank" rel="noreferrer" className="text-sm font-medium text-gray-900 break-all">{inv.filename}</a>
+                <button onClick={() => inv.url ? openPreview(inv) : null} className="text-sm font-medium text-gray-900 break-all text-left">{inv.filename}</button>
                 <div className="text-xs text-gray-400 mt-0.5">{[inv.supplier, inv.invoice_date, inv.total != null ? `$${Number(inv.total).toFixed(2)}` : null].filter(Boolean).join(' · ') || 'No details tagged'}</div>
                 <div className="text-[11px] text-gray-400">{inv.uploaded_by} · {(inv.created_at || '').slice(0, 10)}</div>
               </div>
@@ -448,9 +458,9 @@ function InvoiceRepo() {
               {list.map(inv => (
                 <tr key={inv.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-3 py-2.5 w-full">
-                    <a href={inv.url || undefined} target="_blank" rel="noreferrer" className="flex items-center gap-2 font-medium text-gray-900 hover:text-powder-700">
+                    <button onClick={() => inv.url ? openPreview(inv) : null} className="flex items-center gap-2 font-medium text-gray-900 hover:text-powder-700 text-left">
                       <FileText size={15} className="text-powder-600 shrink-0" /><span className="break-all">{inv.filename}</span>
-                    </a>
+                    </button>
                     {inv.notes && <div className="text-[11px] text-gray-400 ml-6">{inv.notes}</div>}
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{inv.supplier || '—'}</td>
@@ -472,6 +482,9 @@ function InvoiceRepo() {
         </div>
       </div>
       {editing && <EditInvoiceModal inv={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
+      {previewIdx !== null && (
+        <FilePreview items={previewItems} index={previewIdx} onNav={setPreviewIdx} onClose={() => setPreviewIdx(null)} />
+      )}
     </div>
   );
 }

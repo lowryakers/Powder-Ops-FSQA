@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import crypto from 'crypto';
 import { requireRole } from '../middleware/auth.js';
+import { ALL_MODULE_IDS } from '../module-access.js';
 
 const router = Router();
 
@@ -142,6 +143,15 @@ router.get('/duplicates', requireRole('admin'), (req, res) => {
   res.json({ groups });
 });
 
+// Must precede /:id or "access-templates" would be parsed as a user id.
+router.get('/access-templates', requireRole('admin'), (_req, res) => {
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM app_settings WHERE key = 'access_templates'").get();
+  let templates = {};
+  try { templates = row ? JSON.parse(row.value) : {}; } catch { templates = {}; }
+  res.json({ templates });
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT id, name, email, role, department, is_active, created_at FROM users WHERE id = ?').get(req.params.id);
@@ -197,17 +207,65 @@ router.post('/bulk', requireRole('admin'), (req, res) => {
 });
 
 // Apply a module-access map to several users at once (admins are left untouched).
+// mode 'merge' (default): only the modules present in the patch change — each
+// user's other module settings are preserved. A user with unrestricted access
+// (null) is materialized to an explicit all-edit map first so the patch can't
+// silently expand or shrink anything else. Patch level 'none' removes access.
+// mode 'replace': the old behavior — the map overwrites each user's access
+// entirely (module_access null = reset to full access).
 router.post('/bulk-access', requireRole('admin'), (req, res) => {
   const db = getDb();
-  const { user_ids, module_access } = req.body;
+  const { user_ids, module_access, mode } = req.body;
   if (!Array.isArray(user_ids) || !user_ids.length) return res.status(400).json({ error: 'user_ids is required' });
-  const str = module_access ? JSON.stringify(module_access) : null;
+  const merge = mode !== 'replace';
   const upd = db.prepare("UPDATE users SET module_access = ?, updated_at = datetime('now') WHERE id = ? AND role != 'admin'");
   let updated = 0;
-  const tx = db.transaction(() => { for (const id of user_ids) updated += upd.run(str, id).changes; });
+  const tx = db.transaction(() => {
+    for (const id of user_ids) {
+      let str;
+      if (!merge) {
+        str = module_access ? JSON.stringify(module_access) : null;
+      } else {
+        const patch = module_access || {};
+        if (!Object.keys(patch).length) continue; // nothing to change
+        const row = db.prepare("SELECT module_access FROM users WHERE id = ? AND role != 'admin'").get(id);
+        if (!row) continue;
+        let base;
+        try { base = row.module_access ? JSON.parse(row.module_access) : null; } catch { base = null; }
+        if (Array.isArray(base)) base = Object.fromEntries(base.map(m => [m, 'edit'])); // legacy list
+        if (base == null) base = Object.fromEntries(ALL_MODULE_IDS.map(m => [m, 'edit'])); // unrestricted → explicit
+        for (const [mid, lvl] of Object.entries(patch)) {
+          if (lvl === 'none' || lvl == null) delete base[mid];
+          else base[mid] = lvl === 'edit' ? 'edit' : 'view';
+        }
+        str = JSON.stringify(base);
+      }
+      updated += upd.run(str, id).changes;
+    }
+  });
   tx();
-  logAudit(req.user, 'permission_change', 'user', null, { bulk: true, count: updated }, null, null);
+  logAudit(req.user, 'permission_change', 'user', null, { bulk: true, mode: merge ? 'merge' : 'replace', count: updated }, null, null);
   res.json({ updated });
+});
+
+// ── Access templates ─────────────────────────────────────────────────────────
+// Named module-access maps ("QA Tech", "Production Operator") stored once and
+// applied to users, so individuals are exceptions rather than hand-built.
+// (The GET lives above the /:id route — see route order note there.)
+router.put('/access-templates', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const { name, access } = req.body; // access null/absent deletes the template
+  const clean = String(name || '').trim().slice(0, 60);
+  if (!clean) return res.status(400).json({ error: 'Template name is required' });
+  const row = db.prepare("SELECT value FROM app_settings WHERE key = 'access_templates'").get();
+  let templates = {};
+  try { templates = row ? JSON.parse(row.value) : {}; } catch { templates = {}; }
+  if (access && typeof access === 'object') templates[clean] = access;
+  else delete templates[clean];
+  db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('access_templates', ?, datetime('now'))")
+    .run(JSON.stringify(templates));
+  logAudit(req.user, 'permission_change', 'user', null, { template: clean, deleted: !access }, null, null);
+  res.json({ templates });
 });
 
 router.put('/:id', requireRole('admin'), (req, res) => {

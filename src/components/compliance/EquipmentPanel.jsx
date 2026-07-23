@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { useAuth } from '../../hooks/useAuth';
+import { canEditModule } from '../../utils/permissions';
 import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 
@@ -439,6 +441,8 @@ function BulkEditBar({ selected, equipment, onApply, onCancel }) {
 export default function EquipmentPanel() {
   const { data: equipment, loading, refresh } = useApiGet('/equipment');
   const { data: ccps } = useApiGet('/haccp');
+  const { user } = useAuth() || {};
+  const canEdit = canEditModule(user, 'equipment');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
@@ -570,10 +574,12 @@ export default function EquipmentPanel() {
           }} className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
             <Download size={16} /> Export
           </button>
-          <button onClick={() => { setShowForm(true); setEditing(null); }}
-            className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
-            <Plus size={16} /> Add Equipment
-          </button>
+          {canEdit && (
+            <button onClick={() => { setShowForm(true); setEditing(null); }}
+              className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+              <Plus size={16} /> Add Equipment
+            </button>
+          )}
         </div>
       </div>
 

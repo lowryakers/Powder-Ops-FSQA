@@ -4,6 +4,8 @@ import { getDb, logAudit } from '../db.js';
 import { requireDepartment } from '../middleware/auth.js';
 import { generateDocumentReviewTasks, recomputeDocumentReview } from './documents.js';
 import { generateQualityScheduleTasks } from './quality-schedules.js';
+import { getChannelByName, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
 
 // Side-effects to run when any work order transitions to completed, regardless
 // of which completion path handled it. Completing a document-review task
@@ -450,6 +452,34 @@ router.post('/work-orders/:id/not-applicable', (req, res) => {
 
 // --- Flag Issue on Work Order ---
 
+// A flagged issue alerts the responsible person: post into the task's team
+// channel with an @mention of the team lead (the team's sole active
+// supervisor), falling back to Adam as the catch-all when the lead is
+// ambiguous or missing, plus a direct push so the lead's phone buzzes even
+// if they aren't a member of the channel. Best-effort — flagging never fails
+// because notification did.
+async function notifyTaskIssue(db, flagger, wo) {
+  const team = wo.task_group || 'maintenance';
+  const sups = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND role = 'supervisor' AND department = ?").all(team);
+  let lead = sups.length === 1 ? sups[0] : null;
+  if (!lead) {
+    lead = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name LIKE 'Adam%' ORDER BY name LIMIT 1").get() || null;
+  }
+  const channel = getChannelByName(db, team) || getChannelByName(db, 'general');
+  const note = String(wo.issue_notes || '').slice(0, 300);
+  if (channel) {
+    const text = `⚠️ Issue reported on task "${wo.title}"${lead ? ` — @${lead.name}` : ''}\n${note}`;
+    await postMessageAs(db, channel, flagger, text); // @mention handles the lead's push
+  }
+  if (lead && lead.id !== flagger.id) {
+    pushToUser(lead.id, {
+      title: `Issue reported: ${wo.title}`,
+      body: `${flagger.name}: ${note.slice(0, 120)}`,
+      tag: `issue-${wo.id}`, renotify: true,
+    }).catch(() => {});
+  }
+}
+
 router.post('/work-orders/:id/flag-issue', (req, res) => {
   const db = getDb();
   const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
@@ -466,6 +496,7 @@ router.post('/work-orders/:id/flag-issue', (req, res) => {
 
   logAudit(req.user, 'issue_flagged', 'work_order', req.params.id, { notes });
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  notifyTaskIssue(db, req.user, updated).catch(e => console.warn('[flag-issue] notify failed:', e.message));
   res.json(updated);
 });
 

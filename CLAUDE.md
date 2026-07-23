@@ -9,19 +9,12 @@ completed/on-time/overdue/avg-cycle KPIs, weekly trend, by-department and by-per
 Whole view is admin-gated, which satisfies the agreed sensitivity guard (per-person detail never shown to
 non-admins). If it's ever opened to supervisors, re-apply aggregate-by-default with admin-only drill-down.
 
-### Comms → compliance-record crossover  (DEFERRED — re-confirmed 2026-07-22, keep reminding when relevant)
-The user wants the ability to promote a chat message into a compliance record (e.g. a message becomes
-a deviation / CAPA / NC entry, or gets attached to one) but judged it "overly complex" for now and asked
-to be **reminded when something relevant comes up or where it would fit naturally.**
-
-**Surface the reminder when work touches any of:**
-- The Comms module (channels/messages/threads/DMs) gaining new capabilities.
-- QMS record creation flows (deviations, non-conformance, CAPA, on-hold, disposals) — anywhere a record is opened from context.
-- Any "attach evidence / source / provenance" affordance, or linking free-form discussion to a formal record.
-
-**Agreed shape when it lands:** a message action ("Convert to record" / "Attach to record") that opens the
-relevant QMS form pre-filled from the message + author + timestamp, and back-links the record to the source
-message for an audit trail. Membership/access on the source channel must be respected.
+### Comms → compliance-record crossover  (SHIPPED 2026-07-23)
+"Create compliance record…" in the message 3-dot menu + mobile long-press sheet → picker
+(Deviation / Non-Conformance / On Hold) → `POST /api/comms/messages/:id/to-record` creates a draft
+qms_record pre-filled from the message (body → description/reason, author, timestamp), back-linked via
+`data.source_message_id`/`source_channel_id` + a notes line, channel-access-checked. Extend
+`CONVERT_TYPES` in comms.js to add more target types.
 
 ### Comms build phases (Phase 1 shipped)
 - **Phase 1 (DONE):** `chat_*` schema + membership access layer (`server/api/comms.js`), `/api/comms` endpoints,

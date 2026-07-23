@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { useAuth } from '../../hooks/useAuth';
+import { canEditModule } from '../../utils/permissions';
 import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -175,6 +177,8 @@ function CalibrateForm({ instrument, onSave, onCancel }) {
 }
 
 export default function CalibrationPanel() {
+  const { user } = useAuth() || {};
+  const canEdit = canEditModule(user, 'calibration');
   const { data: instruments, loading, refresh } = useApiGet('/calibration/instruments');
   const { data: summary } = useApiGet('/calibration/summary');
   const { data: records, refresh: refreshRecords } = useApiGet('/calibration/records');
@@ -230,10 +234,12 @@ export default function CalibrationPanel() {
             </p>
           )}
         </div>
-        <button onClick={() => { setShowForm(true); setEditing(null); }}
-          className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
-          <Plus size={16} /> Add Instrument
-        </button>
+        {canEdit && (
+          <button onClick={() => { setShowForm(true); setEditing(null); }}
+            className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+            <Plus size={16} /> Add Instrument
+          </button>
+        )}
       </div>
 
       {/* Summary cards */}

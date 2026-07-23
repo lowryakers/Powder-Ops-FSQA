@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -683,9 +683,71 @@ function MessageActionSheet({ preview, mine, canReply, canTranslate, canMarkUnre
           <SheetRow icon={Copy} label="Copy text" act="copy" onAction={onAction} />
           {canTranslate && <SheetRow icon={Languages} label="Translate" act="translate" onAction={onAction} />}
           {canMarkUnread && <SheetRow icon={null} label="Mark unread from here" act="unread" onAction={onAction} />}
+          <SheetRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={onAction} />
           {mine && <SheetRow icon={Edit2} label="Edit message" act="edit" onAction={onAction} />}
           {mine && <SheetRow icon={Trash2} label="Delete message" danger act="delete" onAction={onAction} />}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Promote a chat message into a draft compliance record. The record is
+// pre-filled from the message + author + timestamp and back-linked to the
+// source; it lands as a draft in the owning module for QA to complete.
+const RECORD_TYPES = [
+  { type: 'deviation', label: 'Deviation' },
+  { type: 'non_conformance', label: 'Non-Conformance' },
+  { type: 'on_hold', label: 'On Hold' },
+];
+function ConvertRecordModal({ m, onClose }) {
+  const [type, setType] = useState('deviation');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(null); // { record_number, label }
+
+  const create = async () => {
+    setBusy(true); setError('');
+    try { setDone(await apiPost(`/comms/messages/${m.id}/to-record`, { type })); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3">
+        {done ? (
+          <div className="text-center py-2 space-y-2">
+            <ClipboardCheck size={36} className="mx-auto text-green-600" />
+            <p className="text-sm font-semibold text-gray-900">{done.label} {done.record_number} created</p>
+            <p className="text-xs text-gray-500">Saved as a draft in the {done.label} module, pre-filled from this message and back-linked to it. Open the module to complete and sign it.</p>
+            <button onClick={onClose} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">Done</button>
+          </div>
+        ) : (
+          <>
+            <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2"><ClipboardCheck size={16} className="text-powder-600" /> Create compliance record</h3>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+              <p className="text-[11px] text-gray-400 mb-0.5">{m.user_name} · {fmtTime(m.created_at)}</p>
+              <p className="text-xs text-gray-700 line-clamp-4 whitespace-pre-wrap">{m.body}</p>
+            </div>
+            <div className="flex gap-1.5">
+              {RECORD_TYPES.map(rt => (
+                <button key={rt.type} onClick={() => setType(rt.type)}
+                  className={`flex-1 px-2 py-2 rounded-lg border-2 text-xs font-semibold transition-colors ${type === rt.type ? 'border-powder-500 bg-powder-50 text-powder-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                  {rt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-400">The message text, author, and time are copied into a draft record with an audit-trail link back to this conversation.</p>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="flex gap-2">
+              <button onClick={create} disabled={busy} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+                {busy ? 'Creating…' : 'Create draft record'}
+              </button>
+              <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -700,6 +762,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   const [sheet, setSheet] = useState(false); // mobile long-press action sheet
   const [menuOpen, setMenuOpen] = useState(false); // desktop 3-dot menu
   const [lightbox, setLightbox] = useState(null); // index into m.attachments
+  const [convert, setConvert] = useState(false); // message → compliance record
   const mine = m.user_id === me.id;
 
   const doTranslate = useCallback(async () => {
@@ -748,6 +811,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
     else if (act === 'copy') { try { navigator.clipboard?.writeText(displayBody || m.body || ''); } catch { /* ignore */ } }
     else if (act === 'translate') doTranslate();
     else if (act === 'unread' && onMarkUnread) onMarkUnread(m);
+    else if (act === 'record') setConvert(true);
     else if (act === 'edit') { setDraft(m.body || ''); setEditing(true); }
     else if (act === 'delete') onDelete(m);
   };
@@ -836,6 +900,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
                   <MenuRow icon={Copy} label="Copy text" act="copy" onAction={handleSheetAction} />
                   {canTranslate && m.body && !translated && <MenuRow icon={Languages} label="Translate" act="translate" onAction={handleSheetAction} />}
                   {onMarkUnread && <MenuRow icon={null} label="Mark unread from here" act="unread" onAction={handleSheetAction} />}
+                  {m.body && <MenuRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={handleSheetAction} />}
                   {mine && <MenuRow icon={Edit2} label="Edit message" act="edit" onAction={handleSheetAction} />}
                   {mine && <MenuRow icon={Trash2} label="Delete message" danger act="delete" onAction={handleSheetAction} />}
                 </div>
@@ -845,6 +910,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
           {showEmoji && <EmojiPicker onPick={(e) => { onReact(m, e); setShowEmoji(false); }} onClose={() => setShowEmoji(false)} />}
         </div>
       )}
+      {convert && <ConvertRecordModal m={m} onClose={() => setConvert(false)} />}
       {sheet && !m.deleted && (
         <MessageActionSheet
           preview={`${m.user_name}: ${(displayBody || '').slice(0, 80)}`}
@@ -1692,6 +1758,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, openChannelNam
                   <input type="date" value={dateView || ''} onChange={e => e.target.value && jumpToDate(e.target.value)}
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
                 </label>
+                {/* Gmail-style popout: this conversation in its own slim window,
+                    so it stays visible while working in a module. Hidden when
+                    already inside the standalone /chat view (popout or dock). */}
+                {!window.location.pathname.startsWith('/chat') && (
+                  <button onClick={() => window.open(`/chat?cid=${active.id}`, `powderops-chat-${active.id}`, 'width=460,height=760')}
+                    className="hidden md:block p-1.5 rounded-lg text-gray-400 hover:bg-gray-100" data-tip="Open in a separate window">
+                    <ExternalLink size={15} />
+                  </button>
+                )}
                 {translateOn && (
                   <div className="ml-auto flex items-center gap-1.5">
                     {translatingNow && <span className="text-[10px] text-gray-400 hidden sm:inline">Translating…</span>}

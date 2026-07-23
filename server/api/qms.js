@@ -81,6 +81,16 @@ function parseCsv(text) {
 function requireType(req, res) {
   const cfg = getType(req.params.type);
   if (!cfg) { res.status(404).json({ error: 'Unknown record type' }); return null; }
+  // Per-type module enforcement: writes need Edit on the type's module for
+  // users with a granular access map (mirrors requireModuleWrite in server.js).
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.user && req.user.role !== 'admin') {
+    if (req.user.role === 'auditor') { res.status(403).json({ error: 'Auditor accounts are read-only.' }); return null; }
+    const ma = req.user.module_access;
+    if (ma != null && !Array.isArray(ma) && ma[cfg.moduleId] !== 'edit') {
+      res.status(403).json({ error: 'You have view-only access to this module.' });
+      return null;
+    }
+  }
   return cfg;
 }
 

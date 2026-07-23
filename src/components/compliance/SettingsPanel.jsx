@@ -93,17 +93,28 @@ function normalizeAccess(value) {
   return value;
 }
 
-function ModuleAccessEditor({ value, onChange, disabled }) {
-  const map = normalizeAccess(value);
-  const allAccess = map == null; // null = full access to everything
+// `additive` mode (bulk merge): the map holds ONLY the modules to change —
+// everything else on each user stays as it is. A fourth "Keep" level marks
+// "leave this module alone" (absent from the map).
+function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
+  const map = additive ? (value || {}) : normalizeAccess(value);
+  const allAccess = !additive && map == null; // null = full access to everything
 
   const levelOf = (id) => {
+    if (additive) return map[id] || 'keep';
     if (allAccess) return 'edit';
     return map[id] || 'none';
   };
 
   const setLevel = (id, level) => {
     if (disabled) return;
+    if (additive) {
+      const base = { ...map };
+      if (level === 'keep') delete base[id];
+      else base[id] = level;
+      onChange(base);
+      return;
+    }
     const base = allAccess ? Object.fromEntries(ALL_MODULE_IDS.map(m => [m, 'edit'])) : { ...map };
     if (level === 'none') delete base[id];
     else base[id] = level;
@@ -120,13 +131,24 @@ function ModuleAccessEditor({ value, onChange, disabled }) {
   // Set every module in a group to one level at once — the main simplification.
   const setGroup = (ids, level) => {
     if (disabled) return;
+    if (additive) {
+      const base = { ...map };
+      ids.forEach(id => { if (level === 'keep') delete base[id]; else base[id] = level; });
+      onChange(base);
+      return;
+    }
     const base = allAccess ? Object.fromEntries(ALL_MODULE_IDS.map(m => [m, 'edit'])) : { ...map };
     ids.forEach(id => { if (level === 'none') delete base[id]; else base[id] = level; });
     const isAllEdit = ALL_MODULE_IDS.every(m => base[m] === 'edit');
     onChange(isAllEdit ? null : base);
   };
 
-  const LEVELS = [
+  const LEVELS = additive ? [
+    { value: 'keep', label: 'Keep' },
+    { value: 'none', label: 'None' },
+    { value: 'view', label: 'View' },
+    { value: 'edit', label: 'Edit' },
+  ] : [
     { value: 'none', label: 'None' },
     { value: 'view', label: 'View' },
     { value: 'edit', label: 'Edit' },
@@ -134,17 +156,23 @@ function ModuleAccessEditor({ value, onChange, disabled }) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="block text-xs font-medium text-gray-700">Module Access</label>
-        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-          <input type="checkbox" checked={allAccess} onChange={toggleAll} disabled={disabled}
-            className="rounded border-gray-300 text-powder-600" />
-          Full access (all modules)
-        </label>
-      </div>
+      {!additive && (
+        <div className="flex items-center justify-between">
+          <label className="block text-xs font-medium text-gray-700">Module Access</label>
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" checked={allAccess} onChange={toggleAll} disabled={disabled}
+              className="rounded border-gray-300 text-powder-600" />
+            Full access (all modules)
+          </label>
+        </div>
+      )}
       {!allAccess && (
         <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-72 overflow-y-auto space-y-3">
-          <p className="text-[11px] text-gray-500">Set each module to <strong>None</strong> (hidden), <strong>View</strong> (read-only), or <strong>Edit</strong>.</p>
+          <p className="text-[11px] text-gray-500">
+            {additive
+              ? <>Modules left on <strong>Keep</strong> are not changed for anyone. Set a module to None / View / Edit to apply just that change.</>
+              : <>Set each module to <strong>None</strong> (hidden), <strong>View</strong> (read-only), or <strong>Edit</strong>.</>}
+          </p>
           {MODULE_GROUPS.map(group => (
             <div key={group.label} className="space-y-1">
               <div className="flex items-center justify-between">
@@ -168,7 +196,7 @@ function ModuleAccessEditor({ value, onChange, disabled }) {
                       {LEVELS.map(l => (
                         <button key={l.value} type="button" disabled={disabled}
                           onClick={() => setLevel(mod.id, l.value)}
-                          className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${lvl === l.value ? (l.value === 'edit' ? 'bg-green-600 text-white' : l.value === 'view' ? 'bg-powder-600 text-white' : 'bg-gray-400 text-white') : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
+                          className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${lvl === l.value ? (l.value === 'edit' ? 'bg-green-600 text-white' : l.value === 'view' ? 'bg-powder-600 text-white' : l.value === 'keep' ? 'bg-gray-200 text-gray-700' : 'bg-gray-400 text-white') : 'bg-white text-gray-500 hover:bg-gray-100'}`}>
                           {l.label}
                         </button>
                       ))}
@@ -376,6 +404,7 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
         value={form.module_access}
         onChange={(val) => setForm({ ...form, module_access: val })}
       />
+      <TemplateTools current={form.module_access} onApply={(map) => setForm({ ...form, module_access: map })} />
       {isAdmin && (
         <p className="text-[11px] text-gray-400 italic -mt-1">Admins default to full access — uncheck "Full access" to hide specific modules from this admin. Settings always stays enabled.</p>
       )}
@@ -610,20 +639,87 @@ function BulkAddModal({ onClose, onDone }) {
   );
 }
 
+// Named access templates ("QA Tech", "Production Operator"): save a full
+// module map once, apply it anywhere a ModuleAccessEditor appears.
+function TemplateTools({ current, onApply }) {
+  const { data, refresh } = useApiGet('/users/access-templates');
+  const templates = data?.templates || {};
+  const names = Object.keys(templates).sort();
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [name, setName] = useState('');
+
+  const save = async () => {
+    const n = name.trim();
+    if (!n) return;
+    // A full-access (null) map saves as explicit all-edit so it round-trips.
+    const access = current == null ? Object.fromEntries(ALL_MODULE_IDS.map(m => [m, 'edit'])) : current;
+    await apiPut('/users/access-templates', { name: n, access });
+    setSaveOpen(false); setName(''); refresh();
+  };
+  const remove = async (n) => { await apiPut('/users/access-templates', { name: n, access: null }); refresh(); };
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap text-xs">
+      {names.length > 0 && (
+        <select defaultValue="" onChange={e => { const n = e.target.value; if (n) { onApply({ ...templates[n] }); e.target.value = ''; } }}
+          className="px-2 py-1 border border-gray-200 rounded-md text-xs text-gray-600 bg-white">
+          <option value="">Apply template…</option>
+          {names.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      )}
+      {saveOpen ? (
+        <span className="inline-flex items-center gap-1">
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Template name" autoFocus
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save(); } }}
+            className="px-2 py-1 border border-gray-300 rounded-md text-xs w-32" />
+          <button type="button" onClick={save} className="px-2 py-1 bg-powder-600 text-white rounded-md">Save</button>
+          <button type="button" onClick={() => setSaveOpen(false)} className="px-2 py-1 bg-gray-100 text-gray-600 rounded-md">✕</button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => setSaveOpen(true)}
+          className="px-2 py-1 border border-gray-200 rounded-md text-gray-500 hover:bg-gray-50">Save as template</button>
+      )}
+      {names.length > 0 && (
+        <details className="inline-block">
+          <summary className="px-2 py-1 border border-gray-200 rounded-md text-gray-500 hover:bg-gray-50 cursor-pointer list-none">Manage</summary>
+          <div className="absolute mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-1 z-10">
+            {names.map(n => (
+              <div key={n} className="flex items-center gap-2 px-2 py-1">
+                <span className="text-xs text-gray-700 flex-1">{n}</span>
+                <button type="button" onClick={() => remove(n)} className="text-[11px] text-red-500 hover:text-red-700">delete</button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function BulkAccessModal({ users, onClose, onDone }) {
   const [selected, setSelected] = useState({});
-  const [access, setAccess] = useState({}); // {} = no access; configured below (null = full)
+  // Merge mode (default): `access` holds only the changes to apply. Overwrite
+  // mode: `access` is the complete map every selected user ends up with.
+  const [overwrite, setOverwrite] = useState(false);
+  const [access, setAccess] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const eligible = (users || []).filter(u => u.role !== 'admin');
   const chosen = Object.keys(selected).filter(id => selected[id]);
   const toggle = (id) => setSelected(s => ({ ...s, [id]: !s[id] }));
+  const changeCount = Object.keys(access || {}).length;
+
+  const switchMode = (ow) => { setOverwrite(ow); setAccess({}); };
+  const applyTemplate = (map) => { setOverwrite(true); setAccess(map); };
 
   const apply = async () => {
     if (!chosen.length) { setError('Select at least one user.'); return; }
+    if (!overwrite && !changeCount) { setError('Set at least one module (everything is on Keep).'); return; }
     setSaving(true); setError('');
-    try { await apiPost('/users/bulk-access', { user_ids: chosen, module_access: access }); onDone(); }
-    catch (e) { setError(e.message); setSaving(false); }
+    try {
+      await apiPost('/users/bulk-access', { user_ids: chosen, module_access: access, mode: overwrite ? 'replace' : 'merge' });
+      onDone();
+    } catch (e) { setError(e.message); setSaving(false); }
   };
 
   return (
@@ -648,9 +744,21 @@ function BulkAccessModal({ users, onClose, onDone }) {
             </div>
             <p className="text-[11px] text-gray-400 mt-1">Admins always have full access and are excluded.</p>
           </div>
-          <div>
-            <p className="text-xs font-medium text-gray-700 mb-1">Access to apply</p>
-            <ModuleAccessEditor value={access} onChange={setAccess} />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs font-medium text-gray-700">{overwrite ? 'Access to apply (replaces everything)' : 'Changes to apply'}</p>
+              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer" data-tip="Off: only the modules you set here change; each user's other settings are kept. On: the map below replaces each user's entire access.">
+                <input type="checkbox" checked={overwrite} onChange={e => switchMode(e.target.checked)} className="rounded border-gray-300 text-powder-600" />
+                Overwrite entire access
+              </label>
+            </div>
+            <TemplateTools current={overwrite ? access : null} onApply={applyTemplate} />
+            {!overwrite && (
+              <p className="text-[11px] text-gray-500 bg-powder-50 border border-powder-100 rounded-lg p-2">
+                Safe by default: modules on <strong>Keep</strong> are untouched, so per-person tweaks survive. {changeCount ? `${changeCount} module${changeCount === 1 ? '' : 's'} will change.` : ''}
+              </p>
+            )}
+            <ModuleAccessEditor value={access} onChange={setAccess} additive={!overwrite} />
           </div>
         </div>
         {error && <p className="px-4 text-sm text-red-600">{error}</p>}

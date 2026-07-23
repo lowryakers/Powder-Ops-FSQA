@@ -29,6 +29,7 @@ import qualityScheduleRoutes, { generateQualityScheduleTasks } from './server/ap
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
+import { requireModuleWrite } from './server/module-access.js';
 import { DCR_LOG_CSV, DEVIATION_LOG_CSVS, NON_CONFORMANCE_LOG_CSV, ON_HOLD_LOG_CSV, ORGANOLEPTIC_LOG_CSV } from './server/qms-seed.js';
 import orgRoutes from './server/api/org.js';
 import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
@@ -1297,32 +1298,39 @@ app.use('/api', (req, res, next) => {
 });
 
 // --- API Routes ---
-app.use('/api/equipment', equipmentRoutes);
+// requireModuleWrite makes the Settings View level real on the server: users
+// with a granular access map need Edit on (one of) the router's modules for
+// any non-GET request. Multi-module routers list every module they serve;
+// 'operator' is included where floor completions flow through the same API.
+// Exempt: comms (own membership model), users/audit/ai/activity (role-gated),
+// office (own grant logic), submit (public kiosks), compliance (read-mostly),
+// qms (exact per-type check inside requireType).
+app.use('/api/equipment', requireModuleWrite('equipment'), equipmentRoutes);
 app.use('/api/haccp', haccpRoutes);
-app.use('/api/pm', pmRoutes);
-app.use('/api/checklists', checklistRoutes);
-app.use('/api/calibration', calibrationRoutes);
-app.use('/api/sanitation', sanitationRoutes);
+app.use('/api/pm', requireModuleWrite('pm', 'operator'), pmRoutes);
+app.use('/api/checklists', requireModuleWrite('pm', 'operator', 'sanitation'), checklistRoutes);
+app.use('/api/calibration', requireModuleWrite('calibration'), calibrationRoutes);
+app.use('/api/sanitation', requireModuleWrite('sanitation'), sanitationRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/compliance', complianceRoutes);
-app.use('/api/loto', lotoRoutes);
+app.use('/api/loto', requireModuleWrite('loto'), lotoRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/submit', submitRoutes);
-app.use('/api/chemicals', chemicalRoutes);
-app.use('/api/hygienic-design', hygienicDesignRoutes);
-app.use('/api/complaints', complaintRoutes);
-app.use('/api/documents', documentRoutes);
-app.use('/api/quality-schedules', qualityScheduleRoutes);
+app.use('/api/chemicals', requireModuleWrite('chemicals'), chemicalRoutes);
+app.use('/api/hygienic-design', requireModuleWrite('hygienic'), hygienicDesignRoutes);
+app.use('/api/complaints', requireModuleWrite('capa'), complaintRoutes);
+app.use('/api/documents', requireModuleWrite('sops', 'work-instructions', 'job-descriptions'), documentRoutes);
+app.use('/api/quality-schedules', requireModuleWrite('pm', 'coa', 'sanitation', 'calibration'), qualityScheduleRoutes);
 app.use('/api/activity', activityRoutes);
-app.use('/api/org', orgRoutes);
-app.use('/api/disposals', disposalRoutes);
+app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
+app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);
 app.use('/api/qms', qmsRoutes);
-app.use('/api/training', trainingRoutes);
+app.use('/api/training', requireModuleWrite('training'), trainingRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/comms', commsRoutes);
-app.use('/api/mock-recalls', mockRecallRoutes);
-app.use('/api/production', productionRoutes);
-app.use('/api/coa', coaRoutes);
+app.use('/api/mock-recalls', requireModuleWrite('recall'), mockRecallRoutes);
+app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator'), productionRoutes);
+app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
 app.use('/api/office', officeRoutes);
 
 // Version check (used by client to detect updates)
