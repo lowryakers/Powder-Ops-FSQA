@@ -766,7 +766,11 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
       }
       if (items.length > 1) flash(`Signed out ${items.length} items.`);
     } else {
-      await apiPost(`/qms/${recordType}`, form);
+      const res = await apiPost(`/qms/${recordType}`, form);
+      // Duplicate watcher: advisory only — the record saves either way.
+      if (res.possible_duplicate) {
+        flash(`⚠️ Heads up: ${res.possible_duplicate.record_number} from the last 2 days matches this one on ${res.possible_duplicate.fields.join(' + ').replace(/_/g, ' ')} — check it isn't a double entry.`);
+      }
     }
     setCreating(false); refresh();
   };

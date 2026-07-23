@@ -19,8 +19,7 @@ const csvCell = (v) => {
   const s = String(v);
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 };
-router.get('/export-all', requireRole('admin'), (req, res) => {
-  const db = getDb();
+export function buildBackupZip(db, generatedBy) {
   const zip = new AdmZip();
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()
     .map(t => t.name).filter(n => !BACKUP_EXCLUDE.test(n));
@@ -37,12 +36,32 @@ router.get('/export-all', requireRole('admin'), (req, res) => {
     total += rows.length;
   }
   zip.addFile('README.txt', Buffer.from(
-    `Powder Ops ReadyDoc full data backup\nGenerated: ${new Date().toISOString()} by ${req.user.name}\n` +
-    `${tables.length} tables, ${total} rows. Each CSV opens in Excel; JSON columns (data, procedure_steps, approvals) hold structured form contents.\n`, 'utf8'));
+    `Powder Ops ReadyDoc full data backup\nGenerated: ${new Date().toISOString()} by ${generatedBy}\n` +
+    `${tables.length} tables, ${total} rows. Each CSV opens in Excel; JSON columns (data, procedure_steps, approvals) hold structured form contents.\n` +
+    `Comms channels/messages/reactions are included as CSVs; chat attachment FILES live in R2 object storage (not in this zip).\n`, 'utf8'));
+  return zip.toBuffer();
+}
+
+router.get('/export-all', requireRole('admin'), (req, res) => {
+  const db = getDb();
   const name = `readydoc-backup-${new Date().toISOString().slice(0, 10)}.zip`;
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
-  res.send(zip.toBuffer());
+  res.send(buildBackupZip(db, req.user.name));
+});
+
+// Stored automatic backups (weekly Friday job writes them to R2 under backups/).
+router.get('/backups', requireRole('admin'), async (req, res) => {
+  const db = getDb();
+  let list = [];
+  try { list = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'auto_backups'").get()?.value || '[]'); } catch { list = []; }
+  const { presignGet } = await import('../storage.js');
+  const out = [];
+  for (const b of list) {
+    const url = await presignGet(b.key, b.name).catch(() => null);
+    out.push({ ...b, url });
+  }
+  res.json({ backups: out });
 });
 
 router.get('/dashboard', (_req, res) => {

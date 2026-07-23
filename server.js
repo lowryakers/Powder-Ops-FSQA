@@ -17,7 +17,8 @@ import checklistRoutes from './server/api/checklists.js';
 import calibrationRoutes from './server/api/calibration.js';
 import sanitationRoutes from './server/api/sanitation.js';
 import auditRoutes from './server/api/audit.js';
-import complianceRoutes from './server/api/compliance.js';
+import complianceRoutes, { buildBackupZip } from './server/api/compliance.js';
+import { startScheduledJobs } from './server/scheduled-jobs.js';
 import lotoRoutes from './server/api/loto.js';
 import userRoutes from './server/api/users.js';
 import submitRoutes from './server/api/submit.js';
@@ -37,10 +38,10 @@ import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
 import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
-import commsRoutes, { backfillEmbeddings } from './server/api/comms.js';
+import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser } from './server/api/comms.js';
 import { initRealtime } from './server/realtime.js';
 import { aiEnabled } from './server/ai.js';
-import { storageEnabled } from './server/storage.js';
+import { storageEnabled, putObject, deleteObject } from './server/storage.js';
 import { voyageEnabled } from './server/embeddings.js';
 import { pushEnabled } from './server/push.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
@@ -1403,6 +1404,8 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillEmbeddings().catch(e => console.warn('[comms] embedding backfill error:', e.message));
   // Index the contents of previously-uploaded invoices (no-op unless storage is on).
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
+  // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser });
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).
   try {

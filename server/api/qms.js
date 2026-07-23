@@ -286,8 +286,26 @@ router.post('/:type', (req, res) => {
   logAudit(req.user, 'qms_created', cfg.key, id, { record_number: number });
   const created = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id));
   try { syncOrganolepticDisposal(db, cfg, created, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
+  try { created.possible_duplicate = findPossibleDuplicate(db, cfg, created); } catch { /* advisory only */ }
   res.status(201).json(created);
 });
+
+// Duplicate watcher: warn (never block) when a just-created record shares two
+// or more identifying values (lot, product, work order, part #) with another
+// record of the same type from the last 2 days — usually a double entry.
+const DUP_KEYS = ['lot', 'lot_number', 'product', 'product_name', 'product_description', 'work_order', 'item_number', 'part_number'];
+function findPossibleDuplicate(db, cfg, rec) {
+  const mine = DUP_KEYS.map(k => [k, String(rec[k] ?? '').trim().toLowerCase()]).filter(([, v]) => v);
+  if (mine.length < 2) return null;
+  const recent = db.prepare(`SELECT record_number, data FROM qms_records
+    WHERE record_type = ? AND id != ? AND created_at >= datetime('now', '-2 days')`).all(cfg.key, rec.id);
+  for (const r of recent) {
+    const d = parseJson(r.data, {});
+    const matches = mine.filter(([k, v]) => String(d[k] ?? '').trim().toLowerCase() === v);
+    if (matches.length >= 2) return { record_number: r.record_number, fields: matches.map(([k]) => k) };
+  }
+  return null;
+}
 
 // ── update ───────────────────────────────────────────────────────────────────
 router.put('/:type/:id', (req, res) => {

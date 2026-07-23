@@ -1284,6 +1284,28 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     const files = Array.from(e.clipboardData?.files || []);
     if (files.length && storageOn) { e.preventDefault(); uploadFiles(files); }
   };
+  // Drag a file from the desktop / Downloads and drop it on the conversation.
+  const [dropHover, setDropHover] = useState(false);
+  const dragDepth = useRef(0);
+  const onDragEnterMsgs = (e) => {
+    if (!storageOn || !e.dataTransfer?.types?.includes('Files')) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDropHover(true);
+  };
+  const onDragOverMsgs = (e) => { if (storageOn && e.dataTransfer?.types?.includes('Files')) e.preventDefault(); };
+  const onDragLeaveMsgs = () => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDropHover(false);
+  };
+  const onDropMsgs = (e) => {
+    if (!storageOn) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDropHover(false);
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (files.length) uploadFiles(files);
+  };
   const removePending = (id) => setPending(p => p.filter(x => x.id !== id));
   const react = async (m, emoji) => { const updated = await apiPost(`/comms/messages/${m.id}/reactions`, { emoji }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
   const unreact = async (m, emoji) => { const updated = await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
@@ -1844,7 +1866,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   </div>
                 )}
               </div>
-              <div ref={scrollRef} onScroll={onMessagesScroll} className="flex-1 overflow-y-auto py-2">
+              <div ref={scrollRef} onScroll={onMessagesScroll} className="relative flex-1 overflow-y-auto py-2"
+                onDragEnter={onDragEnterMsgs} onDragOver={onDragOverMsgs} onDragLeave={onDragLeaveMsgs} onDrop={onDropMsgs}>
+                {dropHover && (
+                  <div className="sticky top-0 z-30 mx-3 pointer-events-none">
+                    <div className="border-2 border-dashed border-powder-400 bg-powder-50/90 rounded-xl py-6 text-center text-sm font-semibold text-powder-700 shadow-sm">
+                      Drop files to attach to #{active?.name || 'this conversation'}
+                    </div>
+                  </div>
+                )}
                 <div>{/* single wrapper so the pinned-scroll ResizeObserver sees content height */}
                 {messages.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello 👋</p>}
                 {messages.map((m, i) => {

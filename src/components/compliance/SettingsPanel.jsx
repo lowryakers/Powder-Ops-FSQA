@@ -728,6 +728,27 @@ function BackupDownloadButton() {
   );
 }
 
+// Weekly automatic backups stored in R2 by the Friday job.
+function AutoBackupList() {
+  const { data } = useApiGet('/compliance/backups');
+  const backups = data?.backups || [];
+  if (!backups.length) {
+    return <p className="text-[11px] text-gray-400 border-t border-gray-100 pt-2.5">Automatic Friday backups appear here once the first one runs (requires R2 file storage, already used for chat uploads).</p>;
+  }
+  return (
+    <div className="border-t border-gray-100 pt-2.5">
+      <p className="text-xs font-medium text-gray-700 mb-1.5">Automatic weekly backups (Fridays, last {backups.length} kept)</p>
+      <div className="flex flex-wrap gap-1.5">
+        {backups.map(b => (
+          <a key={b.key} href={b.url || undefined} className={`px-2.5 py-1 rounded-lg border text-xs ${b.url ? 'border-gray-200 text-powder-700 hover:bg-powder-50' : 'border-gray-100 text-gray-400'}`}>
+            {b.name.replace('readydoc-backup-', '').replace('.zip', '')} · {Math.round((b.size || 0) / 1024)} KB
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function BulkAccessModal({ users, onClose, onDone }) {
   const [selected, setSelected] = useState({});
   // Merge mode (default): `access` holds only the changes to apply. Overwrite
@@ -916,12 +937,15 @@ export default function SettingsPanel() {
       {/* Data backup */}
       <div className="space-y-3">
         <h2 className="text-xl font-bold text-gray-900">Data Backup</h2>
-        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h3 className="font-semibold text-gray-900">Full data export</h3>
-            <p className="text-sm text-gray-500 max-w-xl">Every form, log, and check as a ZIP of spreadsheets (CSV) — download periodically so a physical/offline copy of all records exists even if the tool goes down. Excludes passwords and message notification internals.</p>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="font-semibold text-gray-900">Full data export</h3>
+              <p className="text-sm text-gray-500 max-w-xl">Every form, log, and check as a ZIP of spreadsheets (CSV) — includes all comms channels and messages. Excludes passwords and notification internals. A copy is also saved automatically every Friday (below).</p>
+            </div>
+            <BackupDownloadButton />
           </div>
-          <BackupDownloadButton />
+          <AutoBackupList />
         </div>
       </div>
 

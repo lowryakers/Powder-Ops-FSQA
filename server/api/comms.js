@@ -224,12 +224,12 @@ export function getChannelByName(db, name) {
   const rows = db.prepare("SELECT * FROM chat_channels WHERE kind IN ('public','private') AND (archived IS NULL OR archived = 0)").all();
   return rows.find(c => norm(c.name) === want) || null;
 }
-export async function postMessageAs(db, channel, author, body) {
+export async function postMessageAs(db, channel, author, body, parentId = null) {
   const text = String(body || '').trim();
   if (!channel || !text) return null;
   const id = uuid();
   const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
-  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?)').run(id, channel.id, author.id, text, now);
+  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, channel.id, author.id, text, parentId, now);
   db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(channel.id);
   db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?").run(now, channel.id, author.id);
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
@@ -241,6 +241,49 @@ export async function postMessageAs(db, channel, author, body) {
   notifyChannelMessage(db, channel, text, author, mentioned, id);
   embedMessage(db, id, channel.id, text);
   return message;
+}
+
+// ── ReadyBot ─────────────────────────────────────────────────────────────────
+// The house bot account used for hygiene nudges, digests, and job notices.
+// Login-less (no password/PIN) and hidden from mention pools by simply never
+// being a channel member.
+export function getBotUser(db) {
+  let bot = db.prepare("SELECT * FROM users WHERE name = 'ReadyBot' LIMIT 1").get();
+  if (!bot) {
+    const id = uuid();
+    db.prepare("INSERT INTO users (id, name, role, department, is_active, module_access) VALUES (?, 'ReadyBot', 'operator', 'office', 1, '{}')").run(id);
+    bot = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  }
+  return bot;
+}
+
+// Channel-hygiene rules: gentle, threaded nudges that keep the right info in
+// the right place (e.g. "I'm running late" belongs with a supervisor + Time
+// Tracking, not #general). Conservative on purpose — false nudges are worse
+// than missed ones. Public channels only; the bot never nudges itself.
+const HYGIENE_RULES = [
+  {
+    match: /\b(running late|be late|late today|gonna be late|call(ing)? (in|out)|out sick|sick today|feeling sick|can'?t (make it|come in)|no.?call.?no.?show)\b/i,
+    skipChannels: /time|office/i,
+    reply: '👋 Heads up: lates and absences should go to your supervisor directly — they log it in Time Tracking (Requests → Time Tracking) so it\'s recorded. That keeps this channel clean and makes sure nothing is missed.',
+  },
+  {
+    match: /\b(broken|not working|won'?t (start|turn on|run)|jammed|leaking|stopped working|down again)\b/i,
+    onlyChannels: /^general$/i,
+    reply: '🔧 Equipment problem? Flag it on the task in the Task Center or report it as an issue so maintenance sees it, it\'s prioritized, and it\'s tracked — a message in #general can get missed.',
+  },
+];
+function channelHygiene(db, channel, message, author) {
+  if (!message?.body || channel.kind === 'dm' || message.parent_id) return;
+  if (author?.name === 'ReadyBot') return;
+  for (const rule of HYGIENE_RULES) {
+    if (rule.skipChannels && rule.skipChannels.test(channel.name || '')) continue;
+    if (rule.onlyChannels && !rule.onlyChannels.test(channel.name || '')) continue;
+    if (!rule.match.test(message.body)) continue;
+    const bot = getBotUser(db);
+    postMessageAs(db, channel, bot, rule.reply, message.id).catch(() => {});
+    return; // one nudge max
+  }
 }
 
 // ── Channels ──────────────────────────────────────────────────────────────────
@@ -786,6 +829,7 @@ router.post('/channels/:id/messages', async (req, res) => {
     notifyChannelMessage(db, channel, body, req.user, mentionedIds, id);
   }
   embedMessage(db, id, channel.id, body); // fire-and-forget
+  try { channelHygiene(db, channel, message, req.user); } catch { /* best-effort */ }
   res.status(201).json(message);
 });
 
