@@ -45,6 +45,20 @@ export function canEditAny(user, moduleIds) {
   return moduleIds.some(id => moduleLevel(user, id) === 'edit');
 }
 
+// Explicit grants — modules a user was deliberately given in Settings, as
+// opposed to ones visible through their role default. Server-side mirror of
+// the client's hasExplicitGrant; opt-in pseudo-modules (critical-tracking,
+// production-eod, …) key off these.
+export function hasExplicitGrant(user, moduleId) {
+  const ma = user?.module_access;
+  if (!ma) return false;
+  return Array.isArray(ma) ? ma.includes(moduleId) : !!ma[moduleId];
+}
+export function hasExplicitEdit(user, moduleId) {
+  const ma = user?.module_access;
+  return !!(ma && !Array.isArray(ma) && ma[moduleId] === 'edit');
+}
+
 // Express middleware: gate non-GET requests on edit access to any of the
 // router's modules. GETs pass (View means read). Only enforced for users
 // with an explicit granular map (see philosophy above), except auditors,

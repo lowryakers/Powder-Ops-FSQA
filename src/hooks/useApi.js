@@ -56,7 +56,7 @@ export function useApiGet(path, deps = []) {
       .catch(e => { if (!stale) setError(e.message); })
       .finally(() => { if (!stale) setLoading(false); });
     return () => { stale = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [path, depsKey, tick]);
 
   const refresh = useCallback(() => setTick(t => t + 1), []);

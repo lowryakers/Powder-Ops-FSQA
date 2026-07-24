@@ -3,11 +3,11 @@ import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import path from 'path';
 import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { getDb, logAudit } from '../db.js';
+import { getDb, logAudit, dataDir } from '../db.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CERT_DIR = path.join(__dirname, '..', '..', 'data', 'calibration-certs');
+// Beside the DB (the persistent volume in production) — NOT the app dir,
+// which is wiped on every deploy.
+const CERT_DIR = path.join(dataDir(), 'calibration-certs');
 mkdirSync(CERT_DIR, { recursive: true });
 const certUpload = multer({
   storage: multer.diskStorage({

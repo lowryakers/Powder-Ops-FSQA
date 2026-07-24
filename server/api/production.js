@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
+import { hasExplicitEdit } from '../module-access.js';
 import { getChannelByName, postMessageAs, getModuleLinks } from './comms.js';
 
 // Production teams whose schedule gets published to a matching comms channel.
@@ -259,12 +260,7 @@ router.post('/entries/import', (req, res) => {
 // Editing EXISTING log entries is separate from submitting the EOD form:
 // supervisors file EOD reports, but changing the log afterwards requires an
 // admin or an explicit Production Log edit grant in Settings.
-function canEditLog(u) {
-  if (!u) return false;
-  if (u.role === 'admin') return true;
-  const ma = u.module_access;
-  return !!(ma && !Array.isArray(ma) && ma['production-log'] === 'edit');
-}
+const canEditLog = (u) => u?.role === 'admin' || hasExplicitEdit(u, 'production-log');
 
 // PUT /entries/:id — update a production entry field
 router.put('/entries/:id', (req, res) => {

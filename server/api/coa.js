@@ -6,11 +6,13 @@ import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync } from 'f
 import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { getDb, logAudit } from '../db.js';
+import { getDb, logAudit, dataDir } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'data', 'coa-files');
+// Beside the DB (the persistent volume in production) — NOT the app dir,
+// which is wiped on every deploy.
+const UPLOAD_DIR = path.join(dataDir(), 'coa-files');
 mkdirSync(UPLOAD_DIR, { recursive: true });
 // The real Powder Ops box logo, embedded on exported certificates.
 const LOGO_PATH = path.join(__dirname, '..', 'assets', 'powder-ops-logo.jpg');

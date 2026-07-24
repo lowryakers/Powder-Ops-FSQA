@@ -641,10 +641,12 @@ router.post('/dm/:userId', (req, res) => {
   let channel = db.prepare("SELECT * FROM chat_channels WHERE kind = 'dm' AND dm_key = ?").get(key);
   if (!channel) {
     const id = uuid();
-    db.prepare("INSERT INTO chat_channels (id, kind, dm_key, created_by) VALUES (?, 'dm', ?, ?)").run(id, key, req.user.id);
-    const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
-    add.run(uuid(), id, req.user.id, 'member');
-    add.run(uuid(), id, other, 'member');
+    db.transaction(() => {
+      db.prepare("INSERT INTO chat_channels (id, kind, dm_key, created_by) VALUES (?, 'dm', ?, ?)").run(id, key, req.user.id);
+      const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
+      add.run(uuid(), id, req.user.id, 'member');
+      add.run(uuid(), id, other, 'member');
+    })();
     channel = getChannel(db, id);
     emitChannelsChanged(db, channel); // let the other participant see the new DM
   }
@@ -667,9 +669,11 @@ router.post('/dm', (req, res) => {
   let channel = db.prepare("SELECT * FROM chat_channels WHERE kind = 'dm' AND dm_key = ?").get(key);
   if (!channel) {
     const id = uuid();
-    db.prepare("INSERT INTO chat_channels (id, kind, dm_key, created_by) VALUES (?, 'dm', ?, ?)").run(id, key, req.user.id);
-    const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
-    for (const mid of memberIds) add.run(uuid(), id, mid, 'member');
+    db.transaction(() => {
+      db.prepare("INSERT INTO chat_channels (id, kind, dm_key, created_by) VALUES (?, 'dm', ?, ?)").run(id, key, req.user.id);
+      const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
+      for (const mid of memberIds) add.run(uuid(), id, mid, 'member');
+    })();
     channel = getChannel(db, id);
     emitChannelsChanged(db, channel);
   }
@@ -1049,10 +1053,12 @@ function botDm(db, userId) {
   let dm = db.prepare("SELECT * FROM chat_channels WHERE kind = 'dm' AND dm_key = ?").get(key);
   if (!dm) {
     const id = uuid();
-    db.prepare("INSERT INTO chat_channels (id, kind, dm_key, created_by) VALUES (?, 'dm', ?, ?)").run(id, key, bot.id);
-    const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
-    add.run(uuid(), id, bot.id, 'member');
-    add.run(uuid(), id, userId, 'member');
+    db.transaction(() => {
+      db.prepare("INSERT INTO chat_channels (id, kind, dm_key, created_by) VALUES (?, 'dm', ?, ?)").run(id, key, bot.id);
+      const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
+      add.run(uuid(), id, bot.id, 'member');
+      add.run(uuid(), id, userId, 'member');
+    })();
     dm = getChannel(db, id);
     emitChannelsChanged(db, dm);
   }

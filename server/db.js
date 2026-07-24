@@ -12,6 +12,14 @@ export function getDbPath() {
   return DB_PATH;
 }
 
+// Directory for ALL persisted files (uploads, certificates, …). Lives beside
+// the database so that when DB_PATH points at the Railway volume, files land
+// on the volume too and survive deploys. Never build file paths from the app
+// directory — that filesystem is wiped on every deploy.
+export function dataDir() {
+  return path.dirname(DB_PATH);
+}
+
 export function getDb() {
   if (!db) {
     mkdirSync(path.dirname(DB_PATH), { recursive: true });

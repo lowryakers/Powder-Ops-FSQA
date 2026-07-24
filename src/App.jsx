@@ -5,7 +5,7 @@ import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
 import { setAppBadge } from './lib/appBadge';
 import { useEdgeSwipe } from './lib/useEdgeSwipe';
-import { visibleModuleIds, canViewModule } from './utils/permissions';
+import { visibleModuleIds, canViewModule, hasExplicitGrant } from './utils/permissions';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
@@ -154,10 +154,13 @@ const NAV_GROUPS = [
 // for his floor check) and to anyone explicitly granted the 'currently-out'
 // module in Settings — hidden for everyone else to keep sidebars lean.
 const isRicardo = (u) => (u?.name || '').toLowerCase().startsWith('ricardo');
-function hasExplicitGrant(u, id) {
-  const ma = u?.module_access;
-  if (!ma) return false;
-  return Array.isArray(ma) ? ma.includes(id) : !!ma[id];
+
+// Sends a signed-in kiosk-QR scanner into the app with the form as an overlay
+// (?form=…). A component (not an inline call) so the navigation runs as an
+// effect rather than as a side effect during render.
+function KioskAppRedirect({ form }) {
+  useEffect(() => { window.location.replace(`/?form=${form}`); }, [form]);
+  return null;
 }
 const canSeeCheckedOut = (u) => isRicardo(u) || hasExplicitGrant(u, 'currently-out');
 
@@ -1055,12 +1058,9 @@ function App() {
   // Signed-in users who scan a kiosk QR get the same form INSIDE the app
   // (overlay via ?form=…) so closing it lands on their normal view. Logged-out
   // scanners still get the public no-login kiosk page.
-  const kioskRedirect = (form) => {
-    try { if (localStorage.getItem('auth_token')) { window.location.replace(`/?form=${form}`); return true; } } catch { /* private mode */ }
-    return false;
-  };
+  const hasSession = (() => { try { return !!localStorage.getItem('auth_token'); } catch { return false; } })();
   if (path === '/kiosk/knife') {
-    if (kioskRedirect('knife')) return null;
+    if (hasSession) return <KioskAppRedirect form="knife" />;
     return <><KnifeKiosk /><UpdateBanner /></>;
   }
 
@@ -1070,12 +1070,12 @@ function App() {
   }
 
   if (path === '/kiosk/components') {
-    if (kioskRedirect('components')) return null;
+    if (hasSession) return <KioskAppRedirect form="components" />;
     return <><ComponentKiosk /><UpdateBanner /></>;
   }
 
   if (path === '/kiosk/maintenance') {
-    if (kioskRedirect('maintenance')) return null;
+    if (hasSession) return <KioskAppRedirect form="maintenance" />;
     return <><MaintenanceKiosk /><UpdateBanner /></>;
   }
 

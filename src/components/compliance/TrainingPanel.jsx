@@ -506,7 +506,7 @@ function TestEditor({ course, aiEnabled, onClose, onSaved }) {
     try {
       await apiPut(`/training/courses/${course.id}/test`, {
         title, passing_score: passing,
-        questions: clean.map(({ _k, ...q }) => q), // eslint-disable-line no-unused-vars
+        questions: clean.map(({ _k, ...q }) => q),  
       });
       onSaved();
     } catch (e) { setError(e.message || 'Save failed'); setSaving(false); }

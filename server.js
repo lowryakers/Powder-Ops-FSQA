@@ -9,7 +9,7 @@ import { gunzipSync } from 'zlib';
 import { execSync } from 'child_process';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
-import { getDb } from './server/db.js';
+import { getDb, dataDir } from './server/db.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
 import pmRoutes from './server/api/pm.js';
@@ -1233,7 +1233,8 @@ try {
 }
 
 // --- File Uploads ---
-const UPLOAD_DIR = path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, 'data'), 'uploads');
+// Beside the DB (persistent volume in production) — single source of truth.
+const UPLOAD_DIR = path.join(dataDir(), 'uploads');
 mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const storage = multer.diskStorage({

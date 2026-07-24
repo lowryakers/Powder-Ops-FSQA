@@ -1265,7 +1265,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       s.off('message:new', onNew); s.off('message:update', onUpdate);
       s.off('channels:changed', onChannels); s.off('typing', onTyping); s.off('connect', onConnect);
     };
-  }, [activeId, refreshChannels, loadMessages, user.id]);
+  }, [activeId, refreshChannels, refreshSections, loadMessages, user.id]);
 
   // Expire typing indicators that have gone quiet for >4s.
   useEffect(() => {
@@ -1467,7 +1467,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     // Restore the remembered language for translate mode on first load.
     const mode = localStorage.getItem('comms_translate_mode');
     if (mode === 'en' || mode === 'es') setViewerLang(mode);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Channel auto-translate: batch-translate everything on screen in ONE request
@@ -1530,7 +1530,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         }
       } catch { pendingMsgRef.current = null; }
     })();
-  }, [messages, activeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [messages, activeId]);  
 
   const pushSupported = ('serviceWorker' in navigator) && ('PushManager' in window);
 

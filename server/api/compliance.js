@@ -4,6 +4,7 @@ import { getDb } from '../db.js';
 import { QMS_TYPES } from '../qms-config.js';
 import { recleanRooms } from './sanitation.js';
 import { requireRole } from '../middleware/auth.js';
+import { hasExplicitGrant } from '../module-access.js';
 
 const router = Router();
 
@@ -175,9 +176,7 @@ export function computeCritical(db) {
 router.get('/critical', (req, res) => {
   // Admins/supervisors always; others need an explicit 'critical-tracking'
   // grant in their Settings access map (shareable like any module).
-  const ma = req.user?.module_access;
-  const granted = ma && !Array.isArray(ma) && !!ma['critical-tracking'];
-  if (!req.user || (!['admin', 'supervisor'].includes(req.user.role) && !granted)) {
+  if (!req.user || (!['admin', 'supervisor'].includes(req.user.role) && !hasExplicitGrant(req.user, 'critical-tracking'))) {
     return res.status(403).json({ error: 'Critical Tracking is for admins, supervisors, or users granted access in Settings.' });
   }
   res.json(computeCritical(getDb()));

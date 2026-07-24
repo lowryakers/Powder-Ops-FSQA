@@ -24,6 +24,12 @@ No code change is required — the server already honors `DB_PATH`
 3. **Redeploy.** On boot the server creates `/data/compliance.db` on the volume.
    From then on the data survives deploys and restarts.
 
+**Uploaded files live beside the database.** Work-order attachments, COA lab
+files, and calibration certificates are stored in sibling folders of
+`DB_PATH` (`/data/uploads`, `/data/coa-files`, `/data/calibration-certs`), so
+one volume covers everything. Comms attachments are separate — they live in
+Cloudflare R2, not on the container.
+
 > First-time cutover: a fresh volume starts empty, so the app re-seeds a new
 > database. If you already have production data in the current container that you
 > need to keep, take a backup **before** switching `DB_PATH` (see below), then

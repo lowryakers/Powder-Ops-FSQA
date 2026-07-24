@@ -32,6 +32,16 @@ export function moduleLevel(user, moduleId) {
 export const canViewModule = (user, moduleId) => moduleLevel(user, moduleId) != null;
 export const canEditModule = (user, moduleId) => moduleLevel(user, moduleId) === 'edit';
 
+// True when the user was explicitly granted a module in Settings (as opposed
+// to seeing it through their role default). Opt-in pseudo-modules —
+// critical-tracking, currently-out, office-requests, production-eod — use
+// this so they stay hidden unless deliberately shared.
+export function hasExplicitGrant(user, moduleId) {
+  const ma = user?.module_access;
+  if (!ma) return false;
+  return Array.isArray(ma) ? ma.includes(moduleId) : !!ma[moduleId];
+}
+
 export function visibleModuleIds(user, allIds) {
   if (!user) return [];
   const ma = user.module_access;

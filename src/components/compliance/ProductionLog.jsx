@@ -2,6 +2,7 @@ import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2 } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
+import { hasExplicitGrant } from '../../utils/permissions';
 
 const TEAMS = ['Batching', 'Stick Pack', 'Hand Fill', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const ROOMS = ['Batching 1', 'Batching 2', ...Array.from({ length: 16 }, (_, i) => String(i)), 'Other'];
@@ -615,8 +616,7 @@ export default function ProductionLog({ user, directEntry }) {
   // an explicit 'production-eod' grant. The log itself stays read-only here —
   // changing existing entries needs an explicit Production Log edit grant
   // (enforced server-side).
-  const canEod = user?.role === 'admin' || user?.role === 'supervisor' ||
-    (user?.module_access && !Array.isArray(user.module_access) && !!user.module_access['production-eod']);
+  const canEod = user?.role === 'admin' || user?.role === 'supervisor' || hasExplicitGrant(user, 'production-eod');
   const tabs = [
     { id: 'log', label: 'Production Log', icon: ClipboardList },
     ...(canEod ? [{ id: 'form', label: 'Entry Form', icon: Plus }] : []),
