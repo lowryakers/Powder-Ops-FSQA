@@ -611,9 +611,15 @@ export default function ProductionLog({ user, directEntry }) {
     return <EntryForm user={user} onSuccess={() => setRefreshKey(k => k + 1)} />;
   }
 
+  // EOD entry form is its own permission: supervisors/admins by default, or
+  // an explicit 'production-eod' grant. The log itself stays read-only here —
+  // changing existing entries needs an explicit Production Log edit grant
+  // (enforced server-side).
+  const canEod = user?.role === 'admin' || user?.role === 'supervisor' ||
+    (user?.module_access && !Array.isArray(user.module_access) && !!user.module_access['production-eod']);
   const tabs = [
     { id: 'log', label: 'Production Log', icon: ClipboardList },
-    { id: 'form', label: 'Entry Form', icon: Plus },
+    ...(canEod ? [{ id: 'form', label: 'Entry Form', icon: Plus }] : []),
   ];
 
   return (

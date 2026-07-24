@@ -189,6 +189,58 @@ router.get('/config', (_req, res) => {
   res.json({ types });
 });
 
+// ── My checked-out items (sidebar reminder) ──────────────────────────────────
+// Everything the signed-in user currently has out across the sign-out logs,
+// matched by employee name. Registered before the '/:type' routes so 'mine'
+// isn't captured as a type.
+const MY_CHECKOUT_TYPES = ['maintenance_sign_out', 'knife_sign_out'];
+router.get('/mine/checked-out', (req, res) => {
+  const db = getDb();
+  const me = (req.user?.name || '').trim().toLowerCase();
+  if (!me) return res.json([]);
+  const out = [];
+  for (const type of MY_CHECKOUT_TYPES) {
+    let rows;
+    try { rows = db.prepare("SELECT * FROM qms_records WHERE record_type = ? AND status = 'out'").all(type).map(flatten); } catch { rows = []; }
+    for (const r of rows) {
+      if ((r.employee_name || '').trim().toLowerCase() !== me) continue;
+      out.push({
+        id: r.id, type, module: QMS_TYPES[type]?.moduleId, record_number: r.record_number,
+        item: r.item_description || r.tool_id || 'Item', qty: r.qty || null, date: r.record_date,
+      });
+    }
+  }
+  out.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  res.json(out);
+});
+
+// Return your own item — sets status + return date/time/name. Deliberately
+// does NOT require module edit access: you can always return what you
+// personally checked out. QA still reviews/approves the record afterwards.
+router.post('/mine/checked-out/:id/return', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
+  if (!row || !MY_CHECKOUT_TYPES.includes(row.record_type) || row.status !== 'out') {
+    return res.status(404).json({ error: 'Checked-out record not found' });
+  }
+  const flat = flatten(row);
+  if ((flat.employee_name || '').trim().toLowerCase() !== (req.user?.name || '').trim().toLowerCase()) {
+    return res.status(403).json({ error: 'You can only return items you checked out yourself.' });
+  }
+  const data = parseJson(row.data, {});
+  const now = new Date();
+  data.return_date = now.toISOString().slice(0, 10);
+  data.return_time = now.toTimeString().slice(0, 5);
+  data.returned_by = req.user.name;
+  if (!data.condition_returned) data.condition_returned = req.body?.condition === 'Bad' ? 'Bad' : 'Good';
+  db.prepare("UPDATE qms_records SET status = 'returned', data = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify(data), row.id);
+  logAudit(req.user, 'update', row.record_type, row.id,
+    { self_return: true, return_date: data.return_date, condition_returned: data.condition_returned },
+    null, null, String(flat.item_description || flat.tool_id || row.record_number));
+  res.json({ ok: true });
+});
+
 // ── Flavor approval: text the taste-test request to the approver ─────────────
 // Generates (or reuses) the record's magic approval token and, when Twilio is
 // configured, texts the link to the flavor approver (Danny). Always returns

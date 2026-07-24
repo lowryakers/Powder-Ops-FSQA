@@ -10,6 +10,7 @@ import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
 import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
 import { getType } from '../qms-config.js';
+import { appBaseUrl } from '../sms.js';
 
 const router = Router();
 
@@ -1025,6 +1026,68 @@ router.put('/module-links', requireRole('admin'), (req, res) => {
 });
 
 // ── Reactions ─────────────────────────────────────────────────────────────────
+// ── Remind me (Slack-style) ──────────────────────────────────────────────────
+// Store a reminder; the minute-loop below has ReadyBot DM the user at the
+// chosen time with an excerpt and a deep link back to the message.
+router.post('/messages/:id/remind', (req, res) => {
+  const ctx = ownedMessage(req, res); if (!ctx) return;
+  const db = getDb();
+  const at = req.body?.at ? new Date(req.body.at) : null;
+  if (!at || isNaN(at.getTime()) || at.getTime() <= Date.now()) {
+    return res.status(400).json({ error: 'Pick a future time.' });
+  }
+  const id = uuid();
+  db.prepare('INSERT INTO chat_reminders (id, user_id, message_id, channel_id, remind_at) VALUES (?, ?, ?, ?, ?)')
+    .run(id, req.user.id, ctx.m.id, ctx.channel.id, at.toISOString());
+  res.status(201).json({ id, remind_at: at.toISOString() });
+});
+
+// Get-or-create the ReadyBot ↔ user DM used for reminder delivery.
+function botDm(db, userId) {
+  const bot = getBotUser(db);
+  const key = [bot.id, userId].sort().join(':');
+  let dm = db.prepare("SELECT * FROM chat_channels WHERE kind = 'dm' AND dm_key = ?").get(key);
+  if (!dm) {
+    const id = uuid();
+    db.prepare("INSERT INTO chat_channels (id, kind, dm_key, created_by) VALUES (?, 'dm', ?, ?)").run(id, key, bot.id);
+    const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
+    add.run(uuid(), id, bot.id, 'member');
+    add.run(uuid(), id, userId, 'member');
+    dm = getChannel(db, id);
+    emitChannelsChanged(db, dm);
+  }
+  return { bot, dm };
+}
+
+// Minute loop: deliver due reminders. Marked fired BEFORE posting so a crash
+// can drop a reminder but never double-send it.
+export function startReminderLoop(db) {
+  const tick = async () => {
+    try {
+      const due = db.prepare('SELECT * FROM chat_reminders WHERE fired_at IS NULL AND remind_at <= ?')
+        .all(new Date().toISOString());
+      for (const r of due) {
+        db.prepare("UPDATE chat_reminders SET fired_at = datetime('now') WHERE id = ?").run(r.id);
+        const orig = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(r.message_id);
+        const chan = db.prepare('SELECT * FROM chat_channels WHERE id = ?').get(r.channel_id);
+        const { bot, dm } = botDm(db, r.user_id);
+        const from = orig ? userName(db, orig.user_id) : 'someone';
+        const label = !chan ? 'a channel' : chan.kind === 'dm' ? 'your DM' : `#${chan.name}`;
+        const excerpt = (orig?.body || '(attachment)').replace(/\s+/g, ' ').slice(0, 140);
+        const link = `${appBaseUrl()}/?c=${r.channel_id}&m=${r.message_id}`;
+        await postMessageAs(db, dm, bot, `⏰ Reminder — ${from} in ${label}:\n"${excerpt}"\nOpen the message: ${link}`);
+        // DMs aren't covered by the grouped channel push — notify directly.
+        pushToUser(r.user_id, {
+          title: '⏰ Reminder', body: `${from}: ${excerpt}`.slice(0, 120),
+          tag: `channel-${dm.id}`, renotify: true, url: `/?c=${r.channel_id}&m=${r.message_id}`,
+        }).catch(() => {});
+      }
+    } catch (e) { console.warn('[reminders] tick failed:', e.message); }
+  };
+  setInterval(tick, 60 * 1000).unref();
+  setTimeout(tick, 15 * 1000);
+}
+
 router.post('/messages/:id/reactions', async (req, res) => {
   const ctx = ownedMessage(req, res); if (!ctx) return;
   const db = getDb();

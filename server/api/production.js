@@ -223,8 +223,10 @@ router.put('/entries/:id/qa-signoff', (req, res) => {
   res.json(computeMetrics(updated));
 });
 
-// POST /entries/import — bulk import from CSV data
+// POST /entries/import — bulk import from CSV data (rewrites the log → same
+// guard as editing entries).
 router.post('/entries/import', (req, res) => {
+  if (!canEditLog(req.user)) return res.status(403).json({ error: 'Importing log entries requires an explicit Production Log edit grant (Settings) or admin.' });
   const db = getDb();
   const { entries } = req.body;
   if (!Array.isArray(entries) || entries.length === 0) {
@@ -254,8 +256,19 @@ router.post('/entries/import', (req, res) => {
   }
 });
 
+// Editing EXISTING log entries is separate from submitting the EOD form:
+// supervisors file EOD reports, but changing the log afterwards requires an
+// admin or an explicit Production Log edit grant in Settings.
+function canEditLog(u) {
+  if (!u) return false;
+  if (u.role === 'admin') return true;
+  const ma = u.module_access;
+  return !!(ma && !Array.isArray(ma) && ma['production-log'] === 'edit');
+}
+
 // PUT /entries/:id — update a production entry field
 router.put('/entries/:id', (req, res) => {
+  if (!canEditLog(req.user)) return res.status(403).json({ error: 'Editing log entries requires an explicit Production Log edit grant (Settings) or admin.' });
   const db = getDb();
   const existing = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Production entry not found' });

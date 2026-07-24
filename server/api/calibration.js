@@ -1,6 +1,25 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
+import multer from 'multer';
+import path from 'path';
+import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync } from 'fs';
+import { fileURLToPath } from 'url';
 import { getDb, logAudit } from '../db.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CERT_DIR = path.join(__dirname, '..', '..', 'data', 'calibration-certs');
+mkdirSync(CERT_DIR, { recursive: true });
+const certUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, CERT_DIR),
+    filename: (_req, file, cb) => cb(null, `${uuid()}${path.extname(file.originalname)}`),
+  }),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = ['.pdf', '.jpg', '.jpeg', '.png'].includes(path.extname(file.originalname).toLowerCase());
+    cb(null, ok);
+  },
+});
 
 const router = Router();
 
@@ -108,6 +127,33 @@ router.get('/records', (req, res) => {
 
   sql += ' ORDER BY cr.calibrated_at DESC';
   res.json(db.prepare(sql).all(...params));
+});
+
+// Calibration certificate (PDF/scan) attached to a record. Re-uploading
+// replaces the previous file.
+router.post('/records/:id/certificate', certUpload.single('file'), (req, res) => {
+  const db = getDb();
+  const rec = db.prepare('SELECT * FROM calibration_records WHERE id = ?').get(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'Calibration record not found' });
+  if (!req.file) return res.status(400).json({ error: 'Attach a PDF, JPG, or PNG certificate file.' });
+  if (rec.certificate_file) { try { unlinkSync(path.join(CERT_DIR, rec.certificate_file)); } catch { /* already gone */ } }
+  db.prepare('UPDATE calibration_records SET certificate_file = ?, certificate_original_name = ? WHERE id = ?')
+    .run(req.file.filename, req.file.originalname, req.params.id);
+  logAudit(req.user, 'upload', 'calibration_certificate', req.params.id, { original_name: req.file.originalname }, null, null);
+  res.status(201).json(db.prepare('SELECT * FROM calibration_records WHERE id = ?').get(req.params.id));
+});
+
+router.get('/records/:id/certificate', (req, res) => {
+  const db = getDb();
+  const rec = db.prepare('SELECT * FROM calibration_records WHERE id = ?').get(req.params.id);
+  if (!rec?.certificate_file) return res.status(404).json({ error: 'No certificate on this record' });
+  const filePath = path.join(CERT_DIR, rec.certificate_file);
+  if (!existsSync(filePath)) return res.status(404).json({ error: 'Certificate file missing on disk' });
+  const safeName = (rec.certificate_original_name || 'certificate.pdf').replace(/["\r\n]/g, '_');
+  res.setHeader('Content-Length', statSync(filePath).size);
+  res.setHeader('Content-Type', safeName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+  createReadStream(filePath).pipe(res);
 });
 
 router.post('/records', (req, res) => {

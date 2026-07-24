@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2 } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
@@ -408,6 +408,55 @@ function writeDraft(key, text) {
   window.dispatchEvent(new CustomEvent('comms-drafts-changed'));
 }
 
+// Slack-style "Remind me about this": pick a delay and ReadyBot DMs you at
+// that time with an excerpt + a link back to the message.
+function RemindPicker({ m, onClose }) {
+  const [done, setDone] = useState(null);
+  const [error, setError] = useState(null);
+  const opts = [
+    ['In 20 minutes', () => new Date(Date.now() + 20 * 60000)],
+    ['In 1 hour', () => new Date(Date.now() + 60 * 60000)],
+    ['In 3 hours', () => new Date(Date.now() + 180 * 60000)],
+    ['Tomorrow at 9 AM', () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; }],
+    ['Next Monday at 9 AM', () => { const d = new Date(); d.setDate(d.getDate() + (((8 - d.getDay()) % 7) || 7)); d.setHours(9, 0, 0, 0); return d; }],
+  ];
+  const pick = async (label, fn) => {
+    setError(null);
+    try {
+      await apiPost(`/comms/messages/${m.id}/remind`, { at: fn().toISOString() });
+      setDone(label);
+      setTimeout(onClose, 1100);
+    } catch (e) { setError(e.message); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/30 z-[90] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-xs p-4 space-y-1" onClick={e => e.stopPropagation()}>
+        <p className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-2"><Clock size={15} className="text-powder-600" /> Remind me about this</p>
+        {done ? (
+          <p className="text-sm text-green-700 py-2">✓ ReadyBot will remind you {done.toLowerCase()}.</p>
+        ) : (
+          <>
+            {opts.map(([label, fn]) => (
+              <button key={label} onClick={() => pick(label, fn)}
+                className="w-full text-left px-3 py-2 text-sm text-gray-800 rounded-lg hover:bg-powder-50">{label}</button>
+            ))}
+            {error && <p className="text-xs text-red-600 px-1">{error}</p>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Composers grow with their content (like Slack) up to a cap, then scroll
+// internally. Called from a layout effect on every body change so programmatic
+// clears (after send) and draft restores resize too.
+function sizeTextarea(el, max = 240) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, max) + 'px';
+}
+
 // Viewing a channel clears its lingering push notifications on THIS device.
 // (Cross-device clearing via a silent push was removed: web push requires each
 // push to show a notification, so the "silent" dismiss made Android surface a
@@ -432,6 +481,8 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   const fileInputRef = useRef(null);
   const replyRef = useRef(null);
   const endRef = useRef(null);
+  // Reply box grows with its content, like the main composer.
+  useEffect(() => { sizeTextarea(replyRef.current); }, [body]);
   // @mention autocomplete for the reply box (same behavior as the composer).
   const [mQuery, setMQuery] = useState(null);
   const [mHi, setMHi] = useState(0);
@@ -554,7 +605,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
                 }
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
               }}
-              placeholder="Reply…" className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />
+              placeholder="Reply…" className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-60 overflow-y-auto" />
             <button onClick={send} disabled={sending || (!body.trim() && !pending.length)} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
           </div>
         </div>
@@ -585,9 +636,9 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
           canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />)}
       </div>
       <div className="flex items-end gap-2 p-2 border-t border-gray-100">
-        <textarea value={body} onChange={e => setBody(e.target.value)} rows={1}
+        <textarea value={body} onChange={e => setBody(e.target.value)} rows={1} onInput={e => sizeTextarea(e.target, 160)}
           onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
-          placeholder="Reply…" className="flex-1 px-3 py-1.5 border border-gray-300 rounded-xl text-sm resize-none max-h-24" />
+          placeholder="Reply…" className="flex-1 px-3 py-1.5 border border-gray-300 rounded-xl text-sm resize-none max-h-40 overflow-y-auto" />
         <button onClick={send} disabled={!body.trim()} className="p-2 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={15} /></button>
       </div>
     </div>
@@ -728,6 +779,7 @@ function MessageActionSheet({ preview, mine, canReply, canTranslate, canMarkUnre
         <div className="border-t border-gray-100 pt-1">
           {canReply && <SheetRow icon={MessageSquare} label="Reply in thread" act="reply" onAction={onAction} />}
           <SheetRow icon={Copy} label="Copy text" act="copy" onAction={onAction} />
+          <SheetRow icon={Clock} label="Remind me about this…" act="remind" onAction={onAction} />
           {canTranslate && <SheetRow icon={Languages} label="Translate" act="translate" onAction={onAction} />}
           {canMarkUnread && <SheetRow icon={null} label="Mark unread from here" act="unread" onAction={onAction} />}
           <SheetRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={onAction} />
@@ -810,6 +862,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   const [menuOpen, setMenuOpen] = useState(false); // desktop 3-dot menu
   const [lightbox, setLightbox] = useState(null); // index into m.attachments
   const [convert, setConvert] = useState(false); // message → compliance record
+  const [remind, setRemind] = useState(false);   // Slack-style "remind me"
   const mine = m.user_id === me.id;
 
   const doTranslate = useCallback(async () => {
@@ -859,6 +912,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
     else if (act === 'translate') doTranslate();
     else if (act === 'unread' && onMarkUnread) onMarkUnread(m);
     else if (act === 'record') setConvert(true);
+    else if (act === 'remind') setRemind(true);
     else if (act === 'edit') { setDraft(m.body || ''); setEditing(true); }
     else if (act === 'delete') onDelete(m);
   };
@@ -931,8 +985,10 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
       {/* Desktop hover pill (Slack-style): suggested reactions, full picker,
           reply, and a 3-dot menu with the rest. On phones everything lives in
           the long-press sheet, so messages get the full width. */}
+      {/* Shown wherever a mouse exists (pointer:fine) — including the narrow
+          split-screen dock and pop-out windows; width alone doesn't decide. */}
       {!m.deleted && (
-        <div className={`absolute -top-3 right-3 z-10 hidden md:flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg shadow-sm px-1 py-0.5 transition-opacity ${menuOpen || showEmoji ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+        <div className={`absolute -top-3 right-3 z-10 hidden [@media(pointer:fine)]:flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg shadow-sm px-1 py-0.5 transition-opacity ${menuOpen || showEmoji ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
           {['✅', '👍', '🙌'].map(e => (
             <button key={e} onClick={() => onReact(m, e)} className="px-1 py-0.5 text-[15px] hover:bg-gray-100 rounded" data-tip={`React ${e}`}>{e}</button>
           ))}
@@ -945,6 +1001,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
                 <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
                 <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1">
                   <MenuRow icon={Copy} label="Copy text" act="copy" onAction={handleSheetAction} />
+                  <MenuRow icon={Clock} label="Remind me about this…" act="remind" onAction={handleSheetAction} />
                   {canTranslate && m.body && !translated && <MenuRow icon={Languages} label="Translate" act="translate" onAction={handleSheetAction} />}
                   {onMarkUnread && <MenuRow icon={null} label="Mark unread from here" act="unread" onAction={handleSheetAction} />}
                   {m.body && <MenuRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={handleSheetAction} />}
@@ -958,6 +1015,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
         </div>
       )}
       {convert && <ConvertRecordModal m={m} onClose={() => setConvert(false)} />}
+      {remind && <RemindPicker m={m} onClose={() => setRemind(false)} />}
       {sheet && !m.deleted && (
         <MessageActionSheet
           preview={`${m.user_name}: ${(displayBody || '').slice(0, 80)}`}
@@ -1139,6 +1197,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   useEffect(() => { setMessages([]); setTypers([]); setPending([]); loadMessages(activeId); }, [activeId, loadMessages]);
   // Restore this conversation's draft (typed text was saved as you navigated away).
   useEffect(() => { setBody(readDrafts()[activeId]?.text || ''); }, [activeId]);
+  // Composer grows with its content (and shrinks back after send/clear).
+  useEffect(() => { sizeTextarea(composerRef.current); }, [body, activeId]);
   // Live view of all drafts for the sidebar section + channel-row pencils.
   const [drafts, setDrafts] = useState(readDrafts);
   useEffect(() => {
@@ -2004,7 +2064,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                       // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).
                     }}
                     placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-32" />
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-60 overflow-y-auto" />
                   <button onClick={send} disabled={!body.trim() && pending.length === 0} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
                 </div>
               </div>

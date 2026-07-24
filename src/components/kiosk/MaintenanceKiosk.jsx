@@ -3,8 +3,8 @@ import { Wrench, CheckCircle, AlertTriangle, X } from 'lucide-react';
 
 const EMPTY = { employee_name: '', tool_box: '', asset_tag: '', condition_out: 'Good' };
 
-export default function MaintenanceKiosk() {
-  const [form, setForm] = useState(EMPTY);
+export default function MaintenanceKiosk({ defaultName = '' }) {
+  const [form, setForm] = useState({ ...EMPTY, employee_name: defaultName });
   // Picked items: [{ name, qty, use_spec }] — use_spec only for chemicals.
   const [picked, setPicked] = useState([]);
   const [catalog, setCatalog] = useState({ groups: [], chemicals: [], use_specs: [] });

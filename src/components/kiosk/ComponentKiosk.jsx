@@ -3,8 +3,8 @@ import { PackageCheck, CheckCircle, AlertTriangle, LogOut, LogIn } from 'lucide-
 
 const EMPTY = { direction: 'Out', item_name: '', part_number: '', lot_number: '', qty_pulled: '', person: '' };
 
-export default function ComponentKiosk() {
-  const [form, setForm] = useState(EMPTY);
+export default function ComponentKiosk({ defaultName = '' }) {
+  const [form, setForm] = useState({ ...EMPTY, person: defaultName });
   const [options, setOptions] = useState({ item_names: [], part_numbers: [] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');

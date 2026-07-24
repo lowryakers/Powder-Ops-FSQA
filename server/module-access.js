@@ -19,7 +19,7 @@
 // Must include every id used in Settings' MODULE_GROUPS (src side).
 export const ALL_MODULE_IDS = [
   'dashboard', 'critical-tracking', 'operator',
-  'production-log', 'production-schedule', 'production-dashboard',
+  'production-log', 'production-eod', 'production-schedule', 'production-dashboard',
   'pm', 'equipment', 'calibration', 'loto',
   'sanitation', 'chemicals', 'hygienic', 'coa',
   'capa', 'sops', 'work-instructions', 'job-descriptions', 'org-chart',
@@ -28,6 +28,7 @@ export const ALL_MODULE_IDS = [
   'dcr', 'deviations', 'non-conformance', 'on-hold',
   'component-signout', 'maintenance-signout', 'currently-out', 'organoleptic',
   'knife-accountability', 'flavor-approvals',
+  'form-maintenance', 'form-knife', 'form-components',
 ];
 
 export function moduleLevel(user, moduleId) {

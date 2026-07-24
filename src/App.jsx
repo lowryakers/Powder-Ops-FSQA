@@ -60,6 +60,16 @@ const NAV_GROUPS = [
     ],
   },
   {
+    // The kiosk QR forms, reachable in-app. Toggleable per user like any
+    // module (Settings → module access); QR scans deep-link to the same forms.
+    label: 'Quick Forms',
+    items: [
+      { id: 'form-maintenance', label: 'Sign Out an Item', icon: Wrench },
+      { id: 'form-knife', label: 'Knife Sign In/Out', icon: Scissors },
+      { id: 'form-components', label: 'Component Pull', icon: PackageCheck },
+    ],
+  },
+  {
     label: 'Production',
     items: [
       { id: 'production-log', label: 'Production Log', icon: Factory },
@@ -168,6 +178,16 @@ function wantsMessagesTab(u) {
 function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotice, onOpenComms }) {
   const { data: aiStatus } = useApiGet('/ai/status');
   const { data: commsChannels, refresh: refreshComms } = useApiGet('/comms/channels', [activeTab]);
+  // The user's own open sign-outs — pinned above the footer as a reminder to
+  // return them, with a one-click Return. Refetches on every tab change.
+  const { data: myOut, refresh: refreshMyOut } = useApiGet('/qms/mine/checked-out', [activeTab]);
+  const [returningId, setReturningId] = useState(null);
+  const returnItem = async (it) => {
+    setReturningId(it.id);
+    try { await apiPost(`/qms/mine/checked-out/${it.id}/return`, {}); refreshMyOut(); }
+    catch { /* leave in list */ }
+    finally { setReturningId(null); }
+  };
   const commsUnread = (commsChannels || []).reduce((n, c) => n + (c.unread || 0), 0);
   const aiOn = !!aiStatus?.enabled;
 
@@ -307,6 +327,30 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
           );
         })}
       </div>
+
+      {(myOut || []).length > 0 && (
+        <div className="border-t border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 px-1 mb-1">
+            You have {myOut.length} item{myOut.length === 1 ? '' : 's'} checked out
+          </p>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {myOut.map(it => (
+              <div key={it.id} className="flex items-center gap-1.5 rounded-lg bg-white border border-amber-200 px-2 py-1">
+                <button onClick={() => { setActiveTab(it.module); onClose(); }}
+                  className="flex-1 min-w-0 text-left text-xs text-gray-800 hover:text-powder-700 truncate"
+                  data-tip="Open the sign-out log">
+                  {it.item}{it.qty > 1 ? ` ×${it.qty}` : ''}
+                  <span className="block text-[10px] text-gray-400">out since {it.date || '—'}</span>
+                </button>
+                <button onClick={() => returnItem(it)} disabled={returningId === it.id}
+                  className="shrink-0 px-2 py-1 text-[10px] font-semibold bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50">
+                  {returningId === it.id ? '…' : 'Return'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="border-t border-gray-100 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -897,6 +941,19 @@ function App() {
     return () => window.removeEventListener('app-navigate', handler);
   }, []);
 
+  // Deep links: ?tab=<module> jumps straight to a module (ReadyBot alert
+  // links use this), ?form=<kiosk> pops a quick form over whatever's open
+  // (kiosk QR codes scanned by signed-in users). Params are consumed once.
+  const [kioskForm, setKioskForm] = useState(null); // 'knife' | 'components' | 'maintenance'
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    const form = params.get('form');
+    if (tab) { setWorkspace('fsqa'); setActiveTab(tab); }
+    if (form && ['knife', 'components', 'maintenance'].includes(form)) setKioskForm(form);
+    if (tab || form) window.history.replaceState({}, '', window.location.pathname);
+  }, []);
+
   // Jump from a module to a specific comms channel, remembering the origin.
   useEffect(() => {
     const handler = (e) => {
@@ -995,7 +1052,15 @@ function App() {
     return <><SubmitWorkOrder /><UpdateBanner /></>;
   }
 
+  // Signed-in users who scan a kiosk QR get the same form INSIDE the app
+  // (overlay via ?form=…) so closing it lands on their normal view. Logged-out
+  // scanners still get the public no-login kiosk page.
+  const kioskRedirect = (form) => {
+    try { if (localStorage.getItem('auth_token')) { window.location.replace(`/?form=${form}`); return true; } } catch { /* private mode */ }
+    return false;
+  };
   if (path === '/kiosk/knife') {
+    if (kioskRedirect('knife')) return null;
     return <><KnifeKiosk /><UpdateBanner /></>;
   }
 
@@ -1005,10 +1070,12 @@ function App() {
   }
 
   if (path === '/kiosk/components') {
+    if (kioskRedirect('components')) return null;
     return <><ComponentKiosk /><UpdateBanner /></>;
   }
 
   if (path === '/kiosk/maintenance') {
+    if (kioskRedirect('maintenance')) return null;
     return <><MaintenanceKiosk /><UpdateBanner /></>;
   }
 
@@ -1267,9 +1334,9 @@ function App() {
             </div>
             <div className="flex items-center gap-3">
               <ModuleSearch user={user} onNavigate={setActiveTab} />
-              <button onClick={toggleDockChat} data-tip={dockChat ? 'Close the docked Messages panel' : 'Dock Messages beside this module (split screen)'}
-                className={`hidden lg:block p-1.5 rounded-lg transition-colors ${dockChat ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
-                <PanelRight size={18} />
+              <button onClick={toggleDockChat} data-tip={dockChat ? 'Close the docked Messages panel' : 'Dock Messages beside this module'}
+                className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${dockChat ? 'text-powder-700 bg-powder-50' : 'text-gray-500 hover:bg-gray-100'}`}>
+                <PanelRight size={16} /> Split Screen
               </button>
               <button onClick={() => setHome('fsqa')} data-tip={homePref === 'fsqa' ? 'ReadyDoc is your home screen' : 'Make ReadyDoc your home screen'}
                 className={`p-1.5 rounded-lg transition-colors ${homePref === 'fsqa' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
@@ -1322,6 +1389,9 @@ function App() {
           )}
           {resolvedTab === 'dashboard' && <DashboardHub user={user} onNavigate={setActiveTab} />}
           {resolvedTab === 'ask-ai' && <AiAskPanel />}
+          {resolvedTab === 'form-maintenance' && <MaintenanceKiosk defaultName={user.name} />}
+          {resolvedTab === 'form-knife' && <KnifeKiosk defaultName={user.name} />}
+          {resolvedTab === 'form-components' && <ComponentKiosk defaultName={user.name} />}
           {resolvedTab === 'operator' && <OperatorView />}
           {resolvedTab === 'office-requests' && <OfficeRequestsPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
@@ -1378,6 +1448,19 @@ function App() {
       )}
 
       <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onOpenComms={() => setWorkspace('comms')} />
+      {/* Quick-form overlay: a scanned kiosk QR (?form=…) pops the form over
+          whatever's open; closing it returns to the normal app view. */}
+      {kioskForm && (
+        <div className="fixed inset-0 z-[70] bg-gray-50 overflow-y-auto">
+          <button onClick={() => setKioskForm(null)}
+            className="fixed top-3 right-3 z-[75] p-2 bg-white border border-gray-200 rounded-full shadow-md text-gray-500 hover:text-gray-800" data-tip="Close form">
+            <X size={18} />
+          </button>
+          {kioskForm === 'knife' && <KnifeKiosk defaultName={user.name} />}
+          {kioskForm === 'components' && <ComponentKiosk defaultName={user.name} />}
+          {kioskForm === 'maintenance' && <MaintenanceKiosk defaultName={user.name} />}
+        </div>
+      )}
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
       {showViewAsPicker && <ViewAsPickerModal onPick={(u) => { setShowViewAsPicker(false); startViewAs(u); }} onClose={() => setShowViewAsPicker(false)} />}
       <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />

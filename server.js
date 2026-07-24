@@ -38,7 +38,7 @@ import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
 import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
-import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser } from './server/api/comms.js';
+import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser, startReminderLoop } from './server/api/comms.js';
 import { initRealtime } from './server/realtime.js';
 import { aiEnabled } from './server/ai.js';
 import { storageEnabled, putObject, deleteObject } from './server/storage.js';
@@ -1406,6 +1406,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
   startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical });
+  startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).
   try {

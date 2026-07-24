@@ -39,7 +39,8 @@ const TEST_TYPES = [
   'Total Aerobic Microbial Count (USP)', 'Total Coliforms (BAM) (MOD)', 'E. Coli BAM (MOD)',
   'Salmonella', 'Staphylococcus aureus <2022>', 'Rapid Yeast and Mold',
   'Arsenic', 'Cadmium', 'Mercury', 'Lead',
-  'Gluten', 'FTIR ID', 'Potency', 'Bacillus Subtilis', 'Allergens', 'Moisture', 'Other',
+  'Gluten', 'FTIR ID', 'Potency', 'Bacillus Subtilis', 'Allergens', 'Moisture',
+  'Organoleptic Test', 'Minerals Test', 'Other',
 ];
 
 // Left-edge accent for the mobile cards, keyed to status.

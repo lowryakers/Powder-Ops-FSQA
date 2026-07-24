@@ -10,6 +10,8 @@
 //    program areas changes (new red, or back to clear). Same computation as
 //    the dashboard; no repeat pings while the same areas stay red.
 
+import { appBaseUrl } from './sms.js';
+
 export function startScheduledJobs(db, deps) {
   const tick = () => {
     try { runDue(db, deps); } catch (e) { console.warn('[jobs] tick failed:', e.message); }
@@ -84,8 +86,9 @@ async function runDue(db, deps) {
       if (lines.length) {
         const channel = getChannelByName(db, 'quality') || getChannelByName(db, 'general');
         if (channel) {
+          const base = appBaseUrl();
           await postMessageAs(db, channel, getBotUser(db),
-            `📋 Monday expiry check — ${lines.length} item${lines.length === 1 ? '' : 's'} need attention:\n${lines.slice(0, 20).join('\n')}${lines.length > 20 ? `\n…and ${lines.length - 20} more (see Certifications / Calibration modules)` : ''}`);
+            `📋 Monday expiry check — ${lines.length} item${lines.length === 1 ? '' : 's'} need attention:\n${lines.slice(0, 20).join('\n')}${lines.length > 20 ? `\n…and ${lines.length - 20} more` : ''}\nOpen: ${base}/?tab=certifications · ${base}/?tab=calibration`);
         }
       }
       setFlag(db, 'last_expiry_digest_week', week);
@@ -104,9 +107,14 @@ async function runDue(db, deps) {
       if (JSON.stringify(redNow) !== JSON.stringify(redBefore)) {
         const channel = getChannelByName(db, 'quality') || getChannelByName(db, 'general');
         if (channel) {
+          // Red areas link straight to their owning module so the alert is
+          // actionable in one tap; the summary links to Critical Tracking.
+          const base = appBaseUrl();
+          const redLines = Object.values(categories).filter(c => c.status === 'crit')
+            .map(c => `• ${c.label} (${c.count})${c.module ? ` → ${base}/?tab=${c.module}` : ''}`);
           const msg = redNow.length
-            ? `🚨 Critical Tracking alert — ${redNow.length} program area${redNow.length === 1 ? ' is' : 's are'} RED: ${redNow.join(', ')}. Audit readiness is at ${readiness.score}%. Open Dashboard → Critical Tracking to see the specific items.`
-            : `✅ Critical Tracking — all previously red program areas are resolved. Audit readiness is at ${readiness.score}%.`;
+            ? `🚨 Critical Tracking alert — ${redNow.length} program area${redNow.length === 1 ? ' is' : 's are'} RED:\n${redLines.join('\n')}\nAudit readiness is at ${readiness.score}%. Full picture: ${base}/?tab=critical-tracking`
+            : `✅ Critical Tracking — all previously red program areas are resolved. Audit readiness is at ${readiness.score}%. ${base}/?tab=critical-tracking`;
           await postMessageAs(db, channel, getBotUser(db), msg);
         }
         setFlag(db, 'critical_alerted_set', JSON.stringify(redNow));

@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search } from 'lucide-react';
+import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search, FileText, Upload } from 'lucide-react';
 
 const STATUS_COLORS = {
   active: 'bg-green-100 text-green-800',
@@ -122,12 +122,13 @@ function CalibrateForm({ instrument, onSave, onCancel }) {
     calibrated_by: '', result: 'pass', reading_before: '', reading_after: '',
     standard_used: '', certificate_number: '', next_due: nextYear.toISOString().split('T')[0], notes: '',
   });
+  const [certFile, setCertFile] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, instrument_id: instrument.id }); } finally { setSaving(false); }
+    try { await onSave({ ...form, instrument_id: instrument.id }, certFile); } finally { setSaving(false); }
   };
 
   return (
@@ -174,6 +175,12 @@ function CalibrateForm({ instrument, onSave, onCancel }) {
         <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={2} />
       </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Calibration Certificate (PDF/photo, optional)</label>
+        <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setCertFile(e.target.files?.[0] || null)}
+          className="block w-full text-sm text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-blue-100 file:text-blue-700 file:text-xs file:font-medium hover:file:bg-blue-200" />
+        {certFile && <p className="text-[11px] text-gray-500 mt-0.5">{certFile.name} will attach to this record.</p>}
+      </div>
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
           {saving ? 'Saving...' : 'Record Calibration'}
@@ -210,10 +217,36 @@ export default function CalibrationPanel() {
     refresh();
   };
 
-  const handleCalibrate = async (form) => {
-    await apiPost('/calibration/records', form);
+  const handleCalibrate = async (form, certFile) => {
+    const rec = await apiPost('/calibration/records', form);
+    if (certFile && rec?.id) {
+      const fd = new FormData();
+      fd.append('file', certFile);
+      await apiUpload(`/calibration/records/${rec.id}/certificate`, fd).catch(() => {});
+    }
     setCalibrating(null);
     refresh();
+    refreshRecords();
+  };
+
+  // Certificates attach per record; download carries the auth header.
+  const downloadCert = async (r) => {
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch(`/api/calibration/records/${r.id}/certificate`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = r.certificate_original_name || 'calibration-certificate.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const uploadCert = async (r, file) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    await apiUpload(`/calibration/records/${r.id}/certificate`, fd);
     refreshRecords();
   };
 
@@ -420,6 +453,7 @@ export default function CalibrationPanel() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">By</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Standard</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Next Due</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Cert</th>
               </tr>
             </thead>
             <tbody>
@@ -437,10 +471,23 @@ export default function CalibrationPanel() {
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.calibrated_by}</td>
                   <td className="px-4 py-3 text-gray-600">{r.standard_used || '—'}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.next_due || '—'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {r.certificate_file ? (
+                      <button onClick={() => downloadCert(r)} className="p-1 text-powder-600 hover:text-powder-800" data-tip="Download calibration certificate">
+                        <FileText size={15} />
+                      </button>
+                    ) : canEdit ? (
+                      <label className="p-1 text-gray-300 hover:text-powder-600 cursor-pointer inline-flex" data-tip="Upload calibration certificate">
+                        <Upload size={15} />
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
+                          onChange={e => { uploadCert(r, e.target.files?.[0]); e.target.value = ''; }} />
+                      </label>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
                 </tr>
               ))}
               {(!records || records.length === 0) && (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No calibration records yet</td></tr>
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No calibration records yet</td></tr>
               )}
             </tbody>
           </table>

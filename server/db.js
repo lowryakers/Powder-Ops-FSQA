@@ -1070,6 +1070,11 @@ function runMigrations() {
   addColumnIfMissing('coa_requests', 'certificate_number', 'TEXT');
   addColumnIfMissing('coa_requests', 'date_of_issuance', 'TEXT');
 
+  // Calibration certificate PDFs/scans attached to individual calibration
+  // records (stored on disk under data/calibration-certs).
+  addColumnIfMissing('calibration_records', 'certificate_file', 'TEXT');
+  addColumnIfMissing('calibration_records', 'certificate_original_name', 'TEXT');
+
   // Digital COA sign-off: who signed, when, and a snapshot of the signature
   // image at signing time (so later changes to a user's saved signature never
   // alter an already-issued certificate).
@@ -1313,6 +1318,18 @@ function runMigrations() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
+
+    -- Slack-style "Remind me about this": ReadyBot DMs the user at remind_at.
+    CREATE TABLE IF NOT EXISTS chat_reminders (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      remind_at TEXT NOT NULL,
+      fired_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_reminders_due ON chat_reminders(remind_at) WHERE fired_at IS NULL;
   `);
 
   // Comms: announcement channels (admins-only posting) and default channels

@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Scissors, CheckCircle, AlertTriangle, Search, ArrowLeft, LogOut, LogIn } from 'lucide-react';
 
-export default function KnifeKiosk() {
+export default function KnifeKiosk({ defaultName = '' }) {
   const [knives, setKnives] = useState([]);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(defaultName);
   const [condition, setCondition] = useState('Good');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -39,7 +39,7 @@ export default function KnifeKiosk() {
     }
   };
 
-  const reset = () => { setSelected(null); setResult(null); setName(''); setCondition('Good'); setError(''); setQuery(''); };
+  const reset = () => { setSelected(null); setResult(null); setName(defaultName); setCondition('Good'); setError(''); setQuery(''); };
 
   // Success confirmation
   if (result) {

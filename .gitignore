@@ -16,3 +16,4 @@ _pdf*.mjs
 *.db
 *.db-shm
 *.db-wal
+data/calibration-certs/

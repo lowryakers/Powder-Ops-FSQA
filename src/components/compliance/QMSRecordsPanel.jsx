@@ -142,6 +142,13 @@ function FieldInput({ f, value, onChange }) {
 function MultiPickInput({ f, value, onChange, useSpecOptions = [] }) {
   const arr = Array.isArray(value) ? value : [];
   const grouped = Array.isArray(f.options) && f.options.some(o => o && typeof o === 'object' && Array.isArray(o.items));
+  // Type-ahead: the item list is long, so a search box with suggestions
+  // replaces scrolling a giant dropdown. Matches on item name or group.
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const flat = useMemo(() => grouped
+    ? f.options.flatMap(g => (g.items || []).map(o => ({ group: g.group, name: o })))
+    : (f.options || []).map(o => ({ group: null, name: o })), [f.options, grouped]);
   const chemicalSet = useMemo(() => {
     if (!grouped) return new Set();
     const g = f.options.find(o => o.group === 'Chemicals');
@@ -176,16 +183,35 @@ function MultiPickInput({ f, value, onChange, useSpecOptions = [] }) {
           )}
         </div>
       ))}
-      <select value="" onChange={e => add(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-        <option value="">{arr.length ? 'Add another item…' : 'Select item(s)…'}</option>
-        {grouped
-          ? f.options.map(g => (
-              <optgroup key={g.group} label={g.group}>
-                {g.items.filter(o => !names.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
-              </optgroup>
-            ))
-          : f.options.filter(o => !names.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
+      {(() => {
+        const t = q.trim().toLowerCase();
+        const avail = flat.filter(o => !names.includes(o.name));
+        const matches = t ? avail.filter(o => o.name.toLowerCase().includes(t) || (o.group || '').toLowerCase().includes(t)) : avail;
+        const pick = (name) => { add(name); setQ(''); };
+        return (
+          <div className="relative">
+            <input value={q} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+              onChange={e => { setQ(e.target.value); setOpen(true); }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (matches.length) pick(matches[0].name); } }}
+              placeholder={arr.length ? 'Search to add another item…' : 'Start typing to search items…'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
+            {open && matches.length > 0 && (
+              <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                {matches.slice(0, 60).map((o, i, arr) => (
+                  <div key={`${o.group}|${o.name}`}>
+                    {grouped && o.group !== arr[i - 1]?.group && (
+                      <div className="px-3 pt-2 pb-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-400">{o.group}</div>
+                    )}
+                    <button type="button" onMouseDown={e => { e.preventDefault(); pick(o.name); }}
+                      className="w-full text-left px-3 py-1.5 text-sm text-gray-800 hover:bg-powder-50">{o.name}</button>
+                  </div>
+                ))}
+                {matches.length > 60 && <div className="px-3 py-1.5 text-[11px] text-gray-400">Keep typing to narrow down…</div>}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {arr.length > 1 && <p className="text-[11px] text-gray-400">One sign-out record is created per item.</p>}
     </div>
   );

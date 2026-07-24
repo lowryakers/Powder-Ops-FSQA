@@ -24,9 +24,21 @@ const MODULE_GROUPS = [
     ],
   },
   {
+    label: 'Quick Forms',
+    modules: [
+      { id: 'form-maintenance', label: 'Sign Out an Item (kiosk form)' },
+      { id: 'form-knife', label: 'Knife Sign In/Out (kiosk form)' },
+      { id: 'form-components', label: 'Component Pull (kiosk form)' },
+    ],
+  },
+  {
     label: 'Production',
     modules: [
       { id: 'production-log', label: 'Production Log' },
+      // Submitting the EOD entry form — separate from editing the log itself.
+      // Supervisors get the form automatically; edit on Production Log is what
+      // allows changing existing log entries.
+      { id: 'production-eod', label: 'EOD Entry Form (auto for supervisors)' },
       { id: 'production-schedule', label: 'Schedule' },
       { id: 'production-dashboard', label: 'Production KPIs' },
     ],
