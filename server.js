@@ -39,6 +39,7 @@ import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
 import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
 import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser, startReminderLoop } from './server/api/comms.js';
+import smsInboundRoutes from './server/api/sms-inbound.js';
 import { initRealtime } from './server/realtime.js';
 import { aiEnabled } from './server/ai.js';
 import { storageEnabled, putObject, deleteObject } from './server/storage.js';
@@ -1292,6 +1293,7 @@ app.use('/api', (req, res, next) => {
     '/users/login',
     '/users/set-password',
     '/submit/',
+    '/sms/inbound',
     '/version',
     '/health',
   ];
@@ -1318,6 +1320,7 @@ app.use('/api/compliance', complianceRoutes);
 app.use('/api/loto', requireModuleWrite('loto'), lotoRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/submit', submitRoutes);
+app.use('/api/sms', smsInboundRoutes);
 app.use('/api/chemicals', requireModuleWrite('chemicals'), chemicalRoutes);
 app.use('/api/hygienic-design', requireModuleWrite('hygienic'), hygienicDesignRoutes);
 app.use('/api/complaints', requireModuleWrite('capa'), complaintRoutes);

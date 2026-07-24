@@ -5,7 +5,11 @@
 (public, single-use, ApprovePage.jsx) → decision updates the record + announces in #batching.
 **SMS auto-send needs env:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `FLAVOR_APPROVER_PHONE`
 (optional `APP_BASE_URL`, default start.powder-ops.com). Without them the link is shown for manual texting.
-Future: text-to-AI query layer for Danny rides on the same Twilio setup (inbound webhook needed then).
+**Text-to-AI (BUILT, awaiting Twilio compliance approval):** `server/api/sms-inbound.js` →
+`POST /api/sms/inbound` (public path, X-Twilio-Signature validated against the exact APP_BASE_URL webhook
+URL; allowlist = FLAVOR_APPROVER_PHONE matched on last 10 digits; acks with empty TwiML, answers async via
+REST using ai.js `answerQuestion`, audit-logged as `sms:Danny`). One-time console step once the number is
+live: number → Messaging → "A message comes in" → HTTP POST `https://start.powder-ops.com/api/sms/inbound`.
 
 ## Deferred / future work — remind the user when relevant
 
