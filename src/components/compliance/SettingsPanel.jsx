@@ -3,6 +3,7 @@ import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 import { Plus, Copy, Shield, ChevronDown, ChevronRight, KeyRound, Users, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { DEPARTMENTS, DEPARTMENT_GROUPS, deptLabel } from '../../constants/departments';
+import QuickBooksSetupCard from './QuickBooksSetupCard.jsx';
 
 const ROLES = [
   { value: 'admin', label: 'Admin', desc: 'Full access to all features' },
@@ -1029,6 +1030,12 @@ export default function SettingsPanel() {
           </div>
           <AutoBackupList />
         </div>
+      </div>
+
+      {/* Integrations */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-bold text-gray-900">Integrations</h2>
+        <QuickBooksSetupCard />
       </div>
 
       {/* Links Section */}

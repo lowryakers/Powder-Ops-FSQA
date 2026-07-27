@@ -270,16 +270,30 @@ router.get('/quickbooks/status', (req, res) => {
 // Intuit's app profile asks for the IP address their API will see our calls
 // coming from. Hosting can move us between addresses, so rather than write a
 // number down once and hope, this reports what it is right now.
+const IP_LOOKUPS = [
+  'https://checkip.amazonaws.com',
+  'https://api.ipify.org',
+  'https://icanhazip.com',
+];
+const IPV4 = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/;
+
 router.get('/quickbooks/egress-ip', async (req, res) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
-  try {
-    const r = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) throw new Error(`lookup failed (${r.status})`);
-    const { ip } = await r.json();
-    res.json({ ip, checked_at: new Date().toISOString() });
-  } catch (e) {
-    res.status(502).json({ error: `Could not determine the outbound IP: ${e.message}` });
+  // Try a few echo services in turn — one being down or blocked shouldn't
+  // leave an admin staring at a blank field mid-way through Intuit's form.
+  const errors = [];
+  for (const url of IP_LOOKUPS) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const ip = (await r.text()).match(IPV4)?.[0];
+      if (!ip) throw new Error('no address in response');
+      return res.json({ ip, source: new URL(url).host, checked_at: new Date().toISOString() });
+    } catch (e) {
+      errors.push(`${new URL(url).host}: ${e.message}`);
+    }
   }
+  res.status(502).json({ error: `Could not determine the outbound IP (${errors.join('; ')})` });
 });
 
 router.post('/quickbooks/sync', async (req, res) => {
