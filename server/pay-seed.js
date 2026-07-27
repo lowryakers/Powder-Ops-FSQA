@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { PAY_ROSTER, PAY_RANGES } from './pay-seed-data.js';
+import { PAY_ROSTER } from './pay-seed-data.js';
 
 // One-time import of the Pay Tracking workbook. Idempotent: it only ever fills
 // an empty roster, so a redeploy never overwrites rates that have since been
@@ -28,13 +28,6 @@ export function seedPayTracking(db) {
         }
       })();
       console.log(`[seed] Pay roster: ${PAY_ROSTER.length} people (${linked} matched to a Settings user)`);
-    }
-
-    const haveRanges = db.prepare('SELECT COUNT(*) c FROM pay_ranges').get().c;
-    if (haveRanges === 0) {
-      const ins = db.prepare('INSERT INTO pay_ranges (position, market_min, market_max) VALUES (?, ?, ?)');
-      db.transaction(() => { for (const r of PAY_RANGES) ins.run(r.position, r.market_min, r.market_max); })();
-      console.log(`[seed] Pay ranges: ${PAY_RANGES.length} positions`);
     }
   } catch (e) {
     console.warn('[seed] pay tracking seed skipped:', e.message);

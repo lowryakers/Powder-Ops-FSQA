@@ -34,16 +34,3 @@ export const PAY_ROSTER = [
   { name: "Jake", team: null, is_supervisor: 0, pay_rate: null, hire_date: "2023-01-01", last_increase_at: "2026-03-30", pto_plan: null },
   { name: "Marnee", team: null, is_supervisor: 0, pay_rate: null, hire_date: "2026-01-26", last_increase_at: "2026-05-25", pto_plan: null },
 ];
-
-// Market bands by production position, from the same workbook. These are
-// reference rails shown next to a proposed rate — they do not block anything.
-export const PAY_RANGES = [
-  { position: "Warehouse", market_min: 11.4, market_max: 25 },
-  { position: "Batching/Blending", market_min: 15, market_max: 24 },
-  { position: "Machine Operators", market_min: 15, market_max: 38 },
-  { position: "Kitting", market_min: 9.93, market_max: 20 },
-  { position: "Quality Assurance", market_min: 15, market_max: 33 },
-  { position: "Cleaning", market_min: 13, market_max: 21 },
-  { position: "Maintenance", market_min: 18.72, market_max: 29 },
-  { position: "Supervisors", market_min: null, market_max: null },
-];

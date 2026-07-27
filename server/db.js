@@ -1746,6 +1746,12 @@ function runMigrations() {
     dropColumnIfPresent('newsletter_issues', col);
   }
 
+  // The pay module briefly carried a static table of market bands by position,
+  // imported from the workbook. It was already out of date there, and the
+  // roster shows what people are actually paid, so it is gone rather than kept
+  // as a second number to maintain.
+  try { db.exec('DROP TABLE IF EXISTS pay_ranges'); } catch { /* fine if absent */ }
+
   // ── Pay tracking (admin only) ─────────────────────────────────────────────
   // The roster of who is paid what, and when they were last raised, replacing
   // the Pay Tracking workbook. Two deliberate omissions:
@@ -1789,14 +1795,6 @@ function runMigrations() {
         created_at   TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE INDEX IF NOT EXISTS idx_pay_rate_history_emp ON pay_rate_history(employee_id, effective_at);
-
-      CREATE TABLE IF NOT EXISTS pay_ranges (
-        position   TEXT PRIMARY KEY,
-        market_min REAL,
-        market_max REAL,
-        ops_min    REAL,
-        ops_max    REAL
-      );
     `);
   } catch (e) {
     console.warn('[db] pay tracking tables unavailable:', e.message);

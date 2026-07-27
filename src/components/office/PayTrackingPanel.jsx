@@ -6,7 +6,7 @@ import LangToggle from '../LangToggle.jsx';
 import DataGrid from './DataGrid.jsx';
 import { CHARACTERISTICS, MAX_SCORE, BANDS, bandFor, VISION, CORE_VALUES } from './payRubric.js';
 import {
-  AlertTriangle, Check, X, TrendingUp, Users, Clock, DollarSign, RefreshCw, Printer,
+  AlertTriangle, Check, X, TrendingUp, Users, Clock, DollarSign, RefreshCw, FileText,
 } from 'lucide-react';
 
 // Pay Tracking.
@@ -36,12 +36,13 @@ const REVIEW_LABEL = { due: 'Due', soon: 'Soon', ok: 'OK', unknown: '—' };
 
 /* ── Evaluation ─────────────────────────────────────────── */
 
-function Evaluation({ people, canApply, onClose, onRecorded, tr }) {
+function Evaluation({ people, canApply, onClose, onRecorded, tr, lang }) {
   const [personId, setPersonId] = useState('');
   const [scores, setScores] = useState({});
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
+  const [error, setError] = useState('');
 
   const person = people.find(p => p.id === personId) || null;
   const answered = CHARACTERISTICS.filter(c => scores[c.key]).length;
@@ -52,7 +53,42 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr }) {
   // it gets its own alert rather than living inside the total.
   const hardFlag = CHARACTERISTICS.some(c => c.hardFlagAtOne && scores[c.key] === 1);
 
-  const reset = () => { setScores({}); setNotes(''); setDone(null); };
+  const reset = () => { setScores({}); setNotes(''); setDone(null); setError(''); };
+
+  // The hand-out for the meeting. It carries the descriptor picked for each
+  // value — the feedback in the company's own words — plus notes and the
+  // recommendation, and deliberately no numbers: no 1/2/3, no total. Nothing
+  // is stored; the server renders and streams it straight back.
+  const openPdf = async () => {
+    if (!person || !complete) return;
+    setBusy(true); setError('');
+    try {
+      const res = await fetch('/api/pay/evaluation-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+        body: JSON.stringify({
+          employee_name: person.name,
+          team: person.team,
+          date: todayStr(),
+          lang,
+          notes,
+          recommendation: band ? tr(band.label) : '',
+          attendance_flag: hardFlag,
+          lines: CHARACTERISTICS.map(c => ({
+            title: tr(c.title),
+            subtitle: tr(c.subtitle),
+            descriptor: tr(c.levels[scores[c.key]]),
+          })),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not build the PDF.');
+      const url = URL.createObjectURL(await res.blob());
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      setError(e.message);
+    } finally { setBusy(false); }
+  };
 
   const recordReviewDate = async () => {
     if (!person) return;
@@ -161,12 +197,16 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr }) {
           </div>
 
           {done && <p className="text-sm text-green-700 font-medium">{tr(done)}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
-              <Printer size={14} /> {tr('Print for the conversation')}
+            <button onClick={openPdf} disabled={busy || !complete}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50">
+              <FileText size={14} /> {busy ? tr('Building…') : tr('PDF for the conversation')}
             </button>
+            <span className="text-[11px] text-gray-500 self-center">
+              {tr('The sheet carries the feedback and the recommendation — no score.')}
+            </span>
             <button onClick={recordReviewDate} disabled={busy || !complete}
               className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-50">
               <Check size={14} /> {busy ? tr('Recording…') : tr('Record review date only')}
@@ -374,7 +414,7 @@ function SyncPanel({ onDone, tr }) {
 /* ── Panel ──────────────────────────────────────────────── */
 
 const PAGE_STRINGS = [
-  'Pay Tracking', 'Roster', 'Evaluation', 'Vision & Values', 'Pay ranges', 'Sync with Settings',
+  'Pay Tracking', 'Roster', 'Evaluation', 'Vision & Values', 'Sync with Settings',
   'Employee', 'Team', 'Rate', 'Annual', 'Hired', 'Last raise', 'Last review', 'Days', 'Review',
   'Due', 'Soon', 'OK', 'Supervisor', 'Salaried', 'No team',
   'This evaluation is not saved.',
@@ -385,7 +425,7 @@ const PAGE_STRINGS = [
   'A score of 1 in Time & Attendance triggers a review conversation regardless of the total score.',
   'Notes / Feedback', 'For the conversation — not saved.', 'Total score', 'scored',
   'Score every characteristic to see the recommended increase.',
-  'Print for the conversation', 'Record review date only', 'Recording…', 'Clear', 'Close',
+  'PDF for the conversation', 'Building…', 'Record review date only', 'Recording…', 'Clear', 'Close',
   'To apply the increase, open this person on the Roster tab.',
   'Review date recorded. The scores and notes were not saved.',
   'Apply a pay increase', 'New rate', 'Effective date', 'Note (optional)', 'Apply increase', 'Applying…',
@@ -394,6 +434,7 @@ const PAGE_STRINGS = [
   'Search name or team…', 'Add someone', 'Checking…', 'Apply', 'to link', 'to add',
   'Settings is the source of truth for who works here. This compares the roster against it and shows the differences rather than changing anything on its own.',
   'The roster matches the employee list in Settings.',
+  'The sheet carries the feedback and the recommendation — no score.',
   'Can be linked by name', 'These roster rows match a Settings user exactly.',
   'In Settings but not on the roster',
   'Tick anyone who should be tracked. They are added with no rate — you enter that deliberately.',
@@ -401,7 +442,6 @@ const PAGE_STRINGS = [
   'Either they have left, or the name is spelled differently in Settings. Nothing is removed automatically.',
   'Pay information is restricted to administrators.',
   'You can run a Pay Increase Evaluation here. Actual pay rates are not shown.',
-  'Market min', 'Market max', 'Powder Ops min', 'Powder Ops max', 'Position',
   'Score', 'Performance', 'Increase', 'Cultural Score',
 ];
 
@@ -413,7 +453,6 @@ export default function PayTrackingPanel() {
 
   const { data: roster, refresh: refreshRoster } = useApiGet(isAdmin ? '/pay/employees' : null);
   const { data: evaluatees, refresh: refreshEval } = useApiGet('/pay/evaluatees');
-  const { data: ranges } = useApiGet(isAdmin ? '/pay/ranges' : null);
 
   const contentStrings = useMemo(() => {
     const out = [...PAGE_STRINGS];
@@ -467,7 +506,7 @@ export default function PayTrackingPanel() {
   ];
 
   const tabs = isAdmin
-    ? [['roster', 'Roster'], ['evaluate', 'Evaluation'], ['ranges', 'Pay ranges'], ['sync', 'Sync with Settings'], ['values', 'Vision & Values']]
+    ? [['roster', 'Roster'], ['evaluate', 'Evaluation'], ['sync', 'Sync with Settings'], ['values', 'Vision & Values']]
     : [['evaluate', 'Evaluation'], ['values', 'Vision & Values']];
 
   return (
@@ -525,31 +564,8 @@ export default function PayTrackingPanel() {
       )}
 
       {tab === 'evaluate' && (
-        <Evaluation people={evaluatees || []} canApply={isAdmin} tr={tr}
+        <Evaluation people={evaluatees || []} canApply={isAdmin} tr={tr} lang={lang}
           onRecorded={() => { refreshEval(); refreshRoster?.(); }} />
-      )}
-
-      {tab === 'ranges' && isAdmin && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <th className="px-4 py-2">{tr('Position')}</th>
-                <th className="px-4 py-2 text-right">{tr('Market min')}</th>
-                <th className="px-4 py-2 text-right">{tr('Market max')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(ranges || []).map(r => (
-                <tr key={r.position} className="border-t border-gray-100">
-                  <td className="px-4 py-2 font-medium text-gray-900">{r.position}</td>
-                  <td className="px-4 py-2 text-right text-gray-600">{r.market_min != null ? money(r.market_min) : '—'}</td>
-                  <td className="px-4 py-2 text-right text-gray-600">{r.market_max != null ? money(r.market_max) : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       )}
 
       {tab === 'sync' && isAdmin && (

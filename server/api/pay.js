@@ -1,7 +1,14 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
+import PDFDocument from 'pdfkit';
+import { readFileSync, existsSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { getDb, logAudit } from '../db.js';
 import { normalizeName } from '../pay-seed.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const LOGO_PATH = path.join(__dirname, '..', 'assets', 'powder-ops-logo.jpg');
 
 // Pay tracking.
 //
@@ -247,24 +254,117 @@ router.post('/sync', (req, res) => {
   res.json({ linked, added });
 });
 
-// ── Pay ranges ───────────────────────────────────────────────────────────────
+// ── The conversation hand-out ────────────────────────────────────────────────
+//
+// Renders the evaluation to a PDF for the conversation and streams it straight
+// back. Nothing is written to the database or to storage — this endpoint has no
+// side effects at all, which is the whole point: the sheet exists for the
+// meeting, and what happens to it afterwards is a decision made on paper.
+//
+// It deliberately carries no numeric score and no 1/2/3 ratings. What it shows
+// is the descriptor that was picked for each value — which is the actual
+// feedback, in the company's own words — plus the notes and the recommendation.
+// Someone reading it gets something concrete to talk about rather than a grade.
+//
+// The rubric text comes from the client because that is where it lives (one
+// copy, translated by the page toggle). The sheet is the evaluator's own
+// document, not a stored record, so there is nothing here worth validating
+// against a server-side duplicate of the same strings.
+router.post('/evaluation-pdf', async (req, res) => {
+  if (!requireEvaluator(req, res)) return;
+  const b = req.body || {};
+  const lang = b.lang === 'es' ? 'es' : 'en';
+  const lines = Array.isArray(b.lines) ? b.lines.slice(0, 20) : [];
+  if (!b.employee_name || !lines.length) {
+    return res.status(400).json({ error: 'Nothing to print yet — score the evaluation first.' });
+  }
 
-router.get('/ranges', (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  res.json(getDb().prepare('SELECT * FROM pay_ranges ORDER BY position').all());
-});
+  const t = (en, es) => (lang === 'es' ? es : en);
+  // \p{Cc} is the control-character class — stripping them keeps stray
+  // newlines and terminal escapes out of the rendered page.
+  const clean = (v, max = 400) => String(v ?? '').replace(/\p{Cc}/gu, ' ').slice(0, max);
 
-router.put('/ranges/:position', (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const db = getDb();
-  const num = (v) => (v === '' || v == null ? null : Number(v));
-  db.prepare(`INSERT INTO pay_ranges (position, market_min, market_max, ops_min, ops_max)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(position) DO UPDATE SET market_min = excluded.market_min, market_max = excluded.market_max,
-      ops_min = excluded.ops_min, ops_max = excluded.ops_max`)
-    .run(req.params.position, num(req.body?.market_min), num(req.body?.market_max),
-      num(req.body?.ops_min), num(req.body?.ops_max));
-  res.json(db.prepare('SELECT * FROM pay_ranges WHERE position = ?').get(req.params.position));
+  try {
+    const doc = new PDFDocument({ size: 'LETTER', margins: { top: 54, bottom: 54, left: 54, right: 54 } });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+    const done = new Promise((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+    });
+
+    if (existsSync(LOGO_PATH)) {
+      try { doc.image(readFileSync(LOGO_PATH), 54, 40, { height: 30 }); } catch { /* logo optional */ }
+    }
+    doc.moveDown(2);
+    doc.font('Helvetica-Bold').fontSize(18).fillColor('#26262a')
+      .text(t('Pay Increase Evaluation', 'Evaluación de Aumento Salarial'));
+    doc.moveDown(0.4);
+
+    const when = String(b.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    doc.font('Helvetica').fontSize(10).fillColor('#4b4b52');
+    doc.text(`${t('Employee', 'Empleado')}: ${clean(b.employee_name, 80)}`);
+    if (b.team) doc.text(`${t('Team', 'Equipo')}: ${clean(b.team, 60)}`);
+    doc.text(`${t('Supervisor', 'Supervisor')}: ${clean(b.supervisor || req.user.name, 80)}`);
+    doc.text(`${t('Date', 'Fecha')}: ${when}`);
+    doc.moveTo(54, doc.y + 8).lineTo(558, doc.y + 8).strokeColor('#e5e4df').stroke();
+    doc.moveDown(1.2);
+
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#26262a')
+      .text(t('What we talked about', 'De qué hablamos'));
+    doc.moveDown(0.4);
+    for (const line of lines) {
+      if (doc.y > 650) doc.addPage();
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#4f6ff5').text(clean(line.title, 120));
+      if (line.subtitle) {
+        doc.font('Helvetica-Oblique').fontSize(8).fillColor('#8a8a92').text(clean(line.subtitle, 160));
+      }
+      doc.font('Helvetica').fontSize(9.5).fillColor('#3a3a40')
+        .text(clean(line.descriptor, 500), { lineGap: 1.5 });
+      doc.moveDown(0.6);
+    }
+
+    if (b.notes) {
+      if (doc.y > 600) doc.addPage();
+      doc.moveDown(0.3);
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#26262a').text(t('Notes', 'Notas'));
+      doc.moveDown(0.3);
+      doc.font('Helvetica').fontSize(10).fillColor('#3a3a40').text(clean(b.notes, 2000), { lineGap: 2 });
+    }
+
+    if (b.recommendation) {
+      if (doc.y > 620) doc.addPage();
+      doc.moveDown(0.8);
+      const boxTop = doc.y;
+      doc.roundedRect(54, boxTop, 504, 52, 6).fillAndStroke('#f4f6ff', '#c8d2fb');
+      doc.fillColor('#26262a').font('Helvetica-Bold').fontSize(9)
+        .text(t('RECOMMENDATION', 'RECOMENDACIÓN'), 68, boxTop + 10, { characterSpacing: 0.6 });
+      doc.font('Helvetica-Bold').fontSize(13).fillColor('#26262a')
+        .text(clean(b.recommendation, 120), 68, boxTop + 24);
+      doc.y = boxTop + 60;
+    }
+
+    if (b.attendance_flag) {
+      if (doc.y > 660) doc.addPage();
+      doc.moveDown(0.4);
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#b42318')
+        .text(t('A review conversation is required regardless of the rest of this evaluation.',
+          'Se requiere una conversación de revisión independientemente del resto de esta evaluación.'),
+        { width: 504 });
+    }
+
+    doc.font('Helvetica').fontSize(8).fillColor('#9a9aa2')
+      .text('Powder Ops · ReadyDoc', 54, 720, { align: 'center', width: 504 });
+    doc.end();
+
+    const pdf = await done;
+    const safe = clean(b.employee_name, 60).replace(/[^\w -]+/g, '').trim() || 'evaluation';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${safe} - evaluation ${when}.pdf"`);
+    res.send(pdf);
+  } catch (e) {
+    res.status(500).json({ error: `Could not build the PDF: ${e.message}` });
+  }
 });
 
 // ── Evaluation support ───────────────────────────────────────────────────────
