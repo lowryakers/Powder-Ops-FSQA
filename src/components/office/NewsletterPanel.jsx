@@ -1,10 +1,10 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
-import { Plus, Trash2, Send, FileText, Image as ImageIcon, ArrowUp, ArrowDown, Eye, X, Newspaper, Languages } from 'lucide-react';
+import { Plus, Trash2, Send, FileText, Image as ImageIcon, ArrowUp, ArrowDown, Eye, X, Newspaper } from 'lucide-react';
 
 // The newsletter, in two halves.
 //
@@ -23,33 +23,38 @@ const KINDS = [
 ];
 const kindMeta = (k) => KINDS.find(x => x.value === k) || KINDS[4];
 
-function CardEditor({ card, onSave, onCancel }) {
+function CardEditor({ card, onSave, onCancel, tr = (x) => x, lang = 'en' }) {
   const [form, setForm] = useState({ kind: card?.kind || 'general', title: card?.title || '', body: card?.body || '' });
   const [saving, setSaving] = useState(false);
   return (
     <form onSubmit={async e => { e.preventDefault(); setSaving(true); try { await onSave(form); } finally { setSaving(false); } }}
       className="bg-white rounded-xl border border-powder-200 p-3 space-y-2">
+      {/* Cards are written once, in English, and translated on display — so the
+          editor always shows the original no matter which way the toggle is set. */}
+      {lang === 'es' && (
+        <p className="text-[11px] text-amber-700">{tr('You are editing the original text (English).')}</p>
+      )}
       <div className="flex gap-2">
         <select value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })}
           className="px-2.5 py-2 border border-gray-300 rounded-lg text-sm">
-          {KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+          {KINDS.map(k => <option key={k.value} value={k.value}>{tr(k.label)}</option>)}
         </select>
         <input required autoFocus value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
-          placeholder="Headline" className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          placeholder={tr('Headline')} className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
       </div>
       <textarea value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} rows={3}
-        placeholder="Details — dates, names, numbers…" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        placeholder={tr('Details — dates, names, numbers…')} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="px-3 py-1.5 bg-powder-600 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? tr('Saving…') : tr('Save')}
         </button>
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-gray-600 text-sm rounded-lg hover:bg-gray-100">Cancel</button>
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-gray-600 text-sm rounded-lg hover:bg-gray-100">{tr('Cancel')}</button>
       </div>
     </form>
   );
 }
 
-function NotesTab({ canEdit, cards, refresh, onBuild, building, tr = (x) => x }) {
+function NotesTab({ canEdit, cards, refresh, onBuild, building, tr = (x) => x, lang = 'en' }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -81,7 +86,10 @@ function NotesTab({ canEdit, cards, refresh, onBuild, building, tr = (x) => x })
     <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm text-gray-500">
-          Add to these through the month. {active} card{active === 1 ? '' : 's'} will go into the next newsletter.
+          {tr('Add to these through the month.')}{' '}
+          {active === 1
+            ? `1 ${tr('card will go into the next newsletter.')}`
+            : `${active} ${tr('cards will go into the next newsletter.')}`}
         </p>
         <div className="flex gap-2">
           {canEdit && !adding && (
@@ -99,32 +107,32 @@ function NotesTab({ canEdit, cards, refresh, onBuild, building, tr = (x) => x })
         </div>
       </div>
 
-      {adding && <CardEditor onSave={f => save(f)} onCancel={() => setAdding(false)} />}
+      {adding && <CardEditor onSave={f => save(f)} onCancel={() => setAdding(false)} tr={tr} lang={lang} />}
 
       <div className="space-y-2">
         {(cards || []).map((c, i) => (
           editingId === c.id ? (
-            <CardEditor key={c.id} card={c} onSave={f => save(f, c.id)} onCancel={() => setEditingId(null)} />
+            <CardEditor key={c.id} card={c} onSave={f => save(f, c.id)} onCancel={() => setEditingId(null)} tr={tr} lang={lang} />
           ) : (
             <div key={c.id} className={`bg-white rounded-xl border p-3 ${c.is_active ? 'border-gray-200' : 'border-gray-100 opacity-60'}`}>
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${kindMeta(c.kind).tone}`}>{tr(kindMeta(c.kind).label)}</span>
-                    <p className="font-medium text-gray-900">{c.title}</p>
-                    {!c.is_active && <span className="text-[10px] font-bold text-gray-400">HELD BACK</span>}
+                    <p className="font-medium text-gray-900">{tr(c.title)}</p>
+                    {!c.is_active && <span className="text-[10px] font-bold text-gray-400">{tr('HELD BACK')}</span>}
                   </div>
-                  {c.body && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{c.body}</p>}
-                  <p className="text-[11px] text-gray-400 mt-1">Updated by {c.updated_by || '—'}</p>
+                  {c.body && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{tr(c.body)}</p>}
+                  <p className="text-[11px] text-gray-400 mt-1">{tr('Updated by')} {c.updated_by || '—'}</p>
                 </div>
                 {canEdit && (
                   <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
                     <button onClick={() => move(c, -1)} disabled={i === 0} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30"><ArrowUp size={14} /></button>
                     <button onClick={() => move(c, 1)} disabled={i === (cards || []).length - 1} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30"><ArrowDown size={14} /></button>
                     <button onClick={() => toggle(c)} className="px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 rounded">
-                      {c.is_active ? 'Hold' : 'Include'}
+                      {c.is_active ? tr('Hold') : tr('Include')}
                     </button>
-                    <button onClick={() => setEditingId(c.id)} className="px-2 py-1 text-xs font-medium text-powder-700 hover:bg-powder-50 rounded">Edit</button>
+                    <button onClick={() => setEditingId(c.id)} className="px-2 py-1 text-xs font-medium text-powder-700 hover:bg-powder-50 rounded">{tr('Edit')}</button>
                     <button onClick={() => remove(c)} className="p-1 text-gray-300 hover:text-red-500"><Trash2 size={14} /></button>
                   </div>
                 )}
@@ -133,23 +141,26 @@ function NotesTab({ canEdit, cards, refresh, onBuild, building, tr = (x) => x })
           )
         ))}
         {(cards || []).length === 0 && (
-          <p className="text-center py-10 text-sm text-gray-400">No cards yet. Add events, shout-outs and news as they happen.</p>
+          <p className="text-center py-10 text-sm text-gray-400">{tr('No cards yet. Add events, shout-outs and news as they happen.')}</p>
         )}
       </div>
     </div>
   );
 }
 
-function IssueEditor({ issue, canEdit, onChanged, onClose }) {
+function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang = 'en', setLang, translating }) {
   const [draft, setDraft] = useState(issue);
   const [saving, setSaving] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [uploadingFor, setUploadingFor] = useState(null);
-  const [translating, setTranslating] = useState(false);
   const fileRef = useRef(null);
   const shared = draft.status === 'shared';
+  // Spanish is a view of the same document, so it reads rather than edits —
+  // typing into a translation would quietly overwrite the original.
+  const reading = lang === 'es';
+  const locked = shared || reading;
 
   const setSection = (id, patch) =>
     setDraft(d => ({ ...d, sections: d.sections.map(s => (s.id === id ? { ...s, ...patch } : s)) }));
@@ -170,22 +181,10 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
     try {
       const saved = await apiPut(`/newsletter/issues/${draft.id}`, {
         title: draft.title, intro: draft.intro, sections: draft.sections,
-        title_es: draft.title_es, intro_es: draft.intro_es, include_spanish: draft.include_spanish,
       });
       setDraft(saved);
-      onChanged?.();
+      onChanged?.(saved);
     } catch (e) { setError(e.message); } finally { setSaving(false); }
-  };
-
-  // The Spanish half is a first draft she edits, exactly like the Slack
-  // template: English newsletter, then the same thing in Spanish.
-  const translate = async () => {
-    setTranslating(true); setError('');
-    try {
-      await save();
-      const out = await apiPost(`/newsletter/issues/${draft.id}/translate`, {});
-      setDraft(out);
-    } catch (e) { setError(e.message); } finally { setTranslating(false); }
   };
 
   const attachImage = async (sectionId, files) => {
@@ -208,11 +207,11 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
   };
 
   const share = async () => {
-    if (!confirm('Share this newsletter to #announcements? It will be locked afterwards.')) return;
+    if (!confirm(`Share this newsletter to #announcements in ${lang === 'es' ? 'Spanish' : 'English'}? It will be locked afterwards.`)) return;
     setSharing(true); setError('');
     try {
       await save();
-      await apiPost(`/newsletter/issues/${draft.id}/share`, { message });
+      await apiPost(`/newsletter/issues/${draft.id}/share`, { message, lang });
       onChanged?.();
       onClose();
     } catch (e) { setError(e.message); } finally { setSharing(false); }
@@ -220,7 +219,7 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
 
   const openPdf = () => {
     // Presigned-free: the endpoint streams the PDF for whoever can view it.
-    fetch(`/api/newsletter/issues/${draft.id}/pdf`, { headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` } })
+    fetch(`/api/newsletter/issues/${draft.id}/pdf?lang=${lang}`, { headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` } })
       .then(r => r.blob())
       .then(b => window.open(URL.createObjectURL(b), '_blank', 'noopener'))
       .catch(() => setError('Could not open the PDF.'));
@@ -231,19 +230,20 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
       <div className="bg-gray-50 w-full max-w-3xl min-h-full sm:min-h-0 sm:rounded-2xl sm:shadow-xl sm:my-6 pb-20 sm:pb-0">
         <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-gray-200 bg-white sm:rounded-t-2xl sticky top-0 z-10">
           <div className="min-w-0">
-            <h3 className="font-semibold text-gray-900 truncate">{shared ? 'Shared newsletter' : 'Newsletter preview'}</h3>
+            <h3 className="font-semibold text-gray-900 truncate">
+              {tr(shared ? 'Shared newsletter' : 'Newsletter preview')}
+            </h3>
             <p className="text-[11px] text-gray-400">
-              {shared ? `Shared by ${draft.shared_by} · ${(draft.shared_at || '').slice(0, 10)}` : 'Edit anything before it goes out.'}
+              {shared ? `${tr('Shared by')} ${draft.shared_by} · ${(draft.shared_at || '').slice(0, 10)}`
+                : reading ? tr('Reading in Spanish. Switch to EN to make changes.')
+                : tr('Edit anything before it goes out.')}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {!shared && canEdit && (
-              <button onClick={translate} disabled={translating}
-                className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 disabled:opacity-50">
-                <Languages size={13} /> {translating ? 'Translating…' : 'Translate to Spanish'}
-              </button>
-            )}
-            <button onClick={openPdf} className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">
+          <div className="flex items-center gap-2 shrink-0">
+            {/* The preview covers the page, so it carries its own toggle —
+                otherwise "switch to EN to edit" would be impossible to act on. */}
+            {setLang && <LangToggle lang={lang} setLang={setLang} translating={translating} />}
+            <button onClick={openPdf} className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">
               <FileText size={13} /> PDF
             </button>
             <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
@@ -252,38 +252,27 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
 
         <div className="p-3 sm:p-5 space-y-3">
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {reading && !shared && (
+            <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              {tr('Reading in Spanish. The PDF and Share will use Spanish too. Switch to EN to edit.')}
+            </p>
+          )}
 
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
-            <input value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} disabled={shared}
+            <input value={reading ? tr(draft.title) : draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} disabled={locked}
               className="w-full text-xl font-bold text-gray-900 border-0 border-b border-transparent focus:border-gray-200 focus:outline-none disabled:bg-transparent" />
-            <textarea value={draft.intro || ''} onChange={e => setDraft({ ...draft, intro: e.target.value })} disabled={shared}
-              rows={2} placeholder="A short intro (optional)"
+            <textarea value={reading ? tr(draft.intro || '') : (draft.intro || '')} onChange={e => setDraft({ ...draft, intro: e.target.value })} disabled={locked}
+              rows={2} placeholder={tr('A short intro (optional)')}
               className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
-            {(draft.title_es || draft.intro_es) && (
-              <div className="pt-2 mt-1 border-t border-dashed border-gray-200 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Español</p>
-                <input value={draft.title_es || ''} onChange={e => setDraft({ ...draft, title_es: e.target.value })} disabled={shared}
-                  className="w-full text-lg font-bold text-gray-900 border-0 border-b border-transparent focus:border-gray-200 focus:outline-none disabled:bg-transparent" />
-                <textarea value={draft.intro_es || ''} onChange={e => setDraft({ ...draft, intro_es: e.target.value })} disabled={shared}
-                  rows={2} className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
-                {!shared && (
-                  <label className="flex items-center gap-2 text-xs text-gray-600">
-                    <input type="checkbox" checked={draft.include_spanish !== 0}
-                      onChange={e => setDraft({ ...draft, include_spanish: e.target.checked ? 1 : 0 })} />
-                    Include the Spanish version in the newsletter
-                  </label>
-                )}
-              </div>
-            )}
           </div>
 
           {draft.sections.map((s, i) => (
             <div key={s.id} className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
               <div className="flex items-start gap-2">
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 mt-1 ${kindMeta(s.kind).tone}`}>{kindMeta(s.kind).label}</span>
-                <input value={s.title} onChange={e => setSection(s.id, { title: e.target.value })} disabled={shared}
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 mt-1 ${kindMeta(s.kind).tone}`}>{tr(kindMeta(s.kind).label)}</span>
+                <input value={reading ? tr(s.title) : s.title} onChange={e => setSection(s.id, { title: e.target.value })} disabled={locked}
                   className="flex-1 font-semibold text-gray-900 border-0 border-b border-transparent focus:border-gray-200 focus:outline-none disabled:bg-transparent" />
-                {!shared && (
+                {!locked && (
                   <div className="flex items-center gap-0.5 shrink-0">
                     <button onClick={() => moveSection(s.id, -1)} disabled={i === 0} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30"><ArrowUp size={14} /></button>
                     <button onClick={() => moveSection(s.id, 1)} disabled={i === draft.sections.length - 1} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30"><ArrowDown size={14} /></button>
@@ -291,45 +280,36 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
                   </div>
                 )}
               </div>
-              <textarea value={s.body || ''} onChange={e => setSection(s.id, { body: e.target.value })} disabled={shared} rows={3}
+              <textarea value={reading ? tr(s.body || '') : (s.body || '')} onChange={e => setSection(s.id, { body: e.target.value })} disabled={locked} rows={3}
                 className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
-              {(s.title_es || s.body_es) && (
-                <div className="pt-2 border-t border-dashed border-gray-200 space-y-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Español</p>
-                  <input value={s.title_es || ''} onChange={e => setSection(s.id, { title_es: e.target.value })} disabled={shared}
-                    className="w-full font-semibold text-gray-900 border-0 border-b border-transparent focus:border-gray-200 focus:outline-none disabled:bg-transparent" />
-                  <textarea value={s.body_es || ''} onChange={e => setSection(s.id, { body_es: e.target.value })} disabled={shared} rows={3}
-                    className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
-                </div>
-              )}
               {s.image_url && <img src={s.image_url} alt="" className="rounded-lg max-h-56 object-contain" />}
-              {!shared && canEdit && (
+              {!locked && canEdit && (
                 <div>
                   <input ref={s.id === uploadingFor ? fileRef : null} type="file" accept="image/*" className="hidden"
                     id={`img-${s.id}`} onChange={e => attachImage(s.id, e.target.files)} />
                   <label htmlFor={`img-${s.id}`}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs font-medium cursor-pointer hover:bg-gray-200">
-                    <ImageIcon size={13} /> {uploadingFor === s.id ? 'Uploading…' : (s.image_id ? 'Replace image' : 'Add an image')}
+                    <ImageIcon size={13} /> {uploadingFor === s.id ? tr('Uploading…') : (s.image_id ? tr('Replace image') : tr('Add an image'))}
                   </label>
                 </div>
               )}
             </div>
           ))}
 
-          {!shared && canEdit && (
+          {!locked && canEdit && (
             <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
-              <label className="block text-xs font-medium text-gray-700">Message to post with it</label>
+              <label className="block text-xs font-medium text-gray-700">{tr('Message to post with it')}</label>
               <textarea value={message} onChange={e => setMessage(e.target.value)} rows={2}
-                placeholder="e.g. July newsletter is here — big month for the sticks line 🎉"
+                placeholder={tr('e.g. July newsletter is here — big month for the sticks line 🎉')}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2" />
               <div className="flex flex-col sm:flex-row gap-2">
                 <button onClick={share} disabled={sharing}
                   className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50">
-                  <Send size={14} /> {sharing ? 'Sharing…' : 'Share to #announcements'}
+                  <Send size={14} /> {sharing ? tr('Sharing…') : tr('Share to #announcements')}
                 </button>
                 <button onClick={save} disabled={saving}
                   className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 disabled:opacity-50">
-                  {saving ? 'Saving…' : 'Save draft'}
+                  {saving ? tr('Saving…') : tr('Save draft')}
                 </button>
               </div>
             </div>
@@ -340,24 +320,52 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
   );
 }
 
-// Labels the page toggle covers. (The newsletter's own Spanish half is a
-// separate thing — that's content, translated once and edited by hand.)
+// The page's own labels. Card and newsletter text is added to these at render
+// time, so one toggle translates the chrome and the document together.
 const PAGE_STRINGS = [
   'Newsletter', 'Notes', 'Newsletters', 'Add a card', 'Build newsletter', 'Building…',
   'Collect news through the month, then send it out in one go.', 'Open', 'Draft', 'Shared',
   'Upcoming event', 'Shout-out', 'Big news', 'Stats', 'General', 'Hold', 'Include', 'Edit',
+  'Newsletter preview', 'Shared newsletter', 'Edit anything before it goes out.', 'Shared by',
+  'Reading in Spanish. Switch to EN to make changes.', 'Message to post with it', 'Save draft',
+  'Share to #announcements', 'Sharing…', 'Saving…',
+  'Reading in Spanish. The PDF and Share will use Spanish too. Switch to EN to edit.',
+  'Add to these through the month.', 'card will go into the next newsletter.',
+  'cards will go into the next newsletter.', 'HELD BACK', 'Updated by',
+  'No cards yet. Add events, shout-outs and news as they happen.',
+  'Nothing built yet — add some notes, then press Build newsletter.',
+  'section', 'sections', 'SHARED', 'DRAFT', 'Save', 'Cancel', 'Headline',
+  'Details — dates, names, numbers…', 'A short intro (optional)',
+  'You are editing the original text (English).',
+  'Uploading…', 'Replace image', 'Add an image',
+  'e.g. July newsletter is here — big month for the sticks line 🎉',
 ];
 
 export default function NewsletterPanel() {
   const { user } = useAuth();
   const canEdit = canEditModule(user, 'newsletter');
-  const { lang, setLang, tr, translating: pageTranslating } = usePageTranslation(PAGE_STRINGS);
   const [tab, setTab] = useState('notes');
   const [open, setOpen] = useState(null);
   const [building, setBuilding] = useState(false);
 
   const { data: cards, refresh: refreshCards } = useApiGet('/newsletter/cards');
   const { data: issues, refresh: refreshIssues } = useApiGet('/newsletter/issues');
+
+  // The toggle covers the whole document, not just the chrome: every card, and
+  // every heading and paragraph of whatever newsletter is open, goes through
+  // the same translator as the labels.
+  const contentStrings = useMemo(() => {
+    const out = [...PAGE_STRINGS];
+    for (const c of cards || []) { out.push(c.title); if (c.body) out.push(c.body); }
+    for (const i of issues || []) out.push(i.title);
+    if (open) {
+      out.push(open.title);
+      if (open.intro) out.push(open.intro);
+      for (const s of open.sections || []) { out.push(s.title); if (s.body) out.push(s.body); }
+    }
+    return out;
+  }, [cards, issues, open]);
+  const { lang, setLang, tr, translating: pageTranslating } = usePageTranslation(contentStrings);
 
   const build = async () => {
     setBuilding(true);
@@ -389,7 +397,7 @@ export default function NewsletterPanel() {
       </div>
 
       {tab === 'notes' && (
-        <NotesTab canEdit={canEdit} cards={cards} refresh={refreshCards} onBuild={build} building={building} tr={tr} />
+        <NotesTab canEdit={canEdit} cards={cards} refresh={refreshCards} onBuild={build} building={building} tr={tr} lang={lang} />
       )}
 
       {tab === 'issues' && (
@@ -397,31 +405,37 @@ export default function NewsletterPanel() {
           {(issues || []).map(i => (
             <div key={i.id} className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3">
               <div className="min-w-0 flex-1">
-                <p className="font-medium text-gray-900 truncate">{i.title}</p>
+                <p className="font-medium text-gray-900 truncate">{tr(i.title)}</p>
                 <p className="text-[11px] text-gray-400">
                   {i.status === 'shared'
-                    ? `Shared by ${i.shared_by} · ${(i.shared_at || '').slice(0, 10)}`
-                    : `Draft · ${i.sections.length} section${i.sections.length === 1 ? '' : 's'}`}
+                    ? `${tr('Shared by')} ${i.shared_by} · ${(i.shared_at || '').slice(0, 10)}`
+                    : `${tr('Draft')} · ${i.sections.length} ${i.sections.length === 1 ? tr('section') : tr('sections')}`}
                 </p>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${i.status === 'shared' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                {i.status === 'shared' ? 'SHARED' : 'DRAFT'}
+                {i.status === 'shared' ? tr('SHARED') : tr('DRAFT')}
               </span>
               <button onClick={() => openIssue(i)}
                 className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">
-                <Eye size={13} /> Open
+                <Eye size={13} /> {tr('Open')}
               </button>
             </div>
           ))}
           {(issues || []).length === 0 && (
-            <p className="text-center py-10 text-sm text-gray-400">Nothing built yet — add some notes, then press Build newsletter.</p>
+            <p className="text-center py-10 text-sm text-gray-400">{tr('Nothing built yet — add some notes, then press Build newsletter.')}</p>
           )}
         </div>
       )}
 
       {open && (
         <IssueEditor issue={open} canEdit={canEdit} onClose={() => setOpen(null)}
-          onChanged={() => { refreshIssues(); refreshCards(); }} />
+          tr={tr} lang={lang} setLang={setLang} translating={pageTranslating}
+          onChanged={(saved) => {
+            refreshIssues(); refreshCards();
+            // Keep the open issue current so a switch to ES translates what was
+            // just written, not the text it replaced.
+            if (saved) setOpen(saved);
+          }} />
       )}
     </div>
   );

@@ -838,6 +838,21 @@ function addColumnIfMissing(table, column, definition) {
   return false;
 }
 
+// The mirror of the above, for columns a feature no longer has any use for.
+// Leaving dead columns behind makes the next reader guess whether they matter.
+function dropColumnIfPresent(table, column) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.find(c => c.name === column)) return false;
+  try {
+    db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+    console.log(`[migrate] Dropped ${table}.${column}`);
+    return true;
+  } catch (e) {
+    console.warn(`[migrate] Could not drop ${table}.${column}:`, e.message);
+    return false;
+  }
+}
+
 function runMigrations() {
   addColumnIfMissing('calibration_instruments', 'room', 'TEXT');
   addColumnIfMissing('calibration_instruments', 'asset_number', 'TEXT');
@@ -857,9 +872,8 @@ function runMigrations() {
   addColumnIfMissing('production_schedule', 'flavor_approved_by', 'TEXT');
   addColumnIfMissing('production_schedule', 'flavor_approved_at', 'TEXT');
 
-  // Invoice content search: text pulled from the uploaded file (PDF text layer
-  // or vision OCR). NULL = not yet indexed; '' = indexed, nothing extractable.
-  addColumnIfMissing('supply_invoices', 'extracted_text', 'TEXT');
+  // (supply_invoices.extracted_text is added further down, right after the
+  // office tables are created — a column migration can't run before its table.)
 
   // 72-hour re-clean workflow: per-room applicability overrides plus the
   // dismiss / N-A / not-in-use / task-assigned actions taken on a flag. An
@@ -1398,34 +1412,6 @@ function runMigrations() {
   // badge that admins raise when they publish/update the week's schedule.
   addColumnIfMissing('users', 'schedule_seen_at', 'TEXT');
 
-  // Payroll follow-through: once Marnee has reviewed an absence/tardy she still
-  // has to enter it in ADP, per pay period. These columns track that last mile
-  // so nothing silently misses payroll.
-  addColumnIfMissing('time_adjustments', 'pay_period', 'TEXT');
-  addColumnIfMissing('time_adjustments', 'adp_status', "TEXT DEFAULT 'pending'");
-  addColumnIfMissing('time_adjustments', 'adp_entered_by', 'TEXT');
-  addColumnIfMissing('time_adjustments', 'adp_entered_at', 'TEXT');
-  // Pay periods run every two weeks from the 2026-07-19 period. Recompute any
-  // row whose stored period isn't a period start date — that catches both new
-  // rows and the semi-monthly labels used before this rule was confirmed.
-  try {
-    const rows = db.prepare("SELECT id, adjustment_date FROM time_adjustments WHERE adjustment_date IS NOT NULL AND (pay_period IS NULL OR pay_period NOT LIKE '____-__-__')").all();
-    if (rows.length) {
-      const anchor = Date.parse('2026-07-19T00:00:00Z');
-      const upd = db.prepare('UPDATE time_adjustments SET pay_period = ? WHERE id = ?');
-      const tx = db.transaction(() => {
-        for (const r of rows) {
-          const d = String(r.adjustment_date).slice(0, 10);
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-          const n = Math.floor((Date.parse(`${d}T00:00:00Z`) - anchor) / (14 * 86400000));
-          upd.run(new Date(anchor + n * 14 * 86400000).toISOString().slice(0, 10), r.id);
-        }
-      });
-      tx();
-      console.log(`[db] Set biweekly pay periods on ${rows.length} time entries`);
-    }
-  } catch { /* table optional */ }
-
   // Light Inspection (Form 110-01/02) and Brittle Plastic & Glass (Form 431-02)
   // are QA inspections that happen to be stored as sanitation_records. Tagging
   // them keeps the Sanitation log about cleaning and puts the inspections on
@@ -1555,6 +1541,38 @@ function runMigrations() {
   } catch (e) {
     console.warn('[db] office ops tables unavailable:', e.message);
   }
+
+  // Invoice content search: text pulled from the uploaded file (PDF text layer
+  // or vision OCR). NULL = not yet indexed; '' = indexed, nothing extractable.
+  addColumnIfMissing('supply_invoices', 'extracted_text', 'TEXT');
+
+  // Payroll follow-through: once Marnee has reviewed an absence/tardy she still
+  // has to enter it in ADP, per pay period. These columns track that last mile
+  // so nothing silently misses payroll.
+  addColumnIfMissing('time_adjustments', 'pay_period', 'TEXT');
+  addColumnIfMissing('time_adjustments', 'adp_status', "TEXT DEFAULT 'pending'");
+  addColumnIfMissing('time_adjustments', 'adp_entered_by', 'TEXT');
+  addColumnIfMissing('time_adjustments', 'adp_entered_at', 'TEXT');
+  // Pay periods run every two weeks from the 2026-07-19 period. Recompute any
+  // row whose stored period isn't a period start date — that catches both new
+  // rows and the semi-monthly labels used before this rule was confirmed.
+  try {
+    const rows = db.prepare("SELECT id, adjustment_date FROM time_adjustments WHERE adjustment_date IS NOT NULL AND (pay_period IS NULL OR pay_period NOT LIKE '____-__-__')").all();
+    if (rows.length) {
+      const anchor = Date.parse('2026-07-19T00:00:00Z');
+      const upd = db.prepare('UPDATE time_adjustments SET pay_period = ? WHERE id = ?');
+      const tx = db.transaction(() => {
+        for (const r of rows) {
+          const d = String(r.adjustment_date).slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+          const n = Math.floor((Date.parse(`${d}T00:00:00Z`) - anchor) / (14 * 86400000));
+          upd.run(new Date(anchor + n * 14 * 86400000).toISOString().slice(0, 10), r.id);
+        }
+      });
+      tx();
+      console.log(`[db] Set biweekly pay periods on ${rows.length} time entries`);
+    }
+  } catch { /* table optional */ }
 
   // ── Finance: Accounts Payable / Accounts Receivable ────────────────────────
   // Jake's two ledgers, deliberately flat: one row per invoice, money in
@@ -1714,11 +1732,13 @@ function runMigrations() {
     console.warn('[db] newsletter tables unavailable:', e.message);
   }
 
-  // Newsletters go out bilingual, the way the Slack template did it: the whole
-  // thing in English, then the whole thing again in Spanish.
-  addColumnIfMissing('newsletter_issues', 'title_es', 'TEXT');
-  addColumnIfMissing('newsletter_issues', 'intro_es', 'TEXT');
-  addColumnIfMissing('newsletter_issues', 'include_spanish', 'INTEGER NOT NULL DEFAULT 1');
+  // A newsletter is written once, in English, and read in whichever language
+  // the EN/ES toggle is set to — the PDF renders in that language too. An
+  // earlier pass stored a hand-kept Spanish half alongside the English one;
+  // these columns are what's left of it.
+  for (const col of ['title_es', 'intro_es', 'include_spanish']) {
+    dropColumnIfPresent('newsletter_issues', col);
+  }
 
   // ── Procurement & demand planning (Jake) ──────────────────────────────────
   // Reference data comes from his two workbooks: the combined BOMs drive parts

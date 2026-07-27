@@ -121,13 +121,9 @@ router.put('/issues/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Newsletter not found' });
   if (existing.status === 'shared') return res.status(400).json({ error: 'This newsletter has already been shared. Build a new one to make changes.' });
   const b = req.body || {};
-  db.prepare(`UPDATE newsletter_issues SET title = ?, intro = ?, sections = ?, title_es = ?, intro_es = ?,
-    include_spanish = ?, updated_at = datetime('now') WHERE id = ?`)
+  db.prepare(`UPDATE newsletter_issues SET title = ?, intro = ?, sections = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(b.title ?? existing.title, b.intro ?? existing.intro,
-      b.sections ? JSON.stringify(b.sections) : existing.sections,
-      b.title_es ?? existing.title_es, b.intro_es ?? existing.intro_es,
-      b.include_spanish === undefined ? existing.include_spanish : (b.include_spanish ? 1 : 0),
-      req.params.id);
+      b.sections ? JSON.stringify(b.sections) : existing.sections, req.params.id);
   const updated = db.prepare('SELECT * FROM newsletter_issues WHERE id = ?').get(req.params.id);
   res.json({ ...updated, sections: parseSections(updated.sections) });
 });
@@ -140,39 +136,6 @@ router.delete('/issues/:id', (req, res) => {
   db.prepare('DELETE FROM newsletter_issues WHERE id = ?').run(req.params.id);
   logAudit(req.user, 'delete', 'newsletter', req.params.id, null, existing, null, existing.title);
   res.json({ deleted: req.params.id });
-});
-
-// Translate the whole issue into Spanish in one pass. She can edit every line
-// afterwards — this is a first draft, not the final word.
-router.post('/issues/:id/translate', async (req, res) => {
-  if (!requireAccess(req, res, 'edit')) return;
-  if (!aiEnabled()) return res.status(503).json({ error: 'AI translation is not configured on this server.' });
-  const db = getDb();
-  const issue = db.prepare('SELECT * FROM newsletter_issues WHERE id = ?').get(req.params.id);
-  if (!issue) return res.status(404).json({ error: 'Newsletter not found' });
-  if (issue.status === 'shared') return res.status(400).json({ error: 'This newsletter has already been shared.' });
-
-  const sections = parseSections(issue.sections);
-  // One flat list keeps the order predictable when the answers come back.
-  const texts = [issue.title, issue.intro || '', ...sections.flatMap(s => [s.title, s.body || ''])];
-  let out;
-  try { out = await translateCached(texts, 'es'); }
-  catch (e) { return res.status(502).json({ error: `Translation failed: ${e.message}` }); }
-
-  const titleEs = out[0] || issue.title;
-  const introEs = out[1] || issue.intro;
-  const nextSections = sections.map((s, i) => ({
-    ...s,
-    title_es: out[2 + i * 2] || s.title,
-    body_es: out[3 + i * 2] || s.body,
-  }));
-
-  db.prepare(`UPDATE newsletter_issues SET title_es = ?, intro_es = ?, sections = ?, include_spanish = 1,
-    updated_at = datetime('now') WHERE id = ?`)
-    .run(titleEs, introEs, JSON.stringify(nextSections), issue.id);
-
-  const updated = db.prepare('SELECT * FROM newsletter_issues WHERE id = ?').get(issue.id);
-  res.json({ ...updated, sections: parseSections(updated.sections) });
 });
 
 // ── Images ───────────────────────────────────────────────────────────────────
@@ -222,8 +185,23 @@ const KIND_LABEL = {
 
 // Renders the issue to a PDF buffer. Images are fetched from storage; a
 // missing one is skipped rather than failing the whole newsletter.
-async function renderPdf(db, issue) {
-  const sections = parseSections(issue.sections);
+async function renderPdf(db, issue, lang = 'en') {
+  let sections = parseSections(issue.sections);
+  let title = issue.title;
+  let intro = issue.intro;
+
+  // Spanish is a translation of the same newsletter, not a second half bolted
+  // on: everything the PDF prints goes through the cached translator, so the
+  // document reads end-to-end in the language that was asked for.
+  if (lang === 'es' && aiEnabled()) {
+    const texts = [title, intro || '', ...sections.flatMap(s => [s.title, s.body || ''])];
+    try {
+      const out = await translateCached(texts, 'es');
+      title = out[0] || title;
+      intro = out[1] || intro;
+      sections = sections.map((s, i) => ({ ...s, title: out[2 + i * 2] || s.title, body: out[3 + i * 2] || s.body }));
+    } catch { /* fall back to English rather than fail the download */ }
+  }
   const imageIds = sections.map(s => s.image_id).filter(Boolean);
   const images = new Map();
   for (const id of imageIds) {
@@ -244,65 +222,37 @@ async function renderPdf(db, issue) {
       try { doc.image(readFileSync(LOGO_PATH), 54, 40, { height: 34 }); } catch { /* logo optional */ }
     }
     doc.moveDown(2.2);
-    doc.fillColor('#26262a').font('Helvetica-Bold').fontSize(24).text(issue.title, { align: 'left' });
+    doc.fillColor('#26262a').font('Helvetica-Bold').fontSize(24).text(title, { align: 'left' });
     doc.moveDown(0.2);
     doc.font('Helvetica').fontSize(10).fillColor('#6c6c73')
-      .text(new Date(issue.created_at?.replace(' ', 'T') || Date.now()).toLocaleDateString('en-US', { dateStyle: 'long' }));
+      .text(new Date(issue.created_at?.replace(' ', 'T') || Date.now())
+        .toLocaleDateString(lang === 'es' ? 'es-US' : 'en-US', { dateStyle: 'long' }));
     doc.moveTo(54, doc.y + 10).lineTo(558, doc.y + 10).strokeColor('#e5e4df').stroke();
     doc.moveDown(1.2);
 
-    if (issue.intro) {
-      doc.font('Helvetica').fontSize(11).fillColor('#26262a').text(issue.intro, { align: 'left' });
+    if (intro) {
+      doc.font('Helvetica').fontSize(11).fillColor('#26262a').text(intro, { align: 'left' });
       doc.moveDown(1);
     }
 
-    // One pass per language: English first, then the same newsletter in
-    // Spanish, matching the layout the team is used to.
-    const renderSections = (lang) => {
-      for (const s of sections) {
-        const title = lang === 'es' ? (s.title_es || s.title) : s.title;
-        const body = lang === 'es' ? (s.body_es || s.body) : s.body;
-        if (doc.y > 640) doc.addPage();
-        const label = KIND_LABEL[s.kind];
-        if (label) {
-          doc.font('Helvetica-Bold').fontSize(8).fillColor('#4f6ff5')
-            .text((lang === 'es' ? KIND_LABEL_ES[s.kind] || label : label).toUpperCase(), { characterSpacing: 0.8 });
-          doc.moveDown(0.15);
-        }
-        doc.font('Helvetica-Bold').fontSize(14).fillColor('#26262a').text(title);
-        if (body) {
-          doc.moveDown(0.2);
-          doc.font('Helvetica').fontSize(11).fillColor('#3a3a40').text(body, { align: 'left', lineGap: 2 });
-        }
-        // Images belong to the section, so they appear in both languages.
-        const img = s.image_id && images.get(s.image_id);
-        if (img) {
-          doc.moveDown(0.5);
-          try { doc.image(img, { fit: [440, 260], align: 'center' }); } catch { /* unreadable image */ }
-        }
-        doc.moveDown(1);
+    for (const s of sections) {
+      if (doc.y > 640) doc.addPage();
+      const label = lang === 'es' ? (KIND_LABEL_ES[s.kind] || KIND_LABEL[s.kind]) : KIND_LABEL[s.kind];
+      if (label) {
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#4f6ff5').text(label.toUpperCase(), { characterSpacing: 0.8 });
+        doc.moveDown(0.15);
       }
-    };
-
-    const hasSpanish = issue.include_spanish !== 0
-      && (issue.title_es || sections.some(s => s.title_es || s.body_es));
-    if (hasSpanish) {
-      doc.font('Helvetica-Oblique').fontSize(10).fillColor('#6c6c73')
-        .text('(Una versión en español de este boletín se encuentra a continuación.)');
-      doc.moveDown(0.8);
-    }
-
-    renderSections('en');
-
-    if (hasSpanish) {
-      doc.addPage();
-      doc.font('Helvetica-Bold').fontSize(22).fillColor('#26262a').text(issue.title_es || issue.title);
-      doc.moveDown(0.3);
-      if (issue.intro_es || issue.intro) {
-        doc.font('Helvetica').fontSize(11).fillColor('#26262a').text(issue.intro_es || issue.intro);
-        doc.moveDown(1);
+      doc.font('Helvetica-Bold').fontSize(14).fillColor('#26262a').text(s.title);
+      if (s.body) {
+        doc.moveDown(0.2);
+        doc.font('Helvetica').fontSize(11).fillColor('#3a3a40').text(s.body, { align: 'left', lineGap: 2 });
       }
-      renderSections('es');
+      const img = s.image_id && images.get(s.image_id);
+      if (img) {
+        doc.moveDown(0.5);
+        try { doc.image(img, { fit: [440, 260], align: 'center' }); } catch { /* unreadable image */ }
+      }
+      doc.moveDown(1);
     }
 
     doc.font('Helvetica').fontSize(9).fillColor('#9a9aa2')
@@ -317,7 +267,7 @@ router.get('/issues/:id/pdf', async (req, res) => {
   const issue = db.prepare('SELECT * FROM newsletter_issues WHERE id = ?').get(req.params.id);
   if (!issue) return res.status(404).json({ error: 'Newsletter not found' });
   try {
-    const pdf = await renderPdf(db, issue);
+    const pdf = await renderPdf(db, issue, req.query.lang === 'es' ? 'es' : 'en');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${issue.title.replace(/[^\w -]+/g, '')}.pdf"`);
     res.send(pdf);
@@ -343,11 +293,12 @@ router.post('/issues/:id/share', async (req, res) => {
   const channel = getChannelByName(db, channelName);
   if (!channel) return res.status(404).json({ error: `No #${channelName} channel found.` });
 
+  const lang = req.body?.lang === 'es' ? 'es' : 'en';
   let pdf;
-  try { pdf = await renderPdf(db, issue); }
+  try { pdf = await renderPdf(db, issue, lang); }
   catch (e) { return res.status(500).json({ error: `Could not build the PDF: ${e.message}` }); }
 
-  const filename = `${issue.title.replace(/[^\w -]+/g, '').trim() || 'newsletter'}.pdf`;
+  const filename = `${issue.title.replace(/[^\w -]+/g, '').trim() || 'newsletter'}${lang === 'es' ? ' (ES)' : ''}.pdf`;
   const key = `newsletter/${issue.id}-${filename}`;
   await putObject(key, pdf, 'application/pdf');
 
