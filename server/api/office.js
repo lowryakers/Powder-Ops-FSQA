@@ -3,8 +3,8 @@ import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
-import { aiEnabled, translateText, transcribeImage } from '../ai.js';
-import { extractPdfText } from './documents.js';
+import { aiEnabled, translateText } from '../ai.js';
+import { extractInvoiceText } from '../invoice-text.js';
 
 // Office Ops: supply ordering + time tracking (replaces two Monday boards).
 // Submitting is open to supervisors + admins (or anyone explicitly granted the
@@ -39,35 +39,6 @@ function requireSubmit(req, res, kind) {
 function requireAdmin(req, res) {
   if (req.user?.role !== 'admin') { res.status(403).json({ error: 'Admin only.' }); return false; }
   return true;
-}
-
-// ── Invoice content indexing ─────────────────────────────────────────────────
-// Same idea as the SOP/Job-Description importer: pull the text out of each
-// uploaded file so search covers what's INSIDE the invoice, not just its
-// filename. PDFs go through pdfjs; photos/scans go through AI vision OCR.
-// Failures store '' so a broken file isn't retried forever.
-async function extractInvoiceText(buffer, contentType, filename) {
-  try {
-    const isPdf = /pdf/i.test(contentType || '') || /\.pdf$/i.test(filename || '');
-    if (isPdf) {
-      // extractPdfText returns { text, pages }. Scanned PDFs with no text
-      // layer yield '' — nothing else to try without page rendering.
-      const res = await extractPdfText(buffer);
-      const text = typeof res === 'string' ? res : (res?.text || '');
-      return text.trim().slice(0, 20000);
-    }
-    if (/^image\//i.test(contentType || '') && aiEnabled()) {
-      const mediaTypes = { 'image/jpeg': 'image/jpeg', 'image/jpg': 'image/jpeg', 'image/png': 'image/png', 'image/webp': 'image/webp', 'image/gif': 'image/gif' };
-      const mt = mediaTypes[(contentType || '').toLowerCase()];
-      if (mt) {
-        const text = await transcribeImage(buffer, mt);
-        return (text || '').trim().slice(0, 20000);
-      }
-    }
-  } catch (e) {
-    console.warn('[invoices] text extraction failed:', e.message);
-  }
-  return '';
 }
 
 function saveInvoiceText(db, id, text) {

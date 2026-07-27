@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -54,6 +54,7 @@ import SupplyOrdersPanel from './components/office/SupplyOrdersPanel.jsx';
 import TimeTrackingPanel from './components/office/TimeTrackingPanel.jsx';
 import CheckedOutPanel from './components/compliance/CheckedOutPanel.jsx';
 import OfficeRequestsPanel from './components/office/OfficeRequestsPanel.jsx';
+import LedgerPanel from './components/office/LedgerPanel.jsx';
 
 const NAV_GROUPS = [
   {
@@ -142,6 +143,8 @@ const NAV_GROUPS = [
       { id: 'office-requests', label: 'Requests', icon: ShoppingCart },
       { id: 'supply-orders', label: 'Supply Orders', icon: ShoppingCart, adminOnly: true },
       { id: 'time-tracking', label: 'Time Tracking', icon: AlarmClock, adminOnly: true },
+      { id: 'accounts-payable', label: 'Accounts Payable', icon: Receipt, keywords: 'AP bills vendors invoices owed' },
+      { id: 'accounts-receivable', label: 'Accounts Receivable', icon: Landmark, keywords: 'AR customers invoices billed' },
     ],
   },
   {
@@ -1456,6 +1459,8 @@ function App() {
           {resolvedTab === 'operator' && <OperatorView />}
           {resolvedTab === 'office-requests' && <OfficeRequestsPanel />}
           {resolvedTab === 'qa-inspections' && <QAInspectionsPanel />}
+          {resolvedTab === 'accounts-payable' && <LedgerPanel ledger="ap" />}
+          {resolvedTab === 'accounts-receivable' && <LedgerPanel ledger="ar" />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}

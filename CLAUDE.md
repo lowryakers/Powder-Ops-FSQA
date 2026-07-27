@@ -81,6 +81,23 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## Office finance: AP / AR (+ QuickBooks)
+`ap_invoices` / `ar_invoices` / `finance_files` (`server/api/finance.js`, one router driven by a per-ledger
+config; UI is one `LedgerPanel.jsx` with `ledger="ap"|"ar"`). KPI cards are plain SQL sums. Bulk file upload
+→ R2, contents OCR'd via the shared `server/invoice-text.js` (extracted from office.js; supply invoices use
+it too) so search hits text *inside* the PDF. Modules `accounts-payable` / `accounts-receivable` are granted
+separately in Settings.
+**QuickBooks** (`server/quickbooks.js`) degrades gracefully like storage/ai: pull-only sync of Bills→AP and
+Invoices→AR, upserted on `qb_id`; money fields come from QBO, everything else stays local. Refresh tokens
+rotate, so the current one is persisted in `app_settings.qbo_refresh_token`. **Env:** `QBO_CLIENT_ID`,
+`QBO_CLIENT_SECRET`, `QBO_REFRESH_TOKEN`, `QBO_REALM_ID` (optional `QBO_ENV=sandbox`). Written against QBO
+v3 but **not yet exercised against a real company** — verify the pull before building push-back.
+
+## Whole-page EN/ES
+`src/lib/usePageTranslation.js` + `src/components/LangToggle.jsx`: pass every string the page shows, get
+`tr()` back. Uses the cached `/ai/translate-content` endpoint, so it silently stays English when AI is off.
+Wired into Supply Orders, Time Tracking and both finance ledgers; reusable anywhere.
+
 ## Sign-in usernames (short) vs full names (records)
 `users.username` = what people type to sign in, derived first + last from `users.name`
 (`server/usernames.js`, backfilled on boot, unique index, admin-editable in Settings). `users.name` stays

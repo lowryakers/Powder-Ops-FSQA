@@ -84,6 +84,8 @@ const MODULE_GROUPS = [
       // staff). The full Supply Orders / Time Tracking modules stay admin-only.
       { id: 'supply-requests', label: 'Supply Order request form' },
       { id: 'time-requests', label: 'Time Tracking request form' },
+      { id: 'accounts-payable', label: 'Accounts Payable' },
+      { id: 'accounts-receivable', label: 'Accounts Receivable' },
     ],
   },
   {

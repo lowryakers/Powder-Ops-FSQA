@@ -1541,6 +1541,85 @@ function runMigrations() {
     console.warn('[db] office ops tables unavailable:', e.message);
   }
 
+  // ── Finance: Accounts Payable / Accounts Receivable ────────────────────────
+  // Jake's two ledgers, deliberately flat: one row per invoice, money in
+  // dollars, status as a short vocabulary the KPI cards can add up. Attached
+  // files live in finance_files (R2 like every other upload) and their text is
+  // indexed so search covers what's inside the PDF.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ap_invoices (
+        id             TEXT PRIMARY KEY,
+        vendor         TEXT NOT NULL,
+        invoice_number TEXT,
+        po_number      TEXT,
+        invoice_date   TEXT,
+        due_date       TEXT,
+        terms          TEXT,
+        category       TEXT,
+        amount         REAL NOT NULL DEFAULT 0,
+        amount_paid    REAL NOT NULL DEFAULT 0,
+        status         TEXT NOT NULL DEFAULT 'awaiting_approval'
+                       CHECK (status IN ('draft','awaiting_approval','approved','scheduled','paid','void')),
+        approved_by    TEXT,
+        approved_at    TEXT,
+        paid_date      TEXT,
+        payment_method TEXT,
+        payment_ref    TEXT,
+        notes          TEXT,
+        file_id        TEXT,
+        qb_id          TEXT,
+        qb_synced_at   TEXT,
+        created_by     TEXT,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_ap_status ON ap_invoices(status, due_date);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ap_qb ON ap_invoices(qb_id) WHERE qb_id IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS ar_invoices (
+        id              TEXT PRIMARY KEY,
+        customer        TEXT NOT NULL,
+        invoice_number  TEXT,
+        po_number       TEXT,
+        invoice_date    TEXT,
+        due_date        TEXT,
+        terms           TEXT,
+        amount          REAL NOT NULL DEFAULT 0,
+        amount_received REAL NOT NULL DEFAULT 0,
+        status          TEXT NOT NULL DEFAULT 'unbilled'
+                        CHECK (status IN ('unbilled','sent','partial','paid','void')),
+        sent_date       TEXT,
+        paid_date       TEXT,
+        notes           TEXT,
+        file_id         TEXT,
+        qb_id           TEXT,
+        qb_synced_at    TEXT,
+        created_by      TEXT,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_ar_status ON ar_invoices(status, due_date);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ar_qb ON ar_invoices(qb_id) WHERE qb_id IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS finance_files (
+        id             TEXT PRIMARY KEY,
+        ledger         TEXT NOT NULL DEFAULT 'ap' CHECK (ledger IN ('ap','ar')),
+        invoice_id     TEXT,
+        filename       TEXT NOT NULL,
+        storage_key    TEXT NOT NULL,
+        size           INTEGER,
+        content_type   TEXT,
+        extracted_text TEXT,
+        uploaded_by    TEXT,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_finance_files_invoice ON finance_files(invoice_id);
+    `);
+  } catch (e) {
+    console.warn('[db] finance tables unavailable:', e.message);
+  }
+
   // Slack import: original message ts for idempotent re-imports.
   addColumnIfMissing('chat_messages', 'external_id', 'TEXT');
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_external ON chat_messages(channel_id, external_id)'); } catch { /* ignore */ }

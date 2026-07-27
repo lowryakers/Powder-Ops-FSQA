@@ -11,6 +11,7 @@ import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import { getDb, dataDir } from './server/db.js';
 import { readyDocOrigin } from './server/links.js';
+import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
 import pmRoutes from './server/api/pm.js';
@@ -1338,6 +1339,7 @@ app.use('/api/mock-recalls', requireModuleWrite('recall'), mockRecallRoutes);
 app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator'), productionRoutes);
 app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
 app.use('/api/office', officeRoutes);
+app.use('/api/finance', financeRoutes);
 
 // Version check (used by client to detect updates)
 app.get('/api/version', (_req, res) => {
@@ -1407,6 +1409,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillEmbeddings().catch(e => console.warn('[comms] embedding backfill error:', e.message));
   // Index the contents of previously-uploaded invoices (no-op unless storage is on).
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
+  backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
   startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical });
   startReminderLoop(db);
