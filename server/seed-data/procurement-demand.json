@@ -1,0 +1,562 @@
+[
+{
+"product_number": "202278",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Butterfinger)",
+"requested_qty": 5000.0
+},
+{
+"product_number": "202279",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Kit Kat)",
+"requested_qty": 100.0
+},
+{
+"product_number": "202280",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Snickers)",
+"requested_qty": 100.0
+},
+{
+"product_number": "202288",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Peanut Butter & Jelly)",
+"requested_qty": 77.0
+},
+{
+"product_number": "202302",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Salted Caramel)",
+"requested_qty": 1000.0
+},
+{
+"product_number": "202303",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Star Spangled Sprinkles)",
+"requested_qty": 100.0
+},
+{
+"product_number": "202305",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Toasted Coconut)",
+"requested_qty": 588.0
+},
+{
+"product_number": "202306",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Apple Strudel)",
+"requested_qty": 932.0
+},
+{
+"product_number": "202307",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Banana Cream)",
+"requested_qty": 485.0
+},
+{
+"product_number": "202308",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Cheesecake Crumble)",
+"requested_qty": 319.0
+},
+{
+"product_number": "202310",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Reese\u2019s )",
+"requested_qty": 100.0
+},
+{
+"product_number": "202314",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Sugar Cookie)",
+"requested_qty": 49912.0
+},
+{
+"product_number": "202315",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Chocolate PB)",
+"requested_qty": 66443.0
+},
+{
+"product_number": "202316",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Chocolate Mint)",
+"requested_qty": 36345.0
+},
+{
+"product_number": "202322",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Fruity Cereal)",
+"requested_qty": 19942.0
+},
+{
+"product_number": "202376",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Pomegranate)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202396",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Pumpkin Spice)",
+"requested_qty": 16685.0
+},
+{
+"product_number": "202621",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Salted Caramel)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202622",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Blueberry Muffin)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202623",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Cinnamon Roll)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202624",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Double Chocolate)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202625",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Salted Caramel)",
+"requested_qty": 2100.0
+},
+{
+"product_number": "202626",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Blueberry Muffin)",
+"requested_qty": 2100.0
+},
+{
+"product_number": "202627",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Cinnamon Roll)",
+"requested_qty": 2100.0
+},
+{
+"product_number": "202628",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Double Chocolate)",
+"requested_qty": 2100.0
+},
+{
+"product_number": "202650",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Bananas Foster)",
+"requested_qty": 2100.0
+},
+{
+"product_number": "202651",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Birthday Cake)",
+"requested_qty": 2100.0
+},
+{
+"product_number": "202652",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Key Lime Pie)",
+"requested_qty": 2100.0
+},
+{
+"product_number": "202653",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Lemon Cake)",
+"requested_qty": 2100.0
+},
+{
+"product_number": "202654",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Red Velvet)",
+"requested_qty": 2100.0
+},
+{
+"product_number": "202655",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Red Velvet)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202656",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Lemon Cake)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202658",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Key Lime Pie)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202659",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Birthday Cake)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202660",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Bananas Foster)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202690",
+"product_name": "INTERMEDIATE- ProDough Beef Protein Stick (Toffee Cream)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202691",
+"product_name": "INTERMEDIATE- ProDough Beef Protein Stick (Cinnamon Sugar)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202692",
+"product_name": "INTERMEDIATE- ProDough Beef Protein Stick (Double Chocolate)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202693",
+"product_name": "INTERMEDIATE- ProDough Beef Protein Stick (Frosted Vanilla)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202707",
+"product_name": "INTERMEDIATE- ProDough Plant Protein Stick (Brownie Batter)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202708",
+"product_name": "INTERMEDIATE- ProDough Plant Protein Stick (Cafe Mocha)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202709",
+"product_name": "INTERMEDIATE- ProDough Plant Protein Stick (Salted Caramel)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "202710",
+"product_name": "INTERMEDIATE- ProDough Plant Protein Stick (Vanilla Cone)",
+"requested_qty": 52500.0
+},
+{
+"product_number": "FG0900",
+"product_name": "FINISHED GOOD- ProDough Protein Pancake (Buttermilk)",
+"requested_qty": 31439.0
+},
+{
+"product_number": "FG0905",
+"product_name": "FINISHED GOOD- ProDough Protein Pancake (Pumpkin Spice)",
+"requested_qty": 2938.0
+},
+{
+"product_number": "FG0906",
+"product_name": "FINISHED GOOD-ProDough Protein Pancake (Cinnamon Swirl)",
+"requested_qty": 11460.0
+},
+{
+"product_number": "FG0907",
+"product_name": "FINISHED GOOD- ProDough Protein Crepe Mix (Original)",
+"requested_qty": 2351.0
+},
+{
+"product_number": "FG0908",
+"product_name": "FINISHED GOOD- ProDough Protein Crepe Mix (Chocolate)",
+"requested_qty": 562.0
+},
+{
+"product_number": "FG0909",
+"product_name": "FINISHED GOOD- ProDough Protein Pancake (Chocolate)",
+"requested_qty": 6809.0
+},
+{
+"product_number": "FG0932",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Peach Cobbler)",
+"requested_qty": 1252.0
+},
+{
+"product_number": "FG0959",
+"product_name": "FINISHED GOOD- ProDough Protein Cupcake (Vanilla)",
+"requested_qty": 1572.0
+},
+{
+"product_number": "FG0960",
+"product_name": "FINISHED GOOD- ProDough Protein Cupcake (Cinnamon)",
+"requested_qty": 1098.0
+},
+{
+"product_number": "FG0961",
+"product_name": "FINISHED GOOD- ProDough Protein Cupcake (Chocolate)",
+"requested_qty": 1916.0
+},
+{
+"product_number": "FG0962",
+"product_name": "FINISHED GOOD- ProDough Protein Cupcake (Pumpkin)",
+"requested_qty": 2400.0
+},
+{
+"product_number": "FG0967",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Double Chocolate)",
+"requested_qty": 1112.0
+},
+{
+"product_number": "FG0968",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Cinnamon Sugar)",
+"requested_qty": 3501.0
+},
+{
+"product_number": "FG0969",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Wild Blueberry)",
+"requested_qty": 945.0
+},
+{
+"product_number": "FG0970",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Lemon Poppy Seed)",
+"requested_qty": 767.0
+},
+{
+"product_number": "FG0971",
+"product_name": "FINISHED GOOD- ProDough Gluten Free Flour",
+"requested_qty": 179.0
+},
+{
+"product_number": "FG0975",
+"product_name": "FINISHED GOOD- ProDough Daily Recharge 20ct Pouch (Tropical)",
+"requested_qty": 537.0
+},
+{
+"product_number": "FG0976",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Chocolate Mousse)",
+"requested_qty": 7346.0
+},
+{
+"product_number": "FG0977",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Strawberry Shortcake)",
+"requested_qty": 3207.0
+},
+{
+"product_number": "FG0978",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Horchata)",
+"requested_qty": 1367.0
+},
+{
+"product_number": "FG0979",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Raspberry Cheesecake)",
+"requested_qty": 5136.0
+},
+{
+"product_number": "FG0980",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Maple Donut)",
+"requested_qty": 1137.0
+},
+{
+"product_number": "FG0981",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Glazed Donut)",
+"requested_qty": 1035.0
+},
+{
+"product_number": "FG0982",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Apple Pie)",
+"requested_qty": 1086.0
+},
+{
+"product_number": "FG0983",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Orange Cream)",
+"requested_qty": 3820.0
+},
+{
+"product_number": "FG0984",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Coconut Cream)",
+"requested_qty": 9453.0
+},
+{
+"product_number": "FG0985",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Cookie Crumble)",
+"requested_qty": 2695.0
+},
+{
+"product_number": "FG0986",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Iced Mocha)",
+"requested_qty": 2734.0
+},
+{
+"product_number": "FG0987",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Neapolitan)",
+"requested_qty": 1278.0
+},
+{
+"product_number": "FG0988",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Snickerdoodle)",
+"requested_qty": 2032.0
+},
+{
+"product_number": "FG0989",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Vanilla Bean)",
+"requested_qty": 5136.0
+},
+{
+"product_number": "FG1019",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Pumpkin Spice)",
+"requested_qty": 77.0
+},
+{
+"product_number": "FG1020",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Sugar Cookie)",
+"requested_qty": 1635.0
+},
+{
+"product_number": "FG1021",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Fruity Cereal)",
+"requested_qty": 422.0
+},
+{
+"product_number": "FG1022",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Chocolate Peanut Butter)",
+"requested_qty": 2811.0
+},
+{
+"product_number": "FG1023",
+"product_name": "FINISHED GOOD- ProDough Whey Protein (Chocolate Mint)",
+"requested_qty": 1290.0
+},
+{
+"product_number": "FG1024",
+"product_name": "FINISHED GOOD- ProDough Plant Protein (Salted Caramel)(V2)",
+"requested_qty": 243.0
+},
+{
+"product_number": "FG1025",
+"product_name": "FINISHED GOOD- ProDough Plant Protein (Brownie Batter)(V2)",
+"requested_qty": 473.0
+},
+{
+"product_number": "FG1026",
+"product_name": "FINISHED GOOD- ProDough Plant Protein (Cafe Mocha)",
+"requested_qty": 141.0
+},
+{
+"product_number": "FG1027",
+"product_name": "FINISHED GOOD- ProDough Plant Protein (Vanilla Cone) (V2)",
+"requested_qty": 319.0
+},
+{
+"product_number": "FG1127",
+"product_name": "FINISHED GOOD- ProDough Protein Oatmeal Cup (Apple Cinnamon)",
+"requested_qty": 12071.0
+},
+{
+"product_number": "FG1128",
+"product_name": "FINISHED GOOD- ProDough Protein Oatmeal Cup (Maple Brown Sugar)",
+"requested_qty": 17278.0
+},
+{
+"product_number": "FG1129",
+"product_name": "FINISHED GOOD- ProDough Protein Oatmeal Cup (Cinnamon Spice)",
+"requested_qty": 11900.0
+},
+{
+"product_number": "FG1141",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Vanilla Cream)",
+"requested_qty": 945.0
+},
+{
+"product_number": "FG1155",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Chocolate Peanut Butter)",
+"requested_qty": 971.0
+},
+{
+"product_number": "FG1156",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Raspberry Cheesecake) (Chocolate)",
+"requested_qty": 779.0
+},
+{
+"product_number": "FG1157",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Peanut Butter Banana)",
+"requested_qty": 562.0
+},
+{
+"product_number": "FG1158",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Heath Bar)",
+"requested_qty": 120.0
+},
+{
+"product_number": "FG1159",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Oreo)",
+"requested_qty": 300.0
+},
+{
+"product_number": "FG1160",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Andes Mint Pieces)",
+"requested_qty": 800.0
+},
+{
+"product_number": "FG1162",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Strawberries & Cream)",
+"requested_qty": 435.0
+},
+{
+"product_number": "FG1163",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Key Lime)",
+"requested_qty": 2600.0
+},
+{
+"product_number": "FG1164",
+"product_name": "FINISHED GOOD- ProDough Protein Donut Box (Birthday Cake)",
+"requested_qty": 932.0
+},
+{
+"product_number": "IM0033",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Chocolate Mousse)",
+"requested_qty": 82374.0
+},
+{
+"product_number": "IM0034",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Strawberry Shortcake)",
+"requested_qty": 66750.0
+},
+{
+"product_number": "IM0035",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Horchata)",
+"requested_qty": 17872.0
+},
+{
+"product_number": "IM0036",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Raspberry Cheesecake)",
+"requested_qty": 61359.0
+},
+{
+"product_number": "IM0037",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Maple Donut)",
+"requested_qty": 22893.0
+},
+{
+"product_number": "IM0038",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Glazed Donut)",
+"requested_qty": 22817.0
+},
+{
+"product_number": "IM0039",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Apple Pie)",
+"requested_qty": 29243.0
+},
+{
+"product_number": "IM0040",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Orange Cream)",
+"requested_qty": 50921.0
+},
+{
+"product_number": "IM0041",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Coconut Cream)",
+"requested_qty": 79295.0
+},
+{
+"product_number": "IM0042",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Cookie Crumble)",
+"requested_qty": 50742.0
+},
+{
+"product_number": "IM0043",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Iced Mocha)",
+"requested_qty": 36614.0
+},
+{
+"product_number": "IM0044",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Neapolitan)",
+"requested_qty": 21961.0
+},
+{
+"product_number": "IM0045",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Snickerdoodle)",
+"requested_qty": 41480.0
+},
+{
+"product_number": "IM0046",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Vanilla Bean)",
+"requested_qty": 62623.0
+},
+{
+"product_number": "IM0047",
+"product_name": "INTERMEDIATE- ProDough Whey Protein Stick (Peach Cobbler)",
+"requested_qty": 38619.0
+},
+{
+"product_number": "Product number",
+"product_name": "Product name",
+"requested_qty": 0
+}
+]

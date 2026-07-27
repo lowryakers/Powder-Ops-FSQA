@@ -1,0 +1,152 @@
+import { useState, useMemo } from 'react';
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react';
+
+// A plain, fast table for the office data sheets: click a header to sort,
+// type to search everything, and pick values from any column marked filterable.
+// Cells can render themselves and can be edited in place when the column says
+// so — that's what makes these feel like the spreadsheets they replace.
+//
+// columns: [{ key, label, width, align, type: 'text'|'number'|'money'|'date',
+//             filter: true, edit: true, render: (row) => node }]
+export default function DataGrid({
+  columns, rows, loading, empty = 'Nothing here yet.',
+  onEdit, canEdit = false, searchPlaceholder = 'Search…', toolbar, rowClass,
+  initialSort,
+}) {
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState(initialSort || null);   // { key, dir }
+  const [filters, setFilters] = useState({});
+  const [editing, setEditing] = useState(null);            // { id, key }
+  const [draft, setDraft] = useState('');
+
+  const filterable = columns.filter(c => c.filter);
+  const options = useMemo(() => {
+    const out = {};
+    for (const c of filterable) {
+      out[c.key] = [...new Set((rows || []).map(r => r[c.key]).filter(v => v !== null && v !== undefined && v !== ''))]
+        .sort((a, b) => String(a).localeCompare(String(b))).slice(0, 200);
+    }
+    return out;
+  }, [rows, filterable]);
+
+  const view = useMemo(() => {
+    let list = rows || [];
+    for (const [key, val] of Object.entries(filters)) {
+      if (val) list = list.filter(r => String(r[key] ?? '') === val);
+    }
+    const needle = q.toLowerCase().trim();
+    if (needle) {
+      list = list.filter(r => columns.some(c => String(r[c.key] ?? '').toLowerCase().includes(needle)));
+    }
+    if (sort) {
+      const col = columns.find(c => c.key === sort.key);
+      const dir = sort.dir === 'asc' ? 1 : -1;
+      const numeric = col?.type === 'number' || col?.type === 'money';
+      list = [...list].sort((a, b) => {
+        const av = a[sort.key], bv = b[sort.key];
+        if (numeric) return ((Number(av) || 0) - (Number(bv) || 0)) * dir;
+        return String(av ?? '').localeCompare(String(bv ?? '')) * dir;
+      });
+    }
+    return list;
+  }, [rows, filters, q, sort, columns]);
+
+  const toggleSort = (key) => setSort(s => (s?.key === key
+    ? (s.dir === 'asc' ? { key, dir: 'desc' } : null)
+    : { key, dir: 'asc' }));
+
+  const startEdit = (row, col) => {
+    if (!canEdit || !col.edit) return;
+    setEditing({ id: row.id, key: col.key });
+    setDraft(row[col.key] ?? '');
+  };
+  const commit = async (row, col) => {
+    setEditing(null);
+    const value = col.type === 'number' || col.type === 'money' ? Number(draft) || 0 : draft;
+    if (String(row[col.key] ?? '') === String(value)) return;
+    await onEdit?.(row, col.key, value);
+  };
+
+  const fmt = (row, col) => {
+    if (col.render) return col.render(row);
+    const v = row[col.key];
+    if (v === null || v === undefined || v === '') return <span className="text-gray-300">—</span>;
+    if (col.type === 'money') return `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (col.type === 'number') return Number(v).toLocaleString('en-US', { maximumFractionDigits: 4 });
+    return String(v);
+  };
+
+  const activeFilters = Object.entries(filters).filter(([, v]) => v);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={searchPlaceholder}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-white" />
+        </div>
+        {filterable.map(c => (
+          <select key={c.key} value={filters[c.key] || ''} onChange={e => setFilters(f => ({ ...f, [c.key]: e.target.value }))}
+            className="px-2.5 py-2 border border-gray-200 rounded-lg text-xs bg-white text-gray-600 max-w-[180px]">
+            <option value="">{c.label}: all</option>
+            {(options[c.key] || []).map(v => <option key={v} value={v}>{String(v)}</option>)}
+          </select>
+        ))}
+        {activeFilters.length > 0 && (
+          <button onClick={() => setFilters({})} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700">
+            <X size={12} /> Clear filters
+          </button>
+        )}
+        {toolbar}
+        <span className="text-xs text-gray-400 ml-auto">{view.length.toLocaleString()} of {(rows || []).length.toLocaleString()}</span>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 sticky top-0 z-10">
+            <tr>
+              {columns.map(c => (
+                <th key={c.key} onClick={() => toggleSort(c.key)}
+                  className={`px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap ${c.align === 'right' ? 'text-right' : 'text-left'}`}
+                  style={c.width ? { width: c.width } : undefined}>
+                  <span className="inline-flex items-center gap-1">
+                    {c.label}
+                    {sort?.key === c.key
+                      ? (sort.dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
+                      : <ArrowUpDown size={11} className="text-gray-300" />}
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">Loading…</td></tr>}
+            {!loading && view.length === 0 && <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">{empty}</td></tr>}
+            {!loading && view.map(row => (
+              <tr key={row.id} className={`border-t border-gray-100 hover:bg-gray-50 ${rowClass?.(row) || ''}`}>
+                {columns.map(c => {
+                  const isEditing = editing && editing.id === row.id && editing.key === c.key;
+                  return (
+                    <td key={c.key}
+                      onDoubleClick={() => startEdit(row, c)}
+                      className={`px-3 py-1.5 ${c.align === 'right' ? 'text-right' : ''} ${canEdit && c.edit ? 'cursor-text' : ''}`}>
+                      {isEditing ? (
+                        <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+                          onBlur={() => commit(row, c)}
+                          onKeyDown={e => { if (e.key === 'Enter') commit(row, c); if (e.key === 'Escape') setEditing(null); }}
+                          type={c.type === 'number' || c.type === 'money' ? 'number' : 'text'} step="any"
+                          className={`w-full px-1 py-0.5 border border-powder-400 rounded text-sm ${c.align === 'right' ? 'text-right' : ''}`} />
+                      ) : fmt(row, c)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {canEdit && <p className="text-[11px] text-gray-400">Double-click a highlighted cell to edit it.</p>}
+    </div>
+  );
+}

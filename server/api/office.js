@@ -237,12 +237,18 @@ router.post('/time/adjustments', (req, res) => {
   res.status(201).json(created);
 });
 
-// Semi-monthly pay periods (1st-15th, 16th-EOM) written as "2026-07 A/B".
-// Kept as a plain derived string so filtering and grouping need no date math.
+// Pay periods are every two weeks, anchored on the 2026-07-19 → 2026-08-01
+// period. Stored as the period's start date (YYYY-MM-DD) so it sorts and
+// filters without any date maths; the UI renders it as "7/19 – 8/1".
+export const PAY_PERIOD_ANCHOR = '2026-07-19';
+const DAY = 86400000;
+
 function payPeriodFor(dateStr) {
   const d = String(dateStr || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
-  return `${d.slice(0, 7)} ${Number(d.slice(8, 10)) <= 15 ? 'A' : 'B'}`;
+  const anchor = Date.parse(`${PAY_PERIOD_ANCHOR}T00:00:00Z`);
+  const n = Math.floor((Date.parse(`${d}T00:00:00Z`) - anchor) / (14 * DAY));
+  return new Date(anchor + n * 14 * DAY).toISOString().slice(0, 10);
 }
 
 router.get('/time/adjustments', (req, res) => {

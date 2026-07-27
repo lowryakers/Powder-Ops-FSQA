@@ -1405,10 +1405,25 @@ function runMigrations() {
   addColumnIfMissing('time_adjustments', 'adp_status', "TEXT DEFAULT 'pending'");
   addColumnIfMissing('time_adjustments', 'adp_entered_by', 'TEXT');
   addColumnIfMissing('time_adjustments', 'adp_entered_at', 'TEXT');
+  // Pay periods run every two weeks from the 2026-07-19 period. Recompute any
+  // row whose stored period isn't a period start date — that catches both new
+  // rows and the semi-monthly labels used before this rule was confirmed.
   try {
-    db.prepare(`UPDATE time_adjustments
-      SET pay_period = substr(adjustment_date, 1, 7) || (CASE WHEN CAST(substr(adjustment_date, 9, 2) AS INTEGER) <= 15 THEN ' A' ELSE ' B' END)
-      WHERE pay_period IS NULL AND adjustment_date IS NOT NULL`).run();
+    const rows = db.prepare("SELECT id, adjustment_date FROM time_adjustments WHERE adjustment_date IS NOT NULL AND (pay_period IS NULL OR pay_period NOT LIKE '____-__-__')").all();
+    if (rows.length) {
+      const anchor = Date.parse('2026-07-19T00:00:00Z');
+      const upd = db.prepare('UPDATE time_adjustments SET pay_period = ? WHERE id = ?');
+      const tx = db.transaction(() => {
+        for (const r of rows) {
+          const d = String(r.adjustment_date).slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+          const n = Math.floor((Date.parse(`${d}T00:00:00Z`) - anchor) / (14 * 86400000));
+          upd.run(new Date(anchor + n * 14 * 86400000).toISOString().slice(0, 10), r.id);
+        }
+      });
+      tx();
+      console.log(`[db] Set biweekly pay periods on ${rows.length} time entries`);
+    }
   } catch { /* table optional */ }
 
   // Light Inspection (Form 110-01/02) and Brittle Plastic & Glass (Form 431-02)
@@ -1619,6 +1634,129 @@ function runMigrations() {
   } catch (e) {
     console.warn('[db] finance tables unavailable:', e.message);
   }
+
+  // ── Procurement & demand planning (Jake) ──────────────────────────────────
+  // Reference data comes from his two workbooks: the combined BOMs drive parts
+  // demand, the parts/pricing sheet drives sourcing, and samples track what's
+  // being evaluated. Purchase orders are entered here.
+  //
+  // Scenarios are the "make a copy to edit" habit made safe: demand-plan rows
+  // and POs carry a scenario_id (NULL = the live plan). Editing inside a
+  // scenario never touches live numbers, reverting drops the scenario, and
+  // applying copies it over live in one transaction.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS procurement_scenarios (
+        id         TEXT PRIMARY KEY,
+        name       TEXT NOT NULL,
+        note       TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        applied_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS procurement_parts (
+        id             TEXT PRIMARY KEY,
+        part_no        TEXT NOT NULL,
+        description    TEXT,
+        vendor         TEXT,
+        price          REAL,
+        current_price  REAL,
+        moq            REAL,
+        lead_time_days REAL,
+        priority       REAL,
+        mrp_updated    INTEGER DEFAULT 0,
+        last_checked   TEXT,
+        link           TEXT,
+        notes          TEXT,
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_proc_parts_no ON procurement_parts(part_no);
+
+      CREATE TABLE IF NOT EXISTS procurement_boms (
+        id               TEXT PRIMARY KEY,
+        bom_number       TEXT,
+        bom_name         TEXT,
+        product_number   TEXT NOT NULL,
+        product_name     TEXT,
+        group_number     TEXT,
+        group_name       TEXT,
+        part_no          TEXT NOT NULL,
+        part_description TEXT,
+        uom              TEXT,
+        bom_qty          REAL NOT NULL DEFAULT 0,
+        fill_weight      REAL NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_proc_boms_product ON procurement_boms(product_number);
+      CREATE INDEX IF NOT EXISTS idx_proc_boms_part ON procurement_boms(part_no);
+
+      CREATE TABLE IF NOT EXISTS procurement_demand (
+        id             TEXT PRIMARY KEY,
+        scenario_id    TEXT,
+        product_number TEXT NOT NULL,
+        product_name   TEXT,
+        requested_qty  REAL NOT NULL DEFAULT 0,
+        quarter        TEXT,
+        notes          TEXT,
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_proc_demand_scenario ON procurement_demand(scenario_id, product_number);
+
+      CREATE TABLE IF NOT EXISTS procurement_samples (
+        id             TEXT PRIMARY KEY,
+        item_name      TEXT NOT NULL,
+        vendor         TEXT,
+        status         TEXT,
+        viable         TEXT,
+        qc_approved    TEXT,
+        quality_rank   REAL,
+        demand_qty     REAL,
+        price          REAL,
+        moq            REAL,
+        lead_time      TEXT,
+        notes          TEXT,
+        ordering_notes TEXT,
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS purchase_orders (
+        id            TEXT PRIMARY KEY,
+        scenario_id   TEXT,
+        po_number     TEXT,
+        vendor        TEXT NOT NULL,
+        part_no       TEXT,
+        description   TEXT,
+        qty           REAL NOT NULL DEFAULT 0,
+        uom           TEXT,
+        unit_price    REAL NOT NULL DEFAULT 0,
+        order_date    TEXT,
+        expected_date TEXT,
+        received_date TEXT,
+        status        TEXT NOT NULL DEFAULT 'open'
+                      CHECK (status IN ('draft','open','confirmed','shipped','received','cancelled')),
+        urgent        INTEGER NOT NULL DEFAULT 0,
+        notes         TEXT,
+        created_by    TEXT,
+        created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_po_scenario ON purchase_orders(scenario_id, status);
+    `);
+  } catch (e) {
+    console.warn('[db] procurement tables unavailable:', e.message);
+  }
+
+  // Fields carried over from the Monday boards these ledgers replace.
+  addColumnIfMissing('ap_invoices', 'priority', 'TEXT');
+  addColumnIfMissing('ap_invoices', 'invoice_link', 'TEXT');
+  addColumnIfMissing('ap_invoices', 'ach_link', 'TEXT');
+  addColumnIfMissing('ap_invoices', 'pay_link', 'TEXT');
+  addColumnIfMissing('ap_invoices', 'pay_confirmation', 'TEXT');
+  addColumnIfMissing('ar_invoices', 'co_number', 'TEXT');
+  addColumnIfMissing('ar_invoices', 'person', 'TEXT');
+  addColumnIfMissing('ar_invoices', 'order_type', 'TEXT');
+  addColumnIfMissing('ar_invoices', 'invoice_link', 'TEXT');
+  addColumnIfMissing('ar_invoices', 'pay_confirmation', 'TEXT');
 
   // Slack import: original message ts for idempotent re-imports.
   addColumnIfMissing('chat_messages', 'external_id', 'TEXT');

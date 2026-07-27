@@ -12,6 +12,9 @@ import multer from 'multer';
 import { getDb, dataDir } from './server/db.js';
 import { readyDocOrigin } from './server/links.js';
 import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
+import procurementRoutes from './server/api/procurement.js';
+import { seedProcurement } from './server/procurement-seed.js';
+import { seedFinanceFromMonday } from './server/finance-seed.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
 import pmRoutes from './server/api/pm.js';
@@ -117,6 +120,15 @@ try {
 } catch (err) {
   console.error('[db] FATAL: Failed to initialize database:', err.message);
   process.exit(1);
+}
+
+// Office seeds: procurement reference data from Jake's workbooks, and the AP/AR
+// ledgers from the Monday exports. Both are idempotent.
+try {
+  seedProcurement(db);
+  seedFinanceFromMonday(db);
+} catch (e) {
+  console.warn('[seed] office seeding skipped:', e.message);
 }
 
 // Auto-seed equipment if table is empty
@@ -1340,6 +1352,7 @@ app.use('/api/production', requireModuleWrite('production-log', 'production-sche
 app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
 app.use('/api/office', officeRoutes);
 app.use('/api/finance', financeRoutes);
+app.use('/api/procurement', procurementRoutes);
 
 // Version check (used by client to detect updates)
 app.get('/api/version', (_req, res) => {

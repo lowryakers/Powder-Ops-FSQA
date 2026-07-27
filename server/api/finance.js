@@ -27,13 +27,15 @@ const LEDGERS = {
     table: 'ap_invoices', party: 'vendor', paidField: 'amount_paid',
     statuses: AP_STATUSES, moduleId: 'accounts-payable', entity: 'ap_invoice',
     fields: ['vendor', 'invoice_number', 'po_number', 'invoice_date', 'due_date', 'terms', 'category',
-      'amount', 'amount_paid', 'status', 'paid_date', 'payment_method', 'payment_ref', 'notes', 'file_id'],
+      'amount', 'amount_paid', 'status', 'paid_date', 'payment_method', 'payment_ref', 'notes', 'file_id',
+      'priority', 'invoice_link', 'ach_link', 'pay_link', 'pay_confirmation'],
   },
   ar: {
     table: 'ar_invoices', party: 'customer', paidField: 'amount_received',
     statuses: AR_STATUSES, moduleId: 'accounts-receivable', entity: 'ar_invoice',
     fields: ['customer', 'invoice_number', 'po_number', 'invoice_date', 'due_date', 'terms',
-      'amount', 'amount_received', 'status', 'sent_date', 'paid_date', 'notes', 'file_id'],
+      'amount', 'amount_received', 'status', 'sent_date', 'paid_date', 'notes', 'file_id',
+      'co_number', 'person', 'order_type', 'invoice_link', 'pay_confirmation'],
   },
 };
 

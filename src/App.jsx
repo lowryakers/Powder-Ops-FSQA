@@ -55,6 +55,7 @@ import TimeTrackingPanel from './components/office/TimeTrackingPanel.jsx';
 import CheckedOutPanel from './components/compliance/CheckedOutPanel.jsx';
 import OfficeRequestsPanel from './components/office/OfficeRequestsPanel.jsx';
 import LedgerPanel from './components/office/LedgerPanel.jsx';
+import ProcurementPanel from './components/office/ProcurementPanel.jsx';
 
 const NAV_GROUPS = [
   {
@@ -145,6 +146,7 @@ const NAV_GROUPS = [
       { id: 'time-tracking', label: 'Time Tracking', icon: AlarmClock, adminOnly: true },
       { id: 'accounts-payable', label: 'Accounts Payable', icon: Receipt, keywords: 'AP bills vendors invoices owed' },
       { id: 'accounts-receivable', label: 'Accounts Receivable', icon: Landmark, keywords: 'AR customers invoices billed' },
+      { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
     ],
   },
   {
@@ -1461,6 +1463,7 @@ function App() {
           {resolvedTab === 'qa-inspections' && <QAInspectionsPanel />}
           {resolvedTab === 'accounts-payable' && <LedgerPanel ledger="ap" />}
           {resolvedTab === 'accounts-receivable' && <LedgerPanel ledger="ar" />}
+          {resolvedTab === 'procurement' && <ProcurementPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}

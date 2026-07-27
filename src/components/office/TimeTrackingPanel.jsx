@@ -100,9 +100,22 @@ function EntryMessage({ e, compact = false }) {
   return txt ? <p className={compact ? 'text-sm text-gray-800' : 'mt-1.5 text-sm text-gray-800'}>{txt}</p> : <span className="text-gray-300">—</span>;
 }
 
-// Semi-monthly periods, matching the server's payPeriodFor().
-const payPeriodOf = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(String(d || '').slice(0, 10))
-  ? `${String(d).slice(0, 7)} ${Number(String(d).slice(8, 10)) <= 15 ? 'A' : 'B'}` : null);
+// Biweekly periods, matching the server's payPeriodFor(): the value is the
+// period's start date, shown as "7/19 – 8/1".
+const PAY_PERIOD_ANCHOR = Date.parse('2026-07-19T00:00:00Z');
+const payPeriodOf = (d) => {
+  const day = String(d || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const n = Math.floor((Date.parse(`${day}T00:00:00Z`) - PAY_PERIOD_ANCHOR) / (14 * 86400000));
+  return new Date(PAY_PERIOD_ANCHOR + n * 14 * 86400000).toISOString().slice(0, 10);
+};
+const payPeriodLabel = (start) => {
+  if (!start) return '';
+  const a = new Date(`${start}T00:00:00Z`);
+  const b = new Date(a.getTime() + 13 * 86400000);
+  const fmt = (x) => `${x.getUTCMonth() + 1}/${x.getUTCDate()}`;
+  return `${fmt(a)} – ${fmt(b)}`;
+};
 const ADP_STATES = [
   { value: 'pending', label: 'Pending', tone: 'bg-amber-100 text-amber-700' },
   { value: 'entered', label: 'In ADP', tone: 'bg-green-100 text-green-700' },
@@ -180,7 +193,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
         </select>
         <select value={periodFilter} onChange={e => setPeriodFilter(e.target.value)} className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
           <option value="">{tr('Pay period: all')}</option>
-          {periods.map(p => <option key={p} value={p}>{p}</option>)}
+          {periods.map(p => <option key={p} value={p}>{payPeriodLabel(p)}</option>)}
         </select>
         <select value={adpFilter} onChange={e => setAdpFilter(e.target.value)} className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
           <option value="">{tr('ADP: all')}</option>
@@ -278,7 +291,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
                           </button>
                         );
                       })()}
-                      <div className="text-[10px] text-gray-400">{e.pay_period || payPeriodOf(e.adjustment_date) || ''}</div>
+                      <div className="text-[10px] text-gray-400">{payPeriodLabel(e.pay_period || payPeriodOf(e.adjustment_date))}</div>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-right">
                       <div className="flex items-center gap-1 justify-end">
