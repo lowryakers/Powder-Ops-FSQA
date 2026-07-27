@@ -872,6 +872,12 @@ function runMigrations() {
   addColumnIfMissing('production_schedule', 'flavor_approved_by', 'TEXT');
   addColumnIfMissing('production_schedule', 'flavor_approved_at', 'TEXT');
 
+  // Good documentation practice for the production log: a filed EOD report is
+  // a record, so it is never quietly overwritten. Corrections are appended
+  // here as amendments — who, when, why, and each field's before/after — and
+  // the entry shows that it was amended. Nothing is ever destroyed.
+  addColumnIfMissing('production_entries', 'amendments', "TEXT NOT NULL DEFAULT '[]'");
+
   // (supply_invoices.extracted_text is added further down, right after the
   // office tables are created — a column migration can't run before its table.)
 

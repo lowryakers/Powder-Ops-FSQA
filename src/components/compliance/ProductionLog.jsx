@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2 } from 'lucide-react';
+import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2, Pencil } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { hasExplicitGrant } from '../../utils/permissions';
 
@@ -219,6 +219,198 @@ function QASignoffModal({ entry, user, onClose, onSaved }) {
   );
 }
 
+/* ── Amendments ──────────────────────────────────────────── */
+
+// The fields a correction may touch, mirroring AMENDABLE on the server. `date`
+// is deliberately not here: a report filed against the wrong day is a
+// different record, not a typo.
+const AMEND_FIELDS = [
+  { key: 'product_name', label: 'Product', type: 'text' },
+  { key: 'mo_number', label: 'MO #', type: 'text' },
+  { key: 'lot_number', label: 'Lot #', type: 'text' },
+  { key: 'team', label: 'Team', type: 'select', options: TEAMS },
+  { key: 'room', label: 'Room', type: 'select', options: ROOMS },
+  { key: 'start_time', label: 'Start time', type: 'time' },
+  { key: 'end_time', label: 'End time', type: 'time' },
+  { key: 'quantity_completed', label: 'Quantity completed', type: 'number' },
+  { key: 'people_count', label: 'People', type: 'number' },
+  { key: 'submitted_by', label: 'Submitted by', type: 'text' },
+  { key: 'notes', label: 'Notes', type: 'textarea' },
+];
+const MIN_REASON = 10;
+
+const fmtStamp = (ts) => (ts ? new Date(ts).toLocaleString() : '');
+const showVal = (v) => (v === null || v === undefined || v === '' ? '(blank)' : String(v));
+
+// The correction trail, shown on the record itself. An auditor should be able
+// to see that an entry was amended, what changed, who changed it and why,
+// without leaving the log to go dig through the audit report.
+function AmendmentTrail({ amendments }) {
+  if (!amendments?.length) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+      <p className="text-xs font-semibold text-amber-900">
+        Amended {amendments.length === 1 ? '1 time' : `${amendments.length} times`}
+      </p>
+      <ol className="mt-1 space-y-2">
+        {amendments.map((a, i) => (
+          <li key={a.id || i} className="text-[11px] text-amber-900/90">
+            <div className="font-medium">
+              {fmtStamp(a.amended_at)} · {a.amended_by}
+              {a.amended_by_role ? ` (${a.amended_by_role})` : ''}
+            </div>
+            <ul className="ml-3 list-disc">
+              {(a.changes || []).map((c, j) => (
+                <li key={j}>
+                  <span className="font-medium">{c.label || c.field}:</span>{' '}
+                  <span className="line-through opacity-70">{showVal(c.from)}</span> → <span className="font-semibold">{showVal(c.to)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="ml-3">Reason: {a.reason}</div>
+            {a.retired_qa_signoff && (
+              <div className="ml-3 italic">
+                Prior QA sign-off by {a.retired_qa_signoff.by} ({fmtStamp(a.retired_qa_signoff.at)}) was retired — the entry returned to Pending QA.
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+// Correcting a filed report. Deliberately heavier than an edit form: the reason
+// is mandatory, the attestation is spelled out, and re-signing is called out
+// before you commit rather than discovered afterwards.
+function AmendModal({ entry, onClose, onSaved }) {
+  const [form, setForm] = useState(() => {
+    const f = {};
+    for (const { key } of AMEND_FIELDS) f[key] = entry[key] ?? '';
+    return f;
+  });
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const changed = AMEND_FIELDS.filter(f => String(entry[f.key] ?? '') !== String(form[f.key] ?? ''));
+  const ready = changed.length > 0 && reason.trim().length >= MIN_REASON;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true); setError(null);
+    try {
+      const patch = { reason: reason.trim() };
+      for (const f of changed) patch[f.key] = form[f.key];
+      await apiPut(`/production/entries/${entry.id}`, patch);
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not save the correction.');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto sm:p-4">
+      <form onSubmit={submit} className="bg-white w-full max-w-2xl min-h-full sm:min-h-0 sm:rounded-xl sm:my-6 shadow-xl">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-gray-200 sticky top-0 bg-white sm:rounded-t-xl z-10">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-gray-900">Correct this entry</h3>
+            <p className="text-[11px] text-gray-500 truncate">
+              {entry.product_name} · MO {entry.mo_number} · {formatDate(entry.date)}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="p-4 sm:p-5 space-y-3">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p className="font-semibold">This is a correction, not an edit.</p>
+            <p className="mt-0.5">
+              The original values are kept and shown on the record along with your name, the time, and your
+              reason. Nothing is overwritten or deleted.
+            </p>
+            {entry.qa_signoff_by && (
+              <p className="mt-1 font-medium">
+                This entry was signed off by {entry.qa_signoff_by}. Correcting it retires that sign-off and
+                returns the entry to Pending QA, because a signature can only attest to what was reviewed.
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {AMEND_FIELDS.map(f => {
+              const dirty = String(entry[f.key] ?? '') !== String(form[f.key] ?? '');
+              const cls = `w-full px-3 py-2 border rounded-lg text-sm ${dirty ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`;
+              const set = (v) => setForm(s => ({ ...s, [f.key]: v }));
+              return (
+                <div key={f.key} className={f.type === 'textarea' ? 'sm:col-span-2' : ''}>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    {f.label}
+                    {dirty && <span className="ml-1 text-[10px] font-semibold text-amber-700">was {showVal(entry[f.key])}</span>}
+                  </label>
+                  {f.type === 'select' ? (
+                    <select value={form[f.key]} onChange={e => set(e.target.value)} className={cls}>
+                      {f.options.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : f.type === 'textarea' ? (
+                    <textarea value={form[f.key]} onChange={e => set(e.target.value)} rows={2} className={cls} />
+                  ) : (
+                    <input type={f.type} step={f.type === 'number' ? 'any' : undefined}
+                      value={form[f.key]} onChange={e => set(e.target.value)} className={cls} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Reason for the correction <span className="text-red-600">*</span>
+            </label>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2}
+              placeholder="e.g. Samples pulled for QA were not included in the original quantity."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <p className="mt-1 text-[11px] text-gray-500">
+              {reason.trim().length < MIN_REASON
+                ? `At least ${MIN_REASON} characters — this becomes part of the permanent record.`
+                : 'This becomes part of the permanent record.'}
+            </p>
+          </div>
+
+          {changed.length > 0 && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-xs font-semibold text-gray-700">You are changing {changed.length === 1 ? '1 field' : `${changed.length} fields`}:</p>
+              <ul className="mt-1 ml-4 list-disc text-[11px] text-gray-600">
+                {changed.map(f => (
+                  <li key={f.key}>
+                    {f.label}: <span className="line-through">{showVal(entry[f.key])}</span> → <span className="font-semibold">{showVal(form[f.key])}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <p className="text-[11px] text-gray-500 italic">
+            By saving, you certify that this correction is accurate, that the reason above is truthful, and
+            that the original entry has been preserved. Recorded under your name.
+          </p>
+
+          {error && <div className="px-3 py-2 rounded-lg text-sm bg-red-50 text-red-800">{error}</div>}
+        </div>
+
+        <div className="flex justify-end gap-2 px-4 sm:px-5 py-3 border-t border-gray-200 sticky bottom-0 bg-white sm:rounded-b-xl">
+          <button type="button" onClick={onClose} className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button type="submit" disabled={!ready || saving}
+            className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50">
+            {saving ? 'Recording…' : 'Record correction'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 /* ── Summary KPI Cards ───────────────────────────────────── */
 
 function SummaryCards({ from, to }) {
@@ -383,7 +575,9 @@ function LogTable({ user }) {
   const [roomFilter, setRoomFilter] = useState('');
   const [moSearch, setMoSearch] = useState('');
   const [signoffEntry, setSignoffEntry] = useState(null);
+  const [amendEntry, setAmendEntry] = useState(null);
   const [expandedNotes, setExpandedNotes] = useState(null);
+  const [openTrail, setOpenTrail] = useState(null);
   const [sortCol, setSortCol] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -401,6 +595,13 @@ function LogTable({ user }) {
   );
 
   const canSignoff = user.department === 'qa' || user.role === 'admin';
+  // Correcting a filed report is a deliberate, separately granted right —
+  // filing an EOD report does not carry the right to change one afterwards.
+  // Mirrors canEditLog() in server/api/production.js exactly, so the button
+  // never appears to someone the server would reject.
+  const ma = user?.module_access;
+  const canAmend = user?.role === 'admin'
+    || !!(ma && !Array.isArray(ma) && ma['production-log'] === 'edit');
 
   const filtered = useMemo(() => {
     if (!entries) return [];
@@ -510,6 +711,13 @@ function LogTable({ user }) {
               </div>
               {entry.qa_signoff_by && <div className="mt-1 text-xs text-green-600">QA: {entry.qa_signoff_by}</div>}
               {entry.notes && <div className="mt-2 text-xs text-gray-700 bg-gray-50 rounded-lg px-2 py-1.5 break-words"><span className="font-medium text-gray-900">Notes:</span> {entry.notes}</div>}
+              <AmendmentTrail amendments={entry.amendments} />
+              {canAmend && (
+                <button type="button" onClick={() => setAmendEntry(entry)}
+                  className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                  <Pencil size={12} /> Correct entry
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -553,6 +761,13 @@ function LogTable({ user }) {
                           <ClipboardList size={13} className="inline" />
                         </button>
                       )}
+                      {entry.amendments?.length > 0 && (
+                        <button type="button" onClick={() => setOpenTrail(openTrail === entry.id ? null : entry.id)}
+                          className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 hover:bg-amber-200"
+                          title="This entry was corrected — click to see what changed">
+                          <AlertCircle size={10} /> AMENDED
+                        </button>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.mo_number}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.lot_number}</td>
@@ -579,6 +794,12 @@ function LogTable({ user }) {
                           <Clock size={12} /> Pending QA
                         </span>
                       )}
+                      {canAmend && (
+                        <button type="button" onClick={() => setAmendEntry(entry)}
+                          className="ml-2 text-gray-400 hover:text-amber-600" data-tip="Correct this entry" data-tip-left>
+                          <Pencil size={13} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -586,6 +807,13 @@ function LogTable({ user }) {
                   <tr key={`notes-${entry.id}`} className="bg-blue-50">
                     <td colSpan={14} className="px-4 py-2 text-sm text-gray-700">
                       <span className="font-medium text-gray-900">Notes:</span> {entry.notes}
+                    </td>
+                  </tr>
+                ))}
+                {filtered.map(entry => openTrail === entry.id && entry.amendments?.length > 0 && (
+                  <tr key={`trail-${entry.id}`}>
+                    <td colSpan={14} className="px-4 py-2">
+                      <AmendmentTrail amendments={entry.amendments} />
                     </td>
                   </tr>
                 ))}
@@ -597,6 +825,9 @@ function LogTable({ user }) {
 
       {signoffEntry && (
         <QASignoffModal entry={signoffEntry} user={user} onClose={() => setSignoffEntry(null)} onSaved={refresh} />
+      )}
+      {amendEntry && (
+        <AmendModal entry={amendEntry} onClose={() => setAmendEntry(null)} onSaved={refresh} />
       )}
     </div>
   );

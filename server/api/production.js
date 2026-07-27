@@ -75,8 +75,14 @@ function computeMetrics(entry) {
   const units_per_hour = duration_hours > 0 ? entry.quantity_completed / duration_hours : 0;
   const units_per_minute = duration_hours > 0 ? entry.quantity_completed / (duration_hours * 60) : 0;
   const units_per_min_per_person = entry.people_count > 0 ? units_per_minute / entry.people_count : 0;
-  return { ...entry, duration_hours, units_per_hour, units_per_minute, units_per_min_per_person };
+  return {
+    ...entry,
+    amendments: parseAmendments(entry.amendments),
+    duration_hours, units_per_hour, units_per_minute, units_per_min_per_person,
+  };
 }
+
+const parseAmendments = (raw) => { try { return JSON.parse(raw || '[]'); } catch { return []; } };
 
 // GET /entries — list production entries with optional filters
 router.get('/entries', (req, res) => {
@@ -262,30 +268,93 @@ router.post('/entries/import', (req, res) => {
 // admin or an explicit Production Log edit grant in Settings.
 const canEditLog = (u) => u?.role === 'admin' || hasExplicitEdit(u, 'production-log');
 
-// PUT /entries/:id — update a production entry field
+// Fields a correction may touch, with the labels an auditor should read.
+// `date` is deliberately absent: an EOD report filed against the wrong day is
+// a different record, not a typo, and should be voided and re-filed.
+const AMENDABLE = {
+  product_name: 'Product', mo_number: 'MO #', lot_number: 'Lot #',
+  team: 'Team', room: 'Room',
+  start_time: 'Start time', end_time: 'End time',
+  quantity_completed: 'Quantity completed', people_count: 'People',
+  notes: 'Notes', submitted_by: 'Submitted by',
+};
+const NUMERIC_FIELDS = new Set(['quantity_completed', 'people_count']);
+const MIN_REASON = 10;
+
+// PUT /entries/:id — amend a filed production entry.
+//
+// A filed EOD report is a record, so this is a correction with an audit trail,
+// not an edit. Three rules make it defensible under SQF:
+//   1. A reason is mandatory — a change nobody explained is a finding.
+//   2. The original values survive. Every amendment stores each field's
+//      before/after on the entry itself, so the correction is visible on the
+//      record and not only in the audit log an auditor may never open.
+//   3. Amending a QA-signed entry retires that signature (preserved in the
+//      amendment) and returns the entry to Pending QA. A signature attests to
+//      what was reviewed; change the record and it no longer attests to
+//      anything, so QA must look again.
 router.put('/entries/:id', (req, res) => {
   if (!canEditLog(req.user)) return res.status(403).json({ error: 'Editing log entries requires an explicit Production Log edit grant (Settings) or admin.' });
   const db = getDb();
   const existing = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Production entry not found' });
 
-  const allowed = ['submitted_by', 'notes', 'team', 'room', 'product_name', 'mo_number', 'lot_number'];
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < MIN_REASON) {
+    return res.status(400).json({ error: `A reason for the correction is required (at least ${MIN_REASON} characters). It becomes part of the record.` });
+  }
+
+  // Diff first: only fields that actually differ become part of the amendment,
+  // so re-saving an untouched form doesn't manufacture a correction.
+  const changes = [];
   const updates = [];
   const values = [];
-  for (const field of allowed) {
-    if (req.body[field] !== undefined) {
-      updates.push(`${field} = ?`);
-      values.push(req.body[field]);
+  for (const [field, label] of Object.entries(AMENDABLE)) {
+    if (req.body[field] === undefined) continue;
+    const next = NUMERIC_FIELDS.has(field) ? Number(req.body[field]) : (req.body[field] ?? '');
+    if (NUMERIC_FIELDS.has(field) && !Number.isFinite(next)) {
+      return res.status(400).json({ error: `${label} must be a number.` });
     }
+    const prev = existing[field];
+    if (String(prev ?? '') === String(next ?? '')) continue;
+    changes.push({ field, label, from: prev ?? null, to: next });
+    updates.push(`${field} = ?`);
+    values.push(next);
   }
-  if (updates.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+  if (!changes.length) return res.status(400).json({ error: 'Nothing was changed.' });
 
+  const wasSigned = existing.qa_signoff_by
+    ? { by: existing.qa_signoff_by, at: existing.qa_signoff_at, notes: existing.qa_notes || null }
+    : null;
+
+  const amendment = {
+    id: uuid(),
+    amended_at: new Date().toISOString(),
+    amended_by: req.user?.name || 'system',
+    amended_by_id: req.user?.id || null,
+    amended_by_role: req.user?.role || null,
+    reason,
+    changes,
+    attestation: 'I certify that this correction is accurate, that the reason recorded above is truthful, and that the original entry has been preserved.',
+    retired_qa_signoff: wasSigned,
+  };
+  const amendments = [...parseAmendments(existing.amendments), amendment];
+
+  updates.push('amendments = ?');
+  values.push(JSON.stringify(amendments));
+  if (wasSigned) {
+    updates.push('qa_signoff_by = NULL', 'qa_signoff_at = NULL', 'qa_notes = NULL');
+  }
   updates.push("updated_at = datetime('now')");
   values.push(req.params.id);
   db.prepare(`UPDATE production_entries SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
   const updated = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
-  logAudit(req.user || 'system', 'update', 'production_entry', req.params.id, req.body, existing, updated);
+  logAudit(req.user || 'system', 'amend', 'production_entry', req.params.id, {
+    reason,
+    changes: changes.map(c => ({ field: c.field, from: c.from, to: c.to })),
+    qa_signoff_retired: !!wasSigned,
+  }, existing, updated, `${existing.product_name} · MO ${existing.mo_number} · ${existing.date}`);
   res.json(computeMetrics(updated));
 });
 
