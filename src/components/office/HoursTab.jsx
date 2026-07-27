@@ -78,7 +78,8 @@ export default function HoursTab() {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      {/* Desktop: both weeks side by side */}
+      <div className="hidden lg:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
@@ -142,6 +143,62 @@ export default function HoursTab() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Phone and tablet: one card per person, one block per week. The same
+          four numbers, big enough to actually tap. */}
+      <div className="lg:hidden space-y-2">
+        {(data?.people || []).map(p => (
+          <div key={p.user_id} className="bg-white rounded-xl border border-gray-200 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-medium text-gray-900">{p.name}</p>
+                <p className="text-[11px] text-gray-400 capitalize">{(p.department || '').replace('_', ' ')}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-lg font-bold text-gray-900">{hrs(p.period.total)}</p>
+                <p className="text-[10px] text-gray-400">period total</p>
+              </div>
+            </div>
+
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[11px] text-gray-500">Target / week</span>
+              <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} tone="text-gray-500" />
+              {p.period.overtime > 0 && (
+                <span className="ml-auto text-[11px] font-semibold text-amber-600">{hrs(p.period.overtime)} OT</span>
+              )}
+            </div>
+
+            {p.weeks.map(w => (
+              <div key={w.week_start} className="mt-2 rounded-lg bg-gray-50 p-2">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-semibold text-gray-600">Week of {weekLabel(w.week_start)}</span>
+                  <button onClick={() => save(p.user_id, w.week_start, { auto_fill: !w.auto_fill })}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      w.non_working > 0 ? 'bg-amber-100 text-amber-700'
+                      : w.auto_fill ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-400 line-through'}`}>
+                    {w.non_working > 0 ? `${hrs(w.non_working)} non-working` : (w.auto_fill ? 'auto-fill on' : 'auto-fill off')}
+                  </button>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    ['Worked', 'worked'], ['PTO', 'pto'], ['Holiday', 'holiday'], ['Unpaid', 'unpaid'],
+                  ].map(([label, key]) => (
+                    <label key={key} className="block">
+                      <span className="block text-[10px] text-gray-400 mb-0.5">{label}</span>
+                      <input type="number" step="0.25" min="0" defaultValue={w[key]}
+                        onBlur={e => { const v = Number(e.target.value) || 0; if (v !== w[key]) save(p.user_id, w.week_start, { [key]: v }); }}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right" />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+        {(data?.people || []).length === 0 && (
+          <p className="text-center py-8 text-sm text-gray-400">No active people in Settings yet.</p>
+        )}
       </div>
     </div>
   );

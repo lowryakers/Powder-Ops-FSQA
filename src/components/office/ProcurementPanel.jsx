@@ -256,7 +256,7 @@ export default function ProcurementPanel() {
       <ScenarioBar scenarios={scenarios} active={scenario} setActive={setScenario}
         canEdit={canEdit} onChanged={reloadAll} />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
         {cards.map(c => (
           <div key={c.label} className="bg-white rounded-xl border border-gray-200 px-4 py-3">
             <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{c.label}</p>

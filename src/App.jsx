@@ -593,7 +593,7 @@ function AccountMenu({ user, onChangePassword, onLogout, onViewAs, onInstallHelp
         <div className="h-7 w-7 rounded-full bg-powder-100 flex items-center justify-center text-xs font-bold text-powder-700">
           {(user.name || '?')[0]}
         </div>
-        <span className="text-sm text-gray-600">{user.name}</span>
+        <span className="hidden lg:inline text-sm text-gray-600">{user.name}</span>
         <ChevronDown size={14} className="text-gray-400" />
       </button>
       {open && (
@@ -1398,7 +1398,7 @@ function App() {
               <PageInfo moduleId={resolvedTab} title={activeItem?.label || 'Dashboard'} />
             </div>
             <div className="flex items-center gap-3">
-              <ModuleSearch user={user} onNavigate={setActiveTab} />
+              <div className="hidden lg:block"><ModuleSearch user={user} onNavigate={setActiveTab} /></div>
               <button onClick={toggleDockChat} data-tip={dockChat ? 'Close the docked Messages panel' : 'Dock Messages beside this module'}
                 className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${dockChat ? 'text-powder-700 bg-powder-50' : 'text-gray-500 hover:bg-gray-100'}`}>
                 <PanelRight size={16} /> Split Screen

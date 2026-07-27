@@ -2,7 +2,9 @@ import { useState, useRef } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Trash2, Send, FileText, Image as ImageIcon, ArrowUp, ArrowDown, Eye, X, Newspaper } from 'lucide-react';
+import { usePageTranslation } from '../../lib/usePageTranslation.js';
+import LangToggle from '../LangToggle.jsx';
+import { Plus, Trash2, Send, FileText, Image as ImageIcon, ArrowUp, ArrowDown, Eye, X, Newspaper, Languages } from 'lucide-react';
 
 // The newsletter, in two halves.
 //
@@ -47,7 +49,7 @@ function CardEditor({ card, onSave, onCancel }) {
   );
 }
 
-function NotesTab({ canEdit, cards, refresh, onBuild, building }) {
+function NotesTab({ canEdit, cards, refresh, onBuild, building, tr = (x) => x }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -85,13 +87,13 @@ function NotesTab({ canEdit, cards, refresh, onBuild, building }) {
           {canEdit && !adding && (
             <button onClick={() => setAdding(true)}
               className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
-              <Plus size={15} /> Add a card
+              <Plus size={15} /> {tr('Add a card')}
             </button>
           )}
           {canEdit && (
             <button onClick={onBuild} disabled={building || active === 0}
               className="flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-50">
-              <Newspaper size={15} /> {building ? 'Building…' : 'Build newsletter'}
+              <Newspaper size={15} /> {building ? tr('Building…') : tr('Build newsletter')}
             </button>
           )}
         </div>
@@ -108,7 +110,7 @@ function NotesTab({ canEdit, cards, refresh, onBuild, building }) {
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${kindMeta(c.kind).tone}`}>{kindMeta(c.kind).label}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${kindMeta(c.kind).tone}`}>{tr(kindMeta(c.kind).label)}</span>
                     <p className="font-medium text-gray-900">{c.title}</p>
                     {!c.is_active && <span className="text-[10px] font-bold text-gray-400">HELD BACK</span>}
                   </div>
@@ -116,7 +118,7 @@ function NotesTab({ canEdit, cards, refresh, onBuild, building }) {
                   <p className="text-[11px] text-gray-400 mt-1">Updated by {c.updated_by || '—'}</p>
                 </div>
                 {canEdit && (
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
                     <button onClick={() => move(c, -1)} disabled={i === 0} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30"><ArrowUp size={14} /></button>
                     <button onClick={() => move(c, 1)} disabled={i === (cards || []).length - 1} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30"><ArrowDown size={14} /></button>
                     <button onClick={() => toggle(c)} className="px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 rounded">
@@ -145,6 +147,7 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [uploadingFor, setUploadingFor] = useState(null);
+  const [translating, setTranslating] = useState(false);
   const fileRef = useRef(null);
   const shared = draft.status === 'shared';
 
@@ -167,10 +170,22 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
     try {
       const saved = await apiPut(`/newsletter/issues/${draft.id}`, {
         title: draft.title, intro: draft.intro, sections: draft.sections,
+        title_es: draft.title_es, intro_es: draft.intro_es, include_spanish: draft.include_spanish,
       });
       setDraft(saved);
       onChanged?.();
     } catch (e) { setError(e.message); } finally { setSaving(false); }
+  };
+
+  // The Spanish half is a first draft she edits, exactly like the Slack
+  // template: English newsletter, then the same thing in Spanish.
+  const translate = async () => {
+    setTranslating(true); setError('');
+    try {
+      await save();
+      const out = await apiPost(`/newsletter/issues/${draft.id}/translate`, {});
+      setDraft(out);
+    } catch (e) { setError(e.message); } finally { setTranslating(false); }
   };
 
   const attachImage = async (sectionId, files) => {
@@ -212,9 +227,9 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-[70] flex items-start justify-center overflow-y-auto p-4">
-      <div className="bg-gray-50 rounded-2xl shadow-xl w-full max-w-3xl my-6">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-white rounded-t-2xl sticky top-0 z-10">
+    <div className="fixed inset-0 bg-black/30 z-[70] flex items-start justify-center overflow-y-auto sm:p-4">
+      <div className="bg-gray-50 w-full max-w-3xl min-h-full sm:min-h-0 sm:rounded-2xl sm:shadow-xl sm:my-6 pb-20 sm:pb-0">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-gray-200 bg-white sm:rounded-t-2xl sticky top-0 z-10">
           <div className="min-w-0">
             <h3 className="font-semibold text-gray-900 truncate">{shared ? 'Shared newsletter' : 'Newsletter preview'}</h3>
             <p className="text-[11px] text-gray-400">
@@ -222,6 +237,12 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {!shared && canEdit && (
+              <button onClick={translate} disabled={translating}
+                className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 disabled:opacity-50">
+                <Languages size={13} /> {translating ? 'Translating…' : 'Translate to Spanish'}
+              </button>
+            )}
             <button onClick={openPdf} className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">
               <FileText size={13} /> PDF
             </button>
@@ -229,7 +250,7 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
           </div>
         </div>
 
-        <div className="p-5 space-y-3">
+        <div className="p-3 sm:p-5 space-y-3">
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
@@ -238,6 +259,22 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
             <textarea value={draft.intro || ''} onChange={e => setDraft({ ...draft, intro: e.target.value })} disabled={shared}
               rows={2} placeholder="A short intro (optional)"
               className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
+            {(draft.title_es || draft.intro_es) && (
+              <div className="pt-2 mt-1 border-t border-dashed border-gray-200 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Español</p>
+                <input value={draft.title_es || ''} onChange={e => setDraft({ ...draft, title_es: e.target.value })} disabled={shared}
+                  className="w-full text-lg font-bold text-gray-900 border-0 border-b border-transparent focus:border-gray-200 focus:outline-none disabled:bg-transparent" />
+                <textarea value={draft.intro_es || ''} onChange={e => setDraft({ ...draft, intro_es: e.target.value })} disabled={shared}
+                  rows={2} className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
+                {!shared && (
+                  <label className="flex items-center gap-2 text-xs text-gray-600">
+                    <input type="checkbox" checked={draft.include_spanish !== 0}
+                      onChange={e => setDraft({ ...draft, include_spanish: e.target.checked ? 1 : 0 })} />
+                    Include the Spanish version in the newsletter
+                  </label>
+                )}
+              </div>
+            )}
           </div>
 
           {draft.sections.map((s, i) => (
@@ -256,6 +293,15 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
               </div>
               <textarea value={s.body || ''} onChange={e => setSection(s.id, { body: e.target.value })} disabled={shared} rows={3}
                 className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
+              {(s.title_es || s.body_es) && (
+                <div className="pt-2 border-t border-dashed border-gray-200 space-y-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Español</p>
+                  <input value={s.title_es || ''} onChange={e => setSection(s.id, { title_es: e.target.value })} disabled={shared}
+                    className="w-full font-semibold text-gray-900 border-0 border-b border-transparent focus:border-gray-200 focus:outline-none disabled:bg-transparent" />
+                  <textarea value={s.body_es || ''} onChange={e => setSection(s.id, { body_es: e.target.value })} disabled={shared} rows={3}
+                    className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
+                </div>
+              )}
               {s.image_url && <img src={s.image_url} alt="" className="rounded-lg max-h-56 object-contain" />}
               {!shared && canEdit && (
                 <div>
@@ -276,9 +322,9 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
               <textarea value={message} onChange={e => setMessage(e.target.value)} rows={2}
                 placeholder="e.g. July newsletter is here — big month for the sticks line 🎉"
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2" />
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button onClick={share} disabled={sharing}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50">
+                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50">
                   <Send size={14} /> {sharing ? 'Sharing…' : 'Share to #announcements'}
                 </button>
                 <button onClick={save} disabled={saving}
@@ -294,9 +340,18 @@ function IssueEditor({ issue, canEdit, onChanged, onClose }) {
   );
 }
 
+// Labels the page toggle covers. (The newsletter's own Spanish half is a
+// separate thing — that's content, translated once and edited by hand.)
+const PAGE_STRINGS = [
+  'Newsletter', 'Notes', 'Newsletters', 'Add a card', 'Build newsletter', 'Building…',
+  'Collect news through the month, then send it out in one go.', 'Open', 'Draft', 'Shared',
+  'Upcoming event', 'Shout-out', 'Big news', 'Stats', 'General', 'Hold', 'Include', 'Edit',
+];
+
 export default function NewsletterPanel() {
   const { user } = useAuth();
   const canEdit = canEditModule(user, 'newsletter');
+  const { lang, setLang, tr, translating: pageTranslating } = usePageTranslation(PAGE_STRINGS);
   const [tab, setTab] = useState('notes');
   const [open, setOpen] = useState(null);
   const [building, setBuilding] = useState(false);
@@ -319,19 +374,22 @@ export default function NewsletterPanel() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Newsletter</h2>
-          <p className="text-sm text-gray-500">Collect news through the month, then send it out in one go.</p>
+          <h2 className="text-xl font-bold text-gray-900">{tr('Newsletter')}</h2>
+          <p className="text-sm text-gray-500">{tr('Collect news through the month, then send it out in one go.')}</p>
         </div>
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {[['notes', 'Notes'], ['issues', 'Newsletters']].map(([v, l]) => (
-            <button key={v} onClick={() => setTab(v)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{l}</button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto max-w-full">
+            {[['notes', 'Notes'], ['issues', 'Newsletters']].map(([v, l]) => (
+              <button key={v} onClick={() => setTab(v)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tr(l)}</button>
+            ))}
+          </div>
+          <LangToggle lang={lang} setLang={setLang} translating={pageTranslating} />
         </div>
       </div>
 
       {tab === 'notes' && (
-        <NotesTab canEdit={canEdit} cards={cards} refresh={refreshCards} onBuild={build} building={building} />
+        <NotesTab canEdit={canEdit} cards={cards} refresh={refreshCards} onBuild={build} building={building} tr={tr} />
       )}
 
       {tab === 'issues' && (

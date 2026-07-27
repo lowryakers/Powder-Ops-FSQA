@@ -55,7 +55,7 @@ export default function QAInspectionsPanel() {
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {[
           { label: 'Inspections', value: rows.length, tone: 'text-gray-900' },
           { label: 'Failures', value: fails, tone: fails ? 'text-red-600' : 'text-gray-900' },

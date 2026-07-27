@@ -97,7 +97,7 @@ function InvoiceForm({ cfg, initial, onSave, onCancel, tr }) {
   return (
     <form onSubmit={submit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
       <h3 className="font-semibold text-gray-900">{tr(initial?.id ? 'Edit invoice' : 'New invoice')}</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
         <div className="sm:col-span-1">
           <label className="block text-xs font-medium text-gray-700 mb-1">{tr(cfg.partyLabel)} *</label>
           <input required value={form[cfg.party] ?? ''} onChange={e => set(cfg.party, e.target.value)}
@@ -260,11 +260,11 @@ export default function LedgerPanel({ ledger }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-gray-900">{tr(cfg.title)}</h2>
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto max-w-full">
             {[['list', 'Invoices'], ['files', 'Files']].map(([v, l]) => (
               <button key={v} onClick={() => setTab(v)}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tr(l)}</button>
+                className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tr(l)}</button>
             ))}
           </div>
           {summary?.quickbooks?.enabled && user?.role === 'admin' && (

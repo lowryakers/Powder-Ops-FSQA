@@ -8,12 +8,13 @@ import { Copy, Check, RefreshCw, Link2 } from 'lucide-react';
 function Row({ label, value, hint, onCopy, copied, busy, onRefresh }) {
   return (
     <div className="py-2 border-b border-gray-100 last:border-0">
-      <div className="flex items-start gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-gray-500">{label}</p>
           <p className="text-sm text-gray-900 font-mono break-all">{busy ? 'Checking…' : (value || '—')}</p>
           {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}
         </div>
+        <div className="flex items-center gap-1 self-end sm:self-auto shrink-0">
         {onRefresh && (
           <button onClick={onRefresh} disabled={busy} title="Check again"
             className="p-1.5 text-gray-400 hover:text-gray-700 disabled:opacity-40">
@@ -24,6 +25,7 @@ function Row({ label, value, hint, onCopy, copied, busy, onRefresh }) {
           className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-powder-700 hover:bg-powder-50 disabled:opacity-40 shrink-0">
           {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
         </button>
+        </div>
       </div>
     </div>
   );

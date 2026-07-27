@@ -1714,6 +1714,12 @@ function runMigrations() {
     console.warn('[db] newsletter tables unavailable:', e.message);
   }
 
+  // Newsletters go out bilingual, the way the Slack template did it: the whole
+  // thing in English, then the whole thing again in Spanish.
+  addColumnIfMissing('newsletter_issues', 'title_es', 'TEXT');
+  addColumnIfMissing('newsletter_issues', 'intro_es', 'TEXT');
+  addColumnIfMissing('newsletter_issues', 'include_spanish', 'INTEGER NOT NULL DEFAULT 1');
+
   // ── Procurement & demand planning (Jake) ──────────────────────────────────
   // Reference data comes from his two workbooks: the combined BOMs drive parts
   // demand, the parts/pricing sheet drives sourcing, and samples track what's

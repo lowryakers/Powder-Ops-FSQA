@@ -41,7 +41,7 @@ export default function SpendTab() {
         <span className="text-xs text-gray-400">Orders marked ordered, received or paid in this period.</span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
         <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
           <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Spend this period</p>
           <p className="text-2xl font-bold text-gray-900">{money(data?.total)}</p>
@@ -69,10 +69,10 @@ export default function SpendTab() {
           <div className="space-y-2">
             {(data?.categories || []).map((c, i) => (
               <div key={c.label}>
-                <div className="flex items-center justify-between text-sm">
-                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${TONES[i % TONES.length]}`}>{c.label}</span>
-                  <span className="text-gray-500 text-xs">{c.count} order{c.count === 1 ? '' : 's'}</span>
-                  <span className="font-semibold text-gray-900 ml-auto pl-3">{money(c.amount)}</span>
+                <div className="flex items-center gap-2 text-sm min-w-0">
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium truncate max-w-[45%] ${TONES[i % TONES.length]}`}>{c.label}</span>
+                  <span className="text-gray-500 text-[11px] whitespace-nowrap">{c.count} order{c.count === 1 ? '' : 's'}</span>
+                  <span className="font-semibold text-gray-900 ml-auto whitespace-nowrap">{money(c.amount)}</span>
                 </div>
                 <div className="h-1.5 mt-1 rounded-full bg-gray-100 overflow-hidden">
                   <div className="h-full bg-powder-500 rounded-full" style={{ width: `${(c.amount / max) * 100}%` }} />
@@ -83,7 +83,7 @@ export default function SpendTab() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
@@ -120,6 +120,34 @@ export default function SpendTab() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Phone: the same orders as cards */}
+      <div className="md:hidden space-y-2">
+        {(data?.orders || []).map(o => (
+          <div key={o.id} className="bg-white rounded-xl border border-gray-200 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                {externalUrl(o.link) ? (
+                  <a href={externalUrl(o.link)} target="_blank" rel="noreferrer"
+                    className="font-medium text-powder-700 break-words inline-flex items-center gap-1">
+                    {o.item_name} <ExternalLink size={11} />
+                  </a>
+                ) : <p className="font-medium text-gray-900 break-words">{o.item_name}</p>}
+                <p className="text-[11px] text-gray-500">
+                  {[o.supplier, o.label || 'Uncategorized'].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+              <span className={`shrink-0 text-sm font-semibold ${o.total == null ? 'text-amber-600' : 'text-gray-900'}`}>
+                {o.total == null ? 'no total' : money(o.total)}
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1 capitalize">{o.status} · {(o.submitted_at || '').slice(0, 10)}</p>
+          </div>
+        ))}
+        {(data?.orders || []).length === 0 && (
+          <p className="text-center py-8 text-sm text-gray-400">No orders in this period.</p>
+        )}
       </div>
     </div>
   );

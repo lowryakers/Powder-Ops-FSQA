@@ -81,7 +81,7 @@ export default function DataGrid({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[220px]">
+        <div className="relative flex-1 min-w-full sm:min-w-[220px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder={searchPlaceholder}
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-white" />
@@ -102,7 +102,8 @@ export default function DataGrid({
         <span className="text-xs text-gray-400 ml-auto">{view.length.toLocaleString()} of {(rows || []).length.toLocaleString()}</span>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      {/* Desktop: the full table */}
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 sticky top-0 z-10">
             <tr>
@@ -146,7 +147,44 @@ export default function DataGrid({
           </tbody>
         </table>
       </div>
-      {canEdit && <p className="text-[11px] text-gray-400">Double-click a highlighted cell to edit it.</p>}
+      {/* Mobile: one card per row. The first column is the heading, the second
+          the subheading, and the rest are label/value pairs — tapping an
+          editable value opens the same inline input the table uses. */}
+      <div className="md:hidden space-y-2">
+        {loading && <p className="text-center py-8 text-gray-400 text-sm">Loading…</p>}
+        {!loading && view.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">{empty}</p>}
+        {!loading && view.map(row => {
+          const [head, sub, ...rest] = columns.filter(c => c.label);
+          return (
+            <div key={row.id} className={`bg-white rounded-xl border border-gray-200 p-3 ${rowClass?.(row) || ''}`}>
+              <div className="font-medium text-gray-900 break-words">{fmt(row, head)}</div>
+              {sub && <div className="text-xs text-gray-500 break-words">{fmt(row, sub)}</div>}
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                {rest.map(c => {
+                  const isEditing = editing && editing.id === row.id && editing.key === c.key;
+                  return (
+                    <div key={c.key} className="min-w-0">
+                      <dt className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{c.label}</dt>
+                      <dd className="text-sm text-gray-800 break-words" onClick={() => startEdit(row, c)}>
+                        {isEditing ? (
+                          <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+                            onBlur={() => commit(row, c)}
+                            onKeyDown={e => { if (e.key === 'Enter') commit(row, c); if (e.key === 'Escape') setEditing(null); }}
+                            type={c.type === 'number' || c.type === 'money' ? 'number' : 'text'} step="any"
+                            className="w-full px-1 py-0.5 border border-powder-400 rounded text-sm" />
+                        ) : fmt(row, c)}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </div>
+          );
+        })}
+      </div>
+
+      {canEdit && <p className="hidden md:block text-[11px] text-gray-400">Double-click a highlighted cell to edit it.</p>}
+      {canEdit && <p className="md:hidden text-[11px] text-gray-400">Tap a value to edit it.</p>}
     </div>
   );
 }
