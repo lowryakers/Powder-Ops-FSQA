@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
+import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
 import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
+import NotificationStatus from './NotificationStatus.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
@@ -22,6 +24,31 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // refs, then tokenize @mentions and Slack *bold* / ~strike~ / `code` markup into
 // styled nodes. (Italic via single underscore is intentionally left alone so
 // snake_case words and channel refs aren't mangled.)
+// Links that point back into ReadyDoc — reminder DMs from ReadyBot, module
+// cross-links — should navigate INSIDE the app rather than reloading the site.
+// Recognizes ?c=<channel>[&m=<message>] (jump to a conversation) and
+// ?tab=<module> (open a module), on our own origin only.
+function parseAppLink(href) {
+  let u;
+  try { u = new URL(href, window.location.origin); } catch { return null; }
+  if (u.origin !== window.location.origin) return null;
+  const channelId = u.searchParams.get('c');
+  const messageId = u.searchParams.get('m');
+  const tab = u.searchParams.get('tab');
+  if (channelId) return { kind: 'channel', channelId, messageId, label: messageId ? 'Open the message' : 'Open the conversation' };
+  if (tab) return { kind: 'tab', tab, label: 'Open in ReadyDoc' };
+  return null;
+}
+function openAppLink(link) {
+  if (link.kind === 'channel') {
+    window.dispatchEvent(new CustomEvent('comms-open-channel', {
+      detail: { channelId: link.channelId, messageId: link.messageId },
+    }));
+  } else {
+    window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: link.tab } }));
+  }
+}
+
 function renderBody(text, users, meName) {
   if (!text) return text;
   let s = replaceShortcodes(text)
@@ -48,6 +75,21 @@ function renderBody(text, users, meName) {
       let trail = '';
       const tm = tok.match(/[.,;:!?)\]}"']+$/);
       if (tm) { trail = tm[0]; tok = tok.slice(0, -trail.length); }
+      // A link back into ReadyDoc itself (reminder DMs, cross-links) jumps
+      // in-app instead of reloading the whole site in a new tab.
+      const inApp = parseAppLink(tok);
+      if (inApp) {
+        out.push(
+          <button key={k++} type="button"
+            onClick={(e) => { e.stopPropagation(); openAppLink(inApp); }}
+            className="inline-flex items-center gap-1 align-baseline text-powder-700 underline font-medium hover:text-powder-800">
+            {inApp.label}
+          </button>
+        );
+        if (trail) out.push(trail);
+        last = m.index + m[0].length;
+        continue;
+      }
       out.push(<a key={k++} href={tok} target="_blank" rel="noopener noreferrer" className="text-powder-700 underline break-all hover:text-powder-800">{tok}</a>);
       if (trail) out.push(trail);
       last = m.index + m[0].length;
@@ -129,7 +171,8 @@ function Attachment({ a, onOpen }) {
 // files show a download card so mixed sets still page smoothly.
 function Lightbox({ atts, index, onNav, onClose }) {
   const a = atts[index];
-  const touchX = useRef(null);
+  // Follow-the-finger paging between attachments.
+  const { trackRef, containerProps } = useDragPager({ index, count: atts.length, onChange: (i) => onNav(i - index) });
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -141,14 +184,8 @@ function Lightbox({ atts, index, onNav, onClose }) {
   }, [onNav, onClose]);
   if (!a) return null;
   return (
-    <div className="fixed inset-0 bg-black/85 z-[70] flex items-center justify-center" onClick={onClose}
-      onTouchStart={e => { touchX.current = e.touches[0]?.clientX ?? null; }}
-      onTouchEnd={e => {
-        if (touchX.current == null) return;
-        const dx = (e.changedTouches[0]?.clientX ?? touchX.current) - touchX.current;
-        touchX.current = null;
-        if (Math.abs(dx) > 50) onNav(dx < 0 ? 1 : -1);
-      }}>
+    <div className="fixed inset-0 bg-black/85 z-[70] flex items-center justify-center overflow-hidden" onClick={onClose}
+      {...containerProps}>
       <button onClick={e => { e.stopPropagation(); onClose(); }} className="absolute top-3 right-3 p-2 text-white/70 hover:text-white z-10"><X size={24} /></button>
       <div className="absolute top-3 left-1/2 -translate-x-1/2 text-white/70 text-sm select-none">
         {index + 1} / {atts.length} · <span className="text-white/90">{a.filename}</span>
@@ -161,7 +198,7 @@ function Lightbox({ atts, index, onNav, onClose }) {
         <button onClick={e => { e.stopPropagation(); onNav(1); }}
           className="absolute right-2 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 text-white hover:bg-white/25 z-10"><ChevronRight size={26} /></button>
       )}
-      <div className="max-w-[92vw] max-h-[84vh]" onClick={e => e.stopPropagation()}>
+      <div ref={trackRef} className="max-w-[92vw] max-h-[84vh] will-change-transform" onClick={e => e.stopPropagation()}>
         {browserRenderable(a) && a.url ? (
           <img src={a.url} alt={a.filename} className="max-w-[92vw] max-h-[84vh] object-contain rounded-lg"
             onError={e => { e.target.outerHTML = '<div class="bg-white rounded-xl p-6 text-sm text-gray-700">This photo could not be displayed — use Download below to view it.</div>'; }} />
@@ -1047,6 +1084,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const [highlightId, setHighlightId] = useState(null); // deep-linked message flash
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
+  const [showNotifStatus, setShowNotifStatus] = useState(false);
   const [activeId, setActiveId] = useState(null);
   // On phones the list and thread can't share the screen — show one at a time.
   const [mobileThread, setMobileThread] = useState(false);
@@ -1183,6 +1221,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     if (list.some(c => c.id === openChannelId)) { linkedOpenedRef.current = openChannelId; openChannel(openChannelId); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openChannelId, list.length]);
+
 
   const loadMessages = useCallback(async (id) => {
     if (!id) return;
@@ -1500,6 +1539,21 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // thread reply, open the thread drawer too. Highlight briefly either way.
   const pendingMsgRef = useRef(null);
   useEffect(() => { if (openMessageId) pendingMsgRef.current = openMessageId; }, [openMessageId]);
+
+  // Tapping a ReadyDoc link inside a message (ReadyBot reminders, cross-links)
+  // jumps straight to that conversation/message instead of reloading the site.
+  useEffect(() => {
+    const onOpen = (e) => {
+      const { channelId, messageId } = e.detail || {};
+      if (!channelId) return;
+      openChannel(channelId);
+      if (messageId) pendingMsgRef.current = messageId;
+    };
+    window.addEventListener('comms-open-channel', onOpen);
+    return () => window.removeEventListener('comms-open-channel', onOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const mid = pendingMsgRef.current;
     if (!mid || !activeId || !messages.length) return;
@@ -1551,7 +1605,16 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   useEffect(() => {
     if (!pushOn || !pushSupported) return;
     navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(async (sub) => {
-      if (sub) { setPushSubscribed(true); return; }
+      if (sub) {
+        setPushSubscribed(true);
+        // Self-heal: the browser still holds a subscription, but the server's
+        // copy can be gone (pruned after a transient 410, a DB restore, a
+        // re-seed). Re-register it — the endpoint upserts, so this is a no-op
+        // when the row is already there, and repairs silent-notification loss
+        // when it isn't.
+        apiPost('/comms/push/subscribe', { subscription: sub.toJSON() }).catch(() => {});
+        return;
+      }
       const optedOut = localStorage.getItem('comms_push_optout') === '1';
       if (!optedOut && (typeof Notification !== 'undefined') && Notification.permission !== 'denied') {
         try { await doSubscribe(); } catch { /* leave the bell for manual enable */ }
@@ -1720,8 +1783,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
             </button>
           )}
           {pushOn && (
-            <button onClick={togglePush} disabled={pushBusy} data-tip-left
-              data-tip={pushSubscribed ? 'Notifications on — click to turn off' : 'Enable push notifications'}
+            <button onClick={() => setShowNotifStatus(true)} disabled={pushBusy} data-tip-left
+              data-tip={pushSubscribed ? 'Notifications on — check status' : 'Notifications off — set them up'}
               className={`p-2 rounded-lg ${pushSubscribed ? 'text-powder-600 bg-powder-50 hover:bg-powder-100' : 'text-gray-400 hover:bg-gray-100'}`}>
               {pushSubscribed ? <Bell size={16} /> : <BellOff size={16} />}
             </button>
@@ -2078,6 +2141,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
 
       {newChannel && <NewChannelModal users={users} me={user} onClose={() => setNewChannel(false)} onCreated={(ch) => { setNewChannel(false); refreshChannels(); openChannel(ch.id); }} />}
       {showSettings && <CommsSettings users={users} onClose={() => setShowSettings(false)} onChanged={refreshChannels} />}
+      {showNotifStatus && (
+        <NotificationStatus subscribed={pushSubscribed} onClose={() => setShowNotifStatus(false)}
+          onToggle={async () => { await togglePush(); }} />
+      )}
       {showDetails && active && active.kind !== 'dm' && <ChannelDetails channel={active} me={user} users={users} onClose={() => setShowDetails(false)} onChanged={refreshChannels} />}
       {replyTo && <ThreadPanel parent={replyTo} me={user} channelName={active?.kind === 'dm' ? active.name : '#' + (active?.name || '')} mentionUsers={users} members={channelMembers}
         canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} socketRef={socketRef} storageOn={storageOn}

@@ -8,6 +8,7 @@ import { useEdgeSwipe } from './lib/useEdgeSwipe';
 import { visibleModuleIds, canViewModule, hasExplicitGrant } from './utils/permissions';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
+import AttentionBar from './components/AttentionBar.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
 import ComponentKiosk from './components/kiosk/ComponentKiosk.jsx';
@@ -178,7 +179,7 @@ function wantsMessagesTab(u) {
   return w.includes('messages');
 }
 
-function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotice, onOpenComms }) {
+function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, scheduleNotice, onOpenComms }) {
   const { data: aiStatus } = useApiGet('/ai/status');
   const { data: commsChannels, refresh: refreshComms } = useApiGet('/comms/channels', [activeTab]);
   // The user's own open sign-outs — pinned above the footer as a reminder to
@@ -272,6 +273,15 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
           const hasActive = visibleItems.some(i => i.id === activeTab);
           // Roll up notifications so a collapsed section still surfaces them.
           const badgeFor = (i) => i.anyOf ? i.anyOf.reduce((n, id) => n + (badges?.[id] || 0), 0) : (badges?.[i.id] || 0);
+          // The badge number is a count of items; the tooltip says which items,
+          // so "7" is never a mystery.
+          const badgeTip = (i) => {
+            const ids = i.anyOf || [i.id];
+            const lines = ids.flatMap(id => badgeDetail?.[id] || [])
+              .filter(d => d.severity === 'critical' || d.severity === 'warning')
+              .map(d => `• ${d.label}`);
+            return lines.length ? `Needs attention:\n${lines.join('\n')}` : 'Needs attention';
+          };
           const groupBadgeCount = visibleItems.reduce((n, i) => n + badgeFor(i), 0);
           const groupHasNotice = visibleItems.some(i => i.id === 'production-schedule') && scheduleNotice?.unseen;
 
@@ -317,7 +327,8 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, scheduleNotic
                           </span>
                         )}
                         {itemBadge > 0 && (
-                          <span className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1">
+                          <span data-tip={badgeTip(item)} data-tip-left
+                            className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1">
                             {itemBadge}
                           </span>
                         )}
@@ -887,7 +898,15 @@ function InstallPrompt() {
 
 function App() {
   const { user, realUser, viewAs, startViewAs, stopViewAs, loading, login, loginWithToken, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // Reloading keeps you where you were instead of bouncing to the Dashboard.
+  // (A ?tab= deep link or the user's Home preference still wins — both are
+  // applied after mount.)
+  const [activeTab, setActiveTab] = useState(() => {
+    try { return localStorage.getItem('active_tab') || 'dashboard'; } catch { return 'dashboard'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('active_tab', activeTab); } catch { /* private mode */ }
+  }, [activeTab]);
   const [showViewAsPicker, setShowViewAsPicker] = useState(false);
   const [workspace, setWorkspace] = useState('fsqa');
   // Cross-link request from a module → a specific comms channel, remembering
@@ -1309,7 +1328,7 @@ function App() {
     <div className="min-h-screen bg-gray-50 flex">
       {/* Desktop sidebar */}
       <aside className="hidden md:block flex-shrink-0 sticky top-0 h-screen">
-        <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} scheduleNotice={notifications?.scheduleNotice} onOpenComms={() => setWorkspace('comms')} />
+        <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => {}} badges={notifications?.badges} badgeDetail={notifications?.badgeDetail} scheduleNotice={notifications?.scheduleNotice} onOpenComms={() => setWorkspace('comms')} />
       </aside>
 
       {/* Mobile sidebar overlay — always mounted so the edge swipe can pull it
@@ -1319,7 +1338,7 @@ function App() {
           className={`absolute inset-0 bg-black/30 transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`} />
         <div ref={drawerPanelRef}
           className={`absolute left-0 top-0 bottom-0 w-60 shadow-xl transition-transform duration-200 ease-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} scheduleNotice={notifications?.scheduleNotice} onOpenComms={() => setWorkspace('comms')} />
+          <Sidebar activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onClose={() => setSidebarOpen(false)} badges={notifications?.badges} badgeDetail={notifications?.badgeDetail} scheduleNotice={notifications?.scheduleNotice} onOpenComms={() => setWorkspace('comms')} />
         </div>
       </div>
 
@@ -1387,6 +1406,8 @@ function App() {
               <p className="text-sm">No modules are enabled for this account.</p>
             </div>
           )}
+          {/* What the sidebar badge on this module actually refers to. */}
+          <AttentionBar detail={notifications?.badgeDetail?.[resolvedTab]} />
           {resolvedTab === 'dashboard' && <DashboardHub user={user} onNavigate={setActiveTab} />}
           {resolvedTab === 'ask-ai' && <AiAskPanel />}
           {resolvedTab === 'form-maintenance' && <MaintenanceKiosk defaultName={user.name} />}

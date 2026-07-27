@@ -473,34 +473,47 @@ router.get('/notifications', (req, res) => {
   }
 
   const items = [];
-  if (overdueWOs > 0) items.push({ id: 'pm-overdue', tab: 'pm', severity: 'critical', label: `${overdueWOs} overdue PM work order${overdueWOs > 1 ? 's' : ''}` });
-  if (dueSoonWOs > 0) items.push({ id: 'pm-due-soon', tab: 'pm', severity: 'warning', label: `${dueSoonWOs} PM work order${dueSoonWOs > 1 ? 's' : ''} due within 7 days` });
-  if (clearancePending > 0) items.push({ id: 'clearance', tab: 'pm', severity: 'warning', label: `${clearancePending} hygiene clearance${clearancePending > 1 ? 's' : ''} awaiting QA sign-off` });
-  if (calOverdue > 0) items.push({ id: 'cal-overdue', tab: 'calibration', severity: 'critical', label: `${calOverdue} calibration${calOverdue > 1 ? 's' : ''} overdue` });
-  if (calDueSoon > 0) items.push({ id: 'cal-due-soon', tab: 'calibration', severity: 'info', label: `${calDueSoon} calibration${calDueSoon > 1 ? 's' : ''} due within 7 days` });
-  if (lotoUncovered > 0) items.push({ id: 'loto-uncovered', tab: 'loto', severity: 'warning', label: `${lotoUncovered} equipment missing LOTO procedure${lotoUncovered > 1 ? 's' : ''}` });
-  if (chemMissingSDS > 0) items.push({ id: 'chem-sds', tab: 'chemicals', severity: 'warning', label: `${chemMissingSDS} chemical${chemMissingSDS > 1 ? 's' : ''} missing SDS documentation` });
-  if (flaggedIssues > 0) items.push({ id: 'flagged', tab: 'pm', severity: 'critical', label: `${flaggedIssues} flagged issue${flaggedIssues > 1 ? 's' : ''} requiring attention` });
-  if (sopReviewDue > 0) items.push({ id: 'sop-review', tab: 'sops', severity: 'info', label: `${sopReviewDue} SOP${sopReviewDue > 1 ? 's' : ''} past review date` });
-  if (pendingQA > 0) items.push({ id: 'production-qa', tab: 'production-log', severity: 'warning', label: `${pendingQA} production entr${pendingQA > 1 ? 'ies' : 'y'} pending QA sign-off` });
+  if (overdueWOs > 0) items.push({ id: 'pm-overdue', tab: 'pm', severity: 'critical', count: overdueWOs, label: `${overdueWOs} overdue PM work order${overdueWOs > 1 ? 's' : ''}` });
+  if (dueSoonWOs > 0) items.push({ id: 'pm-due-soon', tab: 'pm', severity: 'info', count: dueSoonWOs, label: `${dueSoonWOs} PM work order${dueSoonWOs > 1 ? 's' : ''} due within 7 days` });
+  if (clearancePending > 0) items.push({ id: 'clearance', tab: 'pm', severity: 'warning', count: clearancePending, label: `${clearancePending} hygiene clearance${clearancePending > 1 ? 's' : ''} awaiting QA sign-off` });
+  if (calOverdue > 0) items.push({ id: 'cal-overdue', tab: 'calibration', severity: 'critical', count: calOverdue, label: `${calOverdue} calibration${calOverdue > 1 ? 's' : ''} overdue` });
+  if (calDueSoon > 0) items.push({ id: 'cal-due-soon', tab: 'calibration', severity: 'info', count: calDueSoon, label: `${calDueSoon} calibration${calDueSoon > 1 ? 's' : ''} due within 7 days` });
+  if (lotoUncovered > 0) items.push({ id: 'loto-uncovered', tab: 'loto', severity: 'warning', count: lotoUncovered, label: `${lotoUncovered} equipment missing LOTO procedure${lotoUncovered > 1 ? 's' : ''}` });
+  if (chemMissingSDS > 0) items.push({ id: 'chem-sds', tab: 'chemicals', severity: 'warning', count: chemMissingSDS, label: `${chemMissingSDS} chemical${chemMissingSDS > 1 ? 's' : ''} missing SDS documentation` });
+  if (flaggedIssues > 0) items.push({ id: 'flagged', tab: 'pm', severity: 'critical', count: flaggedIssues, label: `${flaggedIssues} flagged issue${flaggedIssues > 1 ? 's' : ''} requiring attention` });
+  if (sopReviewDue > 0) items.push({ id: 'sop-review', tab: 'sops', severity: 'info', count: sopReviewDue, label: `${sopReviewDue} SOP${sopReviewDue > 1 ? 's' : ''} past review date` });
+  if (pendingQA > 0) items.push({ id: 'production-qa', tab: 'production-log', severity: 'warning', count: pendingQA, label: `${pendingQA} production entr${pendingQA > 1 ? 'ies' : 'y'} pending QA sign-off` });
   for (const q of qmsPending) {
-    items.push({ id: `qms-approval-${q.type}`, tab: q.cfg?.moduleId || 'deviations', severity: 'warning', label: `${q.count} ${q.cfg?.label || q.type} record${q.count > 1 ? 's' : ''} awaiting approval` });
+    items.push({ id: `qms-approval-${q.type}`, tab: q.cfg?.moduleId || 'deviations', severity: 'warning', count: q.count, label: `${q.count} ${q.cfg?.label || q.type} record${q.count > 1 ? 's' : ''} awaiting approval` });
   }
-  if (disposalsPending > 0) items.push({ id: 'disposal-approvals', tab: 'disposals', severity: 'warning', label: `${disposalsPending} disposal${disposalsPending > 1 ? 's' : ''} awaiting Ops/QA sign-off` });
-  if (coaPending > 0) items.push({ id: 'coa-pending', tab: 'coa', severity: 'info', label: `${coaPending} lab request${coaPending > 1 ? 's' : ''} awaiting results` });
+  if (disposalsPending > 0) items.push({ id: 'disposal-approvals', tab: 'disposals', severity: 'warning', count: disposalsPending, label: `${disposalsPending} disposal${disposalsPending > 1 ? 's' : ''} awaiting Ops/QA sign-off` });
+  if (coaPending > 0) items.push({ id: 'coa-pending', tab: 'coa', severity: 'info', count: coaPending, label: `${coaPending} lab request${coaPending > 1 ? 's' : ''} awaiting results` });
 
   // 72-hour idle rule: applicable rooms needing a re-clean that nobody has
   // handled yet (not dismissed / N-A'd / assigned) badge the Sanitation module.
   try {
     const flagged = recleanRooms(db).filter(r => r.needs_attention).length;
-    if (flagged > 0) items.push({ id: 'sanitation-reclean', tab: 'sanitation', severity: 'warning', label: `${flagged} room${flagged > 1 ? 's' : ''} need${flagged > 1 ? '' : 's'} re-cleaning (72h rule / used since clean)` });
+    if (flagged > 0) items.push({ id: 'sanitation-reclean', tab: 'sanitation', severity: 'warning', count: flagged, label: `${flagged} room${flagged > 1 ? 's' : ''} need${flagged > 1 ? '' : 's'} re-cleaning (72h rule / used since clean)` });
   } catch { /* optional tables */ }
 
+  // A module's badge is the number of THINGS needing attention, not the number
+  // of alert categories (a badge of "3" used to mean "3 kinds of problem",
+  // which read as "3 items" and confused everyone). `badgeDetail` carries the
+  // per-category breakdown so the sidebar tooltip and the module's attention
+  // bar can say exactly what those items are.
   const badges = {};
+  const badgeDetail = {};
   for (const item of items) {
+    const n = Number.isFinite(item.count) ? item.count : 1;
+    // Only actionable severities drive the number; 'info' items (things merely
+    // coming up) still travel in badgeDetail so the page can show them as a
+    // heads-up without inflating the badge.
     if (item.severity === 'critical' || item.severity === 'warning') {
-      badges[item.tab] = (badges[item.tab] || 0) + 1;
+      badges[item.tab] = (badges[item.tab] || 0) + n;
     }
+    (badgeDetail[item.tab] = badgeDetail[item.tab] || []).push({
+      id: item.id, label: item.label, severity: item.severity, count: n,
+    });
   }
 
   // Production Schedule "New/Updated" notice: a text pill on the Schedule tab
@@ -518,7 +531,10 @@ router.get('/notifications', (req, res) => {
     }
   } catch { /* app_settings/column may not exist yet */ }
 
-  res.json({ items, badges, scheduleNotice, total: items.filter(i => i.severity === 'critical' || i.severity === 'warning').length });
+  res.json({
+    items, badges, badgeDetail, scheduleNotice,
+    total: Object.values(badges).reduce((s, n) => s + n, 0),
+  });
 });
 
 export default router;

@@ -1,7 +1,9 @@
 import { useState, useMemo, useCallback, useRef, useEffect, forwardRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
-import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock, Columns2, CheckCircle2 } from 'lucide-react';
 import DiscussLink from '../DiscussLink.jsx';
+import { useDragPager } from '../../lib/useDragPager';
+import ScheduleProgressPanel from './ScheduleProgressPanel.jsx';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -879,17 +881,11 @@ function DownstreamModal({ product, batchDay, weekStart, userName, nextSlotFor, 
 
 // Mobile view of the week's schedule: one swipeable day at a time as cards,
 // grouped by section → room. Much easier to read on a phone than the wide grid.
-function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay }) {
+function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay, entryFor }) {
   const [day, setDay] = useState(initialDay);
-  const touchX = useRef(null);
   const go = (dir) => setDay(d => Math.min(4, Math.max(0, d + dir)));
-  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; };
-  const onTouchEnd = (e) => {
-    if (touchX.current == null) return;
-    const dx = e.changedTouches[0].clientX - touchX.current;
-    touchX.current = null;
-    if (Math.abs(dx) > 45) go(dx < 0 ? 1 : -1);
-  };
+  // Follow-the-finger day paging (same feel as the sidebar drawer).
+  const { trackRef, containerProps } = useDragPager({ index: day, count: 5, onChange: setDay });
 
   const sections = ROOM_SECTIONS.map(section => {
     const rooms = section.rooms
@@ -899,7 +895,7 @@ function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay
   }).filter(s => s.rooms.length > 0);
 
   return (
-    <div className="md:hidden" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <div className="md:hidden overflow-x-hidden" {...containerProps}>
       {/* Day pager */}
       <div className="sticky top-0 z-10 flex items-center justify-between bg-white border border-gray-200 rounded-xl px-2 py-2 mb-3">
         <button onClick={() => go(-1)} disabled={day === 0} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-30"><ChevronLeft size={18} /></button>
@@ -916,6 +912,9 @@ function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay
         ))}
       </div>
 
+      {/* The day's content is the draggable track — it tracks your finger and
+          slides out when the swipe commits. */}
+      <div ref={trackRef} className="will-change-transform">
       {sections.length === 0 && <p className="text-center text-sm text-gray-400 py-10">Nothing scheduled for {DAYS[day]}.</p>}
       <div className="space-y-4">
         {sections.map(({ section, rooms }) => (
@@ -945,6 +944,11 @@ function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay
                               <Check size={9} /> Flavor approved
                             </div>
                           )}
+                          {entryFor?.(day, room, a) && (
+                            <div className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 py-px">
+                              <CheckCircle2 size={9} /> Reported
+                            </div>
+                          )}
                           {a.start_time && <div className="flex items-center gap-1 text-[11px] text-gray-400"><Clock size={9} /> {fmtTime(a.start_time)}</div>}
                         </div>
                       );
@@ -962,6 +966,7 @@ function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay
           </div>
         ))}
       </div>
+      </div>
       <p className="text-center text-[11px] text-gray-400 mt-4">Swipe left/right to change day</p>
     </div>
   );
@@ -975,6 +980,16 @@ export default function ProductionSchedule({ user }) {
   const [copied, setCopied] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [showSnapshot, setShowSnapshot] = useState(false);
+  // Split view: the week's production progress beside the schedule, so editing
+  // doesn't require bouncing to the Production Log. Remembered per device.
+  const [showProgress, setShowProgress] = useState(() => {
+    try { return localStorage.getItem('schedule_progress') === '1'; } catch { return false; }
+  });
+  const toggleProgress = () => setShowProgress(v => {
+    const n = !v;
+    try { localStorage.setItem('schedule_progress', n ? '1' : '0'); } catch { /* private mode */ }
+    return n;
+  });
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverKey, setDragOverKey] = useState(null);
   const [downstreamFor, setDownstreamFor] = useState(null); // { product_name, mo_number, batchDay }
@@ -1027,6 +1042,37 @@ export default function ProductionSchedule({ user }) {
     }
     return map;
   }, [data]);
+
+  // ── Progress overlay: what has actually run this week ─────────────────────
+  // The end-of-day reports for the displayed week, matched back to the
+  // schedule so "what we've worked on vs. what's left" is visible without
+  // bouncing to the Production Log. Same matching rule the server uses for
+  // missed reports: same date + room, and matching MO# (or team when the
+  // schedule line has no MO#).
+  const weekFrom = formatWeekStart(monday);
+  const weekTo = useMemo(() => {
+    const d = new Date(monday); d.setDate(d.getDate() + 4);
+    return formatWeekStart(d);
+  }, [monday]);
+  const { data: weekEntries } = useApiGet(`/production/entries?from=${weekFrom}&to=${weekTo}`, [weekFrom, weekTo]);
+
+  const doneMap = useMemo(() => {
+    const map = {};
+    for (const e of weekEntries || []) {
+      const day = Math.round((new Date(e.date + 'T00:00:00') - new Date(weekFrom + 'T00:00:00')) / 86400000);
+      if (day < 0 || day > 4) continue;
+      if (e.mo_number) map[`${day}|${e.room}|mo:${String(e.mo_number).trim()}`] = e;
+      if (e.team) map[`${day}|${e.room}|team:${e.team}`] = e;
+    }
+    return map;
+  }, [weekEntries, weekFrom]);
+
+  const entryFor = useCallback((dayIndex, room, a) => {
+    if (!a) return null;
+    if (a.mo_number) return doneMap[`${dayIndex}|${room}|mo:${String(a.mo_number).trim()}`] || null;
+    if (a.team) return doneMap[`${dayIndex}|${room}|team:${a.team}`] || null;
+    return null;
+  }, [doneMap]);
 
   const cleaningMap = useMemo(() => {
     if (!data?.cleaning_levels) return {};
@@ -1158,6 +1204,11 @@ export default function ProductionSchedule({ user }) {
                       <Check size={9} className="shrink-0" /> Flavor
                     </div>
                   )}
+                  {entryFor(dayIndex, room, a) && (
+                    <div className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 py-px" title="An end-of-day report exists for this run">
+                      <CheckCircle2 size={9} className="shrink-0" /> Reported
+                    </div>
+                  )}
                   {a.start_time && (
                     <div className="flex items-center gap-1 text-gray-400 text-[11px]">
                       <Clock size={9} className="shrink-0" />{fmtTime(a.start_time)}
@@ -1226,6 +1277,11 @@ export default function ProductionSchedule({ user }) {
         </h2>
 
         <div className="flex items-center gap-1.5 shrink-0">
+        <button onClick={toggleProgress}
+          data-tip={showProgress ? 'Hide production progress' : 'Show what has been produced this week beside the schedule'}
+          className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 ${showProgress ? 'text-powder-700 bg-powder-50' : 'text-gray-600 hover:bg-gray-100'}`}>
+          <Columns2 size={14} /> Progress
+        </button>
         <DiscussLink moduleId="production-schedule" defaultChannel="production_schedule" fromLabel="Schedule" isAdmin={canEdit} />
         {canEdit && (
           <div className="relative">
@@ -1300,11 +1356,21 @@ export default function ProductionSchedule({ user }) {
 
       {/* Mobile: swipeable one-day card view */}
       {!loading && !error && (
-        <MobileDayCards monday={monday} assignmentMap={assignmentMap} canEdit={canEdit} onEditCell={setEditCell} initialDay={mobileInitialDay} />
+        <MobileDayCards monday={monday} assignmentMap={assignmentMap} canEdit={canEdit} onEditCell={setEditCell}
+          initialDay={mobileInitialDay} entryFor={entryFor} />
       )}
 
-      {/* Schedule Grid (desktop / tablet) */}
+      {/* Mobile: progress list under the day cards when the toggle is on. */}
+      {!loading && !error && showProgress && (
+        <div className="md:hidden">
+          <ScheduleProgressPanel monday={monday} assignmentMap={assignmentMap} entryFor={entryFor}
+            entries={weekEntries} onOpenLog={() => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'production-log' } }))} />
+        </div>
+      )}
+
+      {/* Schedule grid (desktop / tablet), beside the progress panel in split view */}
       {!loading && !error && (
+        <div className={showProgress ? 'hidden md:grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]' : 'contents'}>
         <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-auto max-h-[calc(100vh-13rem)]">
             <table className="w-full border-collapse min-w-[640px]">
@@ -1392,6 +1458,11 @@ export default function ProductionSchedule({ user }) {
               </tbody>
             </table>
           </div>
+        </div>
+        {showProgress && (
+          <ScheduleProgressPanel monday={monday} assignmentMap={assignmentMap} entryFor={entryFor}
+            entries={weekEntries} onOpenLog={() => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'production-log' } }))} />
+        )}
         </div>
       )}
 

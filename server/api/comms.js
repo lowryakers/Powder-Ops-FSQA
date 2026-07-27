@@ -38,6 +38,25 @@ router.post('/push/subscribe', (req, res) => {
   res.json({ ok: true });
 });
 
+// How many devices this account has registered — surfaced in the notification
+// status panel so "why isn't my phone buzzing?" has a visible answer.
+router.get('/push/status', (req, res) => {
+  const count = getDb().prepare('SELECT COUNT(*) c FROM chat_push_subscriptions WHERE user_id = ?').get(req.user.id).c;
+  res.json({ enabled: pushEnabled(), count });
+});
+
+// Self-test: push to the caller's own devices.
+router.post('/push/test', async (req, res) => {
+  if (!pushEnabled()) return res.status(503).json({ error: 'Push is not configured on this server.' });
+  const count = getDb().prepare('SELECT COUNT(*) c FROM chat_push_subscriptions WHERE user_id = ?').get(req.user.id).c;
+  if (!count) return res.status(400).json({ error: 'No devices are subscribed on your account yet.' });
+  await pushToUser(req.user.id, {
+    title: 'ReadyDoc test', body: 'Notifications are working on this device.',
+    tag: 'readydoc-test', renotify: true, url: '/',
+  });
+  res.json({ ok: true, devices: count });
+});
+
 router.post('/push/unsubscribe', (req, res) => {
   const endpoint = req.body?.endpoint;
   if (endpoint) getDb().prepare('DELETE FROM chat_push_subscriptions WHERE endpoint = ? AND user_id = ?').run(endpoint, req.user.id);
@@ -177,8 +196,14 @@ function recordMentions(db, channel, messageId, body, author) {
 // Debounce window: at most one channel push per person+channel in this span, so
 // a burst of messages coalesces into one (tag-collapsed) alert instead of a
 // buzz per message. In-memory is fine on a single instance.
-const PUSH_DEBOUNCE_MS = 25000;
-const lastChannelPushAt = new Map(); // `${userId}:${channelId}` -> epoch ms
+// Rapid messages in one channel are coalesced rather than dropped: the first
+// pushes immediately, and anything arriving inside the window schedules ONE
+// trailing "catch-up" push at the end of it. (The old behavior skipped those
+// pushes entirely, so a second message ~20 s after the first silently never
+// notified — the "I'm getting messages but no notification" bug.)
+const PUSH_COALESCE_MS = 20000;
+const lastChannelPushAt = new Map();  // `${userId}:${channelId}` -> epoch ms
+const pendingTrailing = new Map();    // `${userId}:${channelId}` -> timeout handle
 
 function channelUnread(db, channelId, userId) {
   const lr = db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId)?.last_read_at || null;
@@ -202,16 +227,35 @@ function notifyChannelMessage(db, channel, body, author, excludeUserIds = [], me
   const now = Date.now();
   // Deep-link to the triggering message so a tap lands on it, not just the channel.
   const url = messageId ? `/?c=${channel.id}&m=${messageId}` : `/?c=${channel.id}`;
-  for (const { id: uid } of members) {
-    if (exclude.has(uid)) continue;
-    const key = `${uid}:${channel.id}`;
-    if (now - (lastChannelPushAt.get(key) || 0) < PUSH_DEBOUNCE_MS) continue; // coalesce burst
-    lastChannelPushAt.set(key, now);
+  // Build + send the notification for one member from their CURRENT unread
+  // state, so a trailing push reflects everything that landed meanwhile.
+  const sendFor = (uid) => {
     const n = channelUnread(db, channel.id, uid);
+    if (n === 0) return; // they read it in the meantime — don't buzz for nothing
     const summary = n > 1
       ? `${n} new · ${author.name}: ${body.slice(0, 80)}`
       : `${author.name}: ${body.slice(0, 120)}`;
     pushToUser(uid, { title: label, body: summary, tag: `channel-${channel.id}`, renotify: true, url }).catch(() => {});
+  };
+
+  for (const { id: uid } of members) {
+    if (exclude.has(uid)) continue;
+    const key = `${uid}:${channel.id}`;
+    const since = now - (lastChannelPushAt.get(key) || 0);
+    if (since >= PUSH_COALESCE_MS) {
+      lastChannelPushAt.set(key, now);
+      sendFor(uid);
+    } else if (!pendingTrailing.has(key)) {
+      // Inside the window: queue exactly one catch-up push for when it closes.
+      const wait = PUSH_COALESCE_MS - since;
+      const handle = setTimeout(() => {
+        pendingTrailing.delete(key);
+        lastChannelPushAt.set(key, Date.now());
+        try { sendFor(uid); } catch { /* best effort */ }
+      }, wait);
+      handle.unref?.();
+      pendingTrailing.set(key, handle);
+    }
   }
 }
 
