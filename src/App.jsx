@@ -591,6 +591,9 @@ function AccountMenu({ user, onChangePassword, onLogout, onViewAs, onInstallHelp
           <div className="px-3 py-2 border-b border-gray-100">
             <div className="text-sm font-medium text-gray-900 truncate">{user.name}</div>
             <div className="text-[11px] text-gray-400 capitalize">{user.role}</div>
+            {user.username && user.username !== user.name && (
+              <div className="text-[11px] text-gray-400 truncate">Signs in as {user.username}</div>
+            )}
           </div>
           {onViewAs && (
             <button onClick={() => { setOpen(false); onViewAs(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">

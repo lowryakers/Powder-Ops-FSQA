@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync } from 'fs';
+import { backfillUsernames } from './usernames.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'compliance.db');
@@ -1396,6 +1397,19 @@ function runMigrations() {
   // Last time this user opened the Production Schedule — clears the New/Updated
   // badge that admins raise when they publish/update the week's schedule.
   addColumnIfMissing('users', 'schedule_seen_at', 'TEXT');
+
+  // Short sign-in name (first + last) for people whose legal name runs to three
+  // or four words. `name` stays the full name on every record; this is only
+  // what they type to log in. NULLs don't collide in a SQLite unique index, so
+  // the index is safe to create before the backfill fills them.
+  addColumnIfMissing('users', 'username', 'TEXT');
+  try {
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE)');
+    const filled = backfillUsernames(db);
+    if (filled) console.log(`[db] Assigned sign-in usernames to ${filled} user${filled === 1 ? '' : 's'}`);
+  } catch (e) {
+    console.warn('[db] username backfill skipped:', e.message);
+  }
 
   // Generic app-wide key/value settings (e.g. the schedule "notified" marker).
   try {

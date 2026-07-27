@@ -10,6 +10,7 @@
 import AdmZip from 'adm-zip';
 import { v4 as uuid } from 'uuid';
 import { getDb } from './db.js';
+import { uniqueUsername } from './usernames.js';
 
 // Common Slack emoji shortcodes → unicode. Unmapped reactions are skipped rather
 // than shown as literal ":name:" text.
@@ -107,7 +108,7 @@ export function importSlackExport(buffer, importerUser, options = {}) {
   let usersCreated = 0, usersMapped = 0;
   const findUser = db.prepare('SELECT id FROM users WHERE LOWER(name) = LOWER(?)');
   const findById = db.prepare('SELECT id FROM users WHERE id = ?');
-  const insUser = db.prepare('INSERT INTO users (id, name, role, department, is_active) VALUES (?, ?, ?, ?, 1)');
+  const insUser = db.prepare('INSERT INTO users (id, name, username, role, department, is_active) VALUES (?, ?, ?, ?, ?, 1)');
   for (const su of usersJson) {
     const displayName = su.profile?.real_name || su.real_name || su.profile?.display_name || su.name;
     slackUsers[su.id] = { name: su.profile?.display_name || displayName };
@@ -117,7 +118,7 @@ export function importSlackExport(buffer, importerUser, options = {}) {
     const existing = override || findUser.get(displayName) || (su.profile?.display_name ? findUser.get(su.profile.display_name) : null);
     let ourId;
     if (existing) { ourId = existing.id; if (override) usersMapped++; }
-    else { ourId = uuid(); insUser.run(ourId, displayName, 'operator', 'warehouse'); usersCreated++; }
+    else { ourId = uuid(); insUser.run(ourId, displayName, uniqueUsername(db, displayName, null), 'operator', 'warehouse'); usersCreated++; }
     userMap[su.id] = ourId;
   }
 

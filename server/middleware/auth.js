@@ -7,10 +7,28 @@ const SESSION_QUERY = `
   WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
 `;
 
-export const PUBLIC_PATHS = new Set([
-  'POST /users/login',
-  'POST /users/set-password',
-]);
+// Requests that must work before there is a session. Everything else under
+// /api needs a valid bearer token. This is the only list — server.js asks
+// isPublicPath() rather than keeping a second copy that can drift.
+const PUBLIC_ROUTES = [
+  { method: 'POST', path: '/users/login' },
+  { method: 'POST', path: '/users/set-password' },
+  // The login screen's name type-ahead. Without it people have to type their
+  // full name exactly, which is the problem short usernames exist to solve.
+  // Returns at most 10 active users and needs 2+ characters to match.
+  { method: 'GET', path: '/users/lookup' },
+  { method: 'POST', path: '/sms/inbound' },   // Twilio — signature-checked in the handler
+  { prefix: '/submit/' },                     // public kiosk forms (QR codes)
+  { path: '/version' },
+  { path: '/health' },
+];
+
+export function isPublicPath(req) {
+  return PUBLIC_ROUTES.some(r => {
+    if (r.method && r.method !== req.method) return false;
+    return r.prefix ? req.path.startsWith(r.prefix) : req.path === r.path;
+  });
+}
 
 function extractToken(req) {
   const header = req.headers.authorization;

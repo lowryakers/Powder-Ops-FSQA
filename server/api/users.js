@@ -4,6 +4,7 @@ import { getDb, logAudit } from '../db.js';
 import crypto from 'crypto';
 import { requireRole } from '../middleware/auth.js';
 import { ALL_MODULE_IDS } from '../module-access.js';
+import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
 
 const router = Router();
 
@@ -37,7 +38,7 @@ function issueSession(db, user) {
   const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
   let quickTabs;
   try { quickTabs = user.quick_tabs ? JSON.parse(user.quick_tabs) : null; } catch { quickTabs = null; }
-  return { token, user: { id: user.id, name: user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess, home_workspace: user.home_workspace || 'fsqa', quick_tabs: quickTabs } };
+  return { token, user: { id: user.id, name: user.name, username: user.username || user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess, home_workspace: user.home_workspace || 'fsqa', quick_tabs: quickTabs } };
 }
 
 // --- User CRUD ---
@@ -45,7 +46,7 @@ function issueSession(db, user) {
 router.get('/', (req, res) => {
   const db = getDb();
   const { role, active } = req.query;
-  let sql = 'SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, created_at FROM users WHERE 1=1';
+  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, created_at FROM users WHERE 1=1';
   const params = [];
   if (role) { sql += ' AND role = ?'; params.push(role); }
   if (active !== undefined) { sql += ' AND is_active = ?'; params.push(active === 'true' ? 1 : 0); }
@@ -60,10 +61,10 @@ router.get('/technicians', (_req, res) => {
 });
 
 router.get('/me', (req, res) => {
-  const row = getDb().prepare('SELECT home_workspace, quick_tabs FROM users WHERE id = ?').get(req.user.id) || {};
+  const row = getDb().prepare('SELECT home_workspace, quick_tabs, username FROM users WHERE id = ?').get(req.user.id) || {};
   let quickTabs;
   try { quickTabs = row.quick_tabs ? JSON.parse(row.quick_tabs) : null; } catch { quickTabs = null; }
-  res.json({ id: req.user.id, name: req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs });
+  res.json({ id: req.user.id, name: req.user.name, username: row.username || req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs });
 });
 
 // Let a user set their own default landing workspace.
@@ -118,7 +119,9 @@ router.get('/lookup', (req, res) => {
   const db = getDb();
   const { q } = req.query;
   if (!q || q.length < 2) return res.json([]);
-  const users = db.prepare("SELECT id, name, department FROM users WHERE is_active = 1 AND LOWER(name) LIKE LOWER(?) ORDER BY name LIMIT 10").all(`%${q}%`);
+  const users = db.prepare(`SELECT id, name, COALESCE(username, name) AS username, department FROM users
+     WHERE is_active = 1 AND (LOWER(name) LIKE LOWER(?) OR LOWER(username) LIKE LOWER(?))
+     ORDER BY username LIMIT 10`).all(`%${q}%`, `%${q}%`);
   res.json(users);
 });
 
@@ -186,15 +189,24 @@ router.get('/:id/pin', requireRole('admin'), (req, res) => {
 router.post('/', requireRole('admin'), (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { name, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access } = req.body;
+  const { name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
 
+  let signIn;
+  if (username) {
+    const check = validateUsername(db, username, null);
+    if (check.error) return res.status(400).json({ error: check.error });
+    signIn = check.username;
+  } else {
+    signIn = uniqueUsername(db, name, null);
+  }
+
   const moduleAccessStr = module_access ? JSON.stringify(module_access) : null;
-  db.prepare('INSERT INTO users (id, name, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr);
+  db.prepare('INSERT INTO users (id, name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, signIn, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr);
 
   joinDefaultChannels(db, id);
-  const created = db.prepare('SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(id);
+  const created = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'user', id, { name, role: role || 'operator', department: department || 'warehouse' }, null, null, name);
   res.status(201).json(created);
 });
@@ -205,7 +217,7 @@ router.post('/bulk', requireRole('admin'), (req, res) => {
   const list = Array.isArray(req.body?.users) ? req.body.users : [];
   if (!list.length) return res.status(400).json({ error: 'users array is required' });
   const ROLES = ['admin', 'supervisor', 'operator', 'auditor'];
-  const ins = db.prepare('INSERT INTO users (id, name, email, role, department, module_access) VALUES (?, ?, ?, ?, ?, ?)');
+  const ins = db.prepare('INSERT INTO users (id, name, username, email, role, department, module_access) VALUES (?, ?, ?, ?, ?, ?, ?)');
   let created = 0; const names = [];
   const tx = db.transaction(() => {
     for (const u of list) {
@@ -213,7 +225,7 @@ router.post('/bulk', requireRole('admin'), (req, res) => {
       if (!name) continue;
       const role = ROLES.includes(u.role) ? u.role : 'operator';
       const nid = uuid();
-      ins.run(nid, name, u.email || null, role, u.department || 'warehouse', u.module_access ? JSON.stringify(u.module_access) : null);
+      ins.run(nid, name, uniqueUsername(db, name, null), u.email || null, role, u.department || 'warehouse', u.module_access ? JSON.stringify(u.module_access) : null);
       joinDefaultChannels(db, nid);
       created++; names.push(name);
     }
@@ -290,14 +302,27 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'User not found' });
 
-  const { name, email, pin, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs } = req.body;
+  const { name, username, email, pin, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs } = req.body;
+
+  // An admin-set username wins. Otherwise, if the full name changed and the
+  // current username is still the one we derived from the old name, follow the
+  // rename; a hand-picked username is left alone.
+  let signIn = existing.username;
+  if (username !== undefined && username !== null && username !== existing.username) {
+    const check = validateUsername(db, username, req.params.id);
+    if (check.error) return res.status(400).json({ error: check.error });
+    signIn = check.username;
+  } else if (name && name !== existing.name && existing.username === deriveUsername(existing.name)) {
+    signIn = uniqueUsername(db, name, req.params.id);
+  }
+  if (!signIn) signIn = uniqueUsername(db, name || existing.name, req.params.id);
   const moduleAccessStr = module_access !== undefined ? (module_access ? JSON.stringify(module_access) : null) : existing.module_access;
   const homeWorkspace = home_workspace !== undefined ? (home_workspace === 'messages' ? 'messages' : 'fsqa') : existing.home_workspace;
   const quickTabsStr = quick_tabs !== undefined
     ? (Array.isArray(quick_tabs) && quick_tabs.length ? JSON.stringify(quick_tabs.slice(0, 4).map(String)) : null)
     : existing.quick_tabs;
-  db.prepare(`UPDATE users SET name=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, updated_at=datetime('now') WHERE id=?`)
-    .run(name || existing.name, email ?? existing.email, pin || null, role || existing.role,
+  db.prepare(`UPDATE users SET name=?, username=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, updated_at=datetime('now') WHERE id=?`)
+    .run(name || existing.name, signIn, email ?? existing.email, pin || null, role || existing.role,
       department || existing.department || 'warehouse',
       is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
       is_contractor !== undefined ? (is_contractor ? 1 : 0) : (existing.is_contractor || 0),
@@ -306,13 +331,14 @@ router.put('/:id', requireRole('admin'), (req, res) => {
       moduleAccessStr, homeWorkspace, quickTabsStr,
       req.params.id);
 
-  const updated = db.prepare('SELECT id, name, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(req.params.id);
+  const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(req.params.id);
 
   // Surface security-relevant changes (role, active status, module permissions)
   // as their own explicit audit actions so they're easy to filter for.
   const changes = {};
   if (updated.role !== existing.role) changes.role = { from: existing.role, to: updated.role };
   if (updated.is_active !== existing.is_active) changes.is_active = { from: existing.is_active, to: updated.is_active };
+  if (updated.username !== existing.username) changes.username = { from: existing.username, to: updated.username };
   const permsChanged = (existing.module_access || null) !== (updated.module_access || null);
   if (permsChanged) changes.module_access = { changed: true };
   const securityChange = changes.role || changes.is_active || permsChanged;
@@ -341,7 +367,10 @@ router.post('/login', (req, res) => {
     return res.status(429).json({ error: `Too many failed attempts. Try again in ${mins} minute${mins > 1 ? 's' : ''}.` });
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?) AND is_active = 1').get(name);
+  // The short username is what people are told to use, but the full name keeps
+  // working — nobody gets locked out by the switch.
+  const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND (LOWER(username) = LOWER(?) OR LOWER(name) = LOWER(?))
+     ORDER BY (LOWER(username) = LOWER(?)) DESC LIMIT 1`).get(name, name, name);
   if (!user) {
     logAudit(name, 'login_failed', 'user', null, { reason: 'unknown_user' }, null, null, name);
     return res.status(401).json({ error: 'User not found. Ask your admin to add you.' });
@@ -350,7 +379,7 @@ router.post('/login', (req, res) => {
   // No password yet → first-login set-password flow. has_pin means an existing
   // staffer transitioning from PIN (they must confirm their current PIN).
   if (!user.password_hash) {
-    return res.status(200).json({ needs_password_setup: true, user_id: user.id, user_name: user.name, has_pin: !!user.pin });
+    return res.status(200).json({ needs_password_setup: true, user_id: user.id, user_name: user.username || user.name, has_pin: !!user.pin });
   }
 
   if (!password) return res.status(400).json({ error: 'Password is required' });

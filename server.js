@@ -54,7 +54,7 @@ import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, s
 import { seedProductionEntries } from './server/production-seed.js';
 import { seedTrainingCourses } from './server/training-seed.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
-import { authenticate } from './server/middleware/auth.js';
+import { authenticate, isPublicPath } from './server/middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1297,15 +1297,7 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 
 // --- Auth middleware (applied to all /api/* except public paths) ---
 app.use('/api', (req, res, next) => {
-  const skip = [
-    '/users/login',
-    '/users/set-password',
-    '/submit/',
-    '/sms/inbound',
-    '/version',
-    '/health',
-  ];
-  if (skip.some(p => req.path === p || req.path.startsWith(p))) return next();
+  if (isPublicPath(req)) return next();
   authenticate(req, res, next);
 });
 

@@ -37,7 +37,7 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const selectUser = (u) => { setName(u.name); setShowSuggestions(false); setSuggestions([]); };
+  const selectUser = (u) => { setName(u.username || u.name); setShowSuggestions(false); setSuggestions([]); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -157,21 +157,26 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">
           <div className="relative">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
             <div className="relative">
               <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input ref={nameRef} type="text" required autoComplete="name" value={name}
                 onChange={e => { setName(e.target.value); setShowSuggestions(true); }}
                 onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Your full name" />
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="First and last name" />
             </div>
             {showSuggestions && suggestions.length > 0 && (
               <div ref={suggestionsRef} className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
                 {suggestions.map(u => (
                   <button key={u.id} type="button" onClick={() => selectUser(u)}
                     className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between border-b border-gray-100 last:border-0">
-                    <span className="font-medium text-gray-900">{u.name}</span>
-                    <span className="text-xs text-gray-400 capitalize">{u.department}</span>
+                    <span className="min-w-0">
+                      <span className="block font-medium text-gray-900 truncate">{u.username || u.name}</span>
+                      {u.username && u.username !== u.name && (
+                        <span className="block text-[11px] text-gray-400 truncate">{u.name}</span>
+                      )}
+                    </span>
+                    <span className="text-xs text-gray-400 capitalize shrink-0 ml-2">{u.department}</span>
                   </button>
                 ))}
               </div>

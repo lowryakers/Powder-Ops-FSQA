@@ -371,10 +371,20 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
       <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit User' : 'Add Technician / User'}</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="sm:col-span-2">
+        <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Full Name *</label>
           <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Adam Bliss" />
+          <p className="text-[11px] text-gray-400 mt-1">Appears on records and signatures.</p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Username (sign-in)</label>
+          <input value={form.username || ''} onChange={e => setForm({ ...form, username: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            placeholder="First Last" />
+          <p className="text-[11px] text-gray-400 mt-1">
+            Leave blank for first + last name. Set it by hand when someone goes by a different surname.
+          </p>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Password</label>
@@ -488,6 +498,9 @@ function UserRow({ u, onEdit, onToggle, onRemove, isEditing }) {
     <tr className={`border-b border-gray-100 hover:bg-gray-50 ${isEditing ? 'bg-powder-50' : ''}`}>
       <td className="px-4 py-3 w-full">
         <span className="font-medium text-gray-900">{u.name}</span>
+        {u.username && u.username !== u.name && (
+          <span className="ml-2 text-[11px] text-gray-400">signs in as {u.username}</span>
+        )}
         {u.is_contractor ? (
           <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
         ) : null}

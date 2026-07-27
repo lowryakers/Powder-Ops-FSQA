@@ -81,6 +81,18 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## Sign-in usernames (short) vs full names (records)
+`users.username` = what people type to sign in, derived first + last from `users.name`
+(`server/usernames.js`, backfilled on boot, unique index, admin-editable in Settings). `users.name` stays
+the full legal name and is what every record, signature and audit entry shows — nothing historical moved.
+Login accepts **either** the username or the full name, so no one is locked out. A rename follows the
+username only when it was still the auto-derived one; a hand-set username is never overwritten.
+Spanish two-surname names derive to first + *last* word ("Gaston Antonio Perez Quintanilla" → "Gaston
+Quintanilla"); when someone goes by the paternal surname, set it by hand in Settings.
+**Public API paths live in one place:** `isPublicPath()` in `server/middleware/auth.js` (server.js calls it).
+`GET /users/lookup` is public — the login type-ahead was 401ing before, which is why long names had to be
+typed exactly.
+
 ## Two origins: launcher vs app (link + PWA gotcha)
 `start.powder-ops.com` = the **workspace launcher** (`launcher/index.html`), not the app. Only the bare
 landing request (`/`, no query) gets the launcher; every other GET on that host 302s to the ReadyDoc origin
