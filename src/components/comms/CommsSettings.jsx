@@ -29,9 +29,15 @@ function TabButton({ active, onClick, icon: Icon, children }) {
 
 /* ─────────────────────────── Channels tab ─────────────────────────── */
 // Admin manager for sidebar sections (create / rename / reorder / delete).
-function SectionsManager({ secs, onChange }) {
+//
+// A section is a named heading in everyone's channel sidebar — it only groups
+// channels, it doesn't grant or restrict access. An empty one renders nothing,
+// so each row shows what it holds and offers a way to fill it; otherwise a
+// newly created section looks like it did nothing.
+function SectionsManager({ secs, channels, onAssign, onChange }) {
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
+  const emptyCount = secs.filter(s => !channels.some(c => c.section_id === s.id)).length;
   const add = async () => { if (!newName.trim()) return; await apiPost('/comms/sections', { name: newName.trim() }); setNewName(''); onChange(); };
   const rename = async (s, name) => { if (name.trim() && name.trim() !== s.name) { await apiPut(`/comms/sections/${s.id}`, { name: name.trim() }); onChange(); } };
   const del = async (s) => { if (window.confirm(`Delete section "${s.name}"? Its channels become ungrouped.`)) { await apiDelete(`/comms/sections/${s.id}`); onChange(); } };
@@ -44,21 +50,51 @@ function SectionsManager({ secs, onChange }) {
   return (
     <div className="border border-gray-200 rounded-lg mb-3">
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700">
-        <span>Sidebar sections {secs.length ? `(${secs.length})` : ''}</span>
-        <span className="text-xs text-powder-600">{open ? 'Hide' : 'Manage'}</span>
+        <span className="flex items-center gap-2 min-w-0">
+          <span>Sidebar sections {secs.length ? `(${secs.length})` : ''}</span>
+          {!open && emptyCount > 0 && (
+            <span className="text-[10px] font-medium text-amber-700 bg-amber-50 rounded-full px-2 py-0.5 whitespace-nowrap">
+              {emptyCount} empty · hidden from the sidebar
+            </span>
+          )}
+        </span>
+        <span className="text-xs text-powder-600 shrink-0">{open ? 'Hide' : 'Manage'}</span>
       </button>
       {open && (
-        <div className="px-3 pb-3 space-y-1.5">
-          {secs.map((s, i) => (
-            <div key={s.id} className="flex items-center gap-1.5">
-              <input defaultValue={s.name} onBlur={e => rename(s, e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-                className="flex-1 px-2 py-1 border border-gray-200 rounded text-sm" />
-              <button onClick={() => move(i, -1)} disabled={i === 0} className="p-1 text-gray-400 hover:text-powder-600 disabled:opacity-30" title="Move up"><ArrowUp size={13} /></button>
-              <button onClick={() => move(i, 1)} disabled={i === secs.length - 1} className="p-1 text-gray-400 hover:text-powder-600 disabled:opacity-30" title="Move down"><ArrowDown size={13} /></button>
-              <button onClick={() => del(s)} className="p-1 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
-            </div>
-          ))}
+        <div className="px-3 pb-3 space-y-2">
+          <p className="text-[11px] text-gray-500">
+            Sections are headings that group channels in everyone&apos;s sidebar. They don&apos;t change who can
+            see a channel. A section with no channels in it is hidden, so it won&apos;t appear until you put
+            something in it.
+          </p>
+          {secs.map((s, i) => {
+            const mine = channels.filter(c => c.section_id === s.id);
+            return (
+              <div key={s.id} className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <input defaultValue={s.name} onBlur={e => rename(s, e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                    className="flex-1 px-2 py-1 border border-gray-200 rounded text-sm" />
+                  <button onClick={() => move(i, -1)} disabled={i === 0} className="p-1 text-gray-400 hover:text-powder-600 disabled:opacity-30" title="Move up"><ArrowUp size={13} /></button>
+                  <button onClick={() => move(i, 1)} disabled={i === secs.length - 1} className="p-1 text-gray-400 hover:text-powder-600 disabled:opacity-30" title="Move down"><ArrowDown size={13} /></button>
+                  <button onClick={() => del(s)} className="p-1 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
+                </div>
+                <div className="flex items-center gap-1.5 pl-1">
+                  {mine.length === 0 ? (
+                    <span className="text-[11px] text-amber-700">Empty — hidden from the sidebar until a channel is added.</span>
+                  ) : (
+                    <span className="text-[11px] text-gray-500 truncate">{mine.map(c => `#${c.name}`).join(', ')}</span>
+                  )}
+                  <select value="" onChange={e => e.target.value && onAssign(e.target.value, s.id)}
+                    className="ml-auto shrink-0 text-[11px] border border-gray-200 rounded px-1.5 py-1 text-gray-600">
+                    <option value="">Add a channel…</option>
+                    {channels.filter(c => !c.is_default && !c.archived && c.section_id !== s.id)
+                      .map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+                  </select>
+                </div>
+              </div>
+            );
+          })}
           <div className="flex items-center gap-1.5 pt-1">
             <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add(); }}
               placeholder="New section name (e.g. Warehouse)" className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
@@ -122,7 +158,8 @@ function ChannelsTab({ users }) {
         <p className="text-xs text-gray-400">{rows.filter(c => !c.archived).length} active channels</p>
         <button onClick={clearUnread} disabled={busy} className="text-xs text-powder-600 hover:text-powder-700 font-medium disabled:opacity-50">Clear unread for everyone</button>
       </div>
-      <SectionsManager secs={secs} onChange={reload} />
+      <SectionsManager secs={secs} channels={rows} onChange={reload}
+        onAssign={(channelId, sectionId) => assignSection({ id: channelId }, sectionId)} />
       {loading ? <p className="text-sm text-gray-400 py-6 text-center">Loading channels…</p> : (
         <div className="space-y-1.5">
           {rows.length === 0 && <p className="text-sm text-gray-400 py-6 text-center">No channels yet.</p>}

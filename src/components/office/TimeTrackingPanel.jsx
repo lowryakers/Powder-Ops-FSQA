@@ -132,6 +132,8 @@ function AdjustmentsLog({ tr = (x) => x }) {
   const [q, setQ] = useState('');
   const [sortField, setSortField] = useState('adjustment_date');
   const [sortDir, setSortDir] = useState('desc');
+  const [picked, setPicked] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
   const { data: entries, refresh } = useApiGet(`/office/time/adjustments${employee ? `?employee=${encodeURIComponent(employee)}` : ''}`, [employee]);
   const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir(f === 'adjustment_date' ? 'desc' : 'asc'); } };
 
@@ -175,6 +177,45 @@ function AdjustmentsLog({ tr = (x) => x }) {
     refresh();
   };
 
+  // ── Bulk review ───────────────────────────────────────────────────────────
+  // Filter the log down to what you're working through — a pay period, one
+  // person, everything still pending — then act on the whole set at once. The
+  // selection only ever covers rows currently visible, so a hidden row can
+  // never be changed by accident.
+  const visibleIds = useMemo(() => list.map(e => e.id), [list]);
+  const selected = useMemo(() => visibleIds.filter(id => picked.has(id)), [visibleIds, picked]);
+  const allPicked = visibleIds.length > 0 && selected.length === visibleIds.length;
+  const toggleOne = (id) => setPicked(s => {
+    const next = new Set(s);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAll = () => setPicked(s => {
+    const next = new Set(s);
+    if (allPicked) visibleIds.forEach(id => next.delete(id));
+    else visibleIds.forEach(id => next.add(id));
+    return next;
+  });
+  const applyBulk = async (patch) => {
+    if (!selected.length) return;
+    setBusy(true);
+    try {
+      await apiPut('/office/time/adjustments/bulk', { ids: selected, ...patch });
+      setPicked(new Set());
+      refresh();
+    } finally { setBusy(false); }
+  };
+  const deleteBulk = async () => {
+    if (!selected.length) return;
+    if (!confirm(`Delete ${selected.length} ${selected.length === 1 ? 'entry' : 'entries'}? This cannot be undone.`)) return;
+    setBusy(true);
+    try {
+      await apiPost('/office/time/adjustments/bulk-delete', { ids: selected });
+      setPicked(new Set());
+      refresh();
+    } finally { setBusy(false); }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
@@ -212,13 +253,47 @@ function AdjustmentsLog({ tr = (x) => x }) {
         </div>
       </div>
 
+      {/* Bulk bar. Sits above the list rather than floating over it, so it can
+          never cover a row you're deciding about. */}
+      {selected.length > 0 && (
+        <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-powder-200 bg-powder-50 px-3 py-2">
+          <span className="text-xs font-semibold text-powder-900">
+            {selected.length} {selected.length === 1 ? tr('entry selected') : tr('entries selected')}
+          </span>
+          <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+            <button onClick={() => applyBulk({ status: 'reviewed' })} disabled={busy}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 disabled:opacity-50">
+              <Check size={12} /> {tr('Mark reviewed')}
+            </button>
+            <span className="text-[11px] text-gray-500 pl-1">{tr('ADP')}:</span>
+            {ADP_STATES.map(a => (
+              <button key={a.value} onClick={() => applyBulk({ adp_status: a.value })} disabled={busy}
+                className={`px-2 py-1 rounded-lg text-[11px] font-semibold hover:opacity-80 disabled:opacity-50 ${a.tone}`}>
+                {tr(a.label)}
+              </button>
+            ))}
+            <button onClick={deleteBulk} disabled={busy}
+              className="p-1.5 text-gray-400 hover:text-red-600 disabled:opacity-50" data-tip="Delete selected"><Trash2 size={14} /></button>
+            <button onClick={() => setPicked(new Set())} className="text-[11px] text-gray-500 hover:text-gray-700 pl-1">{tr('Clear')}</button>
+          </div>
+        </div>
+      )}
+      {list.length > 0 && (
+        <label className="flex items-center gap-2 text-xs text-gray-500 px-1 cursor-pointer w-fit">
+          <input type="checkbox" checked={allPicked} onChange={toggleAll} className="rounded border-gray-300" />
+          {allPicked ? tr('Deselect all') : `${tr('Select all')} (${list.length})`}
+        </label>
+      )}
+
       {/* Mobile cards */}
       <div className="md:hidden space-y-2">
         {list.map(e => {
           const t = typeMeta(e.adjustment_type);
           return (
-            <div key={e.id} className={`bg-white rounded-xl border border-gray-200 border-l-4 ${e.status === 'new' ? 'border-powder-400' : 'border-gray-200'} p-3 shadow-sm`}>
+            <div key={e.id} className={`bg-white rounded-xl border border-gray-200 border-l-4 ${e.status === 'new' ? 'border-powder-400' : 'border-gray-200'} p-3 shadow-sm ${picked.has(e.id) ? 'ring-2 ring-powder-300' : ''}`}>
               <div className="flex items-start justify-between gap-2">
+                <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggleOne(e.id)}
+                  className="mt-1 shrink-0 rounded border-gray-300" aria-label={`Select ${e.employee_name}`} />
                 <div className="min-w-0 flex-1">
                   <button onClick={() => setEmployee(e.employee_name)} className="font-medium text-gray-900 hover:text-powder-700">{e.employee_name}</button>
                   <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${t.tone}`}>{t.label}</span>
@@ -255,6 +330,10 @@ function AdjustmentsLog({ tr = (x) => x }) {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
+                <th className="px-3 py-2.5 w-8">
+                  <input type="checkbox" checked={allPicked} onChange={toggleAll}
+                    className="rounded border-gray-300" aria-label="Select all entries" />
+                </th>
                 <SortHeader label="Employee" field="employee_name" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Type" field="adjustment_type" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Date" field="adjustment_date" sortField={sortField} sortDir={sortDir} onSort={onSort} />
@@ -269,7 +348,11 @@ function AdjustmentsLog({ tr = (x) => x }) {
               {list.map(e => {
                 const t = typeMeta(e.adjustment_type);
                 return (
-                  <tr key={e.id} className={`border-b border-gray-100 hover:bg-gray-50 ${e.status === 'new' ? 'bg-powder-50/40' : ''}`}>
+                  <tr key={e.id} className={`border-b border-gray-100 hover:bg-gray-50 ${picked.has(e.id) ? 'bg-powder-50' : e.status === 'new' ? 'bg-powder-50/40' : ''}`}>
+                    <td className="px-3 py-2.5">
+                      <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggleOne(e.id)}
+                        className="rounded border-gray-300" aria-label={`Select ${e.employee_name}`} />
+                    </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <button onClick={() => setEmployee(e.employee_name)} className="font-medium text-gray-900 hover:text-powder-700">{e.employee_name}</button>
                     </td>
@@ -305,7 +388,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
                   </tr>
                 );
               })}
-              {list.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">{tr('No entries')}</td></tr>}
+              {list.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">{tr('No entries')}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -352,6 +435,7 @@ const PAGE_STRINGS = [
   'Time Tracking', 'Log', 'New Report', 'Stats', 'Status: all', 'New', 'Reviewed',
   'Pay period: all', 'ADP: all', 'Pending', 'In ADP', 'N/A', 'accounted for in ADP',
   'ADP', 'No entries', 'Reported by', 'Mark reviewed', 'Employee', 'Type', 'Date', 'Message', 'Hours',
+  'entry selected', 'entries selected', 'Select all', 'Deselect all', 'Clear',
 ];
 
 export default function TimeTrackingPanel() {

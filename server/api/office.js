@@ -284,6 +284,58 @@ router.get('/time/stats', (req, res) => {
   res.json(rows);
 });
 
+// Bulk review: the same two decisions as the single-entry PUT (reviewed, and
+// keyed into ADP) applied to a selection. Reconciling a whole pay period one
+// row at a time is the slow part of Marnee's month, so this is one round trip
+// and one transaction. Each entry is still audited individually — a bulk edit
+// has to leave the same trail a manual one would.
+router.put('/time/adjustments/bulk', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(x => typeof x === 'string') : [];
+  if (!ids.length) return res.status(400).json({ error: 'No entries selected' });
+
+  const wantStatus = ['new', 'reviewed'].includes(req.body?.status) ? req.body.status : null;
+  const wantAdp = ['pending', 'entered', 'not_applicable'].includes(req.body?.adp_status) ? req.body.adp_status : null;
+  if (!wantStatus && !wantAdp) return res.status(400).json({ error: 'Nothing to change' });
+
+  const get = db.prepare('SELECT * FROM time_adjustments WHERE id = ?');
+  const upd = db.prepare(`UPDATE time_adjustments SET status = ?, adp_status = ?, adp_entered_by = ?,
+    adp_entered_at = ?, pay_period = ?, updated_at = datetime('now') WHERE id = ?`);
+  const now = new Date().toISOString();
+  const changed = [];
+
+  db.transaction(() => {
+    for (const id of ids) {
+      const existing = get.get(id);
+      if (!existing) continue;
+      const status = wantStatus || existing.status;
+      const adpStatus = wantAdp || existing.adp_status || 'pending';
+      const done = adpStatus !== 'pending';
+      // Only re-stamp who/when when the ADP state is what actually moved.
+      const adpMoved = wantAdp && adpStatus !== (existing.adp_status || 'pending');
+      const adpBy = adpMoved ? (done ? req.user.name : null) : existing.adp_entered_by;
+      const adpAt = adpMoved ? (done ? now : null) : existing.adp_entered_at;
+      // Older rows predate the pay-period column; stamp it while we're here so
+      // the period filter groups them the same way an edited row would.
+      const payPeriod = existing.pay_period || payPeriodFor(existing.adjustment_date);
+      if (status === existing.status && !adpMoved && payPeriod === existing.pay_period) continue;
+      upd.run(status, adpStatus, adpBy, adpAt, payPeriod, id);
+      changed.push({ existing, after: get.get(id) });
+    }
+  })();
+
+  for (const { existing, after } of changed) {
+    logAudit(req.user, 'update', 'time_adjustment', after.id, {
+      bulk: true,
+      ...(after.status !== existing.status ? { status: { from: existing.status, to: after.status } } : {}),
+      ...(after.adp_status !== existing.adp_status
+        ? { adp_status: { from: existing.adp_status || 'pending', to: after.adp_status } } : {}),
+    }, existing, after, existing.employee_name);
+  }
+  res.json({ updated: changed.length, requested: ids.length });
+});
+
 router.put('/time/adjustments/:id', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const db = getDb();
@@ -316,6 +368,28 @@ router.put('/time/adjustments/:id', (req, res) => {
       { adp_status: { from: existing.adp_status || 'pending', to: updated.adp_status } }, existing, updated, existing.employee_name);
   }
   res.json(updated);
+});
+
+router.post('/time/adjustments/bulk-delete', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(x => typeof x === 'string') : [];
+  if (!ids.length) return res.status(400).json({ error: 'No entries selected' });
+  const get = db.prepare('SELECT * FROM time_adjustments WHERE id = ?');
+  const del = db.prepare('DELETE FROM time_adjustments WHERE id = ?');
+  const removed = [];
+  db.transaction(() => {
+    for (const id of ids) {
+      const existing = get.get(id);
+      if (!existing) continue;
+      del.run(id);
+      removed.push(existing);
+    }
+  })();
+  for (const e of removed) {
+    logAudit(req.user, 'delete', 'time_adjustment', e.id, { bulk: true }, e, null, e.employee_name);
+  }
+  res.json({ deleted: removed.length, requested: ids.length });
 });
 
 router.delete('/time/adjustments/:id', (req, res) => {
