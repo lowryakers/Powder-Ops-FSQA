@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -56,6 +56,7 @@ import CheckedOutPanel from './components/compliance/CheckedOutPanel.jsx';
 import OfficeRequestsPanel from './components/office/OfficeRequestsPanel.jsx';
 import LedgerPanel from './components/office/LedgerPanel.jsx';
 import ProcurementPanel from './components/office/ProcurementPanel.jsx';
+import NewsletterPanel from './components/office/NewsletterPanel.jsx';
 
 const NAV_GROUPS = [
   {
@@ -147,6 +148,7 @@ const NAV_GROUPS = [
       { id: 'accounts-payable', label: 'Accounts Payable', icon: Receipt, keywords: 'AP bills vendors invoices owed' },
       { id: 'accounts-receivable', label: 'Accounts Receivable', icon: Landmark, keywords: 'AR customers invoices billed' },
       { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
+      { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
     ],
   },
   {
@@ -1464,6 +1466,7 @@ function App() {
           {resolvedTab === 'accounts-payable' && <LedgerPanel ledger="ap" />}
           {resolvedTab === 'accounts-receivable' && <LedgerPanel ledger="ar" />}
           {resolvedTab === 'procurement' && <ProcurementPanel />}
+          {resolvedTab === 'newsletter' && <NewsletterPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}

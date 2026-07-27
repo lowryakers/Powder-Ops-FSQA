@@ -5,9 +5,21 @@ import { Search, Repeat, Trash2, Upload, FileText, Download, AlertTriangle, Exte
 import FilePreview from '../FilePreview.jsx';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
+import SpendTab from './SpendTab.jsx';
 
 const LABELS = ['Warehouse/Production', 'Cleaning', 'Break room', 'Maintenance', 'Office'];
 const STATUS_FLOW = ['new', 'ordered', 'received', 'paid'];
+// People paste links as "amazon.com/..." as often as with the scheme, and a
+// bare href like that is treated as a path — the click goes nowhere. Normalize
+// before rendering so the link in a request is always the link that opens.
+function externalUrl(raw) {
+  const v = String(raw || '').trim();
+  if (!v) return null;
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/^[\w.-]+\.[a-z]{2,}(\/|$|\?)/i.test(v)) return `https://${v}`;
+  return null;
+}
+
 const STATUS_META = {
   new: { label: 'New', tone: 'bg-blue-100 text-blue-700', next: 'ordered', nextLabel: 'Mark ordered' },
   ordered: { label: 'Ordered', tone: 'bg-amber-100 text-amber-700', next: 'received', nextLabel: 'Mark received' },
@@ -150,8 +162,18 @@ function EditOrderModal({ order, onClose, onSaved }) {
             <input type="date" value={form.eta} onChange={e => setForm({ ...form, eta: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
           <div><label className="block text-xs font-medium text-gray-700 mb-1">Supplier</label>
             <input value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-          <div className="col-span-2"><label className="block text-xs font-medium text-gray-700 mb-1">Link</label>
-            <input value={form.link} onChange={e => setForm({ ...form, link: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+          <div className="col-span-2">
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium text-gray-700">Link</label>
+              {externalUrl(form.link) && (
+                <a href={externalUrl(form.link)} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-powder-700 hover:underline">
+                  Open <ExternalLink size={11} />
+                </a>
+              )}
+            </div>
+            <input value={form.link} onChange={e => setForm({ ...form, link: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
           <div className="col-span-2"><label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
             <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
         </div>
@@ -257,7 +279,12 @@ function OrdersLog({ refreshKey, onChanged }) {
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
               <span>{o.requested_by || '—'} · {(o.submitted_at || '').slice(0, 10)}</span>
               {o.total != null && <span>${Number(o.total).toFixed(2)}</span>}
-              {o.link && <a href={o.link} target="_blank" rel="noreferrer" className="text-powder-600 inline-flex items-center gap-0.5">link <ExternalLink size={10} /></a>}
+              {externalUrl(o.link) && (
+                <a href={externalUrl(o.link)} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-powder-50 text-powder-700 font-medium hover:bg-powder-100">
+                  Open link <ExternalLink size={10} />
+                </a>
+              )}
             </div>
             <div className="mt-2 flex items-center gap-2">
               {STATUS_META[o.status].next && (
@@ -291,9 +318,16 @@ function OrdersLog({ refreshKey, onChanged }) {
               {list.map(o => (
                 <tr key={o.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-3 py-2.5 w-full">
-                    <span className="font-medium text-gray-900">{o.item_name}</span>
+                    {externalUrl(o.link) ? (
+                      <a href={externalUrl(o.link)} target="_blank" rel="noreferrer"
+                        className="font-medium text-powder-700 hover:underline inline-flex items-center gap-1"
+                        title={o.link}>
+                        {o.item_name} <ExternalLink size={11} />
+                      </a>
+                    ) : (
+                      <span className="font-medium text-gray-900">{o.item_name}</span>
+                    )}
                     {o.urgent && (o.status === 'new' || o.status === 'ordered') && <span className="ml-1.5 text-[10px] font-bold text-red-600">URGENT</span>}
-                    {o.link && <a href={o.link} target="_blank" rel="noreferrer" className="ml-1.5 text-powder-600 inline-flex items-center"><ExternalLink size={11} /></a>}
                     {o.notes && <div className="text-[11px] text-gray-400">{o.notes}</div>}
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{o.qty ?? '—'} {o.uom || ''}</td>
@@ -508,7 +542,7 @@ function InvoiceRepo() {
 // Labels the EN/ES toggle covers on this page.
 const PAGE_STRINGS = [
   'Supply Orders', 'Orders', 'New Request', 'Invoices', 'Item', 'Quantity', 'Supplier',
-  'Status', 'Urgent', 'Needed by', 'Notes', 'Requested by', 'Total', 'No orders',
+  'Status', 'Urgent', 'Needed by', 'Notes', 'Requested by', 'Total', 'No orders', 'Spend',
 ];
 
 export default function SupplyOrdersPanel() {
@@ -521,7 +555,7 @@ export default function SupplyOrdersPanel() {
   const { lang, setLang, tr, translating } = usePageTranslation(PAGE_STRINGS);
 
   const tabs = isAdmin
-    ? [['log', 'Orders'], ['form', 'New Request'], ['invoices', 'Invoices']]
+    ? [['log', 'Orders'], ['form', 'New Request'], ['invoices', 'Invoices'], ['spend', 'Spend']]
     : [['form', 'New Request']];
 
   return (
@@ -548,6 +582,7 @@ export default function SupplyOrdersPanel() {
       )}
       {tab === 'log' && isAdmin && <OrdersLog refreshKey={refreshKey} onChanged={refreshItems} />}
       {tab === 'invoices' && isAdmin && <InvoiceRepo />}
+      {tab === 'spend' && isAdmin && <SpendTab />}
     </div>
   );
 }

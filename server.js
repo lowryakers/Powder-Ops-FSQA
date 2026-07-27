@@ -13,6 +13,7 @@ import { getDb, dataDir } from './server/db.js';
 import { readyDocOrigin } from './server/links.js';
 import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import procurementRoutes from './server/api/procurement.js';
+import newsletterRoutes from './server/api/newsletter.js';
 import { seedProcurement } from './server/procurement-seed.js';
 import { seedFinanceFromMonday } from './server/finance-seed.js';
 import equipmentRoutes from './server/api/equipment.js';
@@ -1367,6 +1368,7 @@ app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
 app.use('/api/office', officeRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/procurement', procurementRoutes);
+app.use('/api/newsletter', newsletterRoutes);
 
 // Version check (used by client to detect updates)
 app.get('/api/version', (_req, res) => {

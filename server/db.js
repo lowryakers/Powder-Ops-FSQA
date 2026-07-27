@@ -1635,6 +1635,85 @@ function runMigrations() {
     console.warn('[db] finance tables unavailable:', e.message);
   }
 
+  // ── Hours & spend (Marnee's payroll tracker, merged in) ───────────────────
+  // One row per person per week (weeks run Sun–Sat). "Worked" is time on the
+  // clock; PTO and holiday are paid time off; unpaid is unpaid absence. When
+  // auto-fill is on, whatever is left up to the weekly target counts as paid
+  // non-working time — which is the number payroll actually argues about.
+  // The roster is the users table, so nobody maintains a second list.
+  addColumnIfMissing('users', 'weekly_hours_target', 'REAL');
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS employee_hours (
+        id            TEXT PRIMARY KEY,
+        user_id       TEXT NOT NULL,
+        week_start    TEXT NOT NULL,
+        worked        REAL NOT NULL DEFAULT 0,
+        pto           REAL NOT NULL DEFAULT 0,
+        holiday       REAL NOT NULL DEFAULT 0,
+        unpaid        REAL NOT NULL DEFAULT 0,
+        auto_fill     INTEGER NOT NULL DEFAULT 1,
+        note          TEXT,
+        updated_by    TEXT,
+        updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_hours_week ON employee_hours(user_id, week_start);
+    `);
+  } catch (e) {
+    console.warn('[db] employee_hours unavailable:', e.message);
+  }
+
+  // ── Newsletter (Marnee) ───────────────────────────────────────────────────
+  // Two layers on purpose. `newsletter_cards` are the living notes she adds to
+  // all month — upcoming events, shout-outs, big news, stats. Pressing
+  // "Build newsletter" snapshots them into a `newsletter_issues` row, so
+  // editing the draft never disturbs the running notes, and an issue that went
+  // out is a permanent record of exactly what was sent.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS newsletter_cards (
+        id         TEXT PRIMARY KEY,
+        kind       TEXT NOT NULL DEFAULT 'general',
+        title      TEXT NOT NULL,
+        body       TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active  INTEGER NOT NULL DEFAULT 1,
+        updated_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS newsletter_issues (
+        id         TEXT PRIMARY KEY,
+        title      TEXT NOT NULL,
+        intro      TEXT,
+        sections   TEXT NOT NULL DEFAULT '[]',
+        status     TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','shared')),
+        shared_at  TEXT,
+        shared_by  TEXT,
+        channel_id TEXT,
+        message_id TEXT,
+        pdf_key    TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS newsletter_images (
+        id           TEXT PRIMARY KEY,
+        issue_id     TEXT,
+        filename     TEXT NOT NULL,
+        storage_key  TEXT NOT NULL,
+        content_type TEXT,
+        size         INTEGER,
+        uploaded_by  TEXT,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+  } catch (e) {
+    console.warn('[db] newsletter tables unavailable:', e.message);
+  }
+
   // ── Procurement & demand planning (Jake) ──────────────────────────────────
   // Reference data comes from his two workbooks: the combined BOMs drive parts
   // demand, the parts/pricing sheet drives sourcing, and samples track what's

@@ -88,6 +88,7 @@ const MODULE_GROUPS = [
       { id: 'accounts-payable', label: 'Accounts Payable' },
       { id: 'accounts-receivable', label: 'Accounts Receivable' },
       { id: 'procurement', label: 'Procurement & Demand Planning' },
+      { id: 'newsletter', label: 'Newsletter' },
     ],
   },
   {

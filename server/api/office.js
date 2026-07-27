@@ -328,4 +328,170 @@ router.delete('/time/adjustments/:id', (req, res) => {
   res.json({ deleted: req.params.id });
 });
 
+// ── Hours & spend ────────────────────────────────────────────────────────────
+// Merged in from the standalone tracker Marnee was keeping. Two additions:
+// hours worked vs paid non-working time per pay period, and what the supply
+// orders in that period actually cost, by category.
+//
+// Pay periods are the same biweekly Sun–Sat periods used everywhere else
+// (payPeriodFor above); weeks are the two halves of a period.
+
+const STANDARD_WEEK_HOURS = 40;
+const DAY_MS = 86400000;
+
+// The two week-start dates (Sundays) inside a pay period.
+function weeksOf(periodStart) {
+  const a = Date.parse(`${periodStart}T00:00:00Z`);
+  return [periodStart, new Date(a + 7 * DAY_MS).toISOString().slice(0, 10)];
+}
+
+// Recent pay periods, newest first, for the period picker.
+router.get('/periods', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const count = Math.min(Number(req.query.count) || 8, 26);
+  const current = payPeriodFor(new Date().toISOString().slice(0, 10));
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const start = new Date(Date.parse(`${current}T00:00:00Z`) - i * 14 * DAY_MS).toISOString().slice(0, 10);
+    const end = new Date(Date.parse(`${start}T00:00:00Z`) + 13 * DAY_MS).toISOString().slice(0, 10);
+    out.push({ start, end, weeks: weeksOf(start), current: i === 0 });
+  }
+  res.json(out);
+});
+
+// The roster comes straight from the users table — active people only, no bot
+// — so adding someone in Settings adds them here.
+function roster(db) {
+  return db.prepare(`SELECT id, name, department, weekly_hours_target FROM users
+    WHERE is_active = 1 AND name != 'ReadyBot' AND role != 'auditor' ORDER BY name`).all()
+    .map(u => ({ ...u, target: u.weekly_hours_target || STANDARD_WEEK_HOURS }));
+}
+
+router.get('/hours', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const periodStart = /^\d{4}-\d{2}-\d{2}$/.test(req.query.period || '')
+    ? req.query.period : payPeriodFor(new Date().toISOString().slice(0, 10));
+  const weeks = weeksOf(periodStart);
+
+  const rows = db.prepare('SELECT * FROM employee_hours WHERE week_start IN (?, ?)').all(...weeks);
+  const byUser = {};
+  for (const r of rows) (byUser[r.user_id] = byUser[r.user_id] || {})[r.week_start] = r;
+
+  const people = roster(db).map(u => {
+    const weekRows = weeks.map(w => {
+      const r = byUser[u.id]?.[w];
+      const worked = r?.worked || 0, pto = r?.pto || 0, holiday = r?.holiday || 0, unpaid = r?.unpaid || 0;
+      const autoFill = r ? !!r.auto_fill : true;
+      // Paid-but-not-worked: the balance up to target, only once there's an
+      // entry — an untouched week shouldn't invent 40 hours of anything.
+      const nonWorking = (r && autoFill) ? Math.max(0, u.target - worked - pto - holiday - unpaid) : 0;
+      return {
+        week_start: w, worked, pto, holiday, unpaid, auto_fill: autoFill,
+        has_entry: !!r, note: r?.note || null,
+        non_working: Math.round(nonWorking * 100) / 100,
+        overtime: Math.round(Math.max(0, worked - u.target) * 100) / 100,
+        total: Math.round((worked + pto + holiday + nonWorking) * 100) / 100,
+      };
+    });
+    const sum = (k) => Math.round(weekRows.reduce((n, w) => n + w[k], 0) * 100) / 100;
+    return {
+      user_id: u.id, name: u.name, department: u.department, target: u.target,
+      weeks: weekRows,
+      period: { worked: sum('worked'), pto: sum('pto'), holiday: sum('holiday'), unpaid: sum('unpaid'),
+        non_working: sum('non_working'), overtime: sum('overtime'), total: sum('total') },
+    };
+  });
+
+  const totals = people.reduce((acc, p) => {
+    for (const k of ['worked', 'pto', 'holiday', 'unpaid', 'non_working', 'overtime', 'total']) {
+      acc[k] = Math.round(((acc[k] || 0) + p.period[k]) * 100) / 100;
+    }
+    return acc;
+  }, {});
+
+  res.json({ period_start: periodStart, weeks, people, totals });
+});
+
+router.put('/hours', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const { user_id, week_start } = req.body || {};
+  if (!user_id || !/^\d{4}-\d{2}-\d{2}$/.test(week_start || '')) {
+    return res.status(400).json({ error: 'user_id and week_start are required' });
+  }
+  const person = db.prepare('SELECT id, name FROM users WHERE id = ?').get(user_id);
+  if (!person) return res.status(404).json({ error: 'Person not found' });
+
+  const existing = db.prepare('SELECT * FROM employee_hours WHERE user_id = ? AND week_start = ?').get(user_id, week_start);
+  const n = (v, fallback) => (v === undefined ? fallback : Math.max(0, Number(v) || 0));
+  const next = {
+    worked: n(req.body.worked, existing?.worked || 0),
+    pto: n(req.body.pto, existing?.pto || 0),
+    holiday: n(req.body.holiday, existing?.holiday || 0),
+    unpaid: n(req.body.unpaid, existing?.unpaid || 0),
+    auto_fill: req.body.auto_fill === undefined ? (existing ? existing.auto_fill : 1) : (req.body.auto_fill ? 1 : 0),
+    note: req.body.note === undefined ? (existing?.note || null) : (req.body.note || null),
+  };
+
+  if (existing) {
+    db.prepare(`UPDATE employee_hours SET worked = ?, pto = ?, holiday = ?, unpaid = ?, auto_fill = ?,
+      note = ?, updated_by = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(next.worked, next.pto, next.holiday, next.unpaid, next.auto_fill, next.note, req.user.name, existing.id);
+  } else {
+    db.prepare(`INSERT INTO employee_hours (id, user_id, week_start, worked, pto, holiday, unpaid, auto_fill, note, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(uuid(), user_id, week_start, next.worked, next.pto, next.holiday, next.unpaid, next.auto_fill, next.note, req.user.name);
+  }
+  res.json(db.prepare('SELECT * FROM employee_hours WHERE user_id = ? AND week_start = ?').get(user_id, week_start));
+});
+
+// Per-person weekly target (Settings keeps the roster; this keeps the number
+// payroll cares about next to it).
+router.put('/hours/target/:userId', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const target = req.body?.target === null || req.body?.target === '' ? null : Math.max(0, Number(req.body?.target) || 0);
+  db.prepare("UPDATE users SET weekly_hours_target = ?, updated_at = datetime('now') WHERE id = ?").run(target, req.params.userId);
+  res.json({ ok: true, target });
+});
+
+// Supply spend for a pay period, by category — the card that used to come from
+// the Monday board, now reading the supply orders in this app.
+router.get('/spend', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const periodStart = /^\d{4}-\d{2}-\d{2}$/.test(req.query.period || '')
+    ? req.query.period : payPeriodFor(new Date().toISOString().slice(0, 10));
+  const end = new Date(Date.parse(`${periodStart}T00:00:00Z`) + 13 * DAY_MS).toISOString().slice(0, 10);
+
+  // Ordered-or-later orders are money committed; date them by when they were
+  // submitted, which is the only date every row reliably has.
+  const rows = db.prepare(`SELECT * FROM supply_orders
+    WHERE status IN ('ordered','received','paid')
+      AND date(submitted_at) BETWEEN ? AND ?
+    ORDER BY submitted_at DESC`).all(periodStart, end);
+
+  const byCategory = {};
+  let total = 0;
+  for (const r of rows) {
+    const key = (r.label || 'Uncategorized').trim() || 'Uncategorized';
+    const amount = Number(r.total) || 0;
+    byCategory[key] = byCategory[key] || { label: key, amount: 0, count: 0 };
+    byCategory[key].amount = Math.round((byCategory[key].amount + amount) * 100) / 100;
+    byCategory[key].count++;
+    total += amount;
+  }
+
+  res.json({
+    period_start: periodStart, period_end: end,
+    total: Math.round(total * 100) / 100,
+    order_count: rows.length,
+    untotalled: rows.filter(r => r.total == null).length,
+    categories: Object.values(byCategory).sort((a, b) => b.amount - a.amount),
+    orders: rows.map(r => ({ id: r.id, item_name: r.item_name, supplier: r.supplier, label: r.label,
+      total: r.total, status: r.status, submitted_at: r.submitted_at, link: r.link })),
+  });
+});
+
 export default router;

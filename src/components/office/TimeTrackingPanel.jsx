@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { Check, Languages, Trash2, UserX, Clock, HelpCircle, Search, ChevronUp, ChevronDown } from 'lucide-react';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
+import HoursTab from './HoursTab.jsx';
 
 const TYPES = [
   { value: 'absent', label: 'Absent', icon: UserX, tone: 'bg-red-100 text-red-700' },
@@ -350,7 +351,7 @@ function StatsTab() {
 const PAGE_STRINGS = [
   'Time Tracking', 'Log', 'New Report', 'Stats', 'Status: all', 'New', 'Reviewed',
   'Pay period: all', 'ADP: all', 'Pending', 'In ADP', 'N/A', 'accounted for in ADP',
-  'ADP', 'No entries', 'Reported by', 'Mark reviewed', 'Employee', 'Type', 'Date', 'Message',
+  'ADP', 'No entries', 'Reported by', 'Mark reviewed', 'Employee', 'Type', 'Date', 'Message', 'Hours',
 ];
 
 export default function TimeTrackingPanel() {
@@ -360,7 +361,9 @@ export default function TimeTrackingPanel() {
   const { data: employees } = useApiGet('/users/technicians');
   const { lang, setLang, tr, translating } = usePageTranslation(PAGE_STRINGS);
 
-  const tabs = isAdmin ? [['log', 'Log'], ['form', 'New Report'], ['stats', 'Stats']] : [['form', 'New Report']];
+  const tabs = isAdmin
+    ? [['log', 'Log'], ['form', 'New Report'], ['stats', 'Stats'], ['hours', 'Hours']]
+    : [['form', 'New Report']];
 
   return (
     <div className="space-y-4">
@@ -381,6 +384,7 @@ export default function TimeTrackingPanel() {
       {tab === 'form' && <AdjustmentForm employees={employees} onCreated={() => {}} />}
       {tab === 'log' && isAdmin && <AdjustmentsLog tr={tr} />}
       {tab === 'stats' && isAdmin && <StatsTab />}
+      {tab === 'hours' && isAdmin && <HoursTab />}
     </div>
   );
 }
