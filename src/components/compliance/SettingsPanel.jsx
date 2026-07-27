@@ -89,6 +89,7 @@ const MODULE_GROUPS = [
       { id: 'accounts-receivable', label: 'Accounts Receivable' },
       { id: 'procurement', label: 'Procurement & Demand Planning' },
       { id: 'newsletter', label: 'Newsletter' },
+      { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
     ],
   },
   {

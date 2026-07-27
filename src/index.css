@@ -83,11 +83,25 @@ body { overflow-x: hidden; }
   top: 0;
   z-index: 10;
 }
-/* Sticky cells need their own opaque background (a row's bg doesn't travel with
-   them). Provide a gray-50 fallback only where the th sets no bg-* itself, so
-   intentionally colored headers keep their color. */
-.overflow-x-auto:has(> table):not(.no-sticky-head) thead th:not([class*="bg-"]) {
+/* A sticky cell needs its own opaque background — a <thead>'s background does
+   not paint behind a sticky <th>, so without this the header text floats and
+   the rows scroll straight through it.
+
+   Wrapped in :where() so both rules carry zero specificity: a real bg-*
+   utility on the cell always wins, and these only ever fill in the gap. The
+   previous guard (`th:not([class*="bg-"])`) tried to do the same by matching
+   class names and got it wrong — a sortable header with `hover:bg-gray-100`
+   counts as "already has a background", so it was skipped and left
+   transparent, which is exactly the case that shows the bug. */
+:where(.overflow-x-auto:has(> table):not(.no-sticky-head)) thead {
   background-color: #f9fafb;
+}
+/* The colour has to be handed down the whole chain: a cell's `inherit` reads
+   its <tr>, not the <thead>, and an un-styled <tr> is transparent — which is
+   how the header ended up see-through even with a coloured thead. */
+:where(.overflow-x-auto:has(> table):not(.no-sticky-head)) thead tr,
+:where(.overflow-x-auto:has(> table):not(.no-sticky-head)) thead th {
+  background-color: inherit;
 }
 
 @keyframes fade-in {

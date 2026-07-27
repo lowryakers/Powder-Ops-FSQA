@@ -13,9 +13,11 @@ import { getDb, dataDir } from './server/db.js';
 import { readyDocOrigin } from './server/links.js';
 import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import procurementRoutes from './server/api/procurement.js';
+import payRoutes from './server/api/pay.js';
 import newsletterRoutes from './server/api/newsletter.js';
 import { seedProcurement } from './server/procurement-seed.js';
 import { seedFinanceFromMonday } from './server/finance-seed.js';
+import { seedPayTracking } from './server/pay-seed.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
 import pmRoutes from './server/api/pm.js';
@@ -778,6 +780,14 @@ if (userCount === 0) {
   console.log('[seed] Created default users (admin + operators + auditor)');
 }
 
+// The pay roster links its rows to Settings users by name, so it has to run
+// after users exist — on a fresh database the seed above is what creates them.
+try {
+  seedPayTracking(db);
+} catch (e) {
+  console.warn('[seed] pay tracking seeding skipped:', e.message);
+}
+
 // Ensure auditor user exists (for existing databases)
 {
   const hasAuditor = db.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'auditor'").get().c;
@@ -1368,6 +1378,7 @@ app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
 app.use('/api/office', officeRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/procurement', procurementRoutes);
+app.use('/api/pay', payRoutes);
 app.use('/api/newsletter', newsletterRoutes);
 
 // Version check (used by client to detect updates)

@@ -1746,6 +1746,62 @@ function runMigrations() {
     dropColumnIfPresent('newsletter_issues', col);
   }
 
+  // ── Pay tracking (admin only) ─────────────────────────────────────────────
+  // The roster of who is paid what, and when they were last raised, replacing
+  // the Pay Tracking workbook. Two deliberate omissions:
+  //
+  //  * Evaluations are NOT stored. A supervisor scores the rubric in the
+  //    browser, has the conversation, and the scores and notes are gone when
+  //    the form closes. Only `last_reviewed_at` is stamped, so the review
+  //    clock resets without leaving a rating on anybody's file.
+  //  * Rate history records what a rate was and when it changed, because a
+  //    pay change is a durable business fact even when the evaluation behind
+  //    it deliberately isn't.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pay_employees (
+        id               TEXT PRIMARY KEY,
+        user_id          TEXT,
+        name             TEXT NOT NULL,
+        team             TEXT,
+        is_supervisor    INTEGER NOT NULL DEFAULT 0,
+        pay_rate         REAL,
+        hire_date        TEXT,
+        last_increase_at TEXT,
+        last_reviewed_at TEXT,
+        pto_plan         TEXT,
+        active           INTEGER NOT NULL DEFAULT 1,
+        notes            TEXT,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pay_employees_name ON pay_employees(name);
+      CREATE INDEX IF NOT EXISTS idx_pay_employees_user ON pay_employees(user_id);
+
+      CREATE TABLE IF NOT EXISTS pay_rate_history (
+        id           TEXT PRIMARY KEY,
+        employee_id  TEXT NOT NULL,
+        old_rate     REAL,
+        new_rate     REAL,
+        effective_at TEXT NOT NULL,
+        changed_by   TEXT,
+        note         TEXT,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_pay_rate_history_emp ON pay_rate_history(employee_id, effective_at);
+
+      CREATE TABLE IF NOT EXISTS pay_ranges (
+        position   TEXT PRIMARY KEY,
+        market_min REAL,
+        market_max REAL,
+        ops_min    REAL,
+        ops_max    REAL
+      );
+    `);
+  } catch (e) {
+    console.warn('[db] pay tracking tables unavailable:', e.message);
+  }
+
   // ── Procurement & demand planning (Jake) ──────────────────────────────────
   // Reference data comes from his two workbooks: the combined BOMs drive parts
   // demand, the parts/pricing sheet drives sourcing, and samples track what's
