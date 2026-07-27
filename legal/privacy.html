@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Policy — ReadyDoc (Powder Ops)</title>
+<link rel="stylesheet" href="/legal/style.css" />
+</head>
+<body>
+<main>
+  <p class="brand">Powder Ops · ReadyDoc</p>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated 27 July 2026</p>
+
+  <p>
+    ReadyDoc is a private, internal application built and operated by Powder Ops LLC
+    ("Powder Ops", "we") for its own employees and contractors. It is not offered to the
+    public, and accounts are created only by a Powder Ops administrator. This policy
+    explains what the application stores, why, and who it is shared with.
+  </p>
+
+  <h2>Who this covers</h2>
+  <p>
+    Everyone who signs in to ReadyDoc: Powder Ops employees, contractors, and any auditor
+    or customer representative given temporary access.
+  </p>
+
+  <h2>What we store</h2>
+  <table>
+    <tr><th>Category</th><th>Examples</th><th>Why</th></tr>
+    <tr>
+      <td>Account</td>
+      <td>Name, sign-in username, role, department, password (stored only as a salted scrypt hash), session tokens</td>
+      <td>To sign you in and decide what you can see</td>
+    </tr>
+    <tr>
+      <td>Work records</td>
+      <td>Task completions, inspections, production and cleaning logs, calibration, signatures, timestamps</td>
+      <td>Food-safety and quality records required by SQF and by our customers</td>
+    </tr>
+    <tr>
+      <td>Messages and files</td>
+      <td>Channel and direct messages, attachments, invoices and other uploaded documents</td>
+      <td>Team communication and document control</td>
+    </tr>
+    <tr>
+      <td>Business records</td>
+      <td>Supply orders, absence and tardy reports, accounts payable and receivable, purchase orders</td>
+      <td>Running the office side of the business</td>
+    </tr>
+    <tr>
+      <td>Audit trail</td>
+      <td>Who changed what, and when</td>
+      <td>Regulatory traceability; it is deliberately not editable</td>
+    </tr>
+  </table>
+  <p>
+    We do not collect location data, we do not use advertising or analytics trackers, and
+    we do not sell or rent any data to anyone.
+  </p>
+
+  <h2>QuickBooks Online</h2>
+  <p>
+    Where Powder Ops connects ReadyDoc to its own QuickBooks Online company, the
+    application reads bills and invoices — vendor and customer names, invoice and PO
+    numbers, dates, amounts and balances — and copies them into the internal accounts
+    payable and accounts receivable ledgers so the office works in one place.
+  </p>
+  <ul>
+    <li>The connection is to Powder Ops' own company file. We never access anyone else's.</li>
+    <li>Access is <strong>read-only</strong>: ReadyDoc does not create, change or delete anything in QuickBooks.</li>
+    <li>Access and refresh tokens are stored on our server and are used only to fetch that data.</li>
+    <li>You can disconnect at any time — see <a href="/quickbooks/disconnect">Disconnecting QuickBooks</a>.</li>
+  </ul>
+
+  <h2>Service providers</h2>
+  <p>Data is processed by a small number of providers, each only for the function listed:</p>
+  <ul>
+    <li><strong>Railway</strong> — application hosting and the database.</li>
+    <li><strong>Cloudflare R2</strong> — storage of uploaded files and backups.</li>
+    <li><strong>Anthropic</strong> — optional AI features (translation, document proofreading, question answering). Content sent for these features is not used to train models.</li>
+    <li><strong>Voyage AI</strong> — optional search embeddings for message search.</li>
+    <li><strong>Twilio</strong> — optional SMS for approval requests.</li>
+    <li><strong>Intuit</strong> — where the QuickBooks connection above is enabled.</li>
+  </ul>
+  <p>We share data with no one else, except where the law requires it.</p>
+
+  <h2>Security</h2>
+  <ul>
+    <li>All traffic is served over HTTPS.</li>
+    <li>Passwords are stored only as salted scrypt hashes; nobody, including administrators, can read them.</li>
+    <li>Access is granted per module, per person, by an administrator.</li>
+    <li>Repeated failed sign-ins lock an account temporarily.</li>
+    <li>File downloads use short-lived links issued only after an access check.</li>
+  </ul>
+
+  <h2>How long we keep it</h2>
+  <p>
+    Food-safety and quality records are retained for at least the period our certification
+    scheme and customer agreements require (generally a minimum of two years, and longer
+    where a product's shelf life demands it). Accounts are deactivated rather than deleted
+    so historical records keep naming the person who signed them. Messages, files and
+    business records are kept for as long as they are useful to the business.
+  </p>
+
+  <h2>Your choices</h2>
+  <p>
+    To see what the application holds about you, correct it, or ask about deletion, contact
+    us at the address below. Because much of the data is a regulated food-safety record, we
+    may be unable to delete an entry that a compliance obligation requires us to keep; we
+    will say so plainly if that is the case.
+  </p>
+
+  <h2>Children</h2>
+  <p>ReadyDoc is a workplace tool and is not directed to anyone under 16.</p>
+
+  <h2>Changes</h2>
+  <p>
+    If this policy changes materially, the date at the top changes and staff are notified in
+    the application.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Powder Ops LLC<br />
+    <a href="mailto:lowry@powder-ops.com">lowry@powder-ops.com</a>
+  </p>
+</main>
+<footer>Powder Ops LLC · <a href="/terms">Terms of Use</a></footer>
+</body>
+</html>

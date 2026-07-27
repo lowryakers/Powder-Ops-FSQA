@@ -89,6 +89,20 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Public legal pages (terms of use, privacy policy, QuickBooks disconnect).
+// Mounted ahead of everything else so they answer on BOTH hostnames, with no
+// login and no SPA involvement — an integration reviewer or a crawler has to be
+// able to fetch them cold, which is exactly what Intuit's app profile requires.
+const LEGAL_DIR = path.join(__dirname, 'legal');
+app.use('/legal', express.static(LEGAL_DIR, { maxAge: '1h' }));
+for (const [route, file] of [
+  ['/terms', 'terms.html'],
+  ['/privacy', 'privacy.html'],
+  ['/quickbooks/disconnect', 'quickbooks-disconnect.html'],
+]) {
+  app.get(route, (_req, res) => res.sendFile(path.join(LEGAL_DIR, file)));
+}
+
 // Intranet launcher: the bare landing page on the launcher hostname
 // (start.powder-ops.com by default) is the workspace picker, not the ReadyDoc
 // app. Only that one bare request gets the launcher — everything else on the

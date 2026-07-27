@@ -267,6 +267,21 @@ router.get('/quickbooks/status', (req, res) => {
   res.json(quickbooksStatus());
 });
 
+// Intuit's app profile asks for the IP address their API will see our calls
+// coming from. Hosting can move us between addresses, so rather than write a
+// number down once and hope, this reports what it is right now.
+router.get('/quickbooks/egress-ip', async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
+  try {
+    const r = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(`lookup failed (${r.status})`);
+    const { ip } = await r.json();
+    res.json({ ip, checked_at: new Date().toISOString() });
+  } catch (e) {
+    res.status(502).json({ error: `Could not determine the outbound IP: ${e.message}` });
+  }
+});
+
 router.post('/quickbooks/sync', async (req, res) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
   if (!quickbooksEnabled()) return res.status(503).json({ error: 'QuickBooks is not configured on this server.' });
