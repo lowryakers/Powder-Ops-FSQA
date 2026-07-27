@@ -1398,6 +1398,33 @@ function runMigrations() {
   // badge that admins raise when they publish/update the week's schedule.
   addColumnIfMissing('users', 'schedule_seen_at', 'TEXT');
 
+  // Payroll follow-through: once Marnee has reviewed an absence/tardy she still
+  // has to enter it in ADP, per pay period. These columns track that last mile
+  // so nothing silently misses payroll.
+  addColumnIfMissing('time_adjustments', 'pay_period', 'TEXT');
+  addColumnIfMissing('time_adjustments', 'adp_status', "TEXT DEFAULT 'pending'");
+  addColumnIfMissing('time_adjustments', 'adp_entered_by', 'TEXT');
+  addColumnIfMissing('time_adjustments', 'adp_entered_at', 'TEXT');
+  try {
+    db.prepare(`UPDATE time_adjustments
+      SET pay_period = substr(adjustment_date, 1, 7) || (CASE WHEN CAST(substr(adjustment_date, 9, 2) AS INTEGER) <= 15 THEN ' A' ELSE ' B' END)
+      WHERE pay_period IS NULL AND adjustment_date IS NOT NULL`).run();
+  } catch { /* table optional */ }
+
+  // Light Inspection (Form 110-01/02) and Brittle Plastic & Glass (Form 431-02)
+  // are QA inspections that happen to be stored as sanitation_records. Tagging
+  // them keeps the Sanitation log about cleaning and puts the inspections on
+  // QA's own list, without moving a single historical record.
+  addColumnIfMissing('sanitation_records', 'record_group', "TEXT DEFAULT 'sanitation'");
+  try {
+    const { changes } = db.prepare(`UPDATE sanitation_records SET record_group = 'qa'
+      WHERE COALESCE(record_group, 'sanitation') != 'qa'
+        AND (area LIKE 'Brittle Plastic%' OR area LIKE 'Light Inspection%')`).run();
+    if (changes > 0) console.log(`[db] Moved ${changes} inspection records to the QA list`);
+  } catch (e) {
+    console.warn('[db] QA inspection tagging skipped:', e.message);
+  }
+
   // Short sign-in name (first + last) for people whose legal name runs to three
   // or four words. `name` stays the full name on every record; this is only
   // what they type to log in. NULLs don't collide in a SQLite unique index, so

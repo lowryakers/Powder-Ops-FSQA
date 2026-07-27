@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -755,6 +755,25 @@ export default function PMPanel() {
 
   const freqOrder = ['daily', 'weekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'unscheduled'];
   const q = search.toLowerCase().trim();
+
+  // Search deliberately ignores the team tab, the frequency tabs and the status
+  // filters: a task you can name is a task you should be able to find. The
+  // server searches every team and status (plus the last 90 days of
+  // completions), so results can include tasks the current filters hide.
+  const [searchHits, setSearchHits] = useState(null);
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    if (q.length < 2) { setSearchHits(null); return; }
+    let cancelled = false;
+    setSearching(true);
+    const t = setTimeout(() => {
+      apiFetch(`/pm/search?q=${encodeURIComponent(q)}`)
+        .then(rows => { if (!cancelled) setSearchHits(rows); })
+        .catch(() => { if (!cancelled) setSearchHits([]); })
+        .finally(() => { if (!cancelled) setSearching(false); });
+    }, 200);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q]);
   const today = new Date().toISOString().split('T')[0];
   const filteredGroups = grouped ? freqOrder
     .filter(f => grouped[f]?.length > 0)
@@ -769,6 +788,7 @@ export default function PMPanel() {
     })
     .filter(g => g.items.length > 0) : [];
 
+  const searchMode = q.length >= 2;
   const totalActive = filteredGroups.reduce((sum, g) => sum + g.items.length, 0);
 
   // Flat, urgency-sorted worklist of every incomplete task (overdue first, then soonest due)
@@ -931,8 +951,49 @@ export default function PMPanel() {
         </div>
       </div>
 
+      {/* Search results — every team, every status */}
+      {searchMode && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-3 py-1 rounded-full text-sm font-semibold bg-powder-100 text-powder-700">
+              Search results
+            </span>
+            <span className="text-sm text-gray-500">
+              {searching ? 'Searching…' : `${searchHits?.length || 0} match${(searchHits?.length || 0) === 1 ? '' : 'es'} for "${search.trim()}"`}
+            </span>
+            <span className="text-xs text-gray-400">· all teams and statuses, plus the last 90 days of completions</span>
+          </div>
+          {!searching && (searchHits?.length || 0) === 0 ? (
+            <div className="text-center py-8 text-gray-500">Nothing matches "{search.trim()}".</div>
+          ) : (
+            <div className="space-y-2">
+              {(searchHits || []).map(wo => (
+                <div key={wo.id}>
+                  <div className="flex items-center gap-2 mb-1 ml-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{(wo.task_group || 'general').replace('_', ' ')}</span>
+                    <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                      wo.status === 'completed' ? 'bg-green-100 text-green-700'
+                      : wo.status === 'missed' ? 'bg-red-100 text-red-700'
+                      : wo.due_date < today ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {wo.status === 'completed' ? `completed ${(wo.completed_at || '').slice(0, 10)}`
+                        : wo.status === 'missed' ? 'missed'
+                        : wo.due_date < today ? `overdue · due ${wo.due_date}` : `due ${wo.due_date}`}
+                    </span>
+                  </div>
+                  <TaskCard wo={wo} completing={completing}
+                    onStartComplete={handleStartWO} onComplete={handleComplete}
+                    onCancelComplete={() => setCompleting(null)} chemicals={chemicals}
+                    flagging={flagging} onStartFlag={(id) => { setFlagging(flagging === id ? null : id); setCompleting(null); }}
+                    onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Incomplete — single actionable worklist */}
-      {view === 'incomplete' && (
+      {view === 'incomplete' && !searchMode && (
         <div className="space-y-6">
           {taskLoading ? (
             <div className="text-center py-8 text-gray-500">Loading tasks...</div>
@@ -964,7 +1025,7 @@ export default function PMPanel() {
       )}
 
       {/* Active Tasks by Frequency */}
-      {view === 'active' && (
+      {view === 'active' && !searchMode && (
         <div className="space-y-6">
           {taskLoading ? (
             <div className="text-center py-8 text-gray-500">Loading PM tasks...</div>
@@ -993,7 +1054,7 @@ export default function PMPanel() {
       )}
 
       {/* Completed Archive */}
-      {view === 'completed' && (
+      {view === 'completed' && !searchMode && (
         <div className="space-y-3">
           <div className="flex items-end gap-3 flex-wrap bg-white rounded-xl border border-gray-200 p-3">
             <div>

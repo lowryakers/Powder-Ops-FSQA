@@ -58,6 +58,7 @@ const MODULE_GROUPS = [
       { id: 'sanitation', label: 'Sanitation' },
       { id: 'chemicals', label: 'Chemicals' },
       { id: 'hygienic', label: 'Hygienic Design' },
+      { id: 'qa-inspections', label: 'QA Inspections (light, brittle plastic & glass)' },
       { id: 'coa', label: 'COA / Lab Testing' },
     ],
   },
@@ -81,7 +82,8 @@ const MODULE_GROUPS = [
       // Requests is automatic for every supervisor; granting it here extends
       // the Supply Order + Time Tracking forms to a non-supervisor (e.g. office
       // staff). The full Supply Orders / Time Tracking modules stay admin-only.
-      { id: 'office-requests', label: 'Requests (Supply Order + Time forms)' },
+      { id: 'supply-requests', label: 'Supply Order request form' },
+      { id: 'time-requests', label: 'Time Tracking request form' },
     ],
   },
   {
@@ -293,9 +295,12 @@ function ResetPasswordControl({ userId, userName }) {
   );
 }
 
-// Per-user mobile bottom-bar tabs. Tap to add (in order, up to 4), tap again to
-// remove. Empty = the automatic role-aware picks.
+// Per-user mobile bottom-bar tabs. The four picks are shown across the top in
+// the order they'll appear, can be reordered or removed there, and choosing a
+// fifth swaps out the last one — so the bar is always exactly what you see.
+// Empty = the automatic role-aware picks.
 const QUICK_TAB_OPTIONS = [
+  { id: 'home', label: 'Home' },
   { id: 'messages', label: 'Messages' },
   { id: 'operator', label: 'Operator View' },
   { id: 'dashboard', label: 'Dashboard' },
@@ -306,22 +311,66 @@ const QUICK_TAB_OPTIONS = [
   { id: 'currently-out', label: 'Checked Out' },
   { id: 'component-signout', label: 'Component Sign In/Out' },
   { id: 'sanitation', label: 'Sanitation' },
+  { id: 'qa-inspections', label: 'QA Inspections' },
   { id: 'coa', label: 'COA / Lab Testing' },
   { id: 'supply-orders', label: 'Supply Orders' },
   { id: 'time-tracking', label: 'Time Tracking' },
 ];
+const QUICK_TAB_LABEL = Object.fromEntries(QUICK_TAB_OPTIONS.map(o => [o.id, o.label]));
+
 function QuickTabsEditor({ value, onChange }) {
   const picked = Array.isArray(value) ? value : [];
+
   const toggle = (id) => {
-    if (picked.includes(id)) onChange(picked.filter(x => x !== id));
-    else if (picked.length < 4) onChange([...picked, id]);
+    if (picked.includes(id)) return onChange(picked.filter(x => x !== id));
+    // Four is the whole bar, so a fifth pick replaces the last one rather than
+    // silently doing nothing.
+    if (picked.length < 4) return onChange([...picked, id]);
+    onChange([...picked.slice(0, 3), id]);
   };
+
+  const move = (idx, dir) => {
+    const next = [...picked];
+    const j = idx + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[idx], next[j]] = [next[j], next[idx]];
+    onChange(next);
+  };
+
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="block text-xs font-medium text-gray-700">Mobile bottom-bar tabs <span className="text-gray-400 font-normal">(order = tap order, max 4)</span></label>
-        {picked.length > 0 && <button type="button" onClick={() => onChange([])} className="text-[11px] text-gray-400 hover:text-gray-600">Reset to automatic</button>}
+        <label className="block text-xs font-medium text-gray-700">
+          Mobile bottom-bar tabs <span className="text-gray-400 font-normal">(max 4, left to right)</span>
+        </label>
+        {picked.length > 0 && (
+          <button type="button" onClick={() => onChange([])} className="text-[11px] text-gray-400 hover:text-gray-600">Reset to automatic</button>
+        )}
       </div>
+
+      {/* The bar as it will look, in order */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+        {picked.length === 0 ? (
+          <p className="text-[11px] text-gray-400 text-center py-2">Automatic — picked from what this user can access.</p>
+        ) : (
+          <div className="grid grid-cols-4 gap-1.5">
+            {picked.map((id, i) => (
+              <div key={id} className="bg-white rounded-lg border border-powder-200 px-1.5 py-1.5 text-center">
+                <p className="text-[11px] font-semibold text-gray-800 truncate">{QUICK_TAB_LABEL[id] || id}</p>
+                <div className="flex items-center justify-center gap-1 mt-1">
+                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0}
+                    className="px-1 text-gray-400 hover:text-gray-700 disabled:opacity-30" title="Move left">←</button>
+                  <button type="button" onClick={() => toggle(id)}
+                    className="px-1 text-gray-400 hover:text-red-600" title="Remove">×</button>
+                  <button type="button" onClick={() => move(i, 1)} disabled={i === picked.length - 1}
+                    className="px-1 text-gray-400 hover:text-gray-700 disabled:opacity-30" title="Move right">→</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex flex-wrap gap-1.5">
         {QUICK_TAB_OPTIONS.map(o => {
           const idx = picked.indexOf(o.id);
@@ -333,7 +382,9 @@ function QuickTabsEditor({ value, onChange }) {
           );
         })}
       </div>
-      <p className="text-[11px] text-gray-400">Empty = automatic picks based on what this user can access. Only accessible modules will actually show.</p>
+      <p className="text-[11px] text-gray-400">
+        Home opens this user&apos;s home workspace. Picking a fifth tab replaces the last one. Only modules they can access will actually show.
+      </p>
     </div>
   );
 }

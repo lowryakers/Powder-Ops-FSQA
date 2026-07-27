@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Check, Languages, Trash2, UserX, Clock, HelpCircle, Search, ChevronUp, ChevronDown } from 'lucide-react';
+import { usePageTranslation } from '../../lib/usePageTranslation.js';
+import LangToggle from '../LangToggle.jsx';
 
 const TYPES = [
   { value: 'absent', label: 'Absent', icon: UserX, tone: 'bg-red-100 text-red-700' },
@@ -98,10 +100,21 @@ function EntryMessage({ e, compact = false }) {
   return txt ? <p className={compact ? 'text-sm text-gray-800' : 'mt-1.5 text-sm text-gray-800'}>{txt}</p> : <span className="text-gray-300">—</span>;
 }
 
-function AdjustmentsLog() {
+// Semi-monthly periods, matching the server's payPeriodFor().
+const payPeriodOf = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(String(d || '').slice(0, 10))
+  ? `${String(d).slice(0, 7)} ${Number(String(d).slice(8, 10)) <= 15 ? 'A' : 'B'}` : null);
+const ADP_STATES = [
+  { value: 'pending', label: 'Pending', tone: 'bg-amber-100 text-amber-700' },
+  { value: 'entered', label: 'In ADP', tone: 'bg-green-100 text-green-700' },
+  { value: 'not_applicable', label: 'N/A', tone: 'bg-gray-100 text-gray-500' },
+];
+
+function AdjustmentsLog({ tr = (x) => x }) {
   const [employee, setEmployee] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [periodFilter, setPeriodFilter] = useState('');
+  const [adpFilter, setAdpFilter] = useState('');
   const [q, setQ] = useState('');
   const [sortField, setSortField] = useState('adjustment_date');
   const [sortDir, setSortDir] = useState('desc');
@@ -112,6 +125,8 @@ function AdjustmentsLog() {
     let l = entries || [];
     if (typeFilter) l = l.filter(e => e.adjustment_type === typeFilter);
     if (statusFilter) l = l.filter(e => e.status === statusFilter);
+    if (periodFilter) l = l.filter(e => (e.pay_period || payPeriodOf(e.adjustment_date)) === periodFilter);
+    if (adpFilter) l = l.filter(e => (e.adp_status || 'pending') === adpFilter);
     const needle = q.toLowerCase().trim();
     if (needle) l = l.filter(e => [e.employee_name, e.message, e.message_en, e.details, e.submitted_by].filter(Boolean).join(' ').toLowerCase().includes(needle));
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -120,9 +135,26 @@ function AdjustmentsLog() {
       return String(e[sortField] ?? '').toLowerCase();
     };
     return [...l].sort((a, b) => { const av = val(a), bv = val(b); return av < bv ? -dir : av > bv ? dir : 0; });
-  }, [entries, typeFilter, statusFilter, q, sortField, sortDir]);
+  }, [entries, typeFilter, statusFilter, periodFilter, adpFilter, q, sortField, sortDir]);
 
   const markReviewed = async (e) => { await apiPut(`/office/time/adjustments/${e.id}`, { status: 'reviewed' }); refresh(); };
+  // Payroll's last mile: pending → in ADP → N/A, one click per step.
+  const cycleAdp = async (e) => {
+    const order = ['pending', 'entered', 'not_applicable'];
+    const next = order[(order.indexOf(e.adp_status || 'pending') + 1) % order.length];
+    await apiPut(`/office/time/adjustments/${e.id}`, { adp_status: next });
+    refresh();
+  };
+
+  // Periods present in the data, newest first — no date maths for the user.
+  const periods = useMemo(() => {
+    const set = new Set((entries || []).map(e => e.pay_period || payPeriodOf(e.adjustment_date)).filter(Boolean));
+    return [...set].sort().reverse();
+  }, [entries]);
+  const periodSummary = useMemo(() => {
+    const done = list.filter(e => (e.adp_status || 'pending') !== 'pending').length;
+    return { done, total: list.length };
+  }, [list]);
   const del = async (e) => {
     if (!confirm(`Delete entry for ${e.employee_name}?`)) return;
     await apiFetch(`/office/time/adjustments/${e.id}`, { method: 'DELETE' });
@@ -142,10 +174,23 @@ function AdjustmentsLog() {
           {TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
-          <option value="">Status: all</option>
-          <option value="new">New</option>
-          <option value="reviewed">Reviewed</option>
+          <option value="">{tr('Status: all')}</option>
+          <option value="new">{tr('New')}</option>
+          <option value="reviewed">{tr('Reviewed')}</option>
         </select>
+        <select value={periodFilter} onChange={e => setPeriodFilter(e.target.value)} className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
+          <option value="">{tr('Pay period: all')}</option>
+          {periods.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select value={adpFilter} onChange={e => setAdpFilter(e.target.value)} className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
+          <option value="">{tr('ADP: all')}</option>
+          {ADP_STATES.map(a => <option key={a.value} value={a.value}>{tr(a.label)}</option>)}
+        </select>
+        {periodFilter && (
+          <span className="text-[11px] font-medium text-gray-500">
+            {periodSummary.done}/{periodSummary.total} {tr('accounted for in ADP')}
+          </span>
+        )}
         <div className="relative flex-1 min-w-[180px]">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, message…"
@@ -173,7 +218,17 @@ function AdjustmentsLog() {
                 </div>
               </div>
               <EntryMessage e={e} />
-              <div className="mt-1 text-[11px] text-gray-400">Reported by {e.submitted_by || '—'} · {(e.created_at || '').slice(0, 16).replace('T', ' ')}</div>
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-gray-400">{tr('Reported by')} {e.submitted_by || '—'} · {(e.created_at || '').slice(0, 16).replace('T', ' ')}</span>
+                {(() => {
+                  const a = ADP_STATES.find(x => x.value === (e.adp_status || 'pending'));
+                  return (
+                    <button onClick={() => cycleAdp(e)} className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${a.tone}`}>
+                      ADP: {tr(a.label)}
+                    </button>
+                  );
+                })()}
+              </div>
             </div>
           );
         })}
@@ -192,6 +247,7 @@ function AdjustmentsLog() {
                 <th className="text-left px-3 py-2.5 font-medium text-gray-600">Message</th>
                 <SortHeader label="Reported by" field="submitted_by" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Status" field="status" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <th className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">{tr('ADP')}</th>
                 <th className="px-3 py-2.5" />
               </tr>
             </thead>
@@ -212,6 +268,18 @@ function AdjustmentsLog() {
                         ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">New</span>
                         : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 inline-flex items-center gap-1"><Check size={11} /> Reviewed</span>}
                     </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {(() => {
+                        const a = ADP_STATES.find(x => x.value === (e.adp_status || 'pending'));
+                        return (
+                          <button onClick={() => cycleAdp(e)} title={e.adp_entered_by ? `${e.adp_entered_by} · ${(e.adp_entered_at || '').slice(0, 10)}` : 'Click to change'}
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${a.tone}`}>
+                            {tr(a.label)}
+                          </button>
+                        );
+                      })()}
+                      <div className="text-[10px] text-gray-400">{e.pay_period || payPeriodOf(e.adjustment_date) || ''}</div>
+                    </td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-right">
                       <div className="flex items-center gap-1 justify-end">
                         {e.status === 'new' && (
@@ -223,7 +291,7 @@ function AdjustmentsLog() {
                   </tr>
                 );
               })}
-              {list.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No entries</td></tr>}
+              {list.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">{tr('No entries')}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -264,29 +332,41 @@ function StatsTab() {
   );
 }
 
+// Page labels the EN/ES toggle covers. Row content (names, messages) is added
+// on top of this list by the log itself.
+const PAGE_STRINGS = [
+  'Time Tracking', 'Log', 'New Report', 'Stats', 'Status: all', 'New', 'Reviewed',
+  'Pay period: all', 'ADP: all', 'Pending', 'In ADP', 'N/A', 'accounted for in ADP',
+  'ADP', 'No entries', 'Reported by', 'Mark reviewed', 'Employee', 'Type', 'Date', 'Message',
+];
+
 export default function TimeTrackingPanel() {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin';
   const [tab, setTab] = useState(isAdmin ? 'log' : 'form');
   const { data: employees } = useApiGet('/users/technicians');
+  const { lang, setLang, tr, translating } = usePageTranslation(PAGE_STRINGS);
 
   const tabs = isAdmin ? [['log', 'Log'], ['form', 'New Report'], ['stats', 'Stats']] : [['form', 'New Report']];
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-xl font-bold text-gray-900">Time Tracking</h2>
-        {tabs.length > 1 && (
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-            {tabs.map(([v, l]) => (
-              <button key={v} onClick={() => setTab(v)}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{l}</button>
-            ))}
-          </div>
-        )}
+        <h2 className="text-xl font-bold text-gray-900">{tr('Time Tracking')}</h2>
+        <div className="flex items-center gap-2">
+          {tabs.length > 1 && (
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+              {tabs.map(([v, l]) => (
+                <button key={v} onClick={() => setTab(v)}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tr(l)}</button>
+              ))}
+            </div>
+          )}
+          <LangToggle lang={lang} setLang={setLang} translating={translating} />
+        </div>
       </div>
       {tab === 'form' && <AdjustmentForm employees={employees} onCreated={() => {}} />}
-      {tab === 'log' && isAdmin && <AdjustmentsLog />}
+      {tab === 'log' && isAdmin && <AdjustmentsLog tr={tr} />}
       {tab === 'stats' && isAdmin && <StatsTab />}
     </div>
   );

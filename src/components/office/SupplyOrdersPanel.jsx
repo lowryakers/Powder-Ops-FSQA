@@ -3,6 +3,8 @@ import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/use
 import { useAuth } from '../../hooks/useAuth';
 import { Search, Repeat, Trash2, Upload, FileText, Download, AlertTriangle, ExternalLink, Pencil, X, ChevronUp, ChevronDown } from 'lucide-react';
 import FilePreview from '../FilePreview.jsx';
+import { usePageTranslation } from '../../lib/usePageTranslation.js';
+import LangToggle from '../LangToggle.jsx';
 
 const LABELS = ['Warehouse/Production', 'Cleaning', 'Break room', 'Maintenance', 'Office'];
 const STATUS_FLOW = ['new', 'ordered', 'received', 'paid'];
@@ -503,6 +505,12 @@ function InvoiceRepo() {
   );
 }
 
+// Labels the EN/ES toggle covers on this page.
+const PAGE_STRINGS = [
+  'Supply Orders', 'Orders', 'New Request', 'Invoices', 'Item', 'Quantity', 'Supplier',
+  'Status', 'Urgent', 'Needed by', 'Notes', 'Requested by', 'Total', 'No orders',
+];
+
 export default function SupplyOrdersPanel() {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin';
@@ -510,6 +518,7 @@ export default function SupplyOrdersPanel() {
   const [refreshKey, setRefreshKey] = useState(0);
   const { data: items, refresh: refreshItems } = useApiGet('/office/supply/items', [refreshKey]);
   const bump = () => setRefreshKey(k => k + 1);
+  const { lang, setLang, tr, translating } = usePageTranslation(PAGE_STRINGS);
 
   const tabs = isAdmin
     ? [['log', 'Orders'], ['form', 'New Request'], ['invoices', 'Invoices']]
@@ -518,15 +527,18 @@ export default function SupplyOrdersPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-xl font-bold text-gray-900">Supply Orders</h2>
-        {tabs.length > 1 && (
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-            {tabs.map(([v, l]) => (
-              <button key={v} onClick={() => setTab(v)}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{l}</button>
-            ))}
-          </div>
-        )}
+        <h2 className="text-xl font-bold text-gray-900">{tr('Supply Orders')}</h2>
+        <div className="flex items-center gap-2">
+          {tabs.length > 1 && (
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+              {tabs.map(([v, l]) => (
+                <button key={v} onClick={() => setTab(v)}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tr(l)}</button>
+              ))}
+            </div>
+          )}
+          <LangToggle lang={lang} setLang={setLang} translating={translating} />
+        </div>
       </div>
       {tab === 'form' && (
         <div className="space-y-4">

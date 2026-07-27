@@ -49,6 +49,9 @@ export function useApiGet(path, deps = []) {
 
   useEffect(() => {
     let stale = false;
+    // A null path means "nothing to fetch yet" (e.g. the caller isn't allowed
+    // this endpoint), so callers can keep hooks unconditional.
+    if (!path) { setLoading(false); return undefined; }
     setLoading(true);
     setError(null);
     apiFetch(path)

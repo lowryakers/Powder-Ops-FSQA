@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -21,6 +21,7 @@ import EquipmentPanel from './components/compliance/EquipmentPanel.jsx';
 import PMPanel from './components/compliance/PMPanel.jsx';
 import CalibrationPanel from './components/compliance/CalibrationPanel.jsx';
 import SanitationPanel from './components/compliance/SanitationPanel.jsx';
+import QAInspectionsPanel from './components/compliance/QAInspectionsPanel.jsx';
 import LOTOPanel from './components/compliance/LOTOPanel.jsx';
 import AuditLogPanel from './components/compliance/AuditLogPanel.jsx';
 import OperatorView from './components/compliance/OperatorView.jsx';
@@ -104,6 +105,7 @@ const NAV_GROUPS = [
       { id: 'coa', label: 'COA / Lab Testing', icon: TestTubes },
       { id: 'quality-schedules', label: 'Quality Schedules', icon: CalendarClock },
       { id: 'hygienic', label: 'Hygienic Design', icon: ClipboardCheck },
+      { id: 'qa-inspections', label: 'QA Inspections', icon: Lightbulb, keywords: 'light inspection brittle plastic glass form 110 431' },
       { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
       { id: 'flavor-approvals', label: 'Flavor Approvals', icon: Sparkles },
       { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
@@ -170,7 +172,8 @@ const canSeeCheckedOut = (u) => isRicardo(u) || hasExplicitGrant(u, 'currently-o
 // "Requests" (supply order + time tracking forms) is for every supervisor,
 // regardless of how their module access is trimmed — plus anyone explicitly
 // granted the module in Settings (e.g. office staff who submit orders).
-const canSeeOfficeRequests = (u) => u?.role === 'supervisor' || hasExplicitGrant(u, 'office-requests');
+const canSeeOfficeRequests = (u) => u?.role === 'supervisor' ||
+  hasExplicitGrant(u, 'office-requests') || hasExplicitGrant(u, 'supply-requests') || hasExplicitGrant(u, 'time-requests');
 
 // Does this user's bottom tab bar include a Messages tab? If so, the bar stays
 // visible inside the Messages workspace too — those users navigate by tabs.
@@ -816,6 +819,8 @@ function MobileBottomNav({ activeTab, setActiveTab, user, onOpenComms }) {
       if (!byId[id] && HUB_OF[id]) id = HUB_OF[id];
       if (picked.length >= 4 || seen.has(id)) return;
       if (id === 'messages') { picked.push({ id: 'messages', icon: MessageSquare, isMessages: true }); seen.add(id); return; }
+      // 'home' is a shortcut to whichever workspace this user calls home.
+      if (id === 'home') { picked.push({ id: 'home', label: 'Home', icon: Home, isHome: true }); seen.add(id); return; }
       if (byId[id]) { picked.push(byId[id]); seen.add(id); }
     };
 
@@ -832,11 +837,17 @@ function MobileBottomNav({ activeTab, setActiveTab, user, onOpenComms }) {
     <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-bottom">
       <div className="flex">
         {quickTabs.map(tab => {
-          const isActive = tab.isMessages ? activeTab === '__messages' : activeTab === tab.id;
+          const homeIsMessages = user.home_workspace === 'messages';
+          const isActive = tab.isMessages ? activeTab === '__messages'
+            : tab.isHome ? (homeIsMessages ? activeTab === '__messages' : activeTab === 'dashboard')
+            : activeTab === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => tab.isMessages ? onOpenComms?.() : setActiveTab(tab.id)}
+              onClick={() => {
+                if (tab.isMessages || (tab.isHome && homeIsMessages)) return onOpenComms?.();
+                setActiveTab(tab.isHome ? 'dashboard' : tab.id);
+              }}
               className={`flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium ${
                 isActive ? 'text-powder-600' : 'text-gray-400'
               }`}
@@ -1444,6 +1455,7 @@ function App() {
           {resolvedTab === 'form-components' && <ComponentKiosk defaultName={user.name} />}
           {resolvedTab === 'operator' && <OperatorView />}
           {resolvedTab === 'office-requests' && <OfficeRequestsPanel />}
+          {resolvedTab === 'qa-inspections' && <QAInspectionsPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}

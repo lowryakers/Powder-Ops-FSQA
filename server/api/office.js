@@ -14,16 +14,26 @@ import { extractPdfText } from './documents.js';
 const router = Router();
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 20 } });
 
-function canSubmit(req) {
+// Supply-order and time-tracking requests are granted separately, so office
+// staff can be given one without the other. The original combined
+// 'office-requests' grant still means both, so existing users keep what they
+// had.
+const GRANT_FOR = { supply: ['supply-requests', 'office-requests'], time: ['time-requests', 'office-requests'] };
+
+function canSubmit(req, kind) {
   const u = req.user;
   if (u?.role === 'admin' || u?.role === 'supervisor') return true;
-  // Explicit "Requests" module grant (set per user in Settings).
   const ma = u?.module_access;
-  if (Array.isArray(ma)) return ma.includes('office-requests');
-  return !!(ma && ma['office-requests']);
+  if (!ma) return false;
+  const ids = GRANT_FOR[kind] || [...GRANT_FOR.supply, ...GRANT_FOR.time];
+  const has = (id) => (Array.isArray(ma) ? ma.includes(id) : !!ma[id]);
+  return ids.some(has);
 }
-function requireSubmit(req, res) {
-  if (!canSubmit(req)) { res.status(403).json({ error: 'Only supervisors, admins, or users granted the Requests module can use this form.' }); return false; }
+function requireSubmit(req, res, kind) {
+  if (!canSubmit(req, kind)) {
+    res.status(403).json({ error: 'You do not have access to this request form. Ask an admin to grant it in Settings.' });
+    return false;
+  }
   return true;
 }
 function requireAdmin(req, res) {
@@ -88,7 +98,7 @@ export async function backfillInvoiceText() {
 // Item history for the form: distinct items with their most recent details, so
 // reorders are one click and typing autocompletes from what's been bought before.
 router.get('/supply/items', (req, res) => {
-  if (!requireSubmit(req, res)) return;
+  if (!requireSubmit(req, res, 'supply')) return;
   const db = getDb();
   const rows = db.prepare(`
     SELECT item_name, supplier, link, uom, label, qty, COUNT(*) AS times_ordered, MAX(submitted_at) AS last_ordered
@@ -98,7 +108,7 @@ router.get('/supply/items', (req, res) => {
 });
 
 router.post('/supply/orders', (req, res) => {
-  if (!requireSubmit(req, res)) return;
+  if (!requireSubmit(req, res, 'supply')) return;
   const db = getDb();
   const { item_name, qty, uom, link, supplier, urgent, label, notes } = req.body || {};
   if (!item_name || !String(item_name).trim()) return res.status(400).json({ error: 'Item name is required' });
@@ -143,7 +153,7 @@ router.put('/supply/orders/:id', (req, res) => {
 
 // One-click reorder: clone a past order as a fresh "new" request.
 router.post('/supply/orders/:id/reorder', (req, res) => {
-  if (!requireSubmit(req, res)) return;
+  if (!requireSubmit(req, res, 'supply')) return;
   const db = getDb();
   const src = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(req.params.id);
   if (!src) return res.status(404).json({ error: 'Order not found' });
@@ -231,15 +241,15 @@ router.delete('/supply/invoices/:id', (req, res) => {
 
 // ── Time tracking (absences / tardies) ───────────────────────────────────────
 router.post('/time/adjustments', (req, res) => {
-  if (!requireSubmit(req, res)) return;
+  if (!requireSubmit(req, res, 'time')) return;
   const db = getDb();
   const { employee_name, employee_id, adjustment_type, adjustment_date, message, details } = req.body || {};
   if (!employee_name || !adjustment_date) return res.status(400).json({ error: 'employee_name and adjustment_date are required' });
   const type = ['absent', 'tardy_leave_early', 'other'].includes(adjustment_type) ? adjustment_type : 'other';
   const id = uuid();
-  db.prepare(`INSERT INTO time_adjustments (id, employee_name, employee_id, adjustment_type, adjustment_date, message, details, submitted_by, submitted_by_id)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, employee_name, employee_id || null, type, adjustment_date, message || null, details || null, req.user.name, req.user.id);
+  db.prepare(`INSERT INTO time_adjustments (id, employee_name, employee_id, adjustment_type, adjustment_date, message, details, submitted_by, submitted_by_id, pay_period)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, employee_name, employee_id || null, type, adjustment_date, message || null, details || null, req.user.name, req.user.id, payPeriodFor(adjustment_date));
   const created = db.prepare('SELECT * FROM time_adjustments WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'time_adjustment', id, { employee_name, adjustment_type: type, adjustment_date }, null, created, employee_name);
   // Auto-translate the free-text to English for the (English-speaking) admin.
@@ -256,12 +266,22 @@ router.post('/time/adjustments', (req, res) => {
   res.status(201).json(created);
 });
 
+// Semi-monthly pay periods (1st-15th, 16th-EOM) written as "2026-07 A/B".
+// Kept as a plain derived string so filtering and grouping need no date math.
+function payPeriodFor(dateStr) {
+  const d = String(dateStr || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  return `${d.slice(0, 7)} ${Number(d.slice(8, 10)) <= 15 ? 'A' : 'B'}`;
+}
+
 router.get('/time/adjustments', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const db = getDb();
-  const { status, employee, from, to } = req.query;
+  const { status, employee, from, to, pay_period, adp_status } = req.query;
   let sql = 'SELECT * FROM time_adjustments WHERE 1=1';
   const params = [];
+  if (pay_period) { sql += ' AND pay_period = ?'; params.push(pay_period); }
+  if (adp_status) { sql += " AND COALESCE(adp_status, 'pending') = ?"; params.push(adp_status); }
   if (status) { sql += ' AND status = ?'; params.push(status); }
   if (employee) { sql += ' AND employee_name = ?'; params.push(employee); }
   if (from) { sql += ' AND adjustment_date >= ?'; params.push(from); }
@@ -293,8 +313,32 @@ router.put('/time/adjustments/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM time_adjustments WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Entry not found' });
   const status = req.body?.status === 'reviewed' ? 'reviewed' : req.body?.status === 'new' ? 'new' : existing.status;
-  db.prepare("UPDATE time_adjustments SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, req.params.id);
-  res.json(db.prepare('SELECT * FROM time_adjustments WHERE id = ?').get(req.params.id));
+
+  // The last mile after review: was this entry actually keyed into ADP for its
+  // pay period? Stamped with who and when so payroll can be reconciled later.
+  let adpStatus = existing.adp_status || 'pending';
+  let adpBy = existing.adp_entered_by;
+  let adpAt = existing.adp_entered_at;
+  if (req.body?.adp_status !== undefined) {
+    adpStatus = ['entered', 'not_applicable'].includes(req.body.adp_status) ? req.body.adp_status : 'pending';
+    const done = adpStatus !== 'pending';
+    adpBy = done ? req.user.name : null;
+    adpAt = done ? new Date().toISOString() : null;
+  }
+  const payPeriod = req.body?.pay_period !== undefined
+    ? (req.body.pay_period || null)
+    : (existing.pay_period || payPeriodFor(existing.adjustment_date));
+
+  db.prepare(`UPDATE time_adjustments SET status = ?, adp_status = ?, adp_entered_by = ?, adp_entered_at = ?,
+    pay_period = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(status, adpStatus, adpBy, adpAt, payPeriod, req.params.id);
+
+  const updated = db.prepare('SELECT * FROM time_adjustments WHERE id = ?').get(req.params.id);
+  if (updated.adp_status !== existing.adp_status) {
+    logAudit(req.user, 'update', 'time_adjustment', req.params.id,
+      { adp_status: { from: existing.adp_status || 'pending', to: updated.adp_status } }, existing, updated, existing.employee_name);
+  }
+  res.json(updated);
 });
 
 router.delete('/time/adjustments/:id', (req, res) => {

@@ -489,6 +489,26 @@ router.get('/notifications', (req, res) => {
   if (disposalsPending > 0) items.push({ id: 'disposal-approvals', tab: 'disposals', severity: 'warning', count: disposalsPending, label: `${disposalsPending} disposal${disposalsPending > 1 ? 's' : ''} awaiting Ops/QA sign-off` });
   if (coaPending > 0) items.push({ id: 'coa-pending', tab: 'coa', severity: 'info', count: coaPending, label: `${coaPending} lab request${coaPending > 1 ? 's' : ''} awaiting results` });
 
+  // Office inbox (Marnee): unhandled supply orders and unreviewed time
+  // adjustments badge their own modules. Urgent supply requests and absences
+  // are red; everything else is amber, so the colour says how fast to look.
+  try {
+    const urgentOrders = db.prepare("SELECT COUNT(*) c FROM supply_orders WHERE status = 'new' AND urgent = 1").get().c;
+    const newOrders = db.prepare("SELECT COUNT(*) c FROM supply_orders WHERE status = 'new' AND urgent = 0").get().c;
+    if (urgentOrders > 0) items.push({ id: 'supply-urgent', tab: 'supply-orders', severity: 'critical', count: urgentOrders, label: `${urgentOrders} urgent supply request${urgentOrders > 1 ? 's' : ''} to order` });
+    if (newOrders > 0) items.push({ id: 'supply-new', tab: 'supply-orders', severity: 'warning', count: newOrders, label: `${newOrders} new supply request${newOrders > 1 ? 's' : ''} to order` });
+  } catch { /* table optional */ }
+  try {
+    const absences = db.prepare("SELECT COUNT(*) c FROM time_adjustments WHERE status = 'new' AND adjustment_type = 'absent'").get().c;
+    const others = db.prepare("SELECT COUNT(*) c FROM time_adjustments WHERE status = 'new' AND adjustment_type != 'absent'").get().c;
+    if (absences > 0) items.push({ id: 'time-absent', tab: 'time-tracking', severity: 'critical', count: absences, label: `${absences} absence${absences > 1 ? 's' : ''} to review` });
+    if (others > 0) items.push({ id: 'time-new', tab: 'time-tracking', severity: 'warning', count: others, label: `${others} tardy/early-leave report${others > 1 ? 's' : ''} to review` });
+  } catch { /* table optional */ }
+  try {
+    const unaccounted = db.prepare("SELECT COUNT(*) c FROM time_adjustments WHERE status = 'reviewed' AND COALESCE(adp_status,'pending') = 'pending' AND adjustment_date < date('now', '-7 days')").get().c;
+    if (unaccounted > 0) items.push({ id: 'time-adp', tab: 'time-tracking', severity: 'warning', count: unaccounted, label: `${unaccounted} reviewed entr${unaccounted > 1 ? 'ies' : 'y'} not yet accounted for in ADP` });
+  } catch { /* column added by migration */ }
+
   // 72-hour idle rule: applicable rooms needing a re-clean that nobody has
   // handled yet (not dismissed / N-A'd / assigned) badge the Sanitation module.
   try {

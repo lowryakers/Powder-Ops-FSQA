@@ -540,6 +540,35 @@ router.get('/clearance-pending', (req, res) => {
 
 // --- PM Schedules grouped by frequency ---
 
+// Search every task, regardless of the team tab, frequency filter or status the
+// user happens to be looking at — searching a filtered slice is why "restroom"
+// came back empty while the task existed. Covers open/in-progress/overdue,
+// missed, and recent completions, and matches the PM title as well as the work
+// order's own title, equipment, asset id, location and assignee.
+router.get('/search', (req, res) => {
+  const db = getDb();
+  markMissedWorkOrders(db);
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json([]);
+  const like = `%${q}%`;
+
+  const rows = db.prepare(`
+    SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
+      e.asset_id, ps.title as pm_title, ps.frequency_type, ps.procedure_steps as pm_steps
+    FROM work_orders wo
+    JOIN equipment e ON wo.equipment_id = e.id
+    LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
+    WHERE (wo.status != 'completed' OR wo.completed_at >= date('now', '-90 days'))
+      AND (LOWER(wo.title) LIKE LOWER(?) OR LOWER(ps.title) LIKE LOWER(?)
+        OR LOWER(e.name) LIKE LOWER(?) OR LOWER(e.asset_id) LIKE LOWER(?)
+        OR LOWER(e.location) LIKE LOWER(?) OR LOWER(wo.assigned_to) LIKE LOWER(?))
+    ORDER BY (wo.status = 'completed'), (wo.due_date >= date('now')), wo.due_date
+    LIMIT 100
+  `).all(like, like, like, like, like, like);
+
+  res.json(rows.map(r => ({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) })));
+});
+
 router.get('/by-frequency', (req, res) => {
   const db = getDb();
   markMissedWorkOrders(db);

@@ -4,12 +4,25 @@ import { getDb, logAudit } from '../db.js';
 
 const router = Router();
 
+// Light Inspection (Form 110-01/02) and Brittle Plastic & Glass (Form 431-02)
+// are QA inspections recorded in the same table as cleaning. They belong on
+// QA's list, so every record carries the group it belongs to and each list
+// asks for its own.
+const QA_RECORD_AREA = /^(brittle plastic|light inspection)/i;
+export function recordGroupFor(area) {
+  return QA_RECORD_AREA.test(String(area || '').trim()) ? 'qa' : 'sanitation';
+}
+
 router.get('/', (req, res) => {
   const db = getDb();
   const { area, type, from, to, result, equipment_id } = req.query;
+  // Default to cleaning records; 'qa' is the inspection list, 'all' is both.
+  const group = req.query.group === 'qa' ? 'qa' : req.query.group === 'all' ? null : 'sanitation';
   let sql = `SELECT sr.*, e.name as equipment_name
     FROM sanitation_records sr LEFT JOIN equipment e ON sr.equipment_id = e.id WHERE 1=1`;
   const params = [];
+
+  if (group) { sql += " AND COALESCE(sr.record_group, 'sanitation') = ?"; params.push(group); }
 
   if (area) { sql += ' AND sr.area = ?'; params.push(area); }
   if (type) { sql += ' AND sr.type = ?'; params.push(type); }
@@ -176,11 +189,11 @@ router.post('/', (req, res) => {
   }
 
   db.prepare(`
-    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id, record_group)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, area, type, equipment_id || null, performed_by, chemicals_used || null,
     concentration || null, contact_time_minutes ?? null, rinse_verified ? 1 : 0,
-    result, atp_reading ?? null, notes || null, chemical_id || null);
+    result, atp_reading ?? null, notes || null, chemical_id || null, recordGroupFor(area));
 
   const created = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
   logAudit(performed_by, 'create', 'sanitation_record', id, { area, type, result }, null, created);
