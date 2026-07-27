@@ -10,7 +10,7 @@ import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
 import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
 import { getType } from '../qms-config.js';
-import { appBaseUrl } from '../sms.js';
+import { readyDocOrigin } from '../links.js';
 
 const router = Router();
 
@@ -1124,7 +1124,7 @@ export function startReminderLoop(db) {
         const from = orig ? userName(db, orig.user_id) : 'someone';
         const label = !chan ? 'a channel' : chan.kind === 'dm' ? 'your DM' : `#${chan.name}`;
         const excerpt = (orig?.body || '(attachment)').replace(/\s+/g, ' ').slice(0, 140);
-        const link = `${appBaseUrl()}/?c=${r.channel_id}&m=${r.message_id}`;
+        const link = `${readyDocOrigin()}/?c=${r.channel_id}&m=${r.message_id}`;
         await postMessageAs(db, dm, bot, `⏰ Reminder — ${from} in ${label}:\n"${excerpt}"\nOpen the message: ${link}`);
         // DMs aren't covered by the grouped channel push — notify directly.
         pushToUser(r.user_id, {

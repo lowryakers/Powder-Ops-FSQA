@@ -19,7 +19,8 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { aiEnabled, answerQuestion } from '../ai.js';
-import { smsEnabled, sendSms, approverPhone, appBaseUrl } from '../sms.js';
+import { smsEnabled, sendSms, approverPhone } from '../sms.js';
+import { appBaseUrl } from '../links.js';
 import { logAudit } from '../db.js';
 
 const router = Router();

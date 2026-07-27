@@ -10,6 +10,7 @@ import { execSync } from 'child_process';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import { getDb, dataDir } from './server/db.js';
+import { readyDocOrigin } from './server/links.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
 import pmRoutes from './server/api/pm.js';
@@ -84,11 +85,14 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Intranet launcher: requests arriving on the launcher hostname
-// (start.powder-ops.com by default) get the standalone launcher page instead
-// of the ReadyDoc app. The Railway domain and any app custom domains are
-// unaffected and keep serving the React app below. Override the hostname with
-// the LAUNCHER_HOST env var if it ever changes.
+// Intranet launcher: the bare landing page on the launcher hostname
+// (start.powder-ops.com by default) is the workspace picker, not the ReadyDoc
+// app. Only that one bare request gets the launcher — everything else on the
+// host is a ReadyDoc link (a channel/message deep link, an approval magic
+// link, a PWA asset) and is handed to the app's own origin with the path and
+// query intact, so links land on the record instead of the picker. The Railway
+// domain and any app custom domains are unaffected and serve the React app
+// below. Override with LAUNCHER_HOST / READYDOC_ORIGIN if either ever changes.
 const LAUNCHER_HOST = (process.env.LAUNCHER_HOST || 'start.powder-ops.com').toLowerCase();
 const LAUNCHER_FILE = path.join(__dirname, 'launcher', 'index.html');
 app.use((req, res, next) => {
@@ -97,6 +101,9 @@ app.use((req, res, next) => {
   // Leave the health check and any API calls working on this host, just in case.
   if (req.path === '/api/health' || req.path.startsWith('/api/')) return next();
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const appOrigin = readyDocOrigin();
+  const isLanding = req.path === '/' && !req.originalUrl.includes('?');
+  if (!isLanding && appOrigin) return res.redirect(302, appOrigin + req.originalUrl);
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   return res.sendFile(LAUNCHER_FILE);
 });

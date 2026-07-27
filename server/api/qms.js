@@ -3,7 +3,8 @@ import { v4 as uuid } from 'uuid';
 import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
-import { smsEnabled, sendSms, approverPhone, appBaseUrl } from '../sms.js';
+import { smsEnabled, sendSms, approverPhone } from '../sms.js';
+import { readyDocOrigin } from '../links.js';
 import { nextDisposalNumber } from './disposals.js';
 import { QMS_TYPES, getType, canSignApproval } from '../qms-config.js';
 
@@ -255,7 +256,7 @@ router.post('/flavor_approval/:id/send', async (req, res) => {
     data.approval_token = crypto.randomBytes(24).toString('base64url');
     db.prepare("UPDATE qms_records SET data = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(data), row.id);
   }
-  const link = `${appBaseUrl()}/approve/${data.approval_token}`;
+  const link = `${readyDocOrigin()}/approve/${data.approval_token}`;
   const summary = [data.product_name, data.lot_number && `Lot ${data.lot_number}`, data.work_order && `WO ${data.work_order}`].filter(Boolean).join(' · ');
   let texted = false, smsError = null;
   if (smsEnabled() && approverPhone()) {

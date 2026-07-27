@@ -10,7 +10,7 @@
 //    program areas changes (new red, or back to clear). Same computation as
 //    the dashboard; no repeat pings while the same areas stay red.
 
-import { appBaseUrl } from './sms.js';
+import { readyDocOrigin } from './links.js';
 
 export function startScheduledJobs(db, deps) {
   const tick = () => {
@@ -86,7 +86,7 @@ async function runDue(db, deps) {
       if (lines.length) {
         const channel = getChannelByName(db, 'quality') || getChannelByName(db, 'general');
         if (channel) {
-          const base = appBaseUrl();
+          const base = readyDocOrigin();
           await postMessageAs(db, channel, getBotUser(db),
             `📋 Monday expiry check — ${lines.length} item${lines.length === 1 ? '' : 's'} need attention:\n${lines.slice(0, 20).join('\n')}${lines.length > 20 ? `\n…and ${lines.length - 20} more` : ''}\nOpen: ${base}/?tab=certifications · ${base}/?tab=calibration`);
         }
@@ -109,7 +109,7 @@ async function runDue(db, deps) {
         if (channel) {
           // Red areas link straight to their owning module so the alert is
           // actionable in one tap; the summary links to Critical Tracking.
-          const base = appBaseUrl();
+          const base = readyDocOrigin();
           const redLines = Object.values(categories).filter(c => c.status === 'crit')
             .map(c => `• ${c.label} (${c.count})${c.module ? ` → ${base}/?tab=${c.module}` : ''}`);
           const msg = redNow.length

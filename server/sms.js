@@ -3,8 +3,10 @@
 // fall back to showing a copyable link instead of texting it.
 //
 // Env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM (E.164, e.g. +15551234567)
-// Optional: FLAVOR_APPROVER_PHONE (Danny's number for flavor approvals),
-//           APP_BASE_URL (public origin for links; default start.powder-ops.com)
+// Optional: FLAVOR_APPROVER_PHONE (Danny's number for flavor approvals)
+//
+// Link origins live in ./links.js — texted links must point at the app, not at
+// the launcher host.
 
 export function smsEnabled() {
   return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM);
@@ -12,10 +14,6 @@ export function smsEnabled() {
 
 export function approverPhone() {
   return process.env.FLAVOR_APPROVER_PHONE || null;
-}
-
-export function appBaseUrl() {
-  return (process.env.APP_BASE_URL || 'https://start.powder-ops.com').replace(/\/$/, '');
 }
 
 export async function sendSms(to, body) {

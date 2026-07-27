@@ -81,6 +81,19 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## Two origins: launcher vs app (link + PWA gotcha)
+`start.powder-ops.com` = the **workspace launcher** (`launcher/index.html`), not the app. Only the bare
+landing request (`/`, no query) gets the launcher; every other GET on that host 302s to the ReadyDoc origin
+with path+query intact (`server.js`, `READYDOC_ORIGIN`, default the Railway domain). Before that, deep links,
+`/approve/<token>` magic links, and PWA assets on the launcher host all rendered the picker instead.
+**Generate links with `readyDocOrigin()` (`server/links.js`), never `appBaseUrl()`** — `appBaseUrl()` is the
+public front door and is only for the Twilio webhook signature, which must match the console entry exactly.
+**PWA installs must happen on the app origin** (the manifest and its start_url must be same-origin), so the
+launcher host can never be installable. In-app help: `src/components/InstallHelp.jsx` +
+`src/lib/useInstallPrompt.js` (captures `beforeinstallprompt` at module load, so the account menu / sidebar
+"Add ReadyDoc to your phone" entry can still fire the native prompt). Android Chrome shows no install option
+in in-app browsers/WebViews, in Incognito, or when it's already installed — the sheet says so per-platform.
+
 **Slack history importer (Phase 5) — confirmed shape:**
 - User will make all channels public before exporting so the Slack export captures everything.
 - Map imported authors to **existing users by NAME**, not email — keep the current user structure (add-by-name).

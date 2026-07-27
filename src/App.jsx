@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
 import { setAppBadge } from './lib/appBadge';
 import { useEdgeSwipe } from './lib/useEdgeSwipe';
+import { useInstallPrompt, installEnvironment } from './lib/useInstallPrompt.js';
 import { visibleModuleIds, canViewModule, hasExplicitGrant } from './utils/permissions';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
 import AttentionBar from './components/AttentionBar.jsx';
+import InstallHelp from './components/InstallHelp.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
 import ComponentKiosk from './components/kiosk/ComponentKiosk.jsx';
@@ -382,6 +384,12 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, 
             <LogOut size={16} />
           </button>
         </div>
+        {!installEnvironment().standalone && (
+          <button onClick={() => window.dispatchEvent(new CustomEvent('app-install-help'))}
+            className="mt-2 w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-powder-700 bg-powder-50 hover:bg-powder-100">
+            <Smartphone size={13} /> Add ReadyDoc to your phone
+          </button>
+        )}
       </div>
     </nav>
   );
@@ -561,7 +569,7 @@ function ViewAsPickerModal({ onPick, onClose }) {
 }
 
 // Top-right account menu: name/avatar → View as / Change password / Sign out.
-function AccountMenu({ user, onChangePassword, onLogout, onViewAs }) {
+function AccountMenu({ user, onChangePassword, onLogout, onViewAs, onInstallHelp }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -592,6 +600,11 @@ function AccountMenu({ user, onChangePassword, onLogout, onViewAs }) {
           <button onClick={() => { setOpen(false); onChangePassword(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
             <KeyRound size={15} className="text-gray-400" /> Change password
           </button>
+          {!installEnvironment().standalone && (
+            <button onClick={() => { setOpen(false); onInstallHelp(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+              <Smartphone size={15} className="text-gray-400" /> Add to home screen
+            </button>
+          )}
           <button onClick={() => { setOpen(false); onLogout(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
             <LogOut size={15} className="text-gray-400" /> Sign out
           </button>
@@ -836,21 +849,13 @@ function MobileBottomNav({ activeTab, setActiveTab, user, onOpenComms }) {
 }
 
 function InstallPrompt() {
-  const [deferred, setDeferred] = useState(null);
+  const { deferred, install } = useInstallPrompt();
   const [dismissed, setDismissed] = useState(() => localStorage.getItem('install_dismissed') === '1');
 
   // iOS Safari never fires beforeinstallprompt — users must add to the home
   // screen manually — so detect it and show step-by-step instructions instead.
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const isStandalone = window.navigator.standalone === true ||
-    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  const { ios: isIOS, standalone: isStandalone } = installEnvironment();
   const [showIosHelp, setShowIosHelp] = useState(false);
-
-  useEffect(() => {
-    const h = (e) => { e.preventDefault(); setDeferred(e); };
-    window.addEventListener('beforeinstallprompt', h);
-    return () => window.removeEventListener('beforeinstallprompt', h);
-  }, []);
 
   const close = () => { setDismissed(true); localStorage.setItem('install_dismissed', '1'); };
 
@@ -889,7 +894,7 @@ function InstallPrompt() {
         <p className="text-sm font-semibold text-gray-900">Install ReadyDoc</p>
         <p className="text-xs text-gray-500">Add to your home screen.</p>
       </div>
-      <button onClick={async () => { deferred.prompt(); await deferred.userChoice.catch(() => {}); setDeferred(null); }}
+      <button onClick={install}
         className="px-3 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700">Install</button>
       <button onClick={close} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
     </div>
@@ -915,6 +920,7 @@ function App() {
   const [homePref, setHomePref] = useState('fsqa');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
+  const [showInstall, setShowInstall] = useState(false);
   // Docked chat: a slim Messages panel beside the modules (desktop split screen).
   const [dockChat, setDockChat] = useState(() => { try { return localStorage.getItem('dock_chat') === '1'; } catch { return false; } });
   const toggleDockChat = () => setDockChat(d => { const n = !d; try { localStorage.setItem('dock_chat', n ? '1' : '0'); } catch { /* private mode */ } return n; });
@@ -950,6 +956,13 @@ function App() {
     window.addEventListener('app-logout', handler);
     return () => window.removeEventListener('app-logout', handler);
   }, [logout]);
+
+  // The sidebar footer lives outside this component, so it asks by event.
+  useEffect(() => {
+    const handler = () => setShowInstall(true);
+    window.addEventListener('app-install-help', handler);
+    return () => window.removeEventListener('app-install-help', handler);
+  }, []);
 
   useEffect(() => {
     const handler = () => setShowChangePw(true);
@@ -1184,6 +1197,11 @@ function App() {
                 {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH' }[user.department] || user.department?.toUpperCase()}
               </span>
               <span className="text-xs text-gray-500">{user.name}</span>
+              {!installEnvironment().standalone && (
+                <button onClick={() => setShowInstall(true)} className="text-gray-400 hover:text-gray-600" title="Add to home screen">
+                  <Smartphone size={17} />
+                </button>
+              )}
               <button onClick={() => setShowChangePw(true)} className="text-gray-400 hover:text-gray-600" data-tip="Change password" data-tip-left>
                 <KeyRound size={17} />
               </button>
@@ -1197,6 +1215,7 @@ function App() {
           <OperatorView />
         </main>
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+        {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
         <UpdateBanner />
       </div>
     );
@@ -1299,6 +1318,11 @@ function App() {
                 {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH' }[user.department] || user.department?.toUpperCase()}
               </span>
               <span className="text-xs text-gray-500">{user.name}</span>
+              {!installEnvironment().standalone && (
+                <button onClick={() => setShowInstall(true)} className="text-gray-400 hover:text-gray-600" title="Add to home screen">
+                  <Smartphone size={17} />
+                </button>
+              )}
               <button onClick={() => setShowChangePw(true)} className="text-gray-400 hover:text-gray-600" data-tip="Change password" data-tip-left>
                 <KeyRound size={17} />
               </button>
@@ -1312,6 +1336,7 @@ function App() {
           <OperatorView />
         </main>
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+        {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
         <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
         <UpdateBanner />
       </div>
@@ -1369,6 +1394,7 @@ function App() {
                 </button>
               )}
               <AccountMenu user={user} onChangePassword={() => setShowChangePw(true)} onLogout={logout}
+                onInstallHelp={() => setShowInstall(true)}
                 onViewAs={realUser?.role === 'admin' && !viewAs ? () => setShowViewAsPicker(true) : null} />
             </div>
           </div>
@@ -1483,6 +1509,7 @@ function App() {
         </div>
       )}
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+        {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
       {showViewAsPicker && <ViewAsPickerModal onPick={(u) => { setShowViewAsPicker(false); startViewAs(u); }} onClose={() => setShowViewAsPicker(false)} />}
       <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
       <UpdateBanner />
