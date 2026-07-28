@@ -13,6 +13,13 @@ const ROLES = [
 ];
 
 
+// Mirrors the app's own sidebar sections, in the same order and under the same
+// names — an admin granting access should be looking at the list they already
+// navigate every day, not a second taxonomy invented for this screen.
+//
+// `sub: true` indents an entry under the one above it. That is how the kiosk
+// forms are shown: each sits under the log it files into, because they are
+// separate grants and the difference is easy to miss when they are apart.
 const MODULE_GROUPS = [
   {
     label: 'Overview',
@@ -25,23 +32,27 @@ const MODULE_GROUPS = [
     ],
   },
   {
-    label: 'Quick Forms',
-    modules: [
-      { id: 'form-maintenance', label: 'Sign Out an Item (kiosk form)' },
-      { id: 'form-knife', label: 'Knife Sign In/Out (kiosk form)' },
-      { id: 'form-components', label: 'Component Pull (kiosk form)' },
-    ],
-  },
-  {
     label: 'Production',
     modules: [
       { id: 'production-log', label: 'Production Log' },
       // Submitting the EOD entry form — separate from editing the log itself.
       // Supervisors get the form automatically; edit on Production Log is what
-      // allows changing existing log entries.
-      { id: 'production-eod', label: 'EOD Entry Form (auto for supervisors)' },
+      // allows correcting entries afterwards.
+      { id: 'production-eod', label: 'EOD entry form (auto for supervisors)', sub: true, note: 'Files into the Production Log. Correcting a filed entry needs Edit above.' },
       { id: 'production-schedule', label: 'Schedule' },
       { id: 'production-dashboard', label: 'Production KPIs' },
+    ],
+  },
+  {
+    label: 'Warehouse',
+    modules: [
+      { id: 'component-signout', label: 'Component Sign In/Out' },
+      { id: 'form-components', label: 'Component Pull (kiosk form)', sub: true, note: 'The Quick Forms shortcut in the sidebar. Files into the log above — grant this alone for people who only submit.' },
+      { id: 'maintenance-signout', label: 'Equipment/Tool/Chemical Sign In-Out' },
+      { id: 'form-maintenance', label: 'Sign Out an Item (kiosk form)', sub: true, note: 'The Quick Forms shortcut in the sidebar. Files into the log above — grant this alone for people who only submit.' },
+      { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor' },
+      { id: 'form-knife', label: 'Knife Sign In/Out (kiosk form)', sub: true, note: 'The Quick Forms shortcut in the sidebar. Files into the log above — grant this alone for people who only submit.' },
+      { id: 'currently-out', label: 'Checked Out (summary view)' },
     ],
   },
   {
@@ -54,27 +65,38 @@ const MODULE_GROUPS = [
     ],
   },
   {
-    label: 'Quality & Safety',
+    label: 'Quality',
     modules: [
-      { id: 'sanitation', label: 'Sanitation' },
-      { id: 'chemicals', label: 'Chemicals' },
+      { id: 'coa', label: 'COA / Lab Testing' },
       { id: 'hygienic', label: 'Hygienic Design' },
       { id: 'qa-inspections', label: 'QA Inspections (light, brittle plastic & glass)' },
-      { id: 'coa', label: 'COA / Lab Testing' },
+      { id: 'organoleptic', label: 'Organoleptic Sensory' },
+      { id: 'flavor-approvals', label: 'Flavor Approvals' },
+      { id: 'capa', label: 'CAPA / Complaints' },
+      { id: 'deviations', label: 'Deviations' },
+      { id: 'non-conformance', label: 'Non-Conformance' },
+      { id: 'on-hold', label: 'On Hold' },
+      { id: 'disposals', label: 'Disposals' },
+      { id: 'recall', label: 'Mock Recall' },
     ],
   },
   {
-    label: 'Compliance',
+    label: 'Cleaning',
     modules: [
-      { id: 'capa', label: 'CAPA / Complaints' },
+      { id: 'sanitation', label: 'Sanitation' },
+      { id: 'chemicals', label: 'Chemicals' },
+    ],
+  },
+  {
+    label: 'Document Control',
+    modules: [
       { id: 'sops', label: 'SOP Registry' },
       { id: 'work-instructions', label: 'Work Instructions' },
       { id: 'job-descriptions', label: 'Job Descriptions' },
-      { id: 'org-chart', label: 'Org Chart' },
-      { id: 'disposals', label: 'Disposals' },
       { id: 'training', label: 'Training Records' },
       { id: 'certifications', label: 'Certifications' },
-      { id: 'recall', label: 'Mock Recall' },
+      { id: 'dcr', label: 'Document Change Requests' },
+      { id: 'org-chart', label: 'Org Chart' },
     ],
   },
   {
@@ -90,21 +112,6 @@ const MODULE_GROUPS = [
       { id: 'procurement', label: 'Procurement & Demand Planning' },
       { id: 'newsletter', label: 'Newsletter' },
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
-    ],
-  },
-  {
-    label: 'Quality Records',
-    modules: [
-      { id: 'dcr', label: 'Document Change Requests' },
-      { id: 'deviations', label: 'Deviations' },
-      { id: 'non-conformance', label: 'Non-Conformance' },
-      { id: 'on-hold', label: 'On Hold' },
-      { id: 'component-signout', label: 'Component Sign In/Out' },
-      { id: 'maintenance-signout', label: 'Equipment/Tool/Chemical Sign In-Out' },
-      { id: 'currently-out', label: 'Checked Out (summary view)' },
-      { id: 'organoleptic', label: 'Organoleptic Sensory' },
-      { id: 'flavor-approvals', label: 'Flavor Approvals' },
-      { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor' },
     ],
   },
 ];
@@ -215,8 +222,11 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
               {group.modules.map(mod => {
                 const lvl = levelOf(mod.id);
                 return (
-                  <div key={mod.id} className="flex items-center justify-between gap-2 pl-1">
-                    <span className="text-xs text-gray-700">{mod.label}</span>
+                  <div key={mod.id} className={`flex items-start justify-between gap-2 ${mod.sub ? 'pl-4 border-l-2 border-gray-200 ml-1' : 'pl-1'}`}>
+                    <span className="text-xs text-gray-700 min-w-0">
+                      {mod.label}
+                      {mod.note && <span className="block text-[10px] text-gray-400">{mod.note}</span>}
+                    </span>
                     <div className="flex rounded-md border border-gray-200 overflow-hidden shrink-0">
                       {LEVELS.map(l => (
                         <button key={l.value} type="button" disabled={disabled}
