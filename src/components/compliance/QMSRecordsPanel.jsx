@@ -2,17 +2,38 @@ import { useState, useMemo, useRef, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
+import { deptLabel } from '../../constants/departments';
 import FileUpload from '../FileUpload';
 import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square, Eye, QrCode, ListChecks } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
 
 // Mirror of server canSignApproval — admin always; else role/department match.
+//
+// Note this is deliberately NOT the module's edit permission. Editing a log and
+// signing it in a named capacity are different rights: someone who can correct
+// a sign-out record should not thereby be able to sign it off as QA.
 function canSign(user, appr) {
   if (!user || !appr || appr.external) return false;
   if (user.role === 'admin') return true;
   if (Array.isArray(appr.roles) && appr.roles.includes(user.role)) return true;
   if (Array.isArray(appr.departments) && appr.departments.includes(user.department)) return true;
   return false;
+}
+
+// Why the signature button isn't there. Without this the row just reads
+// "Awaiting Reviewed by QA", which looks identical whether you are the wrong
+// person or the feature is broken — and the difference matters, because the
+// usual cause is a department that only looks right (Document Control shows
+// under the QA heading in Settings but is its own department).
+function whyCannotSign(user, appr) {
+  if (!user || !appr || appr.external) return null;
+  const needs = [
+    ...(appr.roles || []).map(r => `${r} role`),
+    ...(appr.departments || []).map(d => `${deptLabel(d)} department`),
+  ];
+  if (!needs.length) return null;
+  const yours = deptLabel(user.department) || 'no department';
+  return `Requires ${needs.join(' or ')} — you are in ${yours}. Module permissions do not grant signing.`;
 }
 
 function requiredPending(cfg, rec) {
@@ -420,7 +441,12 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
                   ) : canSign(user, a) ? (
                     <button onClick={() => doSign(a.key)} disabled={signing === a.key} className="px-2.5 py-1 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{signing === a.key ? 'Signing…' : `Sign as ${a.label}`}</button>
                   ) : (
-                    <span className="text-xs text-gray-400">Awaiting {a.label}</span>
+                    <span className="text-xs text-gray-400 flex-1">
+                      Awaiting {a.label}
+                      {whyCannotSign(user, a) && (
+                        <span className="block text-[10px] text-gray-400 mt-0.5">{whyCannotSign(user, a)}</span>
+                      )}
+                    </span>
                   )}
                 </div>
               );
