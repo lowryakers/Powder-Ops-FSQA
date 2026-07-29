@@ -559,8 +559,7 @@ const GROUP_TABS = [
   { value: 'document_control', label: 'Document Control', color: 'bg-sky-600' },
   { value: 'batching', label: 'Batching', color: 'bg-yellow-600' },
   { value: 'kitting', label: 'Kitting', color: 'bg-blue-600' },
-  { value: 'sticks', label: 'Sticks', color: 'bg-cyan-600' },
-  { value: 'hand_fill', label: 'Hand Fill', color: 'bg-purple-600' },
+  { value: 'filling', label: 'Filling', color: 'bg-cyan-600' },
   { value: 'cleaning', label: 'Cleaning', color: 'bg-amber-600' },
 ];
 

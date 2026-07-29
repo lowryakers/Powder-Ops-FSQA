@@ -27,9 +27,9 @@ function normalizeTeam(team) {
   if (!team) return null;
   const t = team.trim().toLowerCase();
   if (t.includes('batch') || t.includes('blend')) return 'Batching';
-  if (t.includes('hand') || t.includes('fill')) return 'Hand Fill';
+  if (t.includes('hand') || t.includes('fill')) return 'Filling';
   if (t.includes('kit')) return 'Kitting';
-  if (t.includes('stick') || t.includes('sachet')) return 'Stick Pack';
+  if (t.includes('stick') || t.includes('sachet')) return 'Filling';
   return team.trim();
 }
 
@@ -189,9 +189,8 @@ function getWeekKey(date) {
 export function getTeamColor(team) {
   const colors = {
     'Batching': '#f59e0b',
-    'Hand Fill': '#10b981',
+    'Filling': '#0891b2',
     'Kitting': '#8b5cf6',
-    'Stick Pack': '#3b82f6',
   };
   return colors[team] || '#6b7280';
 }

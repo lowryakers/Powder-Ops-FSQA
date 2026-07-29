@@ -18,6 +18,7 @@ import newsletterRoutes from './server/api/newsletter.js';
 import { seedProcurement } from './server/procurement-seed.js';
 import { seedFinanceFromMonday } from './server/finance-seed.js';
 import { seedPayTracking } from './server/pay-seed.js';
+import { mergeFillingTeam } from './server/filling-merge.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
 import pmRoutes from './server/api/pm.js';
@@ -788,6 +789,7 @@ try {
   console.warn('[seed] pay tracking seeding skipped:', e.message);
 }
 
+
 // Ensure auditor user exists (for existing databases)
 {
   const hasAuditor = db.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'auditor'").get().c;
@@ -879,6 +881,11 @@ try {
 // Seed production entries
 try {
   seedProductionEntries(db);
+
+  // Sticks + Hand Fill → Filling. Runs after every seed, because the historical
+  // production seed still speaks the pre-merge team names on a fresh database.
+  // Idempotent: a no-op once there is nothing left carrying the old values.
+  mergeFillingTeam(db);
   console.log('[seed] Production entries seeded');
 } catch (err) {
   console.error('[seed] Error seeding production entries (non-fatal):', err.message);

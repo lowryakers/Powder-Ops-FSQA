@@ -8,13 +8,12 @@ import ScheduleProgressPanel from './ScheduleProgressPanel.jsx';
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
-const TEAMS = ['Batching', 'Stick Pack', 'Hand Fill', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
+const TEAMS = ['Batching', 'Filling', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const CLEANING_LEVELS = ['N/A', 'Partial', 'Full Clean'];
 
 const TEAM_COLORS = {
   Batching: '#ca8a04',
-  'Stick Pack': '#0891b2',
-  'Hand Fill': '#7c3aed',
+  'Filling': '#0891b2',
   Kitting: '#2563eb',
   Quality: '#dc2626',
   Warehouse: '#4b5563',
@@ -245,10 +244,10 @@ const ROOM_SECTIONS = [
 
 const PRODUCTION_ROOMS = ROOM_SECTIONS.find(s => s.type === 'production')?.rooms || [];
 const KITTING_ROOMS = ROOM_SECTIONS.find(s => s.type === 'kitting')?.rooms || [];
-// Downstream packaging lines a batched product can flow to (Pouch = Hand Fill)
+// Downstream packaging step a batched product flows to. Which machine runs it
+// is the per-run line tag, not a separate team.
 const PACKAGING_TEAMS = [
-  { value: 'Stick Pack', label: 'Stick Pack' },
-  { value: 'Hand Fill', label: 'Hand Fill (Pouch)' },
+  { value: 'Filling', label: 'Filling' },
 ];
 
 function getMonday(date) {
@@ -572,7 +571,7 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
                 onChange={e => setSetupDownstream(e.target.checked)}
                 className="rounded border-gray-300 mt-0.5"
               />
-              <span>After saving, set up downstream steps (Stick Pack / Pouch → Kitting) for this product.</span>
+              <span>After saving, set up downstream steps (Filling → Kitting) for this product.</span>
             </label>
           )}
           <div className="flex items-center gap-2 pt-1">
@@ -731,9 +730,9 @@ function DuplicateDayModal({ weekStart, sourceDay, userName, onClose, onSaved })
 }
 
 // Per-item prompt to auto-populate downstream steps for a batched product:
-// Batching → Pouch (Hand Fill) / Stick Pack → Kitting
+// Batching → Filling → Kitting
 function DownstreamModal({ product, batchDay, weekStart, userName, nextSlotFor, onClose, onSaved }) {
-  const [pkgTeam, setPkgTeam] = useState('Stick Pack');
+  const [pkgTeam, setPkgTeam] = useState('Filling');
   const [pkgDay, setPkgDay] = useState(batchDay);
   const [pkgRoom, setPkgRoom] = useState('');
   const [pkgTime, setPkgTime] = useState('');
@@ -1170,7 +1169,7 @@ export default function ProductionSchedule({ user }) {
     if (entries.length > 0) {
       const nextSlot = Math.max(...entries.map(a => a.slot || 0)) + 1;
       // Any room can run several products on the same day — Kitting/Batching, and
-      // production rooms running Stick Pack / Hand Fill, etc.
+      // production rooms running Filling, etc.
       const canAddLine = canEdit;
       return (
         <td key={dayIndex} className={`border border-gray-200 px-2 py-1.5 ${cellTint} ${dropHighlight}`} {...dropProps(dayIndex, room, roomType)}>

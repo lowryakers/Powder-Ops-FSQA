@@ -11,12 +11,11 @@ const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#14b8a6', '#f43f5e'
 
 const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const WEEK_DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-const TEAM_ORDER = ['Batching', 'Kitting', 'Stick Pack', 'Hand Fill', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
+const TEAM_ORDER = ['Batching', 'Kitting', 'Filling', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const TEAM_TEXT = {
   Batching: 'text-yellow-700',
   Kitting: 'text-blue-700',
-  'Stick Pack': 'text-cyan-700',
-  'Hand Fill': 'text-violet-700',
+  'Filling': 'text-cyan-700',
   Quality: 'text-red-700',
   Warehouse: 'text-gray-700',
   Sanitation: 'text-emerald-700',

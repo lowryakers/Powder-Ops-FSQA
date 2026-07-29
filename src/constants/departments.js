@@ -1,9 +1,14 @@
 // Canonical operational departments — the single source of truth for user
 // assignment and task grouping. Edit here, not in individual components.
 //
-// - Production was split into its line teams (Batching / Kitting / Sticks /
-//   Hand Fill). The old 'production' value is kept as a legacy bucket so
-//   pre-split users and work orders keep working until an admin reassigns them.
+// - Production was split into its line teams. Sticks and Hand Fill were later
+//   merged into one 'filling' team under a single supervisor; which machine a
+//   run used is now a per-run line tag (see constants/productionLines.js)
+//   rather than a separate team, so the distinction survives without splitting
+//   the people.
+// - Legacy values ('production', 'sticks', 'hand_fill') stay assignable-in-data
+//   so pre-merge users and work orders keep resolving; a boot migration moves
+//   them across, and they are hidden from the pickers.
 // - QA and Document Control stay as two distinct values but share the "QA"
 //   group so the UI can present them together.
 export const DEPARTMENTS = [
@@ -12,14 +17,20 @@ export const DEPARTMENTS = [
   { value: 'document_control', label: 'Document Control', group: 'QA' },
   { value: 'batching', label: 'Batching', group: 'Production' },
   { value: 'kitting', label: 'Kitting', group: 'Production' },
-  { value: 'sticks', label: 'Sticks', group: 'Production' },
-  { value: 'hand_fill', label: 'Hand Fill', group: 'Production' },
+  { value: 'filling', label: 'Filling', group: 'Production' },
   { value: 'cleaning', label: 'Cleaning', group: 'Sanitation' },
   { value: 'maintenance', label: 'Maintenance', group: 'Maintenance' },
   { value: 'office', label: 'Office', group: 'Office' },
-  // Legacy — assignable so existing accounts stay valid; reassign to a line team.
+  // Legacy — kept so existing accounts stay valid; reassign to a line team.
   { value: 'production', label: 'Production (legacy)', group: 'Production', legacy: true },
+  { value: 'sticks', label: 'Sticks (merged into Filling)', group: 'Production', legacy: true },
+  { value: 'hand_fill', label: 'Hand Fill (merged into Filling)', group: 'Production', legacy: true },
 ];
+
+// Departments folded into another one. Anything still carrying the old value is
+// read as the new one, so a record written before the merge still resolves.
+export const MERGED_DEPARTMENTS = { sticks: 'filling', hand_fill: 'filling' };
+export const resolveDepartment = (d) => MERGED_DEPARTMENTS[d] || d;
 
 // Assignable (go-forward) departments — excludes legacy buckets.
 export const ASSIGNABLE_DEPARTMENTS = DEPARTMENTS.filter(d => !d.legacy);

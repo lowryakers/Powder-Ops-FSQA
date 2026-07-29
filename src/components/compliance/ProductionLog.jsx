@@ -3,8 +3,9 @@ import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2, Pencil } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { hasExplicitGrant } from '../../utils/permissions';
+import { PRODUCTION_LINES, lineLabel, FILLING_TEAM } from '../../constants/productionLines';
 
-const TEAMS = ['Batching', 'Stick Pack', 'Hand Fill', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
+const TEAMS = ['Batching', 'Filling', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const ROOMS = ['Batching 1', 'Batching 2', ...Array.from({ length: 16 }, (_, i) => String(i)), 'Other'];
 
 function formatDate(d) {
@@ -34,6 +35,7 @@ function thirtyDaysAgo() {
 const INITIAL_FORM = {
   date: todayStr(),
   team: '',
+  line: '',
   room: '',
   product_name: '',
   mo_number: '',
@@ -52,7 +54,12 @@ function EntryForm({ user, onSuccess }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
-  const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+  const set = (key, val) => setForm(prev => ({
+    ...prev,
+    [key]: val,
+    // A line only means something on a Filling run.
+    ...(key === 'team' && val !== FILLING_TEAM ? { line: '' } : {}),
+  }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -110,6 +117,18 @@ function EntryForm({ user, onSuccess }) {
             {ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
+        {/* Filling is one team across several machines, so the run records
+            which line it went through. */}
+        {form.team === FILLING_TEAM && (
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Line *</label>
+            <select required value={form.line} onChange={e => set('line', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">Select line...</option>
+              {PRODUCTION_LINES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Product Name *</label>
           <input required value={form.product_name} onChange={e => set('product_name', e.target.value)}
@@ -229,6 +248,7 @@ const AMEND_FIELDS = [
   { key: 'mo_number', label: 'MO #', type: 'text' },
   { key: 'lot_number', label: 'Lot #', type: 'text' },
   { key: 'team', label: 'Team', type: 'select', options: TEAMS },
+  { key: 'line', label: 'Line', type: 'select', options: ['', ...PRODUCTION_LINES.map(l => l.value)] },
   { key: 'room', label: 'Room', type: 'select', options: ROOMS },
   { key: 'start_time', label: 'Start time', type: 'time' },
   { key: 'end_time', label: 'End time', type: 'time' },
@@ -701,6 +721,7 @@ function LogTable({ user }) {
                 )}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+                {entry.line && <span className="font-medium text-gray-700">{lineLabel(entry.line)}</span>}
                 {entry.mo_number && <span>MO {entry.mo_number}</span>}
                 {entry.lot_number && <span>Lot {entry.lot_number}</span>}
                 <span>{formatTime(entry.start_time)}–{formatTime(entry.end_time)}</span>
@@ -751,7 +772,10 @@ function LogTable({ user }) {
                 {filtered.map(entry => (
                   <tr key={entry.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2 text-sm text-gray-900 whitespace-nowrap">{formatDate(entry.date)}</td>
-                    <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.team}</td>
+                    <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">
+                      {entry.team}
+                      {entry.line && <span className="ml-1.5 text-[10px] font-medium text-gray-500">{lineLabel(entry.line)}</span>}
+                    </td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.room}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 w-full min-w-[160px] relative group">
                       {entry.product_name}

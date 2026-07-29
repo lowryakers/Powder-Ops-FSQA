@@ -10,8 +10,7 @@ import { getChannelByName, postMessageAs, getModuleLinks } from './comms.js';
 const SCHEDULE_TEAM_CHANNELS = [
   { team: 'Batching', channel: 'batching' },
   { team: 'Kitting', channel: 'kitting' },
-  { team: 'Stick Pack', channel: 'sticks' },
-  { team: 'Hand Fill', channel: 'hand fill' },
+  { team: 'Filling', channel: 'filling-team' },
 ];
 const SCHED_DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
@@ -195,7 +194,7 @@ router.post('/missed-reports/restore', requireRole('admin', 'supervisor'), (req,
 // POST /entries — create a new production entry
 router.post('/entries', (req, res) => {
   const db = getDb();
-  const { date, team, room, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes } = req.body;
+  const { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes } = req.body;
 
   if (!date || !team || !room || !product_name || !mo_number || !lot_number || !start_time || !end_time || quantity_completed == null || !people_count || !submitted_by) {
     return res.status(400).json({ error: 'Missing required fields: date, team, room, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by' });
@@ -203,9 +202,9 @@ router.post('/entries', (req, res) => {
 
   const id = uuid();
   db.prepare(`
-    INSERT INTO production_entries (id, date, team, room, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, date, team, room, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by);
+    INSERT INTO production_entries (id, date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by);
 
   const created = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
   logAudit(submitted_by, 'create', 'production_entry', id, req.body, null, created);
@@ -273,7 +272,7 @@ const canEditLog = (u) => u?.role === 'admin' || hasExplicitEdit(u, 'production-
 // a different record, not a typo, and should be voided and re-filed.
 const AMENDABLE = {
   product_name: 'Product', mo_number: 'MO #', lot_number: 'Lot #',
-  team: 'Team', room: 'Room',
+  team: 'Team', room: 'Room', line: 'Line',
   start_time: 'Start time', end_time: 'End time',
   quantity_completed: 'Quantity completed', people_count: 'People',
   notes: 'Notes', submitted_by: 'Submitted by',

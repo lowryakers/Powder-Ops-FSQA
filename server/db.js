@@ -872,6 +872,12 @@ function runMigrations() {
   addColumnIfMissing('production_schedule', 'flavor_approved_by', 'TEXT');
   addColumnIfMissing('production_schedule', 'flavor_approved_at', 'TEXT');
 
+  // Sticks and Hand Fill merged into one Filling team; which machine a run used
+  // moved from the team name onto its own tag, so historical runs stay
+  // distinguishable and new lines (auto pouch, sachet, bottling) need no team.
+  addColumnIfMissing('production_entries', 'line', 'TEXT');
+  addColumnIfMissing('production_schedule', 'line', 'TEXT');
+
   // Good documentation practice for the production log: a filed EOD report is
   // a record, so it is never quietly overwritten. Corrections are appended
   // here as amendments — who, when, why, and each field's before/after — and
