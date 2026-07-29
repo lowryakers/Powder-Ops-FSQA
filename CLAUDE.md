@@ -63,6 +63,14 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `/push/key|subscribe|unsubscribe`; pushes on @mention and DM; prunes dead subs on 404/410. Bell toggle in
     comms header. **Env:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (generate once with
     `npx web-push generate-vapid-keys`).
+    **A subscription is bound to the VAPID key it was created under.** Change the keys and every older
+    subscription starts failing with a 403 (`VapidPkHashMismatch`) while still looking healthy on the phone —
+    which is how someone ends up silently getting nothing on every device. `chat_push_subscriptions` records
+    `vapid_key` / `last_success_at` / `last_error`; `pushToUser` logs every failure and prunes on **403, 404
+    and 410**; the client compares `sub.options.applicationServerKey` to `/push/key` on load and rebuilds the
+    subscription when they differ. `GET /push/status` (per-device, in the bell → Notification status panel)
+    and admin `GET /push/diagnostics` (Messages → Settings → Notifications, incl. accounts with **no** device
+    registered) make "who isn't getting notifications" answerable without shell access.
     **NEVER send data-only ("silent") pushes** — every push must end in `showNotification()`, or Android
     Chrome shows a generic fallback notification (this was the 2026-07 "phantom notifications" bug: a
     cross-device dismiss push on channel read). Same-device notification clearing is done client-side via

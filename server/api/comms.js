@@ -44,17 +44,90 @@ router.post('/push/subscribe', (req, res) => {
   const s = req.body?.subscription || req.body;
   if (!s?.endpoint || !s?.keys?.p256dh || !s?.keys?.auth) return res.status(400).json({ error: 'Invalid subscription' });
   const db = getDb();
-  db.prepare(`INSERT INTO chat_push_subscriptions (id, user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?, ?)
-              ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth`)
-    .run(uuid(), req.user.id, s.endpoint, s.keys.p256dh, s.keys.auth);
+  // Record the VAPID key this subscription was created under. If the server's
+  // keys ever change, these rows are the only way to tell a live subscription
+  // from one that can never be delivered again.
+  db.prepare(`INSERT INTO chat_push_subscriptions (id, user_id, endpoint, p256dh, auth, vapid_key, user_agent)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh,
+                auth = excluded.auth, vapid_key = excluded.vapid_key, user_agent = excluded.user_agent,
+                last_error = NULL, last_error_at = NULL`)
+    .run(uuid(), req.user.id, s.endpoint, s.keys.p256dh, s.keys.auth,
+      vapidPublicKey(), (req.headers['user-agent'] || '').slice(0, 300));
   res.json({ ok: true });
 });
 
-// How many devices this account has registered — surfaced in the notification
-// status panel so "why isn't my phone buzzing?" has a visible answer.
+// How many devices this account has registered, and how each one is actually
+// doing — surfaced in the notification status panel so "why isn't my phone
+// buzzing?" has a visible answer rather than a guess.
 router.get('/push/status', (req, res) => {
-  const count = getDb().prepare('SELECT COUNT(*) c FROM chat_push_subscriptions WHERE user_id = ?').get(req.user.id).c;
-  res.json({ enabled: pushEnabled(), count });
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM chat_push_subscriptions WHERE user_id = ? ORDER BY created_at').all(req.user.id);
+  const current = vapidPublicKey();
+  res.json({
+    enabled: pushEnabled(),
+    count: rows.length,
+    devices: rows.map(r => ({
+      created_at: r.created_at,
+      last_success_at: r.last_success_at,
+      last_error: r.last_error,
+      last_error_at: r.last_error_at,
+      // A subscription made under an older key can never be delivered to.
+      stale_key: !!(current && r.vapid_key && r.vapid_key !== current),
+      device: deviceLabel(r.user_agent),
+    })),
+  });
+});
+
+// Rough device label from the user-agent — enough to tell someone's phone from
+// their desktop in the status panel.
+function deviceLabel(ua = '') {
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'iPhone / iPad';
+  if (/Android/i.test(ua)) return 'Android';
+  if (/Windows/i.test(ua)) return 'Windows';
+  if (/Mac OS X/i.test(ua)) return 'Mac';
+  return 'Unknown device';
+}
+
+// Admin view of push health across everyone. "Some people aren't getting
+// notifications" is otherwise unanswerable without shell access to the server.
+router.get('/push/diagnostics', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const current = vapidPublicKey();
+  const rows = db.prepare(`
+    SELECT s.*, u.name, u.username FROM chat_push_subscriptions s
+    JOIN users u ON u.id = s.user_id ORDER BY u.name, s.created_at
+  `).all();
+  const byUser = new Map();
+  for (const r of rows) {
+    const entry = byUser.get(r.user_id)
+      || { user_id: r.user_id, name: shortNameOf(r), devices: [] };
+    entry.devices.push({
+      device: deviceLabel(r.user_agent),
+      created_at: r.created_at,
+      last_success_at: r.last_success_at,
+      last_error: r.last_error,
+      last_error_at: r.last_error_at,
+      stale_key: !!(current && r.vapid_key && r.vapid_key !== current),
+      // Subscriptions predating this bookkeeping have no key recorded; they're
+      // not necessarily broken, just unverifiable until their next send.
+      unknown_key: !r.vapid_key,
+    });
+    byUser.set(r.user_id, entry);
+  }
+  // Everyone active with no subscription at all — the most common reason for
+  // "I get nothing", and invisible from the subscriptions table alone.
+  const withSubs = new Set(rows.map(r => r.user_id));
+  const noDevices = db.prepare('SELECT id, name, username FROM users WHERE is_active = 1 ORDER BY name').all()
+    .filter(u => !withSubs.has(u.id))
+    .map(u => ({ user_id: u.id, name: shortNameOf(u) }));
+
+  res.json({
+    enabled: pushEnabled(),
+    vapid_key_set: !!current,
+    users: [...byUser.values()],
+    no_devices: noDevices,
+  });
 });
 
 // Self-test: push to the caller's own devices.
@@ -1210,6 +1283,9 @@ function channelLabel(db, channel, me) {
 
 // Turn ranked message ids into access-checked result rows (order preserved).
 // noDms: "View as" previews exclude direct-message content entirely.
+//
+// `rank` is the position the retriever put it in — sorting by date has to be
+// able to get back to "most relevant" without a second query.
 function resultsFor(db, me, messageIds, limit = 40, isAdmin = false, noDms = false) {
   const out = [];
   for (const id of messageIds) {
@@ -1220,11 +1296,31 @@ function resultsFor(db, me, messageIds, limit = 40, isAdmin = false, noDms = fal
     if (noDms && channel.kind === 'dm') continue;
     out.push({
       id: m.id, channel_id: m.channel_id, channel_kind: channel.kind, channel_name: channelLabel(db, channel, me),
-      user_name: userName(db, m.user_id), body: m.body, created_at: m.created_at,
+      user_id: m.user_id, user_name: userName(db, m.user_id), parent_id: m.parent_id || null,
+      body: m.body, created_at: m.created_at, rank: out.length,
     });
     if (out.length >= limit) break;
   }
   return out;
+}
+
+// What the caller can narrow by, counted from the results they actually got —
+// so the filter list never offers a channel or a person with nothing behind it.
+function facetsFor(rows) {
+  const byChannel = new Map();
+  const byPerson = new Map();
+  for (const r of rows) {
+    const c = byChannel.get(r.channel_id)
+      || { id: r.channel_id, name: r.channel_name, kind: r.channel_kind, count: 0 };
+    c.count++; byChannel.set(r.channel_id, c);
+    const p = byPerson.get(r.user_id) || { id: r.user_id, name: r.user_name, count: 0 };
+    p.count++; byPerson.set(r.user_id, p);
+  }
+  const bySize = (a, b) => b.count - a.count || a.name.localeCompare(b.name);
+  return {
+    channels: [...byChannel.values()].sort(bySize),
+    people: [...byPerson.values()].sort(bySize),
+  };
 }
 
 function keywordHits(db, q) {
@@ -1255,16 +1351,50 @@ async function semanticHits(db, me, q, limit = 40, isAdmin = false) {
 }
 
 // FTS5 keyword search (default) or embedding-based semantic search (?mode=semantic).
+//
+// Retrieval is wider than what's returned so the narrowing happens over the
+// whole hit set, not over a page of it: filter by channel/person/date, sort by
+// relevance or date, then cut to a page. Facets are counted before the
+// channel/person filters are applied so the filter list doesn't collapse to the
+// one option you just picked.
+const SEARCH_POOL = 300;   // access-checked rows to consider
+const SEARCH_PAGE = 60;    // rows actually returned
+
 router.get('/search', async (req, res) => {
   const db = getDb();
   const me = req.user.id;
   const q = (req.query.q || '').trim();
-  if (q.length < 2) return res.json([]);
+  const empty = { results: [], facets: { channels: [], people: [] }, total: 0, truncated: false };
+  if (q.length < 2) return res.json(empty);
   try {
     const isAdmin = req.user.role === 'admin';
     const semantic = req.query.mode === 'semantic' && voyageEnabled();
-    const ids = semantic ? await semanticHits(db, me, q, 40, isAdmin) : keywordHits(db, q);
-    res.json(resultsFor(db, me, ids, 40, isAdmin, !!req.impersonated));
+    const ids = semantic ? await semanticHits(db, me, q, SEARCH_POOL, isAdmin) : keywordHits(db, q);
+    const all = resultsFor(db, me, ids, SEARCH_POOL, isAdmin, !!req.impersonated);
+
+    const facets = facetsFor(all);
+
+    const { channel_id, user_id, from, to } = req.query;
+    let rows = all;
+    if (channel_id) rows = rows.filter(r => r.channel_id === channel_id);
+    if (user_id) rows = rows.filter(r => r.user_id === user_id);
+    // created_at is 'YYYY-MM-DD HH:MM:SS.mmm', so a plain string compare against
+    // a date bound works — 'to' gets the whole day by comparing past midnight.
+    if (from) rows = rows.filter(r => r.created_at >= from);
+    if (to) rows = rows.filter(r => r.created_at <= `${to} 99`);
+
+    const sort = req.query.sort || 'relevance';
+    if (sort === 'newest') rows = [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    else if (sort === 'oldest') rows = [...rows].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    else rows = [...rows].sort((a, b) => a.rank - b.rank);
+
+    res.json({
+      results: rows.slice(0, SEARCH_PAGE),
+      facets,
+      total: rows.length,
+      // The retriever itself capped out, so "312 results" would be a lie.
+      truncated: all.length >= SEARCH_POOL,
+    });
   } catch (e) {
     res.status(502).json({ error: e.message || 'Search failed' });
   }

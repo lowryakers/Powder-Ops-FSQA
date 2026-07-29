@@ -22,8 +22,21 @@ function ensureConfigured() {
   configured = true;
 }
 
-// Send a push to every subscription a user has. Prunes subscriptions the push
-// service reports as gone (404/410) so the table doesn't accumulate dead ones.
+// Send a push to every subscription a user has.
+//
+// Every outcome is recorded on the row. A push that fails used to disappear
+// without a trace: the phone still showed as subscribed, the server had sent
+// nothing, and no one could tell which layer was broken. Now the last success
+// and the last failure are both stored, so "Jake gets no notifications" is a
+// question the app can answer.
+//
+// Pruning covers the three ways a subscription becomes permanently dead:
+//   404/410 — the push service dropped it (uninstalled, cleared data).
+//   403     — VapidPkHashMismatch: it was created under a different VAPID key
+//             than the server now holds, so it can never be delivered again.
+// Anything else (network blips, 5xx) is left alone and retried next time.
+const DEAD_STATUSES = new Set([403, 404, 410]);
+
 export async function pushToUser(userId, payload) {
   if (!pushEnabled()) return;
   ensureConfigured();
@@ -33,9 +46,18 @@ export async function pushToUser(userId, payload) {
   await Promise.all(subs.map(async (s) => {
     try {
       await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body);
+      db.prepare("UPDATE chat_push_subscriptions SET last_success_at = datetime('now'), last_error = NULL, last_error_at = NULL WHERE endpoint = ?")
+        .run(s.endpoint);
     } catch (e) {
-      if (e.statusCode === 404 || e.statusCode === 410) {
+      const status = e.statusCode || 0;
+      const reason = `${status || 'network'}: ${String(e.body || e.message || '').slice(0, 200)}`;
+      if (DEAD_STATUSES.has(status)) {
+        console.warn(`[push] dropping dead subscription for user ${userId} — ${reason}`);
         db.prepare('DELETE FROM chat_push_subscriptions WHERE endpoint = ?').run(s.endpoint);
+      } else {
+        console.warn(`[push] send failed for user ${userId} — ${reason}`);
+        db.prepare("UPDATE chat_push_subscriptions SET last_error = ?, last_error_at = datetime('now') WHERE endpoint = ?")
+          .run(reason, s.endpoint);
       }
     }
   }));

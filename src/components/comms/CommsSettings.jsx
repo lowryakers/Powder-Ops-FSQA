@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
-import { Hash, Lock, X, Trash2, Archive, ArchiveRestore, Pencil, Check, Users, Upload, Loader2, UserPlus, UserMinus, Megaphone, GitMerge, ArrowUp, ArrowDown } from 'lucide-react';
+import { Hash, Lock, X, Trash2, Archive, ArchiveRestore, Pencil, Check, Users, Upload, Loader2, UserPlus, UserMinus, Megaphone, GitMerge, ArrowUp, ArrowDown, Bell } from 'lucide-react';
 import { DEPARTMENT_VALUES, deptLabel } from '../../constants/departments';
 
 const DEPARTMENTS = DEPARTMENT_VALUES;
@@ -422,6 +422,93 @@ function PeopleTab() {
   );
 }
 
+/* ─────────────────────────── Notifications tab ─────────────────────────── */
+
+// "Some people aren't getting notifications" used to be unanswerable without
+// shell access: a device could be failing every send and still look subscribed.
+// This shows, per person, what actually happened on the last attempt.
+function NotificationsTab() {
+  const { data, refresh } = useApiGet('/comms/push/diagnostics');
+  if (!data) return <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>;
+
+  const failing = (data.users || []).filter(u => u.devices.some(d => d.stale_key || d.last_error));
+  const healthy = (data.users || []).filter(u => !u.devices.some(d => d.stale_key || d.last_error));
+
+  const Device = ({ d }) => {
+    const bad = d.stale_key || d.last_error;
+    return (
+      <li className={`text-[11px] ${bad ? 'text-red-700' : 'text-gray-500'}`}>
+        {d.device}
+        {d.stale_key ? ' — registered under older server keys; can never be delivered to'
+          : d.last_error ? ` — last attempt failed (${d.last_error})`
+          : d.last_success_at ? ` — delivering, last ${new Date(d.last_success_at).toLocaleString()}`
+          : d.unknown_key ? ' — registered before delivery tracking; status unknown until the next send'
+          : ' — registered, nothing sent yet'}
+      </li>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {!data.enabled && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="font-semibold">Push is not configured on this server.</p>
+          <p className="text-xs mt-1">
+            Nobody can receive notifications until <code>VAPID_PUBLIC_KEY</code>, <code>VAPID_PRIVATE_KEY</code> and
+            {' '}<code>VAPID_SUBJECT</code> are set. Generate them once with <code>npx web-push generate-vapid-keys</code>.
+          </p>
+        </div>
+      )}
+
+      {failing.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase text-red-600 mb-1">Not receiving ({failing.length})</h4>
+          <div className="space-y-2">
+            {failing.map(u => (
+              <div key={u.user_id} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                <p className="text-sm font-medium text-gray-900">{u.name}</p>
+                <ul className="mt-0.5 space-y-0.5">{u.devices.map((d, i) => <Device key={i} d={d} />)}</ul>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1.5">
+            Anyone listed here should open Messages → bell → Notification status and turn notifications off and back
+            on. That rebuilds the subscription against the current keys.
+          </p>
+        </div>
+      )}
+
+      {(data.no_devices || []).length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase text-amber-600 mb-1">No device registered ({data.no_devices.length})</h4>
+          <p className="text-[11px] text-gray-500 mb-1">
+            These accounts have never turned notifications on, on any device — so there is nothing to send to.
+          </p>
+          <p className="text-xs text-gray-700">{data.no_devices.map(u => u.name).join(', ')}</p>
+        </div>
+      )}
+
+      {healthy.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase text-green-700 mb-1">Receiving ({healthy.length})</h4>
+          <div className="space-y-1.5">
+            {healthy.map(u => (
+              <div key={u.user_id} className="rounded-lg border border-gray-200 px-3 py-2">
+                <p className="text-sm text-gray-900">{u.name}</p>
+                <ul className="mt-0.5 space-y-0.5">{u.devices.map((d, i) => <Device key={i} d={d} />)}</ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button onClick={refresh} className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200">
+        Refresh
+      </button>
+    </div>
+  );
+}
+
 /* ─────────────────────────── Import tab ─────────────────────────── */
 function ImportTab({ onImported }) {
   const { data: existingUsers } = useApiGet('/users');
@@ -603,11 +690,13 @@ export default function CommsSettings({ users, onClose, onChanged }) {
         <div className="flex items-center gap-1.5 px-4 py-3 border-b border-gray-100">
           <TabButton active={tab === 'channels'} onClick={() => setTab('channels')} icon={Hash}>Channels</TabButton>
           <TabButton active={tab === 'people'} onClick={() => setTab('people')} icon={Users}>People</TabButton>
+          <TabButton active={tab === 'notifications'} onClick={() => setTab('notifications')} icon={Bell}>Notifications</TabButton>
           <TabButton active={tab === 'import'} onClick={() => setTab('import')} icon={Upload}>Import</TabButton>
         </div>
         <div className="p-5 overflow-y-auto">
           {tab === 'channels' && <ChannelsTab users={users} />}
           {tab === 'people' && <PeopleTab />}
+          {tab === 'notifications' && <NotificationsTab />}
           {tab === 'import' && <ImportTab onImported={onChanged} />}
         </div>
       </div>

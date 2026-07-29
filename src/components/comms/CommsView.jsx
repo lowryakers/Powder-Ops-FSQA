@@ -10,6 +10,17 @@ import ZoomableImage from './ZoomableImage.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
+// The reverse trip: a live subscription reports its applicationServerKey as an
+// ArrayBuffer, and comparing it to the server's advertised key is the only way
+// to notice the two have drifted apart.
+function subKeyToBase64(buf) {
+  if (!buf) return null;
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -148,6 +159,26 @@ function DateDivider({ iso }) {
     </div>
   );
 }
+// Mark the searched words inside a result so the eye lands on why it matched,
+// instead of reading two lines to find out. Prefix-matched like the FTS query
+// itself ("gask" highlights "gasket").
+function highlightTerms(text, query) {
+  const body = text || '';
+  const terms = (query || '').trim().split(/\s+/).filter(t => t.length >= 2);
+  if (!terms.length) return body;
+  const re = new RegExp(`(${terms.map(escapeRe).join('|')})`, 'gi');
+  const out = [];
+  let last = 0, m, k = 0;
+  while ((m = re.exec(body)) !== null) {
+    if (m.index > last) out.push(body.slice(last, m.index));
+    out.push(<mark key={k++} className="bg-amber-200 text-amber-900 rounded-sm px-0.5">{m[0]}</mark>);
+    last = m.index + m[0].length;
+    if (re.lastIndex === m.index) re.lastIndex++; // guard against a zero-width match
+  }
+  if (last < body.length) out.push(body.slice(last));
+  return out;
+}
+
 const fmtSize = (n) => { if (!n && n !== 0) return ''; if (n < 1024) return n + ' B'; if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB'; return (n / 1024 / 1024).toFixed(1) + ' MB'; };
 
 // Browsers can't decode HEIC/HEIF (iPhone) or TIFF — treat those "images" as
@@ -1188,6 +1219,13 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const [searching, setSearching] = useState(false);
   const [searchMode, setSearchMode] = useState('keyword'); // keyword | smart | ask
   const [answer, setAnswer] = useState(null); // AI answer in ask mode
+  // Search narrowing: totals + facets from the server, and the caller's picks.
+  const [searchMeta, setSearchMeta] = useState(null);
+  const [searchSort, setSearchSort] = useState('relevance'); // relevance | newest | oldest
+  const [fChannel, setFChannel] = useState('');
+  const [fPerson, setFPerson] = useState('');
+  const [fFrom, setFFrom] = useState('');
+  const [fTo, setFTo] = useState('');
   const [mentionQuery, setMentionQuery] = useState(null); // text after "@" being typed, or null
   const scrollRef = useRef(null);
   const socketRef = useRef(null);
@@ -1660,6 +1698,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') return false;
     const { key } = await apiFetch('/comms/push/key');
+    if (!key) return false; // server has no VAPID keys — nothing to subscribe to
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
     await apiPost('/comms/push/subscribe', { subscription: sub.toJSON() });
     setPushSubscribed(true);
@@ -1673,6 +1712,21 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     if (!pushOn || !pushSupported) return;
     navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(async (sub) => {
       if (sub) {
+        // A subscription is bound to the VAPID key it was created with. If the
+        // server's key has changed since, this one is undeliverable forever —
+        // and it looks perfectly healthy from the phone, which is exactly how
+        // someone ends up silently getting nothing on every device. Detect the
+        // mismatch and rebuild the subscription against the current key.
+        try {
+          const { key } = await apiFetch('/comms/push/key');
+          const mine = subKeyToBase64(sub.options?.applicationServerKey);
+          if (key && mine && mine !== key) {
+            await apiPost('/comms/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
+            await sub.unsubscribe().catch(() => {});
+            await doSubscribe();
+            return;
+          }
+        } catch { /* fall through and re-register what we have */ }
         setPushSubscribed(true);
         // Self-heal: the browser still holds a subscription, but the server's
         // copy can be gone (pruned after a transient 410, a DB restore, a
@@ -1741,15 +1795,24 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // it calls the AI — we don't want a request per keystroke.
   useEffect(() => {
     if (searchMode === 'ask') return;
-    if (searchQ.trim().length < 2) { setSearchResults(null); setAnswer(null); setSearching(false); return; }
+    if (searchQ.trim().length < 2) {
+      setSearchResults(null); setAnswer(null); setSearching(false); setSearchMeta(null); return;
+    }
     setSearching(true); setAnswer(null);
     const mode = searchMode === 'smart' ? 'semantic' : 'keyword';
+    const params = new URLSearchParams({ q: searchQ.trim(), mode, sort: searchSort });
+    if (fChannel) params.set('channel_id', fChannel);
+    if (fPerson) params.set('user_id', fPerson);
+    if (fFrom) params.set('from', fFrom);
+    if (fTo) params.set('to', fTo);
     const t = setTimeout(() => {
-      apiFetch(`/comms/search?q=${encodeURIComponent(searchQ.trim())}&mode=${mode}`)
-        .then(r => setSearchResults(r)).catch(() => setSearchResults([])).finally(() => setSearching(false));
+      apiFetch(`/comms/search?${params}`)
+        .then(r => { setSearchResults(r.results || []); setSearchMeta(r); })
+        .catch(() => { setSearchResults([]); setSearchMeta(null); })
+        .finally(() => setSearching(false));
     }, 300);
     return () => clearTimeout(t);
-  }, [searchQ, searchMode]);
+  }, [searchQ, searchMode, searchSort, fChannel, fPerson, fFrom, fTo]);
 
   const runAsk = async () => {
     const question = searchQ.trim();
@@ -1762,8 +1825,38 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     finally { setSearching(false); }
   };
 
-  const clearSearch = () => { setSearchQ(''); setSearchResults(null); setAnswer(null); };
-  const openResult = (r) => { clearSearch(); openChannel(r.channel_id); };
+  const anyFilter = !!(fChannel || fPerson || fFrom || fTo);
+  const clearFilters = () => { setFChannel(''); setFPerson(''); setFFrom(''); setFTo(''); };
+  const clearSearch = () => {
+    setSearchQ(''); setSearchResults(null); setAnswer(null); setSearchMeta(null);
+    clearFilters(); setSearchSort('relevance');
+  };
+  // Land on the message, not just the channel it lives in. The deep-link path
+  // already knows how to scroll to a message and open its thread if it's a
+  // reply — a search hit is the same kind of destination.
+  const openResult = (r) => {
+    const id = r.id;
+    clearSearch();
+    openChannel(r.channel_id);
+    pendingMsgRef.current = id;
+  };
+
+  // Date headings, but only when the order is chronological — grouping a
+  // relevance-ranked list by day would just scatter one-item headings through
+  // it. `key` keeps React stable across re-sorts.
+  const searchGroups = useMemo(() => {
+    const rows = searchResults || [];
+    if (!rows.length) return [];
+    if (searchSort === 'relevance' || searchMode === 'ask') return [{ key: 'all', label: null, items: rows }];
+    const out = [];
+    for (const r of rows) {
+      const day = String(r.created_at).slice(0, 10);
+      const last = out[out.length - 1];
+      if (last && last.key === day) last.items.push(r);
+      else out.push({ key: day, label: dayLabel(r.created_at), items: [r] });
+    }
+    return out;
+  }, [searchResults, searchSort, searchMode]);
 
   const ChannelBtn = ({ c, icon: Icon, highlight, onHover }) => {
     const unread = c.unread > 0;
@@ -2020,8 +2113,60 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                 {searching ? <Loader2 size={14} className="animate-spin text-gray-400" />
                   : searchMode === 'ask'
                     ? <span className="text-xs text-gray-400">{(searchResults?.length || 0)} source{(searchResults?.length || 0) !== 1 ? 's' : ''}</span>
-                    : <span className="text-xs text-gray-400">{(searchResults?.length || 0)} result{(searchResults?.length || 0) !== 1 ? 's' : ''} for “{searchQ.trim()}”</span>}
+                    : <span className="text-xs text-gray-400">
+                        {searchMeta?.total ?? searchResults?.length ?? 0}{searchMeta?.truncated ? '+' : ''} result
+                        {(searchMeta?.total ?? 0) !== 1 ? 's' : ''} for “{searchQ.trim()}”
+                      </span>}
+                {anyFilter && (
+                  <button onClick={clearFilters} className="ml-auto text-xs text-powder-600 hover:underline">Clear filters</button>
+                )}
               </div>
+
+              {/* Narrowing: sort, then the channels and people the hits are
+                  actually in, then a date window. Counts come from the whole
+                  hit set, so the options don't vanish as you pick them. */}
+              {searchMode !== 'ask' && searchResults !== null && (
+                <div className="px-3 py-2 border-b border-gray-100 space-y-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold uppercase text-gray-400">Sort</span>
+                    {[['relevance', 'Best match'], ['newest', 'Newest'], ['oldest', 'Oldest']].map(([v, l]) => (
+                      <button key={v} onClick={() => setSearchSort(v)}
+                        className={`px-2 py-0.5 rounded-full text-[11px] font-medium border ${searchSort === v ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
+                    ))}
+                  </div>
+                  {(searchMeta?.facets?.channels || []).length > 1 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold uppercase text-gray-400">In</span>
+                      {(searchMeta.facets.channels).slice(0, 8).map(c => (
+                        <button key={c.id} onClick={() => setFChannel(fChannel === c.id ? '' : c.id)}
+                          className={`px-2 py-0.5 rounded-full text-[11px] border max-w-[45%] truncate ${fChannel === c.id ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                          {c.kind === 'dm' ? c.name : '#' + c.name} <span className="opacity-60">{c.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {(searchMeta?.facets?.people || []).length > 1 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold uppercase text-gray-400">From</span>
+                      {(searchMeta.facets.people).slice(0, 8).map(p => (
+                        <button key={p.id} onClick={() => setFPerson(fPerson === p.id ? '' : p.id)}
+                          className={`px-2 py-0.5 rounded-full text-[11px] border max-w-[45%] truncate ${fPerson === p.id ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                          {p.name} <span className="opacity-60">{p.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase text-gray-400">Between</span>
+                    <input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)}
+                      className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] text-gray-600" />
+                    <span className="text-[11px] text-gray-400">and</span>
+                    <input type="date" value={fTo} onChange={e => setFTo(e.target.value)}
+                      className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] text-gray-600" />
+                  </div>
+                </div>
+              )}
+
               <div className="flex-1 overflow-y-auto p-2">
                 {searchMode === 'ask' && searching && <p className="text-center text-sm text-gray-400 py-8">Thinking…</p>}
                 {answer !== null && (
@@ -2031,16 +2176,33 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   </div>
                 )}
                 {answer !== null && (searchResults?.length || 0) > 0 && <div className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase text-gray-400">Sources</div>}
-                {!searching && searchResults !== null && searchResults.length === 0 && searchMode !== 'ask' && <p className="text-center text-sm text-gray-400 py-8">No messages found.</p>}
-                {(searchResults || []).map(r => (
-                  <button key={r.id} onClick={() => openResult(r)} className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">
-                    <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-0.5">
-                      {r.channel_kind === 'dm' ? <MessageSquare size={11} /> : r.channel_kind === 'private' ? <Lock size={11} /> : <Hash size={11} />}
-                      <span className="font-medium text-gray-500">{r.channel_kind === 'dm' ? r.channel_name : (r.channel_kind === 'private' ? '' : '#') + r.channel_name}</span>
-                      <span>· {r.user_name} · {fmtTime(r.created_at)}</span>
-                    </div>
-                    <div className="text-sm text-gray-800 line-clamp-2">{r.body}</div>
-                  </button>
+                {!searching && searchResults !== null && searchResults.length === 0 && searchMode !== 'ask' && (
+                  <p className="text-center text-sm text-gray-400 py-8">
+                    {(fChannel || fPerson || fFrom || fTo)
+                      ? 'No messages match those filters.' : 'No messages found.'}
+                  </p>
+                )}
+                {searchGroups.map(g => (
+                  <div key={g.key}>
+                    {/* Grouped by day when sorted by date — a run of results
+                        from one afternoon reads as one thing, not fifteen. */}
+                    {g.label && (
+                      <div className="sticky top-0 bg-white/95 backdrop-blur px-3 py-1 text-[10px] font-bold uppercase text-gray-400 z-10">
+                        {g.label}
+                      </div>
+                    )}
+                    {g.items.map(r => (
+                      <button key={r.id} onClick={() => openResult(r)} className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">
+                        <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-0.5">
+                          {r.channel_kind === 'dm' ? <MessageSquare size={11} /> : r.channel_kind === 'private' ? <Lock size={11} /> : <Hash size={11} />}
+                          <span className="font-medium text-gray-500">{r.channel_kind === 'dm' ? r.channel_name : (r.channel_kind === 'private' ? '' : '#') + r.channel_name}</span>
+                          <span>· {r.user_name} · {fmtTime(r.created_at)}</span>
+                          {r.parent_id && <span className="px-1 rounded bg-gray-100 text-gray-500">thread reply</span>}
+                        </div>
+                        <div className="text-sm text-gray-800 line-clamp-2">{highlightTerms(r.body, searchQ)}</div>
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
             </>

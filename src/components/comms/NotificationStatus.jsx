@@ -28,6 +28,7 @@ function Row({ state, label, detail }) {
 export default function NotificationStatus({ subscribed, onClose, onToggle }) {
   const [serverOn, setServerOn] = useState(null);
   const [registered, setRegistered] = useState(null);
+  const [devices, setDevices] = useState([]);
   const [testState, setTestState] = useState(null);
 
   const supported = ('serviceWorker' in navigator) && ('PushManager' in window);
@@ -36,7 +37,9 @@ export default function NotificationStatus({ subscribed, onClose, onToggle }) {
 
   useEffect(() => {
     apiFetch('/comms/push/key').then(d => setServerOn(!!d.key)).catch(() => setServerOn(false));
-    apiFetch('/comms/push/status').then(d => setRegistered(d.count || 0)).catch(() => setRegistered(null));
+    apiFetch('/comms/push/status')
+      .then(d => { setRegistered(d.count || 0); setDevices(d.devices || []); })
+      .catch(() => setRegistered(null));
   }, [subscribed]);
 
   const sendTest = async () => {
@@ -76,6 +79,22 @@ export default function NotificationStatus({ subscribed, onClose, onToggle }) {
           <Row state={subscribed ? 'ok' : 'warn'}
             label={subscribed ? 'This device is subscribed' : 'This device is not subscribed yet'}
             detail={registered != null ? `${registered} device${registered === 1 ? '' : 's'} registered on your account.` : null} />
+          {/* What actually happened on the last send, per device. Without this
+              a failing subscription looks identical to a healthy one. */}
+          {devices.map((d, i) => {
+            const broken = d.stale_key || !!d.last_error;
+            return (
+              <Row key={i} state={broken ? 'bad' : d.last_success_at ? 'ok' : 'warn'}
+                label={`${d.device}${broken ? ' — not receiving' : d.last_success_at ? ' — delivering' : ' — nothing sent yet'}`}
+                detail={d.stale_key
+                  ? 'Registered against older server keys, so nothing can reach it. Turn notifications off and back on to re-register.'
+                  : d.last_error
+                    ? `Last attempt failed (${d.last_error}).`
+                    : d.last_success_at
+                      ? `Last delivered ${new Date(d.last_success_at).toLocaleString()}.`
+                      : 'Registered, but no notification has been sent to it yet — try the test below.'} />
+            );
+          })}
         </div>
         <div className="px-5 py-3 border-t border-gray-100 flex flex-wrap gap-2">
           {!subscribed && permission !== 'denied' && supported && !iosNeedsInstall && (

@@ -921,6 +921,18 @@ function runMigrations() {
   addColumnIfMissing('work_orders', 'rework_required', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('work_orders', 'review_history', "TEXT NOT NULL DEFAULT '[]'");
 
+  // Push subscriptions are bound to the VAPID key they were created with. If
+  // the server's keys ever change, every older subscription starts failing with
+  // a 403 that nothing was recording — the phone looks subscribed, the server
+  // thinks it sent, and no notification ever arrives. Storing the key each
+  // subscription was made under (plus the last send result) makes that state
+  // visible and repairable instead of silent.
+  addColumnIfMissing('chat_push_subscriptions', 'vapid_key', 'TEXT');
+  addColumnIfMissing('chat_push_subscriptions', 'user_agent', 'TEXT');
+  addColumnIfMissing('chat_push_subscriptions', 'last_success_at', 'TEXT');
+  addColumnIfMissing('chat_push_subscriptions', 'last_error', 'TEXT');
+  addColumnIfMissing('chat_push_subscriptions', 'last_error_at', 'TEXT');
+
   // (supply_invoices.extracted_text is added further down, right after the
   // office tables are created — a column migration can't run before its table.)
 
