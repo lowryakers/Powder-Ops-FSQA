@@ -1168,6 +1168,60 @@ router.post('/messages/:id/to-record', (req, res) => {
   res.status(201).json({ ok: true, record_number: number, record_id: id, type: cfg.key, label: cfg.singular, module: cfg.moduleId });
 });
 
+// ── Chat message → Task Center task ──────────────────────────────────────────
+// A directive typed into a department channel is a task that nobody can follow
+// up on. This turns it into one at the moment it's sent, and leaves a note in
+// the channel saying who assigned it and when — so the conversation still shows
+// what happened, and the work is tracked somewhere it can be closed out.
+//
+// Assigning work is a supervisor/admin act, matching who can create tasks in
+// the Task Center itself.
+router.post('/channels/:id/to-task', (req, res) => {
+  const channel = requireChannel(req, res); if (!channel) return;
+  if (!['admin', 'supervisor'].includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Only supervisors and admins can assign tasks.' });
+  }
+  if (channel.kind === 'dm') return res.status(400).json({ error: 'Tasks come from channel messages, not direct messages.' });
+
+  const db = getDb();
+  const title = String(req.body?.title || '').trim();
+  const dueDate = String(req.body?.due_date || '').trim();
+  if (!title) return res.status(400).json({ error: 'A task title is required.' });
+  if (!dueDate) return res.status(400).json({ error: 'A due date is required.' });
+
+  const group = String(req.body?.task_group || 'warehouse');
+  if (group === 'document_control') {
+    const canAssignDC = req.user.role === 'admin' ||
+      (req.user.role === 'supervisor' && ['qa', 'document_control'].includes(req.user.department));
+    if (!canAssignDC) return res.status(403).json({ error: 'Only admins or QA / Document Control supervisors can assign Document Control tasks.' });
+  }
+
+  const id = uuid();
+  // The original wording is kept as the description — the title is a summary,
+  // and the exact instruction is what the assignee actually needs.
+  const description = String(req.body?.description || '').trim() || null;
+  db.prepare(`INSERT INTO work_orders (id, equipment_id, title, description, priority, assigned_to, due_date, procedure_steps, attachments, task_group)
+              VALUES (?, NULL, ?, ?, ?, ?, ?, '[]', '[]', ?)`)
+    .run(id, title, description, String(req.body?.priority || 'normal'),
+      String(req.body?.assigned_to || '').trim() || null, dueDate, group);
+
+  const created = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id);
+  logAudit(req.user, 'create', 'work_order', id,
+    { title, task_group: group, due_date: dueDate, from_channel: channel.name }, null, created, title);
+
+  // Leave the trail in the channel, threaded under the message it came from
+  // when there is one.
+  const who = shortNameOf(req.user) || req.user.name;
+  const assignee = String(req.body?.assigned_to || '').trim();
+  // Single asterisks: the chat renderer's bold syntax is *text*, not markdown's
+  // **text** — doubling them shows a literal asterisk inside the bold run.
+  const note = `📋 Task created by ${who} — *${title}*\n${assignee ? `Assigned to ${assignee} · ` : ''}${group.replace('_', ' ')} · due ${dueDate}`;
+  const bot = getBotUser(db);
+  postMessageAs(db, channel, bot, note, req.body?.parent_id || null).catch(() => {});
+
+  res.status(201).json({ ok: true, work_order: created });
+});
+
 // ── Translation (on-display) ──────────────────────────────────────────────────
 // Translate a message to the viewer's language, caching the result so repeat
 // views (and other viewers) are free. Access-checked; AI-gated.

@@ -8,6 +8,7 @@ import CommsSettings from './CommsSettings.jsx';
 import NotificationStatus from './NotificationStatus.jsx';
 import ZoomableImage from './ZoomableImage.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
+import { looksLikeTask, suggestTitle, mentionedUsers, teamForChannel } from '../../lib/taskIntent.js';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
 // The reverse trip: a live subscription reports its applicationServerKey as an
@@ -308,6 +309,111 @@ function Lightbox({ atts, index, onNav, onClose }) {
       </div>
       <a href={a.url || undefined} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
         className="absolute bottom-4 right-4 text-white/60 hover:text-white text-xs underline">Open in new tab</a>
+    </div>
+  );
+}
+
+// ReadyBot's offer: this message reads like an assignment — track it instead of
+// letting it scroll away. Everything is pre-filled from the message and the
+// channel, so the common case is one click; the fields are there for the times
+// the guess is close but not right.
+const TEAM_OPTIONS = [
+  ['maintenance', 'Maintenance'], ['warehouse', 'Warehouse'], ['qa', 'QA'],
+  ['cleaning', 'Cleaning'], ['batching', 'Batching'], ['filling', 'Filling'],
+  ['kitting', 'Kitting'], ['document_control', 'Document Control'],
+];
+
+function MessageToTaskModal({ draft, channel, users, onCancel, onJustSend, onCreated }) {
+  const [title, setTitle] = useState(() => suggestTitle(draft));
+  const [team, setTeam] = useState(() => teamForChannel(channel?.name) || 'warehouse');
+  const [assignee, setAssignee] = useState(() => {
+    const hit = mentionedUsers(draft, users, chatName)[0];
+    return hit ? chatName(hit) : '';
+  });
+  // Tomorrow by default — today is usually already spoken for.
+  const [due, setDue] = useState(() => new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+  const [priority, setPriority] = useState('normal');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const create = async () => {
+    if (!title.trim()) { setError('A title is required.'); return; }
+    setSaving(true); setError('');
+    try {
+      await apiPost(`/comms/channels/${channel.id}/to-task`, {
+        title: title.trim(), description: draft, task_group: team,
+        assigned_to: assignee.trim() || null, due_date: due, priority,
+      });
+      onCreated();
+    } catch (e) { setError(e.message || 'Could not create the task.'); setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[75] flex items-center justify-center p-4" onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3">
+        <div className="flex items-start gap-2">
+          <ClipboardCheck size={18} className="text-powder-600 mt-0.5 shrink-0" />
+          <div>
+            <h3 className="font-semibold text-gray-900">Make this a task?</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              This reads like an assignment. A task can be tracked and closed out; a message scrolls away.
+            </p>
+          </div>
+        </div>
+
+        <blockquote className="text-xs text-gray-600 bg-gray-50 border-l-2 border-gray-300 pl-2 py-1.5 max-h-24 overflow-y-auto whitespace-pre-wrap">
+          {draft}
+        </blockquote>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Task</label>
+          <input value={title} onChange={e => setTitle(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Team</label>
+            <select value={team} onChange={e => setTeam(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              {TEAM_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Assign to</label>
+            <input list="to-task-people" value={assignee} onChange={e => setAssignee(e.target.value)}
+              placeholder="Whole team" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <datalist id="to-task-people">
+              {(users || []).map(u => <option key={u.id} value={chatName(u)} />)}
+            </datalist>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Due</label>
+            <input type="date" value={due} onChange={e => setDue(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Priority</label>
+            <select value={priority} onChange={e => setPriority(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              {['low', 'normal', 'high', 'critical'].map(p => <option key={p} value={p} className="capitalize">{p}</option>)}
+            </select>
+          </div>
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <button onClick={create} disabled={saving}
+            className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            {saving ? 'Creating…' : 'Create task'}
+          </button>
+          <button onClick={onJustSend} disabled={saving}
+            className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+            Just send it
+          </button>
+        </div>
+        <p className="text-[11px] text-gray-400">
+          Creating a task posts a note here recording who assigned it and when.
+        </p>
+      </div>
     </div>
   );
 }
@@ -1298,6 +1404,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const [showDetails, setShowDetails] = useState(false);
   const [replyTo, setReplyTo] = useState(null); // parent message whose thread is open
   const [threadsOpen, setThreadsOpen] = useState(false); // Threads inbox view
+  // A message being offered up as a task (null = no prompt showing).
+  const [taskDraft, setTaskDraft] = useState(null);
+  const canAssignTasks = user?.role === 'admin' || user?.role === 'supervisor';
   // Threads carry their own unread state now, so the badge needs its own feed.
   const [threadTick, setThreadTick] = useState(0);
   const { data: threadUnread, refresh: refreshThreadUnread } = useApiGet('/comms/threads/unread', [threadTick]);
@@ -1557,9 +1666,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const send = async () => {
-    const text = body.trim();
-    if ((!text && pending.length === 0) || !active) return;
+  const postMessage = async (text) => {
     const attachment_ids = pending.map(p => p.id);
     setBody(''); writeDraft(active.id, ''); setPending([]); setMentionQuery(null);
     try {
@@ -1567,6 +1674,19 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       setMessages(ms => ms.some(x => x.id === m.id) ? ms : [...ms, m]);
       refreshChannels();
     } catch { setBody(text); setPending(pending); }
+  };
+
+  const send = async () => {
+    const text = body.trim();
+    if ((!text && pending.length === 0) || !active) return;
+    // Intercept a directive aimed at named people in a team channel: it's a
+    // task, and this is the last moment anyone will bother to make it one.
+    // Only supervisors and admins assign work, so only they get asked.
+    if (canAssignTasks && active.kind !== 'dm' && looksLikeTask(text)) {
+      setTaskDraft(text);
+      return;
+    }
+    await postMessage(text);
   };
 
   const uploadFiles = async (files) => {
@@ -2453,6 +2573,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
           onToggle={async () => { await togglePush(); }} />
       )}
       {showDetails && active && active.kind !== 'dm' && <ChannelDetails channel={active} me={user} users={users} onClose={() => setShowDetails(false)} onChanged={refreshChannels} />}
+      {taskDraft && active && (
+        <MessageToTaskModal draft={taskDraft} channel={active} users={users}
+          onCancel={() => setTaskDraft(null)}
+          onJustSend={() => { const t = taskDraft; setTaskDraft(null); postMessage(t); }}
+          onCreated={() => { setTaskDraft(null); setBody(''); writeDraft(active.id, ''); setPending([]); }} />
+      )}
       {replyTo && <ThreadPanel parent={replyTo} me={user} onThreadRead={refreshThreadUnread} channelName={active?.kind === 'dm' ? active.name : '#' + (active?.name || '')} mentionUsers={users} members={channelMembers}
         canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} socketRef={socketRef} storageOn={storageOn}
         onClose={() => setReplyTo(null)} onChanged={() => loadMessages(activeId)} />}

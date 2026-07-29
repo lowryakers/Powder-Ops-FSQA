@@ -89,6 +89,15 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## Chat message → Task Center task
+`src/lib/taskIntent.js` decides if a message reads like an assignment: it needs **both** an @mention and
+directive phrasing (EN + ES), and is suppressed for questions/thanks/acknowledgements — false prompts train
+people to dismiss it. On send (supervisors/admins, non-DM channels only) `MessageToTaskModal` opens
+pre-filled: title from `suggestTitle()` (mentions stripped), team from `teamForChannel()` (channel name →
+task_group), assignee from the @mention, due tomorrow. `POST /comms/channels/:id/to-task` creates the work
+order (original message kept as the description) and posts a ReadyBot note recording who assigned it and
+when. **Bot message bold is `*text*`, not `**text**`** — the chat renderer isn't markdown.
+
 ## Threads behave like their own channel
 Thread replies are **excluded from channel unread** (`parent_id IS NULL` in *both* `channelUnread()` and the
 channel-list query in `/channels` — they're separate queries, keep them in step) and counted per-thread
