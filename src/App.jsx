@@ -1549,9 +1549,16 @@ function App() {
         <aside className="hidden lg:flex flex-col shrink-0 border-l border-gray-200 sticky top-0 h-screen bg-white relative"
           style={{ width: dockWidth }}>
           {/* Drag handle straddling the left border. Widens on hover so it's
-              catchable without being visible clutter at rest. */}
+              catchable without being visible clutter at rest.
+              Positioning is inline, not via the `absolute` utility: this element
+              carries data-tip, and the tooltip CSS (@media hover:hover
+              [data-tip]{position:relative}) would otherwise override `absolute`,
+              drop the handle into flow, and its h-full would eat the whole
+              column — collapsing the chat panel to nothing. Inline styles win
+              over the stylesheet rule, so the handle stays out of flow. */}
           <div onMouseDown={startDockResize} onTouchStart={startDockResize}
-            className="absolute left-0 top-0 h-full w-1.5 -translate-x-1/2 cursor-col-resize z-10 group"
+            style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: '6px', transform: 'translateX(-50%)', zIndex: 10 }}
+            className="cursor-col-resize group"
             data-tip="Drag to resize" role="separator" aria-orientation="vertical">
             <div className={`h-full w-0.5 mx-auto transition-colors ${dockDragging ? 'bg-powder-500' : 'bg-transparent group-hover:bg-powder-300'}`} />
           </div>
@@ -1562,8 +1569,15 @@ function App() {
             </button>
           </div>
           {/* Click-through while dragging so the resize keeps tracking over the
-              iframe instead of the iframe eating the pointer moves. */}
-          <iframe src="/chat" title="Messages" className="flex-1 w-full border-0" style={{ pointerEvents: dockDragging ? 'none' : 'auto' }} />
+              iframe instead of the iframe eating the pointer moves.
+              The iframe lives in a flex-growing wrapper and fills it at
+              height:100% — an iframe is a replaced element and ignores
+              flex-grow on itself (Chrome collapses it to its intrinsic 150px),
+              which left the panel mostly blank with the chat squished at the
+              bottom. min-h-0 lets the wrapper shrink within the flex column. */}
+          <div className="flex-1 min-h-0 w-full">
+            <iframe src="/chat" title="Messages" className="h-full w-full border-0" style={{ pointerEvents: dockDragging ? 'none' : 'auto' }} />
+          </div>
         </aside>
       )}
 
