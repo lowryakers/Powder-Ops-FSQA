@@ -319,11 +319,25 @@ function channelUnread(db, channelId, userId) {
 }
 
 // Threads behave like their own channel: each one is read or unread on its own,
-// tracked per person in chat_thread_reads. A thread you've never opened counts
-// every reply that isn't yours.
+// tracked per person in chat_thread_reads.
+//
+// The baseline matters. If someone has never opened a particular thread there's
+// no chat_thread_reads row, and counting *every* reply that isn't theirs made a
+// long or Slack-imported thread read as hundreds of "new" — the phantom "huge
+// number" bug. So when there's no per-thread mark, fall back to when they last
+// read the channel: replies they'd already scrolled past there aren't new, and
+// only replies since they last caught up count. Opening the thread writes a
+// chat_thread_reads row, which then takes precedence.
 function threadUnread(db, parentId, userId) {
-  const lr = db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?')
+  let lr = db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?')
     .get(parentId, userId)?.last_read_at || null;
+  if (!lr) {
+    const parent = db.prepare('SELECT channel_id FROM chat_messages WHERE id = ?').get(parentId);
+    if (parent) {
+      lr = db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?')
+        .get(parent.channel_id, userId)?.last_read_at || null;
+    }
+  }
   return db.prepare(
     `SELECT COUNT(*) n FROM chat_messages WHERE parent_id = ? AND deleted_at IS NULL AND user_id != ?
      AND (? IS NULL OR created_at > ?)`

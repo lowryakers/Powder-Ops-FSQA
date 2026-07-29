@@ -1158,6 +1158,101 @@ const MAT_SECTIONS = [
   { key: 'treatment_note', label: 'Treatment (microbiology)' },
 ];
 
+// QA's "one item, every spec" view. The Specifications table stores a row per
+// test, which is right for auto pass/fail but hard to eyeball; this regroups
+// the rows under the item — the old paper spec sheet — with a PDF download.
+function ItemSpecSummaryModal({ specs, onClose }) {
+  const items = useMemo(() => {
+    const m = new Map();
+    for (const s of specs) {
+      if (!m.has(s.item_number)) m.set(s.item_number, { item_number: s.item_number, item_description: s.item_description, sku: s.sku_number, vendor: s.vendor, revision: s.revision, rows: [] });
+      m.get(s.item_number).rows.push(s);
+    }
+    return [...m.values()].sort((a, b) => String(a.item_number).localeCompare(String(b.item_number)));
+  }, [specs]);
+  const [picked, setPicked] = useState(items[0]?.item_number || '');
+  const item = items.find(i => i.item_number === picked) || null;
+
+  const rangeText = (s) => {
+    if (s.specification) return s.specification;
+    const u = s.unit ? ` ${s.unit}` : '';
+    if (s.min_value != null && s.max_value != null) return `${s.min_value} – ${s.max_value}${u}`;
+    if (s.max_value != null) return `≤ ${s.max_value}${u}`;
+    if (s.min_value != null) return `≥ ${s.min_value}${u}`;
+    return '—';
+  };
+
+  const downloadPdf = async () => {
+    if (!item) return;
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch(`/api/coa/specifications/pdf?item_number=${encodeURIComponent(item.item_number)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `SpecSheet_${String(item.item_number).replace(/[^a-zA-Z0-9]/g, '_')}.pdf`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2"><ClipboardList size={18} className="text-powder-600" /> Item specification sheet</h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded"><X size={18} /></button>
+        </div>
+        <div className="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2">
+          <label className="text-xs font-medium text-gray-500">Item</label>
+          <select value={picked} onChange={e => setPicked(e.target.value)}
+            className="flex-1 min-w-[200px] px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            {items.map(i => <option key={i.item_number} value={i.item_number}>{i.item_number}{i.item_description ? ` — ${i.item_description}` : ''}</option>)}
+          </select>
+          <button onClick={downloadPdf} disabled={!item}
+            className="flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            <Download size={15} /> PDF
+          </button>
+        </div>
+        {item ? (
+          <div className="overflow-y-auto p-5">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm mb-4">
+              <div><span className="text-gray-400">Item #</span> <span className="font-medium text-gray-900">{item.item_number}</span></div>
+              <div><span className="text-gray-400">SKU</span> <span className="font-medium text-gray-900">{item.sku || '—'}</span></div>
+              <div className="col-span-2"><span className="text-gray-400">Description</span> <span className="font-medium text-gray-900">{item.item_description || '—'}</span></div>
+              <div><span className="text-gray-400">Vendor</span> <span className="font-medium text-gray-900">{item.vendor || '—'}</span></div>
+              <div><span className="text-gray-400">Revision</span> <span className="font-medium text-gray-900">{item.revision || '—'}</span></div>
+            </div>
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Test / Attribute</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Specification</th>
+                    <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Method</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {item.rows.map(s => (
+                    <tr key={s.id}>
+                      <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">{s.test_type}</td>
+                      <td className="px-3 py-2 text-gray-700">{rangeText(s)}</td>
+                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{s.method || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">{item.rows.length} test specification{item.rows.length === 1 ? '' : 's'} on file for this item.</p>
+          </div>
+        ) : (
+          <div className="p-8 text-center text-gray-400">No specifications on file yet.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MaterialSpecModal({ item, onClose, onSaved }) {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1223,6 +1318,7 @@ export default function COAPanel() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [bulkStatus, setBulkStatus] = useState('');
   const [msg, setMsg] = useState(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
   const { data: requests, loading: loadingReqs, refresh: refreshReqs } = useApiGet('/coa/requests' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''), [statusFilter]);
   const { data: labs, refresh: refreshLabs } = useApiGet('/coa/labs');
@@ -1519,10 +1615,16 @@ export default function COAPanel() {
         <>
           <div className="flex justify-between items-center">
             <p className="text-sm text-gray-500">{specs?.length || 0} specifications on file</p>
-            <button onClick={() => { setShowForm(true); setEditItem(null); }}
-              className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
-              <Plus size={16} /> Add Specification
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => setSummaryOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
+                <ClipboardList size={16} /> View item &amp; all specs
+              </button>
+              <button onClick={() => { setShowForm(true); setEditItem(null); }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
+                <Plus size={16} /> Add Specification
+              </button>
+            </div>
           </div>
 
           {showForm && (
@@ -1579,6 +1681,7 @@ export default function COAPanel() {
       )}
 
       {matReqItem && <MaterialSpecModal item={matReqItem} onClose={() => setMatReqItem(null)} onSaved={refreshSpecs} />}
+      {summaryOpen && <ItemSpecSummaryModal specs={specs || []} onClose={() => setSummaryOpen(false)} />}
 
       {/* ───── Labs Tab ───── */}
       {subTab === 'labs' && (

@@ -180,6 +180,117 @@ router.delete('/specifications/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// ──────────────── Item specification summary ────────────────
+// QA wants one item and every test spec that applies to it, grouped — the paper
+// "material specification sheet" they used to keep. The Specifications tab
+// stores one row per test, so this just gathers the active rows for an item and
+// lifts the item-level fields (which repeat on every row) to the top.
+function specSheet(db, itemNumber) {
+  const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1 ORDER BY test_type').all(itemNumber);
+  const head = specs[0] || {};
+  return {
+    item_number: itemNumber,
+    item_description: head.item_description || null,
+    sku_number: head.sku_number || null,
+    vendor: head.vendor || null,
+    revision: head.revision || null,
+    specifications: specs,
+  };
+}
+
+// Human-readable spec: the free-text spec if given, else derived from the range.
+function specText(s) {
+  if (s.specification) return s.specification;
+  const u = s.unit ? ` ${s.unit}` : '';
+  if (s.min_value != null && s.max_value != null) return `${s.min_value} – ${s.max_value}${u}`;
+  if (s.max_value != null) return `≤ ${s.max_value}${u}`;
+  if (s.min_value != null) return `≥ ${s.min_value}${u}`;
+  return '—';
+}
+
+router.get('/specifications/summary', (req, res) => {
+  const { item_number } = req.query;
+  if (!item_number) return res.status(400).json({ error: 'item_number is required' });
+  res.json(specSheet(getDb(), item_number));
+});
+
+// Downloadable spec sheet PDF for one item — same letterhead as the COA export.
+router.get('/specifications/pdf', (req, res) => {
+  const db = getDb();
+  const { item_number } = req.query;
+  if (!item_number) return res.status(400).json({ error: 'item_number is required' });
+  const sheet = specSheet(db, item_number);
+  if (!sheet.specifications.length) return res.status(404).json({ error: 'No active specifications for this item.' });
+
+  const SLATE = '#3a3a3a', ORANGE = '#c65d35', RULE = '#d8d4d0';
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 42, bottom: 60, left: 50, right: 50 }, bufferPages: true });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="SpecSheet_${String(item_number).replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
+  doc.pipe(res);
+
+  const lm = doc.page.margins.left;
+  const pageW = doc.page.width - lm - doc.page.margins.right;
+
+  const logoH = 74;
+  try { doc.image(LOGO_PATH, lm, 42, { height: logoH }); } catch { /* logo optional */ }
+  doc.font('Helvetica-Bold').fontSize(15).fillColor(SLATE).text('POWDER OPS', lm + 75, 50, { characterSpacing: 0.5 });
+  doc.font('Helvetica').fontSize(8.5).fillColor('#666')
+    .text('281 E 1600 N, Vineyard, UT 84059', lm + 75, 69)
+    .text('www.powder-ops.com', lm + 75, 81);
+
+  let y = 42 + logoH + 18;
+  doc.font('Helvetica-Bold').fontSize(16).fillColor(SLATE)
+    .text('MATERIAL SPECIFICATION SHEET', lm, y, { width: pageW, align: 'center', characterSpacing: 1 });
+  y += 22;
+  doc.moveTo(lm, y).lineTo(lm + pageW, y).lineWidth(2).strokeColor(ORANGE).stroke();
+  y += 12;
+
+  const na = (v) => v || 'N/A';
+  const info = [
+    ['Item Number', na(sheet.item_number), 'SKU', na(sheet.sku_number)],
+    ['Description', na(sheet.item_description), 'Vendor', na(sheet.vendor)],
+    ['Revision', na(sheet.revision), 'Printed', new Date().toLocaleDateString('en-US')],
+  ];
+  const halfW = pageW / 2, labW = 78;
+  doc.fontSize(8.5);
+  for (const [l1, v1, l2, v2] of info) {
+    doc.font('Helvetica-Bold').fillColor('#777').text(l1.toUpperCase(), lm, y, { width: labW });
+    doc.font('Helvetica').fillColor('#111').text(v1, lm + labW, y, { width: halfW - labW - 10 });
+    doc.font('Helvetica-Bold').fillColor('#777').text(l2.toUpperCase(), lm + halfW, y, { width: labW });
+    doc.font('Helvetica').fillColor('#111').text(v2, lm + halfW + labW, y, { width: halfW - labW });
+    y += 15;
+    doc.moveTo(lm, y - 4).lineTo(lm + pageW, y - 4).lineWidth(0.4).strokeColor(RULE).stroke();
+  }
+  y += 10;
+
+  // Specs table: Test | Specification | Method
+  const cols = [
+    { k: 'test', label: 'TEST / ATTRIBUTE', w: pageW * 0.34 },
+    { k: 'spec', label: 'SPECIFICATION', w: pageW * 0.40 },
+    { k: 'method', label: 'METHOD', w: pageW * 0.26 },
+  ];
+  const rowX = (i) => lm + cols.slice(0, i).reduce((a, c) => a + c.w, 0);
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#777');
+  cols.forEach((c, i) => doc.text(c.label, rowX(i), y, { width: c.w - 6 }));
+  y += 13;
+  doc.moveTo(lm, y - 3).lineTo(lm + pageW, y - 3).lineWidth(0.8).strokeColor(SLATE).stroke();
+
+  for (const s of sheet.specifications) {
+    const cells = [s.test_type || '—', specText(s), s.method || '—'];
+    const h = Math.max(...cells.map((t, i) => doc.font('Helvetica').fontSize(8.5).heightOfString(String(t), { width: cols[i].w - 6 }))) + 6;
+    if (y + h > doc.page.height - doc.page.margins.bottom) { doc.addPage(); y = doc.page.margins.top; }
+    doc.font('Helvetica').fontSize(8.5).fillColor('#111');
+    cells.forEach((t, i) => doc.text(String(t), rowX(i), y, { width: cols[i].w - 6 }));
+    y += h;
+    doc.moveTo(lm, y - 3).lineTo(lm + pageW, y - 3).lineWidth(0.4).strokeColor(RULE).stroke();
+  }
+
+  y += 8;
+  doc.font('Helvetica-Oblique').fontSize(7.5).fillColor('#999')
+    .text(`${sheet.specifications.length} specification${sheet.specifications.length === 1 ? '' : 's'} · Powder Ops FSQA · generated ${new Date().toLocaleString('en-US')}`, lm, y, { width: pageW });
+  doc.end();
+});
+
 // ──────────────── Vendor Lot Lookup ────────────────
 
 router.get('/lot-lookup', (req, res) => {

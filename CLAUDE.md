@@ -120,7 +120,10 @@ channel-list query in `/channels` — they're separate queries, keep them in ste
 instead via `chat_thread_reads` + `threadUnread()`. `GET /threads` returns `unread` + `last_read_at` per
 thread (drives the "N new" badge and the NEW divider), `GET /threads/unread` feeds the sidebar badge, and
 `POST /threads/:parentId/read` clears one — fired by opening the ThreadPanel, by Mark read / Mark all read,
-and by replying. Unread threads sort first. In the inbox, **read threads dim (opacity-75) and collapse to a
+and by replying. Unread threads sort first. **`threadUnread()` falls back to the channel's `last_read_at`
+when there's no per-thread read row** — otherwise a thread you'd never opened counted its entire history
+(hundreds of replies on imported threads), the "phantom huge number" bug. So once you've caught up on the
+channel, old thread replies don't linger as unread; only replies since count. In the inbox, **read threads dim (opacity-75) and collapse to a
 one-line summary** (parent preview + "N replies · last from X", Expand to reopen) while unread stay open with
 the ring + "N new"; a thread you've replied to shows a muted "Replied" chip — so the list is scannable for
 what still needs you.
@@ -147,6 +150,17 @@ memory-buffered `putObject` would have held a whole video in RAM. Comms attachme
 `/api/training/materials/:id`) both go through it. Client: `apiUpload(path, fd, 'POST', onProgress)` switches
 to XHR when a progress callback is passed (fetch can't report upload progress). Videos play inline; AVI/MKV
 and any codec the browser rejects fall back to the download card.
+
+## COA item specification sheet
+The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
+specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —
+with a PDF download. Server: `GET /coa/specifications/summary?item_number=` (JSON) and
+`GET /coa/specifications/pdf?item_number=` (same letterhead as the COA export). `specText()` derives a
+readable spec from min/max when there's no free-text spec (`≥ X`, `≤ Y`, `X – Y`).
+**The CTLA→spec→pass/fail→PowderOps-COA flow the user described is accurate:** specs are logged per test;
+an uploaded lab result is parsed (`coa.js` extraction), matched to the active spec for that item+test, and
+auto-graded pass/fail from min/max; the request rolls up to pass/fail; the facility COA PDF exports with logo
++ QA e-signature.
 
 ## Office finance: AP / AR (+ QuickBooks)
 `ap_invoices` / `ar_invoices` / `finance_files` (`server/api/finance.js`, one router driven by a per-ledger
