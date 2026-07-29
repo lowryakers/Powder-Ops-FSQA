@@ -927,6 +927,12 @@ function runMigrations() {
   addColumnIfMissing('production_entries', 'qa_action_resolved_at', 'TEXT');
   // Answers to the team's EOD template fields, as a JSON object keyed by field key.
   addColumnIfMissing('production_entries', 'structured_data', 'TEXT');
+  // Batching runs several MOs in one shift; mo_lines is a JSON array of
+  // { product_name, mo_number, lot_number, batches, batch_weights, quantity }.
+  // Line 0 is mirrored into the scalar product_name/mo_number/lot_number/
+  // quantity_completed columns so filters, metrics, COA and other teams keep
+  // working unchanged; the full set lives here.
+  addColumnIfMissing('production_entries', 'mo_lines', 'TEXT');
 
   // Same idea on the task side. A completed task can be reviewed with a note;
   // marking the note as needing rework reopens the task for whoever did it.

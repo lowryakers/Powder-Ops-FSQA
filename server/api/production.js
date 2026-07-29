@@ -78,6 +78,7 @@ function computeMetrics(entry) {
     ...entry,
     amendments: parseAmendments(entry.amendments),
     structured_data: parseJson(entry.structured_data, null),
+    mo_lines: parseJson(entry.mo_lines, null),
     duration_hours, units_per_hour, units_per_minute, units_per_min_per_person,
   };
 }
@@ -85,6 +86,24 @@ function computeMetrics(entry) {
 const parseJson = (raw, fallback) => { try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } };
 
 const parseAmendments = (raw) => { try { return JSON.parse(raw || '[]'); } catch { return []; } };
+
+// Normalize the multi-MO line list (Batching runs several MOs a shift). Keeps
+// only lines that name an MO or product; numbers are coerced, blanks dropped.
+// Returns [] when nothing usable is present so callers can treat it as "none".
+function normalizeMoLines(raw) {
+  if (!Array.isArray(raw)) return [];
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+  return raw
+    .map(l => ({
+      product_name: String(l?.product_name || '').trim(),
+      mo_number: String(l?.mo_number || '').trim(),
+      lot_number: String(l?.lot_number || '').trim(),
+      batches: num(l?.batches),
+      batch_weights: String(l?.batch_weights || '').trim(),
+      quantity: num(l?.quantity),
+    }))
+    .filter(l => l.mo_number || l.product_name);
+}
 
 // ── EOD report templates (per team) ──────────────────────────────────────────
 // A team's structured EOD survey. GET is open to anyone filing a report (they
@@ -132,7 +151,7 @@ router.get('/entries', (req, res) => {
   if (from) { sql += ' AND date >= ?'; params.push(from); }
   if (to) { sql += ' AND date <= ?'; params.push(to); }
   if (team) { sql += ' AND team = ?'; params.push(team); }
-  if (mo) { sql += ' AND mo_number = ?'; params.push(mo); }
+  if (mo) { sql += ' AND (mo_number = ? OR mo_lines LIKE ?)'; params.push(mo, `%${mo}%`); }
   if (room) { sql += ' AND room = ?'; params.push(room); }
   sql += ' ORDER BY date DESC, start_time DESC';
   const rows = db.prepare(sql).all(...params);
@@ -234,7 +253,20 @@ router.post('/missed-reports/restore', requireRole('admin', 'supervisor'), (req,
 // POST /entries — create a new production entry
 router.post('/entries', (req, res) => {
   const db = getDb();
-  const { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes, structured_data } = req.body;
+  let { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes, structured_data, mo_lines } = req.body;
+
+  // A shift can carry several MOs (Batching). When mo_lines is present, line 0
+  // is mirrored into the scalar product/MO/lot/quantity columns so everything
+  // that reads those columns keeps working; the full list is stored in mo_lines.
+  const lines = normalizeMoLines(mo_lines);
+  if (lines.length) {
+    product_name = lines[0].product_name || product_name;
+    mo_number = lines[0].mo_number || mo_number;
+    lot_number = lines[0].lot_number || lot_number;
+    // Shift quantity is the sum of the lines that recorded one (0 if none did).
+    const lineQty = lines.reduce((s, l) => s + (l.quantity || 0), 0);
+    if (quantity_completed == null) quantity_completed = lineQty;
+  }
 
   if (!date || !team || !room || !product_name || !mo_number || !lot_number || !start_time || !end_time || quantity_completed == null || !people_count || !submitted_by) {
     return res.status(400).json({ error: 'Missing required fields: date, team, room, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by' });
@@ -243,12 +275,13 @@ router.post('/entries', (req, res) => {
   // Team EOD template answers, stored as JSON. Only an object is accepted.
   const structured = structured_data && typeof structured_data === 'object' && !Array.isArray(structured_data)
     ? JSON.stringify(structured_data) : null;
+  const moLinesJson = lines.length ? JSON.stringify(lines) : null;
 
   const id = uuid();
   db.prepare(`
-    INSERT INTO production_entries (id, date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by, structured_data)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by, structured);
+    INSERT INTO production_entries (id, date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by, structured_data, mo_lines)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by, structured, moLinesJson);
 
   const created = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
   logAudit(submitted_by, 'create', 'production_entry', id, req.body, null, created);
@@ -396,6 +429,34 @@ router.put('/entries/:id', (req, res) => {
     updates.push(`${field} = ?`);
     values.push(next);
   }
+
+  // Multi-MO lines amend as a whole (they're a JSON array, not a scalar).
+  // Mirror line 0 into the scalar product/MO/lot/quantity columns — but only
+  // ones the caller didn't also send as their own amend, so a column is never
+  // assigned twice in the same UPDATE.
+  if (req.body.mo_lines !== undefined) {
+    const nextLines = normalizeMoLines(req.body.mo_lines);
+    const nextJson = nextLines.length ? JSON.stringify(nextLines) : null;
+    if (String(existing.mo_lines ?? '') !== String(nextJson ?? '')) {
+      changes.push({ field: 'mo_lines', label: 'MO lines', from: existing.mo_lines || null, to: nextJson });
+      updates.push('mo_lines = ?');
+      values.push(nextJson);
+      if (nextLines.length) {
+        const first = nextLines[0];
+        const mirror = { product_name: first.product_name, mo_number: first.mo_number, lot_number: first.lot_number };
+        for (const [f, v] of Object.entries(mirror)) {
+          if (v && req.body[f] === undefined && String(existing[f] ?? '') !== String(v)) {
+            updates.push(`${f} = ?`); values.push(v);
+          }
+        }
+        const qty = nextLines.reduce((s, l) => s + (l.quantity || 0), 0);
+        if (qty && req.body.quantity_completed === undefined && Number(existing.quantity_completed) !== qty) {
+          updates.push('quantity_completed = ?'); values.push(qty);
+        }
+      }
+    }
+  }
+
   if (!changes.length) return res.status(400).json({ error: 'Nothing was changed.' });
 
   const wasSigned = existing.qa_signoff_by

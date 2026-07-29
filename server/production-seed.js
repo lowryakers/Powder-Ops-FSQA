@@ -499,19 +499,19 @@ export function seedProductionEntries(db) {
 // flags are broken out as their own fields because they're the compliance
 // record QA wants to answer directly ("was an allergen swab taken that day?")
 // without parsing a sentence. QA can still edit any of this per team in the app.
+// Shift-level fields only. The per-MO data (product / MO / lot / batches /
+// batch weights) lives on the entry's MO lines now — a Batching shift runs
+// several MOs, so those repeat per line instead of once on the survey.
 const BATCHING_EOD_FIELDS = [
   { key: 'clean_type', label: 'Cleaning performed', type: 'select', options: ['Partial Clean', 'Full Clean', 'No clean this shift'] },
   { key: 'atp_swab', label: 'ATP swab taken', type: 'checkbox' },
   { key: 'allergen_swab', label: 'Allergen swab taken', type: 'checkbox' },
   { key: 'cleaned_items', label: 'Cleaned / swabbed (blender, room, sifter #, utensils)', type: 'text' },
   { key: 'clean_time', label: 'Cleaning time window', type: 'text' },
-  { key: 'room', label: 'Room', type: 'select', options: ['Room 1', 'Room 2', 'Other'] },
   { key: 'sifter_no', label: 'Sifter #', type: 'text' },
   { key: 'weighing', label: 'Weighing progress (e.g. 80% Left, 20% – 2 batches)', type: 'text' },
-  { key: 'batches_completed', label: 'Batches blended', type: 'number' },
-  { key: 'batch_weights', label: 'Batch weights (e.g. No.1=273.4kg, No.2=273.6kg)', type: 'text' },
   { key: 'blend_time', label: 'Sift & blend time window', type: 'text' },
-  { key: 'adjustments', label: 'Adjustments (MO / lot / product + time)', type: 'textarea' },
+  { key: 'adjustments', label: 'Adjustments / notes', type: 'textarea' },
   { key: 'equipment_issues', label: 'Equipment issues / downtime', type: 'textarea' },
 ];
 

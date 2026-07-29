@@ -47,6 +47,86 @@ const INITIAL_FORM = {
   notes: '',
 };
 
+/* ── Multi-MO lines (a Batching shift runs several MOs) ──── */
+
+const blankMoLine = () => ({ product_name: '', mo_number: '', lot_number: '', batches: '', batch_weights: '', quantity: '' });
+// Which teams record more than one MO in a single shift. Batching blends
+// several orders a day; Filling/Kitting stay one MO per entry.
+const usesMoLines = (team) => team === 'Batching';
+
+// Repeatable MO editor: one card per manufacturing order worked in the shift.
+// Reused by the entry form and the amend modal so both build the same shape.
+function MoLinesField({ lines, setLines }) {
+  const setLine = (i, patch) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const add = () => setLines(ls => [...ls, blankMoLine()]);
+  const remove = (i) => setLines(ls => (ls.length > 1 ? ls.filter((_, j) => j !== i) : ls));
+  const cls = 'w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm';
+  return (
+    <div className="space-y-2">
+      {lines.map((l, i) => (
+        <div key={i} className="rounded-lg border border-gray-200 bg-gray-50/60 p-2.5">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-semibold text-gray-500">MO {i + 1}</span>
+            {lines.length > 1 && (
+              <button type="button" onClick={() => remove(i)} className="p-0.5 text-gray-400 hover:text-red-600" title="Remove this MO"><X size={14} /></button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] text-gray-600 mb-0.5">Product</label>
+              <input value={l.product_name} onChange={e => setLine(i, { product_name: e.target.value })} className={cls} placeholder="Product name" />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">MO #</label>
+              <input value={l.mo_number} onChange={e => setLine(i, { mo_number: e.target.value })} className={cls} placeholder="MO #" />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">Lot #</label>
+              <input value={l.lot_number} onChange={e => setLine(i, { lot_number: e.target.value })} className={cls} placeholder="Lot #" />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">Batches</label>
+              <input type="number" min="0" value={l.batches} onChange={e => setLine(i, { batches: e.target.value })} className={cls} placeholder="0" />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">Quantity (optional)</label>
+              <input type="number" min="0" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} className={cls} placeholder="0" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] text-gray-600 mb-0.5">Batch weights</label>
+              <input value={l.batch_weights} onChange={e => setLine(i, { batch_weights: e.target.value })} className={cls} placeholder="No.1=273.4kg, No.2=273.6kg" />
+            </div>
+          </div>
+        </div>
+      ))}
+      <button type="button" onClick={add}
+        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
+        <Plus size={13} /> Add another MO
+      </button>
+    </div>
+  );
+}
+
+// A saved entry's MO lines, read-only, for the log. Falls back to the scalar
+// columns for pre-multi-MO entries so old rows still render.
+function MoLinesSummary({ lines }) {
+  if (!Array.isArray(lines) || !lines.length) return null;
+  return (
+    <div className="mt-1.5 space-y-1">
+      {lines.map((l, i) => (
+        <div key={i} className="text-xs text-gray-700">
+          <span className="font-medium text-gray-900">{l.mo_number || '—'}</span>
+          {l.product_name && <span> · {l.product_name}</span>}
+          {l.lot_number && <span className="text-gray-500"> · Lot {l.lot_number}</span>}
+          {(l.batches != null && l.batches !== '') && <span className="text-gray-500"> · {l.batches} batch{Number(l.batches) === 1 ? '' : 'es'}</span>}
+          {l.batch_weights && <span className="text-gray-500"> · {l.batch_weights}</span>}
+          {(l.quantity != null && l.quantity !== '') && <span className="text-gray-500"> · qty {Number(l.quantity).toLocaleString()}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── EOD template fields (per-team structured survey) ────── */
 
 // One input for a template field. Types mirror the server: text / number /
@@ -119,6 +199,9 @@ function EntryForm({ user, onSuccess }) {
   const { data: templates } = useApiGet('/production/eod-templates');
   const [structured, setStructured] = useState({});
   const template = templates?.[form.team] || null;
+  // Multi-MO teams (Batching) record a line per order instead of one MO.
+  const multiMo = usesMoLines(form.team);
+  const [moLines, setMoLines] = useState([blankMoLine()]);
 
   const set = (key, val) => setForm(prev => ({
     ...prev,
@@ -128,21 +211,35 @@ function EntryForm({ user, onSuccess }) {
   }));
   // Switching teams starts the survey fresh — a Batching answer shouldn't carry
   // into a Filling report.
-  const setTeam = (val) => { set('team', val); setStructured({}); };
+  const setTeam = (val) => { set('team', val); setStructured({}); setMoLines([blankMoLine()]); };
   const setField = (k, v) => setStructured(s => ({ ...s, [k]: v }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Multi-MO teams need at least one line with an MO number; the shared
+    // scalar MO/product/lot come from that first line server-side.
+    if (multiMo && !moLines.some(l => l.mo_number.trim() || l.product_name.trim())) {
+      setMessage({ type: 'error', text: 'Add at least one MO (with an MO # or product).' });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
-      await apiPost('/production/entries', {
+      const payload = {
         ...form,
-        quantity_completed: Number(form.quantity_completed),
         people_count: Number(form.people_count),
         submitted_by: user.name,
         structured_data: template ? structured : undefined,
-      });
+      };
+      if (multiMo) {
+        // Let the server derive product/MO/lot/quantity from the lines.
+        payload.mo_lines = moLines;
+        delete payload.product_name; delete payload.mo_number;
+        delete payload.lot_number; delete payload.quantity_completed;
+      } else {
+        payload.quantity_completed = Number(form.quantity_completed);
+      }
+      await apiPost('/production/entries', payload);
       setMessage({ type: 'success', text: 'Entry submitted successfully.' });
       setForm({ ...INITIAL_FORM, date: todayStr() });
       setStructured({});
@@ -201,21 +298,25 @@ function EntryForm({ user, onSuccess }) {
             </select>
           </div>
         )}
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Product Name *</label>
-          <input required value={form.product_name} onChange={e => set('product_name', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Product name" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">MO # *</label>
-          <input required value={form.mo_number} onChange={e => set('mo_number', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Manufacturing order #" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Lot # *</label>
-          <input required value={form.lot_number} onChange={e => set('lot_number', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Lot number" />
-        </div>
+        {/* Single MO fields — hidden for multi-MO teams, which use the MO-line
+            editor below so a shift can carry several orders. */}
+        {!multiMo && (<>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Product Name *</label>
+            <input required value={form.product_name} onChange={e => set('product_name', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Product name" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">MO # *</label>
+            <input required value={form.mo_number} onChange={e => set('mo_number', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Manufacturing order #" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Lot # *</label>
+            <input required value={form.lot_number} onChange={e => set('lot_number', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Lot number" />
+          </div>
+        </>)}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Project Start Time *</label>
           <input required type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)}
@@ -226,11 +327,13 @@ function EntryForm({ user, onSuccess }) {
           <input required type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Quantity Completed *</label>
-          <input required type="number" min="0" value={form.quantity_completed} onChange={e => set('quantity_completed', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="0" />
-        </div>
+        {!multiMo && (
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Quantity Completed *</label>
+            <input required type="number" min="0" value={form.quantity_completed} onChange={e => set('quantity_completed', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="0" />
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1"># of People Working *</label>
           <input required type="number" min="1" value={form.people_count} onChange={e => set('people_count', e.target.value)}
@@ -242,6 +345,15 @@ function EntryForm({ user, onSuccess }) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Optional notes..." />
         </div>
       </div>
+
+      {/* Multi-MO editor — Batching fills the shift once above, then adds a
+          line per manufacturing order worked. */}
+      {multiMo && (
+        <div className="rounded-lg border border-powder-200 bg-powder-50/50 p-3">
+          <p className="text-xs font-semibold text-powder-800 mb-2">MOs worked this shift</p>
+          <MoLinesField lines={moLines} setLines={setMoLines} />
+        </div>
+      )}
 
       {/* Team-specific EOD survey — only appears when the selected team has a
           template. Batching sees blend/yield fields; Filling/Kitting see their
@@ -459,17 +571,36 @@ function AmendmentTrail({ amendments }) {
 // is mandatory, the attestation is spelled out, and re-signing is called out
 // before you commit rather than discovered afterwards.
 function AmendModal({ entry, onClose, onSaved }) {
+  // Entries with MO lines edit those instead of the scalar product/MO/lot/qty,
+  // which the server derives from line 0.
+  const multiMo = Array.isArray(entry.mo_lines) && entry.mo_lines.length > 0;
+  const HIDDEN_FOR_MO = new Set(['product_name', 'mo_number', 'lot_number', 'quantity_completed']);
+  const amendFields = multiMo ? AMEND_FIELDS.filter(f => !HIDDEN_FOR_MO.has(f.key)) : AMEND_FIELDS;
+
   const [form, setForm] = useState(() => {
     const f = {};
     for (const { key } of AMEND_FIELDS) f[key] = entry[key] ?? '';
     return f;
   });
+  const [moLines, setMoLines] = useState(() =>
+    (entry.mo_lines || []).map(l => ({
+      product_name: l.product_name || '', mo_number: l.mo_number || '', lot_number: l.lot_number || '',
+      batches: l.batches ?? '', batch_weights: l.batch_weights || '', quantity: l.quantity ?? '',
+    })));
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  const changed = AMEND_FIELDS.filter(f => String(entry[f.key] ?? '') !== String(form[f.key] ?? ''));
-  const ready = changed.length > 0 && reason.trim().length >= MIN_REASON;
+  const changed = amendFields.filter(f => String(entry[f.key] ?? '') !== String(form[f.key] ?? ''));
+  // Compare the line list to the saved one (normalized to strings) to know if
+  // the MOs were edited.
+  const norm = (ls) => JSON.stringify((ls || []).map(l => ({
+    product_name: String(l.product_name || '').trim(), mo_number: String(l.mo_number || '').trim(),
+    lot_number: String(l.lot_number || '').trim(), batches: l.batches === '' || l.batches == null ? '' : String(l.batches),
+    batch_weights: String(l.batch_weights || '').trim(), quantity: l.quantity === '' || l.quantity == null ? '' : String(l.quantity),
+  })).filter(l => l.mo_number || l.product_name));
+  const moChanged = multiMo && norm(moLines) !== norm(entry.mo_lines);
+  const ready = (changed.length > 0 || moChanged) && reason.trim().length >= MIN_REASON;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -477,6 +608,7 @@ function AmendModal({ entry, onClose, onSaved }) {
     try {
       const patch = { reason: reason.trim() };
       for (const f of changed) patch[f.key] = form[f.key];
+      if (moChanged) patch.mo_lines = moLines;
       await apiPut(`/production/entries/${entry.id}`, patch);
       onSaved();
       onClose();
@@ -513,8 +645,15 @@ function AmendModal({ entry, onClose, onSaved }) {
             )}
           </div>
 
+          {multiMo && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+              <p className="text-xs font-semibold text-gray-700 mb-2">MOs worked this shift</p>
+              <MoLinesField lines={moLines} setLines={setMoLines} />
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {AMEND_FIELDS.map(f => {
+            {amendFields.map(f => {
               const dirty = String(entry[f.key] ?? '') !== String(form[f.key] ?? '');
               const cls = `w-full px-3 py-2 border rounded-lg text-sm ${dirty ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`;
               const set = (v) => setForm(s => ({ ...s, [f.key]: v }));
@@ -795,7 +934,11 @@ function LogTable({ user }) {
     let rows = Array.isArray(entries) ? entries : entries.data || [];
     if (teamFilter) rows = rows.filter(r => r.team === teamFilter);
     if (roomFilter) rows = rows.filter(r => r.room === roomFilter);
-    if (moSearch) rows = rows.filter(r => (r.mo_number || '').toLowerCase().includes(moSearch.toLowerCase()));
+    if (moSearch) {
+      const q = moSearch.toLowerCase();
+      rows = rows.filter(r => (r.mo_number || '').toLowerCase().includes(q)
+        || (Array.isArray(r.mo_lines) && r.mo_lines.some(l => (l.mo_number || '').toLowerCase().includes(q))));
+    }
 
     const col = SORT_COLUMNS.find(c => c.key === sortCol);
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -893,8 +1036,9 @@ function LogTable({ user }) {
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
                 {entry.line && <span className="font-medium text-gray-700">{lineLabel(entry.line)}</span>}
-                {entry.mo_number && <span>MO {entry.mo_number}</span>}
-                {entry.lot_number && <span>Lot {entry.lot_number}</span>}
+                {entry.mo_lines?.length > 1
+                  ? <span className="font-medium text-gray-700">{entry.mo_lines.length} MOs</span>
+                  : <>{entry.mo_number && <span>MO {entry.mo_number}</span>}{entry.lot_number && <span>Lot {entry.lot_number}</span>}</>}
                 <span>{formatTime(entry.start_time)}–{formatTime(entry.end_time)}</span>
                 {entry.duration_hours != null && <span>{Number(entry.duration_hours).toFixed(1)}h</span>}
                 <span>Qty {Number(entry.quantity_completed).toLocaleString()}</span>
@@ -907,6 +1051,7 @@ function LogTable({ user }) {
                   <span className="font-semibold">QA asked for a correction:</span> {entry.qa_notes}
                 </div>
               )}
+              {entry.mo_lines?.length > 1 && <MoLinesSummary lines={entry.mo_lines} />}
               {entry.notes && <div className="mt-2 text-xs text-gray-700 bg-gray-50 rounded-lg px-2 py-1.5 break-words"><span className="font-medium text-gray-900">Notes:</span> {entry.notes}</div>}
               <EodSummary template={templates?.[entry.team]} data={entry.structured_data} />
               <AmendmentTrail amendments={entry.amendments} />
@@ -956,9 +1101,12 @@ function LogTable({ user }) {
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.room}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 w-full min-w-[160px] relative group">
                       {entry.product_name}
-                      {(entry.notes || entry.structured_data) && (
+                      {entry.mo_lines?.length > 1 && (
+                        <span className="ml-1.5 text-[10px] font-medium text-powder-600">+{entry.mo_lines.length - 1} more MO{entry.mo_lines.length - 1 === 1 ? '' : 's'}</span>
+                      )}
+                      {(entry.notes || entry.structured_data || entry.mo_lines?.length > 1) && (
                         <button type="button" onClick={() => setExpandedNotes(expandedNotes === entry.id ? null : entry.id)}
-                          className="ml-1 text-gray-400 hover:text-gray-600" title={entry.structured_data ? 'View notes & EOD report' : 'View notes'}>
+                          className="ml-1 text-gray-400 hover:text-gray-600" title="View details">
                           <ClipboardList size={13} className="inline" />
                         </button>
                       )}
@@ -1004,9 +1152,15 @@ function LogTable({ user }) {
                     </td>
                   </tr>
                 ))}
-                {filtered.map(entry => expandedNotes === entry.id && (entry.notes || entry.structured_data) && (
+                {filtered.map(entry => expandedNotes === entry.id && (entry.notes || entry.structured_data || entry.mo_lines?.length > 1) && (
                   <tr key={`notes-${entry.id}`} className="bg-blue-50">
                     <td colSpan={14} className="px-4 py-2 text-sm text-gray-700">
+                      {entry.mo_lines?.length > 1 && (
+                        <div className="mb-1">
+                          <span className="font-medium text-gray-900">MOs this shift:</span>
+                          <MoLinesSummary lines={entry.mo_lines} />
+                        </div>
+                      )}
                       {entry.notes && <div><span className="font-medium text-gray-900">Notes:</span> {entry.notes}</div>}
                       <EodSummary template={templates?.[entry.team]} data={entry.structured_data} />
                     </td>

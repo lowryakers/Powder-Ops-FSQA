@@ -154,6 +154,21 @@ row); the **EOD Templates** tab (log-editors/admins) is the field-list editor (`
 reorder typed fields, dropdown choices comma-separated, save per team). Switching team in the entry form
 resets the answers so a Batching answer never carries into a Filling report.
 
+## Multi-MO entries (Batching runs several MOs a shift)
+`production_entries.mo_lines` is a JSON array of
+`{product_name, mo_number, lot_number, batches, batch_weights, quantity}`. **Line 0 is mirrored into the
+scalar `product_name`/`mo_number`/`lot_number` columns and `quantity_completed` is the sum of the lines'
+quantities** — so filters, `computeMetrics`, COA, missed-report matching and every non-Batching team keep
+working against the scalar columns unchanged; the full set lives in `mo_lines`. `usesMoLines(team)` (client)
+gates it — currently just `Batching`. The entry form fills shift-level fields once (date/room/times/people +
+the Blending EOD survey) then a repeatable `MoLinesField` (one card per MO); on submit for a multi-MO team
+the scalar product/MO/lot/quantity are dropped from the payload and the server derives them. The log shows
+"+N more MOs" with the full list in the expandable detail row (`MoLinesSummary`); MO search matches **any**
+line (client filter + server `mo=` → `mo_lines LIKE`). Amend edits the lines as a whole (one `mo_lines`
+change in the audit trail, scalars re-mirrored). **One QA sign-off per entry = the whole shift** (unchanged).
+`normalizeMoLines()` in production.js is the single normalizer (drops blank lines, coerces numbers).
+Per-MO fields (batches/weights) therefore left the EOD template — it's shift-level only now.
+
 ## Migration ordering (fresh-DB gotcha)
 `addColumnIfMissing()` runs `ALTER TABLE … ADD COLUMN`, which **throws** if the table doesn't exist yet —
 `PRAGMA table_info` on a missing table returns empty, so the "missing" check passes and the ALTER blows up.
