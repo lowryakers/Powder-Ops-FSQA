@@ -305,12 +305,29 @@ const PUSH_COALESCE_MS = 20000;
 const lastChannelPushAt = new Map();  // `${userId}:${channelId}` -> epoch ms
 const pendingTrailing = new Map();    // `${userId}:${channelId}` -> timeout handle
 
+// Thread replies are deliberately NOT counted here. A reply buried three levels
+// down a conversation from Tuesday isn't "the channel has something new" — it
+// belongs to that thread, and counting it in the channel is what made a reply
+// look like a fresh channel message and drop the reader at the bottom of the
+// channel instead of in the thread. Replies are counted by threadUnread().
 function channelUnread(db, channelId, userId) {
   const lr = db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId)?.last_read_at || null;
   return db.prepare(
     `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND user_id != ?
-     AND (? IS NULL OR created_at > ?)`
+     AND parent_id IS NULL AND (? IS NULL OR created_at > ?)`
   ).get(channelId, userId, lr, lr).n;
+}
+
+// Threads behave like their own channel: each one is read or unread on its own,
+// tracked per person in chat_thread_reads. A thread you've never opened counts
+// every reply that isn't yours.
+function threadUnread(db, parentId, userId) {
+  const lr = db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?')
+    .get(parentId, userId)?.last_read_at || null;
+  return db.prepare(
+    `SELECT COUNT(*) n FROM chat_messages WHERE parent_id = ? AND deleted_at IS NULL AND user_id != ?
+     AND (? IS NULL OR created_at > ?)`
+  ).get(parentId, userId, lr, lr).n;
 }
 
 // Push a normal channel message to every member (except the author and anyone
@@ -455,9 +472,11 @@ router.get('/channels', (req, res) => {
     // Only channels you've actually joined get an unread count. Admins can SEE
     // every channel, but a channel they never joined shouldn't dump its whole
     // (imported) history on them as unread.
+    // parent_id IS NULL: thread replies belong to Threads, not to the channel.
+    // Keep this in step with channelUnread().
     const unread = !c.membership_id ? 0 : db.prepare(
       `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND user_id != ?
-       AND (? IS NULL OR created_at > ?)`
+       AND parent_id IS NULL AND (? IS NULL OR created_at > ?)`
     ).get(c.id, me, c.last_read_at, c.last_read_at).n;
     // Unread @mentions of me in this channel (drives a distinct badge).
     const mentions = db.prepare(
@@ -915,6 +934,8 @@ router.get('/threads', async (req, res) => {
     const channel = getChannel(db, parent.channel_id);
     if (!channel || !canAccess(db, channel, me, isAdmin)) continue;
     const replies = db.prepare('SELECT * FROM chat_messages WHERE parent_id = ? ORDER BY created_at ASC').all(parent.id);
+    const lastRead = db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?')
+      .get(parent.id, me)?.last_read_at || null;
     out.push({
       channel_id: channel.id,
       channel_name: channelLabel(db, channel, me),
@@ -922,9 +943,53 @@ router.get('/threads', async (req, res) => {
       parent: await serialize(db, parent),
       replies: await Promise.all(replies.map(m => serialize(db, m))),
       last_reply: row.last_reply,
+      unread: threadUnread(db, parent.id, me),
+      // Where to draw the "new replies" line inside the thread.
+      last_read_at: lastRead,
     });
   }
   res.json(out);
+});
+
+// Total unread across every thread the caller follows — the badge on the
+// Threads entry, which is the only reason a thread reply is worth surfacing
+// outside the thread itself.
+router.get('/threads/unread', (req, res) => {
+  const db = getDb();
+  const me = req.user.id;
+  const isAdmin = req.user.role === 'admin';
+  const parents = db.prepare(`
+    SELECT DISTINCT p.id, p.channel_id FROM chat_messages p
+    JOIN chat_messages r ON r.parent_id = p.id AND r.deleted_at IS NULL
+    WHERE p.parent_id IS NULL AND p.deleted_at IS NULL
+      AND (
+        p.user_id = ?
+        OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = ?)
+        OR EXISTS (SELECT 1 FROM chat_mentions mn WHERE mn.message_id = p.id AND mn.user_id = ?)
+      )`).all(me, me, me);
+  let total = 0, threads = 0;
+  for (const p of parents) {
+    const channel = getChannel(db, p.channel_id);
+    if (!channel || !canAccess(db, channel, me, isAdmin)) continue;
+    const n = threadUnread(db, p.id, me);
+    if (n > 0) { total += n; threads++; }
+  }
+  res.json({ total, threads });
+});
+
+// Opening a thread marks it read, the same way opening a channel does.
+router.post('/threads/:parentId/read', (req, res) => {
+  const db = getDb();
+  const parent = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(req.params.parentId);
+  if (!parent) return res.status(404).json({ error: 'Thread not found' });
+  const channel = getChannel(db, parent.channel_id);
+  if (!channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')) {
+    return res.status(404).json({ error: 'Thread not found' });
+  }
+  db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at) VALUES (?, ?, datetime('now'))
+              ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = datetime('now')`)
+    .run(req.user.id, parent.id);
+  res.json({ ok: true });
 });
 
 // A message's thread: the parent plus all its replies in order. Access is

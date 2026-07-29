@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
@@ -599,7 +599,7 @@ function clearChannelNotifications(channelId) {
   }).catch(() => { /* no SW / not supported */ });
 }
 
-function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef, storageOn }) {
+function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef, storageOn, onThreadRead }) {
   const [thread, setThread] = useState(null);
   const [body, setBody] = useState(() => readDrafts()[`thread:${parent.id}`]?.text || '');
   const [sending, setSending] = useState(false);
@@ -650,6 +650,11 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
     try { setThread(await apiFetch(`/comms/messages/${parent.id}/thread`)); } catch { /* gone */ }
   }, [parent.id]);
   useEffect(() => { load(); }, [load]);
+  // Opening the thread clears it from Threads — reading it here and reading it
+  // in the inbox are the same act.
+  useEffect(() => {
+    apiPost(`/comms/threads/${parent.id}/read`, {}).then(() => onThreadRead?.()).catch(() => {});
+  }, [parent.id, onThreadRead]);
   // Live-refresh when a reply to this parent arrives.
   useEffect(() => {
     const s = socketRef?.current; if (!s) return;
@@ -743,25 +748,58 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
 }
 
 // One thread in the Threads inbox: channel label, parent, replies, reply box.
-function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel }) {
+function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onMarkRead }) {
   const [body, setBody] = useState('');
   const react = async (m, e) => { await apiPost(`/comms/messages/${m.id}/reactions`, { emoji: e }); refresh(); };
   const unreact = async (m, e) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(e)}`, { method: 'DELETE' }); refresh(); };
   const del = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); refresh(); };
   const edit = async (m, text) => { await apiPut(`/comms/messages/${m.id}`, { body: text }); refresh(); };
-  const send = async () => { const t = body.trim(); if (!t) return; await apiPost(`/comms/channels/${thread.channel_id}/messages`, { body: t, parent_id: thread.parent.id }); setBody(''); refresh(); };
+  const send = async () => {
+    const t = body.trim(); if (!t) return;
+    await apiPost(`/comms/channels/${thread.channel_id}/messages`, { body: t, parent_id: thread.parent.id });
+    setBody(''); onMarkRead?.(thread.parent.id); refresh();
+  };
   const Icon = thread.channel_kind === 'dm' ? MessageSquare : thread.channel_kind === 'private' ? Lock : Hash;
+  const unread = thread.unread || 0;
+  // The line the reader left off at. Captured once per mount so it stays put
+  // while they read, rather than jumping as the card marks itself read.
+  const [marker] = useState(() => (unread > 0 ? thread.last_read_at || '0' : null));
+  const isNew = (m) => marker !== null && String(m.created_at) > marker && m.user_id !== me.id;
+
   return (
-    <div className="border border-gray-200 rounded-xl m-3 overflow-hidden">
-      <button onClick={() => onOpenChannel(thread.channel_id)} className="w-full flex items-center gap-1.5 px-4 py-2 bg-gray-50 border-b border-gray-100 text-sm font-semibold text-gray-800 hover:bg-gray-100">
-        <Icon size={14} className="text-gray-400" /> {thread.channel_name}
-      </button>
+    <div className={`border rounded-xl m-3 overflow-hidden ${unread > 0 ? 'border-powder-300 ring-1 ring-powder-100' : 'border-gray-200'}`}>
+      <div className="flex items-center gap-1.5 px-4 py-2 bg-gray-50 border-b border-gray-100">
+        <button onClick={() => onOpenChannel(thread.channel_id)}
+          className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 hover:underline min-w-0">
+          <Icon size={14} className="text-gray-400 shrink-0" /> <span className="truncate">{thread.channel_name}</span>
+        </button>
+        {unread > 0 && (
+          <>
+            <span className="px-1.5 py-0.5 rounded-full bg-powder-600 text-white text-[10px] font-bold">{unread} new</span>
+            <button onClick={() => onMarkRead?.(thread.parent.id)}
+              className="ml-auto flex items-center gap-1 text-[11px] text-gray-500 hover:text-powder-600">
+              <Check size={12} /> Mark read
+            </button>
+          </>
+        )}
+      </div>
       <div className="py-1">
         <Message m={thread.parent} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
           canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />
         <div className="px-4 py-0.5 text-[11px] font-medium text-gray-400">{thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}</div>
-        {thread.replies.map(r => <Message key={r.id} m={r} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
-          canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />)}
+        {thread.replies.map((r, i) => (
+          <Fragment key={r.id}>
+            {/* One "new replies" line, at the first reply the reader hasn't seen. */}
+            {isNew(r) && !thread.replies.slice(0, i).some(isNew) && (
+              <div className="flex items-center gap-2 px-4 py-1">
+                <span className="h-px flex-1 bg-red-300" />
+                <span className="text-[10px] font-bold uppercase text-red-500">New</span>
+              </div>
+            )}
+            <Message m={r} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+              canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />
+          </Fragment>
+        ))}
       </div>
       <div className="flex items-end gap-2 p-2 border-t border-gray-100">
         <textarea value={body} onChange={e => setBody(e.target.value)} rows={1} onInput={e => sizeTextarea(e.target, 160)}
@@ -773,9 +811,21 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
   );
 }
 
-function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile }) {
-  const { data: threads, loading, refresh } = useApiGet('/comms/threads');
-  const list = threads || [];
+function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile, onRead, refreshKey }) {
+  const { data: threads, loading, refresh } = useApiGet('/comms/threads', [refreshKey]);
+  // Unread first, then most recently active — the point of the view is what
+  // still needs an answer, not a chronological archive.
+  const list = useMemo(() => [...(threads || [])].sort((a, b) => {
+    const au = a.unread > 0 ? 0 : 1, bu = b.unread > 0 ? 0 : 1;
+    return au - bu || String(b.last_reply).localeCompare(String(a.last_reply));
+  }), [threads]);
+  const unreadCount = list.filter(t => t.unread > 0).length;
+
+  // Reading a thread here clears it, the same as opening a channel does.
+  const markRead = useCallback(async (parentId) => {
+    try { await apiPost(`/comms/threads/${parentId}/read`, {}); onRead?.(); } catch { /* ignore */ }
+  }, [onRead]);
+
   return (
     <>
       <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
@@ -783,12 +833,21 @@ function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, 
         <MessageSquare size={16} className="text-powder-600" />
         <span className="font-semibold text-gray-900">Threads</span>
         <span className="text-xs text-gray-400">{list.length ? `· ${list.length}` : ''}</span>
+        {unreadCount > 0 && (
+          <button onClick={async () => {
+            await Promise.all(list.filter(t => t.unread > 0).map(t => apiPost(`/comms/threads/${t.parent.id}/read`, {}).catch(() => {})));
+            onRead?.(); refresh();
+          }} className="ml-auto flex items-center gap-1 text-xs text-powder-600 hover:underline">
+            <CheckCheck size={13} /> Mark all read
+          </button>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto">
         {loading ? <p className="text-center text-sm text-gray-400 py-8">Loading threads…</p>
           : list.length === 0 ? <p className="text-center text-sm text-gray-400 py-8">No threads yet. Reply to a message to start one.</p>
           : list.map(t => <ThreadInboxCard key={t.parent.id} thread={t} me={me} refresh={refresh} mentionUsers={mentionUsers}
-              canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} onOpenChannel={onOpenChannel} />)}
+              canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} onOpenChannel={onOpenChannel}
+              onMarkRead={markRead} />)}
       </div>
     </>
   );
@@ -1239,6 +1298,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const [showDetails, setShowDetails] = useState(false);
   const [replyTo, setReplyTo] = useState(null); // parent message whose thread is open
   const [threadsOpen, setThreadsOpen] = useState(false); // Threads inbox view
+  // Threads carry their own unread state now, so the badge needs its own feed.
+  const [threadTick, setThreadTick] = useState(0);
+  const { data: threadUnread, refresh: refreshThreadUnread } = useApiGet('/comms/threads/unread', [threadTick]);
+  const bumpThreads = () => setThreadTick(t => t + 1);
 
   const list = channels || [];
   // Keep the PWA home-screen icon badge in sync while the user is in Comms.
@@ -1382,6 +1445,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     s.emit('channel:join', activeId);
 
     const onNew = (m) => {
+      // A reply anywhere may be a thread the reader follows, so the badge is
+      // refreshed even for channels they aren't currently looking at.
+      if (m.parent_id && m.user_id !== user.id) bumpThreads();
       if (m.channel_id !== activeId) return;
       // A threaded reply: bump the parent's reply count in the main list.
       if (m.parent_id) {
@@ -1972,8 +2038,13 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         <div className={`w-full md:w-60 border-r border-gray-200 flex-col shrink-0 overflow-y-auto p-2 space-y-3 ${showMainMobile ? 'hidden md:flex' : 'flex'}`}>
           {/* Threads inbox shortcut (like Slack) */}
           <button onClick={() => { setThreadsOpen(true); setMobileThread(false); clearSearch(); }}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm font-medium ${threadsOpen ? 'bg-powder-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
+            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${threadsOpen ? 'bg-powder-600 text-white font-medium' : `hover:bg-gray-100 ${threadUnread?.total ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium'}`}`}>
             <MessageSquare size={15} className="opacity-80" /> Threads
+            {/* Replies no longer inflate the channel's count, so this badge is
+                the only place an unanswered thread shows up. */}
+            {!!threadUnread?.total && !threadsOpen && (
+              <span className="ml-auto px-1.5 py-0.5 rounded-full bg-powder-600 text-white text-[10px] font-bold">{threadUnread.total}</span>
+            )}
           </button>
           {/* Quick filter — type to filter channels & DMs, ↑/↓ + Enter to jump */}
           <div className="relative px-1">
@@ -2104,7 +2175,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         {/* main pane — hidden on phones until a channel is opened */}
         <div className={`flex-1 flex-col min-w-0 ${showMainMobile ? 'flex' : 'hidden md:flex'}`}>
           {threadsOpen ? (
-            <ThreadsView me={user} mentionUsers={users} canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} onOpenChannel={openChannel} onCloseMobile={() => setThreadsOpen(false)} />
+            <ThreadsView me={user} mentionUsers={users} canTranslate={translateOn} viewerLang={viewerLang}
+              onTranslate={translateMessage} onOpenChannel={openChannel} onCloseMobile={() => setThreadsOpen(false)}
+              onRead={refreshThreadUnread} refreshKey={threadTick} />
           ) : (searchResults !== null || answer !== null || (searching && searchMode === 'ask')) ? (
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
@@ -2380,7 +2453,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
           onToggle={async () => { await togglePush(); }} />
       )}
       {showDetails && active && active.kind !== 'dm' && <ChannelDetails channel={active} me={user} users={users} onClose={() => setShowDetails(false)} onChanged={refreshChannels} />}
-      {replyTo && <ThreadPanel parent={replyTo} me={user} channelName={active?.kind === 'dm' ? active.name : '#' + (active?.name || '')} mentionUsers={users} members={channelMembers}
+      {replyTo && <ThreadPanel parent={replyTo} me={user} onThreadRead={refreshThreadUnread} channelName={active?.kind === 'dm' ? active.name : '#' + (active?.name || '')} mentionUsers={users} members={channelMembers}
         canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage} socketRef={socketRef} storageOn={storageOn}
         onClose={() => setReplyTo(null)} onChanged={() => loadMessages(activeId)} />}
     </div>

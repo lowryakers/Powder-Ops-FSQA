@@ -89,6 +89,14 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## Threads behave like their own channel
+Thread replies are **excluded from channel unread** (`parent_id IS NULL` in *both* `channelUnread()` and the
+channel-list query in `/channels` — they're separate queries, keep them in step) and counted per-thread
+instead via `chat_thread_reads` + `threadUnread()`. `GET /threads` returns `unread` + `last_read_at` per
+thread (drives the "N new" badge and the NEW divider), `GET /threads/unread` feeds the sidebar badge, and
+`POST /threads/:parentId/read` clears one — fired by opening the ThreadPanel, by Mark read / Mark all read,
+and by replying. Unread threads sort first.
+
 ## QA notes that ask for a fix
 **Production Log:** QA sign-off has a "this note needs a correction" checkbox (requires a note) →
 `production_entries.qa_action_required`. The flag is *itself the authorization* to amend that one entry, by

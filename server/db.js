@@ -1403,6 +1403,16 @@ function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
 
+    -- Per-person read state for a single thread. Threads act like their own
+    -- channel — each is unread until you open it — which is why this can't be
+    -- derived from the channel's last_read_at.
+    CREATE TABLE IF NOT EXISTS chat_thread_reads (
+      user_id TEXT NOT NULL,
+      parent_id TEXT NOT NULL,
+      last_read_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, parent_id)
+    );
+
     -- Slack-style "Remind me about this": ReadyBot DMs the user at remind_at.
     CREATE TABLE IF NOT EXISTS chat_reminders (
       id TEXT PRIMARY KEY,
