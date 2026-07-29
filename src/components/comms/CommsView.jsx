@@ -50,13 +50,23 @@ function openAppLink(link) {
   }
 }
 
-function renderBody(text, users, meName) {
+// Chat calls people by their short first + last name — the same one they sign
+// in with. The full legal name stays on records and signatures; a conversation
+// doesn't need it. `username` comes from the server; falling back to the full
+// name keeps anyone imported without one from rendering blank.
+const chatName = (u) => u?.username || u?.name || '';
+
+function renderBody(text, users, me) {
   if (!text) return text;
   let s = replaceShortcodes(text)
     .replace(/<!channel>|<!everyone>/gi, '@channel')
     .replace(/<!here>/gi, '@here');
 
-  const names = (users || []).map(u => u.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  // Highlight both the short chat name and the full one: the composer inserts
+  // the short form now, but messages written before that still spell out the
+  // full name and should stay highlighted.
+  const names = [...new Set((users || []).flatMap(u => [chatName(u), u.name]).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
   const parts = [
     'https?:\\/\\/[^\\s<]+',     // clickable URL (matched first)
     names.length ? '@(?:' + names.map(escapeRe).join('|') + ')' : null,
@@ -98,7 +108,9 @@ function renderBody(text, users, meName) {
     }
     if (tok[0] === '@') {
       const nm = tok.slice(1);
-      const isMe = meName && nm.toLowerCase() === meName.toLowerCase();
+      // Either spelling of my name counts as "you were mentioned".
+      const isMe = [chatName(me), me?.name].filter(Boolean)
+        .some(n => n.toLowerCase() === nm.toLowerCase());
       const isBroadcast = nm === 'channel' || nm === 'here';
       out.push(<span key={k++} className={isMe ? 'bg-amber-200 text-amber-900 rounded px-1 font-semibold' : isBroadcast ? 'bg-amber-100 text-amber-800 rounded px-1 font-medium' : 'text-powder-700 font-medium'}>{tok}</span>);
     } else if (tok[0] === '*') {
@@ -266,7 +278,7 @@ function NewChannelModal({ users, me, onClose, onCreated }) {
               {(users || []).filter(u => u.id !== me.id).map(u => (
                 <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer text-sm">
                   <input type="checkbox" checked={!!members[u.id]} onChange={() => setMembers(m => ({ ...m, [u.id]: !m[u.id] }))} />
-                  {u.name}
+                  {chatName(u)}
                 </label>
               ))}
             </div>
@@ -358,7 +370,7 @@ function ChannelDetails({ channel, me, users, onClose, onChanged }) {
                   {candidates.map(u => (
                     <button key={u.id} onClick={() => addMany([u.id])} className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-powder-50 text-left">
                       <UserPlus size={13} className="text-powder-600" />
-                      <span className="text-sm text-gray-800 flex-1">{u.name}</span>
+                      <span className="text-sm text-gray-800 flex-1">{chatName(u)}</span>
                       <span className="text-xs text-gray-400 capitalize">{(u.department || '').replace('_', ' ')}</span>
                     </button>
                   ))}
@@ -370,9 +382,9 @@ function ChannelDetails({ channel, me, users, onClose, onChanged }) {
               {members.map(m => (
                 <div key={m.user_id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50">
                   <div className="h-7 w-7 rounded-lg bg-powder-100 text-powder-700 flex items-center justify-center text-[11px] font-bold shrink-0">
-                    {m.name?.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
+                    {chatName(m).split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
                   </div>
-                  <span className="text-sm text-gray-800 flex-1">{m.name}{m.user_id === me.id ? ' (you)' : ''}</span>
+                  <span className="text-sm text-gray-800 flex-1">{chatName(m)}{m.user_id === me.id ? ' (you)' : ''}</span>
                   {m.role === 'owner' && <span className="text-[10px] uppercase text-gray-400">owner</span>}
                   {canManage && m.user_id !== me.id && <button onClick={() => removeMember(m.user_id)} className="text-gray-300 hover:text-red-500" data-tip="Remove" data-tip-left><UserMinus size={14} /></button>}
                 </div>
@@ -401,11 +413,14 @@ function ChannelDetails({ channel, me, users, onClose, onChanged }) {
 function filterMentionPool(pool, query, meId) {
   if (query === null) return [];
   const q = query.toLowerCase();
-  const hits = (pool || []).filter(u => u.id !== meId && u.name.toLowerCase().includes(q));
+  // Search both forms so typing a middle name still finds the person, but
+  // rank and insert the short one.
+  const hits = (pool || []).filter(u => u.id !== meId
+    && (chatName(u).toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q)));
   hits.sort((a, b) => {
-    const ap = a.name.toLowerCase().split(/\s+/).some(p => p.startsWith(q)) ? 0 : 1;
-    const bp = b.name.toLowerCase().split(/\s+/).some(p => p.startsWith(q)) ? 0 : 1;
-    return ap - bp || a.name.localeCompare(b.name);
+    const ap = chatName(a).toLowerCase().split(/\s+/).some(p => p.startsWith(q)) ? 0 : 1;
+    const bp = chatName(b).toLowerCase().split(/\s+/).some(p => p.startsWith(q)) ? 0 : 1;
+    return ap - bp || chatName(a).localeCompare(chatName(b));
   });
   return hits.slice(0, 6);
 }
@@ -421,9 +436,9 @@ function MentionDropdown({ matches, hi, onHover, onPick }) {
     <div className="absolute bottom-full mb-1 left-3 right-3 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-20 max-h-48 overflow-y-auto">
       {matches.map((u, idx) => (
         <button key={u.id} onMouseEnter={() => onHover(idx)}
-          onMouseDown={e => { e.preventDefault(); onPick(u.name); }}
+          onMouseDown={e => { e.preventDefault(); onPick(chatName(u)); }}
           className={`w-full text-left px-3 py-1.5 text-sm ${idx === hi ? 'bg-powder-50' : 'hover:bg-gray-50'}`}>
-          <span className="font-medium text-gray-800">@{u.name}</span>
+          <span className="font-medium text-gray-800">@{chatName(u)}</span>
         </button>
       ))}
     </div>
@@ -638,7 +653,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
                 if (mMatches.length) {
                   if (e.key === 'ArrowDown') { e.preventDefault(); setMHi(h => Math.min(h + 1, mMatches.length - 1)); return; }
                   if (e.key === 'ArrowUp') { e.preventDefault(); setMHi(h => Math.max(h - 1, 0)); return; }
-                  if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertReplyMention(mMatches[mHi]?.name || mMatches[0].name); return; }
+                  if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertReplyMention(chatName(mMatches[mHi] || mMatches[0])); return; }
                   if (e.key === 'Escape') { setMQuery(null); return; }
                 }
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
@@ -984,7 +999,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
         ) : (
           m.body && (
             <div>
-              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{renderBody(displayBody, mentionUsers, me.name)}</p>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{renderBody(displayBody, mentionUsers, me)}</p>
               {translating && <span className="text-[11px] text-gray-400 italic">Translating…</span>}
               {translated && (
                 <button onClick={() => setTranslated(null)} className="text-[11px] text-powder-600 hover:underline">
@@ -1194,7 +1209,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // scope the mention autocomplete to people who can actually see the channel.
   const { data: activeInfo } = useApiGet(activeId ? `/comms/channels/${activeId}` : '/comms/status', [activeId]);
   const channelMemberIds = useMemo(() => new Set((activeInfo?.members || []).map(m => m.user_id)), [activeInfo]);
-  const channelMembers = useMemo(() => (activeInfo?.members || []).map(m => ({ id: m.user_id, name: m.name })), [activeInfo]);
+  const channelMembers = useMemo(() => (activeInfo?.members || []).map(m => ({ id: m.user_id, name: m.name, username: m.username })), [activeInfo]);
 
   // Default to #general (or first channel) once loaded.
   // Pick the initial channel once the list loads: a module deep-link (e.g.
@@ -1480,8 +1495,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     const lower = body.toLowerCase();
     return (users || [])
       .filter(u => u.id !== user.id && !channelMemberIds.has(u.id))
-      .filter(u => lower.includes('@' + u.name.toLowerCase()))
-      .sort((a, b) => b.name.length - a.name.length);
+      .filter(u => lower.includes('@' + chatName(u).toLowerCase()) || lower.includes('@' + (u.name || '').toLowerCase()))
+      .sort((a, b) => chatName(b).length - chatName(a).length);
   }, [body, users, channelMemberIds, active, user.id]);
 
   const insertMention = (name) => {
@@ -1670,7 +1685,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     openChannel(ch.id);
   };
 
-  const dmCandidates = useMemo(() => (users || []).filter(u => u.id !== user.id && u.name.toLowerCase().includes(dmSearch.toLowerCase())), [users, dmSearch, user.id]);
+  const dmCandidates = useMemo(() => {
+    const q = dmSearch.toLowerCase();
+    // Search both forms — someone typing a middle name should still find them.
+    return (users || []).filter(u => u.id !== user.id
+      && (chatName(u).toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q)));
+  }, [users, dmSearch, user.id]);
 
   // Debounced keyword/semantic search. Ask mode is manual (runs on Enter) since
   // it calls the AI — we don't want a request per keystroke.
@@ -1914,7 +1934,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                     return (
                       <button key={u.id} onClick={() => toggleDmPick(u.id)} className={`w-full flex items-center gap-2 text-left px-2 py-1.5 text-sm ${picked ? 'bg-powder-50' : 'hover:bg-gray-50'}`}>
                         <span className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${picked ? 'bg-powder-600 border-powder-600' : 'border-gray-300'}`}>{picked && <Check size={11} className="text-white" />}</span>
-                        <span className="flex-1 truncate">{u.name}</span>
+                        <span className="flex-1 truncate">{chatName(u)}</span>
                         <span className="text-[10px] text-gray-400 capitalize">{(u.department || '').replace('_', ' ')}</span>
                       </button>
                     );
@@ -2099,7 +2119,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   <div className="mb-2 flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
                     <Bell size={12} className="mt-0.5 shrink-0" />
                     <span>
-                      {nonMemberMentions.map(u => u.name).join(', ')} {nonMemberMentions.length === 1 ? "isn't" : "aren't"} in this channel, so {nonMemberMentions.length === 1 ? "they won't" : "they won't"} see this message.
+                      {nonMemberMentions.map(u => chatName(u)).join(', ')} {nonMemberMentions.length === 1 ? "isn't" : "aren't"} in this channel, so {nonMemberMentions.length === 1 ? "they won't" : "they won't"} see this message.
                       {user.role === 'admin' && ' Add them from the channel title → Members.'}
                     </span>
                   </div>
@@ -2128,7 +2148,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                       if (mentionMatches.length) {
                         if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHi(h => Math.min(h + 1, mentionMatches.length - 1)); return; }
                         if (e.key === 'ArrowUp') { e.preventDefault(); setMentionHi(h => Math.max(h - 1, 0)); return; }
-                        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(mentionMatches[mentionHi]?.name || mentionMatches[0].name); return; }
+                        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(chatName(mentionMatches[mentionHi] || mentionMatches[0])); return; }
                       }
                       if (e.key === 'Escape' && mentionQuery !== null) { setMentionQuery(null); return; }
                       // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).

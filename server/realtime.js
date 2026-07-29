@@ -18,7 +18,7 @@ function userForToken(token) {
   if (!token) return null;
   const db = getDb();
   const row = db.prepare(`
-    SELECT u.id, u.name, u.role FROM sessions s JOIN users u ON s.user_id = u.id
+    SELECT u.id, u.name, u.username, u.role FROM sessions s JOIN users u ON s.user_id = u.id
     WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
   `).get(token);
   return row || null;
@@ -65,7 +65,8 @@ export function initRealtime(httpServer) {
     socket.on('typing', (channelId) => {
       if (typeof channelId !== 'string') return;
       if (socket.rooms.has(channelRoom(channelId))) {
-        socket.to(channelRoom(channelId)).emit('typing', { channel_id: channelId, user_id: user.id, user_name: user.name });
+        // Short chat name, matching how every other name in comms is rendered.
+        socket.to(channelRoom(channelId)).emit('typing', { channel_id: channelId, user_id: user.id, user_name: user.username || user.name });
       }
     });
   });

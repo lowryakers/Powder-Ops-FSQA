@@ -106,6 +106,12 @@ Login accepts **either** the username or the full name, so no one is locked out.
 username only when it was still the auto-derived one; a hand-set username is never overwritten.
 Spanish two-surname names derive to first + *last* word ("Gaston Antonio Perez Quintanilla" → "Gaston
 Quintanilla"); when someone goes by the paternal surname, set it by hand in Settings.
+**Comms uses the short name everywhere** — author labels, DM/group titles, member lists, mention
+autocomplete, search hits, typing indicators and push titles all go through `userName()`/`shortNameOf()`
+in comms.js and `chatName()` in CommsView. Chat is conversation, not a record. `extractMentions()` matches
+**both** the short and full form (longest first) so messages written before the change still resolve, and
+`renderBody` highlights both. Admin screens (CommsSettings, Settings) keep full names — they're about
+accounts, not conversation.
 **Public API paths live in one place:** `isPublicPath()` in `server/middleware/auth.js` (server.js calls it).
 `GET /users/lookup` is public — the login type-ahead was 401ing before, which is why long names had to be
 typed exactly.

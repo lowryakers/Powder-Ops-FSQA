@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
+import { deriveUsername } from '../usernames.js';
 import { getDb, logAudit } from '../db.js';
 import { emitToChannel, emitChannelsChanged, emitChannelsRefresh, emitToUser } from '../realtime.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
@@ -143,26 +144,40 @@ function requireChannel(req, res) {
   return channel;
 }
 
+// What a person is called in chat: the short first + last form, same as their
+// sign-in name. The full legal name stays on records, signatures and the audit
+// log — chat is conversation, not a compliance record, and "Gaston Antonio
+// Perez Quintanilla" on every line is noise.
 function userName(db, id) {
-  return db.prepare('SELECT name FROM users WHERE id = ?').get(id)?.name || 'Unknown';
+  const u = db.prepare('SELECT name, username FROM users WHERE id = ?').get(id);
+  if (!u) return 'Unknown';
+  return u.username || deriveUsername(u.name) || u.name;
 }
+const shortNameOf = (u) => u?.username || deriveUsername(u?.name) || u?.name || '';
 
 // ── Mentions ──────────────────────────────────────────────────────────────────
 // Users who can be @mentioned in a channel are its members — a mention should
 // never notify someone who can't see the channel. (Now that public channels are
 // membership-gated too, this is uniform across kinds.)
 function mentionCandidates(db, channel) {
-  return db.prepare('SELECT u.id, u.name FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? AND u.is_active = 1').all(channel.id);
+  return db.prepare('SELECT u.id, u.name, u.username FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? AND u.is_active = 1').all(channel.id);
 }
 // Match "@<display name>" occurrences (autocomplete inserts full names, which may
 // contain spaces). Longest names first so "@Ann Marie" wins over "@Ann".
 function extractMentions(db, channel, body, authorId) {
   if (!body || !body.includes('@')) return [];
   const lower = body.toLowerCase();
+  // Match the short chat name AND the full name: the composer inserts the short
+  // one now, but messages written before that still carry the full name and
+  // must keep resolving. Longest form first so "@Ann Marie" beats "@Ann".
+  const forms = (u) => [...new Set([shortNameOf(u), u.name].filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
   return mentionCandidates(db, channel)
     .filter(u => u.id !== authorId)
-    .sort((a, b) => b.name.length - a.name.length)
-    .filter(u => lower.includes('@' + u.name.toLowerCase()));
+    .map(u => ({ u, longest: forms(u)[0] || '' }))
+    .sort((a, b) => b.longest.length - a.longest.length)
+    .filter(({ u }) => forms(u).some(f => lower.includes('@' + f.toLowerCase())))
+    .map(({ u }) => u);
 }
 // True when the body contains a channel-wide broadcast mention (@channel/@here/
 // @everyone), which notifies every member rather than named individuals.
@@ -185,8 +200,9 @@ function recordMentions(db, channel, messageId, body, author) {
   const broadcast = hasBroadcast(body);
   for (const u of recipients) {
     ins.run(uuid(), messageId, channel.id, u.id);
-    emitToUser(u.id, 'mention', { channel_id: channel.id, message_id: messageId, from: author.name, preview: body.slice(0, 140), broadcast });
-    const title = broadcast ? `${author.name} notified ${label}` : `${author.name} mentioned you in ${label}`;
+    const fromName = shortNameOf(author) || author.name;
+    emitToUser(u.id, 'mention', { channel_id: channel.id, message_id: messageId, from: fromName, preview: body.slice(0, 140), broadcast });
+    const title = broadcast ? `${fromName} notified ${label}` : `${fromName} mentioned you in ${label}`;
     // Mentions re-alert (renotify) — they're higher priority than a normal message.
     pushToUser(u.id, { title, body: body.slice(0, 140), tag: `mention-${messageId}`, renotify: true, url: `/?c=${channel.id}&m=${messageId}` }).catch(() => {});
   }
@@ -232,9 +248,10 @@ function notifyChannelMessage(db, channel, body, author, excludeUserIds = [], me
   const sendFor = (uid) => {
     const n = channelUnread(db, channel.id, uid);
     if (n === 0) return; // they read it in the meantime — don't buzz for nothing
+    const from = shortNameOf(author);
     const summary = n > 1
-      ? `${n} new · ${author.name}: ${body.slice(0, 80)}`
-      : `${author.name}: ${body.slice(0, 120)}`;
+      ? `${n} new · ${from}: ${body.slice(0, 80)}`
+      : `${from}: ${body.slice(0, 120)}`;
     pushToUser(uid, { title: label, body: summary, tag: `channel-${channel.id}`, renotify: true, url }).catch(() => {});
   };
 
@@ -414,7 +431,7 @@ router.get('/channels/:id', (req, res) => {
   const channel = req.user.role === 'admin' ? getChannelAny(db, req.params.id) : requireChannel(req, res);
   if (!channel) { if (req.user.role === 'admin') res.status(404).json({ error: 'Channel not found' }); return; }
   const members = db.prepare(`
-    SELECT m.user_id, m.role, u.name FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? ORDER BY u.name
+    SELECT m.user_id, m.role, u.name, u.username FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? ORDER BY u.name
   `).all(channel.id);
   res.json({ ...channel, members });
 });
@@ -870,7 +887,7 @@ router.post('/channels/:id/messages', async (req, res) => {
   // DMs push to the other participant(s) — everyone in the DM but the sender.
   if (channel.kind === 'dm' && body) {
     const recips = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(channel.id, req.user.id);
-    for (const r of recips) pushToUser(r.user_id, { title: `Message from ${req.user.name}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, renotify: true, url: `/?c=${channel.id}&m=${id}` }).catch(() => {});
+    for (const r of recips) pushToUser(r.user_id, { title: `Message from ${shortNameOf(req.user)}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, renotify: true, url: `/?c=${channel.id}&m=${id}` }).catch(() => {});
   } else if (body) {
     // Every other channel message: grouped, summarized, debounced push to members
     // who weren't already @mentioned (they got a higher-priority alert above).
