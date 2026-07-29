@@ -3,7 +3,7 @@ import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/use
 import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Bold, Italic, Underline, Strikethrough, List, ListOrdered } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import NotificationStatus from './NotificationStatus.jsx';
 import ZoomableImage from './ZoomableImage.jsx';
@@ -68,28 +68,27 @@ function openAppLink(link) {
 // name keeps anyone imported without one from rendering blank.
 const chatName = (u) => u?.username || u?.name || '';
 
-function renderBody(text, users, me) {
-  if (!text) return text;
-  let s = replaceShortcodes(text)
-    .replace(/<!channel>|<!everyone>/gi, '@channel')
-    .replace(/<!here>/gi, '@here');
-
-  // Highlight both the short chat name and the full one: the composer inserts
-  // the short form now, but messages written before that still spell out the
-  // full name and should stay highlighted.
+// Inline formatting inside one run of text: mentions, links, and the character
+// markers people type (or the toolbar inserts). Order in the alternation
+// matters — underline (`__x__`) is listed before italic (`_x_`) so the two-
+// underscore form wins at a position where both could start.
+function renderInline(s, users, me, keyBase = '') {
   const names = [...new Set((users || []).flatMap(u => [chatName(u), u.name]).filter(Boolean))]
     .sort((a, b) => b.length - a.length);
   const parts = [
-    'https?:\\/\\/[^\\s<]+',     // clickable URL (matched first)
+    'https?:\\/\\/[^\\s<]+',                       // clickable URL (matched first)
     names.length ? '@(?:' + names.map(escapeRe).join('|') + ')' : null,
     '@channel', '@here',
-    '\\*(?=\\S)[^*\\n]*?\\S\\*', // *bold*
-    '~(?=\\S)[^~\\n]*?\\S~',     // ~strike~
-    '`[^`\\n]+`',               // `code`
+    '\\*(?=\\S)[^*\\n]*?\\S\\*',                    // *bold*
+    '(?<![A-Za-z0-9_])__(?=\\S)[^_\\n]*?\\S__(?![A-Za-z0-9_])', // __underline__
+    '(?<![A-Za-z0-9_])_(?=\\S)[^_\\n]*?\\S_(?![A-Za-z0-9_])',   // _italic_
+    '~(?=\\S)[^~\\n]*?\\S~',                        // ~strike~
+    '`[^`\\n]+`',                                   // `code`
   ].filter(Boolean);
   const re = new RegExp('(' + parts.join('|') + ')', 'g');
 
   const out = []; let last = 0, m, k = 0;
+  const key = () => `${keyBase}-${k++}`;
   while ((m = re.exec(s)) !== null) {
     if (m.index > last) out.push(s.slice(last, m.index));
     let tok = m[0];
@@ -103,7 +102,7 @@ function renderBody(text, users, me) {
       const inApp = parseAppLink(tok);
       if (inApp) {
         out.push(
-          <button key={k++} type="button"
+          <button key={key()} type="button"
             onClick={(e) => { e.stopPropagation(); openAppLink(inApp); }}
             className="inline-flex items-center gap-1 align-baseline text-powder-700 underline font-medium hover:text-powder-800">
             {inApp.label}
@@ -113,7 +112,7 @@ function renderBody(text, users, me) {
         last = m.index + m[0].length;
         continue;
       }
-      out.push(<a key={k++} href={tok} target="_blank" rel="noopener noreferrer" className="text-powder-700 underline break-all hover:text-powder-800">{tok}</a>);
+      out.push(<a key={key()} href={tok} target="_blank" rel="noopener noreferrer" className="text-powder-700 underline break-all hover:text-powder-800">{tok}</a>);
       if (trail) out.push(trail);
       last = m.index + m[0].length;
       continue;
@@ -124,18 +123,129 @@ function renderBody(text, users, me) {
       const isMe = [chatName(me), me?.name].filter(Boolean)
         .some(n => n.toLowerCase() === nm.toLowerCase());
       const isBroadcast = nm === 'channel' || nm === 'here';
-      out.push(<span key={k++} className={isMe ? 'bg-amber-200 text-amber-900 rounded px-1 font-semibold' : isBroadcast ? 'bg-amber-100 text-amber-800 rounded px-1 font-medium' : 'text-powder-700 font-medium'}>{tok}</span>);
+      out.push(<span key={key()} className={isMe ? 'bg-amber-200 text-amber-900 rounded px-1 font-semibold' : isBroadcast ? 'bg-amber-100 text-amber-800 rounded px-1 font-medium' : 'text-powder-700 font-medium'}>{tok}</span>);
+    } else if (tok.startsWith('__')) {
+      out.push(<span key={key()} className="underline">{tok.slice(2, -2)}</span>);
+    } else if (tok[0] === '_') {
+      out.push(<em key={key()}>{tok.slice(1, -1)}</em>);
     } else if (tok[0] === '*') {
-      out.push(<strong key={k++}>{tok.slice(1, -1)}</strong>);
+      out.push(<strong key={key()}>{tok.slice(1, -1)}</strong>);
     } else if (tok[0] === '~') {
-      out.push(<span key={k++} className="line-through">{tok.slice(1, -1)}</span>);
+      out.push(<span key={key()} className="line-through">{tok.slice(1, -1)}</span>);
     } else if (tok[0] === '`') {
-      out.push(<code key={k++} className="px-1 py-0.5 rounded bg-gray-100 text-[0.85em] font-mono">{tok.slice(1, -1)}</code>);
+      out.push(<code key={key()} className="px-1 py-0.5 rounded bg-gray-100 text-[0.85em] font-mono">{tok.slice(1, -1)}</code>);
     }
     last = m.index + tok.length;
   }
   if (last < s.length) out.push(s.slice(last));
   return out.length ? out : s;
+}
+
+// Block-level render: paragraphs keep their line breaks, while runs of `- `/`* `
+// lines become a bullet list and `1. ` lines a numbered list — the clean
+// structure people expect from Slack / Claude. Inline markers are applied
+// within each paragraph and list item.
+function renderBody(text, users, me) {
+  if (!text) return text;
+  const s = replaceShortcodes(text)
+    .replace(/<!channel>|<!everyone>/gi, '@channel')
+    .replace(/<!here>/gi, '@here');
+
+  const blocks = [];
+  let para = [];
+  let list = null; // { type: 'ul' | 'ol', items: [] }
+  const flushPara = () => {
+    if (!para.length) return;
+    const key = `p${blocks.length}`;
+    blocks.push(<p key={key} className="whitespace-pre-wrap break-words">{renderInline(para.join('\n'), users, me, key)}</p>);
+    para = [];
+  };
+  const flushList = () => {
+    if (!list) return;
+    const key = `l${blocks.length}`;
+    const cls = (list.type === 'ul' ? 'list-disc' : 'list-decimal') + ' pl-5 space-y-0.5 my-1';
+    const Tag = list.type;
+    blocks.push(<Tag key={key} className={cls}>
+      {list.items.map((it, i) => <li key={i} className="break-words">{renderInline(it, users, me, `${key}-${i}`)}</li>)}
+    </Tag>);
+    list = null;
+  };
+
+  for (const line of s.split('\n')) {
+    // A space after the marker is required, so `*bold*` (no space) is not a
+    // bullet and only a genuine "- "/"* "/"1. " list item is.
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    const numbered = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (bullet) {
+      flushPara();
+      if (!list || list.type !== 'ul') { flushList(); list = { type: 'ul', items: [] }; }
+      list.items.push(bullet[1]);
+    } else if (numbered) {
+      flushPara();
+      if (!list || list.type !== 'ol') { flushList(); list = { type: 'ol', items: [] }; }
+      list.items.push(numbered[1]);
+    } else {
+      flushList();
+      para.push(line);
+    }
+  }
+  flushList();
+  flushPara();
+  return blocks;
+}
+
+// ── Composer formatting ───────────────────────────────────────────────────────
+// Wrap the current selection in a marker pair. With nothing selected, drop the
+// markers and place the caret between them so you can type into the format.
+function wrapSelection(el, value, before, after = before) {
+  const start = el?.selectionStart ?? value.length;
+  const end = el?.selectionEnd ?? value.length;
+  const inner = value.slice(start, end);
+  const next = value.slice(0, start) + before + inner + after + value.slice(end);
+  const selStart = start + before.length;
+  return { next, selStart, selEnd: selStart + inner.length };
+}
+// Turn the selected lines into a list, stripping any existing list marker first
+// so toggling between bullet/numbered (or off→on) doesn't stack markers.
+function prefixLines(el, value, numbered) {
+  const start = el?.selectionStart ?? value.length;
+  const end = el?.selectionEnd ?? value.length;
+  const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+  let lineEnd = value.indexOf('\n', end);
+  if (lineEnd === -1) lineEnd = value.length;
+  let n = 1;
+  const out = value.slice(lineStart, lineEnd).split('\n').map(l => {
+    const stripped = l.replace(/^\s*(?:[-*]\s+|\d+\.\s+)/, '');
+    return numbered ? `${n++}. ${stripped}` : `- ${stripped}`;
+  }).join('\n');
+  const next = value.slice(0, lineStart) + out + value.slice(lineEnd);
+  return { next, selStart: lineStart, selEnd: lineStart + out.length };
+}
+
+// The B / I / U / S + list toolbar shared by the channel composer and the thread
+// reply box. onChange takes the new text; the caller wires in its own draft
+// saving. onMouseDown preventDefault keeps the textarea's selection alive when a
+// button is clicked.
+function FormatBar({ getEl, value, onChange }) {
+  const apply = (fn) => {
+    const el = getEl?.();
+    const r = fn(el, value ?? '');
+    onChange(r.next);
+    requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(r.selStart, r.selEnd); } });
+  };
+  const cls = 'w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded';
+  const guard = e => e.preventDefault(); // keep the textarea selection alive on click
+  return (
+    <div className="flex items-center gap-0.5">
+      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => wrapSelection(el, v, '*'))} className={cls} data-tip="Bold"><Bold size={14} /></button>
+      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => wrapSelection(el, v, '_'))} className={cls} data-tip="Italic"><Italic size={14} /></button>
+      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => wrapSelection(el, v, '__'))} className={cls} data-tip="Underline"><Underline size={14} /></button>
+      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => wrapSelection(el, v, '~'))} className={cls} data-tip="Strikethrough"><Strikethrough size={14} /></button>
+      <span className="w-px h-4 bg-gray-200 mx-0.5" />
+      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => prefixLines(el, v, false))} className={cls} data-tip="Bulleted list"><List size={14} /></button>
+      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => prefixLines(el, v, true))} className={cls} data-tip="Numbered list"><ListOrdered size={14} /></button>
+    </div>
+  );
 }
 const parseMsgDate = (iso) => new Date(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
 const fmtTime = (iso) => parseMsgDate(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -717,6 +827,13 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   const endRef = useRef(null);
   // Reply box grows with its content, like the main composer.
   useEffect(() => { sizeTextarea(replyRef.current); }, [body]);
+  // Opening a thread lands the cursor in the reply box (desktop only), matching
+  // how opening a channel focuses the main composer.
+  useEffect(() => {
+    if (window.matchMedia?.('(hover: none)').matches) return;
+    const raf = requestAnimationFrame(() => replyRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [parent.id]);
   // @mention autocomplete for the reply box (same behavior as the composer).
   const [mQuery, setMQuery] = useState(null);
   const [mHi, setMHi] = useState(0);
@@ -824,6 +941,8 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
               {uploading && <UploadProgress percent={progress} />}
             </div>
           )}
+          <div className="mb-1"><FormatBar getEl={() => replyRef.current} value={body}
+            onChange={v => { setBody(v); writeDraft(`thread:${parent.id}`, v); }} /></div>
           <div className="flex items-end gap-2">
             {storageOn && (
               <>
@@ -856,6 +975,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
 // One thread in the Threads inbox: channel label, parent, replies, reply box.
 function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onMarkRead }) {
   const [body, setBody] = useState('');
+  const cardReplyRef = useRef(null);
   const react = async (m, e) => { await apiPost(`/comms/messages/${m.id}/reactions`, { emoji: e }); refresh(); };
   const unreact = async (m, e) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(e)}`, { method: 'DELETE' }); refresh(); };
   const del = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); refresh(); };
@@ -867,19 +987,33 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
   };
   const Icon = thread.channel_kind === 'dm' ? MessageSquare : thread.channel_kind === 'private' ? Lock : Hash;
   const unread = thread.unread || 0;
+  // "Acted on" = you've replied in this thread. Shown as a chip so a read
+  // thread you've already answered is distinct from one you only skimmed.
+  const acted = thread.replies.some(r => r.user_id === me.id);
+  // Read threads collapse to a one-line summary so they recede as you scroll;
+  // unread ones stay open. Either can be toggled.
+  const [expanded, setExpanded] = useState(unread > 0);
   // The line the reader left off at. Captured once per mount so it stays put
   // while they read, rather than jumping as the card marks itself read.
   const [marker] = useState(() => (unread > 0 ? thread.last_read_at || '0' : null));
   const isNew = (m) => marker !== null && String(m.created_at) > marker && m.user_id !== me.id;
+  const lastReply = thread.replies[thread.replies.length - 1];
 
   return (
-    <div className={`border rounded-xl m-3 overflow-hidden ${unread > 0 ? 'border-powder-300 ring-1 ring-powder-100' : 'border-gray-200'}`}>
-      <div className="flex items-center gap-1.5 px-4 py-2 bg-gray-50 border-b border-gray-100">
+    <div className={`border rounded-xl m-3 overflow-hidden transition-opacity ${
+      unread > 0 ? 'border-powder-300 ring-1 ring-powder-100 bg-white'
+                 : 'border-gray-200 bg-gray-50/60 opacity-75 hover:opacity-100'}`}>
+      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-gray-100 bg-gray-50">
         <button onClick={() => onOpenChannel(thread.channel_id)}
-          className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 hover:underline min-w-0">
+          className={`flex items-center gap-1.5 text-sm hover:underline min-w-0 ${unread > 0 ? 'font-semibold text-gray-800' : 'font-medium text-gray-500'}`}>
           <Icon size={14} className="text-gray-400 shrink-0" /> <span className="truncate">{thread.channel_name}</span>
         </button>
-        {unread > 0 && (
+        {acted && !unread && (
+          <span className="flex items-center gap-0.5 text-[10px] text-gray-400" data-tip="You replied in this thread">
+            <Check size={11} /> Replied
+          </span>
+        )}
+        {unread > 0 ? (
           <>
             <span className="px-1.5 py-0.5 rounded-full bg-powder-600 text-white text-[10px] font-bold">{unread} new</span>
             <button onClick={() => onMarkRead?.(thread.parent.id)}
@@ -887,8 +1021,23 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
               <Check size={12} /> Mark read
             </button>
           </>
+        ) : (
+          <button onClick={() => setExpanded(x => !x)}
+            className="ml-auto flex items-center gap-0.5 text-[11px] text-gray-400 hover:text-gray-600">
+            {expanded ? <>Collapse <ChevronUp size={12} /></> : <>Expand <ChevronDown size={12} /></>}
+          </button>
         )}
       </div>
+      {!expanded ? (
+        // Collapsed read thread: just enough to recognize it and reopen it.
+        <button onClick={() => setExpanded(true)} className="w-full text-left px-4 py-2 hover:bg-white">
+          <p className="text-xs text-gray-500 line-clamp-1">{thread.parent.body || '(attachment)'}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            {thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}
+            {lastReply ? ` · last from ${lastReply.user_name}` : ''}
+          </p>
+        </button>
+      ) : (
       <div className="py-1">
         <Message m={thread.parent} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
           canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />
@@ -907,12 +1056,18 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
           </Fragment>
         ))}
       </div>
-      <div className="flex items-end gap-2 p-2 border-t border-gray-100">
-        <textarea value={body} onChange={e => setBody(e.target.value)} rows={1} onInput={e => sizeTextarea(e.target, 160)}
-          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
-          placeholder="Reply…" className="flex-1 px-3 py-1.5 border border-gray-300 rounded-xl text-sm resize-none max-h-40 overflow-y-auto" />
-        <button onClick={send} disabled={!body.trim()} className="p-2 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={15} /></button>
+      )}
+      {expanded && (
+      <div className="p-2 border-t border-gray-100">
+        <div className="mb-1"><FormatBar getEl={() => cardReplyRef.current} value={body} onChange={setBody} /></div>
+        <div className="flex items-end gap-2">
+          <textarea ref={cardReplyRef} value={body} onChange={e => setBody(e.target.value)} rows={1} onInput={e => sizeTextarea(e.target, 160)}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
+            placeholder="Reply…" className="flex-1 px-3 py-1.5 border border-gray-300 rounded-xl text-sm resize-none max-h-40 overflow-y-auto" />
+          <button onClick={send} disabled={!body.trim()} className="p-2 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={15} /></button>
+        </div>
       </div>
+      )}
     </div>
   );
 }
@@ -1239,7 +1394,9 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
         ) : (
           m.body && (
             <div>
-              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{renderBody(displayBody, mentionUsers, me)}</p>
+              {/* renderBody returns block elements (paragraphs + lists), so this
+                  is a div, not a p — a p can't legally contain a ul/ol. */}
+              <div className="text-sm text-gray-800 break-words space-y-0.5">{renderBody(displayBody, mentionUsers, me)}</div>
               {translating && <span className="text-[11px] text-gray-400 italic">Translating…</span>}
               {translated && (
                 <button onClick={() => setTranslated(null)} className="text-[11px] text-powder-600 hover:underline">
@@ -1647,12 +1804,33 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // phones autofocus would pop the keyboard over the conversation), and any
   // stray printable keystroke is routed into it, so you can pick a channel and
   // just start typing.
+  //
+  // A single delayed focus was unreliable: messages load async, and the list
+  // render + scroll-to-bottom that follows would land after the focus and pull
+  // it away — so the cursor "sometimes" wasn't in the box. We arm a per-channel
+  // "wants focus" flag on open and try to land the cursor both immediately and
+  // again once messages render, disarming as soon as it succeeds or the user
+  // clicks into something else (so we never yank their cursor back mid-read).
+  const wantFocusRef = useRef(null);
   useEffect(() => {
-    if (!activeId) return;
-    if (window.matchMedia?.('(hover: none)').matches) return;
-    const t = setTimeout(() => composerRef.current?.focus(), 60);
-    return () => clearTimeout(t);
+    if (window.matchMedia?.('(hover: none)').matches) { wantFocusRef.current = null; return; }
+    wantFocusRef.current = activeId || null;
   }, [activeId]);
+  useEffect(() => {
+    if (!wantFocusRef.current || wantFocusRef.current !== activeId) return;
+    if (window.matchMedia?.('(hover: none)').matches) return;
+    const el = document.activeElement;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+      // The user has already put their cursor somewhere deliberate — stand down.
+      if (el === composerRef.current) wantFocusRef.current = null;
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      const ta = composerRef.current;
+      if (ta && !ta.disabled) { ta.focus(); wantFocusRef.current = null; }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [activeId, messages]);
   useEffect(() => {
     const onKey = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.key.length !== 1) return;
@@ -2524,6 +2702,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                     </span>
                   </div>
                 )}
+                <div className="mb-1 -ml-1">
+                  <FormatBar getEl={() => composerRef.current} value={body}
+                    onChange={v => { setBody(v); writeDraft(activeId, v); }} />
+                </div>
                 <div className="flex items-end gap-2">
                   {storageOn && (
                     <>

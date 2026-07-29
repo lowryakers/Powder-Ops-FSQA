@@ -947,6 +947,40 @@ function App() {
   // Docked chat: a slim Messages panel beside the modules (desktop split screen).
   const [dockChat, setDockChat] = useState(() => { try { return localStorage.getItem('dock_chat') === '1'; } catch { return false; } });
   const toggleDockChat = () => setDockChat(d => { const n = !d; try { localStorage.setItem('dock_chat', n ? '1' : '0'); } catch { /* private mode */ } return n; });
+  // Docked-chat width is draggable and remembered. Clamped so it can't crowd out
+  // the module on the left (min) or swallow the screen (max).
+  const DOCK_MIN = 320, DOCK_MAX = 760;
+  const [dockWidth, setDockWidth] = useState(() => {
+    try { const v = parseInt(localStorage.getItem('dock_chat_w'), 10); return Number.isFinite(v) ? Math.min(DOCK_MAX, Math.max(DOCK_MIN, v)) : 420; }
+    catch { return 420; }
+  });
+  const [dockDragging, setDockDragging] = useState(false);
+  // Drag the left edge of the docked panel. Tracked on window so the pointer can
+  // leave the thin handle mid-drag; the iframe is made click-through meanwhile so
+  // it doesn't swallow the move events.
+  const startDockResize = (e) => {
+    e.preventDefault();
+    setDockDragging(true);
+    const move = (ev) => {
+      const x = ev.touches ? ev.touches[0].clientX : ev.clientX;
+      const w = Math.min(DOCK_MAX, Math.max(DOCK_MIN, window.innerWidth - x));
+      setDockWidth(w);
+    };
+    const end = () => {
+      setDockDragging(false);
+      try { localStorage.setItem('dock_chat_w', String(dockWidthRef.current)); } catch { /* private mode */ }
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', end);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', end);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', end);
+  };
+  const dockWidthRef = useRef(dockWidth);
+  useEffect(() => { dockWidthRef.current = dockWidth; }, [dockWidth]);
   const homeApplied = useRef(false);
 
   // Apply the user's default landing workspace once, on first load after login.
@@ -1512,14 +1546,24 @@ function App() {
           left while a slim live chat (the /chat standalone view) rides along
           on the right. Desktop only; state persists across sessions. */}
       {dockChat && (
-        <aside className="hidden lg:flex flex-col w-[400px] xl:w-[440px] shrink-0 border-l border-gray-200 sticky top-0 h-screen bg-white">
+        <aside className="hidden lg:flex flex-col shrink-0 border-l border-gray-200 sticky top-0 h-screen bg-white relative"
+          style={{ width: dockWidth }}>
+          {/* Drag handle straddling the left border. Widens on hover so it's
+              catchable without being visible clutter at rest. */}
+          <div onMouseDown={startDockResize} onTouchStart={startDockResize}
+            className="absolute left-0 top-0 h-full w-1.5 -translate-x-1/2 cursor-col-resize z-10 group"
+            data-tip="Drag to resize" role="separator" aria-orientation="vertical">
+            <div className={`h-full w-0.5 mx-auto transition-colors ${dockDragging ? 'bg-powder-500' : 'bg-transparent group-hover:bg-powder-300'}`} />
+          </div>
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 bg-gray-50">
             <span className="text-xs font-semibold text-gray-500">Messages</span>
             <button onClick={toggleDockChat} className="p-1 text-gray-400 hover:text-gray-600 rounded" data-tip="Close docked chat">
               <X size={14} />
             </button>
           </div>
-          <iframe src="/chat" title="Messages" className="flex-1 w-full border-0" />
+          {/* Click-through while dragging so the resize keeps tracking over the
+              iframe instead of the iframe eating the pointer moves. */}
+          <iframe src="/chat" title="Messages" className="flex-1 w-full border-0" style={{ pointerEvents: dockDragging ? 'none' : 'auto' }} />
         </aside>
       )}
 

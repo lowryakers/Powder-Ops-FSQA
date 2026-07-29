@@ -98,13 +98,32 @@ task_group), assignee from the @mention, due tomorrow. `POST /comms/channels/:id
 order (original message kept as the description) and posts a ReadyBot note recording who assigned it and
 when. **Bot message bold is `*text*`, not `**text**`** — the chat renderer isn't markdown.
 
+## Comms composer: rich text + reliable focus + resizable split screen
+**Formatting:** `renderBody()` is now block-aware — it splits into paragraphs and turns `- `/`* ` runs into a
+bullet `<ul>` and `1. ` runs into a numbered `<ol>`, so the message body renders inside a `<div>` (a `<p>`
+can't hold a list). Inline markers via `renderInline()`: `*bold*`, `_italic_`, `__underline__` (listed
+before italic in the alternation so the two-underscore form wins), `~strike~`, `` `code` ``. Italic/underline
+use lookbehind/lookahead `(?<![A-Za-z0-9_])…(?![A-Za-z0-9_])` so `snake_case` / `MO_4471_lot` don't italicize.
+`<FormatBar>` (B/I/U/S + bullet/numbered) sits above the channel composer, the thread drawer reply, and the
+Threads-inbox reply; `wrapSelection()` / `prefixLines()` edit the textarea and the caller wires its own
+`writeDraft`. `onMouseDown preventDefault` on each button preserves the textarea selection.
+**Composer autofocus** (desktop only): a per-channel `wantFocusRef` re-attempts focus on open and again once
+messages render (the old single timeout lost the race to the load+scroll), and stands down if the cursor is
+already somewhere deliberate. ThreadPanel focuses its reply box on `parent.id` change.
+**Split screen** (`App.jsx`): the docked `/chat` panel width is drag-resizable via a left-edge handle,
+clamped 320–760px, persisted in `localStorage.dock_chat_w`; the iframe goes `pointer-events:none` mid-drag so
+it doesn't eat the move events.
+
 ## Threads behave like their own channel
 Thread replies are **excluded from channel unread** (`parent_id IS NULL` in *both* `channelUnread()` and the
 channel-list query in `/channels` — they're separate queries, keep them in step) and counted per-thread
 instead via `chat_thread_reads` + `threadUnread()`. `GET /threads` returns `unread` + `last_read_at` per
 thread (drives the "N new" badge and the NEW divider), `GET /threads/unread` feeds the sidebar badge, and
 `POST /threads/:parentId/read` clears one — fired by opening the ThreadPanel, by Mark read / Mark all read,
-and by replying. Unread threads sort first.
+and by replying. Unread threads sort first. In the inbox, **read threads dim (opacity-75) and collapse to a
+one-line summary** (parent preview + "N replies · last from X", Expand to reopen) while unread stay open with
+the ring + "N new"; a thread you've replied to shows a muted "Replied" chip — so the list is scannable for
+what still needs you.
 
 ## QA notes that ask for a fix
 **Production Log:** QA sign-off has a "this note needs a correction" checkbox (requires a note) →
