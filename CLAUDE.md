@@ -81,6 +81,18 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## QA notes that ask for a fix
+**Production Log:** QA sign-off has a "this note needs a correction" checkbox (requires a note) →
+`production_entries.qa_action_required`. The flag is *itself the authorization* to amend that one entry, by
+the person who filed it (`invited` in `PUT /entries/:id`) — **no blanket Production Log edit grant needed**,
+and it's spent as soon as the correction lands. The amendment is stamped `resolves_qa_action`, clears the
+flag and (as always) retires the QA signature back to Pending QA. `GET /production/entries/qa-actions` feeds
+the banner at the top of the log (own entries for everyone; all entries for admins/log editors).
+**Task Center:** `POST /pm/work-orders/:id/review` `{note, rework_required}`. A plain note is feedback;
+`rework_required` reopens a *completed* task, reassigns it to whoever completed it, and clears
+completed_at/by — the prior completion is preserved in `review_history` (JSON array, every round). Completing
+the task again clears `rework_required` on all three completion paths. Reviewing is admin/supervisor/QA.
+
 ## Video uploads (comms + training)
 `server/media.js` is the single source of truth for large uploads: **200 MB video / 25 MB everything else**,
 `isVideo()`, a **disk-backed** multer (`mediaUpload()`, temp files in the OS temp dir), `rejectOversize()`,

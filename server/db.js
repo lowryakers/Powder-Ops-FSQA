@@ -903,6 +903,24 @@ function runMigrations() {
   // the entry shows that it was amended. Nothing is ever destroyed.
   addColumnIfMissing('production_entries', 'amendments', "TEXT NOT NULL DEFAULT '[]'");
 
+  // A QA note is usually just a note. Sometimes it means "this needs fixing",
+  // and until now there was no way to say which — the supervisor had to notice.
+  // Flagging a note as actionable puts the entry on the submitter's list AND
+  // authorizes them to amend that one entry, so asking for a correction doesn't
+  // require handing out blanket edit rights to the whole log.
+  addColumnIfMissing('production_entries', 'qa_action_required', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('production_entries', 'qa_action_resolved_at', 'TEXT');
+
+  // Same idea on the task side. A completed task can be reviewed with a note;
+  // marking the note as needing rework reopens the task for whoever did it.
+  // review_history keeps every round so a reopened-and-redone task still shows
+  // what was asked and what the first completion looked like.
+  addColumnIfMissing('work_orders', 'review_note', 'TEXT');
+  addColumnIfMissing('work_orders', 'review_by', 'TEXT');
+  addColumnIfMissing('work_orders', 'review_at', 'TEXT');
+  addColumnIfMissing('work_orders', 'rework_required', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('work_orders', 'review_history', "TEXT NOT NULL DEFAULT '[]'");
+
   // (supply_invoices.extracted_text is added further down, right after the
   // office tables are created — a column migration can't run before its table.)
 

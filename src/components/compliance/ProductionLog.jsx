@@ -185,17 +185,25 @@ function EntryForm({ user, onSuccess }) {
 
 function QASignoffModal({ entry, user, onClose, onSaved }) {
   const [notes, setNotes] = useState('');
+  // Most QA notes are just notes. This says the note is a correction request,
+  // which puts the entry on the submitter's list and lets them amend it.
+  const [needsCorrection, setNeedsCorrection] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (needsCorrection && !notes.trim()) {
+      setError('Say what needs correcting in the notes before flagging this entry.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       await apiPut(`/production/entries/${entry.id}/qa-signoff`, {
         qa_signoff_by: user.name,
         qa_notes: notes,
+        qa_action_required: needsCorrection,
       });
       onSaved();
       onClose();
@@ -225,6 +233,16 @@ function QASignoffModal({ entry, user, onClose, onSaved }) {
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Optional QA notes..." />
         </div>
+        <label className={`flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer ${needsCorrection ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`}>
+          <input type="checkbox" checked={needsCorrection} onChange={e => setNeedsCorrection(e.target.checked)} className="mt-0.5" />
+          <span className="text-sm text-gray-800">
+            This note needs a correction
+            <span className="block text-[11px] text-gray-500 mt-0.5">
+              {entry.submitted_by || 'The supervisor who filed it'} is prompted to amend this entry, and can do so without
+              a standing edit grant. It returns to Pending QA once corrected.
+            </span>
+          </span>
+        </label>
         {error && <div className="px-3 py-2 rounded-lg text-sm bg-red-50 text-red-800">{error}</div>}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</button>
@@ -234,6 +252,54 @@ function QASignoffModal({ entry, user, onClose, onSaved }) {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/* ── QA correction requests ──────────────────────────────── */
+
+// A flagged QA note is useless if the supervisor never sees it, and they have
+// no reason to re-open an entry they filed days ago. This sits at the top of
+// the log — the page they're already on to file the next report — and lists
+// what QA has asked them to fix, with the correction one click away.
+function QACorrections({ user, onAmend, refreshKey }) {
+  const { data: rows } = useApiGet('/production/entries/qa-actions', [refreshKey]);
+  const open = rows || [];
+  if (!open.length) return null;
+  const mine = open.filter(e => e.submitted_by === user?.name);
+  const others = open.filter(e => e.submitted_by !== user?.name);
+  const render = (list, heading) => list.length > 0 && (
+    <>
+      {heading && <p className="text-[11px] font-semibold uppercase text-amber-700/70 mt-2">{heading}</p>}
+      <ul className="mt-1 space-y-1.5">
+        {list.map(e => (
+          <li key={e.id} className="rounded-lg bg-white/70 border border-amber-200 px-3 py-2">
+            <div className="text-sm font-medium text-amber-900">
+              {formatDate(e.date)} · {e.product_name} · MO #{e.mo_number}
+              {e.submitted_by !== user?.name && <span className="font-normal"> — {e.submitted_by}</span>}
+            </div>
+            <div className="text-xs text-amber-900/90 mt-0.5">
+              <span className="font-medium">{e.qa_signoff_by || 'QA'}:</span> {e.qa_notes}
+            </div>
+            <button type="button" onClick={() => onAmend(e)}
+              className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700">
+              <Pencil size={12} /> Correct this entry
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+      <div className="flex items-center gap-2">
+        <AlertCircle size={16} className="text-amber-700" />
+        <h3 className="font-semibold text-amber-900">
+          QA asked for {open.length === 1 ? 'a correction' : `${open.length} corrections`}
+        </h3>
+      </div>
+      {render(mine, others.length ? 'Yours' : null)}
+      {render(others, 'Other supervisors')}
     </div>
   );
 }
@@ -288,6 +354,9 @@ function AmendmentTrail({ amendments }) {
               ))}
             </ul>
             <div className="ml-3">Reason: {a.reason}</div>
+            {a.resolves_qa_action && (
+              <div className="ml-3 italic">Made in response to a QA correction request.</div>
+            )}
             {a.retired_qa_signoff && (
               <div className="ml-3 italic">
                 Prior QA sign-off by {a.retired_qa_signoff.by} ({fmtStamp(a.retired_qa_signoff.at)}) was retired — the entry returned to Pending QA.
@@ -596,6 +665,10 @@ function LogTable({ user }) {
   const [moSearch, setMoSearch] = useState('');
   const [signoffEntry, setSignoffEntry] = useState(null);
   const [amendEntry, setAmendEntry] = useState(null);
+  // Bumped whenever a sign-off or amendment lands, so the corrections banner
+  // re-fetches alongside the log instead of going stale.
+  const [dataVersion, setDataVersion] = useState(0);
+  const refreshAll = () => { refresh(); setDataVersion(v => v + 1); };
   const [expandedNotes, setExpandedNotes] = useState(null);
   const [openTrail, setOpenTrail] = useState(null);
   const [sortCol, setSortCol] = useState('date');
@@ -620,8 +693,13 @@ function LogTable({ user }) {
   // Mirrors canEditLog() in server/api/production.js exactly, so the button
   // never appears to someone the server would reject.
   const ma = user?.module_access;
-  const canAmend = user?.role === 'admin'
+  const canAmendAny = user?.role === 'admin'
     || !!(ma && !Array.isArray(ma) && ma['production-log'] === 'edit');
+  // A QA correction request is a one-entry invitation to amend, so the person
+  // who filed that entry can fix it without being granted the whole log.
+  // Mirrors the `invited` check in the server's PUT /entries/:id.
+  const canAmendEntry = (e) => canAmendAny
+    || (!!e?.qa_action_required && !e?.qa_action_resolved_at && e?.submitted_by === user?.name);
 
   const filtered = useMemo(() => {
     if (!entries) return [];
@@ -650,6 +728,10 @@ function LogTable({ user }) {
 
   return (
     <div className="space-y-4">
+      {/* Corrections QA has asked for, on the page the supervisor already opens
+          to file the next report. Everyone sees their own; the endpoint only
+          returns other people's to admins and log editors. */}
+      <QACorrections user={user} onAmend={setAmendEntry} refreshKey={dataVersion} />
       {/* Missed end-of-day reports are a QA review tool — only QA (and admins) see them. */}
       {(user?.role === 'admin' || user?.department === 'qa') && <MissedReports from={from} to={to} user={user} />}
       <SummaryCards from={from} to={to} />
@@ -731,9 +813,14 @@ function LogTable({ user }) {
                 {entry.units_per_hour != null && <span>{Number(entry.units_per_hour).toLocaleString(undefined, { maximumFractionDigits: 1 })}/h</span>}
               </div>
               {entry.qa_signoff_by && <div className="mt-1 text-xs text-green-600">QA: {entry.qa_signoff_by}</div>}
+              {!!entry.qa_action_required && !entry.qa_action_resolved_at && (
+                <div className="mt-1 rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5 text-xs text-amber-900">
+                  <span className="font-semibold">QA asked for a correction:</span> {entry.qa_notes}
+                </div>
+              )}
               {entry.notes && <div className="mt-2 text-xs text-gray-700 bg-gray-50 rounded-lg px-2 py-1.5 break-words"><span className="font-medium text-gray-900">Notes:</span> {entry.notes}</div>}
               <AmendmentTrail amendments={entry.amendments} />
-              {canAmend && (
+              {canAmendEntry(entry) && (
                 <button type="button" onClick={() => setAmendEntry(entry)}
                   className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
                   <Pencil size={12} /> Correct entry
@@ -818,7 +905,7 @@ function LogTable({ user }) {
                           <Clock size={12} /> Pending QA
                         </span>
                       )}
-                      {canAmend && (
+                      {canAmendEntry(entry) && (
                         <button type="button" onClick={() => setAmendEntry(entry)}
                           className="ml-2 text-gray-400 hover:text-amber-600" data-tip="Correct this entry" data-tip-left>
                           <Pencil size={13} />
@@ -848,10 +935,10 @@ function LogTable({ user }) {
       )}
 
       {signoffEntry && (
-        <QASignoffModal entry={signoffEntry} user={user} onClose={() => setSignoffEntry(null)} onSaved={refresh} />
+        <QASignoffModal entry={signoffEntry} user={user} onClose={() => setSignoffEntry(null)} onSaved={refreshAll} />
       )}
       {amendEntry && (
-        <AmendModal entry={amendEntry} onClose={() => setAmendEntry(null)} onSaved={refresh} />
+        <AmendModal entry={amendEntry} onClose={() => setAmendEntry(null)} onSaved={refreshAll} />
       )}
     </div>
   );

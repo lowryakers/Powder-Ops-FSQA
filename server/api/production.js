@@ -217,16 +217,39 @@ router.put('/entries/:id/qa-signoff', (req, res) => {
   const existing = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Production entry not found' });
 
-  const { qa_signoff_by, qa_notes } = req.body;
+  const { qa_signoff_by, qa_notes, qa_action_required } = req.body;
   if (!qa_signoff_by) return res.status(400).json({ error: 'qa_signoff_by is required' });
 
+  // "Needs correction" only means something alongside a note — the note is what
+  // tells the supervisor what to fix.
+  const needsAction = !!qa_action_required && !!(qa_notes || '').trim();
+  if (qa_action_required && !needsAction) {
+    return res.status(400).json({ error: 'Say what needs correcting in the notes before flagging this entry.' });
+  }
+
   db.prepare(`
-    UPDATE production_entries SET qa_signoff_by = ?, qa_signoff_at = datetime('now'), qa_notes = ?, updated_at = datetime('now') WHERE id = ?
-  `).run(qa_signoff_by, qa_notes || null, req.params.id);
+    UPDATE production_entries SET qa_signoff_by = ?, qa_signoff_at = datetime('now'), qa_notes = ?,
+      qa_action_required = ?, qa_action_resolved_at = NULL, updated_at = datetime('now') WHERE id = ?
+  `).run(qa_signoff_by, qa_notes || null, needsAction ? 1 : 0, req.params.id);
 
   const updated = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
-  logAudit(qa_signoff_by, 'qa_signoff', 'production_entry', req.params.id, { qa_notes }, existing, updated);
+  logAudit(qa_signoff_by, 'qa_signoff', 'production_entry', req.params.id, { qa_notes, qa_action_required: needsAction }, existing, updated);
   res.json(computeMetrics(updated));
+});
+
+// GET /entries/qa-actions — entries QA has asked the caller to correct.
+// Drives the banner on the Production Log so a flagged note doesn't depend on
+// the supervisor happening to scroll past their own entry.
+router.get('/entries/qa-actions', (req, res) => {
+  const db = getDb();
+  const me = req.user?.name || '';
+  const all = req.user?.role === 'admin' || hasExplicitEdit(req.user, 'production-log');
+  const rows = db.prepare(`
+    SELECT * FROM production_entries
+    WHERE qa_action_required = 1 AND qa_action_resolved_at IS NULL
+    ORDER BY date DESC, qa_signoff_at DESC
+  `).all();
+  res.json(rows.filter(r => all || r.submitted_by === me).map(computeMetrics));
 });
 
 // POST /entries/import — bulk import from CSV data (rewrites the log → same
@@ -293,10 +316,19 @@ const MIN_REASON = 10;
 //      what was reviewed; change the record and it no longer attests to
 //      anything, so QA must look again.
 router.put('/entries/:id', (req, res) => {
-  if (!canEditLog(req.user)) return res.status(403).json({ error: 'Editing log entries requires an explicit Production Log edit grant (Settings) or admin.' });
   const db = getDb();
   const existing = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Production entry not found' });
+
+  // QA flagging a note as actionable is itself the authorization to correct
+  // THAT entry, and only by the person who filed it. That's deliberately
+  // narrower than a standing edit grant: asking one supervisor to fix one
+  // report shouldn't open the whole log to them.
+  const invited = !!existing.qa_action_required && !existing.qa_action_resolved_at
+    && existing.submitted_by === req.user?.name;
+  if (!canEditLog(req.user) && !invited) {
+    return res.status(403).json({ error: 'Editing log entries requires an explicit Production Log edit grant (Settings) or admin.' });
+  }
 
   const reason = String(req.body?.reason || '').trim();
   if (reason.length < MIN_REASON) {
@@ -336,6 +368,9 @@ router.put('/entries/:id', (req, res) => {
     changes,
     attestation: 'I certify that this correction is accurate, that the reason recorded above is truthful, and that the original entry has been preserved.',
     retired_qa_signoff: wasSigned,
+    // Records that this amendment answers a QA request, so the round trip
+    // (QA asked → supervisor corrected → QA re-signed) reads off the entry.
+    resolves_qa_action: !!existing.qa_action_required && !existing.qa_action_resolved_at,
   };
   const amendments = [...parseAmendments(existing.amendments), amendment];
 
@@ -343,6 +378,10 @@ router.put('/entries/:id', (req, res) => {
   values.push(JSON.stringify(amendments));
   if (wasSigned) {
     updates.push('qa_signoff_by = NULL', 'qa_signoff_at = NULL', 'qa_notes = NULL');
+  }
+  if (amendment.resolves_qa_action) {
+    // The ask is answered; the entry goes back to Pending QA for a fresh look.
+    updates.push('qa_action_required = 0', "qa_action_resolved_at = datetime('now')");
   }
   updates.push("updated_at = datetime('now')");
   values.push(req.params.id);

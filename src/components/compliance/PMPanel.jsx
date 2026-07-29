@@ -225,7 +225,81 @@ function safeParseFe(val, fallback = []) {
   try { return JSON.parse(val || JSON.stringify(fallback)); } catch { return fallback; }
 }
 
-function CompletedTaskDetail({ wo, onClose }) {
+// A reviewer's note on finished work, and the option to send it back. A note
+// on its own is feedback; "needs rework" reopens the task and puts it back on
+// the person who did it, so the ask can't be missed.
+function ReviewForm({ wo, onDone, onCancel }) {
+  const [note, setNote] = useState('');
+  const [rework, setRework] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async () => {
+    if (!note.trim()) { setError('A note is required.'); return; }
+    setSaving(true); setError('');
+    try {
+      await apiPost(`/pm/work-orders/${wo.id}/review`, { note: note.trim(), rework_required: rework });
+      onDone();
+    } catch (e) { setError(e.message || 'Review failed.'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+      <p className="text-xs font-semibold text-amber-900 uppercase tracking-wide">Review this task</p>
+      <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
+        placeholder="What did you find?"
+        className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white" />
+      <label className="flex items-start gap-2 text-sm text-amber-900 cursor-pointer">
+        <input type="checkbox" checked={rework} onChange={e => setRework(e.target.checked)} className="mt-0.5" />
+        <span>
+          This needs to be redone
+          <span className="block text-[11px] text-amber-800/80">
+            Reopens the task for {wo.completed_by || 'whoever completed it'}, with this note attached.
+          </span>
+        </span>
+      </label>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex gap-2">
+        <button type="button" onClick={submit} disabled={saving}
+          className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-50">
+          {saving ? 'Saving…' : rework ? 'Send back for rework' : 'Save note'}
+        </button>
+        <button type="button" onClick={onCancel}
+          className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs text-gray-700 hover:bg-white">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// Every review round on a task, newest last — what was asked, by whom, and what
+// the completion looked like before it was sent back.
+function ReviewTrail({ wo }) {
+  const history = (() => { try { return JSON.parse(wo.review_history || '[]'); } catch { return []; } })();
+  if (!history.length) return null;
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Review history</h5>
+      <ol className="space-y-1.5">
+        {history.map((h, i) => (
+          <li key={i} className="text-xs text-gray-700">
+            <span className="font-medium">{h.reviewed_by}</span> · {new Date(h.reviewed_at).toLocaleString()}
+            {h.rework_required && <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">rework</span>}
+            <div className="ml-1">{h.note}</div>
+            {h.prior_completion && (
+              <div className="ml-1 italic text-gray-500">
+                Reopened — had been completed by {h.prior_completion.by} on {new Date(h.prior_completion.at).toLocaleString()}.
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
+  const [reviewing, setReviewing] = useState(false);
   const steps = safeParseFe(wo.procedure_steps, []);
   const stepResults = safeParseFe(wo.step_results, []);
   const readings = safeParseFe(wo.readings, {});
@@ -438,6 +512,20 @@ function CompletedTaskDetail({ wo, onClose }) {
           </div>
         </div>
       )}
+
+      {/* Review — a note on the finished work, and the option to send it back. */}
+      <ReviewTrail wo={wo} />
+      {canReview && !isMissed && (
+        reviewing
+          ? <ReviewForm wo={wo} onCancel={() => setReviewing(false)}
+              onDone={() => { setReviewing(false); onReviewed?.(); }} />
+          : (
+            <button type="button" onClick={() => setReviewing(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 text-xs font-medium hover:bg-amber-50">
+              <Flag size={12} /> Review / request rework
+            </button>
+          )
+      )}
     </div>
   );
 }
@@ -449,7 +537,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className={`bg-white rounded-xl border p-4 ${wo.issue_flagged ? 'border-red-300 ring-1 ring-red-100' : 'border-gray-200'}`}>
+    <div className={`bg-white rounded-xl border p-4 ${wo.issue_flagged ? 'border-red-300 ring-1 ring-red-100' : wo.rework_required ? 'border-amber-300 ring-1 ring-amber-100' : 'border-gray-200'}`}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -458,6 +546,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             </span>
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[wo.status]}`}>{wo.status}</span>
             {wo.issue_flagged === 1 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs font-semibold"><Flag size={10} /> Issue</span>}
+            {wo.rework_required === 1 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold"><Flag size={10} /> Rework</span>}
             {wo.priority === 'critical' && <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs">Critical</span>}
             {wo.priority === 'high' && !wo.issue_flagged && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
             {attachments.length > 0 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs"><Paperclip size={10} />{attachments.length}</span>}
@@ -482,6 +571,16 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
           </button>
         </div>
       </div>
+
+      {wo.rework_required === 1 && (
+        <div className="mt-2 bg-amber-50 rounded-lg border border-amber-200 p-2.5">
+          <p className="text-xs font-semibold text-amber-900 flex items-center gap-1 mb-1"><Flag size={11} /> Sent back for rework</p>
+          <p className="text-sm text-amber-900">{wo.review_note}</p>
+          <p className="text-xs text-amber-700 mt-1">
+            {wo.review_by} · {wo.review_at ? new Date(wo.review_at).toLocaleString() : ''}
+          </p>
+        </div>
+      )}
 
       {wo.issue_flagged === 1 && (
         <div className="mt-2 bg-red-50 rounded-lg border border-red-200 p-2.5">
@@ -702,6 +801,9 @@ export default function PMPanel() {
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
   const [expandedArchive, setExpandedArchive] = useState(null);
+  // Reviewing someone else's finished work is a QA/supervisor act, not an
+  // operator one — the same people who sign off elsewhere in the app.
+  const canReviewTasks = user?.role === 'admin' || user?.role === 'supervisor' || user?.department === 'qa';
   const [statusFilter, setStatusFilter] = useState(null);
   const [showQr, setShowQr] = useState(false);
 
@@ -1111,7 +1213,9 @@ export default function PMPanel() {
                 const isExpanded = expandedArchive === wo.id;
 
                 if (isExpanded) {
-                  return <CompletedTaskDetail key={wo.id} wo={wo} onClose={() => setExpandedArchive(null)} />;
+                  return <CompletedTaskDetail key={wo.id} wo={wo} onClose={() => setExpandedArchive(null)}
+                    canReview={canReviewTasks}
+                    onReviewed={() => { setExpandedArchive(null); loadArchive(freqFilter, dateFrom, dateTo); refreshTasks(); }} />;
                 }
 
                 return (

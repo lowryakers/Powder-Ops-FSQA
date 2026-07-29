@@ -259,6 +259,11 @@ router.put('/work-orders/:id', (req, res) => {
 
   if (newStatus === 'completed' && existing.status !== 'completed') {
     onWorkOrderCompleted(db, existing);
+    // Redoing the work answers the rework request. The note and its history
+    // stay on the record; only the outstanding flag clears.
+    if (existing.rework_required) {
+      db.prepare('UPDATE work_orders SET rework_required=0 WHERE id=?').run(req.params.id);
+    }
   }
 
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
@@ -347,6 +352,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     readings=?, step_results=?, reading_result=?,
     clearance_required=?, clearance_status=?,
     chemical_id=?,
+    rework_required=0,
     updated_at=datetime('now') WHERE id=?
   `).run(completedAt, completedBy, notes || null, lubricant_used || null,
     lubricant_is_food_grade ? 1 : 0,
@@ -386,6 +392,7 @@ router.post('/work-orders/batch-complete', (req, res) => {
   const completeStmt = db.prepare(`
     UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
     notes='Batch completed', readings='{}', step_results='[]',
+    rework_required=0,
     updated_at=datetime('now') WHERE id=?
   `);
   const getWO = db.prepare('SELECT * FROM work_orders WHERE id = ?');
@@ -498,6 +505,68 @@ router.post('/work-orders/:id/flag-issue', (req, res) => {
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   notifyTaskIssue(db, req.user, updated).catch(e => console.warn('[flag-issue] notify failed:', e.message));
   res.json(updated);
+});
+
+// --- Review of a completed task ---
+//
+// QA (or a supervisor) reviews finished work and leaves a note. Most notes are
+// just notes. Marking one as needing rework reopens the task and puts it back
+// on the person who did it, with the note attached — the same shape as flagging
+// a QA note on a production entry, minus the amendment machinery, because a
+// task has a status to move and isn't a filed record.
+//
+// The prior completion isn't erased; it moves into review_history so a task
+// that was done, kicked back and redone still shows all of it.
+router.post('/work-orders/:id/review', (req, res) => {
+  const db = getDb();
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+
+  const note = String(req.body?.note || '').trim();
+  const rework = !!req.body?.rework_required;
+  if (!note) return res.status(400).json({ error: 'A review note is required.' });
+  if (rework && wo.status !== 'completed') {
+    return res.status(400).json({ error: 'Only a completed task can be sent back for rework.' });
+  }
+
+  let history;
+  try { history = JSON.parse(wo.review_history || '[]'); } catch { history = []; }
+  history.push({
+    reviewed_at: new Date().toISOString(),
+    reviewed_by: req.user?.name || 'system',
+    note,
+    rework_required: rework,
+    prior_completion: rework && wo.completed_at ? { by: wo.completed_by, at: wo.completed_at } : null,
+  });
+
+  if (rework) {
+    db.prepare(`
+      UPDATE work_orders SET review_note=?, review_by=?, review_at=datetime('now'),
+        rework_required=1, review_history=?, status='open', assigned_to=COALESCE(?, assigned_to),
+        completed_at=NULL, completed_by=NULL, updated_at=datetime('now') WHERE id=?
+    `).run(note, req.user?.name || null, JSON.stringify(history), wo.completed_by || null, req.params.id);
+  } else {
+    db.prepare(`
+      UPDATE work_orders SET review_note=?, review_by=?, review_at=datetime('now'),
+        review_history=?, updated_at=datetime('now') WHERE id=?
+    `).run(note, req.user?.name || null, JSON.stringify(history), req.params.id);
+  }
+
+  const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  logAudit(req.user, rework ? 'rework_requested' : 'task_reviewed', 'work_order', req.params.id,
+    { note, rework_required: rework }, wo, updated, wo.title);
+  res.json(updated);
+});
+
+// Clearing the flag when the work is redone: completing the task resolves it,
+// so this is only for a reviewer withdrawing the request.
+router.post('/work-orders/:id/review/clear', (req, res) => {
+  const db = getDb();
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+  db.prepare("UPDATE work_orders SET rework_required=0, updated_at=datetime('now') WHERE id=?").run(req.params.id);
+  logAudit(req.user, 'rework_cleared', 'work_order', req.params.id, null, wo, null, wo.title);
+  res.json(db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id));
 });
 
 // --- Hygiene Clearance ---
