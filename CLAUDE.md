@@ -81,6 +81,17 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## Video uploads (comms + training)
+`server/media.js` is the single source of truth for large uploads: **200 MB video / 25 MB everything else**,
+`isVideo()`, a **disk-backed** multer (`mediaUpload()`, temp files in the OS temp dir), `rejectOversize()`,
+`cleanupTemp()` (always call it in a `finally`) and `uploadErrorMessage()` for multer's LIMIT_* codes.
+`storage.js` gained `putStream()` — multipart via `@aws-sdk/lib-storage`, 8 MB parts — because the old
+memory-buffered `putObject` would have held a whole video in RAM. Comms attachments and the new
+**course materials** (`training_materials` table, `/api/training/courses/:id/materials`, delete at
+`/api/training/materials/:id`) both go through it. Client: `apiUpload(path, fd, 'POST', onProgress)` switches
+to XHR when a progress callback is passed (fetch can't report upload progress). Videos play inline; AVI/MKV
+and any codec the browser rejects fall back to the download card.
+
 ## Office finance: AP / AR (+ QuickBooks)
 `ap_invoices` / `ar_invoices` / `finance_files` (`server/api/finance.js`, one router driven by a per-ledger
 config; UI is one `LedgerPanel.jsx` with `ledger="ap"|"ar"`). KPI cards are plain SQL sums. Bulk file upload

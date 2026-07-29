@@ -79,25 +79,55 @@ export async function apiDelete(path) {
   return apiFetch(path, { method: 'DELETE' });
 }
 
-export async function apiUpload(path, formData, method = 'POST') {
+// Pass onProgress to get 0-100 as the bytes go out. fetch() can't report
+// request progress at all, so anything that needs a real progress bar (video,
+// which can be 200 MB) goes through XMLHttpRequest instead.
+export async function apiUpload(path, formData, method = 'POST', onProgress) {
   if (viewAsUser) {
     window.dispatchEvent(new CustomEvent('view-as-blocked'));
     throw new Error(`Read-only preview — exit "Viewing as ${viewAsUser.name}" to make changes.`);
   }
   const token = localStorage.getItem('auth_token');
-  const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (!onProgress) {
+    const headers = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, { method, headers, body: formData });
-  if (!res.ok) {
-    if (res.status === 401) {
-      localStorage.removeItem('auth_token');
-      window.dispatchEvent(new CustomEvent('app-logout'));
+    const res = await fetch(`${BASE}${path}`, { method, headers, body: formData });
+    if (!res.ok) {
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token');
+        window.dispatchEvent(new CustomEvent('app-logout'));
+      }
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `API error ${res.status}`);
     }
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `API error ${res.status}`);
+    return res.json();
   }
-  return res.json();
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, `${BASE}${path}`);
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    // The bytes are out but the server is still streaming them to storage —
+    // hold at 100 rather than snapping back or looking stalled.
+    xhr.upload.onload = () => onProgress(100);
+    xhr.onload = () => {
+      let payload = null;
+      try { payload = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(payload);
+      if (xhr.status === 401) {
+        localStorage.removeItem('auth_token');
+        window.dispatchEvent(new CustomEvent('app-logout'));
+      }
+      reject(new Error(payload?.error || `API error ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error('Upload failed — check your connection.'));
+    xhr.onabort = () => reject(new Error('Upload cancelled.'));
+    xhr.send(formData);
+  });
 }
 
 export { apiFetch };

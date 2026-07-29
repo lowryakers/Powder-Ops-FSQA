@@ -12,6 +12,7 @@
 //   R2_ENDPOINT          - override the derived https://<account>.r2.cloudflarestorage.com
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Upload } from '@aws-sdk/lib-storage';
 
 const ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
@@ -47,6 +48,23 @@ export async function putObject(key, body, contentType) {
   const c = getClient();
   if (!c) throw new Error('Object storage is not configured on this server.');
   await c.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType || 'application/octet-stream' }));
+  return key;
+}
+
+// Stream an object up in parts instead of holding it in memory. Used for
+// video, where a single PutObject of a 200 MB buffer would mean 200 MB of
+// resident memory and no way to retry a failed byte range — multipart retries
+// per part, which matters on plant wifi.
+export async function putStream(key, stream, contentType) {
+  const c = getClient();
+  if (!c) throw new Error('Object storage is not configured on this server.');
+  const upload = new Upload({
+    client: c,
+    params: { Bucket: BUCKET, Key: key, Body: stream, ContentType: contentType || 'application/octet-stream' },
+    partSize: 8 * 1024 * 1024,
+    queueSize: 3,
+  });
+  await upload.done();
   return key;
 }
 

@@ -561,6 +561,25 @@ function initSchema() {
       FOREIGN KEY (sop_id) REFERENCES sop_documents(id)
     );
 
+    -- Course material: the video or handout people actually watch, stored in R2
+    -- rather than on the data volume (one training video outweighs the whole
+    -- database). Attached to the course, so it's the same material for everyone
+    -- taking it — training_records.document_url stays what it always was, the
+    -- scan of one person's signed form.
+    CREATE TABLE IF NOT EXISTS training_materials (
+      id TEXT PRIMARY KEY,
+      course_id TEXT NOT NULL,
+      title TEXT,
+      filename TEXT NOT NULL,
+      content_type TEXT,
+      size INTEGER,
+      storage_key TEXT NOT NULL,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (course_id) REFERENCES training_courses(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_training_materials_course ON training_materials(course_id);
+
     -- Versioned assessment for a course. Editing publishes a new version so past
     -- attempts stay tied to the exact test the employee took (is_current = latest).
     CREATE TABLE IF NOT EXISTS training_tests (

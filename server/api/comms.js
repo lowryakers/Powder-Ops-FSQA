@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import { createReadStream } from 'fs';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import { deriveUsername } from '../usernames.js';
 import { getDb, logAudit } from '../db.js';
 import { emitToChannel, emitChannelsChanged, emitChannelsRefresh, emitToUser } from '../realtime.js';
-import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
+import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo } from '../media.js';
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
 import { aiEnabled, summarizeChat, translateText } from '../ai.js';
 import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
@@ -15,8 +17,17 @@ import { readyDocOrigin } from '../links.js';
 
 const router = Router();
 
-// Uploads are buffered in memory then streamed to R2. 25 MB/file, 10 files/msg.
-const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 10 } });
+// Uploads land on disk and are streamed to R2 — see server/media.js for why
+// video can't go through the old memory-buffered path. 10 files/message; up to
+// 200 MB for video, 25 MB for anything else.
+const attachUpload = mediaUpload({ files: 10 }).array('files', 10);
+// Multer rejects an over-limit upload by passing a MulterError to next(), which
+// would otherwise surface as a bare 500. Translate it into something the
+// composer can show.
+const uploadFiles = (req, res, next) => attachUpload(req, res, (err) => {
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  next();
+});
 // Slack export .zip can be large; buffer in memory up to 300 MB.
 const zipUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 300 * 1024 * 1024, files: 1 } });
 
@@ -769,6 +780,7 @@ async function attachmentsFor(db, messageId, deleted) {
   return Promise.all(rows.map(async a => ({
     id: a.id, filename: a.filename, content_type: a.content_type, size: a.size,
     is_image: (a.content_type || '').startsWith('image/'),
+    is_video: isVideo(a.content_type, a.filename),
     url: await presignGet(a.storage_key, a.filename),
   })));
 }
@@ -901,23 +913,33 @@ router.post('/channels/:id/messages', async (req, res) => {
 // ── Attachments ─────────────────────────────────────────────────────────────
 // Upload one or more files to a channel; they stay unlinked until a message
 // references them via attachment_ids. Storage-gated.
-router.post('/channels/:id/attachments', attachUpload.array('files', 10), async (req, res) => {
-  if (!storageEnabled()) return res.status(503).json({ error: 'File uploads are not configured on this server.' });
-  const channel = requireChannel(req, res); if (!channel) return;
-  const db = getDb();
+router.post('/channels/:id/attachments', uploadFiles, async (req, res) => {
   const files = req.files || [];
-  if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
-  const out = [];
-  for (const f of files) {
-    const id = uuid();
-    const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
-    const key = `chat/${channel.id}/${id}-${safe}`;
-    await putObject(key, f.buffer, f.mimetype);
-    db.prepare('INSERT INTO chat_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, null, channel.id, req.user.id, (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null, key);
-    out.push({ id, filename: f.originalname, content_type: f.mimetype, size: f.size, is_image: (f.mimetype || '').startsWith('image/') });
+  try {
+    if (!storageEnabled()) return res.status(503).json({ error: 'File uploads are not configured on this server.' });
+    const channel = requireChannel(req, res); if (!channel) return;
+    const db = getDb();
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+    const tooBig = rejectOversize(files);
+    if (tooBig) return res.status(413).json({ error: tooBig });
+    const out = [];
+    for (const f of files) {
+      const id = uuid();
+      const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+      const key = `chat/${channel.id}/${id}-${safe}`;
+      await putStream(key, createReadStream(f.path), f.mimetype);
+      db.prepare('INSERT INTO chat_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, null, channel.id, req.user.id, (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null, key);
+      out.push({
+        id, filename: f.originalname, content_type: f.mimetype, size: f.size,
+        is_image: (f.mimetype || '').startsWith('image/'),
+        is_video: isVideo(f.mimetype, f.originalname),
+      });
+    }
+    res.status(201).json(out);
+  } finally {
+    cleanupTemp(files);
   }
-  res.status(201).json(out);
 });
 
 function ownedMessage(req, res) {

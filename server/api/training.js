@@ -1,7 +1,10 @@
 import { Router } from 'express';
+import { createReadStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { aiEnabled, generateTestQuestions } from '../ai.js';
+import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo } from '../media.js';
 
 const router = Router();
 
@@ -507,6 +510,69 @@ router.post('/import', (req, res) => {
   tx();
   logAudit(req.user, 'training_imported', 'training', null, { imported, linked }, null, null);
   res.json({ imported, linked, unlinked: imported - linked });
+});
+
+// ── COURSE MATERIAL (videos, handouts) ───────────────────────────────────────
+// Stored in R2, not on the data volume, and served through short-lived signed
+// URLs issued only to an authenticated caller — same shape as chat attachments.
+// Degrades like every other storage feature: with R2 unconfigured the list is
+// empty and uploads answer 503 instead of failing halfway.
+const materialUpload = mediaUpload({ files: 5 }).array('files', 5);
+const uploadMaterials = (req, res, next) => materialUpload(req, res, (err) => {
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  next();
+});
+
+router.get('/courses/:id/materials', async (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM training_materials WHERE course_id = ? ORDER BY created_at').all(req.params.id);
+  res.json(await Promise.all(rows.map(async m => ({
+    id: m.id, title: m.title, filename: m.filename, content_type: m.content_type, size: m.size,
+    uploaded_by: m.uploaded_by, created_at: m.created_at,
+    is_video: isVideo(m.content_type, m.filename),
+    url: await presignGet(m.storage_key, m.filename),
+  }))));
+});
+
+router.post('/courses/:id/materials', uploadMaterials, async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+    const db = getDb();
+    const course = db.prepare('SELECT id, title FROM training_courses WHERE id = ?').get(req.params.id);
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+    const tooBig = rejectOversize(files);
+    if (tooBig) return res.status(413).json({ error: tooBig });
+    const out = [];
+    for (const f of files) {
+      const id = uuid();
+      const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+      const key = `training/${course.id}/${id}-${safe}`;
+      await putStream(key, createReadStream(f.path), f.mimetype);
+      db.prepare(`INSERT INTO training_materials (id, course_id, title, filename, content_type, size, storage_key, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, course.id, (req.body?.title || '').slice(0, 200) || null, (f.originalname || 'file').slice(0, 255),
+        f.mimetype || null, f.size || null, key, req.user?.name || null);
+      out.push({ id, filename: f.originalname, content_type: f.mimetype, size: f.size, is_video: isVideo(f.mimetype, f.originalname) });
+    }
+    logAudit(req.user, 'training_material_added', 'training_course', course.id,
+      { files: out.map(o => o.filename) }, null, null, course.title);
+    res.status(201).json(out);
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+router.delete('/materials/:id', (req, res) => {
+  const db = getDb();
+  const m = db.prepare('SELECT * FROM training_materials WHERE id = ?').get(req.params.id);
+  if (!m) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM training_materials WHERE id = ?').run(m.id);
+  deleteObject(m.storage_key); // best effort; the row is already gone
+  logAudit(req.user, 'training_material_deleted', 'training_course', m.course_id,
+    { filename: m.filename }, null, null, m.filename);
+  res.json({ ok: true });
 });
 
 // ── ATTACH scanned forms ──────────────────────────────────────────────────────

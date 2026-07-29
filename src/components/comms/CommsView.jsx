@@ -3,7 +3,7 @@ import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/use
 import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import NotificationStatus from './NotificationStatus.jsx';
 import ZoomableImage from './ZoomableImage.jsx';
@@ -158,8 +158,49 @@ function browserRenderable(a) {
 }
 const isPdf = (a) => /\.pdf(\s|$)/i.test(a.filename || '') || (a.content_type || '') === 'application/pdf';
 
+// Video the browser will actually decode. AVI, MKV and raw HEVC upload fine and
+// stay downloadable, but no browser plays them — they fall through to the file
+// card rather than showing a dead player. A codec the container can't handle
+// still fires onError, which flips these back to the card too.
+const videoPlayable = (a) => {
+  const probe = `${a.filename || ''} ${a.content_type || ''}`.toLowerCase();
+  return a.is_video && !/\.(avi|mkv|hevc)\b|x-msvideo|matroska/.test(probe);
+};
+
+// A spinner is fine for a screenshot; a 200 MB video needs to show it's moving.
+// Once the bytes are all out the server is still streaming them to storage, so
+// 100% holds with a different label rather than sitting at a stale bar.
+function UploadProgress({ percent }) {
+  const done = percent >= 100;
+  return (
+    <div className="flex items-center gap-2 px-2 py-1 text-xs text-gray-400 min-w-[160px]">
+      <Loader2 size={12} className="animate-spin shrink-0" />
+      <span className="shrink-0">{done ? 'Processing…' : `Uploading ${percent}%`}</span>
+      {!done && (
+        <span className="flex-1 h-1 rounded-full bg-gray-200 overflow-hidden">
+          <span className="block h-full bg-powder-500 transition-[width] duration-150" style={{ width: `${percent}%` }} />
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Attachment({ a, onOpen }) {
   const [broken, setBroken] = useState(false);
+  if (videoPlayable(a) && a.url && !broken) {
+    return (
+      <div className="mt-1 max-w-sm">
+        {/* preload="metadata" so a channel full of clips doesn't pull megabytes
+            on open — the poster frame and duration are enough until played. */}
+        <video src={a.url} controls playsInline preload="metadata" onError={() => setBroken(true)}
+          className="rounded-lg border border-gray-200 max-h-72 w-full bg-black" />
+        <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-gray-400">
+          <span className="truncate">{a.filename}</span>
+          <span className="shrink-0">· {fmtSize(a.size)}</span>
+        </div>
+      </div>
+    );
+  }
   if (browserRenderable(a) && a.url && !broken) {
     return (
       <button type="button" onClick={onOpen} className="block mt-1 max-w-xs text-left">
@@ -215,6 +256,8 @@ function Lightbox({ atts, index, onNav, onClose }) {
         {browserRenderable(a) && a.url ? (
           <ZoomableImage src={a.url} alt={a.filename}
             onError={e => { e.target.outerHTML = '<div class="bg-white rounded-xl p-6 text-sm text-gray-700">This photo could not be displayed — use Download below to view it.</div>'; }} />
+        ) : videoPlayable(a) && a.url ? (
+          <video src={a.url} controls playsInline autoPlay className="max-w-[92vw] max-h-[84vh] bg-black rounded-lg" />
         ) : isPdf(a) && a.url ? (
           <iframe src={a.url} title={a.filename} className="w-[92vw] max-w-4xl h-[84vh] bg-white rounded-lg" />
         ) : (
@@ -531,6 +574,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState([]); // uploaded-but-unsent attachments
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0); // 0-100 while bytes are going out
   const fileInputRef = useRef(null);
   const replyRef = useRef(null);
   const endRef = useRef(null);
@@ -554,14 +598,14 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
 
   const uploadFiles = async (files) => {
     if (!files.length || !storageOn) return;
-    setUploading(true);
+    setUploading(true); setProgress(0);
     try {
       const fd = new FormData();
       for (const f of files) fd.append('files', f);
-      const uploaded = await apiUpload(`/comms/channels/${parent.channel_id}/attachments`, fd);
+      const uploaded = await apiUpload(`/comms/channels/${parent.channel_id}/attachments`, fd, 'POST', setProgress);
       setPending(p => [...p, ...uploaded]);
     } catch (err) { alert(err.message || 'Upload failed'); }
-    finally { setUploading(false); }
+    finally { setUploading(false); setProgress(0); }
   };
   const onPickFiles = (e) => { const files = Array.from(e.target.files || []); e.target.value = ''; uploadFiles(files); };
   // Paste an image/screenshot straight into the reply (text pastes normally).
@@ -630,12 +674,12 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
             <div className="flex flex-wrap gap-2 mb-2">
               {pending.map(p => (
                 <div key={p.id} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg border border-gray-200 bg-gray-50 text-xs">
-                  {p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
+                  {p.is_video ? <Film size={12} className="text-powder-600" /> : p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
                   <span className="max-w-[140px] truncate text-gray-700">{p.filename}</span>
                   <button onClick={() => removePending(p.id)} className="text-gray-400 hover:text-red-500"><X size={13} /></button>
                 </div>
               ))}
-              {uploading && <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400"><Loader2 size={12} className="animate-spin" /> Uploading…</div>}
+              {uploading && <UploadProgress percent={progress} />}
             </div>
           )}
           <div className="flex items-end gap-2">
@@ -1138,6 +1182,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const [typers, setTypers] = useState([]); // {user_id, user_name, at} of people typing in the active channel
   const [pending, setPending] = useState([]); // uploaded-but-unsent attachments for the composer
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0); // 0-100 while bytes are going out
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState(null); // null = not searching
   const [searching, setSearching] = useState(false);
@@ -1426,10 +1471,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     try {
       const fd = new FormData();
       for (const f of files) fd.append('files', f);
-      const uploaded = await apiUpload(`/comms/channels/${active.id}/attachments`, fd);
+      const uploaded = await apiUpload(`/comms/channels/${active.id}/attachments`, fd, 'POST', setProgress);
       setPending(p => [...p, ...uploaded]);
     } catch (err) { alert(err.message || 'Upload failed'); }
-    finally { setUploading(false); }
+    finally { setUploading(false); setProgress(0); }
   };
   const onPickFiles = (e) => { const files = Array.from(e.target.files || []); e.target.value = ''; uploadFiles(files); };
   // Paste an image/screenshot straight into the composer (text pastes normally).
@@ -2107,12 +2152,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   <div className="flex flex-wrap gap-2 mb-2">
                     {pending.map(p => (
                       <div key={p.id} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg border border-gray-200 bg-gray-50 text-xs">
-                        {p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
+                        {p.is_video ? <Film size={12} className="text-powder-600" /> : p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
                         <span className="max-w-[140px] truncate text-gray-700">{p.filename}</span>
                         <button onClick={() => removePending(p.id)} className="text-gray-400 hover:text-red-500"><X size={13} /></button>
                       </div>
                     ))}
-                    {uploading && <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-400"><Loader2 size={12} className="animate-spin" /> Uploading…</div>}
+                    {uploading && <UploadProgress percent={progress} />}
                   </div>
                 )}
                 {nonMemberMentions.length > 0 && (

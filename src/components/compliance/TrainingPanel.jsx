@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useApiGet, apiPost, apiPut, apiFetch, apiUpload, apiDelete } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion, Users } from 'lucide-react';
+import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion, Users, Video, FileText, Loader2 } from 'lucide-react';
 import { DEPARTMENT_VALUES } from '../../constants/departments';
 
 const CATEGORIES = ['GMP', 'Food Safety', 'HACCP', 'Allergen', 'Food Defense', 'Sanitation', 'Safety', 'Onboarding', 'Other'];
@@ -18,6 +18,12 @@ const CELL = {
   overdue: { bg: 'bg-red-100', text: 'text-red-700', label: 'Overdue' },
   missing: { bg: 'bg-gray-100', text: 'text-gray-400', label: 'Not trained' },
   exempt: { bg: 'bg-slate-50', text: 'text-slate-300', label: 'Exempt' },
+};
+
+const fmtBytes = (n) => {
+  if (!n && n !== 0) return '';
+  const mb = n / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(mb >= 10 ? 0 : 1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 };
 
 async function uploadFile(file) {
@@ -274,6 +280,78 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
   );
 }
 
+// ── Course material (videos / handouts) ──────────────────────────────────────
+// Lives on the course, so everyone taking it sees the same thing. Videos play
+// in place — a QA issue is far easier to show than to write up. Only available
+// once a course exists (a material needs a course to hang off), and only when
+// object storage is configured, matching how attachments behave in Messages.
+function CourseMaterials({ courseId }) {
+  const { data: materials, refresh } = useApiGet(courseId ? `/training/courses/${courseId}/materials` : null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState('');
+  const inputRef = useRef(null);
+
+  const upload = async (files) => {
+    if (!files.length) return;
+    setUploading(true); setProgress(0); setError('');
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      await apiUpload(`/training/courses/${courseId}/materials`, fd, 'POST', setProgress);
+      refresh();
+    } catch (e) { setError(e.message || 'Upload failed'); }
+    finally { setUploading(false); setProgress(0); }
+  };
+
+  const remove = async (m) => {
+    if (!window.confirm(`Remove ${m.filename} from this course?`)) return;
+    await apiDelete(`/training/materials/${m.id}`);
+    refresh();
+  };
+
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-700 mb-1">Training material</label>
+      <div className="space-y-2">
+        {(materials || []).map(m => (
+          <div key={m.id} className="rounded-lg border border-gray-200 p-2">
+            {m.is_video && m.url ? (
+              <video src={m.url} controls playsInline preload="metadata" className="w-full max-h-56 rounded bg-black" />
+            ) : null}
+            <div className="flex items-center gap-2 mt-1">
+              {m.is_video ? <Video size={14} className="text-powder-600 shrink-0" /> : <FileText size={14} className="text-powder-600 shrink-0" />}
+              <a href={m.url || undefined} target="_blank" rel="noreferrer" className="text-sm text-gray-800 truncate hover:underline flex-1">{m.filename}</a>
+              <span className="text-[10px] text-gray-400 shrink-0">{fmtBytes(m.size)}</span>
+              <button type="button" onClick={() => remove(m)} className="p-1 text-gray-300 hover:text-red-500"><Trash2 size={14} /></button>
+            </div>
+          </div>
+        ))}
+        {uploading ? (
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <Loader2 size={13} className="animate-spin" />
+            {progress >= 100 ? 'Processing…' : `Uploading ${progress}%`}
+            {progress < 100 && (
+              <span className="flex-1 h-1 rounded-full bg-gray-200 overflow-hidden">
+                <span className="block h-full bg-powder-500 transition-[width] duration-150" style={{ width: `${progress}%` }} />
+              </span>
+            )}
+          </div>
+        ) : (
+          <button type="button" onClick={() => inputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-powder-700 bg-powder-50 rounded-lg hover:bg-powder-100">
+            <Upload size={13} /> Add video or handout
+          </button>
+        )}
+        <input ref={inputRef} type="file" multiple className="hidden"
+          onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; upload(files); }} />
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <p className="text-[11px] text-gray-400">Video up to 200 MB, other files up to 25 MB.</p>
+      </div>
+    </div>
+  );
+}
+
 // ── Course modal ──────────────────────────────────────────────────────────────
 function CourseModal({ initial, onClose, onSaved }) {
   const { data: allDocs } = useApiGet('/documents');
@@ -359,6 +437,9 @@ function CourseModal({ initial, onClose, onSaved }) {
           )}
         </div>
         <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!form.active} onChange={e => set('active', e.target.checked)} /> Active</label>
+        {initial?.id
+          ? <CourseMaterials courseId={initial.id} />
+          : <p className="text-[11px] text-gray-400">Save the course first, then reopen it to attach a training video or handout.</p>}
         <div className="flex gap-2">
           <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save course'}</button>
           <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
