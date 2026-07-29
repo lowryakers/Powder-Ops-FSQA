@@ -77,11 +77,51 @@ function computeMetrics(entry) {
   return {
     ...entry,
     amendments: parseAmendments(entry.amendments),
+    structured_data: parseJson(entry.structured_data, null),
     duration_hours, units_per_hour, units_per_minute, units_per_min_per_person,
   };
 }
 
+const parseJson = (raw, fallback) => { try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } };
+
 const parseAmendments = (raw) => { try { return JSON.parse(raw || '[]'); } catch { return []; } };
+
+// ── EOD report templates (per team) ──────────────────────────────────────────
+// A team's structured EOD survey. GET is open to anyone filing a report (they
+// need it to render the form); editing the template is a log-edit act.
+router.get('/eod-templates', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM eod_templates WHERE is_active = 1').all();
+  const out = {};
+  for (const r of rows) out[r.team] = { team: r.team, title: r.title, fields: parseJson(r.fields, []) };
+  res.json(out);
+});
+
+router.put('/eod-templates/:team', (req, res) => {
+  if (!canEditLog(req.user)) return res.status(403).json({ error: 'Editing EOD templates requires a Production Log edit grant (Settings) or admin.' });
+  const db = getDb();
+  const team = req.params.team;
+  const fields = Array.isArray(req.body?.fields) ? req.body.fields : [];
+  // Normalize: each field needs a stable key and a known type. Keys are derived
+  // from the label if absent so the admin only has to type a label.
+  const TYPES = new Set(['text', 'number', 'select', 'checkbox', 'textarea']);
+  const clean = fields.map((f, i) => {
+    const label = String(f.label || '').trim() || `Field ${i + 1}`;
+    const key = String(f.key || '').trim() || label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `field_${i + 1}`;
+    const type = TYPES.has(f.type) ? f.type : 'text';
+    const out = { key, label, type };
+    if (type === 'select') out.options = (Array.isArray(f.options) ? f.options : []).map(o => String(o)).filter(Boolean);
+    if (f.required) out.required = true;
+    return out;
+  });
+  db.prepare(`INSERT INTO eod_templates (team, title, fields, is_active, updated_by, updated_at)
+              VALUES (?, ?, ?, 1, ?, datetime('now'))
+              ON CONFLICT(team) DO UPDATE SET title = excluded.title, fields = excluded.fields,
+                is_active = 1, updated_by = excluded.updated_by, updated_at = datetime('now')`)
+    .run(team, String(req.body?.title || '').trim() || `${team} EOD Report`, JSON.stringify(clean), req.user?.name || null);
+  logAudit(req.user, 'update', 'eod_template', team, { fields: clean.length }, null, null, team);
+  res.json(db.prepare('SELECT * FROM eod_templates WHERE team = ?').get(team));
+});
 
 // GET /entries — list production entries with optional filters
 router.get('/entries', (req, res) => {
@@ -194,17 +234,21 @@ router.post('/missed-reports/restore', requireRole('admin', 'supervisor'), (req,
 // POST /entries — create a new production entry
 router.post('/entries', (req, res) => {
   const db = getDb();
-  const { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes } = req.body;
+  const { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes, structured_data } = req.body;
 
   if (!date || !team || !room || !product_name || !mo_number || !lot_number || !start_time || !end_time || quantity_completed == null || !people_count || !submitted_by) {
     return res.status(400).json({ error: 'Missing required fields: date, team, room, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by' });
   }
 
+  // Team EOD template answers, stored as JSON. Only an object is accepted.
+  const structured = structured_data && typeof structured_data === 'object' && !Array.isArray(structured_data)
+    ? JSON.stringify(structured_data) : null;
+
   const id = uuid();
   db.prepare(`
-    INSERT INTO production_entries (id, date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by);
+    INSERT INTO production_entries (id, date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by, structured_data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by, structured);
 
   const created = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
   logAudit(submitted_by, 'create', 'production_entry', id, req.body, null, created);

@@ -489,3 +489,30 @@ export function seedProductionEntries(db) {
 
   console.log(`[seed] Imported ${ENTRIES.length} production entries`);
 }
+
+// A starter EOD template for the Batching (Blending) team. Seeded only when no
+// template exists for the team, so any hand-tuning in Settings survives a
+// redeploy. Batching records yield/loss, blend parameters, and the CCP-style
+// checks a blend run cares about — different from what Filling or Kitting log.
+// These fields are a sensible default; QA edits them per team in the app.
+const BATCHING_EOD_FIELDS = [
+  { key: 'blend_type', label: 'Blend type', type: 'select', options: ['Dry blend', 'Liquid', 'Wet mass', 'Other'] },
+  { key: 'batches_completed', label: 'Batches completed', type: 'number' },
+  { key: 'target_weight_kg', label: 'Target batch weight (kg)', type: 'number' },
+  { key: 'actual_yield_kg', label: 'Actual yield (kg)', type: 'number' },
+  { key: 'scrap_rework_kg', label: 'Scrap / rework (kg)', type: 'number' },
+  { key: 'blend_time_min', label: 'Blend time (min)', type: 'number' },
+  { key: 'screen_check', label: 'Screen / sifter check', type: 'select', options: ['Pass', 'Fail', 'N/A'] },
+  { key: 'metal_detector_check', label: 'Metal detector check', type: 'select', options: ['Pass', 'Fail', 'N/A'] },
+  { key: 'allergen_changeover', label: 'Allergen changeover performed', type: 'checkbox' },
+  { key: 'equipment_issues', label: 'Equipment issues / downtime', type: 'textarea' },
+  { key: 'adjustments', label: 'Formula adjustments made', type: 'textarea' },
+];
+
+export function seedEodTemplates(db) {
+  const has = db.prepare('SELECT 1 FROM eod_templates WHERE team = ?').get('Batching');
+  if (has) return;
+  db.prepare('INSERT INTO eod_templates (team, title, fields, updated_by) VALUES (?, ?, ?, ?)')
+    .run('Batching', 'Blending EOD Report', JSON.stringify(BATCHING_EOD_FIELDS), 'system');
+  console.log('[seed] Seeded Batching (Blending) EOD template');
+}

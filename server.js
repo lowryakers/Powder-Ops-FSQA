@@ -59,7 +59,7 @@ import productionRoutes from './server/api/production.js';
 import coaRoutes from './server/api/coa.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
-import { seedProductionEntries } from './server/production-seed.js';
+import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses } from './server/training-seed.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath } from './server/middleware/auth.js';
@@ -881,6 +881,7 @@ try {
 // Seed production entries
 try {
   seedProductionEntries(db);
+  seedEodTemplates(db);
 
   // Sticks + Hand Fill → Filling. Runs after every seed, because the historical
   // production seed still speaks the pre-merge team names on a fresh database.

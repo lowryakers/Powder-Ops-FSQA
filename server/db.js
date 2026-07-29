@@ -697,6 +697,21 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_production_entries_mo ON production_entries(mo_number);
     CREATE INDEX IF NOT EXISTS idx_production_entries_team ON production_entries(team);
 
+    -- Per-team EOD report templates. Batching/Blending records different things
+    -- than Filling or Kitting, so each team gets its own set of structured
+    -- fields (a small survey) on top of the shared production entry. Fully
+    -- admin-editable — the field list is JSON, not code — so QA can shape a
+    -- team's report without a deploy. Answers live in
+    -- production_entries.structured_data keyed by field key.
+    CREATE TABLE IF NOT EXISTS eod_templates (
+      team TEXT PRIMARY KEY,
+      title TEXT,
+      fields TEXT NOT NULL DEFAULT '[]',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Production Schedule
     CREATE TABLE IF NOT EXISTS production_schedule (
       id TEXT PRIMARY KEY,
@@ -910,6 +925,8 @@ function runMigrations() {
   // require handing out blanket edit rights to the whole log.
   addColumnIfMissing('production_entries', 'qa_action_required', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('production_entries', 'qa_action_resolved_at', 'TEXT');
+  // Answers to the team's EOD template fields, as a JSON object keyed by field key.
+  addColumnIfMissing('production_entries', 'structured_data', 'TEXT');
 
   // Same idea on the task side. A completed task can be reviewed with a note;
   // marking the note as needing rework reopens the task for whoever did it.
@@ -921,17 +938,9 @@ function runMigrations() {
   addColumnIfMissing('work_orders', 'rework_required', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('work_orders', 'review_history', "TEXT NOT NULL DEFAULT '[]'");
 
-  // Push subscriptions are bound to the VAPID key they were created with. If
-  // the server's keys ever change, every older subscription starts failing with
-  // a 403 that nothing was recording — the phone looks subscribed, the server
-  // thinks it sent, and no notification ever arrives. Storing the key each
-  // subscription was made under (plus the last send result) makes that state
-  // visible and repairable instead of silent.
-  addColumnIfMissing('chat_push_subscriptions', 'vapid_key', 'TEXT');
-  addColumnIfMissing('chat_push_subscriptions', 'user_agent', 'TEXT');
-  addColumnIfMissing('chat_push_subscriptions', 'last_success_at', 'TEXT');
-  addColumnIfMissing('chat_push_subscriptions', 'last_error', 'TEXT');
-  addColumnIfMissing('chat_push_subscriptions', 'last_error_at', 'TEXT');
+  // (chat_push_subscriptions diagnostic columns are added further down, right
+  // after the chat schema block that creates the table — a column migration
+  // can't run before its table exists, which on a fresh DB is fatal.)
 
   // (supply_invoices.extracted_text is added further down, right after the
   // office tables are created — a column migration can't run before its table.)
@@ -1425,6 +1434,19 @@ function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_reminders_due ON chat_reminders(remind_at) WHERE fired_at IS NULL;
   `);
+
+  // Push subscriptions are bound to the VAPID key they were created with. If
+  // the server's keys ever change, every older subscription starts failing with
+  // a 403 that nothing was recording — the phone looks subscribed, the server
+  // thinks it sent, and no notification ever arrives. Storing the key each
+  // subscription was made under (plus the last send result) makes that state
+  // visible and repairable instead of silent. (Runs here, after the chat schema
+  // block above creates chat_push_subscriptions — not with the other migrations.)
+  addColumnIfMissing('chat_push_subscriptions', 'vapid_key', 'TEXT');
+  addColumnIfMissing('chat_push_subscriptions', 'user_agent', 'TEXT');
+  addColumnIfMissing('chat_push_subscriptions', 'last_success_at', 'TEXT');
+  addColumnIfMissing('chat_push_subscriptions', 'last_error', 'TEXT');
+  addColumnIfMissing('chat_push_subscriptions', 'last_error_at', 'TEXT');
 
   // Comms: announcement channels (admins-only posting) and default channels
   // (everyone auto-joined, pinned) — Slack-style #general / #announcements.

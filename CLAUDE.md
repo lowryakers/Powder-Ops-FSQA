@@ -140,6 +140,30 @@ the banner at the top of the log (own entries for everyone; all entries for admi
 completed_at/by — the prior completion is preserved in `review_history` (JSON array, every round). Completing
 the task again clears `rework_required` on all three completion paths. Reviewing is admin/supervisor/QA.
 
+## Per-team EOD reports (structured survey)
+Each team can have its own end-of-day survey on top of the shared production fields. `eod_templates`
+(team PK, title, `fields` JSON) holds the definition; answers live in `production_entries.structured_data`
+(JSON keyed by field key). Fields are typed — text/number/select/checkbox/textarea — and fully
+**admin-editable** (no deploy needed) via `PUT /production/eod-templates/:team` (canEditLog-gated: admin or
+Production Log **edit** grant). `GET /production/eod-templates` returns `{team: {team,title,fields}}`;
+`computeMetrics()` parses `structured_data` onto every entry. **Batching ships a seeded "Blending EOD Report"**
+(`BATCHING_EOD_FIELDS`/`seedEodTemplates` in `production-seed.js`, seeded only if none exists) — sensible
+default, editable. UI (`ProductionLog.jsx`): `EntryForm` conditionally renders the selected team's survey
+(`EodField`); saved answers show read-only on log entries (`EodSummary`, mobile card + desktop notes-expand
+row); the **EOD Templates** tab (log-editors/admins) is the field-list editor (`TemplateEditor` — add/remove/
+reorder typed fields, dropdown choices comma-separated, save per team). Switching team in the entry form
+resets the answers so a Batching answer never carries into a Filling report.
+
+## Migration ordering (fresh-DB gotcha)
+`addColumnIfMissing()` runs `ALTER TABLE … ADD COLUMN`, which **throws** if the table doesn't exist yet —
+`PRAGMA table_info` on a missing table returns empty, so the "missing" check passes and the ALTER blows up.
+This only bites a **fresh DB** (new deploy / DR restore); Railway's persistent volume masks it because the
+table already exists from an earlier deploy. Keep every column migration **after** its table's CREATE in
+boot order. The `chat_push_subscriptions` diagnostic columns were violating this (added in `runMigrations`
+before the chat-schema block that creates the table) — a fresh boot went FATAL. Fixed by moving those
+five `addColumnIfMissing` calls to right after the chat-schema `db.exec` block. Same pattern documented for
+`supply_invoices.extracted_text`.
+
 ## Video uploads (comms + training)
 `server/media.js` is the single source of truth for large uploads: **200 MB video / 25 MB everything else**,
 `isVideo()`, a **disk-backed** multer (`mediaUpload()`, temp files in the OS temp dir), `rejectOversize()`,

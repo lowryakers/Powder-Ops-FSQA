@@ -47,12 +47,70 @@ const INITIAL_FORM = {
   notes: '',
 };
 
+/* ── EOD template fields (per-team structured survey) ────── */
+
+// One input for a template field. Types mirror the server: text / number /
+// select / checkbox / textarea. Kept dumb so it's reused by the entry form.
+function EodField({ field, value, onChange }) {
+  const cls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
+  if (field.type === 'checkbox') {
+    return (
+      <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-1 mt-5">
+        <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} />
+        {field.label}{field.required && ' *'}
+      </label>
+    );
+  }
+  return (
+    <div className={field.type === 'textarea' ? 'sm:col-span-2 lg:col-span-3' : ''}>
+      <label className="block text-xs font-medium text-gray-700 mb-1">{field.label}{field.required && ' *'}</label>
+      {field.type === 'select' ? (
+        <select required={field.required} value={value ?? ''} onChange={e => onChange(e.target.value)} className={cls}>
+          <option value="">Select…</option>
+          {(field.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : field.type === 'textarea' ? (
+        <textarea required={field.required} value={value ?? ''} onChange={e => onChange(e.target.value)} rows={2} className={cls} />
+      ) : (
+        <input type={field.type === 'number' ? 'number' : 'text'} required={field.required}
+          value={value ?? ''} onChange={e => onChange(e.target.value)} className={cls} />
+      )}
+    </div>
+  );
+}
+
+// Read-only render of a saved structured EOD answer set, shown on the log entry.
+function EodSummary({ template, data }) {
+  if (!data || typeof data !== 'object') return null;
+  const fields = template?.fields || Object.keys(data).map(k => ({ key: k, label: k, type: 'text' }));
+  const shown = fields.filter(f => { const v = data[f.key]; return v !== '' && v != null && v !== false; });
+  if (!shown.length) return null;
+  const fmt = (f) => f.type === 'checkbox' ? (data[f.key] ? 'Yes' : 'No') : String(data[f.key]);
+  return (
+    <div className="mt-2 rounded-lg border border-powder-100 bg-powder-50/40 px-2.5 py-1.5">
+      <p className="text-[11px] font-semibold text-powder-800 mb-1">{template?.title || 'EOD report'}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
+        {shown.map(f => (
+          <div key={f.key} className="text-xs text-gray-700">
+            <span className="text-gray-400">{f.label}:</span> {fmt(f)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Entry Form ──────────────────────────────────────────── */
 
 function EntryForm({ user, onSuccess }) {
   const [form, setForm] = useState({ ...INITIAL_FORM });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  // Per-team EOD templates: the extra structured survey a team fills in beyond
+  // the shared fields. `structured` holds this entry's answers.
+  const { data: templates } = useApiGet('/production/eod-templates');
+  const [structured, setStructured] = useState({});
+  const template = templates?.[form.team] || null;
 
   const set = (key, val) => setForm(prev => ({
     ...prev,
@@ -60,6 +118,10 @@ function EntryForm({ user, onSuccess }) {
     // A line only means something on a Filling run.
     ...(key === 'team' && val !== FILLING_TEAM ? { line: '' } : {}),
   }));
+  // Switching teams starts the survey fresh — a Batching answer shouldn't carry
+  // into a Filling report.
+  const setTeam = (val) => { set('team', val); setStructured({}); };
+  const setField = (k, v) => setStructured(s => ({ ...s, [k]: v }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -71,9 +133,11 @@ function EntryForm({ user, onSuccess }) {
         quantity_completed: Number(form.quantity_completed),
         people_count: Number(form.people_count),
         submitted_by: user.name,
+        structured_data: template ? structured : undefined,
       });
       setMessage({ type: 'success', text: 'Entry submitted successfully.' });
       setForm({ ...INITIAL_FORM, date: todayStr() });
+      setStructured({});
       onSuccess?.();
       setTimeout(() => setMessage(null), 3000);
     } catch (err) {
@@ -103,7 +167,7 @@ function EntryForm({ user, onSuccess }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Team *</label>
-          <select required value={form.team} onChange={e => set('team', e.target.value)}
+          <select required value={form.team} onChange={e => setTeam(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             <option value="">Select team...</option>
             {TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
@@ -170,6 +234,20 @@ function EntryForm({ user, onSuccess }) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Optional notes..." />
         </div>
       </div>
+
+      {/* Team-specific EOD survey — only appears when the selected team has a
+          template. Batching sees blend/yield fields; Filling/Kitting see their
+          own (or nothing, until QA builds one). */}
+      {template && template.fields?.length > 0 && (
+        <div className="rounded-lg border border-powder-200 bg-powder-50/50 p-3">
+          <p className="text-xs font-semibold text-powder-800 mb-2">{template.title || `${form.team} EOD Report`}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {template.fields.map(f => (
+              <EodField key={f.key} field={f} value={structured[f.key]} onChange={v => setField(f.key, v)} />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex justify-end">
         <button type="submit" disabled={saving}
@@ -686,6 +764,9 @@ function LogTable({ user }) {
   const { data: entries, loading, error, refresh } = useApiGet(
     `/production/entries?from=${from}&to=${to}`, [from, to]
   );
+  // Team → template map, so a saved entry's structured answers render with
+  // their proper field labels/order instead of raw keys.
+  const { data: templates } = useApiGet('/production/eod-templates');
 
   const canSignoff = user.department === 'qa' || user.role === 'admin';
   // Correcting a filed report is a deliberate, separately granted right —
@@ -819,6 +900,7 @@ function LogTable({ user }) {
                 </div>
               )}
               {entry.notes && <div className="mt-2 text-xs text-gray-700 bg-gray-50 rounded-lg px-2 py-1.5 break-words"><span className="font-medium text-gray-900">Notes:</span> {entry.notes}</div>}
+              <EodSummary template={templates?.[entry.team]} data={entry.structured_data} />
               <AmendmentTrail amendments={entry.amendments} />
               {canAmendEntry(entry) && (
                 <button type="button" onClick={() => setAmendEntry(entry)}
@@ -866,9 +948,9 @@ function LogTable({ user }) {
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.room}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 w-full min-w-[160px] relative group">
                       {entry.product_name}
-                      {entry.notes && (
+                      {(entry.notes || entry.structured_data) && (
                         <button type="button" onClick={() => setExpandedNotes(expandedNotes === entry.id ? null : entry.id)}
-                          className="ml-1 text-gray-400 hover:text-gray-600" title="View notes">
+                          className="ml-1 text-gray-400 hover:text-gray-600" title={entry.structured_data ? 'View notes & EOD report' : 'View notes'}>
                           <ClipboardList size={13} className="inline" />
                         </button>
                       )}
@@ -914,10 +996,11 @@ function LogTable({ user }) {
                     </td>
                   </tr>
                 ))}
-                {filtered.map(entry => expandedNotes === entry.id && entry.notes && (
+                {filtered.map(entry => expandedNotes === entry.id && (entry.notes || entry.structured_data) && (
                   <tr key={`notes-${entry.id}`} className="bg-blue-50">
                     <td colSpan={14} className="px-4 py-2 text-sm text-gray-700">
-                      <span className="font-medium text-gray-900">Notes:</span> {entry.notes}
+                      {entry.notes && <div><span className="font-medium text-gray-900">Notes:</span> {entry.notes}</div>}
+                      <EodSummary template={templates?.[entry.team]} data={entry.structured_data} />
                     </td>
                   </tr>
                 ))}
@@ -944,6 +1027,172 @@ function LogTable({ user }) {
   );
 }
 
+/* ── EOD Template Editor (admin / log-editor) ────────────── */
+
+const FIELD_TYPES = [
+  { value: 'text', label: 'Short text' },
+  { value: 'number', label: 'Number' },
+  { value: 'select', label: 'Dropdown' },
+  { value: 'checkbox', label: 'Checkbox (yes/no)' },
+  { value: 'textarea', label: 'Long text' },
+];
+
+// Turns a saved template into the editable shape (options as a comma string so
+// the admin edits dropdown choices inline). blankField() adds a fresh row.
+function toEditable(tpl, team) {
+  return {
+    title: tpl?.title || `${team} EOD Report`,
+    fields: (tpl?.fields || []).map(f => ({
+      key: f.key, label: f.label || '', type: f.type || 'text',
+      options: (f.options || []).join(', '), required: !!f.required,
+    })),
+  };
+}
+const blankField = () => ({ key: '', label: '', type: 'text', options: '', required: false });
+
+function TemplateEditor() {
+  const { data: templates, refresh } = useApiGet('/production/eod-templates');
+  const [team, setTeam] = useState('Batching');
+  const [draft, setDraft] = useState(null);
+  const [savedTeam, setSavedTeam] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  // Load the selected team's template into the editable draft once templates
+  // arrive or the team changes. `savedTeam` guards against clobbering unsaved
+  // edits every render.
+  if (templates && savedTeam !== team) {
+    setDraft(toEditable(templates[team], team));
+    setSavedTeam(team);
+  }
+
+  const setField = (i, patch) => setDraft(d => ({ ...d, fields: d.fields.map((f, j) => j === i ? { ...f, ...patch } : f) }));
+  const addField = () => setDraft(d => ({ ...d, fields: [...d.fields, blankField()] }));
+  const removeField = (i) => setDraft(d => ({ ...d, fields: d.fields.filter((_, j) => j !== i) }));
+  const moveField = (i, dir) => setDraft(d => {
+    const j = i + dir;
+    if (j < 0 || j >= d.fields.length) return d;
+    const fields = [...d.fields];
+    [fields[i], fields[j]] = [fields[j], fields[i]];
+    return { ...d, fields };
+  });
+
+  const save = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const fields = draft.fields
+        .filter(f => f.label.trim())
+        .map(f => ({
+          key: f.key || undefined,
+          label: f.label.trim(),
+          type: f.type,
+          options: f.type === 'select' ? f.options.split(',').map(o => o.trim()).filter(Boolean) : undefined,
+          required: f.required || undefined,
+        }));
+      await apiPut(`/production/eod-templates/${encodeURIComponent(team)}`, { title: draft.title, fields });
+      setMessage({ type: 'success', text: 'Template saved.' });
+      refresh();
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message || 'Failed to save template.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!draft) return <div className="text-sm text-gray-500 py-8 text-center">Loading templates…</div>;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+      <div>
+        <h3 className="font-semibold text-gray-900">EOD Report Templates</h3>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Build a team-specific survey that appears on the EOD Entry Form when that team is selected.
+          Batching (Blending) ships with a starter set — tune it or build one for any other team.
+        </p>
+      </div>
+
+      {message && (
+        <div className={`px-3 py-2 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+          {message.text}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Team</label>
+          <select value={team} onChange={e => setTeam(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            {TEAMS.map(t => <option key={t} value={t}>{t}{templates?.[t] ? ' ✓' : ''}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Report title</label>
+          <input value={draft.title} onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={`${team} EOD Report`} />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {draft.fields.length === 0 && (
+          <p className="text-sm text-gray-500 text-center py-3 border border-dashed border-gray-200 rounded-lg">
+            No fields yet — add one below. With no fields, this team's EOD form shows only the shared fields.
+          </p>
+        )}
+        {draft.fields.map((f, i) => (
+          <div key={i} className="rounded-lg border border-gray-200 p-3 bg-gray-50/60">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 items-end">
+              <div>
+                <label className="block text-[11px] font-medium text-gray-600 mb-1">Label</label>
+                <input value={f.label} onChange={e => setField(i, { label: e.target.value })}
+                  className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Actual yield (kg)" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-gray-600 mb-1">Type</label>
+                <select value={f.type} onChange={e => setField(i, { type: e.target.value })}
+                  className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm">
+                  {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-1 pb-0.5">
+                <label className="flex items-center gap-1 text-xs text-gray-600 mr-1">
+                  <input type="checkbox" checked={f.required} onChange={e => setField(i, { required: e.target.checked })} />
+                  Req
+                </label>
+                <button type="button" onClick={() => moveField(i, -1)} disabled={i === 0}
+                  className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30" title="Move up"><ChevronUp size={15} /></button>
+                <button type="button" onClick={() => moveField(i, 1)} disabled={i === draft.fields.length - 1}
+                  className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30" title="Move down"><ChevronDown size={15} /></button>
+                <button type="button" onClick={() => removeField(i)}
+                  className="p-1 text-gray-400 hover:text-red-600" title="Remove field"><X size={15} /></button>
+              </div>
+            </div>
+            {f.type === 'select' && (
+              <div className="mt-2">
+                <label className="block text-[11px] font-medium text-gray-600 mb-1">Choices (comma-separated)</label>
+                <input value={f.options} onChange={e => setField(i, { options: e.target.value })}
+                  className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="Pass, Fail, N/A" />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <button type="button" onClick={addField}
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          <Plus size={14} /> Add field
+        </button>
+        <button type="button" onClick={save} disabled={saving}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+          {saving ? 'Saving…' : `Save ${team} template`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Component ──────────────────────────────────────── */
 
 export default function ProductionLog({ user, directEntry }) {
@@ -959,9 +1208,15 @@ export default function ProductionLog({ user, directEntry }) {
   // changing existing entries needs an explicit Production Log edit grant
   // (enforced server-side).
   const canEod = user?.role === 'admin' || user?.role === 'supervisor' || hasExplicitGrant(user, 'production-eod');
+  // Editing the survey templates is the same right as editing the log itself:
+  // admin, or an explicit Production Log edit grant. Mirrors canEditLog() server-side.
+  const ma = user?.module_access;
+  const canEditTemplates = user?.role === 'admin'
+    || !!(ma && !Array.isArray(ma) && ma['production-log'] === 'edit');
   const tabs = [
     { id: 'log', label: 'Production Log', icon: ClipboardList },
     ...(canEod ? [{ id: 'form', label: 'Entry Form', icon: Plus }] : []),
+    ...(canEditTemplates ? [{ id: 'templates', label: 'EOD Templates', icon: Pencil }] : []),
   ];
 
   return (
@@ -985,6 +1240,9 @@ export default function ProductionLog({ user, directEntry }) {
       )}
       {tab === 'log' && (
         <LogTable key={refreshKey} user={user} />
+      )}
+      {tab === 'templates' && canEditTemplates && (
+        <TemplateEditor />
       )}
     </div>
   );
