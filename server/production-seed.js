@@ -492,27 +492,43 @@ export function seedProductionEntries(db) {
 
 // A starter EOD template for the Batching (Blending) team. Seeded only when no
 // template exists for the team, so any hand-tuning in Settings survives a
-// redeploy. Batching records yield/loss, blend parameters, and the CCP-style
-// checks a blend run cares about — different from what Filling or Kitting log.
-// These fields are a sensible default; QA edits them per team in the app.
+// redeploy. These fields are modeled directly on Bernardo's actual Blending
+// EOD notes — a blend shift is really three things logged with time windows:
+// a cleaning/swab event, weighing + sifting + blending in batches (each batch
+// weighed individually), and any mid-run adjustments. The ATP/Allergen swab
+// flags are broken out as their own fields because they're the compliance
+// record QA wants to answer directly ("was an allergen swab taken that day?")
+// without parsing a sentence. QA can still edit any of this per team in the app.
 const BATCHING_EOD_FIELDS = [
-  { key: 'blend_type', label: 'Blend type', type: 'select', options: ['Dry blend', 'Liquid', 'Wet mass', 'Other'] },
-  { key: 'batches_completed', label: 'Batches completed', type: 'number' },
-  { key: 'target_weight_kg', label: 'Target batch weight (kg)', type: 'number' },
-  { key: 'actual_yield_kg', label: 'Actual yield (kg)', type: 'number' },
-  { key: 'scrap_rework_kg', label: 'Scrap / rework (kg)', type: 'number' },
-  { key: 'blend_time_min', label: 'Blend time (min)', type: 'number' },
-  { key: 'screen_check', label: 'Screen / sifter check', type: 'select', options: ['Pass', 'Fail', 'N/A'] },
-  { key: 'metal_detector_check', label: 'Metal detector check', type: 'select', options: ['Pass', 'Fail', 'N/A'] },
-  { key: 'allergen_changeover', label: 'Allergen changeover performed', type: 'checkbox' },
+  { key: 'clean_type', label: 'Cleaning performed', type: 'select', options: ['Partial Clean', 'Full Clean', 'No clean this shift'] },
+  { key: 'atp_swab', label: 'ATP swab taken', type: 'checkbox' },
+  { key: 'allergen_swab', label: 'Allergen swab taken', type: 'checkbox' },
+  { key: 'cleaned_items', label: 'Cleaned / swabbed (blender, room, sifter #, utensils)', type: 'text' },
+  { key: 'clean_time', label: 'Cleaning time window', type: 'text' },
+  { key: 'room', label: 'Room', type: 'select', options: ['Room 1', 'Room 2', 'Other'] },
+  { key: 'sifter_no', label: 'Sifter #', type: 'text' },
+  { key: 'weighing', label: 'Weighing progress (e.g. 80% Left, 20% – 2 batches)', type: 'text' },
+  { key: 'batches_completed', label: 'Batches blended', type: 'number' },
+  { key: 'batch_weights', label: 'Batch weights (e.g. No.1=273.4kg, No.2=273.6kg)', type: 'text' },
+  { key: 'blend_time', label: 'Sift & blend time window', type: 'text' },
+  { key: 'adjustments', label: 'Adjustments (MO / lot / product + time)', type: 'textarea' },
   { key: 'equipment_issues', label: 'Equipment issues / downtime', type: 'textarea' },
-  { key: 'adjustments', label: 'Formula adjustments made', type: 'textarea' },
 ];
 
 export function seedEodTemplates(db) {
-  const has = db.prepare('SELECT 1 FROM eod_templates WHERE team = ?').get('Batching');
-  if (has) return;
-  db.prepare('INSERT INTO eod_templates (team, title, fields, updated_by) VALUES (?, ?, ?, ?)')
-    .run('Batching', 'Blending EOD Report', JSON.stringify(BATCHING_EOD_FIELDS), 'system');
-  console.log('[seed] Seeded Batching (Blending) EOD template');
+  const row = db.prepare('SELECT updated_by FROM eod_templates WHERE team = ?').get('Batching');
+  const fields = JSON.stringify(BATCHING_EOD_FIELDS);
+  if (!row) {
+    db.prepare('INSERT INTO eod_templates (team, title, fields, updated_by) VALUES (?, ?, ?, ?)')
+      .run('Batching', 'Blending EOD Report', fields, 'system');
+    console.log('[seed] Seeded Batching (Blending) EOD template');
+  } else if (row.updated_by === 'system') {
+    // Still the auto-seeded default — no admin has edited it in the app (a PUT
+    // stamps updated_by with the editor's name). Safe to refresh it to the
+    // latest default so an improved seed reaches existing DBs, without ever
+    // clobbering a hand-tuned template.
+    db.prepare("UPDATE eod_templates SET title = ?, fields = ? WHERE team = 'Batching' AND updated_by = 'system'")
+      .run('Blending EOD Report', fields);
+    console.log('[seed] Refreshed default Batching (Blending) EOD template');
+  }
 }

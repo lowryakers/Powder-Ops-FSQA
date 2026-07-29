@@ -82,7 +82,15 @@ function EodField({ field, value, onChange }) {
 // Read-only render of a saved structured EOD answer set, shown on the log entry.
 function EodSummary({ template, data }) {
   if (!data || typeof data !== 'object') return null;
-  const fields = template?.fields || Object.keys(data).map(k => ({ key: k, label: k, type: 'text' }));
+  // Start from the template's field order/labels, then append any answer keys
+  // the current template no longer defines — a saved record must never lose
+  // data on display just because the template was edited afterwards.
+  const tplFields = template?.fields || [];
+  const known = new Set(tplFields.map(f => f.key));
+  const orphanFields = Object.keys(data)
+    .filter(k => !known.has(k))
+    .map(k => ({ key: k, label: k.replace(/_/g, ' '), type: 'text' }));
+  const fields = [...tplFields, ...orphanFields];
   const shown = fields.filter(f => { const v = data[f.key]; return v !== '' && v != null && v !== false; });
   if (!shown.length) return null;
   const fmt = (f) => f.type === 'checkbox' ? (data[f.key] ? 'Yes' : 'No') : String(data[f.key]);
