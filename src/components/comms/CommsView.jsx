@@ -1641,11 +1641,16 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       const target = list.find(c => norm(c.name) === t) || list.find(c => norm(c.name).includes(t));
       if (target) { linkedOpenedRef.current = openChannelName; openChannel(target.id); return; }
     }
-    // Bare setActiveId (not openChannel) so phones stay on the channel list —
-    // but still capture the unread marker so the New divider shows.
     const target = publicCh.find(c => c.name === 'general') || list[0];
     setNewMarkerTs(target.unread > 0 ? (target.last_read_at || '0') : null);
-    setActiveId(target.id);
+    // A phone should land on the channel list (bare setActiveId leaves
+    // mobileThread false, so the compact layout shows the list first). But the
+    // desktop split-screen dock is *also* narrow enough to hit the compact
+    // layout, and there landing on the list reads as "messages aren't loading."
+    // Width can't tell the docked panel from a phone; touch capability can — so
+    // on any non-touch device open straight into the conversation.
+    if (window.matchMedia?.('(hover: none)').matches) setActiveId(target.id);
+    else openChannel(target.id);
   }, [list, activeId, openChannelName, openChannelId]); // eslint-disable-line
 
   // A push-notification deep-link can arrive while Comms is already open — open
