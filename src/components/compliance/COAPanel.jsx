@@ -43,6 +43,25 @@ const TEST_TYPES = [
   'Organoleptic Test', 'Minerals Test', 'Other',
 ];
 
+// The organoleptic / identity block off the raw-material spec sheet. Each
+// attribute is its own specification row — that is how it reads on the paper
+// form and how QA records it — so picking "Organoleptic Test" opens an
+// Attribute picker rather than collapsing all four into one line.
+//
+// The wording is the house default and is prefilled, not enforced: a spec that
+// differs for a particular material is edited on the row.
+const ORGANOLEPTIC_ATTRIBUTES = [
+  { key: 'Appearance', spec: 'Fine, uniform powder; free-flowing or typical for powder color concentrate' },
+  { key: 'Color', spec: 'Purple to plum-colored powder; uniform shade.' },
+  { key: 'Odor', spec: 'Mild characteristic fruit/vegetable odor; no musty, sour, rancid or chemical odor.' },
+  { key: 'Flavor', spec: 'Very mild characteristic fruity note; should not materially impact finished product flavor.' },
+];
+const ORGANOLEPTIC_TYPE = 'Organoleptic Test';
+const organolepticType = (attr) => `${ORGANOLEPTIC_TYPE} — ${attr}`;
+const isOrganoleptic = (t) => t === ORGANOLEPTIC_TYPE || String(t || '').startsWith(`${ORGANOLEPTIC_TYPE} — `);
+const organolepticAttrOf = (t) => (String(t || '').startsWith(`${ORGANOLEPTIC_TYPE} — `)
+  ? String(t).slice(ORGANOLEPTIC_TYPE.length + 3) : '');
+
 // Left-edge accent for the mobile cards, keyed to status.
 const statusStripe = (s) => ({
   pass: 'border-l-green-500', fail: 'border-l-red-500', hold: 'border-l-yellow-500',
@@ -978,12 +997,42 @@ function SpecForm({ initial, onSave, onCancel }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Test Type *</label>
-                <select value={t.test_type} onChange={e => setTest(i, 'test_type', e.target.value)} required
+                <select value={isOrganoleptic(t.test_type) ? ORGANOLEPTIC_TYPE : t.test_type}
+                  onChange={e => setTest(i, 'test_type', e.target.value)} required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
                   <option value="">Select...</option>
-                  {TEST_TYPES.map(tt => <option key={tt} value={tt} disabled={tt !== t.test_type && usedTypes.includes(tt)}>{tt}</option>)}
+                  {TEST_TYPES.map(tt => (
+                    <option key={tt} value={tt}
+                      disabled={tt !== ORGANOLEPTIC_TYPE && tt !== t.test_type && usedTypes.includes(tt)}>{tt}</option>
+                  ))}
                 </select>
               </div>
+              {isOrganoleptic(t.test_type) && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Attribute *</label>
+                  <select value={organolepticAttrOf(t.test_type)} required
+                    onChange={e => {
+                      const attr = e.target.value;
+                      const preset = ORGANOLEPTIC_ATTRIBUTES.find(a => a.key === attr);
+                      // Prefill the house wording, but never overwrite a spec
+                      // someone has already typed for this row.
+                      setTests(ts => ts.map((row, j) => j !== i ? row : {
+                        ...row,
+                        test_type: attr ? organolepticType(attr) : ORGANOLEPTIC_TYPE,
+                        specification: row.specification?.trim() ? row.specification : (preset?.spec || ''),
+                      }));
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                    <option value="">Select...</option>
+                    {ORGANOLEPTIC_ATTRIBUTES.map(a => (
+                      <option key={a.key} value={a.key}
+                        disabled={organolepticType(a.key) !== t.test_type && usedTypes.includes(organolepticType(a.key))}>
+                        {a.key}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Specification</label>
                 <input value={t.specification} onChange={e => setTest(i, 'specification', e.target.value)}

@@ -6,6 +6,7 @@ import { setAppBadge } from '../../lib/appBadge';
 import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import NotificationStatus from './NotificationStatus.jsx';
+import ZoomableImage from './ZoomableImage.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
@@ -200,7 +201,7 @@ function Lightbox({ atts, index, onNav, onClose }) {
       )}
       <div ref={trackRef} className="max-w-[92vw] max-h-[84vh] will-change-transform" onClick={e => e.stopPropagation()}>
         {browserRenderable(a) && a.url ? (
-          <img src={a.url} alt={a.filename} className="max-w-[92vw] max-h-[84vh] object-contain rounded-lg"
+          <ZoomableImage src={a.url} alt={a.filename}
             onError={e => { e.target.outerHTML = '<div class="bg-white rounded-xl p-6 text-sm text-gray-700">This photo could not be displayed — use Download below to view it.</div>'; }} />
         ) : isPdf(a) && a.url ? (
           <iframe src={a.url} title={a.filename} className="w-[92vw] max-w-4xl h-[84vh] bg-white rounded-lg" />
@@ -919,20 +920,26 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   const pressTimer = useRef(null);
   const pressPos = useRef(null);
   const suppressClick = useRef(false);
+  const cancelPress = () => {
+    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
+  };
   const onTouchStart = (e) => {
     if (m.deleted || editing) return;
-    const t = e.touches?.[0];
+    // A second finger means a pinch, not a long-press. Without this the timer
+    // started by the first finger still fires and the action sheet opens on
+    // top of whatever the user was trying to zoom.
+    if (e.touches.length > 1) { cancelPress(); suppressClick.current = true; return; }
+    const t = e.touches[0];
     if (!t) return;
     pressPos.current = { x: t.clientX, y: t.clientY };
     pressTimer.current = setTimeout(() => { pressTimer.current = null; suppressClick.current = true; setSheet(true); }, 450);
   };
   const onTouchMove = (e) => {
+    if (e.touches.length > 1) { cancelPress(); suppressClick.current = true; return; }
     if (!pressTimer.current || !pressPos.current) return;
-    const t = e.touches?.[0];
+    const t = e.touches[0];
     if (!t) return;
-    if (Math.abs(t.clientX - pressPos.current.x) > 10 || Math.abs(t.clientY - pressPos.current.y) > 10) {
-      clearTimeout(pressTimer.current); pressTimer.current = null;
-    }
+    if (Math.abs(t.clientX - pressPos.current.x) > 10 || Math.abs(t.clientY - pressPos.current.y) > 10) cancelPress();
   };
   const onTouchEnd = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
   const onRowClick = (e) => {

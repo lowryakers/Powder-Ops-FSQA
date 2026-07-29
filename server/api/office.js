@@ -435,9 +435,14 @@ router.get('/periods', (req, res) => {
 
 // The roster comes straight from the users table — active people only, no bot
 // — so adding someone in Settings adds them here.
+//
+// Admins and auditors are excluded: this tab tracks hourly staff against a
+// weekly target, and salaried/system accounts only add rows Marnee has to
+// scroll past. They still appear everywhere else in the app.
 function roster(db) {
   return db.prepare(`SELECT id, name, department, weekly_hours_target FROM users
-    WHERE is_active = 1 AND name != 'ReadyBot' AND role != 'auditor' ORDER BY name`).all()
+    WHERE is_active = 1 AND name != 'ReadyBot' AND role NOT IN ('auditor', 'admin')
+    ORDER BY name`).all()
     .map(u => ({ ...u, target: u.weekly_hours_target || STANDARD_WEEK_HOURS }));
 }
 
