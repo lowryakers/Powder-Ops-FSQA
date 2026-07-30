@@ -2,10 +2,11 @@ import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import {
   PackageCheck, Plus, ClipboardList, Search, Filter, Pencil,
-  CheckCircle, Clock, AlertTriangle, ChevronUp, ChevronDown, ExternalLink,
+  CheckCircle, Clock, AlertTriangle, ChevronUp, ChevronDown, ExternalLink, Upload,
 } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
+import ImportPanel from '../common/ImportPanel';
 
 // Receiving Log — incoming raw material, labels and components (replaces the
 // Monday board). Both dropdowns are managed lists and the extra questions are
@@ -438,10 +439,17 @@ export default function ReceivingLogPanel({ user }) {
   const canLog = user?.role === 'admin' || user?.role === 'supervisor'
     || user?.department === 'warehouse'
     || (user?.module_access && !Array.isArray(user.module_access) && !!user.module_access['receiving-log']);
+  // Importing rewrites the log in bulk, so it needs the edit right, not just
+  // the right to file a receipt.
+  const canImport = user?.role === 'admin'
+    || (user?.module_access && !Array.isArray(user.module_access) && user.module_access['receiving-log'] === 'edit');
+  const { data: targets } = useApiGet(canImport ? '/imports/targets' : null);
+  const importTarget = (targets || []).find(t => t.key === 'receiving_log');
 
   const tabs = [
     { id: 'log', label: 'Receiving Log', icon: ClipboardList },
     ...(canLog ? [{ id: 'form', label: 'New Record', icon: Plus }] : []),
+    ...(canImport ? [{ id: 'import', label: 'Import', icon: Upload }] : []),
   ];
 
   return (
@@ -456,6 +464,10 @@ export default function ReceivingLogPanel({ user }) {
       </div>
       {tab === 'form' && canLog && (
         <ReceivingForm user={user} onSaved={() => setRefreshKey(k => k + 1)} />
+      )}
+      {tab === 'import' && canImport && importTarget && (
+        <ImportPanel target="receiving_log" targetLabel="Receiving Log"
+          fields={importTarget.fields} onDone={() => setRefreshKey(k => k + 1)} />
       )}
       {tab === 'log' && <ReceivingTable key={refreshKey} user={user} />}
     </div>

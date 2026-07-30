@@ -301,3 +301,21 @@ in in-app browsers/WebViews, in Incognito, or when it's already installed — th
   actions in that canonical vocabulary.
 - Auth events logged in `server/api/users.js`: login, logout, login_failed, login_locked, permission_change.
 - Audit API: `server/api/audit.js` (`/`, `/facets`, `/export`, `/entity/:type/:id`); UI `src/components/compliance/AuditLogPanel.jsx`.
+
+## Universal file importer (Monday / Airtable / Drive / Slack / desktop)
+`server/tabular.js` reads **CSV / TSV / XLSX with no new dependencies** (XLSX is a zip of XML via the
+already-present `adm-zip`; the CSV reader is a proper RFC-4180 character scan, not a split). `readTable()`
+skips the title/banner rows and repeated header rows a Monday export carries.
+`server/api/imports.js` is the pipeline, deliberately four steps so nothing bulk-writes a compliance log by
+accident: **analyze** (stash file in `import_batches`, suggest a column mapping) → **preview** (dry run:
+create/update/skip counts + per-row reasons, nothing written) → **commit** (one transaction, upsert on a
+natural key) → the batch row itself is the **provenance** record (`source`, `external_id` on each row).
+- Add a target = one `TARGETS` entry (fields + aliases + identity). Client is `<ImportPanel target=… />`.
+- **`identity` must be the whole natural key, not a single "id" column.** Monday's item name repeats (722
+  distinct across 2,107 rows, "NA" 215×) — keying on it alone collapsed 1,390 rows into "duplicate". The
+  preview step caught that before any write, which is exactly what it's for.
+- Dates arrive as Excel serials, ISO, or locale strings; `toDate()` normalizes all three (serial only in the
+  20000–80000 window so a quantity like 45.36 is never mangled). Monday check columns are "v" → `toBool()`.
+- Verified end to end on the real 2,107-row Receiving Log export: 15/16 fields auto-mapped, 2,064 created in
+  ~0.2s, 43 skipped (in-file duplicates + rows missing a required field), and **re-importing the same file
+  produced 0 created / 2,064 updated with no duplicates**.

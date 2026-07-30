@@ -956,6 +956,27 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_receiving_po ON receiving_log(po_number);
     CREATE INDEX IF NOT EXISTS idx_receiving_part ON receiving_log(part_number);
     CREATE INDEX IF NOT EXISTS idx_receiving_lot ON receiving_log(vendor_lot);
+
+    -- ── Universal file importer ──────────────────────────────────────────
+    -- One row per uploaded file. The parsed rows are held here between the
+    -- analyze and commit steps so the preview is a true dry run against the
+    -- exact data that will be written — no re-upload, no drift. Keeping the
+    -- batch afterwards is the provenance record: which file, whose upload,
+    -- what mapping, and what it did.
+    CREATE TABLE IF NOT EXISTS import_batches (
+      id TEXT PRIMARY KEY,
+      target TEXT NOT NULL,
+      filename TEXT,
+      row_count INTEGER NOT NULL DEFAULT 0,
+      headers TEXT,
+      rows_json TEXT,
+      mapping TEXT,
+      result TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      committed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_import_batches_created ON import_batches(created_at DESC);
   `);
 
   runMigrations();
