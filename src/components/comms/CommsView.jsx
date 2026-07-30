@@ -327,6 +327,31 @@ function UploadProgress({ percent }) {
   );
 }
 
+// Attachments live on R2 behind a presigned URL, which is a different origin —
+// so the <a download> attribute is ignored and the browser just opens the file
+// in a tab. That left right-click → "Save as…" as the only way to keep a
+// screenshot. Fetching the bytes and saving an object URL downloads for real,
+// with the original filename. Falls back to opening the URL if the fetch is
+// blocked for any reason.
+async function downloadAttachment(a) {
+  if (!a?.url) return;
+  try {
+    const res = await fetch(a.url);
+    if (!res.ok) throw new Error('fetch failed');
+    const blob = await res.blob();
+    const href = URL.createObjectURL(blob);
+    const el = document.createElement('a');
+    el.href = href;
+    el.download = a.filename || 'download';
+    document.body.appendChild(el);
+    el.click();
+    el.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 10000);
+  } catch {
+    window.open(a.url, '_blank', 'noopener');
+  }
+}
+
 function Attachment({ a, onOpen }) {
   const [broken, setBroken] = useState(false);
   if (videoPlayable(a) && a.url && !broken) {
@@ -344,11 +369,22 @@ function Attachment({ a, onOpen }) {
     );
   }
   if (browserRenderable(a) && a.url && !broken) {
+    // Screenshots need the same one-click download as any other file. The
+    // button sits on the image (always visible on touch, on hover for mouse)
+    // so nobody has to open the viewer or reach for right-click.
     return (
-      <button type="button" onClick={onOpen} className="block mt-1 max-w-xs text-left">
-        <img src={a.url} alt={a.filename} onError={() => setBroken(true)}
-          className="rounded-lg border border-gray-200 max-h-64 object-contain" />
-      </button>
+      <div className="relative inline-block mt-1 max-w-xs group/img">
+        <button type="button" onClick={onOpen} className="block text-left">
+          <img src={a.url} alt={a.filename} onError={() => setBroken(true)}
+            className="rounded-lg border border-gray-200 max-h-64 object-contain" />
+        </button>
+        <button type="button"
+          onClick={e => { e.stopPropagation(); downloadAttachment(a); }}
+          data-tip="Download image"
+          className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-black/55 text-white opacity-100 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity hover:bg-black/75">
+          <Download size={14} />
+        </button>
+      </div>
     );
   }
   return (
@@ -410,15 +446,23 @@ function Lightbox({ atts, index, onNav, onClose }) {
             {a.is_image && !browserRenderable(a) && (
               <div className="text-[11px] text-gray-500 text-center max-w-[280px]">This photo format (HEIC/TIFF) can't be previewed in the browser — download it to view.</div>
             )}
-            <a href={a.url || undefined} download={a.filename}
+            {/* Goes through downloadAttachment, not a bare <a download> — the
+                presigned URL is cross-origin so the attribute is ignored. */}
+            <button type="button" onClick={e => { e.stopPropagation(); downloadAttachment(a); }}
               className="mt-1 flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
               <Download size={15} /> Download
-            </a>
+            </button>
           </div>
         )}
       </div>
-      <a href={a.url || undefined} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-        className="absolute bottom-4 right-4 text-white/60 hover:text-white text-xs underline">Open in new tab</a>
+      <div className="absolute bottom-4 right-4 flex items-center gap-3">
+        <button type="button" onClick={e => { e.stopPropagation(); downloadAttachment(a); }}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium">
+          <Download size={13} /> Download
+        </button>
+        <a href={a.url || undefined} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+          className="text-white/60 hover:text-white text-xs underline">Open in new tab</a>
+      </div>
     </div>
   );
 }
@@ -1385,11 +1429,26 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
         {m.deleted ? (
           <p className="text-sm text-gray-400 italic">message deleted</p>
         ) : editing ? (
-          <div className="flex items-center gap-2 mt-1">
-            <input value={draft} onChange={e => setDraft(e.target.value)} className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
-              onKeyDown={e => { if (e.key === 'Enter') { onEdit(m, draft); setEditing(false); } if (e.key === 'Escape') setEditing(false); }} autoFocus />
-            <button onClick={() => { onEdit(m, draft); setEditing(false); }} className="text-xs text-powder-600">Save</button>
-            <button onClick={() => setEditing(false)} className="text-xs text-gray-400">Cancel</button>
+          // A long message was previously edited through a one-line input, which
+          // showed a few words at a time. This grows to fit the message (capped
+          // so it can't swallow the channel) and keeps Enter-to-save with
+          // Shift+Enter for a new line.
+          <div className="mt-1">
+            <textarea
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 320)}px`; } }}
+              rows={1}
+              className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm resize-y min-h-[64px] max-h-80 leading-relaxed"
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onEdit(m, draft); setEditing(false); }
+                if (e.key === 'Escape') setEditing(false);
+              }} autoFocus />
+            <div className="flex items-center gap-2 mt-1">
+              <button onClick={() => { onEdit(m, draft); setEditing(false); }} className="text-xs font-medium text-powder-600">Save</button>
+              <button onClick={() => setEditing(false)} className="text-xs text-gray-400">Cancel</button>
+              <span className="text-[10px] text-gray-400">Enter to save · Shift+Enter for a new line</span>
+            </div>
           </div>
         ) : (
           m.body && (

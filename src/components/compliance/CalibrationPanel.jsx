@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -124,6 +124,15 @@ function CalibrateForm({ instrument, onSave, onCancel }) {
   });
   const [certFile, setCertFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  // The form renders below the instrument table, which is long enough that on a
+  // normal screen it opens off-screen — clicking Calibrate looked like nothing
+  // happened. Bring it into view and put the cursor in the first field.
+  const formRef = useRef(null);
+  useEffect(() => {
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const t = setTimeout(() => formRef.current?.querySelector('input')?.focus(), 250);
+    return () => clearTimeout(t);
+  }, [instrument.id]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -132,7 +141,7 @@ function CalibrateForm({ instrument, onSave, onCancel }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-blue-50 rounded-xl border border-blue-200 p-4 mt-3 space-y-3">
+    <form ref={formRef} onSubmit={handleSubmit} className="bg-blue-50 rounded-xl border border-blue-200 p-4 mt-3 space-y-3">
       <p className="text-sm font-semibold text-blue-800">Record Calibration: {instrument.name}</p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
