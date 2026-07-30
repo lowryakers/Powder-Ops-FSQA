@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, Edit2, ShieldCheck, AlertTriangle, Search, ChevronUp, ChevronDown } from 'lucide-react';
 import { localDateStr } from '../../utils/dates';
+import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 const CATEGORIES = [
   { value: 'lubricant', label: 'Lubricant', color: 'bg-blue-100 text-blue-800' },
@@ -123,6 +125,7 @@ export default function ChemicalsPanel() {
   const [catFilter, setCatFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [sortCol, setSortCol] = useState(null);
+  const expand = useRowExpand();
   const [sortDir, setSortDir] = useState('asc');
 
   const handleSort = (col) => {
@@ -301,6 +304,7 @@ export default function ChemicalsPanel() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
+              <th className="w-8 px-2 py-3" />
               {[
                 { key: 'name', label: 'Chemical', sortable: true },
                 { key: 'category', label: 'Category', sortable: true },
@@ -326,7 +330,9 @@ export default function ChemicalsPanel() {
           </thead>
           <tbody>
             {filtered.map(c => (
-              <tr key={c.id} className={`border-b border-gray-100 hover:bg-gray-50 ${!c.is_active ? 'opacity-50' : ''}`}>
+              <Fragment key={c.id}>
+              <tr {...expand.rowProps(c.id, `border-b border-gray-100 ${!c.is_active ? 'opacity-50' : ''}`)}>
+                <td className="px-2 py-3"><ExpandCell open={expand.isExpanded(c.id)} /></td>
                 <td className="px-4 py-3 w-full">
                   <div className="font-medium text-gray-900">{c.name}</div>
                   {c.manufacturer && <div className="text-xs text-gray-500">{c.manufacturer}{c.product_code ? ` — ${c.product_code}` : ''}</div>}
@@ -339,7 +345,7 @@ export default function ChemicalsPanel() {
                   {c.sds_number || c.sds_url ? (
                     <div className="space-y-0.5">
                       {c.sds_number && <span className="font-mono">{c.sds_number}</span>}
-                      {c.sds_url && <a href={c.sds_url} target="_blank" rel="noopener noreferrer" className="block text-powder-600 hover:text-powder-700 underline">{c.sds_number ? 'View SDS' : 'SDS Link'}</a>}
+                      {c.sds_url && <a href={c.sds_url} target="_blank" rel="noopener noreferrer" onClick={stopRowClick} className="block text-powder-600 hover:text-powder-700 underline">{c.sds_number ? 'View SDS' : 'SDS Link'}</a>}
                     </div>
                   ) : <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium"><AlertTriangle size={10} /> Missing SDS</span>
                   }
@@ -362,7 +368,7 @@ export default function ChemicalsPanel() {
                   )}
                 </td>
                 {isAdmin && (
-                  <td className="px-4 py-3 text-right flex gap-1 justify-end">
+                  <td className="px-4 py-3 text-right flex gap-1 justify-end" onClick={stopRowClick}>
                     <button onClick={() => { setEditing(c); setShowForm(false); }} className="text-gray-400 hover:text-powder-600">
                       <Edit2 size={14} />
                     </button>
@@ -373,9 +379,33 @@ export default function ChemicalsPanel() {
                   </td>
                 )}
               </tr>
+              {expand.isExpanded(c.id) && (
+                <DetailRow colSpan={isAdmin ? 8 : 7}>
+                  <DetailFields fields={[
+                    { label: 'Chemical', value: c.name },
+                    { label: 'Manufacturer', value: c.manufacturer },
+                    { label: 'Product code', value: c.product_code },
+                    { label: 'Category', value: c.category },
+                    { label: 'Where it is used', value: c.location_for_use },
+                    { label: 'SDS #', value: c.sds_number },
+                    { label: 'Food grade', value: c.is_food_grade ? `Yes${c.nsf_rating ? ` (${c.nsf_rating})` : ''}` : 'No' },
+                    { label: 'Max concentration', value: c.max_concentration },
+                    { label: 'Use directions', value: c.use_directions, wide: true },
+                    { label: 'Review due', value: c.review_due },
+                    { label: 'Status', value: c.is_active ? 'Active' : 'Inactive' },
+                    { label: 'Notes', value: c.notes, wide: true },
+                  ]}>
+                    {c.sds_url && (
+                      <a href={c.sds_url} target="_blank" rel="noopener noreferrer" onClick={stopRowClick}
+                        className="text-xs text-powder-600 hover:text-powder-700 underline">Open SDS</a>
+                    )}
+                  </DetailFields>
+                </DetailRow>
+              )}
+              </Fragment>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-gray-400">No chemicals registered yet</td></tr>
+              <tr><td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">No chemicals registered yet</td></tr>
             )}
           </tbody>
         </table>

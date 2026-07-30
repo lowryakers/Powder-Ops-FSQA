@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { Shield, Download } from 'lucide-react';
+import { useRowExpand } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 const ROLE_TONE = {
   admin: 'bg-purple-100 text-purple-700',
@@ -11,12 +13,47 @@ const ROLE_TONE = {
 
 const SECURITY_ACTIONS = new Set(['login', 'logout', 'login_failed', 'login_locked', 'permission_change', 'set_pin']);
 
+// Before/after for the fields that actually changed. The audit log stores whole
+// snapshots; dumping both in full buries the one value someone came to check.
+function FieldChanges({ entry }) {
+  const parse = (v) => { try { return v ? JSON.parse(v) : null; } catch { return null; } };
+  const prev = parse(entry.previous_state);
+  const next = parse(entry.new_state);
+  if (!prev && !next) return null;
+
+  const show = (v) => (v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+  const keys = [...new Set([...Object.keys(prev || {}), ...Object.keys(next || {})])]
+    .filter(k => show(prev?.[k]) !== show(next?.[k]));
+  if (keys.length === 0) return null;
+
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-gray-500 mb-1">What changed</div>
+      <div className="overflow-x-auto">
+        <table className="text-xs">
+          <tbody>
+            {keys.map(k => (
+              <tr key={k} className="align-top">
+                <td className="pr-3 py-0.5 font-medium text-gray-700 whitespace-nowrap">{k}</td>
+                <td className="pr-2 py-0.5 text-red-700 line-through break-all max-w-[280px]">{show(prev?.[k])}</td>
+                <td className="pr-2 py-0.5 text-gray-400">→</td>
+                <td className="py-0.5 text-green-700 break-all max-w-[280px]">{show(next?.[k])}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function AuditLogPanel() {
   const [filters, setFilters] = useState({ entity_type: '', actor: '', action: '', actor_role: '', actor_department: '', from: '', to: '' });
   const [exporting, setExporting] = useState(false);
   const query = Object.entries(filters).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
   const { data, loading } = useApiGet(`/audit?${query}`, [query]);
   const { data: facets } = useApiGet('/audit/facets');
+  const expand = useRowExpand();
   const { data: auditReady, loading: arLoading } = useApiGet('/compliance/audit-ready');
 
   const set = (k, v) => setFilters(f => ({ ...f, [k]: v }));
@@ -183,6 +220,7 @@ export default function AuditLogPanel() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
+                    <th className="w-8 px-2 py-3" />
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Timestamp</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Actor</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
@@ -193,7 +231,9 @@ export default function AuditLogPanel() {
                 </thead>
                 <tbody>
                   {(data?.data || []).map(entry => (
-                    <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <Fragment key={entry.id}>
+                    <tr {...expand.rowProps(entry.id, 'border-b border-gray-100')}>
+                      <td className="px-2 py-3"><ExpandCell open={expand.isExpanded(entry.id)} /></td>
                       <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{new Date(entry.timestamp).toLocaleString()}</td>
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{entry.actor}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
@@ -211,9 +251,27 @@ export default function AuditLogPanel() {
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs w-full break-words">{entry.details || '—'}</td>
                     </tr>
+                    {expand.isExpanded(entry.id) && (
+                      <DetailRow colSpan={7}>
+                        <DetailFields fields={[
+                          { label: 'When', value: new Date(entry.timestamp).toLocaleString() },
+                          { label: 'Actor', value: entry.actor },
+                          { label: 'Role', value: entry.actor_role },
+                          { label: 'Department', value: entry.actor_department },
+                          { label: 'Action', value: entry.action },
+                          { label: 'Entity', value: entry.entity_label || entry.entity_type },
+                          { label: 'Entity type', value: entry.entity_type },
+                          { label: 'Entity ID', value: entry.entity_id },
+                          { label: 'Details', value: entry.details, wide: true },
+                        ]}>
+                          <FieldChanges entry={entry} />
+                        </DetailFields>
+                      </DetailRow>
+                    )}
+                    </Fragment>
                   ))}
                   {(!data?.data || data.data.length === 0) && (
-                    <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No audit log entries match these filters</td></tr>
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No audit log entries match these filters</td></tr>
                   )}
                 </tbody>
               </table>

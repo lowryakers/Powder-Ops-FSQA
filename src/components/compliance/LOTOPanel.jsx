@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { Plus, Lock, Unlock, ShieldCheck, AlertTriangle, Zap, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { useRowExpand } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 const ENERGY_TYPES = ['Electrical', 'Pneumatic', 'Hydraulic', 'Mechanical', 'Thermal', 'Chemical', 'Gravitational', 'Stored Energy'];
 const STATUS_COLORS = { locked: 'bg-red-100 text-red-800', verified: 'bg-yellow-100 text-yellow-800', released: 'bg-green-100 text-green-800' };
@@ -256,6 +258,7 @@ function ProcedureCard({ proc, onExecute, executing }) {
 export default function LOTOPanel() {
   const { data: procedures, loading, refresh: refreshProcs } = useApiGet('/loto/procedures');
   const { data: executions, refresh: refreshExecs } = useApiGet('/loto/executions');
+  const expand = useRowExpand();
   const { data: equipment } = useApiGet('/equipment');
   const { data: uncovered, refresh: refreshUncovered } = useApiGet('/loto/uncovered-equipment');
   const [showForm, setShowForm] = useState(false);
@@ -430,6 +433,7 @@ export default function LOTOPanel() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
+                <th className="w-8 px-2 py-3" />
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Equipment</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Locked By</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Locked At</th>
@@ -440,7 +444,9 @@ export default function LOTOPanel() {
             </thead>
             <tbody>
               {(executions || []).map(ex => (
-                <tr key={ex.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <Fragment key={ex.id}>
+                <tr {...expand.rowProps(ex.id, 'border-b border-gray-100')}>
+                  <td className="px-2 py-3"><ExpandCell open={expand.isExpanded(ex.id)} /></td>
                   <td className="px-4 py-3 font-medium">{ex.equipment_name}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ex.locked_by}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{new Date(ex.locked_at).toLocaleString()}</td>
@@ -448,9 +454,26 @@ export default function LOTOPanel() {
                   <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[ex.status]}`}>{ex.status}</span></td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{ex.released_by ? `${ex.released_by} @ ${new Date(ex.released_at).toLocaleString()}` : '—'}</td>
                 </tr>
+                {expand.isExpanded(ex.id) && (
+                  <DetailRow colSpan={7}>
+                    <DetailFields fields={[
+                      { label: 'Equipment', value: ex.equipment_name },
+                      { label: 'Procedure', value: ex.procedure_title },
+                      { label: 'Locked by', value: ex.locked_by },
+                      { label: 'Locked at', value: new Date(ex.locked_at).toLocaleString() },
+                      { label: 'Status', value: ex.status },
+                      { label: 'Released by', value: ex.released_by },
+                      { label: 'Released at', value: ex.released_at ? new Date(ex.released_at).toLocaleString() : '' },
+                      { label: 'Verified by', value: ex.verified_by },
+                      { label: 'Reason', value: ex.reason, wide: true },
+                      { label: 'Notes', value: ex.notes, wide: true },
+                    ]} />
+                  </DetailRow>
+                )}
+                </Fragment>
               ))}
               {(!executions || executions.length === 0) && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No LOTO executions recorded</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No LOTO executions recorded</td></tr>
               )}
             </tbody>
           </table>

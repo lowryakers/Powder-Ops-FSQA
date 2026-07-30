@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Search, Repeat, Trash2, Upload, FileText, Download, AlertTriangle, ExternalLink, Pencil, X, ChevronUp, ChevronDown } from 'lucide-react';
@@ -6,6 +6,8 @@ import FilePreview from '../FilePreview.jsx';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
 import SpendTab from './SpendTab.jsx';
+import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 const LABELS = ['Warehouse/Production', 'Cleaning', 'Break room', 'Maintenance', 'Office'];
 const STATUS_FLOW = ['new', 'ordered', 'received', 'paid'];
@@ -204,6 +206,7 @@ function OrdersLog({ refreshKey, onChanged }) {
   const query = statusFilter === 'open' ? '' : statusFilter === 'all' ? '' : `status=${statusFilter}`;
   const { data: orders, refresh } = useApiGet(`/office/supply/orders?${query}${q ? `&q=${encodeURIComponent(q)}` : ''}`, [statusFilter, q, refreshKey]);
   const [editing, setEditing] = useState(null);
+  const expand = useRowExpand();
   const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir(f === 'submitted_at' || f === 'total' ? 'desc' : 'asc'); } };
   const list = useMemo(() => {
     let l = orders || [];
@@ -304,6 +307,7 @@ function OrdersLog({ refreshKey, onChanged }) {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
+                <th className="w-8 px-2 py-2.5" />
                 <SortHeader label="Item" field="item_name" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Qty" field="qty" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Supplier" field="supplier" sortField={sortField} sortDir={sortDir} onSort={onSort} />
@@ -316,10 +320,12 @@ function OrdersLog({ refreshKey, onChanged }) {
             </thead>
             <tbody>
               {list.map(o => (
-                <tr key={o.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <Fragment key={o.id}>
+                <tr {...expand.rowProps(o.id, 'border-b border-gray-100')}>
+                  <td className="px-2 py-2.5"><ExpandCell open={expand.isExpanded(o.id)} /></td>
                   <td className="px-3 py-2.5 w-full">
                     {externalUrl(o.link) ? (
-                      <a href={externalUrl(o.link)} target="_blank" rel="noreferrer"
+                      <a href={externalUrl(o.link)} target="_blank" rel="noreferrer" onClick={stopRowClick}
                         className="font-medium text-powder-700 hover:underline inline-flex items-center gap-1"
                         title={o.link}>
                         {o.item_name} <ExternalLink size={11} />
@@ -336,7 +342,7 @@ function OrdersLog({ refreshKey, onChanged }) {
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{o.requested_by || '—'}<div className="text-gray-400">{(o.submitted_at || '').slice(0, 10)}</div></td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{o.total != null ? `$${Number(o.total).toFixed(2)}` : '—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_META[o.status].tone}`}>{STATUS_META[o.status].label}</span></td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                  <td className="px-3 py-2.5 whitespace-nowrap text-right" onClick={stopRowClick}>
                     <div className="flex items-center gap-1 justify-end">
                       {STATUS_META[o.status].next && (
                         <button onClick={() => advance(o)} className="px-2 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700">{STATUS_META[o.status].nextLabel}</button>
@@ -346,8 +352,29 @@ function OrdersLog({ refreshKey, onChanged }) {
                     </div>
                   </td>
                 </tr>
+                {expand.isExpanded(o.id) && (
+                  <DetailRow colSpan={9}>
+                    <DetailFields fields={[
+                      { label: 'Item', value: o.item_name },
+                      { label: 'Quantity', value: `${o.qty ?? ''} ${o.uom || ''}`.trim() },
+                      { label: 'Supplier', value: o.supplier },
+                      { label: 'For', value: o.label },
+                      { label: 'Requested by', value: o.requested_by },
+                      { label: 'Requested', value: (o.submitted_at || '').slice(0, 16).replace('T', ' ') },
+                      { label: 'Unit price', value: o.unit_price != null ? `$${Number(o.unit_price).toFixed(2)}` : '' },
+                      { label: 'Total', value: o.total != null ? `$${Number(o.total).toFixed(2)}` : '' },
+                      { label: 'Status', value: STATUS_META[o.status].label },
+                      { label: 'Urgent', value: o.urgent ? 'Yes' : '' },
+                      { label: 'Ordered', value: (o.ordered_at || '').slice(0, 10) },
+                      { label: 'Received', value: (o.received_at || '').slice(0, 10) },
+                      { label: 'Link', value: o.link, wide: true },
+                      { label: 'Notes', value: o.notes, wide: true },
+                    ]} />
+                  </DetailRow>
+                )}
+                </Fragment>
               ))}
-              {list.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">No orders</td></tr>}
+              {list.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">No orders</td></tr>}
             </tbody>
           </table>
         </div>

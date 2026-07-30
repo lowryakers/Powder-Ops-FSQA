@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Search, CheckCircle2, XCircle, Lightbulb, ShieldAlert } from 'lucide-react';
+import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 // QA-owned facility inspections: Light Inspection (Form 110-01/02) and Brittle
 // Plastic & Glass (Form 431-02). They share a table with cleaning records for
@@ -23,6 +25,7 @@ export default function QAInspectionsPanel() {
   const [q, setQ] = useState('');
   const [resultFilter, setResultFilter] = useState('all');
   const [verifying, setVerifying] = useState(null);
+  const expand = useRowExpand();
 
   const rows = useMemo(() => {
     const needle = q.toLowerCase().trim();
@@ -126,6 +129,7 @@ export default function QAInspectionsPanel() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="w-8 px-2 py-2" />
                   <th className="px-4 py-2">Zone / Area</th>
                   <th className="px-4 py-2">Performed</th>
                   <th className="px-4 py-2">By</th>
@@ -137,7 +141,9 @@ export default function QAInspectionsPanel() {
               </thead>
               <tbody>
                 {rows.map(r => (
-                  <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
+                  <Fragment key={r.id}>
+                  <tr {...expand.rowProps(r.id, 'border-t border-gray-100')}>
+                    <td className="px-2 py-2"><ExpandCell open={expand.isExpanded(r.id)} /></td>
                     <td className="px-4 py-2 font-medium text-gray-900">{r.area}</td>
                     <td className="px-4 py-2 text-gray-600 whitespace-nowrap">{fmt(r.performed_at)}</td>
                     <td className="px-4 py-2 text-gray-600">{r.performed_by}</td>
@@ -150,7 +156,7 @@ export default function QAInspectionsPanel() {
                     <td className="px-4 py-2 text-gray-600">{r.verified_by ? `${r.verified_by} · ${fmt(r.verified_at)}` : <span className="text-amber-600">Pending</span>}</td>
                     <td className="px-4 py-2 text-gray-500 max-w-xs truncate">{r.notes || '—'}</td>
                     {canEdit && (
-                      <td className="px-4 py-2 text-right">
+                      <td className="px-4 py-2 text-right" onClick={stopRowClick}>
                         {!r.verified_by && (
                           <button onClick={() => verify(r)} disabled={verifying === r.id}
                             className="px-2.5 py-1 bg-powder-600 text-white text-xs font-semibold rounded-md disabled:opacity-50">
@@ -160,6 +166,20 @@ export default function QAInspectionsPanel() {
                       </td>
                     )}
                   </tr>
+                  {expand.isExpanded(r.id) && (
+                    <DetailRow colSpan={canEdit ? 8 : 7}>
+                      <DetailFields fields={[
+                        { label: 'Zone / area', value: r.area },
+                        { label: 'Inspection', value: r.inspection_type || r.title },
+                        { label: 'Performed', value: fmt(r.performed_at) },
+                        { label: 'Performed by', value: r.performed_by },
+                        { label: 'Result', value: (r.result || '').toUpperCase() },
+                        { label: 'QA verified', value: r.verified_by ? `${r.verified_by} · ${fmt(r.verified_at)}` : 'Pending' },
+                        { label: 'Notes', value: r.notes, wide: true },
+                      ]} />
+                    </DetailRow>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

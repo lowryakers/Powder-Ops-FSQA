@@ -4,6 +4,8 @@ import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCi
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { hasExplicitGrant } from '../../utils/permissions';
 import { PRODUCTION_LINES, lineLabel, FILLING_TEAM } from '../../constants/productionLines';
+import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 const TEAMS = ['Batching', 'Filling', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const ROOMS = ['Batching 1', 'Batching 2', ...Array.from({ length: 16 }, (_, i) => String(i)), 'Other'];
@@ -894,8 +896,7 @@ function LogTable({ user }) {
   // re-fetches alongside the log instead of going stale.
   const [dataVersion, setDataVersion] = useState(0);
   const refreshAll = () => { refresh(); setDataVersion(v => v + 1); };
-  const [expandedNotes, setExpandedNotes] = useState(null);
-  const [openTrail, setOpenTrail] = useState(null);
+  const expand = useRowExpand();
   const [sortCol, setSortCol] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -1073,6 +1074,7 @@ function LogTable({ user }) {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="w-8 px-2 py-3" />
                   {SORT_COLUMNS.map(col => (
                     <th key={col.key}
                       onClick={() => handleSort(col.key)}
@@ -1089,10 +1091,12 @@ function LogTable({ user }) {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filtered.length === 0 && (
-                  <tr><td colSpan={14} className="px-3 py-8 text-center text-sm text-gray-500">No entries found.</td></tr>
+                  <tr><td colSpan={15} className="px-3 py-8 text-center text-sm text-gray-500">No entries found.</td></tr>
                 )}
                 {filtered.map(entry => (
-                  <tr key={entry.id} className="hover:bg-gray-50">
+                  <Fragment key={entry.id}>
+                  <tr {...expand.rowProps(entry.id)}>
+                    <td className="px-2 py-2"><ExpandCell open={expand.isExpanded(entry.id)} /></td>
                     <td className="px-3 py-2 text-sm text-gray-900 whitespace-nowrap">{formatDate(entry.date)}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">
                       {entry.team}
@@ -1104,18 +1108,11 @@ function LogTable({ user }) {
                       {entry.mo_lines?.length > 1 && (
                         <span className="ml-1.5 text-[10px] font-medium text-powder-600">+{entry.mo_lines.length - 1} more MO{entry.mo_lines.length - 1 === 1 ? '' : 's'}</span>
                       )}
-                      {(entry.notes || entry.structured_data || entry.mo_lines?.length > 1) && (
-                        <button type="button" onClick={() => setExpandedNotes(expandedNotes === entry.id ? null : entry.id)}
-                          className="ml-1 text-gray-400 hover:text-gray-600" title="View details">
-                          <ClipboardList size={13} className="inline" />
-                        </button>
-                      )}
                       {entry.amendments?.length > 0 && (
-                        <button type="button" onClick={() => setOpenTrail(openTrail === entry.id ? null : entry.id)}
-                          className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 hover:bg-amber-200"
-                          title="This entry was corrected — click to see what changed">
+                        <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800"
+                          title="This entry was corrected — open the row to see what changed">
                           <AlertCircle size={10} /> AMENDED
-                        </button>
+                        </span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.mo_number}</td>
@@ -1127,7 +1124,7 @@ function LogTable({ user }) {
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.people_count}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.units_per_hour != null ? Number(entry.units_per_hour).toLocaleString(undefined, { maximumFractionDigits: 1 }) : '--'}</td>
                     <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{entry.units_per_min_per_person != null ? Number(entry.units_per_min_per_person).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '--'}</td>
-                    <td className="px-3 py-2 text-sm whitespace-nowrap">
+                    <td className="px-3 py-2 text-sm whitespace-nowrap" onClick={stopRowClick}>
                       {entry.qa_signoff_by ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                           <CheckCircle size={12} /> Signed Off
@@ -1151,27 +1148,34 @@ function LogTable({ user }) {
                       )}
                     </td>
                   </tr>
-                ))}
-                {filtered.map(entry => expandedNotes === entry.id && (entry.notes || entry.structured_data || entry.mo_lines?.length > 1) && (
-                  <tr key={`notes-${entry.id}`} className="bg-blue-50">
-                    <td colSpan={14} className="px-4 py-2 text-sm text-gray-700">
-                      {entry.mo_lines?.length > 1 && (
-                        <div className="mb-1">
-                          <span className="font-medium text-gray-900">MOs this shift:</span>
-                          <MoLinesSummary lines={entry.mo_lines} />
-                        </div>
-                      )}
-                      {entry.notes && <div><span className="font-medium text-gray-900">Notes:</span> {entry.notes}</div>}
-                      <EodSummary template={templates?.[entry.team]} data={entry.structured_data} />
-                    </td>
-                  </tr>
-                ))}
-                {filtered.map(entry => openTrail === entry.id && entry.amendments?.length > 0 && (
-                  <tr key={`trail-${entry.id}`}>
-                    <td colSpan={14} className="px-4 py-2">
-                      <AmendmentTrail amendments={entry.amendments} />
-                    </td>
-                  </tr>
+                  {expand.isExpanded(entry.id) && (
+                    <DetailRow colSpan={15}>
+                      <DetailFields fields={[
+                        { label: 'Date', value: formatDate(entry.date) },
+                        { label: 'Team', value: [entry.team, entry.line ? lineLabel(entry.line) : null].filter(Boolean).join(' · ') },
+                        { label: 'Room', value: entry.room },
+                        { label: 'Shift', value: `${formatTime(entry.start_time)}–${formatTime(entry.end_time)}` },
+                        { label: 'Duration', value: entry.duration_hours != null ? `${Number(entry.duration_hours).toFixed(1)}h` : '' },
+                        { label: 'People', value: entry.people_count },
+                        { label: 'Quantity', value: Number(entry.quantity_completed).toLocaleString() },
+                        { label: 'Units/hr', value: entry.units_per_hour != null ? Number(entry.units_per_hour).toLocaleString(undefined, { maximumFractionDigits: 1 }) : '' },
+                        { label: 'Logged by', value: entry.created_by || entry.operator_name },
+                        { label: 'QA sign-off', value: entry.qa_signoff_by ? `${entry.qa_signoff_by}${entry.qa_signoff_at ? ` · ${formatDate(entry.qa_signoff_at)}` : ''}` : 'Pending' },
+                        { label: 'QA notes', value: entry.qa_notes, wide: true },
+                        { label: 'Notes', value: entry.notes, wide: true },
+                      ]}>
+                        {entry.mo_lines?.length > 1 && (
+                          <div className="mb-2">
+                            <div className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">MOs this shift</div>
+                            <MoLinesSummary lines={entry.mo_lines} />
+                          </div>
+                        )}
+                        <EodSummary template={templates?.[entry.team]} data={entry.structured_data} />
+                        {entry.amendments?.length > 0 && <AmendmentTrail amendments={entry.amendments} />}
+                      </DetailFields>
+                    </DetailRow>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

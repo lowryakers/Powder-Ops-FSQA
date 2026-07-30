@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Check, Languages, Trash2, UserX, Clock, HelpCircle, Search, ChevronUp, ChevronDown } from 'lucide-react';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
+import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import HoursTab from './HoursTab.jsx';
 
 const TYPES = [
@@ -133,6 +135,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
   const [sortField, setSortField] = useState('adjustment_date');
   const [sortDir, setSortDir] = useState('desc');
   const [picked, setPicked] = useState(() => new Set());
+  const expand = useRowExpand();
   const [busy, setBusy] = useState(false);
   const { data: entries, refresh } = useApiGet(`/office/time/adjustments${employee ? `?employee=${encodeURIComponent(employee)}` : ''}`, [employee]);
   const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir(f === 'adjustment_date' ? 'desc' : 'asc'); } };
@@ -334,6 +337,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
                   <input type="checkbox" checked={allPicked} onChange={toggleAll}
                     className="rounded border-gray-300" aria-label="Select all entries" />
                 </th>
+                <th className="w-8 px-2 py-2.5" />
                 <SortHeader label="Employee" field="employee_name" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Type" field="adjustment_type" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Date" field="adjustment_date" sortField={sortField} sortDir={sortDir} onSort={onSort} />
@@ -348,12 +352,14 @@ function AdjustmentsLog({ tr = (x) => x }) {
               {list.map(e => {
                 const t = typeMeta(e.adjustment_type);
                 return (
-                  <tr key={e.id} className={`border-b border-gray-100 hover:bg-gray-50 ${picked.has(e.id) ? 'bg-powder-50' : e.status === 'new' ? 'bg-powder-50/40' : ''}`}>
-                    <td className="px-3 py-2.5">
+                  <Fragment key={e.id}>
+                  <tr {...expand.rowProps(e.id, `border-b border-gray-100 ${picked.has(e.id) ? 'bg-powder-50' : e.status === 'new' ? 'bg-powder-50/40' : ''}`)}>
+                    <td className="px-3 py-2.5" onClick={stopRowClick}>
                       <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggleOne(e.id)}
                         className="rounded border-gray-300" aria-label={`Select ${e.employee_name}`} />
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
+                    <td className="px-2 py-2.5"><ExpandCell open={expand.isExpanded(e.id)} /></td>
+                    <td className="px-3 py-2.5 whitespace-nowrap" onClick={stopRowClick}>
                       <button onClick={() => setEmployee(e.employee_name)} className="font-medium text-gray-900 hover:text-powder-700">{e.employee_name}</button>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.tone}`}>{t.label}</span></td>
@@ -365,7 +371,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
                         ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">New</span>
                         : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 inline-flex items-center gap-1"><Check size={11} /> Reviewed</span>}
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
+                    <td className="px-3 py-2.5 whitespace-nowrap" onClick={stopRowClick}>
                       {(() => {
                         const a = ADP_STATES.find(x => x.value === (e.adp_status || 'pending'));
                         return (
@@ -377,7 +383,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
                       })()}
                       <div className="text-[10px] text-gray-400">{payPeriodLabel(e.pay_period || payPeriodOf(e.adjustment_date))}</div>
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                    <td className="px-3 py-2.5 whitespace-nowrap text-right" onClick={stopRowClick}>
                       <div className="flex items-center gap-1 justify-end">
                         {e.status === 'new' && (
                           <button onClick={() => markReviewed(e)} className="px-2 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700">Mark reviewed</button>
@@ -386,9 +392,31 @@ function AdjustmentsLog({ tr = (x) => x }) {
                       </div>
                     </td>
                   </tr>
+                  {expand.isExpanded(e.id) && (
+                    <DetailRow colSpan={10}>
+                      <DetailFields fields={[
+                        { label: tr('Employee'), value: e.employee_name },
+                        { label: tr('Type'), value: t.label },
+                        { label: tr('Date'), value: e.adjustment_date },
+                        { label: tr('Hours'), value: e.hours },
+                        { label: tr('Reported by'), value: e.submitted_by },
+                        { label: tr('Reported'), value: (e.created_at || '').slice(0, 16).replace('T', ' ') },
+                        { label: tr('Status'), value: e.status === 'new' ? tr('New') : tr('Reviewed') },
+                        { label: tr('Reviewed by'), value: e.reviewed_by },
+                        { label: tr('ADP'), value: e.adp_entered_by ? `${e.adp_entered_by} · ${(e.adp_entered_at || '').slice(0, 10)}` : (e.adp_status || 'pending') },
+                        { label: tr('Pay period'), value: payPeriodLabel(e.pay_period || payPeriodOf(e.adjustment_date)) },
+                      ]}>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">{tr('Message')}</div>
+                          <EntryMessage e={e} />
+                        </div>
+                      </DetailFields>
+                    </DetailRow>
+                  )}
+                  </Fragment>
                 );
               })}
-              {list.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">{tr('No entries')}</td></tr>}
+              {list.length === 0 && <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400">{tr('No entries')}</td></tr>}
             </tbody>
           </table>
         </div>

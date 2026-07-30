@@ -1,10 +1,12 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
 import { Plus, Search, Upload, Paperclip, Trash2, X, RefreshCw, FileText } from 'lucide-react';
+import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 // Accounts Payable / Accounts Receivable, one component driven by a ledger
 // config — the two sides are the same job with the money pointing the other
@@ -231,6 +233,7 @@ export default function LedgerPanel({ ledger }) {
   const listPath = `/finance/${cfg.key}?${new URLSearchParams({ ...(q ? { q } : {}), ...(statusFilter ? { status: statusFilter } : {}) })}`;
   const { data: rows, refresh } = useApiGet(listPath, [q, statusFilter]);
   const { data: summary, refresh: refreshSummary } = useApiGet(`/finance/${cfg.key}/summary`);
+  const expand = useRowExpand();
 
   const reload = () => { refresh(); refreshSummary(); };
 
@@ -353,6 +356,7 @@ export default function LedgerPanel({ ledger }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="w-8 px-2 py-2" />
                   <th className="px-3 py-2">{tr(cfg.partyLabel)}</th>
                   <th className="px-3 py-2">{tr('Invoice #')}</th>
                   <th className="px-3 py-2">{tr('Invoice date')}</th>
@@ -369,7 +373,9 @@ export default function LedgerPanel({ ledger }) {
                   const st = cfg.statuses.find(s => s.value === r.status) || cfg.statuses[0];
                   const overdue = r.due_date && r.due_date < today() && r.status !== 'paid' && r.status !== 'void';
                   return (
-                    <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <Fragment key={r.id}>
+                    <tr {...expand.rowProps(r.id, 'border-t border-gray-100')}>
+                      <td className="px-2 py-2"><ExpandCell open={expand.isExpanded(r.id)} /></td>
                       <td className="px-3 py-2 font-medium text-gray-900">
                         {r[cfg.party]}
                         {r.file_id && <Paperclip size={11} className="inline ml-1 text-gray-400" />}
@@ -382,16 +388,41 @@ export default function LedgerPanel({ ledger }) {
                       <td className="px-3 py-2 text-right font-semibold text-gray-900">{money(r.amount - r[cfg.paidField])}</td>
                       <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${st.tone}`}>{tr(st.label)}</span></td>
                       {canEdit && (
-                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <td className="px-3 py-2 text-right whitespace-nowrap" onClick={stopRowClick}>
                           <button onClick={() => setEditing(r)} className="px-2 py-1 text-xs font-medium text-powder-700 hover:underline">{tr('Edit')}</button>
                           <button onClick={() => remove(r)} className="p-1 text-gray-300 hover:text-red-500"><X size={13} /></button>
                         </td>
                       )}
                     </tr>
+                    {expand.isExpanded(r.id) && (
+                      <DetailRow colSpan={canEdit ? 10 : 9}>
+                        <DetailFields fields={[
+                          { label: tr(cfg.partyLabel), value: r[cfg.party] },
+                          { label: tr('Invoice #'), value: r.invoice_number },
+                          { label: tr('Invoice date'), value: r.invoice_date },
+                          { label: tr('Due date'), value: r.due_date },
+                          { label: tr('Amount'), value: money(r.amount) },
+                          { label: tr(cfg.paidLabel), value: money(r[cfg.paidField]) },
+                          { label: tr('Outstanding'), value: money(r.amount - r[cfg.paidField]) },
+                          { label: tr('Status'), value: tr(st.label) },
+                          { label: tr('Terms'), value: r.terms },
+                          { label: tr('Category'), value: r.category },
+                          { label: tr('Reference'), value: r.qb_id ? `QuickBooks ${r.qb_id}` : '' },
+                          { label: tr('Notes'), value: r.notes, wide: true },
+                        ]}>
+                          {r.file_id && (
+                            <div className="inline-flex items-center gap-1 text-xs text-gray-600">
+                              <Paperclip size={12} /> {tr('Invoice file attached')}
+                            </div>
+                          )}
+                        </DetailFields>
+                      </DetailRow>
+                    )}
+                    </Fragment>
                   );
                 })}
                 {(rows || []).length === 0 && (
-                  <tr><td colSpan={canEdit ? 9 : 8} className="px-4 py-8 text-center text-gray-400">{tr('No invoices yet.')}</td></tr>
+                  <tr><td colSpan={canEdit ? 10 : 9} className="px-4 py-8 text-center text-gray-400">{tr('No invoices yet.')}</td></tr>
                 )}
               </tbody>
             </table>

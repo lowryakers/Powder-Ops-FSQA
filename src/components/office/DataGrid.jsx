@@ -1,5 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { Search, ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react';
+import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 // A plain, fast table for the office data sheets: click a header to sort,
 // type to search everything, and pick values from any column marked filterable.
@@ -11,13 +13,14 @@ import { Search, ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react';
 export default function DataGrid({
   columns, rows, loading, empty = 'Nothing here yet.',
   onEdit, canEdit = false, searchPlaceholder = 'Search…', toolbar, rowClass,
-  initialSort,
+  initialSort, detail, expandable = true,
 }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(initialSort || null);   // { key, dir }
   const [filters, setFilters] = useState({});
   const [editing, setEditing] = useState(null);            // { id, key }
   const [draft, setDraft] = useState('');
+  const expand = useRowExpand();
 
   const filterable = columns.filter(c => c.filter);
   const options = useMemo(() => {
@@ -77,6 +80,7 @@ export default function DataGrid({
   };
 
   const activeFilters = Object.entries(filters).filter(([, v]) => v);
+  const span = columns.length + (expandable ? 1 : 0);
 
   return (
     <div className="space-y-2">
@@ -107,6 +111,7 @@ export default function DataGrid({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 sticky top-0 z-10">
             <tr>
+              {expandable && <th className="w-8 px-2 py-2" />}
               {columns.map(c => (
                 <th key={c.key} onClick={() => toggleSort(c.key)}
                   className={`px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap ${c.align === 'right' ? 'text-right' : 'text-left'}`}
@@ -122,15 +127,20 @@ export default function DataGrid({
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">Loading…</td></tr>}
-            {!loading && view.length === 0 && <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">{empty}</td></tr>}
+            {loading && <tr><td colSpan={span} className="px-4 py-8 text-center text-gray-400">Loading…</td></tr>}
+            {!loading && view.length === 0 && <tr><td colSpan={span} className="px-4 py-8 text-center text-gray-400">{empty}</td></tr>}
             {!loading && view.map(row => (
-              <tr key={row.id} className={`border-t border-gray-100 hover:bg-gray-50 ${rowClass?.(row) || ''}`}>
+              <Fragment key={row.id}>
+              <tr {...(expandable
+                ? expand.rowProps(row.id, `border-t border-gray-100 ${rowClass?.(row) || ''}`)
+                : { className: `border-t border-gray-100 hover:bg-gray-50 ${rowClass?.(row) || ''}` })}>
+                {expandable && <td className="px-2 py-1.5"><ExpandCell open={expand.isExpanded(row.id)} /></td>}
                 {columns.map(c => {
                   const isEditing = editing && editing.id === row.id && editing.key === c.key;
                   return (
                     <td key={c.key}
                       onDoubleClick={() => startEdit(row, c)}
+                      onClick={canEdit && c.edit ? stopRowClick : undefined}
                       className={`px-3 py-1.5 ${c.align === 'right' ? 'text-right' : ''} ${canEdit && c.edit ? 'cursor-text' : ''}`}>
                       {isEditing ? (
                         <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
@@ -143,6 +153,14 @@ export default function DataGrid({
                   );
                 })}
               </tr>
+              {expandable && expand.isExpanded(row.id) && (
+                <DetailRow colSpan={span}>
+                  <DetailFields fields={columns.filter(c => c.label).map(c => ({ label: c.label, value: fmt(row, c) }))}>
+                    {detail?.(row)}
+                  </DetailFields>
+                </DetailRow>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

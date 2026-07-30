@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import {
   PackageCheck, Plus, ClipboardList, Search, Filter, Pencil,
@@ -7,6 +7,8 @@ import {
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import ImportPanel from '../common/ImportPanel';
+import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 // Receiving Log — incoming raw material, labels and components (replaces the
 // Monday board). Both dropdowns are managed lists and the extra questions are
@@ -206,7 +208,7 @@ function ReceivingTable({ user }) {
   const [sortCol, setSortCol] = useState('date_received');
   const [sortDir, setSortDir] = useState('desc');
   const [editing, setEditing] = useState(null);
-  const [expanded, setExpanded] = useState(null);
+  const expand = useRowExpand();
 
   // Searching runs on the server and deliberately IGNORES the date filter.
   // Filtering client-side inside the loaded window meant a search for a receipt
@@ -358,6 +360,7 @@ function ReceivingTable({ user }) {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="w-8 px-2 py-3" />
                   {COLUMNS.map(c => (
                     <th key={c.key} onClick={() => sort(c.key)}
                       className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:text-gray-900 hover:bg-gray-100">
@@ -373,25 +376,18 @@ function ReceivingTable({ user }) {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {sorted.length === 0 && (
-                  <tr><td colSpan={COLUMNS.length + 2} className="px-3 py-8 text-center text-sm text-gray-500">No receipts found.</td></tr>
+                  <tr><td colSpan={COLUMNS.length + 3} className="px-3 py-8 text-center text-sm text-gray-500">No receipts found.</td></tr>
                 )}
                 {sorted.map(r => {
                   const exp = expiryState(r.expiration_date);
-                  const hasDetail = r.custom_data || r.notes || r.packing_slip_url;
                   return (
-                    <tr key={r.id} className="hover:bg-gray-50">
+                    <Fragment key={r.id}>
+                    <tr {...expand.rowProps(r.id)}>
+                      <td className="px-2 py-2"><ExpandCell open={expand.isExpanded(r.id)} /></td>
                       <td className="px-3 py-2 text-sm text-gray-900 whitespace-nowrap">{fmtDate(r.date_received)}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{r.po_number}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{r.part_number}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700 min-w-[200px]">
-                        {r.part_description}
-                        {hasDetail && (
-                          <button type="button" onClick={() => setExpanded(expanded === r.id ? null : r.id)}
-                            className="ml-1 text-gray-400 hover:text-gray-600" title="View details">
-                            <ClipboardList size={13} className="inline" />
-                          </button>
-                        )}
-                      </td>
+                      <td className="px-3 py-2 text-sm text-gray-700 min-w-[200px]">{r.part_description}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{r.vendor_lot}</td>
                       <td className="px-3 py-2 text-sm whitespace-nowrap">
                         {fmtDate(r.expiration_date)}
@@ -413,7 +409,7 @@ function ReceivingTable({ user }) {
                         <span className={r.received_in_mrp ? 'text-green-600' : 'text-gray-300'} title="Received in MRPEasy">●</span>
                         <span className={`ml-1 ${r.part_in_mrp ? 'text-green-600' : 'text-gray-300'}`} title="Part # in MRPEasy">●</span>
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
+                      <td className="px-3 py-2 whitespace-nowrap" onClick={stopRowClick}>
                         {canEdit && (
                           <button type="button" onClick={() => setEditing(r)} className="text-gray-400 hover:text-amber-600" data-tip="Correct this record" data-tip-left>
                             <Pencil size={13} />
@@ -421,22 +417,41 @@ function ReceivingTable({ user }) {
                         )}
                       </td>
                     </tr>
+                    {expand.isExpanded(r.id) && (
+                      <DetailRow colSpan={COLUMNS.length + 3}>
+                        <DetailFields fields={[
+                          { label: 'Inspection #', value: r.inspection_no },
+                          { label: 'Received', value: fmtDate(r.date_received) },
+                          { label: 'PO #', value: r.po_number },
+                          { label: 'Part #', value: r.part_number },
+                          { label: 'Description', value: r.part_description },
+                          { label: 'Vendor lot', value: r.vendor_lot },
+                          { label: 'Expires', value: fmtDate(r.expiration_date) },
+                          { label: 'Quantity', value: r.quantity_received != null ? `${Number(r.quantity_received).toLocaleString()} ${r.uom || ''}`.trim() : '' },
+                          { label: 'Received by', value: r.received_by },
+                          { label: 'Status of release', value: r.status_of_release },
+                          { label: 'Release date', value: fmtDate(r.release_date) },
+                          { label: 'In MRPEasy', value: `Part ${r.part_in_mrp ? 'yes' : 'no'} · Receipt ${r.received_in_mrp ? 'yes' : 'no'}` },
+                          { label: 'Notes', value: r.notes, wide: true },
+                        ]}>
+                          {r.packing_slip_url && (
+                            <a href={r.packing_slip_url} target="_blank" rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs">
+                              <ExternalLink size={12} /> Packing slip
+                            </a>
+                          )}
+                          <CustomFieldValues scope={SCOPE} data={r.custom_data} />
+                          {r.source && (
+                            <div className="mt-2 text-[11px] text-gray-500">
+                              Imported from {r.source}{r.external_id ? ` · ${r.external_id}` : ''}
+                            </div>
+                          )}
+                        </DetailFields>
+                      </DetailRow>
+                    )}
+                    </Fragment>
                   );
                 })}
-                {sorted.map(r => expanded === r.id && (r.custom_data || r.notes || r.packing_slip_url) && (
-                  <tr key={`d-${r.id}`} className="bg-blue-50">
-                    <td colSpan={COLUMNS.length + 2} className="px-4 py-2 text-sm text-gray-700">
-                      {r.notes && <div className="mb-1"><span className="font-medium text-gray-900">Notes:</span> {r.notes}</div>}
-                      {r.packing_slip_url && (
-                        <a href={r.packing_slip_url} target="_blank" rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs mb-1">
-                          <ExternalLink size={12} /> Packing slip
-                        </a>
-                      )}
-                      <CustomFieldValues scope={SCOPE} data={r.custom_data} />
-                    </td>
-                  </tr>
-                ))}
               </tbody>
             </table>
           </div>

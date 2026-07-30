@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search, FileText, Upload } from 'lucide-react';
+import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 const STATUS_COLORS = {
   active: 'bg-green-100 text-green-800',
@@ -210,6 +212,8 @@ export default function CalibrationPanel() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [calibrating, setCalibrating] = useState(null);
+  const expandInst = useRowExpand();
+  const expandRec = useRowExpand();
   const [tab, setTab] = useState('instruments');
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
@@ -386,6 +390,7 @@ export default function CalibrationPanel() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
+                  <th className="w-8 px-2 py-3" />
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Asset #</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Serial #</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Make</th>
@@ -403,7 +408,9 @@ export default function CalibrationPanel() {
                 {filtered.map(inst => {
                   const isOverdue = inst.next_due && inst.next_due < today;
                   return (
-                    <tr key={inst.id} className={`border-b border-gray-100 hover:bg-gray-50 ${isOverdue ? 'bg-red-50/50' : ''}`}>
+                    <Fragment key={inst.id}>
+                    <tr {...expandInst.rowProps(inst.id, `border-b border-gray-100 ${isOverdue ? 'bg-red-50/50' : ''}`)}>
+                      <td className="px-2 py-3"><ExpandCell open={expandInst.isExpanded(inst.id)} /></td>
                       <td className="px-4 py-3 font-mono text-xs font-medium whitespace-nowrap">{inst.asset_number || '—'}</td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">{inst.serial_number || 'N/A'}</td>
                       <td className="px-4 py-3 text-gray-900 font-medium">{inst.manufacturer || '—'}</td>
@@ -421,7 +428,7 @@ export default function CalibrationPanel() {
                           {inst.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right" onClick={stopRowClick}>
                         <div className="flex gap-1 justify-end">
                           <button onClick={() => setCalibrating(calibrating?.id === inst.id ? null : inst)}
                             className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100">
@@ -434,10 +441,33 @@ export default function CalibrationPanel() {
                         </div>
                       </td>
                     </tr>
+                    {expandInst.isExpanded(inst.id) && (
+                      <DetailRow colSpan={12}>
+                        <DetailFields fields={[
+                          { label: 'Asset #', value: inst.asset_number },
+                          { label: 'Serial #', value: inst.serial_number },
+                          { label: 'Name', value: inst.name },
+                          { label: 'Make', value: inst.manufacturer },
+                          { label: 'Model', value: inst.model },
+                          { label: 'Type', value: inst.instrument_type },
+                          { label: 'Room', value: inst.room },
+                          { label: 'Department', value: inst.department },
+                          { label: 'Max capacity', value: inst.max_capacity },
+                          { label: 'Resolution', value: inst.resolution },
+                          { label: 'Tolerance', value: inst.tolerance },
+                          { label: 'Frequency', value: inst.frequency },
+                          { label: 'Last calibrated', value: inst.last_calibrated ? inst.last_calibrated.split('T')[0] : '' },
+                          { label: 'Next due', value: inst.next_due },
+                          { label: 'Status', value: inst.status },
+                          { label: 'Notes', value: inst.notes, wide: true },
+                        ]} />
+                      </DetailRow>
+                    )}
+                    </Fragment>
                   );
                 })}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-500">No instruments found</td></tr>
+                  <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-500">No instruments found</td></tr>
                 )}
               </tbody>
             </table>
@@ -454,6 +484,7 @@ export default function CalibrationPanel() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
+                <th className="w-8 px-2 py-3" />
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Instrument</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Result</th>
@@ -467,7 +498,9 @@ export default function CalibrationPanel() {
             </thead>
             <tbody>
               {(records || []).map(r => (
-                <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <Fragment key={r.id}>
+                <tr {...expandRec.rowProps(r.id, 'border-b border-gray-100')}>
+                  <td className="px-2 py-3"><ExpandCell open={expandRec.isExpanded(r.id)} /></td>
                   <td className="px-4 py-3 font-medium w-full">{r.instrument_name}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(r.calibrated_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3">
@@ -480,7 +513,7 @@ export default function CalibrationPanel() {
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.calibrated_by}</td>
                   <td className="px-4 py-3 text-gray-600">{r.standard_used || '—'}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.next_due || '—'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-4 py-3 whitespace-nowrap" onClick={stopRowClick}>
                     {r.certificate_file ? (
                       <button onClick={() => downloadCert(r)} className="p-1 text-powder-600 hover:text-powder-800" data-tip="Download calibration certificate">
                         <FileText size={15} />
@@ -494,9 +527,26 @@ export default function CalibrationPanel() {
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                 </tr>
+                {expandRec.isExpanded(r.id) && (
+                  <DetailRow colSpan={10}>
+                    <DetailFields fields={[
+                      { label: 'Instrument', value: r.instrument_name },
+                      { label: 'Calibrated', value: new Date(r.calibrated_at).toLocaleString() },
+                      { label: 'Result', value: r.result },
+                      { label: 'Reading before', value: r.reading_before },
+                      { label: 'Reading after', value: r.reading_after },
+                      { label: 'Calibrated by', value: r.calibrated_by },
+                      { label: 'Standard used', value: r.standard_used },
+                      { label: 'Next due', value: r.next_due },
+                      { label: 'Certificate', value: r.certificate_file ? 'On file' : '' },
+                      { label: 'Notes', value: r.notes, wide: true },
+                    ]} />
+                  </DetailRow>
+                )}
+                </Fragment>
               ))}
               {(!records || records.length === 0) && (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No calibration records yet</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">No calibration records yet</td></tr>
               )}
             </tbody>
           </table>
