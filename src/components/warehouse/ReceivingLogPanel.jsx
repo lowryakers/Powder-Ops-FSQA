@@ -58,10 +58,15 @@ function ReceivingForm({ user, record, onSaved, onCancel }) {
   const [custom, setCustom] = useState(record?.custom_data || {});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  // The inspection # of the record just filed, so the next line can join it.
+  const [lastFiled, setLastFiled] = useState(null);
 
   // Both dropdowns come from managed lists, so editing them is a Settings task.
   const { data: uomList } = useApiGet('/structure/lists/uom');
   const { data: statusList } = useApiGet('/structure/lists/receiving_release_status');
+  // What the next new inspection would be numbered. Advisory — the server
+  // issues the real one on save, so two people filing at once can't collide.
+  const { data: nextNo } = useApiGet(record ? null : '/receiving/next-inspection-no');
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -71,14 +76,18 @@ function ReceivingForm({ user, record, onSaved, onCancel }) {
     try {
       const payload = { ...form, custom_data: custom };
       if (record) await apiPut(`/receiving/${record.id}`, payload);
-      else await apiPost('/receiving', payload);
+      else {
+        const created = await apiPost('/receiving', payload);
+        setLastFiled(created?.inspection_no || null);
+      }
       onSaved?.();
       if (!record) {
         // Keep date + receiver: receipts arrive in batches from one person.
+        // Inspection # is deliberately cleared — the default is a NEW
+        // inspection, and "add another line" is one click away below.
         setForm({ ...BLANK, date_received: form.date_received, received_by: form.received_by });
         setCustom({});
         setMsg({ type: 'success', text: 'Receiving record saved.' });
-        setTimeout(() => setMsg(null), 3000);
       }
     } catch (err) {
       setMsg({ type: 'error', text: err.message || 'Could not save.' });
@@ -91,16 +100,37 @@ function ReceivingForm({ user, record, onSaved, onCancel }) {
         <Plus size={16} /> {record ? 'Correct receiving record' : 'New Receiving Record'}
       </h3>
 
-      {msg && (
-        <div className={`px-3 py-2 rounded-lg text-sm ${msg.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-          {msg.text}
+      {msg && msg.type === 'error' && (
+        <div className="px-3 py-2 rounded-lg text-sm bg-red-50 text-red-800">{msg.text}</div>
+      )}
+
+      {/* One arrival = one inspection # = as many lines as it took. After
+          filing a line, joining it is one click; doing nothing starts a new
+          inspection, which is the common case. */}
+      {msg?.type === 'success' && lastFiled && (
+        <div className="px-3 py-2 rounded-lg text-sm bg-green-50 text-green-900 flex flex-wrap items-center gap-2">
+          <span>Filed as <span className="font-semibold">{lastFiled}</span>.</span>
+          {form.inspection_no === lastFiled ? (
+            <span className="text-green-700">Next line joins this inspection.</span>
+          ) : (
+            <button type="button" onClick={() => set('inspection_no', lastFiled)}
+              className="px-2 py-0.5 rounded-md border border-green-300 bg-white text-xs font-medium text-green-800 hover:bg-green-100">
+              Add another line to {lastFiled}
+            </button>
+          )}
         </div>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Inspection #</label>
-          <input value={form.inspection_no} onChange={e => set('inspection_no', e.target.value)} className={inputCls} placeholder="A-100-0492" />
+          <input value={form.inspection_no} onChange={e => set('inspection_no', e.target.value)} className={inputCls}
+            placeholder={record ? 'A-100-0492' : (nextNo?.inspection_no ? `${nextNo.inspection_no} (assigned on save)` : 'Assigned on save')} />
+          {!record && (
+            <p className="mt-1 text-[11px] text-gray-500">
+              Leave blank for a new inspection. Type an existing number to add this line to that receipt.
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Date Received <span className="text-red-600">*</span></label>

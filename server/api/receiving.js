@@ -49,6 +49,36 @@ function readBody(body) {
   return out;
 }
 
+// ── Inspection numbers ──────────────────────────────────────────────────────
+// One inspection covers one arrival, and an arrival is often several lines (a
+// pallet of three different parts on the same PO). So the number is issued per
+// INSPECTION, not per row: start a receipt and you get the next one; add
+// another line to that receipt and you keep it. The imported Monday history
+// works exactly this way — 1,328 rows share 511 A-100 numbers.
+//
+// Format is the one the warehouse already writes by hand: A-100-#### (zero
+// padded to 4, but it keeps counting past 9999 rather than wrapping).
+const INSPECTION_PREFIX = 'A-100-';
+
+function nextInspectionNo(db) {
+  const rows = db.prepare(
+    "SELECT inspection_no FROM receiving_log WHERE inspection_no LIKE 'A-100-%'"
+  ).all();
+  let max = 0;
+  for (const r of rows) {
+    const n = Number(String(r.inspection_no).slice(INSPECTION_PREFIX.length));
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return INSPECTION_PREFIX + String(max + 1).padStart(4, '0');
+}
+
+// GET /next-inspection-no — what the form shows before anything is saved.
+// Advisory only: two people filling the form at once both see the same number,
+// and the one who saves second gets the next one assigned at write time.
+router.get('/next-inspection-no', (req, res) => {
+  res.json({ inspection_no: nextInspectionNo(getDb()) });
+});
+
 // GET / — the log, filtered. Search spans the identifiers a warehouse lead
 // actually reaches for: PO, part, description, lot, inspection #.
 router.get('/', (req, res) => {
@@ -106,6 +136,10 @@ router.post('/', (req, res) => {
 
   const { data, errors } = coerceCustomData(db, 'receiving_log', req.body.custom_data);
   if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+
+  // Left blank = a new inspection, so issue the next number. Sent = the filer
+  // is adding another line to a receipt that's already open; keep it.
+  if (!cols.inspection_no) cols.inspection_no = nextInspectionNo(db);
 
   const id = uuid();
   cols.id = id;

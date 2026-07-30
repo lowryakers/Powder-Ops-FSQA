@@ -154,6 +154,20 @@ row); the **EOD Templates** tab (log-editors/admins) is the field-list editor (`
 reorder typed fields, dropdown choices comma-separated, save per team). Switching team in the entry form
 resets the answers so a Batching answer never carries into a Filling report.
 
+## Schedule: several items on one day, and moving them in bulk
+"It won't let me put two things on Thursday" was a client bug, not a server rule: `production_schedule`
+upserts on `(week_start, day_of_week, room, slot)`, and `handleSave`'s repeat loops reused the edited cell's
+slot (and hardcoded `slot: 0` for next week), so the second item written into a cell **replaced** the first.
+`POST /schedule` now takes **`append: true`** → the slot becomes `MAX(slot)+1` for the target cell and the
+`existing` upsert lookup is skipped; both repeat paths send it. Never send `append` for the cell the editor
+is actually looking at — that's a real upsert and must stay one.
+**`POST /schedule/bulk-move`** `{ids, day_of_week, week_start?, room?, updated_by}` appends each assignment
+into the target cell and **can cross weeks**, which `PUT /schedule/:id/move` cannot (it only ever moves
+within `existing.week_start`). Room follows the request when given, otherwise each item keeps its own.
+UI: a **Select** toggle in the schedule toolbar (desktop, admins) puts the grid in selection mode —
+checkboxes, drag and inline edit suspended — and ticking items raises `BulkMoveBar` (This week / Next week +
+the five weekdays). Moving into next week advances `weekOffset` so the items don't appear to vanish.
+
 ## Multi-MO entries (Batching runs several MOs a shift)
 `production_entries.mo_lines` is a JSON array of
 `{product_name, mo_number, lot_number, batches, batch_weights, quantity}`. **Line 0 is mirrored into the
@@ -206,6 +220,31 @@ else's record needs an edit grant. Both dropdowns (UOM, Status of Release) are *
 questions are **custom fields** — it's the first module built on the structure engine, so use it as the
 reference when converting another log. `external_id` is reserved for idempotent import (upsert, don't
 duplicate) and `source` records provenance.
+**Inspection # is issued per INSPECTION, not per row.** One arrival is often several lines (three parts on
+one PO), and the imported Monday history proves it: 1,328 rows share 511 `A-100-####` numbers. So
+`nextInspectionNo()` takes MAX of the numeric suffix + 1 (zero-padded to 4, keeps counting past 9999); POST
+assigns it **only when `inspection_no` arrives blank** — a number sent explicitly means "add a line to this
+open receipt" and is kept as-is (which also leaves the legacy bare-number records alone).
+`GET /receiving/next-inspection-no` feeds the form placeholder and is **advisory only** — the real number is
+issued at write time, so two people filing at once can't collide. After a save the form clears the field
+(new inspection is the common case) and offers a one-click "Add another line to A-100-####".
+
+## Click a log row to expand it
+`src/lib/useRowExpand.js` (`useRowExpand()`, `stopRowClick`) + `src/components/common/RowDetail.jsx`
+(`<ExpandCell>`, `<DetailRow>`, `<DetailFields>`). A table opts in with a `w-8` chevron column,
+`{...expand.rowProps(r.id)}` on the `<tr>`, and a `<DetailRow>` **inside that row's `<Fragment>`** — two
+panels used to render in a second `.map()` after the whole list, so expanding row 3 of 200 dropped the
+detail at the bottom of the table. Action cells (`Correct`, sign-off, delete, links) carry `stopRowClick`
+so the pencil still opens the form. **The pencil was the wrong door for reading** — it implies you're about
+to change a compliance record and is gated behind edit rights most readers don't have; expanding is
+read-only and open to anyone who can see the log. `colSpan` on `<DetailRow>` and on the empty-state row must
+both count the chevron column.
+Wired: Production Log, Receiving, Calibration (instruments + records), Chemicals, QA Inspections, LOTO
+executions, Supply Orders, Time Tracking, AP/AR ledgers, and office `DataGrid` (`expandable`, on by default,
+auto-builds the panel from the columns; pass `detail={row => …}` to add more). Disposals, QMS Records,
+Document Registry and COA already open a full record view on row click — left alone.
+The **audit log** detail diffs `previous_state`/`new_state` and shows only the fields that changed; it
+stores whole snapshots and dumping both buries the one value someone came to check.
 
 ## Migration ordering (fresh-DB gotcha)
 `addColumnIfMissing()` runs `ALTER TABLE … ADD COLUMN`, which **throws** if the table doesn't exist yet —
