@@ -3,6 +3,8 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { getType, CHEMICAL_USE_SPECS } from '../qms-config.js';
 import { getChannelByName, postMessageAs } from './comms.js';
+import { SCALE_FORMS } from '../scale-forms.js';
+import { recordScaleVerification } from './scale-verification.js';
 
 const router = Router();
 
@@ -319,5 +321,33 @@ router.post('/maintenance-signout', (req, res) => {
   res.status(201).json({ ok: true, created, record_number: created[0].record_number, item_description: created[0].item_description });
 });
 
+
+
+
+// ── Scale Calibration Verification (Forms 417-01 … 417-05) ──────────────────
+// The daily three-point scale check, run from the floor before production
+// starts. Public like the other kiosk forms: a supervisor scans the QR at the
+// scale and fills it in on their phone. Grading happens server-side, so a
+// reading outside tolerance can never be filed as a pass.
+
+router.get('/scale-forms', (_req, res) => {
+  const db = getDb();
+  let rooms;
+  try {
+    rooms = db.prepare(`SELECT DISTINCT room FROM calibration_instruments
+      WHERE room IS NOT NULL AND room != '' ORDER BY room`).all().map(r => r.room);
+  } catch { rooms = []; }
+  res.json({ forms: SCALE_FORMS, rooms });
+});
+
+router.post('/scale-verification', (req, res) => {
+  const db = getDb();
+  const { error, record } = recordScaleVerification(db, req.body, {
+    actor: (req.body?.performed_by || '').trim() || 'kiosk',
+    source: 'kiosk',
+  });
+  if (error) return res.status(400).json({ error });
+  res.status(201).json({ ok: true, record });
+});
 
 export default router;

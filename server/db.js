@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { tagQaInspectionRecords } from './qa-records.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync } from 'fs';
@@ -192,6 +193,33 @@ function initSchema() {
       notes TEXT,
       FOREIGN KEY (instrument_id) REFERENCES calibration_instruments(id)
     );
+
+    -- Daily three-point scale checks (Forms 417-01 … 417-05). Separate from
+    -- calibration_records on purpose: an annual calibration is one before/after
+    -- reading by a technician, this is a three-weight verification the floor
+    -- runs every morning. Both live in Calibration Management; conflating them
+    -- would lose the per-point readings that make the check auditable.
+    CREATE TABLE IF NOT EXISTS scale_verifications (
+      id TEXT PRIMARY KEY,
+      form_code TEXT NOT NULL,
+      form_title TEXT NOT NULL,
+      room TEXT,
+      instrument_id TEXT,
+      weights_serial TEXT,
+      asset_tag TEXT,
+      performed_by TEXT NOT NULL,
+      performed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      readings TEXT NOT NULL DEFAULT '[]',
+      result TEXT NOT NULL CHECK (result IN ('pass','fail')),
+      notes TEXT,
+      verified_by TEXT,
+      verified_at TEXT,
+      source TEXT NOT NULL DEFAULT 'kiosk',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (instrument_id) REFERENCES calibration_instruments(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_scale_verifications_performed ON scale_verifications(performed_at);
+    CREATE INDEX IF NOT EXISTS idx_scale_verifications_form ON scale_verifications(form_code, performed_at);
 
     CREATE TABLE IF NOT EXISTS sanitation_records (
       id TEXT PRIMARY KEY,
@@ -1678,19 +1706,14 @@ function runMigrations() {
   // badge that admins raise when they publish/update the week's schedule.
   addColumnIfMissing('users', 'schedule_seen_at', 'TEXT');
 
-  // Light Inspection (Form 110-01/02) and Brittle Plastic & Glass (Form 431-02)
-  // are QA inspections that happen to be stored as sanitation_records. Tagging
-  // them keeps the Sanitation log about cleaning and puts the inspections on
-  // QA's own list, without moving a single historical record.
+  // Light Inspection (Form 110-01/02), Brittle Plastic & Glass (Form 431-02)
+  // and Temperature & Humidity Control (Form 110-04) are QA inspections that
+  // happen to be stored as sanitation_records. Tagging them keeps the
+  // Sanitation log about cleaning and puts the inspections on QA's own list,
+  // without moving a single historical record. The same tagger runs again
+  // after the seeds (server.js) — on a fresh DB this pass sees an empty table.
   addColumnIfMissing('sanitation_records', 'record_group', "TEXT DEFAULT 'sanitation'");
-  try {
-    const { changes } = db.prepare(`UPDATE sanitation_records SET record_group = 'qa'
-      WHERE COALESCE(record_group, 'sanitation') != 'qa'
-        AND (area LIKE 'Brittle Plastic%' OR area LIKE 'Light Inspection%')`).run();
-    if (changes > 0) console.log(`[db] Moved ${changes} inspection records to the QA list`);
-  } catch (e) {
-    console.warn('[db] QA inspection tagging skipped:', e.message);
-  }
+  tagQaInspectionRecords(db);
 
   // Short sign-in name (first + last) for people whose legal name runs to three
   // or four words. `name` stays the full name on every record; this is only

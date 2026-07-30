@@ -1109,6 +1109,71 @@ router.get('/activity/unread', (req, res) => {
   res.json(counts);
 });
 
+// POST /activity/read — clear the Activity badge.
+//
+// Activity has no read state of its own: an item is unread when it's newer than
+// the caller's last_read_at on its thread (for a reply) or its channel. So
+// clearing the feed means stamping exactly those rows — narrower than
+// /read-all, which marks EVERY channel read and would also wipe unread counts
+// for channels the person hasn't looked at yet.
+router.post('/activity/read', (req, res) => {
+  const db = getDb();
+  const me = req.user.id;
+  const isAdmin = req.user.role === 'admin';
+  // Same clock format as chat_messages.created_at — the unread check is a
+  // string comparison, so an ISO value would sort wrong. See /read-all.
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+
+  const rows = db.prepare(`
+    SELECT m.channel_id, m.parent_id FROM chat_messages m
+      JOIN chat_mentions mn ON mn.message_id = m.id AND mn.user_id = $me
+      WHERE m.deleted_at IS NULL AND m.user_id != $me
+    UNION
+    SELECT m.channel_id, m.parent_id FROM chat_messages m
+      JOIN chat_channels c ON c.id = m.channel_id
+      WHERE c.kind = 'dm' AND m.deleted_at IS NULL AND m.user_id != $me
+    UNION
+    SELECT m.channel_id, m.parent_id FROM chat_messages m
+      JOIN chat_messages p ON p.id = m.parent_id
+      WHERE m.parent_id IS NOT NULL AND m.deleted_at IS NULL AND m.user_id != $me
+        AND (p.user_id = $me
+          OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = $me)
+          OR EXISTS (SELECT 1 FROM chat_mentions m2 WHERE m2.message_id = p.id AND m2.user_id = $me))
+  `).all({ me });
+
+  const markThread = db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at) VALUES (?, ?, ?)
+    ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at`);
+  const markChannel = db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?');
+  const joinChannel = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)');
+
+  const accessCache = new Map();
+  const threads = new Set();
+  const channels = new Set();
+  for (const r of rows) {
+    let ok = accessCache.get(r.channel_id);
+    if (ok === undefined) {
+      const ch = getChannel(db, r.channel_id);
+      ok = !!ch && canAccess(db, ch, me, isAdmin);
+      accessCache.set(r.channel_id, ok);
+    }
+    if (!ok) continue;
+    if (r.parent_id) threads.add(r.parent_id);
+    else channels.add(r.channel_id);
+  }
+
+  db.transaction(() => {
+    for (const parentId of threads) markThread.run(me, parentId, now);
+    for (const channelId of channels) {
+      const changed = markChannel.run(now, channelId, me).changes;
+      // A public channel the caller never joined has no membership row to
+      // update — @mentions land there too, so give them one.
+      if (!changed) joinChannel.run(uuid(), channelId, me, 'member', now);
+    }
+  })();
+
+  res.json({ ok: true, channels: channels.size, threads: threads.size });
+});
+
 // Total unread across every thread the caller follows — the badge on the
 // Threads entry, which is the only reason a thread reply is worth surfacing
 // outside the thread itself.

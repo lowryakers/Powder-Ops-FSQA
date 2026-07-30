@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../../hooks/useApi';
-import { AtSign, MessageSquare, Hash, Bell, ArrowLeft, Loader2, Inbox, Lock } from 'lucide-react';
+import { AtSign, MessageSquare, Hash, Bell, ArrowLeft, Loader2, Inbox, Lock, CheckCheck } from 'lucide-react';
 
 // Activity — one feed of everything that involved you: @mentions, direct
 // messages, and replies on threads you're part of. Not every message in every
@@ -47,13 +47,14 @@ const preview = (body) => {
   return t.length > 160 ? `${t.slice(0, 160)}…` : (t || '(attachment)');
 };
 
-export default function ActivityView({ counts, onOpenMessage, onCloseMobile, refreshKey }) {
+export default function ActivityView({ counts, onOpenMessage, onCloseMobile, refreshKey, onRead }) {
   const [tab, setTab] = useState('all');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const load = useCallback(async (before = null) => {
     const q = new URLSearchParams({ filter: tab, limit: '50' });
@@ -86,6 +87,24 @@ export default function ActivityView({ counts, onOpenMessage, onCloseMobile, ref
     } finally { setLoadingMore(false); }
   };
 
+  // Clearing Activity stamps the channels and threads its items live in as
+  // read — the feed has no read state of its own, so there is nothing else to
+  // clear. Deliberately narrower than the channel list's Mark all read, which
+  // would also wipe unread counts for channels you've never opened.
+  const markAllRead = async () => {
+    setClearing(true);
+    try {
+      await apiFetch('/comms/activity/read', { method: 'POST' });
+      onRead?.();
+      const r = await load();
+      setItems(r.items || []);
+      setMore(!!r.has_more);
+    } catch { /* the badge just stays until the next refresh */ }
+    finally { setClearing(false); }
+  };
+
+  const unreadTotal = counts?.all || 0;
+
   // Day headers computed once per render pass.
   const groups = [];
   for (const it of items) {
@@ -101,6 +120,13 @@ export default function ActivityView({ counts, onOpenMessage, onCloseMobile, ref
         <Bell size={16} className="text-gray-400" />
         <span className="font-semibold text-gray-900">Activity</span>
         <div className="flex-1" />
+        {unreadTotal > 0 && (
+          <button type="button" onClick={markAllRead} disabled={clearing}
+            data-tip="Mark every mention, DM and thread reply here as read"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+            <CheckCheck size={13} /> {clearing ? 'Clearing…' : 'Mark all read'}
+          </button>
+        )}
         <button type="button" onClick={() => setUnreadOnly(u => !u)}
           className={`px-2.5 py-1 rounded-lg text-xs font-medium border ${unreadOnly ? 'bg-powder-600 text-white border-powder-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
           Unreads

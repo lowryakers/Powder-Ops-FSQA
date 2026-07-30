@@ -229,6 +229,36 @@ open receipt" and is kept as-is (which also leaves the legacy bare-number record
 issued at write time, so two people filing at once can't collide. After a save the form clears the field
 (new inspection is the common case) and offers a one-click "Add another line to A-100-####".
 
+## QA inspections vs. cleaning: one table, two lists
+Light Inspection (110-01/02), Brittle Plastic & Glass (431-02) and Temperature & Humidity (110-04) are
+**QA records stored in `sanitation_records`**. `server/qa-records.js` is the single definition —
+`QA_RECORD_AREA` (the regex, used on write), `recordGroupFor()` and `tagQaInspectionRecords()` (bulk re-tag).
+Each list asks for its own group (`GET /sanitation?group=qa|sanitation|all`), so a record is in **exactly
+one** list — nothing is duplicated. Temp/Humidity was missing from the regex, which is why it showed up in
+Sanitation.
+**`tagQaInspectionRecords()` must run both in `runMigrations` AND after the cleaning seeds in server.js.**
+On a fresh DB the migration pass sees an empty table and the seeds then insert every inspection with the
+default `sanitation` group — a brand-new deploy came up with an empty QA Inspections list and 407 of QA's
+records sitting in Sanitation. Same class of bug as the migration-ordering note below.
+**The BPG diagram** (FORM 431-01 V4) is a static reference at `public/forms/…pdf`, linked from the QA
+Inspections BPG filter and from every BPG row's detail panel. Deliberately not an upload: it's a reference
+sheet that must open even with no R2 configured. The zone **item lists** it documents live as
+`pm_schedules.procedure_steps` (`item|qty|material`, one schedule per zone) and the zone names in the
+`bpg_zones` managed list. Operator task views don't render reference documents yet.
+
+## Scale Verification (Forms 417-01 … 417-05)
+Daily three-point scale checks, one form per scale/area. `server/scale-forms.js` holds the five definitions
+(nominal + tolerance per point) — **not user-editable on purpose**: changing a tolerance is a document
+change through Document Control, not a settings toggle. `gradeReadings()` decides pass/fail, so a reading
+outside tolerance can never be filed as a pass (the paper form has the operator circle it; the readings
+decide here). `scale_verifications` table + `server/api/scale-verification.js`; `POST /submit/scale-verification`
+is the public kiosk path and shares `recordScaleVerification()` with the in-app one.
+Kept **separate from `calibration_records`** — that's one before/after reading from an annual technician
+calibration; this is three weighed points every morning, and merging them would lose the per-point readings.
+UI: `ScaleKiosk.jsx` (QR at `/kiosk/scale`, Quick Forms entry `form-scale`, live in/out-of-tolerance feedback)
+→ `ScaleVerificationTab.jsx`, a tab in Calibration Management with one status card per form ("has today's
+check been run") and QA counter-signature. Room links to a `calibration_instruments` row when the name matches.
+
 ## Click a log row to expand it
 `src/lib/useRowExpand.js` (`useRowExpand()`, `stopRowClick`) + `src/components/common/RowDetail.jsx`
 (`<ExpandCell>`, `<DetailRow>`, `<DetailFields>`). A table opts in with a `w-8` chevron column,
@@ -380,6 +410,21 @@ repeating it here buries the things that need an answer. Your own messages are e
   which opens the channel, scrolls to the message, and resolves a thread reply into its thread drawer.
 - Pages back through history via the `before` cursor — people use it to find an old message, not only to
   triage unreads.
+
+## Clearing the Activity badge
+Activity has **no read state of its own** — an item is unread when it's newer than the caller's
+`last_read_at` on its thread (replies) or its channel (everything else). So `POST /comms/activity/read`
+stamps exactly those rows and nothing else; it is deliberately narrower than `/read-all`, which marks every
+channel read and would also wipe unread counts for channels the person hasn't opened. Use the same
+`strftime('%Y-%m-%d %H:%M:%f')` clock format as `chat_messages.created_at` — the unread check is a string
+comparison and an ISO value sorts wrong. A public channel someone was @mentioned in may have no membership
+row, so the handler inserts one. "Mark all read" appears in the Activity header only while something is unread.
+
+## Recurring QA checks that ship pre-scheduled
+`SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).
+Seeded **once, keyed on title** — an edited frequency, a paused schedule or a deleted one is a decision, and
+a redeploy must not undo it. Currently: **Tap Water Testing** (monthly, Environmental Monitoring — restroom
+and kitchen samples to the outside lab). Everything else stays user-created in Quality Schedules.
 
 ## ReadyDoc feedback ("Request" button)
 `app_requests` table + `server/api/requests.js` + `src/components/common/RequestBox.jsx`.

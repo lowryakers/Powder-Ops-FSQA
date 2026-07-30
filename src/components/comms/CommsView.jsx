@@ -2572,6 +2572,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         <div className={`flex-1 flex-col min-w-0 ${showMainMobile ? 'flex' : 'hidden md:flex'}`}>
           {activityOpen ? (
             <ActivityView counts={activityUnread} refreshKey={threadTick}
+              onRead={() => { refreshActivityUnread(); refreshThreadUnread?.(); }}
               onCloseMobile={() => setActivityOpen(false)}
               onOpenMessage={(it) => {
                 // Reuse the deep-link path the push notifications already use:

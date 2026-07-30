@@ -2,17 +2,26 @@ import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Search, CheckCircle2, XCircle, Lightbulb, ShieldAlert } from 'lucide-react';
+import { Search, CheckCircle2, XCircle, Lightbulb, ShieldAlert, Thermometer, FileText } from 'lucide-react';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
-// QA-owned facility inspections: Light Inspection (Form 110-01/02) and Brittle
-// Plastic & Glass (Form 431-02). They share a table with cleaning records for
-// history's sake, but they are QA's records and live on QA's list.
+// QA-owned facility inspections: Light Inspection (Form 110-01/02), Brittle
+// Plastic & Glass (Form 431-02) and Temperature & Humidity Control (Form
+// 110-04). They share a table with cleaning records for history's sake, but
+// they are QA's records and live on QA's list — a record belongs to exactly one
+// of the two lists, so nothing appears in both.
 const KINDS = [
   { value: 'all', label: 'All inspections' },
   { value: 'light', label: 'Light Inspection', icon: Lightbulb, match: /^light inspection/i },
-  { value: 'bpg', label: 'Brittle Plastic & Glass', icon: ShieldAlert, match: /^brittle plastic/i },
+  {
+    value: 'bpg', label: 'Brittle Plastic & Glass', icon: ShieldAlert, match: /^brittle plastic/i,
+    // The controlled diagram the inspection is run against. Served as a static
+    // file so it opens with no storage backend configured — it's a reference
+    // sheet, not an uploaded record.
+    reference: { href: '/forms/FORM-431-01-V4-Brittle-Plastic-and-Glass-Diagram.pdf', label: 'FORM 431-01 V4 — Brittle Plastic & Glass Diagram' },
+  },
+  { value: 'temp', label: 'Temperature & Humidity', icon: Thermometer, match: /^temp(erature)?\s*[/&]?\s*(and\s*)?humidity/i },
 ];
 
 const fmt = (ts) => (ts ? String(ts).replace('T', ' ').slice(0, 16) : '—');
@@ -38,6 +47,9 @@ export default function QAInspectionsPanel() {
     });
   }, [records, kind, q, resultFilter]);
 
+  const activeKind = KINDS.find(k => k.value === kind);
+  const referenceFor = (area) => KINDS.find(k => k.reference && k.match?.test(area || ''))?.reference || null;
+
   const fails = rows.filter(r => r.result === 'fail').length;
   const unverified = rows.filter(r => !r.verified_by).length;
 
@@ -54,7 +66,8 @@ export default function QAInspectionsPanel() {
       <div>
         <h2 className="text-xl font-bold text-gray-900">QA Inspections</h2>
         <p className="text-sm text-gray-500">
-          Light inspections (Form 110-01 / 110-02) and brittle plastic &amp; glass checks (Form 431-02).
+          Light inspections (Form 110-01 / 110-02), brittle plastic &amp; glass checks (Form 431-02)
+          and temperature &amp; humidity control (Form 110-04).
         </p>
       </div>
 
@@ -86,6 +99,12 @@ export default function QAInspectionsPanel() {
             </button>
           ))}
         </div>
+        {activeKind?.reference && (
+          <a href={activeKind.reference.href} target="_blank" rel="noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
+            <FileText size={14} /> View diagram
+          </a>
+        )}
         <div className="relative w-full sm:w-64">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search zone, inspector, notes…"
@@ -176,7 +195,14 @@ export default function QAInspectionsPanel() {
                         { label: 'Result', value: (r.result || '').toUpperCase() },
                         { label: 'QA verified', value: r.verified_by ? `${r.verified_by} · ${fmt(r.verified_at)}` : 'Pending' },
                         { label: 'Notes', value: r.notes, wide: true },
-                      ]} />
+                      ]}>
+                        {referenceFor(r.area) && (
+                          <a href={referenceFor(r.area).href} target="_blank" rel="noreferrer" onClick={stopRowClick}
+                            className="inline-flex items-center gap-1 text-xs text-powder-600 hover:underline">
+                            <FileText size={12} /> {referenceFor(r.area).label}
+                          </a>
+                        )}
+                      </DetailFields>
                     </DetailRow>
                   )}
                   </Fragment>

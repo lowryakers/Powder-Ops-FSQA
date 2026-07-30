@@ -76,6 +76,46 @@ export function generateQualityScheduleTasks(db) {
   return created;
 }
 
+// Recurring QA checks that exist as a matter of program, not preference, so
+// they arrive already scheduled rather than waiting for someone to add them.
+// Seeded ONCE, keyed on title: an edited frequency, a paused schedule or a
+// deleted one is a decision, and a redeploy must not undo it.
+const SEED_SCHEDULES = [
+  {
+    title: 'Tap Water Testing',
+    module_id: 'Environmental Monitoring',
+    description: 'Monthly potable-water verification. Collect tap water from the restrooms and kitchen and send to the outside lab; file the lab report against this task when it comes back.',
+    frequency_type: 'monthly',
+    frequency_value: 1,
+    procedure_steps: [
+      'Sanitize the sample bottles and label each with the collection point, date and time',
+      'Collect a tap water sample from the restrooms',
+      'Collect a tap water sample from the kitchen',
+      'Record collection point, date, time and collector on each bottle',
+      'Ship or deliver the samples to the contract lab',
+      'File the lab report against this task and record pass/fail',
+      'If any result is out of specification: open a Non-Conformance and notify the QA Manager',
+    ],
+  },
+];
+
+export function seedQualitySchedules(db) {
+  let added = 0;
+  const exists = db.prepare('SELECT 1 FROM quality_schedules WHERE lower(title) = lower(?) LIMIT 1');
+  const ins = db.prepare(`INSERT INTO quality_schedules
+    (id, title, description, module_id, frequency_type, frequency_value, procedure_steps, next_due, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`);
+  const today = db.prepare("SELECT date('now') d").get().d;
+  for (const s of SEED_SCHEDULES) {
+    if (exists.get(s.title)) continue;
+    ins.run(uuid(), s.title, s.description, s.module_id, s.frequency_type, s.frequency_value,
+      JSON.stringify(s.procedure_steps), today);
+    added++;
+  }
+  if (added > 0) console.log(`[seed] Added ${added} recurring quality schedule(s)`);
+  return added;
+}
+
 // Only Quality leadership may define/edit recurring quality checks.
 function canManage(user) {
   if (!user) return false;

@@ -5,6 +5,7 @@ import { canEditModule } from '../../utils/permissions';
 import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search, FileText, Upload } from 'lucide-react';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import ScaleVerificationTab from './ScaleVerificationTab.jsx';
 
 const STATUS_COLORS = {
   active: 'bg-green-100 text-green-800',
@@ -329,7 +330,13 @@ export default function CalibrationPanel() {
           className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${tab === 'records' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
           <CheckCircle size={14} /> Calibration Records
         </button>
+        <button onClick={() => setTab('scale-verification')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${tab === 'scale-verification' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+          <Scale size={14} /> Scale Verification
+        </button>
       </div>
+
+      {tab === 'scale-verification' && <ScaleVerificationTab />}
 
       {(showForm && !editing) && <InstrumentForm ccps={ccps} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
       {editing && <InstrumentForm initial={editing} ccps={ccps} onSave={handleUpdate} onCancel={() => setEditing(null)} />}

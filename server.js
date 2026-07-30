@@ -24,6 +24,7 @@ import haccpRoutes from './server/api/haccp.js';
 import pmRoutes from './server/api/pm.js';
 import checklistRoutes from './server/api/checklists.js';
 import calibrationRoutes from './server/api/calibration.js';
+import scaleVerificationRoutes from './server/api/scale-verification.js';
 import sanitationRoutes from './server/api/sanitation.js';
 import auditRoutes from './server/api/audit.js';
 import complianceRoutes, { buildBackupZip, computeCritical } from './server/api/compliance.js';
@@ -58,6 +59,8 @@ import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
 import structureRoutes from './server/api/structure.js';
 import { seedStructureLists } from './server/structure-seed.js';
+import { seedQualitySchedules } from './server/api/quality-schedules.js';
+import { tagQaInspectionRecords } from './server/qa-records.js';
 import receivingRoutes from './server/api/receiving.js';
 import importRoutes from './server/api/imports.js';
 import appRequestRoutes from './server/api/requests.js';
@@ -879,6 +882,10 @@ try {
   seedLightInspectionRecords(db);
   seedLightInspectionPMSchedules(db);
   seedApprovedChemicals(db);
+  // Inspection records seed into sanitation_records with the default group, so
+  // the tagger has to run again here — the migration pass in db.js saw an empty
+  // table on a fresh database. Idempotent.
+  tagQaInspectionRecords(db);
 } catch (err) {
   console.error('[seed] Error seeding data (non-fatal):', err.message);
 }
@@ -888,6 +895,7 @@ try {
   seedProductionEntries(db);
   seedEodTemplates(db);
   seedStructureLists(db);
+  seedQualitySchedules(db);
 
   // Sticks + Hand Fill → Filling. Runs after every seed, because the historical
   // production seed still speaks the pre-merge team names on a fresh database.
@@ -1366,6 +1374,7 @@ app.use('/api/haccp', haccpRoutes);
 app.use('/api/pm', requireModuleWrite('pm', 'operator'), pmRoutes);
 app.use('/api/checklists', requireModuleWrite('pm', 'operator', 'sanitation'), checklistRoutes);
 app.use('/api/calibration', requireModuleWrite('calibration'), calibrationRoutes);
+app.use('/api/scale-verification', requireModuleWrite('calibration'), scaleVerificationRoutes);
 app.use('/api/sanitation', requireModuleWrite('sanitation'), sanitationRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/compliance', complianceRoutes);

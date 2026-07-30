@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign, Scale } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -15,6 +15,7 @@ import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
 import ComponentKiosk from './components/kiosk/ComponentKiosk.jsx';
 import MaintenanceKiosk from './components/kiosk/MaintenanceKiosk.jsx';
+import ScaleKiosk from './components/kiosk/ScaleKiosk.jsx';
 import AiAskPanel from './components/compliance/AiAskPanel.jsx';
 import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
 import EquipmentPanel from './components/compliance/EquipmentPanel.jsx';
@@ -77,6 +78,7 @@ const NAV_GROUPS = [
       { id: 'form-maintenance', label: 'Sign Out an Item', icon: Wrench },
       { id: 'form-knife', label: 'Knife Sign In/Out', icon: Scissors },
       { id: 'form-components', label: 'Component Pull', icon: PackageCheck },
+      { id: 'form-scale', label: 'Scale Verification', icon: Scale, keywords: 'scale calibration verification weights form 417 three point' },
     ],
   },
   {
@@ -1041,13 +1043,13 @@ function App() {
   // Deep links: ?tab=<module> jumps straight to a module (ReadyBot alert
   // links use this), ?form=<kiosk> pops a quick form over whatever's open
   // (kiosk QR codes scanned by signed-in users). Params are consumed once.
-  const [kioskForm, setKioskForm] = useState(null); // 'knife' | 'components' | 'maintenance'
+  const [kioskForm, setKioskForm] = useState(null); // 'knife' | 'components' | 'maintenance' | 'scale'
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab');
     const form = params.get('form');
     if (tab) { setWorkspace('fsqa'); setActiveTab(tab); }
-    if (form && ['knife', 'components', 'maintenance'].includes(form)) setKioskForm(form);
+    if (form && ['knife', 'components', 'maintenance', 'scale'].includes(form)) setKioskForm(form);
     if (tab || form) window.history.replaceState({}, '', window.location.pathname);
   }, []);
 
@@ -1171,6 +1173,11 @@ function App() {
   if (path === '/kiosk/maintenance') {
     if (hasSession) return <KioskAppRedirect form="maintenance" />;
     return <><MaintenanceKiosk /><UpdateBanner /></>;
+  }
+
+  if (path === '/kiosk/scale') {
+    if (hasSession) return <KioskAppRedirect form="scale" />;
+    return <><ScaleKiosk /><UpdateBanner /></>;
   }
 
   if (path === '/production-entry') {
@@ -1507,6 +1514,7 @@ function App() {
           {resolvedTab === 'form-maintenance' && <MaintenanceKiosk defaultName={user.name} />}
           {resolvedTab === 'form-knife' && <KnifeKiosk defaultName={user.name} />}
           {resolvedTab === 'form-components' && <ComponentKiosk defaultName={user.name} />}
+          {resolvedTab === 'form-scale' && <ScaleKiosk defaultName={user.name} />}
           {resolvedTab === 'operator' && <OperatorView />}
           {resolvedTab === 'office-requests' && <OfficeRequestsPanel />}
           {resolvedTab === 'qa-inspections' && <QAInspectionsPanel />}
@@ -1607,6 +1615,7 @@ function App() {
           {kioskForm === 'knife' && <KnifeKiosk defaultName={user.name} />}
           {kioskForm === 'components' && <ComponentKiosk defaultName={user.name} />}
           {kioskForm === 'maintenance' && <MaintenanceKiosk defaultName={user.name} />}
+          {kioskForm === 'scale' && <ScaleKiosk defaultName={user.name} />}
         </div>
       )}
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}

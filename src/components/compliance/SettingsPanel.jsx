@@ -64,6 +64,7 @@ const MODULE_GROUPS = [
       { id: 'pm', label: 'Task Center' },
       { id: 'equipment', label: 'Equipment' },
       { id: 'calibration', label: 'Calibration' },
+      { id: 'form-scale', label: 'Scale Verification (kiosk form)', sub: true, note: 'The Quick Forms shortcut in the sidebar. Files into Calibration \u2192 Scale Verification \u2014 grant this alone for supervisors who only run the daily check.' },
       { id: 'loto', label: 'Lockout / Tagout' },
     ],
   },

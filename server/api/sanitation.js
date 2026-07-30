@@ -1,17 +1,11 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { recordGroupFor } from '../qa-records.js';
 
 const router = Router();
 
-// Light Inspection (Form 110-01/02) and Brittle Plastic & Glass (Form 431-02)
-// are QA inspections recorded in the same table as cleaning. They belong on
-// QA's list, so every record carries the group it belongs to and each list
-// asks for its own.
-const QA_RECORD_AREA = /^(brittle plastic|light inspection)/i;
-export function recordGroupFor(area) {
-  return QA_RECORD_AREA.test(String(area || '').trim()) ? 'qa' : 'sanitation';
-}
+export { recordGroupFor };
 
 router.get('/', (req, res) => {
   const db = getDb();
