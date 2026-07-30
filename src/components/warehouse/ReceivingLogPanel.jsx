@@ -8,6 +8,8 @@ import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import ImportPanel from '../common/ImportPanel';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { useCappedList } from '../../lib/useCappedList';
+import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 // Receiving Log — incoming raw material, labels and components (replaces the
@@ -271,6 +273,8 @@ function ReceivingTable({ user }) {
     });
   }, [rows, sortCol, sortDir]);
 
+  const view = useCappedList(sorted);
+
   const sort = (k) => {
     if (sortCol === k) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortCol(k); setSortDir('asc'); }
@@ -349,7 +353,7 @@ function ReceivingTable({ user }) {
           {sorted.length === 0 && (
             <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-500">No receipts found.</div>
           )}
-          {sorted.map(r => {
+          {view.items.map(r => {
             const exp = expiryState(r.expiration_date);
             return (
               <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
@@ -383,6 +387,8 @@ function ReceivingTable({ user }) {
         </div>
       )}
 
+      <div className="md:hidden"><ShowMore view={view} noun="receipts" /></div>
+
       {/* Desktop table */}
       {!loading && !error && (
         <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -408,7 +414,7 @@ function ReceivingTable({ user }) {
                 {sorted.length === 0 && (
                   <tr><td colSpan={COLUMNS.length + 3} className="px-3 py-8 text-center text-sm text-gray-500">No receipts found.</td></tr>
                 )}
-                {sorted.map(r => {
+                {view.items.map(r => {
                   const exp = expiryState(r.expiration_date);
                   return (
                     <Fragment key={r.id}>
@@ -485,6 +491,7 @@ function ReceivingTable({ user }) {
               </tbody>
             </table>
           </div>
+          <ShowMore view={view} noun="receipts" />
         </div>
       )}
     </div>

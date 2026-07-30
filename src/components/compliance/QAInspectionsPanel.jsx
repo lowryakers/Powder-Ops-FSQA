@@ -4,6 +4,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Search, CheckCircle2, XCircle, Lightbulb, ShieldAlert, Thermometer, FileText } from 'lucide-react';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { useCappedList } from '../../lib/useCappedList';
+import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 // QA-owned facility inspections: Light Inspection (Form 110-01/02), Brittle
@@ -46,6 +48,8 @@ export default function QAInspectionsPanel() {
       return true;
     });
   }, [records, kind, q, resultFilter]);
+
+  const view = useCappedList(rows);
 
   const activeKind = KINDS.find(k => k.value === kind);
   const referenceFor = (area) => KINDS.find(k => k.reference && k.match?.test(area || ''))?.reference || null;
@@ -120,7 +124,7 @@ export default function QAInspectionsPanel() {
         <>
           {/* Mobile cards */}
           <div className="md:hidden space-y-2">
-            {rows.map(r => (
+            {view.items.map(r => (
               <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm font-medium text-gray-900">{r.area}</p>
@@ -143,6 +147,8 @@ export default function QAInspectionsPanel() {
             ))}
           </div>
 
+          <div className="md:hidden"><ShowMore view={view} noun="inspections" /></div>
+
           {/* Desktop table */}
           <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">
@@ -159,7 +165,7 @@ export default function QAInspectionsPanel() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => (
+                {view.items.map(r => (
                   <Fragment key={r.id}>
                   <tr {...expand.rowProps(r.id, 'border-t border-gray-100')}>
                     <td className="px-2 py-2"><ExpandCell open={expand.isExpanded(r.id)} /></td>
@@ -209,6 +215,7 @@ export default function QAInspectionsPanel() {
                 ))}
               </tbody>
             </table>
+            <ShowMore view={view} noun="inspections" />
           </div>
         </>
       )}

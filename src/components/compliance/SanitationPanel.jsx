@@ -2,6 +2,8 @@ import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList, Settings2 } from 'lucide-react';
+import { useCappedList } from '../../lib/useCappedList';
+import ShowMore from '../common/ShowMore.jsx';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
 const RECLEAN_ACTION_META = {
@@ -378,6 +380,7 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
 
 export default function SanitationPanel() {
   const { data: records, loading, refresh } = useApiGet('/sanitation');
+  const view = useCappedList(records);
   const { data: equipment } = useApiGet('/equipment');
   const { data: chemicals } = useApiGet('/chemicals');
   const [showForm, setShowForm] = useState(false);
@@ -414,7 +417,7 @@ export default function SanitationPanel() {
 
       {/* Mobile: card view */}
       <div className="md:hidden space-y-2">
-        {(records || []).map(r => {
+        {view.items.map(r => {
           const isExpanded = expandedId === r.id;
           const stripe = r.result === 'pass' ? 'border-green-400' : r.result === 'fail' ? 'border-red-400' : 'border-gray-300';
           return (
@@ -452,6 +455,8 @@ export default function SanitationPanel() {
         )}
       </div>
 
+      <div className="md:hidden"><ShowMore view={view} noun="records" /></div>
+
       {/* Desktop: table view */}
       <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -471,7 +476,7 @@ export default function SanitationPanel() {
               </tr>
             </thead>
             <tbody>
-              {(records || []).map(r => {
+              {view.items.map(r => {
                 const isExpanded = expandedId === r.id;
                 return (
                   <Fragment key={r.id}>
@@ -508,6 +513,7 @@ export default function SanitationPanel() {
             </tbody>
           </table>
         </div>
+        <ShowMore view={view} noun="records" />
       </div>
     </div>
   );

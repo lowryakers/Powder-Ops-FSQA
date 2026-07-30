@@ -298,6 +298,11 @@ Measured on a production-scale DB, not guessed — server SQL was never the bott
    on every page load. Now two GROUP BY passes (~4 ms) plus indexes on the columns actually filtered.
 **Reads must not write.** `markMissedWorkOrders()` and the task generators ran inside every GET; they're
 behind `runPmHousekeeping()` now (once per 5 min, whoever asks first). Don't call them from a handler.
+3. **The client rendered every row it was given.** Even with bounded APIs, the Production Log came out as
+   18,000 DOM nodes and a 60,000px page on a phone. `src/lib/useCappedList.js` + `<ShowMore>` render the
+   first 100 with a button for the rest (Production Log 18,084 → 4,874 nodes, Sanitation 14,259 → 3,074,
+   QA Inspections 8,996 → 2,257). Deliberately **not** virtualization — a windowed list breaks Ctrl-F,
+   breaks printing, and fights the expand-a-row detail panels. Wire new long lists through it.
 **Modules are lazy-loaded** (`lazy()` + `<Suspense>` in App.jsx): entry bundle 2,002 KB → 544 KB. That adds
 a failure single-bundle didn't have — a deploy replaces hashed chunks under a page that's been open since
 before it — so `ModuleBoundary` catches the failed import and offers a reload instead of a white screen.
