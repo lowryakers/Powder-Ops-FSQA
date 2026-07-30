@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import {
   PackageCheck, Plus, ClipboardList, Search, Filter, Pencil,
@@ -208,18 +208,26 @@ function ReceivingTable({ user }) {
   const [editing, setEditing] = useState(null);
   const [expanded, setExpanded] = useState(null);
 
-  const { data: rows, loading, error, refresh } = useApiGet(
-    `/receiving?from=${from}&to=${to}${status ? `&status=${encodeURIComponent(status)}` : ''}`, [from, to, status]);
+  // Searching runs on the server and deliberately IGNORES the date filter.
+  // Filtering client-side inside the loaded window meant a search for a receipt
+  // older than the default 90 days silently found nothing, even though the
+  // record was right there — the log goes back years after the Monday import.
+  const [qDebounced, setQDebounced] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q.trim()), 250);
+    return () => clearTimeout(t);
+  }, [q]);
+  const searching = qDebounced.length > 0;
+
+  const listUrl = searching
+    ? `/receiving?q=${encodeURIComponent(qDebounced)}${status ? `&status=${encodeURIComponent(status)}` : ''}`
+    : `/receiving?from=${from}&to=${to}${status ? `&status=${encodeURIComponent(status)}` : ''}`;
+  const { data: rows, loading, error, refresh } = useApiGet(listUrl, [listUrl]);
   const { data: stats } = useApiGet(`/receiving/stats?from=${from}&to=${to}`, [from, to]);
   const { data: statusList } = useApiGet('/structure/lists/receiving_release_status');
 
   const sorted = useMemo(() => {
-    let list = rows || [];
-    if (q) {
-      const s = q.toLowerCase();
-      list = list.filter(r => ['po_number', 'part_number', 'part_description', 'vendor_lot', 'inspection_no']
-        .some(k => (r[k] || '').toString().toLowerCase().includes(s)));
-    }
+    const list = rows || [];
     const col = COLUMNS.find(c => c.key === sortCol);
     const dir = sortDir === 'asc' ? 1 : -1;
     return [...list].sort((a, b) => {
@@ -229,7 +237,7 @@ function ReceivingTable({ user }) {
       else cmp = String(a[sortCol] || '').toLowerCase().localeCompare(String(b[sortCol] || '').toLowerCase());
       return cmp * dir;
     });
-  }, [rows, q, sortCol, sortDir]);
+  }, [rows, sortCol, sortDir]);
 
   const sort = (k) => {
     if (sortCol === k) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
@@ -287,11 +295,18 @@ function ReceivingTable({ user }) {
             <label className="block text-xs font-medium text-gray-700 mb-1">Search</label>
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input value={q} onChange={e => setQ(e.target.value)} className={`${inputCls} pl-8`} placeholder="PO, part, lot…" />
+              <input value={q} onChange={e => setQ(e.target.value)} className={`${inputCls} pl-8`}
+                placeholder="PO, part, lot, qty, receiver…" />
             </div>
           </div>
         </div>
       </div>
+
+      {searching && !loading && (
+        <p className="text-xs text-gray-500 -mt-2">
+          Showing {sorted.length} match{sorted.length === 1 ? '' : 'es'} for “{qDebounced}” across <span className="font-medium">all dates</span> — the date filter is ignored while searching.
+        </p>
+      )}
 
       {loading && <div className="text-center py-8 text-gray-500 text-sm">Loading…</div>}
       {error && <div className="text-center py-8 text-red-600 text-sm">{error}</div>}
@@ -439,10 +454,9 @@ export default function ReceivingLogPanel({ user }) {
   const canLog = user?.role === 'admin' || user?.role === 'supervisor'
     || user?.department === 'warehouse'
     || (user?.module_access && !Array.isArray(user.module_access) && !!user.module_access['receiving-log']);
-  // Importing rewrites the log in bulk, so it needs the edit right, not just
-  // the right to file a receipt.
-  const canImport = user?.role === 'admin'
-    || (user?.module_access && !Array.isArray(user.module_access) && user.module_access['receiving-log'] === 'edit');
+  // Importing rewrites the log in bulk — thousands of compliance records in one
+  // action — so it stays admin-only rather than riding on the edit grant.
+  const canImport = user?.role === 'admin';
   const { data: targets } = useApiGet(canImport ? '/imports/targets' : null);
   const importTarget = (targets || []).find(t => t.key === 'receiving_log');
 

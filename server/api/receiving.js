@@ -61,10 +61,13 @@ router.get('/', (req, res) => {
   if (status) { sql += ' AND status_of_release = ?'; params.push(status); }
   if (uom) { sql += ' AND uom = ?'; params.push(uom); }
   if (q) {
+    // Quantity is searchable too — people look up "the 45.36 kg receipt".
+    // CAST because the column is REAL and LIKE on a number won't match.
     sql += ` AND (po_number LIKE ? OR part_number LIKE ? OR part_description LIKE ?
-             OR vendor_lot LIKE ? OR inspection_no LIKE ?)`;
+             OR vendor_lot LIKE ? OR inspection_no LIKE ? OR received_by LIKE ?
+             OR CAST(quantity_received AS TEXT) LIKE ?)`;
     const like = `%${q}%`;
-    params.push(like, like, like, like, like);
+    params.push(like, like, like, like, like, like, like);
   }
   sql += ' ORDER BY date_received DESC, created_at DESC LIMIT ?';
   params.push(Math.min(Number(limit) || 500, 2000));
