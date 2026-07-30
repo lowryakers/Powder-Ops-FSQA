@@ -351,7 +351,12 @@ router.get('/requests', (req, res) => {
     params.push(s, s, s, s, s, s);
   }
 
-  sql += ' ORDER BY date_sent DESC, created_at DESC';
+  // Bounded like the other logs. It also protects the file-count lookup below,
+  // which expands to one bound parameter per request — unbounded, that query
+  // grew a placeholder list as long as the whole table.
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
+  sql += ' ORDER BY date_sent DESC, created_at DESC LIMIT ?';
+  params.push(limit);
   const requests = db.prepare(sql).all(...params);
 
   const fileCountStmt = db.prepare('SELECT request_id, file_type, COUNT(*) as count FROM coa_files WHERE request_id IN (' + requests.map(() => '?').join(',') + ') GROUP BY request_id, file_type');

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign, Scale } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
@@ -10,57 +10,58 @@ import { visibleModuleIds, canViewModule, hasExplicitGrant } from './utils/permi
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
 import AttentionBar from './components/AttentionBar.jsx';
+import ModuleBoundary from './components/ModuleBoundary.jsx';
 import InstallHelp from './components/InstallHelp.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
 import ComponentKiosk from './components/kiosk/ComponentKiosk.jsx';
 import MaintenanceKiosk from './components/kiosk/MaintenanceKiosk.jsx';
 import ScaleKiosk from './components/kiosk/ScaleKiosk.jsx';
-import AiAskPanel from './components/compliance/AiAskPanel.jsx';
-import ComplianceDashboard from './components/compliance/ComplianceDashboard.jsx';
-import EquipmentPanel from './components/compliance/EquipmentPanel.jsx';
-import PMPanel from './components/compliance/PMPanel.jsx';
-import CalibrationPanel from './components/compliance/CalibrationPanel.jsx';
-import SanitationPanel from './components/compliance/SanitationPanel.jsx';
-import QAInspectionsPanel from './components/compliance/QAInspectionsPanel.jsx';
-import LOTOPanel from './components/compliance/LOTOPanel.jsx';
-import AuditLogPanel from './components/compliance/AuditLogPanel.jsx';
-import OperatorView from './components/compliance/OperatorView.jsx';
-import SettingsPanel from './components/compliance/SettingsPanel.jsx';
-import ChemicalsPanel from './components/compliance/ChemicalsPanel.jsx';
-import HygienicDesignPanel from './components/compliance/HygienicDesignPanel.jsx';
-import QualitySchedulesPanel from './components/compliance/QualitySchedulesPanel.jsx';
-import TeamActivityPanel from './components/compliance/TeamActivityPanel.jsx';
-import AuditorView from './components/compliance/AuditorView.jsx';
-import CAPAPanel from './components/compliance/CAPAPanel.jsx';
-import DocumentRegistry from './components/compliance/DocumentRegistry.jsx';
-import OrgChart from './components/compliance/OrgChart.jsx';
-import DisposalsPanel from './components/compliance/DisposalsPanel.jsx';
-import QMSRecordsPanel from './components/compliance/QMSRecordsPanel.jsx';
-import KnifePanel from './components/compliance/KnifePanel.jsx';
-import ReceivingLogPanel from './components/warehouse/ReceivingLogPanel.jsx';
+const AiAskPanel = lazy(() => import('./components/compliance/AiAskPanel.jsx'));
+const ComplianceDashboard = lazy(() => import('./components/compliance/ComplianceDashboard.jsx'));
+const EquipmentPanel = lazy(() => import('./components/compliance/EquipmentPanel.jsx'));
+const PMPanel = lazy(() => import('./components/compliance/PMPanel.jsx'));
+const CalibrationPanel = lazy(() => import('./components/compliance/CalibrationPanel.jsx'));
+const SanitationPanel = lazy(() => import('./components/compliance/SanitationPanel.jsx'));
+const QAInspectionsPanel = lazy(() => import('./components/compliance/QAInspectionsPanel.jsx'));
+const LOTOPanel = lazy(() => import('./components/compliance/LOTOPanel.jsx'));
+const AuditLogPanel = lazy(() => import('./components/compliance/AuditLogPanel.jsx'));
+const OperatorView = lazy(() => import('./components/compliance/OperatorView.jsx'));
+const SettingsPanel = lazy(() => import('./components/compliance/SettingsPanel.jsx'));
+const ChemicalsPanel = lazy(() => import('./components/compliance/ChemicalsPanel.jsx'));
+const HygienicDesignPanel = lazy(() => import('./components/compliance/HygienicDesignPanel.jsx'));
+const QualitySchedulesPanel = lazy(() => import('./components/compliance/QualitySchedulesPanel.jsx'));
+const TeamActivityPanel = lazy(() => import('./components/compliance/TeamActivityPanel.jsx'));
+const AuditorView = lazy(() => import('./components/compliance/AuditorView.jsx'));
+const CAPAPanel = lazy(() => import('./components/compliance/CAPAPanel.jsx'));
+const DocumentRegistry = lazy(() => import('./components/compliance/DocumentRegistry.jsx'));
+const OrgChart = lazy(() => import('./components/compliance/OrgChart.jsx'));
+const DisposalsPanel = lazy(() => import('./components/compliance/DisposalsPanel.jsx'));
+const QMSRecordsPanel = lazy(() => import('./components/compliance/QMSRecordsPanel.jsx'));
+const KnifePanel = lazy(() => import('./components/compliance/KnifePanel.jsx'));
+const ReceivingLogPanel = lazy(() => import('./components/warehouse/ReceivingLogPanel.jsx'));
 import { RequestModal } from './components/common/RequestBox.jsx';
-import FlavorPanel from './components/compliance/FlavorPanel.jsx';
-import CertificationsPanel from './components/compliance/CertificationsPanel.jsx';
-import CriticalPanel from './components/compliance/CriticalPanel.jsx';
+const FlavorPanel = lazy(() => import('./components/compliance/FlavorPanel.jsx'));
+const CertificationsPanel = lazy(() => import('./components/compliance/CertificationsPanel.jsx'));
+const CriticalPanel = lazy(() => import('./components/compliance/CriticalPanel.jsx'));
 import ApprovePage from './components/ApprovePage.jsx';
-import TrainingPanel from './components/compliance/TrainingPanel.jsx';
-import MockRecallPanel from './components/compliance/MockRecallPanel.jsx';
-import ProductionLog from './components/compliance/ProductionLog.jsx';
-import ProductionSchedule from './components/compliance/ProductionSchedule.jsx';
-import ProductionDashboard from './components/compliance/ProductionDashboard.jsx';
-import COAPanel from './components/compliance/COAPanel.jsx';
+const TrainingPanel = lazy(() => import('./components/compliance/TrainingPanel.jsx'));
+const MockRecallPanel = lazy(() => import('./components/compliance/MockRecallPanel.jsx'));
+const ProductionLog = lazy(() => import('./components/compliance/ProductionLog.jsx'));
+const ProductionSchedule = lazy(() => import('./components/compliance/ProductionSchedule.jsx'));
+const ProductionDashboard = lazy(() => import('./components/compliance/ProductionDashboard.jsx'));
+const COAPanel = lazy(() => import('./components/compliance/COAPanel.jsx'));
 import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import PageInfo from './components/PageInfo.jsx';
-import SupplyOrdersPanel from './components/office/SupplyOrdersPanel.jsx';
-import TimeTrackingPanel from './components/office/TimeTrackingPanel.jsx';
-import CheckedOutPanel from './components/compliance/CheckedOutPanel.jsx';
-import OfficeRequestsPanel from './components/office/OfficeRequestsPanel.jsx';
-import LedgerPanel from './components/office/LedgerPanel.jsx';
-import ProcurementPanel from './components/office/ProcurementPanel.jsx';
-import NewsletterPanel from './components/office/NewsletterPanel.jsx';
-import PayTrackingPanel from './components/office/PayTrackingPanel.jsx';
+const SupplyOrdersPanel = lazy(() => import('./components/office/SupplyOrdersPanel.jsx'));
+const TimeTrackingPanel = lazy(() => import('./components/office/TimeTrackingPanel.jsx'));
+const CheckedOutPanel = lazy(() => import('./components/compliance/CheckedOutPanel.jsx'));
+const OfficeRequestsPanel = lazy(() => import('./components/office/OfficeRequestsPanel.jsx'));
+const LedgerPanel = lazy(() => import('./components/office/LedgerPanel.jsx'));
+const ProcurementPanel = lazy(() => import('./components/office/ProcurementPanel.jsx'));
+const NewsletterPanel = lazy(() => import('./components/office/NewsletterPanel.jsx'));
+const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 
 const NAV_GROUPS = [
   {
@@ -929,6 +930,16 @@ function InstallPrompt() {
   );
 }
 
+// Shown while a module's bundle is in flight. Deliberately quiet — a spinner
+// that flashes for 80ms on a warm cache is worse than nothing.
+function ModuleLoading() {
+  return (
+    <div className="py-16 text-center text-sm text-gray-400 animate-pulse" role="status" aria-live="polite">
+      Loading…
+    </div>
+  );
+}
+
 function App() {
   const { user, realUser, viewAs, startViewAs, stopViewAs, loading, login, loginWithToken, logout } = useAuth();
   // Reloading keeps you where you were instead of bouncing to the Dashboard.
@@ -1509,6 +1520,12 @@ function App() {
           )}
           {/* What the sidebar badge on this module actually refers to. */}
           <AttentionBar detail={notifications?.badgeDetail?.[resolvedTab]} />
+          {/* Each module is its own bundle, fetched the first time its tab is
+              opened. The whole app used to ship as one 2 MB script — a second
+              of parse on a phone before anything paints, for forty modules
+              nobody opens in one session. */}
+          <ModuleBoundary resetKey={resolvedTab}>
+          <Suspense fallback={<ModuleLoading />}>
           {resolvedTab === 'dashboard' && <DashboardHub user={user} onNavigate={setActiveTab} />}
           {resolvedTab === 'ask-ai' && <AiAskPanel />}
           {resolvedTab === 'form-maintenance' && <MaintenanceKiosk defaultName={user.name} />}
@@ -1559,6 +1576,8 @@ function App() {
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}
           {resolvedTab === 'settings' && <SettingsPanel />}
+          </Suspense>
+          </ModuleBoundary>
         </main>
       </div>
 

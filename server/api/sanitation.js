@@ -25,7 +25,13 @@ router.get('/', (req, res) => {
   if (from) { sql += ' AND sr.performed_at >= ?'; params.push(from); }
   if (to) { sql += ' AND sr.performed_at <= ?'; params.push(to); }
 
-  sql += ' ORDER BY sr.performed_at DESC';
+  // Bounded. This returned every record ever filed — the log only grows, and
+  // it was shipping megabytes to a phone to render a screen of rows. Callers
+  // that want history ask for it with from/to or a bigger limit; the default
+  // is "recent", which is what the log is actually read for.
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
+  sql += ' ORDER BY sr.performed_at DESC LIMIT ?';
+  params.push(limit);
   res.json(db.prepare(sql).all(...params));
 });
 
@@ -50,6 +56,29 @@ function recleanFlagKey(room, clean, used) {
   return `${room}|${clean || 'none'}|${used || 'none'}`;
 }
 
+// Two GROUP BY passes, not two queries per room.
+//
+// This used to run `MAX(...) WHERE area = ?` and `MAX(...) WHERE room = ?` once
+// per room. Neither has an index on the filtered column, so each one scanned
+// its table — 53 rooms × 2 scans = 106 table scans, ~83ms, and it grew with
+// both the room count and the history. That cost was paid by /notifications,
+// /compliance/critical AND /sanitation/reclean-status, i.e. three times on
+// every page load. Grouped, it's ~4ms and flat.
+function lastCleanByArea(db) {
+  try {
+    return new Map(db.prepare(
+      "SELECT area, MAX(performed_at) t FROM sanitation_records WHERE result = 'pass' GROUP BY area"
+    ).all().map(r => [r.area, r.t]));
+  } catch { return new Map(); }
+}
+function lastUseByRoom(db) {
+  try {
+    return new Map(db.prepare(
+      'SELECT room, MAX(date) t FROM production_entries WHERE room IS NOT NULL GROUP BY room'
+    ).all().map(r => [r.room, r.t]));
+  } catch { return new Map(); }
+}
+
 export function recleanRooms(db) {
   const rooms = new Set();
   try { db.prepare("SELECT DISTINCT room FROM production_entries WHERE room IS NOT NULL").all().forEach(r => rooms.add(r.room)); } catch { /* optional */ }
@@ -57,15 +86,15 @@ export function recleanRooms(db) {
   try { db.prepare('SELECT DISTINCT area FROM sanitation_records').all().forEach(r => rooms.add(r.area)); } catch { /* optional */ }
   let overrides = new Map();
   try { overrides = new Map(db.prepare('SELECT room, applicable FROM reclean_rooms').all().map(r => [r.room, !!r.applicable])); } catch { /* optional */ }
-  const lastClean = db.prepare("SELECT MAX(performed_at) t FROM sanitation_records WHERE area = ? AND result = 'pass'");
-  const lastUse = db.prepare('SELECT MAX(date) t FROM production_entries WHERE room = ?');
+  const cleanBy = lastCleanByArea(db);
+  const useBy = lastUseByRoom(db);
   let latestAction = null;
   try { latestAction = db.prepare('SELECT * FROM reclean_actions WHERE room = ? AND flag_key = ? ORDER BY created_at DESC LIMIT 1'); } catch { /* optional */ }
   const now = Date.now();
   const out = [];
   for (const room of rooms) {
-    const clean = lastClean.get(room).t;
-    const used = lastUse.get(room).t;
+    const clean = cleanBy.get(room) || null;
+    const used = useBy.get(room) || null;
     let status, hoursIdle = null;
     if (!clean) {
       status = used ? 'no_clean_on_record' : 'unknown';

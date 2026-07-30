@@ -297,6 +297,13 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
     CREATE INDEX IF NOT EXISTS idx_sanitation_date ON sanitation_records(performed_at);
+    -- The QA/cleaning split filters on record_group before ordering by date,
+    -- and the 72-hour rule groups by area. Both were scanning the whole log.
+    CREATE INDEX IF NOT EXISTS idx_sanitation_group_date ON sanitation_records(record_group, performed_at);
+    CREATE INDEX IF NOT EXISTS idx_sanitation_area ON sanitation_records(area, performed_at);
+    -- "What ran in this room" — the 72-hour rule and the schedule's progress
+    -- overlay both ask per room.
+    CREATE INDEX IF NOT EXISTS idx_production_entries_room ON production_entries(room, date);
     CREATE INDEX IF NOT EXISTS idx_loto_executions_status ON loto_executions(status);
     CREATE INDEX IF NOT EXISTS idx_loto_executions_procedure ON loto_executions(procedure_id);
 

@@ -44,6 +44,30 @@ function createNextWorkOrder(db, sched, triggeredBy = null) {
   return { id: woId, title: sched.title, due_date: dueStr };
 }
 
+// Housekeeping that used to run on every GET.
+//
+// markMissedWorkOrders() and the task generators WRITE — a status sweep, an
+// orphan backfill, new work orders. Doing that inside a read meant every task
+// list, every operator refresh and every metrics poll paid for a table sweep,
+// and a GET mutated the database. They still can't wait for a restart (a
+// schedule coming due at 6am must produce a task that morning), so they run at
+// most once every few minutes, whoever happens to ask first. Startup runs them
+// once eagerly; see server.js.
+const HOUSEKEEPING_MS = 5 * 60 * 1000;
+const lastRunAt = new Map();
+function periodically(key, fn, db) {
+  const now = Date.now();
+  if (now - (lastRunAt.get(key) || 0) < HOUSEKEEPING_MS) return;
+  lastRunAt.set(key, now);
+  try { fn(db); } catch (e) { console.warn(`[pm] ${key} skipped:`, e.message); }
+}
+export function runPmHousekeeping(db, { force = false } = {}) {
+  if (force) lastRunAt.clear();
+  periodically('mark-missed', markMissedWorkOrders, db);
+  periodically('doc-review', generateDocumentReviewTasks, db);
+  periodically('quality-schedules', generateQualityScheduleTasks, db);
+}
+
 function markMissedWorkOrders(db) {
   const today = new Date().toISOString().split('T')[0];
 
@@ -169,7 +193,7 @@ router.put('/schedules/:id', (req, res) => {
 
 router.get('/work-orders', (req, res) => {
   const db = getDb();
-  markMissedWorkOrders(db);
+  runPmHousekeeping(db);
   const { status, equipment_id, from, to, assigned_to } = req.query;
   let sql = `SELECT wo.*, e.name as equipment_name, e.room, ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
@@ -275,7 +299,7 @@ router.put('/work-orders/:id', (req, res) => {
 
 router.get('/metrics', (req, res) => {
   const db = getDb();
-  markMissedWorkOrders(db);
+  runPmHousekeeping(db);
   const { from, to, group } = req.query;
   const now = new Date();
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
@@ -616,7 +640,7 @@ router.get('/clearance-pending', (req, res) => {
 // order's own title, equipment, asset id, location and assignee.
 router.get('/search', (req, res) => {
   const db = getDb();
-  markMissedWorkOrders(db);
+  runPmHousekeeping(db);
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
   const like = `%${q}%`;
@@ -640,7 +664,7 @@ router.get('/search', (req, res) => {
 
 router.get('/by-frequency', (req, res) => {
   const db = getDb();
-  markMissedWorkOrders(db);
+  runPmHousekeeping(db);
   const { frequency, equipment_id, group } = req.query;
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
@@ -673,7 +697,7 @@ router.get('/by-frequency', (req, res) => {
 
 router.get('/completed-history', (req, res) => {
   const db = getDb();
-  markMissedWorkOrders(db);
+  runPmHousekeeping(db);
   const { limit = 50, offset = 0, frequency, from, to, include_missed, group } = req.query;
   const showMissed = include_missed !== 'false';
 
@@ -749,9 +773,7 @@ router.post('/generate', (_req, res) => {
 
 router.get('/operator-tasks', (req, res) => {
   const db = getDb();
-  markMissedWorkOrders(db);
-  generateDocumentReviewTasks(db);
-  generateQualityScheduleTasks(db);
+  runPmHousekeeping(db);
   const { assigned_to } = req.query;
   // Only admins may view other departments (or all) via the group filter.
   // Everyone else — including supervisors — is locked to their own department.
@@ -780,6 +802,13 @@ router.get('/operator-tasks', (req, res) => {
   const rows = db.prepare(sql).all(...params);
 
   // Also include pending QA production entries as virtual tasks (for QA dept or admin/all view)
+  //
+  // Capped. This is the screen floor staff open on a phone, and an unbounded
+  // sign-off backlog turned it into a multi-megabyte response — every entry
+  // ever filed without a signature, newest first. Nobody works a list of
+  // thousands; the oldest are the ones that matter, and the true count travels
+  // as a number so the UI can say "and N more" without shipping them.
+  const QA_TASK_CAP = 200;
   const qaGroup = group || '';
   const includeQA = !qaGroup || qaGroup === 'qa' || qaGroup === 'all' || qaGroup === '';
   let qaTasks = [];
@@ -788,8 +817,9 @@ router.get('/operator-tasks', (req, res) => {
       SELECT id, date, team, room, product_name, mo_number, lot_number, submitted_by, created_at
       FROM production_entries
       WHERE qa_signoff_by IS NULL
-      ORDER BY date DESC
-    `).all().map(e => ({
+      ORDER BY date ASC
+      LIMIT ?
+    `).all(QA_TASK_CAP).map(e => ({
       id: 'qa_' + e.id,
       _production_entry_id: e.id,
       title: `QA Sign-off: ${e.product_name} (MO ${e.mo_number})`,
@@ -812,6 +842,9 @@ router.get('/operator-tasks', (req, res) => {
     }));
   }
 
+  // Response stays a plain array — every caller maps over it. The true backlog
+  // size is already published by /compliance/notifications ("N production
+  // entries pending QA sign-off"), so the cap costs no information.
   res.json([...rows.map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })), ...qaTasks]);
 });
 
