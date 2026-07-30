@@ -522,7 +522,18 @@ router.post('/schedule', (req, res) => {
     return res.status(400).json({ error: 'week_start, day_of_week, and room are required' });
   }
 
-  const existing = db.prepare('SELECT * FROM production_schedule WHERE week_start = ? AND day_of_week = ? AND room = ? AND slot = ?').get(week_start, day_of_week, room, slot);
+  // `append` means "add a line to this cell", not "write slot N". The repeat /
+  // copy-to-next-week paths use it: they target a cell the editor isn't looking
+  // at, so a fixed slot silently overwrote whatever was already scheduled there
+  // — which read as "it won't let me put two things on Thursday".
+  const appendSlot = req.body.append === true;
+  const effectiveSlot = appendSlot
+    ? ((db.prepare('SELECT MAX(slot) m FROM production_schedule WHERE week_start = ? AND day_of_week = ? AND room = ?')
+        .get(week_start, day_of_week, room).m ?? -1) + 1)
+    : slot;
+
+  const existing = appendSlot ? null
+    : db.prepare('SELECT * FROM production_schedule WHERE week_start = ? AND day_of_week = ? AND room = ? AND slot = ?').get(week_start, day_of_week, room, slot);
 
   if (existing) {
     db.prepare(`
@@ -541,7 +552,7 @@ router.post('/schedule', (req, res) => {
     db.prepare(`
       INSERT INTO production_schedule (id, week_start, day_of_week, room, slot, room_type, team, mo_number, product_name, start_time, notes, created_by, updated_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, week_start, day_of_week, room, slot, room_type || 'production', team || null, mo_number || null, product_name || null, start_time || null, notes || null, updated_by || null, updated_by || null);
+    `).run(id, week_start, day_of_week, room, effectiveSlot, room_type || 'production', team || null, mo_number || null, product_name || null, start_time || null, notes || null, updated_by || null, updated_by || null);
     const created = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(id);
     logAudit(updated_by || 'system', 'create', 'production_schedule', id, req.body, null, created);
     res.status(201).json(created);
@@ -676,6 +687,58 @@ router.put('/schedule/:id/move', (req, res) => {
   logAudit(updated_by || 'system', 'move', 'production_schedule', existing.id,
     { from: { day: existing.day_of_week, room: existing.room }, to: { day: targetDay, room: targetRoom } }, existing, updated);
   res.json(updated);
+});
+
+// POST /schedule/bulk-move — move several assignments into one day at once.
+// Unlike /:id/move this can cross weeks (week_start), which is the whole point:
+// people build next week by pulling this week's items forward. Every item is
+// appended to the end of the target cell, so moving three MOs onto Thursday
+// gives you three lines on Thursday instead of the last one winning.
+router.post('/schedule/bulk-move', (req, res) => {
+  const db = getDb();
+  const { ids, room, room_type, updated_by } = req.body;
+  const targetDay = req.body.day_of_week != null ? Number(req.body.day_of_week) : null;
+  const targetWeek = req.body.week_start || null;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids must be a non-empty array' });
+  }
+  if (targetDay == null || !Number.isInteger(targetDay) || targetDay < 0 || targetDay > 4) {
+    return res.status(400).json({ error: 'day_of_week must be an integer 0-4' });
+  }
+
+  const rows = ids
+    .map(id => db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(id))
+    .filter(Boolean);
+  if (rows.length === 0) return res.status(404).json({ error: 'No matching schedule assignments' });
+
+  const nextSlot = db.prepare('SELECT MAX(slot) m FROM production_schedule WHERE week_start = ? AND day_of_week = ? AND room = ?');
+  const update = db.prepare(`
+    UPDATE production_schedule SET week_start = ?, day_of_week = ?, room = ?, slot = ?, room_type = ?, updated_by = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `);
+
+  const tx = db.transaction(() => {
+    const moved = [];
+    for (const row of rows) {
+      const week = targetWeek || row.week_start;
+      // Room follows the request when given, otherwise each item keeps its own —
+      // a bulk move across days shouldn't quietly relocate everything to one room.
+      const toRoom = room || row.room;
+      const max = nextSlot.get(week, targetDay, toRoom).m;
+      const slot = max == null ? 0 : max + 1;
+      update.run(week, targetDay, toRoom, slot, room_type || row.room_type, updated_by || null, row.id);
+      const updated = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(row.id);
+      logAudit(updated_by || 'system', 'move', 'production_schedule', row.id,
+        { from: { week: row.week_start, day: row.day_of_week, room: row.room }, to: { week, day: targetDay, room: toRoom }, bulk: true },
+        row, updated);
+      moved.push(updated);
+    }
+    return moved;
+  });
+
+  const moved = tx();
+  res.json({ success: true, moved: moved.length, assignments: moved });
 });
 
 // DELETE /schedule/:id — delete a schedule assignment

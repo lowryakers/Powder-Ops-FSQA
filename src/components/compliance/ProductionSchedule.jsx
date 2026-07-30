@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, forwardRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
-import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock, Columns2, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock, Columns2, CheckCircle2, CheckSquare, Square, ArrowRight } from 'lucide-react';
 import DiscussLink from '../DiscussLink.jsx';
 import { useDragPager } from '../../lib/useDragPager';
 import ScheduleProgressPanel from './ScheduleProgressPanel.jsx';
@@ -369,12 +369,15 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
         updated_by: userName,
       };
       await apiPost('/production/schedule', { ...payload, week_start: weekStart, day_of_week: dayIndex });
+      // The repeat paths target cells the editor isn't looking at, so they send
+      // `append` — writing this cell's slot number into another day overwrote
+      // whatever was already there, which read as "it won't let me put two
+      // things on Thursday".
       for (const d of repeatDays) {
-        await apiPost('/production/schedule', { ...payload, week_start: weekStart, day_of_week: d });
+        await apiPost('/production/schedule', { ...payload, week_start: weekStart, day_of_week: d, append: true });
       }
-      // Copy into next week (slot 0 in the target cells — they're a fresh week)
       for (const d of repeatNextDays) {
-        await apiPost('/production/schedule', { ...payload, week_start: nextWeekStart, day_of_week: d, slot: 0 });
+        await apiPost('/production/schedule', { ...payload, week_start: nextWeekStart, day_of_week: d, append: true });
       }
       onSaved();
       onClose();
@@ -971,6 +974,52 @@ function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay
   );
 }
 
+// Bulk move bar — appears once something is ticked in select mode. Moving to a
+// day *next week* is the whole reason this exists: dragging can only reach cells
+// that are on screen, so next week's schedule had to be rebuilt by hand.
+function BulkMoveBar({ count, weekLabel, nextWeekLabel, onMove, onCancel, busy }) {
+  const [targetWeek, setTargetWeek] = useState('this');
+
+  return (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 max-w-[calc(100vw-2rem)]">
+      <div className="flex flex-wrap items-center gap-2 bg-gray-900 text-white rounded-xl shadow-xl px-3 py-2.5">
+        <span className="text-sm font-semibold whitespace-nowrap px-1">
+          {count} selected
+        </span>
+        <div className="flex rounded-lg bg-white/10 p-0.5">
+          {[['this', weekLabel], ['next', nextWeekLabel]].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTargetWeek(key)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${targetWeek === key ? 'bg-white text-gray-900' : 'text-gray-300 hover:text-white'}`}
+            >
+              {key === 'this' ? 'This week' : 'Next week'}
+              <span className="hidden sm:inline opacity-60"> · {label}</span>
+            </button>
+          ))}
+        </div>
+        <ArrowRight size={14} className="text-gray-400 shrink-0" />
+        <div className="flex gap-1">
+          {DAY_SHORT.map((d, i) => (
+            <button
+              key={d}
+              disabled={busy}
+              onClick={() => onMove(i, targetWeek)}
+              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-white/10 hover:bg-blue-500 disabled:opacity-50 transition-colors"
+              title={`Move ${count} item${count === 1 ? '' : 's'} to ${DAYS[i]}${targetWeek === 'next' ? ' next week' : ''}`}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+        <button onClick={onCancel} className="p-1.5 text-gray-400 hover:text-white transition-colors" title="Clear selection">
+          <X size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ProductionSchedule({ user }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [editCell, setEditCell] = useState(null); // { dayIndex, room, roomType, slot, data }
@@ -992,6 +1041,12 @@ export default function ProductionSchedule({ user }) {
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverKey, setDragOverKey] = useState(null);
   const [downstreamFor, setDownstreamFor] = useState(null); // { product_name, mo_number, batchDay }
+
+  // Select-multiple → move as a batch. Drag & drop still works one at a time;
+  // this is for "everything in Tuesday goes to Thursday next week".
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [notified, setNotified] = useState(false);
@@ -1139,9 +1194,45 @@ export default function ProductionSchedule({ user }) {
     }
   }, [refresh, user]);
 
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const toggleSelected = useCallback((id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkMove = useCallback(async (targetDay, targetWeek) => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      await apiPost('/production/schedule/bulk-move', {
+        ids,
+        day_of_week: targetDay,
+        week_start: targetWeek === 'next' ? nextWeekStart : weekStart,
+        updated_by: user?.name || '',
+      });
+      exitSelectMode();
+      // Follow the items into next week — otherwise they just vanish from the
+      // grid you're looking at and it reads like the move failed.
+      if (targetWeek === 'next') setWeekOffset(w => w + 1);
+      else refresh();
+    } catch (err) {
+      console.error('Bulk move failed:', err);
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [selectedIds, weekStart, nextWeekStart, user, refresh, exitSelectMode]);
+
   // Drop-target props shared by filled and empty cells
   const dropProps = (dayIndex, room, roomType) => {
-    if (!canEdit) return {};
+    if (!canEdit || selectMode) return {};
     const key = `${dayIndex}-${room}`;
     return {
       onDragOver: (e) => {
@@ -1170,28 +1261,36 @@ export default function ProductionSchedule({ user }) {
       const nextSlot = Math.max(...entries.map(a => a.slot || 0)) + 1;
       // Any room can run several products on the same day — Kitting/Batching, and
       // production rooms running Filling, etc.
-      const canAddLine = canEdit;
+      const canAddLine = canEdit && !selectMode;
       return (
         <td key={dayIndex} className={`border border-gray-200 px-2 py-1.5 ${cellTint} ${dropHighlight}`} {...dropProps(dayIndex, room, roomType)}>
           <div className="space-y-1">
             {entries.map(a => {
               const color = TEAM_COLORS[a.team] || '#64748b';
+              const picked = selectedIds.has(a.id);
               return (
               <div
                 key={a.id}
-                draggable={canEdit}
-                onDragStart={canEdit ? (e) => {
+                draggable={canEdit && !selectMode}
+                onDragStart={canEdit && !selectMode ? (e) => {
                   e.dataTransfer.setData('text/plain', a.id);
                   e.dataTransfer.effectAllowed = 'move';
                   setDraggingId(a.id);
                 } : undefined}
                 onDragEnd={() => { setDraggingId(null); setDragOverKey(null); }}
-                className={`group/entry relative flex items-start gap-1 text-xs leading-tight rounded-md pl-2 pr-1 py-1 bg-white border border-gray-200/80 shadow-sm transition-colors ${canEdit ? 'cursor-grab active:cursor-grabbing hover:border-gray-300 hover:bg-gray-50' : ''} ${draggingId === a.id ? 'opacity-40' : ''}`}
+                className={`group/entry relative flex items-start gap-1 text-xs leading-tight rounded-md pl-2 pr-1 py-1 bg-white border shadow-sm transition-colors ${picked ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200/80'} ${canEdit ? (selectMode ? 'cursor-pointer hover:border-blue-300' : 'cursor-grab active:cursor-grabbing hover:border-gray-300 hover:bg-gray-50') : ''} ${draggingId === a.id ? 'opacity-40' : ''}`}
                 style={{ borderLeft: `3px solid ${color}` }}
-                onClick={canEdit ? () => setEditCell({ dayIndex, room, roomType, slot: a.slot || 0, data: a }) : undefined}
-                title={canEdit ? 'Drag to move · click to edit' : undefined}
+                onClick={canEdit
+                  ? () => (selectMode ? toggleSelected(a.id) : setEditCell({ dayIndex, room, roomType, slot: a.slot || 0, data: a }))
+                  : undefined}
+                title={canEdit ? (selectMode ? 'Click to select' : 'Drag to move · click to edit') : undefined}
               >
-                {canEdit && <GripVertical size={11} className="text-gray-300 mt-0.5 shrink-0 opacity-0 group-hover/entry:opacity-100" />}
+                {canEdit && selectMode && (
+                  picked
+                    ? <CheckSquare size={12} className="text-blue-600 mt-0.5 shrink-0" />
+                    : <Square size={12} className="text-gray-300 mt-0.5 shrink-0" />
+                )}
+                {canEdit && !selectMode && <GripVertical size={11} className="text-gray-300 mt-0.5 shrink-0 opacity-0 group-hover/entry:opacity-100" />}
                 <div className="space-y-0.5 min-w-0 flex-1">
                   {a.team && (
                     <div className="font-semibold uppercase tracking-wide text-[10px]" style={{ color }}>{a.team}</div>
@@ -1234,11 +1333,11 @@ export default function ProductionSchedule({ user }) {
     return (
       <td
         key={dayIndex}
-        className={`border border-gray-200 px-2 py-3 ${canEdit ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors text-center ${dropHighlight}`}
-        onClick={canEdit ? () => setEditCell({ dayIndex, room, roomType, slot: 0, data: null }) : undefined}
+        className={`border border-gray-200 px-2 py-3 ${canEdit && !selectMode ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors text-center ${dropHighlight}`}
+        onClick={canEdit && !selectMode ? () => setEditCell({ dayIndex, room, roomType, slot: 0, data: null }) : undefined}
         {...dropProps(dayIndex, room, roomType)}
       >
-        {canEdit && <Plus size={14} className="mx-auto text-gray-300" />}
+        {canEdit && !selectMode && <Plus size={14} className="mx-auto text-gray-300" />}
       </td>
     );
   };
@@ -1281,6 +1380,13 @@ export default function ProductionSchedule({ user }) {
           className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 ${showProgress ? 'text-powder-700 bg-powder-50' : 'text-gray-600 hover:bg-gray-100'}`}>
           <Columns2 size={14} /> Progress
         </button>
+        {canEdit && (
+          <button onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+            data-tip="Tick several items and move them all to one day — including a day next week"
+            className={`hidden md:flex px-3 py-1.5 text-sm font-medium rounded-lg transition-colors items-center gap-1.5 ${selectMode ? 'text-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-100'}`}>
+            <CheckSquare size={14} /> {selectMode ? 'Done' : 'Select'}
+          </button>
+        )}
         <DiscussLink moduleId="production-schedule" defaultChannel="production_schedule" fromLabel="Schedule" isAdmin={canEdit} />
         {canEdit && (
           <div className="relative">
@@ -1348,6 +1454,13 @@ export default function ProductionSchedule({ user }) {
         </div>
         </div>
       </div>
+
+      {canEdit && selectMode && selectedIds.size === 0 && (
+        <div className="hidden md:flex items-center gap-2 text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+          <CheckSquare size={14} className="shrink-0" />
+          Click the items you want to move, then pick the day to move them to.
+        </div>
+      )}
 
       {/* Loading / Error */}
       {loading && <div className="text-center py-12 text-gray-500">Loading schedule...</div>}
@@ -1463,6 +1576,18 @@ export default function ProductionSchedule({ user }) {
             entries={weekEntries} onOpenLog={() => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'production-log' } }))} />
         )}
         </div>
+      )}
+
+      {/* Bulk move bar */}
+      {canEdit && selectMode && selectedIds.size > 0 && (
+        <BulkMoveBar
+          count={selectedIds.size}
+          weekLabel={formatDate(monday)}
+          nextWeekLabel={formatDate(nextMonday)}
+          busy={bulkBusy}
+          onMove={handleBulkMove}
+          onCancel={exitSelectMode}
+        />
       )}
 
       {/* Edit modal */}
