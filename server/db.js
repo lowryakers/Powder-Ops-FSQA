@@ -999,6 +999,26 @@ function initSchema() {
       committed_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_import_batches_created ON import_batches(created_at DESC);
+
+    -- ── ReadyDoc feedback ────────────────────────────────────────────────
+    -- "This is broken" / "can we add X" from the people using the app. The
+    -- submit side is deliberately one box and a button: anything heavier and
+    -- nobody files anything, and the report never gets made. The triage side is
+    -- a checklist. It stays out of Task Center on purpose — app feedback isn't
+    -- plant work and shouldn't dilute the operational task list.
+    CREATE TABLE IF NOT EXISTS app_requests (
+      id TEXT PRIMARY KEY,
+      body TEXT NOT NULL,
+      area TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
+      submitted_by TEXT,
+      submitted_by_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      done_by TEXT,
+      done_at TEXT,
+      note TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_app_requests_status ON app_requests(status, created_at DESC);
   `);
 
   runMigrations();

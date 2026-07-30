@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { DEPARTMENTS, DEPARTMENT_GROUPS, deptLabel } from '../../constants/departments';
 import QuickBooksSetupCard from './QuickBooksSetupCard.jsx';
 import LogBuilderPanel from '../settings/LogBuilderPanel.jsx';
+import RequestListPanel from '../common/RequestBox.jsx';
 
 const ROLES = [
   { value: 'admin', label: 'Admin', desc: 'Full access to all features' },
@@ -1036,6 +1037,14 @@ export default function SettingsPanel() {
 
       {bulkAdd && <BulkAddModal onClose={() => setBulkAdd(false)} onDone={() => { setBulkAdd(false); refresh(); }} />}
       {bulkAccess && <BulkAccessModal users={users || []} onClose={() => setBulkAccess(false)} onDone={() => { setBulkAccess(false); refresh(); }} />}
+
+      {/* ReadyDoc requests — what the team has asked for, as a checklist. */}
+      {currentUser?.role === 'admin' && (
+        <div className="space-y-3">
+          <h2 className="text-xl font-bold text-gray-900">ReadyDoc Requests</h2>
+          <RequestListPanel user={currentUser} />
+        </div>
+      )}
 
       {/* Log structure — admins and Log Builder grantees change what the
           forms ask without a deploy. */}

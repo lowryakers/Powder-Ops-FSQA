@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -38,6 +38,7 @@ import DisposalsPanel from './components/compliance/DisposalsPanel.jsx';
 import QMSRecordsPanel from './components/compliance/QMSRecordsPanel.jsx';
 import KnifePanel from './components/compliance/KnifePanel.jsx';
 import ReceivingLogPanel from './components/warehouse/ReceivingLogPanel.jsx';
+import { RequestModal } from './components/common/RequestBox.jsx';
 import FlavorPanel from './components/compliance/FlavorPanel.jsx';
 import CertificationsPanel from './components/compliance/CertificationsPanel.jsx';
 import CriticalPanel from './components/compliance/CriticalPanel.jsx';
@@ -946,6 +947,8 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
+  // ReadyDoc feedback box — one click from anywhere in the app.
+  const [requestOpen, setRequestOpen] = useState(false);
   // Docked chat: a slim Messages panel beside the modules (desktop split screen).
   const [dockChat, setDockChat] = useState(() => { try { return localStorage.getItem('dock_chat') === '1'; } catch { return false; } });
   const toggleDockChat = () => setDockChat(d => { const n = !d; try { localStorage.setItem('dock_chat', n ? '1' : '0'); } catch { /* private mode */ } return n; });
@@ -1441,6 +1444,12 @@ function App() {
                 className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${dockChat ? 'text-powder-700 bg-powder-50' : 'text-gray-500 hover:bg-gray-100'}`}>
                 <PanelRight size={16} /> Split Screen
               </button>
+              {(user.role === 'admin' || user.role === 'supervisor') && (
+                <button onClick={() => setRequestOpen(true)} data-tip="Request a ReadyDoc change or report a problem"
+                  className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100">
+                  <MessageSquarePlus size={16} /> Request
+                </button>
+              )}
               <button onClick={() => setHome('fsqa')} data-tip={homePref === 'fsqa' ? 'ReadyDoc is your home screen' : 'Make ReadyDoc your home screen'}
                 className={`p-1.5 rounded-lg transition-colors ${homePref === 'fsqa' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
                 <Home size={18} />
@@ -1548,6 +1557,8 @@ function App() {
       {/* Docked Messages panel — split screen: the module stays open on the
           left while a slim live chat (the /chat standalone view) rides along
           on the right. Desktop only; state persists across sessions. */}
+      {requestOpen && <RequestModal onClose={() => setRequestOpen(false)} />}
+
       {dockChat && (
         <aside className="hidden lg:flex flex-col shrink-0 border-l border-gray-200 sticky top-0 h-screen bg-white relative"
           style={{ width: dockWidth }}>

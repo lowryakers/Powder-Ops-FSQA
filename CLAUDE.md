@@ -341,3 +341,14 @@ repeating it here buries the things that need an answer. Your own messages are e
   which opens the channel, scrolls to the message, and resolves a thread reply into its thread drawer.
 - Pages back through history via the `before` cursor — people use it to find an old message, not only to
   triage unreads.
+
+## ReadyDoc feedback ("Request" button)
+`app_requests` table + `server/api/requests.js` + `src/components/common/RequestBox.jsx`.
+**Submitting is deliberately one box and a button** — no title, team, assignee or due date. Every required
+field is a reason not to bother, and the request nobody files is the expensive one. `RequestModal` opens from
+a **Request** button in the top bar (admins + supervisors), available from any screen.
+**Triage is where the structure lives:** `RequestListPanel` in Settings (admin) is an open checklist — tick
+to mark done, "Show done" to review, delete to discard. Non-admins only ever see their own submissions.
+Deliberately **not** Task Center: app feedback isn't plant work, and mixing it in dilutes the operational
+task list. Adding an area is optional and free-text-free (a fixed short list) so triage can group without
+making the submitter think.
