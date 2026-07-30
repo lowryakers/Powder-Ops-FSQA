@@ -169,6 +169,44 @@ change in the audit trail, scalars re-mirrored). **One QA sign-off per entry = t
 `normalizeMoLines()` in production.js is the single normalizer (drops blank lines, coerces numbers).
 Per-MO fields (batches/weights) therefore left the EOD template — it's shift-level only now.
 
+## Self-serve structure: managed lists + custom fields (the "Airtable" ask)
+Adding a field to a log or an option to a dropdown is a Settings task, not a deploy.
+- **Schema:** `app_lists` + `app_list_options` (managed dropdowns), `custom_field_defs` (per-scope field
+  definitions). Values live in a `custom_data` JSON column on each host table — same shape as
+  `production_entries.structured_data`, which this generalizes (fold that into this when convenient).
+- **`server/custom-fields.js`** is the engine: `fieldDefs()`, `listOptions()`, `ensureList()`,
+  `coerceCustomData()` (validate on write), `mergeCustomData()` (carry retired-field values through an edit),
+  `describeCustomData()` (label/value pairs for exports).
+- **Two rules that make this safe for compliance records — do not relax them:**
+  1. **Nothing is deleted, only retired** (`is_active = 0`). A retired field/option disappears from new
+     entries but still renders on records already filed. Deleting would silently void history.
+  2. **Keys and values are immutable.** A field's `key` and an option's `value` are set once; only labels
+     change. `PUT /fields/:scope/:id` passes the existing key into `normalizeFieldDef` for exactly this.
+- `POST` of an existing-but-retired field/option **revives** it rather than erroring — people think "add
+  Break Room back", not "resurrect a row".
+- **API:** `server/api/structure.js` — `/lists`, `/lists/:key/options`, `/fields/:scope`,
+  `/fields/:scope/:id/usage` (how many filed records use a field, shown before retiring it). Reads are open
+  (forms need their own options to render); every write is gated on `canEditStructure` = admin or an explicit
+  **`log-builder`** edit grant, and audit-logged.
+- **UI:** `LogBuilderPanel.jsx` (Settings → Log Structure; Dropdown Lists + Log Fields tabs) and
+  `src/components/common/CustomFields.jsx` — `<CustomFields>` in a form, `<CustomFieldValues>` on a record.
+  A module opts in with those two mounts plus a `custom_data` column; nothing else.
+- Scopes the field editor offers live in `KNOWN_SCOPES` (structure.js); `SCOPE_TABLES` maps a scope prefix to
+  its host table for the usage count. Add both when wiring a new module.
+- **Seeded lists** (`server/structure-seed.js`, `ensureList` is idempotent and never overwrites an edited
+  label or revives a retired option): `uom`, `receiving_release_status`, `bpg_zones`.
+  **`bpg_zones` is the brittle-plastic inspection zone list** — the case that motivated all this. Note the
+  zone→PM-schedule wiring in `cleaning-seed.js` is still code-side; adding a zone to the list does not yet
+  create its PM schedule (next step).
+
+## Receiving Log (Warehouse)
+`receiving_log` table + `server/api/receiving.js` + `ReceivingLogPanel.jsx`. Replaces the Monday board
+(~2,100 rows). Filing is open to warehouse/supervisor/admin or a `receiving-log` grant; correcting someone
+else's record needs an edit grant. Both dropdowns (UOM, Status of Release) are **managed lists** and extra
+questions are **custom fields** — it's the first module built on the structure engine, so use it as the
+reference when converting another log. `external_id` is reserved for idempotent import (upsert, don't
+duplicate) and `source` records provenance.
+
 ## Migration ordering (fresh-DB gotcha)
 `addColumnIfMissing()` runs `ALTER TABLE … ADD COLUMN`, which **throws** if the table doesn't exist yet —
 `PRAGMA table_info` on a missing table returns empty, so the "missing" check passes and the ALTER blows up.

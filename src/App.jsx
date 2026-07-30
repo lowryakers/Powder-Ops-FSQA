@@ -37,6 +37,7 @@ import OrgChart from './components/compliance/OrgChart.jsx';
 import DisposalsPanel from './components/compliance/DisposalsPanel.jsx';
 import QMSRecordsPanel from './components/compliance/QMSRecordsPanel.jsx';
 import KnifePanel from './components/compliance/KnifePanel.jsx';
+import ReceivingLogPanel from './components/warehouse/ReceivingLogPanel.jsx';
 import FlavorPanel from './components/compliance/FlavorPanel.jsx';
 import CertificationsPanel from './components/compliance/CertificationsPanel.jsx';
 import CriticalPanel from './components/compliance/CriticalPanel.jsx';
@@ -88,6 +89,7 @@ const NAV_GROUPS = [
   {
     label: 'Warehouse',
     items: [
+      { id: 'receiving-log', label: 'Receiving Log', icon: PackageCheck, keywords: 'receiving incoming raw material po part lot form 204' },
       { id: 'component-signout', label: 'Component Sign In/Out', icon: PackageCheck },
       { id: 'maintenance-signout', label: 'Equipment/Tool/Chemical Sign In-Out', icon: Wrench },
       { id: 'currently-out', label: 'Checked Out', icon: PackageSearch },
@@ -1526,6 +1528,7 @@ function App() {
           {resolvedTab === 'dcr' && <QMSRecordsPanel recordType="document_change_request" moduleId="dcr" />}
           {(resolvedTab === 'quality-events' || HUB_OF[resolvedTab] === 'quality-events') &&
             <ModuleHub key={`qe-${resolvedTab}`} hubId="quality-events" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
+          {resolvedTab === 'receiving-log' && <ReceivingLogPanel user={user} />}
           {resolvedTab === 'component-signout' && <QMSRecordsPanel recordType="component_sign_out" moduleId="component-signout" />}
           {resolvedTab === 'maintenance-signout' && <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" />}
           {resolvedTab === 'currently-out' && <CheckedOutPanel />}

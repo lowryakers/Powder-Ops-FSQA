@@ -4,6 +4,7 @@ import { Plus, Copy, Shield, ChevronDown, ChevronRight, KeyRound, Users, X } fro
 import { useAuth } from '../../hooks/useAuth';
 import { DEPARTMENTS, DEPARTMENT_GROUPS, deptLabel } from '../../constants/departments';
 import QuickBooksSetupCard from './QuickBooksSetupCard.jsx';
+import LogBuilderPanel from '../settings/LogBuilderPanel.jsx';
 
 const ROLES = [
   { value: 'admin', label: 'Admin', desc: 'Full access to all features' },
@@ -46,6 +47,7 @@ const MODULE_GROUPS = [
   {
     label: 'Warehouse',
     modules: [
+      { id: 'receiving-log', label: 'Receiving Log' },
       { id: 'component-signout', label: 'Component Sign In/Out' },
       { id: 'form-components', label: 'Component Pull (kiosk form)', sub: true, note: 'The Quick Forms shortcut in the sidebar. Files into the log above — grant this alone for people who only submit.' },
       { id: 'maintenance-signout', label: 'Equipment/Tool/Chemical Sign In-Out' },
@@ -112,6 +114,12 @@ const MODULE_GROUPS = [
       { id: 'procurement', label: 'Procurement & Demand Planning' },
       { id: 'newsletter', label: 'Newsletter' },
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
+    ],
+  },
+  {
+    label: 'System',
+    modules: [
+      { id: 'log-builder', label: 'Log Builder (edit form fields & dropdown lists)', note: 'Grant Edit to let someone add fields and list options to any log without a deploy. Changes the shape of records, so give it to leads you trust with document control.' },
     ],
   },
 ];
@@ -1028,6 +1036,17 @@ export default function SettingsPanel() {
 
       {bulkAdd && <BulkAddModal onClose={() => setBulkAdd(false)} onDone={() => { setBulkAdd(false); refresh(); }} />}
       {bulkAccess && <BulkAccessModal users={users || []} onClose={() => setBulkAccess(false)} onDone={() => { setBulkAccess(false); refresh(); }} />}
+
+      {/* Log structure — admins and Log Builder grantees change what the
+          forms ask without a deploy. */}
+      {(currentUser?.role === 'admin'
+        || (currentUser?.module_access && !Array.isArray(currentUser.module_access)
+            && currentUser.module_access['log-builder'] === 'edit')) && (
+        <div className="space-y-3">
+          <h2 className="text-xl font-bold text-gray-900">Log Structure</h2>
+          <LogBuilderPanel />
+        </div>
+      )}
 
       {/* Data backup */}
       <div className="space-y-3">

@@ -56,6 +56,9 @@ import { voyageEnabled } from './server/embeddings.js';
 import { pushEnabled } from './server/push.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
+import structureRoutes from './server/api/structure.js';
+import { seedStructureLists } from './server/structure-seed.js';
+import receivingRoutes from './server/api/receiving.js';
 import coaRoutes from './server/api/coa.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
@@ -882,6 +885,7 @@ try {
 try {
   seedProductionEntries(db);
   seedEodTemplates(db);
+  seedStructureLists(db);
 
   // Sticks + Hand Fill → Filling. Runs after every seed, because the historical
   // production seed still speaks the pre-merge team names on a fresh database.
@@ -1376,6 +1380,10 @@ app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);
 app.use('/api/qms', qmsRoutes);
+// Structure is readable by anyone (forms need their own field/option lists to
+// render); every write inside is gated on admin / Log Builder edit.
+app.use('/api/structure', structureRoutes);
+app.use('/api/receiving', requireModuleWrite('receiving-log'), receivingRoutes);
 app.use('/api/training', requireModuleWrite('training'), trainingRoutes);
 app.use('/api/certifications', requireModuleWrite('certifications'), certificationRoutes);
 app.use('/api/ai', aiRoutes);

@@ -857,6 +857,105 @@ function initSchema() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_coa_test_results_request ON coa_test_results(request_id);
+
+    -- ── Self-serve structure: managed lists + custom fields ──────────────
+    -- The team changes what a log CAPTURES (custom_field_defs) and what its
+    -- dropdowns OFFER (app_lists) from inside the app, with no migration or
+    -- deploy. Two hard rules make this safe for compliance records:
+    --   1. Nothing is ever deleted — options and fields RETIRE (is_active = 0).
+    --      A record filed last year must still render with the labels it was
+    --      filed under; deleting a field would silently void history.
+    --   2. A field's key and an option's value are immutable once created.
+    --      Labels are free to change; the stored value never does, so old rows
+    --      keep resolving.
+    CREATE TABLE IF NOT EXISTS app_lists (
+      key TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      description TEXT,
+      -- Seeded lists the app itself reads (e.g. bpg_zones). Options stay
+      -- editable; the list row can't be dropped out from under the code.
+      is_system INTEGER NOT NULL DEFAULT 0,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS app_list_options (
+      id TEXT PRIMARY KEY,
+      list_key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      label TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      -- Free-form JSON for options that carry more than a label (a brittle
+      -- plastic zone carries its item inventory, for instance).
+      meta TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (list_key, value)
+    );
+    CREATE INDEX IF NOT EXISTS idx_list_options_list ON app_list_options(list_key, sort_order);
+
+    -- One row per user-added field. The scope names what it hangs off — a table
+    -- ('receiving_log'), or a table plus a discriminator ('qms:deviation'), so
+    -- one host table can carry different fields per record type.
+    CREATE TABLE IF NOT EXISTS custom_field_defs (
+      id TEXT PRIMARY KEY,
+      scope TEXT NOT NULL,
+      key TEXT NOT NULL,
+      label TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'text',
+      -- A select either points at a managed list (shared, editable in one
+      -- place) or carries its own inline options JSON.
+      options_list_key TEXT,
+      options TEXT,
+      required INTEGER NOT NULL DEFAULT 0,
+      help_text TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (scope, key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_custom_fields_scope ON custom_field_defs(scope, sort_order);
+
+    -- ── Receiving Log (Warehouse) ────────────────────────────────────────
+    -- Replaces the Monday board. Columns here are the ones the warehouse has
+    -- actually been filling for 2,000+ receipts; anything they want to add
+    -- later goes in custom_data via the field engine rather than a migration.
+    -- The external_id carries the source row's identity so re-importing the
+    -- same export updates rather than duplicates.
+    CREATE TABLE IF NOT EXISTS receiving_log (
+      id TEXT PRIMARY KEY,
+      inspection_no TEXT,
+      date_received TEXT,
+      po_number TEXT,
+      part_number TEXT,
+      part_description TEXT,
+      vendor_lot TEXT,
+      expiration_date TEXT,
+      quantity_received REAL,
+      uom TEXT,
+      received_by TEXT,
+      part_in_mrp INTEGER NOT NULL DEFAULT 0,
+      received_in_mrp INTEGER NOT NULL DEFAULT 0,
+      -- Legacy Monday attachments stay as URLs; new uploads go to R2 by key.
+      packing_slip_url TEXT,
+      packing_slip_key TEXT,
+      packing_slip_name TEXT,
+      status_of_release TEXT,
+      release_date TEXT,
+      notes TEXT,
+      custom_data TEXT,
+      source TEXT NOT NULL DEFAULT 'app',
+      external_id TEXT UNIQUE,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_receiving_date ON receiving_log(date_received DESC);
+    CREATE INDEX IF NOT EXISTS idx_receiving_po ON receiving_log(po_number);
+    CREATE INDEX IF NOT EXISTS idx_receiving_part ON receiving_log(part_number);
+    CREATE INDEX IF NOT EXISTS idx_receiving_lot ON receiving_log(vendor_lot);
   `);
 
   runMigrations();
@@ -927,6 +1026,11 @@ function runMigrations() {
   addColumnIfMissing('production_entries', 'qa_action_resolved_at', 'TEXT');
   // Answers to the team's EOD template fields, as a JSON object keyed by field key.
   addColumnIfMissing('production_entries', 'structured_data', 'TEXT');
+  // Values for user-added fields (the custom-field engine). One JSON object per
+  // record, keyed by field key. Any table that wants self-serve fields adds
+  // this column and nothing else — the definitions live in custom_field_defs.
+  // (Safe here: qms_records is created in initSchema's exec above.)
+  addColumnIfMissing('qms_records', 'custom_data', 'TEXT');
   // Batching runs several MOs in one shift; mo_lines is a JSON array of
   // { product_name, mo_number, lot_number, batches, batch_weights, quantity }.
   // Line 0 is mirrored into the scalar product_name/mo_number/lot_number/
