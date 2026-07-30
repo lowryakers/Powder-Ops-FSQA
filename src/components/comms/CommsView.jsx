@@ -795,6 +795,19 @@ function writeDraft(key, text) {
   window.dispatchEvent(new CustomEvent('comms-drafts-changed'));
 }
 
+// The 3-dot menu's tallest form is about 250px. If the button sits closer than
+// that to the bottom of the window, the menu opens upward instead — otherwise
+// it lands below the fold and the options can't be read without scrolling,
+// which is exactly where messages are read most (the newest ones).
+const MENU_EST_HEIGHT = 260;
+function shouldDropUp(btn) {
+  if (!btn) return false;
+  const r = btn.getBoundingClientRect();
+  const below = window.innerHeight - r.bottom;
+  // Only flip when there genuinely isn't room below AND there is room above.
+  return below < MENU_EST_HEIGHT && r.top > below;
+}
+
 // Slack-style "Remind me about this": pick a delay and ReadyBot DMs you at
 // that time with an excerpt + a link back to the message.
 function RemindPicker({ m, onClose }) {
@@ -1352,6 +1365,8 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   const [translating, setTranslating] = useState(false);
   const [sheet, setSheet] = useState(false); // mobile long-press action sheet
   const [menuOpen, setMenuOpen] = useState(false); // desktop 3-dot menu
+  const [menuUp, setMenuUp] = useState(false);     // flip above when short on room below
+  const menuBtnRef = useRef(null);
   const [lightbox, setLightbox] = useState(null); // index into m.attachments
   const [convert, setConvert] = useState(false); // message → compliance record
   const [remind, setRemind] = useState(false);   // Slack-style "remind me"
@@ -1510,11 +1525,15 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
           <button onClick={() => setShowEmoji(s => !s)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" data-tip="More reactions"><Smile size={15} /></button>
           {onReply && <button onClick={() => onReply(m)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" data-tip="Reply in thread"><MessageSquare size={14} /></button>}
           <div className="relative">
-            <button onClick={() => setMenuOpen(o => !o)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" data-tip="More actions" data-tip-left><MoreVertical size={14} /></button>
+            {/* Open upward when the message is near the bottom of the channel,
+                which is where most messages are read. Dropping down there put
+                the menu below the fold and forced a scroll to see the options. */}
+            <button ref={menuBtnRef} onClick={() => { setMenuUp(shouldDropUp(menuBtnRef.current)); setMenuOpen(o => !o); }}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" data-tip="More actions" data-tip-left><MoreVertical size={14} /></button>
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1">
+                <div className={`absolute right-0 ${menuUp ? 'bottom-full mb-1' : 'top-full mt-1'} w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1`}>
                   <MenuRow icon={Copy} label="Copy text" act="copy" onAction={handleSheetAction} />
                   <MenuRow icon={Clock} label="Remind me about this…" act="remind" onAction={handleSheetAction} />
                   {canTranslate && m.body && !translated && <MenuRow icon={Languages} label="Translate" act="translate" onAction={handleSheetAction} />}

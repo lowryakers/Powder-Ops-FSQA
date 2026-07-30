@@ -109,16 +109,40 @@ function suggestMapping(target, headers) {
 }
 
 // A stable id for the row so re-importing updates in place instead of
-// duplicating. Built from the full key including blanks (positionally), so two
-// rows that differ only by having an empty lot # stay distinct.
-function identityFor(target, row) {
-  const parts = target.identity.map(k => clean(row[k]));
+// duplicating.
+//
+// The business key alone is NOT enough to call two rows the same record. The
+// same item legitimately arrives twice against one inspection #, PO and lot —
+// two pallets, two partial deliveries — differing only in quantity, expiry or
+// packing slip. Treating those as duplicates silently discards real receipts.
+//
+// So the identity is the business key PLUS which occurrence of that key this
+// row is within the file. Two separate receipts get occurrence 0 and 1 and both
+// import; re-running the same export lands on the same occurrences and updates
+// in place; and a row edited upstream still matches its slot rather than
+// duplicating. Only rows that are identical *and* redundant collapse — and that
+// check is made on full row content, below.
+function identityFor(target, row, occurrence = 0) {
+  let parts = target.identity.map(k => clean(row[k]));
   if (!parts.some(Boolean)) {
-    const fb = target.identityFallback.map(k => clean(row[k]));
-    if (!fb.some(Boolean)) return null;
-    return `${target.table}:${createHash('sha1').update(fb.join('|').toLowerCase()).digest('hex').slice(0, 24)}`;
+    parts = target.identityFallback.map(k => clean(row[k]));
+    if (!parts.some(Boolean)) return null;
   }
-  return `${target.table}:${createHash('sha1').update(parts.join('|').toLowerCase()).digest('hex').slice(0, 24)}`;
+  const seed = `${parts.join('|').toLowerCase()}#${occurrence}`;
+  return `${target.table}:${createHash('sha1').update(seed).digest('hex').slice(0, 24)}`;
+}
+
+// The business key on its own, used only to count occurrences within a file.
+function businessKey(target, row) {
+  const parts = target.identity.map(k => clean(row[k]));
+  return (parts.some(Boolean) ? parts : target.identityFallback.map(k => clean(row[k]))).join('|').toLowerCase();
+}
+
+// Full-content fingerprint. Two rows matching on this are the same receipt
+// entered twice — the only case where skipping is right.
+function contentHash(target, row) {
+  const parts = target.fields.map(f => clean(row[f.key]));
+  return createHash('sha1').update(parts.join('|').toLowerCase()).digest('hex');
 }
 
 // Apply a mapping to one source row and validate it.
@@ -199,19 +223,31 @@ router.post('/:id/preview', (req, res) => {
 
   let create = 0, update = 0, skip = 0;
   const issues = [];
-  const seen = new Set();
+  const seenContent = new Set();   // identical rows entered twice
+  const keyCounts = new Map();     // occurrences of each business key
   const preview = [];
   rows.forEach((src, i) => {
     const { row, errors } = buildRow(target, mapping, src);
-    const ext = identityFor(target, row);
     if (errors.length) {
       skip++;
       if (issues.length < 25) issues.push({ line: i + 2, errors });
       return;
     }
-    // A file that repeats a row internally shouldn't write it twice.
-    if (ext && seen.has(ext)) { skip++; if (issues.length < 25) issues.push({ line: i + 2, errors: ['duplicate of an earlier row in this file'] }); return; }
-    if (ext) seen.add(ext);
+    // Only a row identical in every mapped field is a redundant re-entry. Rows
+    // sharing a business key but differing anywhere (quantity, expiry, packing
+    // slip) are separate receipts and must both land.
+    const content = contentHash(target, row);
+    if (seenContent.has(content)) {
+      skip++;
+      if (issues.length < 25) issues.push({ line: i + 2, errors: ['identical to an earlier row in this file'] });
+      return;
+    }
+    seenContent.add(content);
+
+    const bk = businessKey(target, row);
+    const occ = keyCounts.get(bk) || 0;
+    keyCounts.set(bk, occ + 1);
+    const ext = identityFor(target, row, occ);
     if (ext && existing.has(ext)) update++; else create++;
     if (preview.length < 8) preview.push(row);
   });
@@ -235,7 +271,8 @@ router.post('/:id/commit', (req, res) => {
   const cols = target.fields.map(f => f.key);
 
   let created = 0, updated = 0, skipped = 0;
-  const seen = new Set();
+  const seenContent = new Set();
+  const keyCounts = new Map();
 
   const insert = db.prepare(`INSERT INTO ${target.table}
     (id, ${cols.join(', ')}, source, external_id, created_by)
@@ -248,9 +285,14 @@ router.post('/:id/commit', (req, res) => {
     for (const src of rows) {
       const { row, errors } = buildRow(target, mapping, src);
       if (errors.length) { skipped++; continue; }
-      const ext = identityFor(target, row);
-      if (ext && seen.has(ext)) { skipped++; continue; }
-      if (ext) seen.add(ext);
+      // Mirrors the preview exactly, so what was approved is what gets written.
+      const content = contentHash(target, row);
+      if (seenContent.has(content)) { skipped++; continue; }
+      seenContent.add(content);
+      const bk = businessKey(target, row);
+      const occ = keyCounts.get(bk) || 0;
+      keyCounts.set(bk, occ + 1);
+      const ext = identityFor(target, row, occ);
       const values = cols.map(c => row[c] ?? null);
       const hit = ext ? findByExt.get(ext) : null;
       if (hit) { updateStmt.run(...values, source, hit.id); updated++; }

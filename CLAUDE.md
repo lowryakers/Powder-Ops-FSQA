@@ -311,9 +311,15 @@ accident: **analyze** (stash file in `import_batches`, suggest a column mapping)
 create/update/skip counts + per-row reasons, nothing written) → **commit** (one transaction, upsert on a
 natural key) → the batch row itself is the **provenance** record (`source`, `external_id` on each row).
 - Add a target = one `TARGETS` entry (fields + aliases + identity). Client is `<ImportPanel target=… />`.
-- **`identity` must be the whole natural key, not a single "id" column.** Monday's item name repeats (722
-  distinct across 2,107 rows, "NA" 215×) — keying on it alone collapsed 1,390 rows into "duplicate". The
-  preview step caught that before any write, which is exactly what it's for.
+- **Identity = business key + occurrence index, and skipping is decided on FULL ROW CONTENT.** Two traps here,
+  both caught by the preview before any write:
+  1. Monday's item name repeats (722 distinct across 2,107 rows, "NA" 215×), so keying on it alone collapsed
+     1,390 rows.
+  2. The business key alone is still not enough: **the same item legitimately arrives twice** against one
+     inspection #/PO/lot (two pallets, a partial delivery) differing only in quantity, expiry or packing slip.
+     Keying on it dropped **15 real receipts**. So each row gets `businessKey + '#' + occurrence-within-file`,
+     and a row is only skipped as a duplicate when `contentHash()` (every mapped field) matches an earlier one.
+     That keeps separate receipts, collapses true re-entries, and still updates in place on re-import.
 - Dates arrive as Excel serials, ISO, or locale strings; `toDate()` normalizes all three (serial only in the
   20000–80000 window so a quantity like 45.36 is never mangled). Monday check columns are "v" → `toBool()`.
 - Verified end to end on the real 2,107-row Receiving Log export: 15/16 fields auto-mapped, 2,064 created in

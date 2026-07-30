@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, Fragment } from 'react';
-import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiDelete, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square, Sparkles } from 'lucide-react';
+import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square, Sparkles, Paperclip } from 'lucide-react';
 
 const DOC_TYPE_OPTIONS = [
   { value: 'sop', label: 'SOP' },
@@ -322,6 +322,101 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
 }
 
 /* ───────── Read view ───────── */
+/* ───────── Attachments ───────── */
+// Files kept with a controlled document. The migration driver is the signed
+// PAPER version each electronic document replaced — an auditor asks for the
+// last approved hard copy, so it's marked as its own kind rather than being one
+// more file in a pile.
+function DocumentAttachments({ docId, canEdit }) {
+  const { data: files, refresh } = useApiGet(`/documents/${docId}/attachments`, [docId]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [kind, setKind] = useState('signed_original');
+  const [revision, setRevision] = useState('');
+
+  const upload = async (fileList) => {
+    const picked = Array.from(fileList || []);
+    if (!picked.length) return;
+    setBusy(true); setError(null);
+    try {
+      const fd = new FormData();
+      picked.forEach(f => fd.append('files', f));
+      fd.append('kind', kind);
+      if (revision.trim()) fd.append('revision', revision.trim());
+      await apiUpload(`/documents/${docId}/attachments`, fd);
+      setRevision('');
+      refresh();
+    } catch (e) { setError(e.message || 'Upload failed.'); }
+    finally { setBusy(false); }
+  };
+
+  const remove = async (f) => {
+    if (!window.confirm(`Remove "${f.filename}"? The file is deleted from storage.`)) return;
+    try { await apiDelete(`/documents/attachments/${f.id}`); refresh(); }
+    catch (e) { setError(e.message); }
+  };
+
+  const signed = (files || []).filter(f => f.kind === 'signed_original');
+  const other = (files || []).filter(f => f.kind !== 'signed_original');
+
+  const Row = ({ f }) => (
+    <div className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+      <FileText size={14} className="text-powder-600 shrink-0" />
+      <a href={f.url || undefined} target="_blank" rel="noreferrer"
+        className="text-xs text-gray-800 hover:text-powder-700 hover:underline truncate flex-1">
+        {f.filename}
+      </a>
+      {f.revision && <span className="text-[10px] text-gray-400 shrink-0">Rev {f.revision}</span>}
+      <span className="text-[10px] text-gray-400 shrink-0 hidden sm:inline">
+        {f.uploaded_by} · {new Date(f.created_at).toLocaleDateString()}
+      </span>
+      {canEdit && (
+        <button onClick={() => remove(f)} className="p-1 text-gray-300 hover:text-red-600 shrink-0" data-tip="Remove"><Trash2 size={12} /></button>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="px-5 py-3 border-t border-gray-100">
+      <p className="text-xs font-semibold text-gray-700 mb-1.5">Attachments</p>
+
+      {signed.length > 0 && (
+        <div className="mb-2">
+          <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Signed paper original</p>
+          {signed.map(f => <Row key={f.id} f={f} />)}
+        </div>
+      )}
+      {other.length > 0 && (
+        <div className="mb-2">
+          {signed.length > 0 && <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Supporting files</p>}
+          {other.map(f => <Row key={f.id} f={f} />)}
+        </div>
+      )}
+      {!files?.length && <p className="text-xs text-gray-400 mb-2">No files attached.</p>}
+
+      {error && <p className="text-xs text-red-600 mb-1.5">{error}</p>}
+
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <select value={kind} onChange={e => setKind(e.target.value)}
+            className="px-2 py-1 border border-gray-300 rounded-lg text-xs">
+            <option value="signed_original">Signed paper original</option>
+            <option value="attachment">Supporting file</option>
+          </select>
+          <input value={revision} onChange={e => setRevision(e.target.value)} placeholder="Rev (optional)"
+            className="w-28 px-2 py-1 border border-gray-300 rounded-lg text-xs" />
+          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 cursor-pointer">
+            <Paperclip size={12} /> {busy ? 'Uploading…' : 'Attach files'}
+            <input type="file" multiple className="hidden" disabled={busy}
+              onChange={e => { upload(e.target.files); e.target.value = ''; }} />
+          </label>
+          <span className="text-[10px] text-gray-400">PDF or scan · up to 25 MB each</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose }) {
   const { data: versions } = useApiGet(`/documents/${doc.id}/versions`, [doc.id]);
   const [showVersions, setShowVersions] = useState(false);
@@ -393,6 +488,8 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose })
             {(!versions || versions.length === 0) && <p className="text-xs text-gray-400">No version history.</p>}
           </div>
         )}
+
+        <DocumentAttachments docId={doc.id} canEdit={canEdit} />
       </div>
     </div>
   );

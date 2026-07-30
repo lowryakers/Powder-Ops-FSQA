@@ -4,7 +4,10 @@ import multer from 'multer';
 import PDFDocument from 'pdfkit';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import mammoth from 'mammoth';
+import { createReadStream } from 'fs';
 import { getDb, logAudit } from '../db.js';
+import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
+import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 
 const router = Router();
 
@@ -618,5 +621,78 @@ function generatePDF(res, docs) {
 
   pdf.end();
 }
+
+/* ── Attachments (signed paper originals + supporting files) ─────────────── */
+// The migration case: each controlled document keeps its last approved PAPER
+// version attached, scanned, so the signed original stays with the record that
+// replaced it. Uses the same disk-backed media pipeline as course materials —
+// large scans stream to storage rather than buffering in memory.
+
+const docFileUpload = mediaUpload({ files: 10 }).array('files', 10);
+const uploadDocFiles = (req, res, next) => docFileUpload(req, res, (err) => {
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  next();
+});
+
+router.get('/:id/attachments', async (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM document_attachments WHERE document_id = ? ORDER BY created_at DESC').all(req.params.id);
+  res.json(await Promise.all(rows.map(async a => ({
+    id: a.id, kind: a.kind, title: a.title, filename: a.filename,
+    content_type: a.content_type, size: a.size, revision: a.revision,
+    uploaded_by: a.uploaded_by, created_at: a.created_at,
+    url: await presignGet(a.storage_key, a.filename),
+  }))));
+});
+
+router.post('/:id/attachments', uploadDocFiles, async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+    const db = getDb();
+    const doc = db.prepare('SELECT id, doc_number, title FROM sop_documents WHERE id = ?').get(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+    const tooBig = rejectOversize(files);
+    if (tooBig) return res.status(413).json({ error: tooBig });
+
+    const kind = req.body?.kind === 'signed_original' ? 'signed_original' : 'attachment';
+    const out = [];
+    for (const f of files) {
+      const id = uuid();
+      const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+      const key = `documents/${doc.id}/${id}-${safe}`;
+      await putStream(key, createReadStream(f.path), f.mimetype);
+      db.prepare(`INSERT INTO document_attachments
+        (id, document_id, kind, title, filename, content_type, size, storage_key, revision, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, doc.id, kind, (req.body?.title || '').slice(0, 200) || null,
+        (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null, key,
+        (req.body?.revision || '').slice(0, 40) || null, req.user?.name || null);
+      out.push({ id, filename: f.originalname, kind });
+    }
+    logAudit(req.user, 'attach', 'document', doc.id,
+      { kind, files: out.map(o => o.filename) }, null, null, `${doc.doc_number} ${doc.title}`);
+    res.status(201).json(out);
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+router.delete('/attachments/:id', (req, res) => {
+  const db = getDb();
+  const a = db.prepare('SELECT * FROM document_attachments WHERE id = ?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  // A signed paper original is the evidence the electronic record replaced;
+  // removing one is an admin decision, not routine housekeeping.
+  if (a.kind === 'signed_original' && req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Only an admin can remove a signed original.' });
+  }
+  db.prepare('DELETE FROM document_attachments WHERE id = ?').run(a.id);
+  deleteObject(a.storage_key); // best effort; the row is already gone
+  logAudit(req.user, 'delete', 'document_attachment', a.id,
+    { filename: a.filename, kind: a.kind }, a, null, a.filename);
+  res.json({ ok: true });
+});
 
 export default router;

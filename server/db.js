@@ -436,6 +436,28 @@ function initSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_sop_versions_sop ON sop_versions(sop_id);
 
+    -- Files attached to a controlled document (SOP / WI / Job Description).
+    -- The immediate need is the last approved PAPER version of each document,
+    -- scanned, so the signed original an auditor asks for stays attached to the
+    -- record that superseded it. The kind column distinguishes that from ordinary
+    -- supporting files, because "show me what this replaced" is a different
+    -- question from "show me the appendix".
+    CREATE TABLE IF NOT EXISTS document_attachments (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'attachment' CHECK (kind IN ('signed_original', 'attachment')),
+      title TEXT,
+      filename TEXT NOT NULL,
+      content_type TEXT,
+      size INTEGER,
+      storage_key TEXT NOT NULL,
+      revision TEXT,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (document_id) REFERENCES sop_documents(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_document_attachments_doc ON document_attachments(document_id, created_at);
+
     -- Org Chart (structured, editable)
     CREATE TABLE IF NOT EXISTS org_positions (
       id TEXT PRIMARY KEY,
