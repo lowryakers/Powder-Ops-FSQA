@@ -95,9 +95,7 @@ const NAV_GROUPS = [
     items: [
       { id: 'receiving-log', label: 'Receiving Log', icon: PackageCheck, keywords: 'receiving incoming raw material po part lot form 204' },
       { id: 'component-signout', label: 'Component Sign In/Out', icon: PackageCheck },
-      { id: 'maintenance-signout', label: 'Equipment/Tool/Chemical Sign In-Out', icon: Wrench },
-      { id: 'currently-out', label: 'Checked Out', icon: PackageSearch },
-      { id: 'knife-accountability', label: 'Knife / Razor Blade / Scissor', icon: Scissors },
+      { id: 'sign-out', label: 'Sign In/Out', icon: Wrench, anyOf: ['maintenance-signout', 'knife-accountability'], keywords: 'checked out knife blade razor scissor equipment tool chemical form 440-02 703-01' },
     ],
   },
   {
@@ -183,6 +181,10 @@ function KioskAppRedirect({ form }) {
   return null;
 }
 const canSeeCheckedOut = (u) => isRicardo(u) || hasExplicitGrant(u, 'currently-out');
+// The Sign In/Out hub: visible to anyone who can reach any of its tabs. Ricardo
+// has only the Out-now grant and must still land here — it's his floor check.
+const canSeeSignOut = (u) => canViewModule(u, 'maintenance-signout')
+  || canViewModule(u, 'knife-accountability') || canSeeCheckedOut(u);
 
 // "Requests" (supply order + time tracking forms) is for every supervisor,
 // regardless of how their module access is trimmed — plus anyone explicitly
@@ -279,7 +281,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, 
         {NAV_GROUPS.map((group) => {
           const visibleItems = group.items.filter(i => {
             if (i.id === 'settings') return false; // lives in the top-right gear icon
-            if (i.id === 'currently-out') return canSeeCheckedOut(user);
+            if (i.id === 'sign-out') return canSeeSignOut(user);
             if (i.id === 'office-requests') return canSeeOfficeRequests(user);
             if (i.adminOnly && user.role !== 'admin') return false;
             if (i.roles && !i.roles.includes(user.role)) return false;
@@ -641,8 +643,8 @@ function accessibleNavItems(user, aiOn) {
   const flat = [];
   for (const g of NAV_GROUPS) {
     for (const i of g.items) {
-      if (i.id === 'currently-out') {
-        if (canSeeCheckedOut(user)) flat.push({ ...i, group: g.label });
+      if (i.id === 'sign-out') {
+        if (canSeeSignOut(user)) flat.push({ ...i, group: g.label });
         continue;
       }
       if (i.id === 'office-requests') {
@@ -735,7 +737,7 @@ function ModuleSearch({ user, onNavigate }) {
   );
 }
 
-const MOBILE_TAB_LABELS = { dashboard: 'Home', operator: 'Operator', pm: 'Tasks', 'production-schedule': 'Schedule', 'production-log': 'Production', capa: 'CAPA', sanitation: 'Sanitation', 'currently-out': 'Checked Out', 'maintenance-signout': 'Sign In-Out', messages: 'Messages' };
+const MOBILE_TAB_LABELS = { dashboard: 'Home', operator: 'Operator', pm: 'Tasks', 'production-schedule': 'Schedule', 'production-log': 'Production', capa: 'CAPA', sanitation: 'Sanitation', 'sign-out': 'Sign In-Out', messages: 'Messages' };
 
 // Audit-readiness chip on the Dashboard tab row — the Phase 3 "one number"
 // view of Critical Tracking. Own component so the fetch only happens for
@@ -784,6 +786,21 @@ const HUB_TABS = {
     { id: 'work-instructions', label: 'Work Instructions', render: () => <DocumentRegistry docType="work_instruction" moduleId="work-instructions" title="Work Instructions" typeLabel="Work Instruction" /> },
     { id: 'job-descriptions', label: 'Job Descriptions', render: () => <DocumentRegistry docType="job_description" moduleId="job-descriptions" title="Job Descriptions" typeLabel="Job Description" /> },
   ],
+  // Forms 440-02 (knives/blades) and 703-01 (equipment/tools/chemicals) record
+  // the same transaction — a person takes an item, brings it back, condition
+  // checked both ways. They were separate modules only because they are
+  // separate paper forms. They stay separate CONTROLLED RECORDS (an auditor
+  // asking for 440-02 must get exactly those, and Document Control owns whether
+  // the two forms ever merge) — but they are one place to go, with "Out now"
+  // spanning both.
+  'sign-out': [
+    { id: 'currently-out', label: 'Out now', render: () => <CheckedOutPanel />,
+      // A read-only roll-up of records you can already see, so anyone with
+      // either form — or Ricardo's explicit grant — gets it.
+      visible: (u) => canViewModule(u, 'maintenance-signout') || canViewModule(u, 'knife-accountability') || canSeeCheckedOut(u) },
+    { id: 'maintenance-signout', label: 'Equipment, Tools & Chemicals', render: () => <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" /> },
+    { id: 'knife-accountability', label: 'Knives & Blades', render: () => <KnifePanel /> },
+  ],
   'quality-events': [
     { id: 'deviations', label: 'Deviations', render: () => <QMSRecordsPanel recordType="deviation" moduleId="deviations" /> },
     { id: 'non-conformance', label: 'Non-Conformance', render: () => <QMSRecordsPanel recordType="non_conformance" moduleId="non-conformance" /> },
@@ -794,7 +811,7 @@ const HUB_TABS = {
 const HUB_OF = Object.fromEntries(Object.entries(HUB_TABS).flatMap(([hub, tabs]) => tabs.map(t => [t.id, hub])));
 
 function ModuleHub({ hubId, user, initialTab, badges }) {
-  const tabs = HUB_TABS[hubId].filter(t => canViewModule(user, t.id));
+  const tabs = HUB_TABS[hubId].filter(t => (t.visible ? t.visible(user) : canViewModule(user, t.id)));
   const [tab, setTab] = useState(tabs.some(t => t.id === initialTab) ? initialTab : tabs[0]?.id);
   if (!tabs.length) return null;
   const active = tabs.find(t => t.id === tab) || tabs[0];
@@ -1565,7 +1582,8 @@ function App() {
           {resolvedTab === 'receiving-log' && <ReceivingLogPanel user={user} />}
           {resolvedTab === 'component-signout' && <QMSRecordsPanel recordType="component_sign_out" moduleId="component-signout" />}
           {resolvedTab === 'maintenance-signout' && <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" />}
-          {resolvedTab === 'currently-out' && <CheckedOutPanel />}
+          {(resolvedTab === 'sign-out' || HUB_OF[resolvedTab] === 'sign-out') &&
+            <ModuleHub key={`so-${resolvedTab}`} hubId="sign-out" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'organoleptic' && <QMSRecordsPanel recordType="organoleptic" moduleId="organoleptic" />}
           {resolvedTab === 'flavor-approvals' && <FlavorPanel />}
           {resolvedTab === 'certifications' && <CertificationsPanel />}

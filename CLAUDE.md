@@ -259,6 +259,20 @@ UI: `ScaleKiosk.jsx` (QR at `/kiosk/scale`, Quick Forms entry `form-scale`, live
 → `ScaleVerificationTab.jsx`, a tab in Calibration Management with one status card per form ("has today's
 check been run") and QA counter-signature. Room links to a `calibration_instruments` row when the name matches.
 
+## Sign In/Out: one place, two controlled forms
+Forms **440-02** (knives/blades) and **703-01** (equipment/tools/chemicals) record the same transaction —
+a person takes an item, brings it back, condition checked both ways. They were separate modules only
+because they are separate paper forms. They are now one nav entry (`sign-out` hub in `HUB_TABS`) with
+tabs **Out now / Equipment, Tools & Chemicals / Knives & Blades**, replacing three entries.
+**The records stay separate on purpose.** An auditor asking for 440-02 must get exactly those, and whether
+the two forms ever become one controlled document is Document Control's call, not the app's. So each tab
+is still its own `record_type` with its own write paths; only the way in is shared.
+`ModuleHub` grew an optional per-tab `visible(user)` — Out now is a read-only roll-up, so it shows for
+anyone with either form (or Ricardo's explicit `currently-out` grant, which is his whole access). `HUB_OF`
+resolves the old ids, so deep links, quick-tab picks and Settings grants all keep working untouched.
+**CheckedOutPanel read only `maintenance_sign_out`**, so a knife signed out on 440-02 never appeared in
+"what's out" — the one question that screen exists to answer. It queries both now.
+
 ## QMS records: who may change a filed record
 `server/api/qms.js` — **filing stays open on purpose** (anyone who sees a deviation should be able to
 report it), everything after that is records integrity. `mayEdit()`: the filer while unsigned, plus
