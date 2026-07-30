@@ -360,12 +360,55 @@ function findPossibleDuplicate(db, cfg, rec) {
   return null;
 }
 
+// ── who may change a filed record ────────────────────────────────────────────
+//
+// FILING stays open on purpose: anyone who sees a deviation should be able to
+// report it without hunting for permission. Everything after that is a
+// records-integrity question, and these are SQF/GMP records.
+//
+// This was missing entirely — any signed-in operator could edit or hard-delete
+// any deviation, non-conformance or on-hold record. bulk-delete already had the
+// admin check; the single-record paths never got it.
+const isRecordsRole = (u) => u?.role === 'admin' || u?.role === 'supervisor'
+  || ['qa', 'quality', 'document_control'].includes((u?.department || '').toLowerCase());
+
+function hasAnySignature(row) {
+  const a = parseJson(row.approvals, {});
+  return Object.values(a || {}).some(Boolean);
+}
+
+// Correcting a record you filed is normal work; correcting someone else's is a
+// QA act. Once ANY approval signature is on it, the record is closed to
+// everyone but an admin — a signed record that can still be edited is not a
+// record.
+function mayEdit(user, row) {
+  if (user?.role === 'admin') return true;
+  if (hasAnySignature(row)) return false;
+  if (isRecordsRole(user)) return true;
+  return !!user?.name && row.created_by === user.name;
+}
+
+// Deleting is for a mis-filed draft, never for history. Admin only, and never
+// once something has been signed — that record gets voided through its status,
+// not removed from the log.
+function mayDelete(user, row) {
+  if (user?.role !== 'admin') return false;
+  return !hasAnySignature(row);
+}
+
 // ── update ───────────────────────────────────────────────────────────────────
 router.put('/:type/:id', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
   const db = getDb();
   const existing = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!mayEdit(req.user, existing)) {
+    return res.status(403).json({
+      error: hasAnySignature(existing)
+        ? `${existing.record_number} carries an approval signature — only an admin can amend it.`
+        : `You can only correct ${cfg.label} records you filed.`,
+    });
+  }
   // approvals are NOT settable here — they go through /approve
   const data = { ...parseJson(existing.data, {}), ...pickData(cfg, req.body) };
   db.prepare(`UPDATE qms_records SET record_number=?, record_date=?, status=?, data=?, paper_record=?, document_url=?, capa_id=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
@@ -391,14 +434,30 @@ router.post('/:type/bulk-delete', (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
   const ph = ids.map(() => '?').join(',');
-  const found = db.prepare(`SELECT id, record_number FROM qms_records WHERE record_type = ? AND id IN (${ph})`).all(cfg.key, ...ids);
-  db.prepare(`DELETE FROM qms_records WHERE record_type = ? AND id IN (${ph})`).run(cfg.key, ...ids);
+  const candidates = db.prepare(`SELECT * FROM qms_records WHERE record_type = ? AND id IN (${ph})`).all(cfg.key, ...ids);
+  // A signed record is history — skip it and say so rather than silently
+  // taking the whole selection down with it.
+  const signed = candidates.filter(hasAnySignature);
+  const found = candidates.filter(r => !hasAnySignature(r));
+  if (found.length) {
+    const fph = found.map(() => '?').join(',');
+    db.prepare(`DELETE FROM qms_records WHERE id IN (${fph})`).run(...found.map(r => r.id));
+  }
   for (const r of found) logAudit(req.user, 'qms_deleted', cfg.key, r.id, { record_number: r.record_number }, r, null);
-  res.json({ deleted: found.length });
+  res.json({
+    deleted: found.length,
+    skipped_signed: signed.length,
+    ...(signed.length ? { message: `${signed.length} signed record${signed.length > 1 ? 's were' : ' was'} kept — change status instead of deleting.` } : {}),
+  });
 });
 
 router.post('/:type/bulk-update', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
+  // Same rule as editing one record, applied to a selection: changing status
+  // or the paper-record flag across a batch is a QA act, not general access.
+  if (!isRecordsRole(req.user)) {
+    return res.status(403).json({ error: `Only QA, supervisors or admins can bulk-edit ${cfg.label}.` });
+  }
   const db = getDb();
   const { ids, patch } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
@@ -491,6 +550,13 @@ router.delete('/:type/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!mayDelete(req.user, existing)) {
+    return res.status(403).json({
+      error: hasAnySignature(existing)
+        ? `${existing.record_number} has been signed and can no longer be deleted. Change its status instead.`
+        : `Only an admin can permanently delete ${cfg.label}.`,
+    });
+  }
   db.prepare('DELETE FROM qms_records WHERE id = ?').run(req.params.id);
   logAudit(req.user, 'qms_deleted', cfg.key, req.params.id, { record_number: existing.record_number }, existing, null);
   res.json({ success: true });
@@ -556,6 +622,10 @@ export function importCsv(db, cfg, csvText, actor) {
 
 router.post('/:type/import', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
+  // Bulk-writing history into a compliance log is an admin act.
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: `Only an admin can import ${cfg.label} history.` });
+  }
   const db = getDb();
   const { csv } = req.body;
   if (!csv) return res.status(400).json({ error: 'csv is required' });

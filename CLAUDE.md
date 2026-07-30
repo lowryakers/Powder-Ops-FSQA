@@ -259,6 +259,17 @@ UI: `ScaleKiosk.jsx` (QR at `/kiosk/scale`, Quick Forms entry `form-scale`, live
 → `ScaleVerificationTab.jsx`, a tab in Calibration Management with one status card per form ("has today's
 check been run") and QA counter-signature. Room links to a `calibration_instruments` row when the name matches.
 
+## QMS records: who may change a filed record
+`server/api/qms.js` — **filing stays open on purpose** (anyone who sees a deviation should be able to
+report it), everything after that is records integrity. `mayEdit()`: the filer while unsigned, plus
+admin/supervisor/QA/document_control; **any approval signature closes the record to everyone but an admin**.
+`mayDelete()`: admin only, and **never once signed** — a signed record is changed by status, not removed
+(bulk-delete skips signed rows and reports `skipped_signed` rather than taking the selection down with it).
+`bulk-update` needs a records role; CSV `import` is admin-only.
+This was missing entirely: `/api/qms` mounts with no router guard and the handlers had none, so any
+signed-in operator could edit or hard-delete any deviation, non-conformance or on-hold record. Only
+`bulk-delete` had ever got the admin check. If you add a QMS write path, guard it — the mount will not.
+
 ## Click a log row to expand it
 `src/lib/useRowExpand.js` (`useRowExpand()`, `stopRowClick`) + `src/components/common/RowDetail.jsx`
 (`<ExpandCell>`, `<DetailRow>`, `<DetailFields>`). A table opts in with a `w-8` chevron column,
@@ -275,6 +286,22 @@ auto-builds the panel from the columns; pass `detail={row => …}` to add more).
 Document Registry and COA already open a full record view on row click — left alone.
 The **audit log** detail diffs `previous_state`/`new_state` and shows only the fields that changed; it
 stores whole snapshots and dumping both buries the one value someone came to check.
+
+## Performance: what actually made it slow
+Measured on a production-scale DB, not guessed — server SQL was never the bottleneck. Two causes:
+1. **Unbounded list endpoints.** `/pm/operator-tasks` shipped **3.7 MB** (every unsigned production entry
+   ever filed) to the screen floor staff open on a phone; `/sanitation` 3.5 MB, `/coa/requests` 1.3 MB.
+   All bounded now (`limit`, default 500; QA sign-off backlog capped at 200 oldest-first — the true count
+   is already in `/compliance/notifications`). **Keep new list endpoints bounded.**
+2. **`recleanRooms()` ran two `MAX(...)` queries per room** against unindexed columns — 53 rooms, 106 table
+   scans, 83 ms, and `/notifications`, `/compliance/critical` and `/sanitation/reclean-status` each paid it
+   on every page load. Now two GROUP BY passes (~4 ms) plus indexes on the columns actually filtered.
+**Reads must not write.** `markMissedWorkOrders()` and the task generators ran inside every GET; they're
+behind `runPmHousekeeping()` now (once per 5 min, whoever asks first). Don't call them from a handler.
+**Modules are lazy-loaded** (`lazy()` + `<Suspense>` in App.jsx): entry bundle 2,002 KB → 544 KB. That adds
+a failure single-bundle didn't have — a deploy replaces hashed chunks under a page that's been open since
+before it — so `ModuleBoundary` catches the failed import and offers a reload instead of a white screen.
+Adding a module means adding it to the lazy list, not a plain import.
 
 ## Migration ordering (fresh-DB gotcha)
 `addColumnIfMissing()` runs `ALTER TABLE … ADD COLUMN`, which **throws** if the table doesn't exist yet —
