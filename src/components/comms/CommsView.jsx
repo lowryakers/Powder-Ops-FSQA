@@ -7,6 +7,7 @@ import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Tras
 import CommsSettings from './CommsSettings.jsx';
 import NotificationStatus from './NotificationStatus.jsx';
 import ZoomableImage from './ZoomableImage.jsx';
+import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 import { looksLikeTask, suggestTitle, mentionedUsers, teamForChannel } from '../../lib/taskIntent.js';
 
@@ -1594,7 +1595,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     const ch = (channels || []).find(c => c.id === id);
     setNewMarkerTs(ch && ch.unread > 0 ? (ch.last_read_at || '0') : null);
     setDateView(null);
-    setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false);
+    setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false); setActivityOpen(false);
   };
   // Sidebar channel quick-filter (type to filter, ↑/↓ + Enter to jump).
   const [chanFilter, setChanFilter] = useState('');
@@ -1639,12 +1640,16 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const [showDetails, setShowDetails] = useState(false);
   const [replyTo, setReplyTo] = useState(null); // parent message whose thread is open
   const [threadsOpen, setThreadsOpen] = useState(false); // Threads inbox view
+  const [activityOpen, setActivityOpen] = useState(false); // Activity feed view
   // A message being offered up as a task (null = no prompt showing).
   const [taskDraft, setTaskDraft] = useState(null);
   const canAssignTasks = user?.role === 'admin' || user?.role === 'supervisor';
   // Threads carry their own unread state now, so the badge needs its own feed.
   const [threadTick, setThreadTick] = useState(0);
   const { data: threadUnread, refresh: refreshThreadUnread } = useApiGet('/comms/threads/unread', [threadTick]);
+  // Per-tab unread counts for Activity. Shares threadTick so reading anything
+  // refreshes the badges without a second poller.
+  const { data: activityUnread, refresh: refreshActivityUnread } = useApiGet('/comms/activity/unread', [threadTick]);
   const bumpThreads = () => setThreadTick(t => t + 1);
 
   const list = channels || [];
@@ -1678,7 +1683,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const kindIcon = (c) => (c.kind === 'dm' ? MessageSquare : c.post_policy === 'admins' ? Megaphone : c.kind === 'private' ? Lock : Hash);
   // On phones, the main pane also needs to show when a search/ask is running.
   const searchActive = searchResults !== null || answer !== null || (searching && searchMode === 'ask');
-  const showMainMobile = mobileThread || searchActive || threadsOpen;
+  const showMainMobile = mobileThread || searchActive || threadsOpen || activityOpen;
 
   // Left-edge swipe (from App) steps back one level within Messages rather than
   // jumping straight out: open thread → channel → channel list → ReadyDoc.
@@ -1686,6 +1691,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     const back = () => {
       if (replyTo) { setReplyTo(null); return; }
       if (searchActive) { setSearchQ(''); setSearchResults(null); setAnswer(null); return; }
+      if (activityOpen) { setActivityOpen(false); return; }
       if (threadsOpen) { setThreadsOpen(false); return; }
       if (mobileThread) { setMobileThread(false); return; }
       if (onBackToModule) { onBackToModule(); return; }
@@ -1693,7 +1699,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     };
     window.addEventListener('comms-back', back);
     return () => window.removeEventListener('comms-back', back);
-  }, [replyTo, searchActive, threadsOpen, mobileThread, onBackToModule, onExit]);
+  }, [replyTo, searchActive, threadsOpen, activityOpen, mobileThread, onBackToModule, onExit]);
 
   // Active channel's members — used to warn when @mentioning a non-member and to
   // scope the mention autocomplete to people who can actually see the channel.
@@ -2417,8 +2423,17 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       <div className="flex flex-1 min-h-0">
         {/* sidebar — full width on phones, hidden there once a channel is open */}
         <div className={`w-full md:w-60 border-r border-gray-200 flex-col shrink-0 overflow-y-auto p-2 space-y-3 ${showMainMobile ? 'hidden md:flex' : 'flex'}`}>
+          {/* Activity — everything that involved you, in one feed. Sits above
+              Threads because Threads is a subset of it. */}
+          <button onClick={() => { setActivityOpen(true); setThreadsOpen(false); setMobileThread(false); clearSearch(); }}
+            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activityOpen ? 'bg-powder-600 text-white font-medium' : `hover:bg-gray-100 ${activityUnread?.all ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium'}`}`}>
+            <Bell size={15} className="opacity-80" /> Activity
+            {!!activityUnread?.all && !activityOpen && (
+              <span className="ml-auto px-1.5 py-0.5 rounded-full bg-powder-600 text-white text-[10px] font-bold">{activityUnread.all}</span>
+            )}
+          </button>
           {/* Threads inbox shortcut (like Slack) */}
-          <button onClick={() => { setThreadsOpen(true); setMobileThread(false); clearSearch(); }}
+          <button onClick={() => { setThreadsOpen(true); setActivityOpen(false); setMobileThread(false); clearSearch(); }}
             className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${threadsOpen ? 'bg-powder-600 text-white font-medium' : `hover:bg-gray-100 ${threadUnread?.total ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium'}`}`}>
             <MessageSquare size={15} className="opacity-80" /> Threads
             {/* Replies no longer inflate the channel's count, so this badge is
@@ -2555,7 +2570,20 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
 
         {/* main pane — hidden on phones until a channel is opened */}
         <div className={`flex-1 flex-col min-w-0 ${showMainMobile ? 'flex' : 'hidden md:flex'}`}>
-          {threadsOpen ? (
+          {activityOpen ? (
+            <ActivityView counts={activityUnread} refreshKey={threadTick}
+              onCloseMobile={() => setActivityOpen(false)}
+              onOpenMessage={(it) => {
+                // Reuse the deep-link path the push notifications already use:
+                // it opens the channel, scrolls to the exact message, and
+                // resolves a thread reply into its thread drawer.
+                setActivityOpen(false);
+                window.dispatchEvent(new CustomEvent('comms-open-channel', {
+                  detail: { channelId: it.channel_id, messageId: it.id },
+                }));
+                refreshActivityUnread();
+              }} />
+          ) : threadsOpen ? (
             <ThreadsView me={user} mentionUsers={users} canTranslate={translateOn} viewerLang={viewerLang}
               onTranslate={translateMessage} onOpenChannel={openChannel} onCloseMobile={() => setThreadsOpen(false)}
               onRead={refreshThreadUnread} refreshKey={threadTick} />

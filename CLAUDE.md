@@ -325,3 +325,19 @@ natural key) → the batch row itself is the **provenance** record (`source`, `e
 - Verified end to end on the real 2,107-row Receiving Log export: 15/16 fields auto-mapped, 2,064 created in
   ~0.2s, 43 skipped (in-file duplicates + rows missing a required field), and **re-importing the same file
   produced 0 created / 2,064 updated with no duplicates**.
+
+## Comms Activity feed
+`GET /api/comms/activity?filter=all|mentions|dms|threads&unread=1&before=<created_at>` +
+`GET /api/comms/activity/unread` (per-tab badge counts). `ActivityView.jsx`, a sidebar entry above Threads.
+**It is deliberately only what involved YOU** — @mentions, DMs, and replies on threads you started/replied
+to/were mentioned in. Ordinary channel messages are excluded on purpose: that's the channel list, and
+repeating it here buries the things that need an answer. Your own messages are excluded too.
+- `ACTIVITY_KINDS` sets precedence (mention > dm > thread) so an @mention inside a DM is de-duplicated to one
+  row rather than appearing twice. The UNION over-fetches (`limit * 4`) because access checks and de-duping
+  both drop rows after the query.
+- **Unread is measured against the thread when the item is a reply, the channel otherwise** — the same rule
+  `threadUnread()`/`channelUnread()` use, so the feed and the sidebar badges can't disagree.
+- Clicking a row dispatches the existing `comms-open-channel` event (the push-notification deep-link path),
+  which opens the channel, scrolls to the message, and resolves a thread reply into its thread drawer.
+- Pages back through history via the `before` cursor — people use it to find an old message, not only to
+  triage unreads.

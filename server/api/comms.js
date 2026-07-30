@@ -965,6 +965,150 @@ router.get('/threads', async (req, res) => {
   res.json(out);
 });
 
+// ── Activity ──────────────────────────────────────────────────────────────────
+// One feed of everything that involved YOU: mentions, direct messages, and
+// replies on threads you're part of. Deliberately not "every message in every
+// channel" — that's the channel list, and duplicating it here would bury the
+// things that actually need an answer.
+//
+// It doubles as the way people find an old message they half-remember, which is
+// why it pages back through history rather than only showing what's unread.
+
+// Kinds in precedence order: an @mention inside a DM is a mention first.
+const ACTIVITY_KINDS = ['mention', 'dm', 'thread'];
+
+router.get('/activity', (req, res) => {
+  const db = getDb();
+  const me = req.user.id;
+  const isAdmin = req.user.role === 'admin';
+  const filter = ['mentions', 'dms', 'threads'].includes(req.query.filter) ? req.query.filter : 'all';
+  const unreadOnly = req.query.unread === '1';
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const before = req.query.before || null; // created_at cursor for "load older"
+
+  const want = (k) => filter === 'all' || filter === `${k}s`;
+  const parts = [];
+  // Nothing you wrote yourself is activity — it never needs your attention.
+  if (want('mention')) {
+    parts.push(`SELECT m.id, m.created_at, 'mention' AS kind FROM chat_messages m
+                JOIN chat_mentions mn ON mn.message_id = m.id AND mn.user_id = $me
+                WHERE m.deleted_at IS NULL AND m.user_id != $me`);
+  }
+  if (want('dm')) {
+    parts.push(`SELECT m.id, m.created_at, 'dm' AS kind FROM chat_messages m
+                JOIN chat_channels c ON c.id = m.channel_id
+                WHERE c.kind = 'dm' AND m.deleted_at IS NULL AND m.user_id != $me`);
+  }
+  if (want('thread')) {
+    // Replies on threads you started, replied to, or were mentioned in.
+    parts.push(`SELECT m.id, m.created_at, 'thread' AS kind FROM chat_messages m
+                JOIN chat_messages p ON p.id = m.parent_id
+                WHERE m.parent_id IS NOT NULL AND m.deleted_at IS NULL AND m.user_id != $me
+                  AND (p.user_id = $me
+                    OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = $me)
+                    OR EXISTS (SELECT 1 FROM chat_mentions m2 WHERE m2.message_id = p.id AND m2.user_id = $me))`);
+  }
+  if (!parts.length) return res.json({ items: [], has_more: false });
+
+  const cursor = before ? ' AND created_at < $before' : '';
+  const sql = `SELECT id, created_at, kind FROM (${parts.join(' UNION ALL ')})
+               WHERE 1=1 ${cursor} ORDER BY created_at DESC LIMIT $scan`;
+  // Over-fetch: access checks and de-duplication both drop rows after the query.
+  const rows = db.prepare(sql).all({ me, before, scan: limit * 4 });
+
+  const best = new Map(); // message id → highest-precedence kind
+  for (const r of rows) {
+    const prev = best.get(r.id);
+    if (!prev || ACTIVITY_KINDS.indexOf(r.kind) < ACTIVITY_KINDS.indexOf(prev.kind)) best.set(r.id, r);
+  }
+  const ordered = [...best.values()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+
+  const items = [];
+  let scanned = 0;
+  for (const r of ordered) {
+    scanned++;
+    const m = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(r.id);
+    if (!m) continue;
+    const channel = getChannel(db, m.channel_id);
+    if (!channel || !canAccess(db, channel, me, isAdmin)) continue;
+
+    // Unread is measured against the thread when it's a reply, the channel
+    // otherwise — the same rule the badges use, so the two never disagree.
+    const lastRead = m.parent_id
+      ? (db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?').get(m.parent_id, me)?.last_read_at
+         || db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channel.id, me)?.last_read_at)
+      : db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channel.id, me)?.last_read_at;
+    const unread = !lastRead || String(m.created_at) > String(lastRead);
+    if (unreadOnly && !unread) continue;
+
+    items.push({
+      id: m.id,
+      kind: r.kind,
+      channel_id: channel.id,
+      channel_name: channelLabel(db, channel, me),
+      channel_kind: channel.kind,
+      parent_id: m.parent_id || null,
+      user_id: m.user_id,
+      user_name: userName(db, m.user_id),
+      body: m.body,
+      created_at: m.created_at,
+      unread,
+    });
+    if (items.length >= limit) break;
+  }
+
+  res.json({ items, has_more: scanned < ordered.length || rows.length >= limit * 4 });
+});
+
+// Unread counts per activity tab — drives the badges without loading the feed.
+router.get('/activity/unread', (req, res) => {
+  const db = getDb();
+  const me = req.user.id;
+  const isAdmin = req.user.role === 'admin';
+  const counts = { all: 0, mentions: 0, dms: 0, threads: 0 };
+
+  const rows = db.prepare(`
+    SELECT m.id, m.channel_id, m.parent_id, m.created_at, 'mention' AS kind FROM chat_messages m
+      JOIN chat_mentions mn ON mn.message_id = m.id AND mn.user_id = $me
+      WHERE m.deleted_at IS NULL AND m.user_id != $me
+    UNION ALL
+    SELECT m.id, m.channel_id, m.parent_id, m.created_at, 'dm' FROM chat_messages m
+      JOIN chat_channels c ON c.id = m.channel_id
+      WHERE c.kind = 'dm' AND m.deleted_at IS NULL AND m.user_id != $me
+    UNION ALL
+    SELECT m.id, m.channel_id, m.parent_id, m.created_at, 'thread' FROM chat_messages m
+      JOIN chat_messages p ON p.id = m.parent_id
+      WHERE m.parent_id IS NOT NULL AND m.deleted_at IS NULL AND m.user_id != $me
+        AND (p.user_id = $me
+          OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = $me)
+          OR EXISTS (SELECT 1 FROM chat_mentions m2 WHERE m2.message_id = p.id AND m2.user_id = $me))
+  `).all({ me });
+
+  const best = new Map();
+  for (const r of rows) {
+    const prev = best.get(r.id);
+    if (!prev || ACTIVITY_KINDS.indexOf(r.kind) < ACTIVITY_KINDS.indexOf(prev.kind)) best.set(r.id, r);
+  }
+  const accessCache = new Map();
+  for (const r of best.values()) {
+    let ok = accessCache.get(r.channel_id);
+    if (ok === undefined) {
+      const ch = getChannel(db, r.channel_id);
+      ok = !!ch && canAccess(db, ch, me, isAdmin);
+      accessCache.set(r.channel_id, ok);
+    }
+    if (!ok) continue;
+    const lastRead = r.parent_id
+      ? (db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?').get(r.parent_id, me)?.last_read_at
+         || db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(r.channel_id, me)?.last_read_at)
+      : db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(r.channel_id, me)?.last_read_at;
+    if (lastRead && String(r.created_at) <= String(lastRead)) continue;
+    counts.all++;
+    counts[`${r.kind}s`]++;
+  }
+  res.json(counts);
+});
+
 // Total unread across every thread the caller follows — the badge on the
 // Threads entry, which is the only reason a thread reply is worth surfacing
 // outside the thread itself.
