@@ -2062,6 +2062,12 @@ function runMigrations() {
     console.warn('[db] newsletter tables unavailable:', e.message);
   }
 
+  // Newsletter banner: either a built-in cover (server/newsletter-covers.js) or
+  // an uploaded image. Added here, immediately after the CREATE above — a
+  // column migration before its table is what kills a fresh database at boot.
+  addColumnIfMissing('newsletter_issues', 'banner_cover', 'TEXT');
+  addColumnIfMissing('newsletter_issues', 'banner_image_id', 'TEXT');
+
   // A newsletter is written once, in English, and read in whichever language
   // the EN/ES toggle is set to — the PDF renders in that language too. An
   // earlier pass stored a hand-kept Spanish half alongside the English one;

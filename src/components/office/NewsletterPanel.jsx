@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import NewsletterBanner from './NewsletterBanner.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
@@ -181,6 +182,7 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
     try {
       const saved = await apiPut(`/newsletter/issues/${draft.id}`, {
         title: draft.title, intro: draft.intro, sections: draft.sections,
+        banner_cover: draft.banner_cover ?? null, banner_image_id: draft.banner_image_id ?? null,
       });
       setDraft(saved);
       onChanged?.(saved);
@@ -203,6 +205,27 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Upload failed');
       const { images } = await res.json();
       setSection(sectionId, { image_id: images[0].id, image_url: images[0].url });
+    } catch (e) { setError(e.message); } finally { setUploadingFor(null); }
+  };
+
+  // A banner photo goes through the same upload the section images use; only
+  // where the id lands differs.
+  const attachBannerImage = async (files) => {
+    const file = files?.[0];
+    if (!file) return;
+    setUploadingFor('__banner__'); setError('');
+    try {
+      const body = new FormData();
+      body.append('files', file);
+      body.append('issue_id', draft.id);
+      const res = await fetch('/api/newsletter/images', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+        body,
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Upload failed');
+      const { images } = await res.json();
+      setDraft(d => ({ ...d, banner_image_id: images[0].id, banner_image_url: images[0].url, banner_cover: null }));
     } catch (e) { setError(e.message); } finally { setUploadingFor(null); }
   };
 
@@ -257,6 +280,13 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
               {tr('Reading in Spanish. The PDF and Share will use Spanish too. Switch to EN to edit.')}
             </p>
           )}
+
+          {/* The header image sits above the title, the way it reads when sent. */}
+          <NewsletterBanner
+            value={draft} disabled={locked} tr={tr}
+            uploading={uploadingFor === '__banner__'}
+            onUpload={(files) => attachBannerImage(files)}
+            onChange={(patch) => setDraft(d => ({ ...d, ...patch }))} />
 
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
             <input value={reading ? tr(draft.title) : draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} disabled={locked}

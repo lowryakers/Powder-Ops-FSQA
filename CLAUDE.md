@@ -538,6 +538,23 @@ not overwrite someone's signature.
 intent statement, and approving one is a decision about product that belongs on the record beside the
 investigation, not on a checkbox in a list.
 
+## Newsletter header covers (the "make it not read like a policy doc" ask)
+`server/newsletter-covers.js` is the gallery: 16 covers grouped Seasons / Holidays / Celebrations /
+Powder Ops, each a gradient plus a motif (burst, confetti, dots, waves, stars, sparkle, leaves, flakes,
+lights, stripes). **They're drawn, not photographed** — no licensing, no megabytes of assets, and no second
+copy of each image for the PDF. `months` drives the "Good for this month" row and the cover a new issue
+starts with.
+**One definition, two renderers.** The module emits plain geometry (circle / line / poly) in a fixed
+1000×300 viewBox; `CoverArt` in `NewsletterBanner.jsx` draws it as SVG and `drawCover()` in
+`api/newsletter.js` draws the same numbers with pdfkit. The vocabulary is deliberately tiny so neither
+renderer needs a special case, and the preview is genuinely the same picture as the download.
+Shapes come from a **seeded PRNG keyed on the cover id** and are cached — a cover looks identical every
+render, so the fireworks don't rearrange between the preview and the PDF.
+`newsletter_issues.banner_cover` / `banner_image_id`: a built-in cover OR an uploaded photo, never both —
+setting one clears the other. Uploads reuse the existing `newsletter_images` + R2 path; `GET /issues/:id`
+returns a presigned `banner_image_url` because the editor needs something it can put in an `<img>`.
+`GET /newsletter/covers?month=` serves the gallery with shapes included.
+
 ## Emoji in generated PDFs
 `server/pdf-emoji.js` + `server/assets/NotoEmoji-Regular.ttf` (OFL 1.1, licence beside it). pdfkit's built-in
 Helvetica is **WinAnsi — 256 characters, no emoji**, so `doc.text('Welcome! 👋')` wrote the raw UTF-16 bytes

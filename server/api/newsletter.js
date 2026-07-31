@@ -3,6 +3,7 @@ import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import PDFDocument from 'pdfkit';
 import { registerEmojiFont, richText } from '../pdf-emoji.js';
+import { COVERS, getCover, coverPayload, coverShapes, COVER_VIEWBOX } from '../newsletter-covers.js';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -87,17 +88,39 @@ router.delete('/cards/:id', (req, res) => {
 
 // ── Issues: the thing that gets sent ─────────────────────────────────────────
 
+// The banner gallery. Everything needed to draw a cover comes down with it,
+// so the picker, the editor preview and the PDF all render the same geometry.
+router.get('/covers', (req, res) => {
+  const month = Number(req.query.month) || (new Date().getMonth() + 1);
+  res.json({
+    month,
+    covers: COVERS.map(coverPayload),
+    // What to offer first for the month being written.
+    suggested: COVERS.filter(c => c.months?.includes(month)).map(c => c.id),
+  });
+});
+
+// Presigned URL for a stored image, or null if it's gone / storage is off.
+async function imageUrl(id) {
+  const row = getDb().prepare('SELECT storage_key FROM newsletter_images WHERE id = ?').get(id);
+  return row ? presignGet(row.storage_key) : null;
+}
+
 router.get('/issues', (req, res) => {
   if (!requireAccess(req, res, 'view')) return;
   const rows = getDb().prepare('SELECT * FROM newsletter_issues ORDER BY created_at DESC LIMIT 100').all();
   res.json(rows.map(r => ({ ...r, sections: parseSections(r.sections) })));
 });
 
-router.get('/issues/:id', (req, res) => {
+router.get('/issues/:id', async (req, res) => {
   if (!requireAccess(req, res, 'view')) return;
   const row = getDb().prepare('SELECT * FROM newsletter_issues WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Newsletter not found' });
-  res.json({ ...row, sections: parseSections(row.sections) });
+  // The editor needs something it can put in an <img>; the stored value is
+  // only a key. Presigned and short-lived, like every other R2 read.
+  let bannerUrl = null;
+  if (row.banner_image_id) bannerUrl = await imageUrl(row.banner_image_id).catch(() => null);
+  res.json({ ...row, sections: parseSections(row.sections), banner_image_url: bannerUrl });
 });
 
 // Build: snapshot the active cards into a fresh draft.
@@ -108,8 +131,13 @@ router.post('/issues', (req, res) => {
   const sections = cards.map(c => ({ id: uuid(), kind: c.kind, title: c.title, body: c.body || '', image_id: null }));
   const month = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const id = uuid();
-  db.prepare('INSERT INTO newsletter_issues (id, title, intro, sections, created_by) VALUES (?, ?, ?, ?, ?)')
-    .run(id, req.body?.title || `Powder Ops — ${month}`, req.body?.intro || null, JSON.stringify(sections), req.user.name);
+  // Start with a cover that suits the month — a newsletter that opens with a
+  // header is the point, and picking one is a decision Marnee can still change.
+  const monthNo = new Date().getMonth() + 1;
+  const seasonal = COVERS.find(c => c.months?.includes(monthNo)) || getCover('powder-blue');
+  db.prepare('INSERT INTO newsletter_issues (id, title, intro, sections, banner_cover, created_by) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, req.body?.title || `Powder Ops — ${month}`, req.body?.intro || null, JSON.stringify(sections),
+      req.body?.banner_cover ?? seasonal?.id ?? null, req.user.name);
   const created = db.prepare('SELECT * FROM newsletter_issues WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'newsletter', id, { sections: sections.length }, null, created, created.title);
   res.status(201).json({ ...created, sections });
@@ -122,9 +150,18 @@ router.put('/issues/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Newsletter not found' });
   if (existing.status === 'shared') return res.status(400).json({ error: 'This newsletter has already been shared. Build a new one to make changes.' });
   const b = req.body || {};
-  db.prepare(`UPDATE newsletter_issues SET title = ?, intro = ?, sections = ?, updated_at = datetime('now') WHERE id = ?`)
+  // Banner: a built-in cover id, an uploaded image id, or neither. Setting one
+  // clears the other — a newsletter has one header, and keeping a stale value
+  // in the unused column is how you get a banner nobody can explain later.
+  let bannerCover = existing.banner_cover, bannerImage = existing.banner_image_id;
+  if ('banner_cover' in b) { bannerCover = getCover(b.banner_cover) ? b.banner_cover : null; if (bannerCover) bannerImage = null; }
+  if ('banner_image_id' in b) { bannerImage = b.banner_image_id || null; if (bannerImage) bannerCover = null; }
+
+  db.prepare(`UPDATE newsletter_issues SET title = ?, intro = ?, sections = ?,
+      banner_cover = ?, banner_image_id = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(b.title ?? existing.title, b.intro ?? existing.intro,
-      b.sections ? JSON.stringify(b.sections) : existing.sections, req.params.id);
+      b.sections ? JSON.stringify(b.sections) : existing.sections,
+      bannerCover, bannerImage, req.params.id);
   const updated = db.prepare('SELECT * FROM newsletter_issues WHERE id = ?').get(req.params.id);
   res.json({ ...updated, sections: parseSections(updated.sections) });
 });
@@ -186,6 +223,44 @@ const KIND_LABEL = {
 
 // Renders the issue to a PDF buffer. Images are fetched from storage; a
 // missing one is skipped rather than failing the whole newsletter.
+/**
+ * Draw a built-in cover into a rectangle, scaling the shared 1000x300 geometry
+ * to fit. This is the PDF half of newsletter-covers.js — the client draws the
+ * exact same shapes as SVG, which is why the preview and the download match.
+ */
+function drawCover(doc, cover, x, y, w, h) {
+  const sx = w / COVER_VIEWBOX.w, sy = h / COVER_VIEWBOX.h;
+  const P = (px, py) => [x + px * sx, y + py * sy];
+
+  // Background gradient, left to right.
+  const grad = doc.linearGradient(x, y, x + w, y);
+  const stops = cover.colors || ['#0369A1'];
+  stops.forEach((c, i) => grad.stop(stops.length === 1 ? 0 : i / (stops.length - 1), c));
+  doc.save().rect(x, y, w, h).fill(grad);
+
+  // Motif. Clipped to the band so nothing bleeds onto the text below.
+  doc.rect(x, y, w, h).clip();
+  for (const sh of coverShapes(cover)) {
+    doc.save().opacity(sh.opacity ?? 1);
+    if (sh.type === 'circle') {
+      const [cx, cy] = P(sh.cx, sh.cy);
+      doc.circle(cx, cy, sh.r * Math.min(sx, sy)).fill(sh.fill || cover.accent);
+    } else if (sh.type === 'line') {
+      const [x1, y1] = P(sh.x1, sh.y1), [x2, y2] = P(sh.x2, sh.y2);
+      doc.moveTo(x1, y1).lineTo(x2, y2)
+        .lineWidth((sh.width || 1) * Math.min(sx, sy)).stroke(sh.stroke || cover.accent);
+    } else if (sh.type === 'poly' && sh.points?.length) {
+      const [fx, fy] = P(sh.points[0][0], sh.points[0][1]);
+      doc.moveTo(fx, fy);
+      for (const [px, py] of sh.points.slice(1)) { const [lx, ly] = P(px, py); doc.lineTo(lx, ly); }
+      if (sh.close) doc.closePath().fill(sh.fill || cover.accent);
+      else doc.lineWidth((sh.width || 1) * Math.min(sx, sy)).stroke(sh.stroke || cover.accent);
+    }
+    doc.restore();
+  }
+  doc.restore();
+}
+
 async function renderPdf(db, issue, lang = 'en') {
   let sections = parseSections(issue.sections);
   let title = issue.title;
@@ -204,6 +279,7 @@ async function renderPdf(db, issue, lang = 'en') {
     } catch { /* fall back to English rather than fail the download */ }
   }
   const imageIds = sections.map(s => s.image_id).filter(Boolean);
+  if (issue.banner_image_id) imageIds.push(issue.banner_image_id);
   const images = new Map();
   for (const id of imageIds) {
     const row = db.prepare('SELECT * FROM newsletter_images WHERE id = ?').get(id);
@@ -223,10 +299,43 @@ async function renderPdf(db, issue, lang = 'en') {
     // glyph for any of them and writes raw bytes instead. See pdf-emoji.js.
     registerEmojiFont(doc);
 
-    if (existsSync(LOGO_PATH)) {
-      try { doc.image(readFileSync(LOGO_PATH), 54, 40, { height: 34 }); } catch { /* logo optional */ }
+    // ── Banner ────────────────────────────────────────────────────────────
+    // Full-bleed across the top: an uploaded photo, or a built-in cover drawn
+    // from the same geometry the app previews. Either way the logo sits on top
+    // of it, so the page still identifies itself.
+    const pageW = doc.page.width;
+    const bannerH = 132;
+    const bannerImg = issue.banner_image_id && images.get(issue.banner_image_id);
+    const cover = !bannerImg && getCover(issue.banner_cover);
+    let hasBanner = false;
+
+    if (bannerImg) {
+      try {
+        // cover-fit the photo into the band and clip the overflow, so a tall
+        // photo doesn't letterbox or squash.
+        doc.save().rect(0, 0, pageW, bannerH).clip();
+        doc.image(bannerImg, 0, 0, { cover: [pageW, bannerH], align: 'center', valign: 'center' });
+        doc.restore();
+        hasBanner = true;
+      } catch { /* unreadable image — fall through to no banner */ }
+    } else if (cover) {
+      drawCover(doc, cover, 0, 0, pageW, bannerH);
+      hasBanner = true;
     }
-    doc.moveDown(2.2);
+
+    if (existsSync(LOGO_PATH)) {
+      try {
+        if (hasBanner) {
+          // A white plate keeps the logo legible on any cover.
+          doc.save().roundedRect(46, 30, 62, 54, 6).fill('#FFFFFF').restore();
+          doc.image(readFileSync(LOGO_PATH), 54, 38, { height: 38 });
+        } else {
+          doc.image(readFileSync(LOGO_PATH), 54, 40, { height: 34 });
+        }
+      } catch { /* logo optional */ }
+    }
+    if (hasBanner) doc.y = bannerH + 24;
+    doc.moveDown(hasBanner ? 0 : 2.2);
     doc.fillColor('#26262a').fontSize(24);
     richText(doc, title, 'Helvetica-Bold', { align: 'left' });
     doc.moveDown(0.2);
