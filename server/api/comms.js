@@ -328,20 +328,71 @@ function channelUnread(db, channelId, userId) {
 // read the channel: replies they'd already scrolled past there aren't new, and
 // only replies since they last caught up count. Opening the thread writes a
 // chat_thread_reads row, which then takes precedence.
-function threadUnread(db, parentId, userId) {
-  let lr = db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?')
+// SQL fragment: does this row (aliased however the caller aliases chat_messages)
+// @mention $me? Used to give mentions their own read rule below.
+const MENTIONS_ME = (alias) =>
+  `EXISTS (SELECT 1 FROM chat_mentions mx WHERE mx.message_id = ${alias}.id AND mx.user_id = $me)`;
+
+/**
+ * The two read markers a thread reply can be measured against.
+ *
+ * `thread` is the per-thread row; `effective` falls back to the channel's, which
+ * is what stops a thread you never opened from counting its entire imported
+ * history as unread.
+ */
+function threadMarkers(db, parentId, userId) {
+  const thread = db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?')
     .get(parentId, userId)?.last_read_at || null;
-  if (!lr) {
-    const parent = db.prepare('SELECT channel_id FROM chat_messages WHERE id = ?').get(parentId);
-    if (parent) {
-      lr = db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?')
-        .get(parent.channel_id, userId)?.last_read_at || null;
-    }
+  let channel = null;
+  const parent = db.prepare('SELECT channel_id FROM chat_messages WHERE id = ?').get(parentId);
+  if (parent) {
+    channel = db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?')
+      .get(parent.channel_id, userId)?.last_read_at || null;
   }
+  return { thread, effective: thread || channel };
+}
+
+/**
+ * The read marker one Activity item is measured against.
+ *
+ * Deliberately the same rule the badges use, so the feed and the sidebar can
+ * never disagree: channel marker for a top-level message, thread marker for a
+ * reply — and for a reply that mentions you, the thread marker *only*, with no
+ * fall back to the channel.
+ */
+function activityMarker(db, { parentId, channelId, isMention }, userId) {
+  if (!parentId) {
+    return db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?')
+      .get(channelId, userId)?.last_read_at || null;
+  }
+  const { thread, effective } = threadMarkers(db, parentId, userId);
+  return isMention ? thread : effective;
+}
+
+/**
+ * Unread replies in one thread.
+ *
+ * Two different rules, on purpose:
+ *  - An ordinary reply is measured against `effective` — the per-thread marker
+ *    if there is one, otherwise the channel's. Catching up on the channel
+ *    catches you up on chatter you were never named in, which is what keeps a
+ *    thread you've never opened from reporting hundreds of unread replies.
+ *  - **A reply that @mentions you is measured against the thread marker ALONE.**
+ *    It is addressed to you personally, and reading the rest of the channel is
+ *    not an acknowledgement of it. Before this, someone could @ you inside a
+ *    thread and the mention would clear itself the moment you opened the
+ *    channel — off the thread badge, off the channel's @ badge and out of
+ *    Activity, without you ever seeing it.
+ */
+function threadUnread(db, parentId, userId) {
+  const { thread, effective } = threadMarkers(db, parentId, userId);
   return db.prepare(
-    `SELECT COUNT(*) n FROM chat_messages WHERE parent_id = ? AND deleted_at IS NULL AND user_id != ?
-     AND (? IS NULL OR created_at > ?)`
-  ).get(parentId, userId, lr, lr).n;
+    `SELECT COUNT(*) n FROM chat_messages m
+     WHERE m.parent_id = $parent AND m.deleted_at IS NULL AND m.user_id != $me
+       AND CASE WHEN ${MENTIONS_ME('m')}
+                THEN ($thread IS NULL OR m.created_at > $thread)
+                ELSE ($effective IS NULL OR m.created_at > $effective) END`
+  ).get({ parent: parentId, me: userId, thread, effective }).n;
 }
 
 // Push a normal channel message to every member (except the author and anyone
@@ -493,11 +544,23 @@ router.get('/channels', (req, res) => {
        AND parent_id IS NULL AND (? IS NULL OR created_at > ?)`
     ).get(c.id, me, c.last_read_at, c.last_read_at).n;
     // Unread @mentions of me in this channel (drives a distinct badge).
+    //
+    // A mention on a thread reply is measured against that THREAD's read row,
+    // not the channel's — same rule as threadUnread(). Otherwise opening the
+    // channel silently cleared the @ badge for a mention buried in a thread you
+    // never opened, and the one message actually addressed to you was the one
+    // you never saw. A mention on a top-level message still clears normally:
+    // reading the channel is reading it.
     const mentions = db.prepare(
       `SELECT COUNT(*) n FROM chat_mentions mn JOIN chat_messages msg ON msg.id = mn.message_id
-       WHERE mn.channel_id = ? AND mn.user_id = ? AND msg.deleted_at IS NULL
-       AND (? IS NULL OR msg.created_at > ?)`
-    ).get(c.id, me, c.last_read_at, c.last_read_at).n;
+       WHERE mn.channel_id = $c AND mn.user_id = $me AND msg.deleted_at IS NULL
+       AND CASE WHEN msg.parent_id IS NULL
+                THEN ($read IS NULL OR msg.created_at > $read)
+                ELSE (SELECT last_read_at FROM chat_thread_reads tr
+                       WHERE tr.parent_id = msg.parent_id AND tr.user_id = $me) IS NULL
+                     OR msg.created_at > (SELECT last_read_at FROM chat_thread_reads tr
+                       WHERE tr.parent_id = msg.parent_id AND tr.user_id = $me) END`
+    ).get({ c: c.id, me, read: c.last_read_at }).n;
 
     // Most recent message time — lets the client sort channels by activity.
     const lastActivity = db.prepare(
@@ -665,6 +728,16 @@ router.post('/read-all', (req, res) => {
       AND NOT EXISTS (SELECT 1 FROM chat_channel_members m WHERE m.channel_id = c.id AND m.user_id = ?)`).all(me);
   const ins = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)');
   for (const c of missing) ins.run(uuid(), c.id, me, 'member', now);
+  // Thread mentions are no longer cleared by reading their channel (see
+  // threadUnread) — so "Mark all read" has to stamp them explicitly, or an @
+  // buried in a thread would be the one badge this button can never clear.
+  // Bounded by the caller's own mentions, which is a small set.
+  const mentionThreads = db.prepare(`SELECT DISTINCT msg.parent_id AS parent_id
+    FROM chat_mentions mn JOIN chat_messages msg ON msg.id = mn.message_id
+    WHERE mn.user_id = ? AND msg.parent_id IS NOT NULL AND msg.deleted_at IS NULL`).all(me);
+  const markThread = db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at) VALUES (?, ?, ?)
+    ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at`);
+  db.transaction(() => { for (const t of mentionThreads) markThread.run(me, t.parent_id, now); })();
   res.json({ ok: true });
 });
 
@@ -936,10 +1009,16 @@ router.get('/threads', async (req, res) => {
         p.user_id = ?
         OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = ?)
         OR EXISTS (SELECT 1 FROM chat_mentions mn WHERE mn.message_id = p.id AND mn.user_id = ?)
+        -- …or a REPLY named you. Being @mentioned deep in a thread is the
+        -- clearest possible signal that it involves you, and it was the one
+        -- case this list missed: the mention check only looked at the parent,
+        -- so the thread never appeared in your inbox at all.
+        OR EXISTS (SELECT 1 FROM chat_mentions mr JOIN chat_messages rm ON rm.id = mr.message_id
+                   WHERE rm.parent_id = p.id AND rm.deleted_at IS NULL AND mr.user_id = ?)
       )
     GROUP BY p.id
     ORDER BY last_reply DESC
-    LIMIT 40`).all(me, me, me);
+    LIMIT 40`).all(me, me, me, me);
 
   const out = [];
   for (const row of rows) {
@@ -1049,10 +1128,8 @@ router.get('/activity', (req, res) => {
 
     // Unread is measured against the thread when it's a reply, the channel
     // otherwise — the same rule the badges use, so the two never disagree.
-    const lastRead = m.parent_id
-      ? (db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?').get(m.parent_id, me)?.last_read_at
-         || db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channel.id, me)?.last_read_at)
-      : db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channel.id, me)?.last_read_at;
+    const lastRead = activityMarker(db,
+      { parentId: m.parent_id, channelId: channel.id, isMention: r.kind === 'mention' }, me);
     const unread = !lastRead || String(m.created_at) > String(lastRead);
     if (unreadOnly && !unread) continue;
 
@@ -1114,10 +1191,8 @@ router.get('/activity/unread', (req, res) => {
       accessCache.set(r.channel_id, ok);
     }
     if (!ok) continue;
-    const lastRead = r.parent_id
-      ? (db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?').get(r.parent_id, me)?.last_read_at
-         || db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(r.channel_id, me)?.last_read_at)
-      : db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(r.channel_id, me)?.last_read_at;
+    const lastRead = activityMarker(db,
+      { parentId: r.parent_id, channelId: r.channel_id, isMention: r.kind === 'mention' }, me);
     if (lastRead && String(r.created_at) <= String(lastRead)) continue;
     counts.all++;
     counts[`${r.kind}s`]++;
@@ -1213,7 +1288,13 @@ router.get('/threads/unread', (req, res) => {
         p.user_id = ?
         OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = ?)
         OR EXISTS (SELECT 1 FROM chat_mentions mn WHERE mn.message_id = p.id AND mn.user_id = ?)
-      )`).all(me, me, me);
+        -- …or a REPLY named you. Being @mentioned deep in a thread is the
+        -- clearest possible signal that it involves you, and it was the one
+        -- case this list missed: the mention check only looked at the parent,
+        -- so the thread never appeared in your inbox at all.
+        OR EXISTS (SELECT 1 FROM chat_mentions mr JOIN chat_messages rm ON rm.id = mr.message_id
+                   WHERE rm.parent_id = p.id AND rm.deleted_at IS NULL AND mr.user_id = ?)
+      )`).all(me, me, me, me);
   let total = 0, threads = 0;
   for (const p of parents) {
     const channel = getChannel(db, p.channel_id);

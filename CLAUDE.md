@@ -123,7 +123,17 @@ thread (drives the "N new" badge and the NEW divider), `GET /threads/unread` fee
 and by replying. Unread threads sort first. **`threadUnread()` falls back to the channel's `last_read_at`
 when there's no per-thread read row** — otherwise a thread you'd never opened counted its entire history
 (hundreds of replies on imported threads), the "phantom huge number" bug. So once you've caught up on the
-channel, old thread replies don't linger as unread; only replies since count. In the inbox, **read threads dim (opacity-75) and collapse to a
+channel, old thread replies don't linger as unread; only replies since count.
+**But a reply that @mentions you is measured against the THREAD marker alone — never the channel's.**
+Applying the fallback to a mention meant an @ inside a thread cleared itself the moment you opened the
+channel: off the thread badge, off the channel's `@N` badge and out of Activity at once, without the one
+message actually addressed to you ever being seen. The rule splits by kind — ordinary replies keep the
+fallback, mentions don't (`MENTIONS_ME` in the `threadUnread` CASE, the same split in the `/channels`
+mention count and in `activityMarker()`, so the feed and the badges can't disagree). `/read-all` stamps
+`chat_thread_reads` for the caller's mention threads, or "Mark all read" could never clear one.
+**"Threads that involve me" includes being mentioned in a REPLY, not just the parent** — the inbox query
+checked `chat_mentions` on the parent only, so a thread where someone @'d you three replies deep never
+appeared in your Threads list at all. In the inbox, **read threads dim (opacity-75) and collapse to a
 one-line summary** (parent preview + "N replies · last from X", Expand to reopen) while unread stay open with
 the ring + "N new"; a thread you've replied to shows a muted "Replied" chip — so the list is scannable for
 what still needs you.

@@ -1034,6 +1034,22 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
 function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onMarkRead }) {
   const [body, setBody] = useState('');
   const cardReplyRef = useRef(null);
+  // @mention autocomplete — the inbox reply is a real reply into a real
+  // channel, so it needs the same picker the channel composer and the thread
+  // drawer have. Without it people typed a name by hand, the spelling didn't
+  // match, and nobody was notified.
+  const [mQuery, setMQuery] = useState(null);
+  const [mHi, setMHi] = useState(0);
+  const mMatches = useMemo(() => filterMentionPool(mentionUsers, mQuery, me.id), [mentionUsers, mQuery, me.id]);
+  const insertCardMention = (name) => {
+    const ta = cardReplyRef.current;
+    const caret = ta ? ta.selectionStart : body.length;
+    const before = body.slice(0, caret).replace(/@([^\s@]*)$/, '@' + name + ' ');
+    const after = body.slice(caret);
+    setBody(before + after);
+    setMQuery(null);
+    requestAnimationFrame(() => { if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); } });
+  };
   const react = async (m, e) => { await apiPost(`/comms/messages/${m.id}/reactions`, { emoji: e }); refresh(); };
   const unreact = async (m, e) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(e)}`, { method: 'DELETE' }); refresh(); };
   const del = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); refresh(); };
@@ -1041,7 +1057,7 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
   const send = async () => {
     const t = body.trim(); if (!t) return;
     await apiPost(`/comms/channels/${thread.channel_id}/messages`, { body: t, parent_id: thread.parent.id });
-    setBody(''); onMarkRead?.(thread.parent.id); refresh();
+    setBody(''); setMQuery(null); onMarkRead?.(thread.parent.id); refresh();
   };
   const Icon = thread.channel_kind === 'dm' ? MessageSquare : thread.channel_kind === 'private' ? Lock : Hash;
   const unread = thread.unread || 0;
@@ -1116,11 +1132,22 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
       </div>
       )}
       {expanded && (
-      <div className="p-2 border-t border-gray-100">
+      <div className="relative p-2 border-t border-gray-100">
+        <MentionDropdown matches={mMatches} hi={mHi} onHover={setMHi} onPick={insertCardMention} />
         <div className="mb-1"><FormatBar getEl={() => cardReplyRef.current} value={body} onChange={setBody} /></div>
         <div className="flex items-end gap-2">
-          <textarea ref={cardReplyRef} value={body} onChange={e => setBody(e.target.value)} rows={1} onInput={e => sizeTextarea(e.target, 160)}
-            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
+          <textarea ref={cardReplyRef} value={body} rows={1} onInput={e => sizeTextarea(e.target, 160)}
+            onChange={e => { setBody(e.target.value); setMQuery(detectMentionQuery(e)); setMHi(0); }}
+            onKeyDown={e => {
+              // While the @ menu is open: arrows move, Enter/Tab picks, Esc closes.
+              if (mMatches.length) {
+                if (e.key === 'ArrowDown') { e.preventDefault(); setMHi(h => Math.min(h + 1, mMatches.length - 1)); return; }
+                if (e.key === 'ArrowUp') { e.preventDefault(); setMHi(h => Math.max(h - 1, 0)); return; }
+                if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertCardMention(chatName(mMatches[mHi] || mMatches[0])); return; }
+              }
+              if (e.key === 'Escape' && mQuery !== null) { setMQuery(null); return; }
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+            }}
             placeholder="Reply…" className="flex-1 px-3 py-1.5 border border-gray-300 rounded-xl text-sm resize-none max-h-40 overflow-y-auto" />
           <button onClick={send} disabled={!body.trim()} className="p-2 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={15} /></button>
         </div>
