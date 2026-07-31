@@ -439,18 +439,43 @@ router.get('/periods', (req, res) => {
 // Admins and auditors are excluded: this tab tracks hourly staff against a
 // weekly target, and salaried/system accounts only add rows Marnee has to
 // scroll past. They still appear everywhere else in the app.
-// Sorted alphabetically in JS, not in SQL. SQLite's default collation compares
-// raw bytes, so any name starting with an accent — Ángel, Óscar, Ñuñez — sorts
-// after every plain-ASCII name instead of where it belongs, which on this
-// roster dropped a handful of people at the bottom of an otherwise A–Z list.
-// localeCompare knows Á files under A.
+// Sorted alphabetically by LAST name, in JS rather than in SQL.
+//
+// Two reasons it isn't `ORDER BY name`. First, this is the payroll tab and it
+// gets read against ADP, which lists people by surname. Second, SQLite's
+// default collation compares raw bytes, so any name starting with an accent —
+// Ángel, Óscar, Ñuñez — sorts after every plain-ASCII name instead of where it
+// belongs, which is what dropped a handful of people at the bottom of an
+// otherwise A–Z list. localeCompare knows Á files under A.
 const byName = new Intl.Collator('en', { sensitivity: 'base', ignorePunctuation: true });
+
+// Suffixes aren't surnames. Without this "Robert Smith Jr." files under J.
+const NAME_SUFFIX = /^(jr|sr|ii|iii|iv|v|md|phd|dds|esq)\.?$/i;
+
+/**
+ * The surname to file someone under: the last word of their full legal name,
+ * ignoring a trailing suffix.
+ *
+ * Spanish names carry two surnames (paternal then maternal), so "Gaston Antonio
+ * Perez Quintanilla" files under Quintanilla. That's the same rule the sign-in
+ * username derivation uses (server/usernames.js), so the two agree — and where
+ * someone goes by the paternal surname instead, the fix is the same one:
+ * correct it on their record rather than special-casing it here.
+ */
+function lastNameOf(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  while (parts.length > 1 && NAME_SUFFIX.test(parts[parts.length - 1])) parts.pop();
+  return parts[parts.length - 1] || '';
+}
 
 function roster(db) {
   return db.prepare(`SELECT id, name, department, weekly_hours_target FROM users
     WHERE is_active = 1 AND name != 'ReadyBot' AND role NOT IN ('auditor', 'admin')`).all()
     .map(u => ({ ...u, target: u.weekly_hours_target || STANDARD_WEEK_HOURS }))
-    .sort((a, b) => byName.compare(a.name || '', b.name || ''));
+    // Full name breaks ties, so two people who share a surname stay in a
+    // stable, predictable order rather than whatever the table returns.
+    .sort((a, b) => byName.compare(lastNameOf(a.name), lastNameOf(b.name))
+      || byName.compare(a.name || '', b.name || ''));
 }
 
 router.get('/hours', (req, res) => {

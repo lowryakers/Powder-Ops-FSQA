@@ -509,9 +509,14 @@ read as **39:56**; storage stays **decimal** because every downstream number (we
 paid-non-working balance, period totals, payroll export) is arithmetic on it. Entry stays forgiving —
 "39:56", "39.93" and "39" all work. The input must be `type="text"`: a number input rejects the colon and no
 phone keyboard offers one.
-The Hours roster sorts in **JS with `Intl.Collator`**, not `ORDER BY name`. SQLite's default collation
-compares raw bytes, so accented names (Ángel, Óscar) sort after every plain-ASCII name — which is what made
-an already-sorted list look unsorted.
+The Hours roster sorts **by last name**, in JS with `Intl.Collator`, not `ORDER BY name` — it's the payroll
+tab and gets read against ADP, which lists people by surname. Two traps it handles: SQLite's default
+collation compares raw bytes, so accented names (Ángel, Óscar) sort after every plain-ASCII name (this is
+what made an already-sorted list look unsorted); and `lastNameOf()` drops a trailing suffix so "Robert Smith
+Jr." files under S. The surname is the **last word** of `users.name`, the same rule `server/usernames.js`
+derives sign-in names with, so Spanish two-surname names file under the maternal surname in both places —
+where someone goes by the paternal one, correct it on their record rather than special-casing the sort. The
+column header says "by last name" because the names still display first-name-first.
 
 ## Recurring QA checks that ship pre-scheduled
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).

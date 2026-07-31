@@ -98,7 +98,9 @@ export default function HoursTab() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-              <th className="px-3 py-2">Employee</th>
+              {/* Say how it's sorted — the names show first-name-first, so an
+                  A–Z-by-surname list otherwise reads as no order at all. */}
+              <th className="px-3 py-2">Employee <span className="text-gray-400 normal-case font-normal">· by last name</span></th>
               <th className="px-3 py-2">Target/wk</th>
               {(data?.weeks || []).map(w => (
                 <th key={w} colSpan={5} className="px-3 py-2 text-center border-l border-gray-200">Week of {weekLabel(w)}</th>
