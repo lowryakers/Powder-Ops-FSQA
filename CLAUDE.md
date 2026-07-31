@@ -503,6 +503,23 @@ not overwrite someone's signature.
 intent statement, and approving one is a decision about product that belongs on the record beside the
 investigation, not on a checkbox in a list.
 
+## Emoji in generated PDFs
+`server/pdf-emoji.js` + `server/assets/NotoEmoji-Regular.ttf` (OFL 1.1, licence beside it). pdfkit's built-in
+Helvetica is **WinAnsi — 256 characters, no emoji**, so `doc.text('Welcome! 👋')` wrote the raw UTF-16 bytes
+and the viewer read them as Latin-1 ("Ø=ÜK"). Nothing was lost on the way in; the font had nowhere to put it.
+`richText(doc, text, baseFont, options)` is the drop-in for `doc.text()`: it splits the string into plain and
+emoji runs and draws the emoji runs in the bundled font. **Text with no emoji takes the original path
+untouched**, so wiring it into another export can't change how existing documents look.
+- **Monochrome on purpose.** PDF cannot draw the colour bitmap fonts phones use (CBDT/sbix) — a colour emoji
+  font embeds as blank boxes. Outline emoji print correctly everywhere.
+- **`continued` and `\n` do not mix.** pdfkit carries a continued run's x-offset into the next line, which
+  indented everything after an emoji halfway across the page and overprinted the following heading. So
+  `richText` splits on newlines first and chains runs only *within* a line; a blank line is a `moveDown()`.
+- Grapheme clusters are matched whole — ZWJ sequences (👨‍🍳), skin tones, flags, keycaps — so an emoji is
+  never split across two fonts. `©`/`®`/`™` are deliberately left to the body font.
+- Only the newsletter is wired up. The other pdfkit exports (COA, QMS, disposals, documents, pay) still have
+  the raw-bytes behaviour if someone types an emoji into them; `richText` is the fix when that comes up.
+
 ## Hours as h:mm
 `src/lib/hoursFormat.js` (`parseHours`, `formatHours`, `hoursInputValue`). Time Tracking → Hours is typed and
 read as **39:56**; storage stays **decimal** because every downstream number (weekly target, overtime, the

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import PDFDocument from 'pdfkit';
+import { registerEmojiFont, richText } from '../pdf-emoji.js';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -218,11 +219,16 @@ async function renderPdf(db, issue, lang = 'en') {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
+    // Emoji come from a bundled outline font; the built-in Helvetica has no
+    // glyph for any of them and writes raw bytes instead. See pdf-emoji.js.
+    registerEmojiFont(doc);
+
     if (existsSync(LOGO_PATH)) {
       try { doc.image(readFileSync(LOGO_PATH), 54, 40, { height: 34 }); } catch { /* logo optional */ }
     }
     doc.moveDown(2.2);
-    doc.fillColor('#26262a').font('Helvetica-Bold').fontSize(24).text(title, { align: 'left' });
+    doc.fillColor('#26262a').fontSize(24);
+    richText(doc, title, 'Helvetica-Bold', { align: 'left' });
     doc.moveDown(0.2);
     doc.font('Helvetica').fontSize(10).fillColor('#6c6c73')
       .text(new Date(issue.created_at?.replace(' ', 'T') || Date.now())
@@ -231,7 +237,8 @@ async function renderPdf(db, issue, lang = 'en') {
     doc.moveDown(1.2);
 
     if (intro) {
-      doc.font('Helvetica').fontSize(11).fillColor('#26262a').text(intro, { align: 'left' });
+      doc.fontSize(11).fillColor('#26262a');
+      richText(doc, intro, 'Helvetica', { align: 'left' });
       doc.moveDown(1);
     }
 
@@ -242,10 +249,12 @@ async function renderPdf(db, issue, lang = 'en') {
         doc.font('Helvetica-Bold').fontSize(8).fillColor('#4f6ff5').text(label.toUpperCase(), { characterSpacing: 0.8 });
         doc.moveDown(0.15);
       }
-      doc.font('Helvetica-Bold').fontSize(14).fillColor('#26262a').text(s.title);
+      doc.fontSize(14).fillColor('#26262a');
+      richText(doc, s.title, 'Helvetica-Bold');
       if (s.body) {
         doc.moveDown(0.2);
-        doc.font('Helvetica').fontSize(11).fillColor('#3a3a40').text(s.body, { align: 'left', lineGap: 2 });
+        doc.fontSize(11).fillColor('#3a3a40');
+        richText(doc, s.body, 'Helvetica', { align: 'left', lineGap: 2 });
       }
       const img = s.image_id && images.get(s.image_id);
       if (img) {
