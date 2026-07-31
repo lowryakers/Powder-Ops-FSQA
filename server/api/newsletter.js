@@ -4,9 +4,6 @@ import { v4 as uuid } from 'uuid';
 import PDFDocument from 'pdfkit';
 import { registerEmojiFont, richText } from '../pdf-emoji.js';
 import { COVERS, getCover, coverPayload, coverShapes, COVER_VIEWBOX } from '../newsletter-covers.js';
-import { readFileSync, existsSync } from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, getObjectBuffer } from '../storage.js';
 import { getChannelByName, postMessageAs } from './comms.js';
@@ -22,9 +19,6 @@ import { aiEnabled, translateCached } from '../ai.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 10 } });
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LOGO_PATH = path.join(__dirname, '..', 'assets', 'powder-ops-logo.jpg');
 
 const MODULE_ID = 'newsletter';
 const KINDS = ['events', 'shoutouts', 'news', 'stats', 'general'];
@@ -301,8 +295,11 @@ async function renderPdf(db, issue, lang = 'en') {
 
     // ── Banner ────────────────────────────────────────────────────────────
     // Full-bleed across the top: an uploaded photo, or a built-in cover drawn
-    // from the same geometry the app previews. Either way the logo sits on top
-    // of it, so the page still identifies itself.
+    // from the same geometry the app previews.
+    //
+    // No logo. This is the one thing in ReadyDoc that isn't a controlled
+    // document — a letterhead is what made it read like a policy memo. The
+    // title carries the identity instead.
     const pageW = doc.page.width;
     const bannerH = 132;
     const bannerImg = issue.banner_image_id && images.get(issue.banner_image_id);
@@ -323,19 +320,8 @@ async function renderPdf(db, issue, lang = 'en') {
       hasBanner = true;
     }
 
-    if (existsSync(LOGO_PATH)) {
-      try {
-        if (hasBanner) {
-          // A white plate keeps the logo legible on any cover.
-          doc.save().roundedRect(46, 30, 62, 54, 6).fill('#FFFFFF').restore();
-          doc.image(readFileSync(LOGO_PATH), 54, 38, { height: 38 });
-        } else {
-          doc.image(readFileSync(LOGO_PATH), 54, 40, { height: 34 });
-        }
-      } catch { /* logo optional */ }
-    }
-    if (hasBanner) doc.y = bannerH + 24;
-    doc.moveDown(hasBanner ? 0 : 2.2);
+    if (hasBanner) doc.y = bannerH + 26;
+    else doc.moveDown(1);
     doc.fillColor('#26262a').fontSize(24);
     richText(doc, title, 'Helvetica-Bold', { align: 'left' });
     doc.moveDown(0.2);
