@@ -114,6 +114,31 @@ already somewhere deliberate. ThreadPanel focuses its reply box on `parent.id` c
 clamped 320–760px, persisted in `localStorage.dock_chat_w`; the iframe goes `pointer-events:none` mid-drag so
 it doesn't eat the move events.
 
+## Comms navigation: where you land, and what counts as "read"
+**A channel is marked read when its conversation is ON SCREEN, not when its messages load.**
+`loadMessages()` used to `POST /read` as a side effect. On a phone the app also picked an active channel at
+launch (#general, else `list[0]`) while showing the channel LIST — so opening Messages loaded that channel,
+marked it read, and the unread you came in for was gone before you saw a word of it. It could wipe a channel
+you had deliberately marked unread the same way. `conversationOnScreen` (activeId + not threads/activity +
+`!isCompactLayout || mobileThread`) drives a separate effect that does the marking.
+**You land where you left.** `comms_last_channel` in localStorage: `openChannel()` remembers, `backToList()`
+forgets. On launch, restore that channel if it still exists; otherwise the compact layout shows the **list**
+and picks nothing (choosing for people is what made the landing feel random). Wide layouts still fall back to
+#general so the pane isn't empty. `markUnread()` calls `backToList()` — staying in the conversation would let
+the read-on-screen rule immediately undo it.
+`isCompactLayout` tracks the same `md` breakpoint the markup uses, live, via matchMedia.
+
+## Comms touch feel
+- **A scroll must not also be a tap.** `Message`'s `onTouchMove` only cancelled the long-press timer; the
+  click still fired, so flicking the list and lifting your finger over a message threw you into its thread.
+  Movement past 12px now sets `suppressClick` too. Most of "comms feels twitchy" was this.
+- **`src/lib/useSwipeBack.js`** — iMessage-style interactive back: drag right anywhere in the conversation and
+  the pane follows your finger, committing past 70px or on a fast flick, snapping back otherwise. Distinct
+  from `useEdgeSwipe`, which only fires from within ~28px of the screen edge and gives no feedback until it
+  commits. The axis is decided once at 8px and then locked — an axis that flips mid-gesture is what makes a
+  swipe feel like it's fighting you. Never starts on a control, a link, or a horizontally scrollable element.
+  Only enabled on the compact layout, where there's actually something to go back to.
+
 ## Threads behave like their own channel
 Thread replies are **excluded from channel unread** (`parent_id IS NULL` in *both* `channelUnread()` and the
 channel-list query in `/channels` — they're separate queries, keep them in step) and counted per-thread

@@ -7,6 +7,7 @@ import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Tras
 import CommsSettings from './CommsSettings.jsx';
 import NotificationStatus from './NotificationStatus.jsx';
 import ZoomableImage from './ZoomableImage.jsx';
+import { useSwipeBack } from '../../lib/useSwipeBack';
 import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 import { looksLikeTask, suggestTitle, mentionedUsers, teamForChannel } from '../../lib/taskIntent.js';
@@ -785,6 +786,17 @@ function MentionDropdown({ matches, hi, onHover, onPick }) {
 // composer) or `thread:<parentId>` (replies), stored per device. A Drafts
 // section at the top of the channel list gets you back to them.
 const DRAFTS_LS = 'comms_drafts';
+// ── Where you were ───────────────────────────────────────────────────────────
+// Coming back to Messages should be predictable: you land where you left. If
+// you were reading a conversation, you get that conversation; if you went back
+// to the list, you get the list. Nothing else picks a channel for you — the old
+// behaviour opened #general (or whatever happened to be first) on every launch,
+// which is why it felt random, and worse, marked it read on the way past.
+const LAST_CH_LS = 'comms_last_channel';
+function rememberChannel(id) { try { localStorage.setItem(LAST_CH_LS, id || ''); } catch { /* full */ } }
+function forgetChannel() { try { localStorage.removeItem(LAST_CH_LS); } catch { /* ignore */ } }
+function lastChannel() { try { return localStorage.getItem(LAST_CH_LS) || null; } catch { return null; } }
+
 function readDrafts() { try { return JSON.parse(localStorage.getItem(DRAFTS_LS) || '{}'); } catch { return {}; } }
 function writeDraft(key, text) {
   if (!key) return;
@@ -1428,17 +1440,26 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
     if (e.touches.length > 1) { cancelPress(); suppressClick.current = true; return; }
     const t = e.touches[0];
     if (!t) return;
+    suppressClick.current = false;   // fresh gesture
     pressPos.current = { x: t.clientX, y: t.clientY };
     pressTimer.current = setTimeout(() => { pressTimer.current = null; suppressClick.current = true; setSheet(true); }, 450);
   };
   const onTouchMove = (e) => {
     if (e.touches.length > 1) { cancelPress(); suppressClick.current = true; return; }
-    if (!pressTimer.current || !pressPos.current) return;
+    // Note: no early return on a cleared timer. Once the finger has travelled,
+    // this gesture is a SCROLL and must not also count as a tap — the old
+    // version only cancelled the long-press, so flicking the list open and
+    // lifting your finger over a message threw you into its thread. That one
+    // accidental navigation is most of what "not smooth" feels like.
+    if (!pressPos.current) return;
     const t = e.touches[0];
     if (!t) return;
-    if (Math.abs(t.clientX - pressPos.current.x) > 10 || Math.abs(t.clientY - pressPos.current.y) > 10) cancelPress();
+    if (Math.abs(t.clientX - pressPos.current.x) > 12 || Math.abs(t.clientY - pressPos.current.y) > 12) {
+      cancelPress();
+      suppressClick.current = true;
+    }
   };
-  const onTouchEnd = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
+  const onTouchEnd = () => { cancelPress(); pressPos.current = null; };
   const onRowClick = (e) => {
     if (e.target.closest('a, button, input, textarea, select')) return;
     if (suppressClick.current) { suppressClick.current = false; return; }
@@ -1623,7 +1644,26 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     setNewMarkerTs(ch && ch.unread > 0 ? (ch.last_read_at || '0') : null);
     setDateView(null);
     setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false); setActivityOpen(false);
+    rememberChannel(id);
   };
+  // Going back to the list is a decision: come back to the list next time.
+  // The compact, one-pane-at-a-time layout — the same `md` breakpoint the
+  // markup switches on, tracked live so a rotate or a resize is picked up.
+  const [isCompactLayout, setIsCompactLayout] = useState(
+    () => (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches) || false);
+  useEffect(() => {
+    const mq = window.matchMedia?.('(max-width: 767px)');
+    if (!mq) return;
+    const on = () => setIsCompactLayout(mq.matches);
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
+
+  const backToList = () => { setMobileThread(false); forgetChannel(); };
+  // Drag the conversation right to go back, iMessage-style. Only on the compact
+  // layout — on desktop the list is always beside you, so there's nothing to go
+  // back to and a stray horizontal drag should do nothing.
+  const swipeBack = useSwipeBack(backToList, { enabled: isCompactLayout && mobileThread });
   // Sidebar channel quick-filter (type to filter, ↑/↓ + Enter to jump).
   const [chanFilter, setChanFilter] = useState('');
   const [chanHi, setChanHi] = useState(0);
@@ -1720,7 +1760,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       if (searchActive) { setSearchQ(''); setSearchResults(null); setAnswer(null); return; }
       if (activityOpen) { setActivityOpen(false); return; }
       if (threadsOpen) { setThreadsOpen(false); return; }
-      if (mobileThread) { setMobileThread(false); return; }
+      if (mobileThread) { backToList(); return; }
       if (onBackToModule) { onBackToModule(); return; }
       onExit?.();
     };
@@ -1752,16 +1792,19 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       const target = list.find(c => norm(c.name) === t) || list.find(c => norm(c.name).includes(t));
       if (target) { linkedOpenedRef.current = openChannelName; openChannel(target.id); return; }
     }
+    // Restore the conversation you were last reading, on any device.
+    const saved = lastChannel();
+    if (saved && list.some(c => c.id === saved)) { openChannel(saved); return; }
+
+    // Nothing to restore. On a phone that means the channel LIST — picking a
+    // channel for someone is what made the landing feel arbitrary, and it used
+    // to mark that channel read without ever showing it. The desktop
+    // split-screen dock is also narrow enough to hit the compact layout, and
+    // there an empty pane reads as "messages aren't loading"; width can't tell
+    // the dock from a phone, but touch capability can.
+    if (window.matchMedia?.('(hover: none)').matches) return;
     const target = publicCh.find(c => c.name === 'general') || list[0];
-    setNewMarkerTs(target.unread > 0 ? (target.last_read_at || '0') : null);
-    // A phone should land on the channel list (bare setActiveId leaves
-    // mobileThread false, so the compact layout shows the list first). But the
-    // desktop split-screen dock is *also* narrow enough to hit the compact
-    // layout, and there landing on the list reads as "messages aren't loading."
-    // Width can't tell the docked panel from a phone; touch capability can — so
-    // on any non-touch device open straight into the conversation.
-    if (window.matchMedia?.('(hover: none)').matches) setActiveId(target.id);
-    else openChannel(target.id);
+    openChannel(target.id);
   }, [list, activeId, openChannelName, openChannelId]); // eslint-disable-line
 
   // A push-notification deep-link can arrive while Comms is already open — open
@@ -1778,12 +1821,29 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     try {
       const msgs = await apiFetch(`/comms/channels/${id}/messages`);
       setMessages(msgs);
-      apiPost(`/comms/channels/${id}/read`, {}).then(refreshChannels).catch(() => {});
-      clearChannelNotifications(id);
+      // NOTE: loading messages does NOT mark the channel read. See the effect
+      // below — a channel is only read once its conversation is on screen.
     } catch { /* channel may be inaccessible */ }
-  }, [refreshChannels]);
+  }, []);
 
   useEffect(() => { setMessages([]); setTypers([]); setPending([]); loadMessages(activeId); }, [activeId, loadMessages]);
+
+  // A channel is marked read when its conversation is ACTUALLY ON SCREEN — not
+  // when its messages happen to load.
+  //
+  // This is the bug behind "it ate my unread". On a phone the app used to set
+  // an active channel on launch while showing the list; loading that channel's
+  // messages posted /read, so the unread you came in to read was gone before
+  // you'd seen a word of it — and the same path could wipe a channel you had
+  // deliberately marked unread. On a phone the conversation is only on screen
+  // once you've navigated into it.
+  const conversationOnScreen = !!activeId && !threadsOpen && !activityOpen
+    && (!isCompactLayout || mobileThread);
+  useEffect(() => {
+    if (!conversationOnScreen) return;
+    apiPost(`/comms/channels/${activeId}/read`, {}).then(refreshChannels).catch(() => {});
+    clearChannelNotifications(activeId);
+  }, [conversationOnScreen, activeId, refreshChannels]);
   // Restore this conversation's draft (typed text was saved as you navigated away).
   useEffect(() => { setBody(readDrafts()[activeId]?.text || ''); }, [activeId]);
   // Composer grows with its content (and shrinks back after send/clear).
@@ -2244,7 +2304,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   };
 
   const markChannelRead = async (id) => { try { await apiPost(`/comms/channels/${id}/read`, {}); refreshChannels(); clearChannelNotifications(id); } catch { /* ignore */ } };
-  const markUnread = async (m) => { try { await apiPost(`/comms/messages/${m.id}/unread`, {}); refreshChannels(); } catch { /* ignore */ } };
+  // Marking unread means "I'll come back to this" — so leave the conversation.
+  // Staying in it would just re-mark it read the moment the screen settled,
+  // which is exactly the behaviour that lost people's unread before.
+  const markUnread = async (m) => {
+    try { await apiPost(`/comms/messages/${m.id}/unread`, {}); } catch { /* ignore */ }
+    backToList();
+    refreshChannels();
+  };
 
   const toggleDmPick = (id) => setDmSelected(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
   const startDm = async () => {
@@ -2717,9 +2784,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
               </div>
             </>
           ) : active ? (
-            <>
+            <div className="flex-1 flex flex-col min-h-0 bg-white will-change-transform"
+              {...swipeBack.handlers} style={swipeBack.style}>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
-                <button onClick={() => setMobileThread(false)} className="md:hidden -ml-1 p-1 text-gray-500 hover:text-gray-700" title="Back to channels"><ArrowLeft size={18} /></button>
+                <button onClick={backToList} className="md:hidden -ml-1 p-1 text-gray-500 hover:text-gray-700" title="Back to channels"><ArrowLeft size={18} /></button>
                 {active.kind === 'dm' ? <MessageSquare size={16} className="text-gray-400" /> : active.post_policy === 'admins' ? <Megaphone size={16} className="text-gray-400" /> : active.kind === 'private' ? <Lock size={16} className="text-gray-400" /> : <Hash size={16} className="text-gray-400" />}
                 {active.kind === 'dm' ? (
                   <span className="font-semibold text-gray-900 truncate shrink-0 max-w-[55%] sm:max-w-none">{active.name}</span>
@@ -2880,7 +2948,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                 </div>
               </div>
               )}
-            </>
+            </div>
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Select a channel to start.</div>
           )}
