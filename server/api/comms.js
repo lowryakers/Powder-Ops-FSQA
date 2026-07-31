@@ -977,6 +977,20 @@ router.get('/threads', async (req, res) => {
 // Kinds in precedence order: an @mention inside a DM is a mention first.
 const ACTIVITY_KINDS = ['mention', 'dm', 'thread'];
 
+// A direct message is your activity only if you are IN it.
+//
+// This has to be enforced in the query, not left to the post-query access
+// check: canAccess() deliberately grants admins every channel so channel
+// administration works, and the DM branch selects every DM in the database.
+// Without this join an admin's Activity feed listed the whole plant's private
+// conversations — and worse, POST /activity/read then created a membership row
+// in each one, permanently adding every DM to their channel list.
+//
+// Only the DM branch needs the guard: an @mention names you and a thread reply
+// is filtered to threads you started, replied to, or were mentioned in, so both
+// are self-selecting by construction.
+const DM_MEMBER_JOIN = 'JOIN chat_channel_members cm ON cm.channel_id = m.channel_id AND cm.user_id = $me';
+
 router.get('/activity', (req, res) => {
   const db = getDb();
   const me = req.user.id;
@@ -997,6 +1011,7 @@ router.get('/activity', (req, res) => {
   if (want('dm')) {
     parts.push(`SELECT m.id, m.created_at, 'dm' AS kind FROM chat_messages m
                 JOIN chat_channels c ON c.id = m.channel_id
+                ${DM_MEMBER_JOIN}
                 WHERE c.kind = 'dm' AND m.deleted_at IS NULL AND m.user_id != $me`);
   }
   if (want('thread')) {
@@ -1074,6 +1089,7 @@ router.get('/activity/unread', (req, res) => {
     UNION ALL
     SELECT m.id, m.channel_id, m.parent_id, m.created_at, 'dm' FROM chat_messages m
       JOIN chat_channels c ON c.id = m.channel_id
+      ${DM_MEMBER_JOIN}
       WHERE c.kind = 'dm' AND m.deleted_at IS NULL AND m.user_id != $me
     UNION ALL
     SELECT m.id, m.channel_id, m.parent_id, m.created_at, 'thread' FROM chat_messages m
@@ -1131,6 +1147,7 @@ router.post('/activity/read', (req, res) => {
     UNION
     SELECT m.channel_id, m.parent_id FROM chat_messages m
       JOIN chat_channels c ON c.id = m.channel_id
+      ${DM_MEMBER_JOIN}
       WHERE c.kind = 'dm' AND m.deleted_at IS NULL AND m.user_id != $me
     UNION
     SELECT m.channel_id, m.parent_id FROM chat_messages m
@@ -1165,9 +1182,16 @@ router.post('/activity/read', (req, res) => {
     for (const parentId of threads) markThread.run(me, parentId, now);
     for (const channelId of channels) {
       const changed = markChannel.run(now, channelId, me).changes;
-      // A public channel the caller never joined has no membership row to
+      // A PUBLIC channel the caller never joined has no membership row to
       // update — @mentions land there too, so give them one.
-      if (!changed) joinChannel.run(uuid(), channelId, me, 'member', now);
+      //
+      // Restricted to public on purpose. Joining is a side effect of reading a
+      // badge, and a side effect that quiet must never be able to add someone
+      // to a private channel or a DM. The DM branch above is membership-scoped
+      // now, so this is belt and braces — keep both.
+      if (!changed && getChannel(db, channelId)?.kind === 'public') {
+        joinChannel.run(uuid(), channelId, me, 'member', now);
+      }
     }
   })();
 

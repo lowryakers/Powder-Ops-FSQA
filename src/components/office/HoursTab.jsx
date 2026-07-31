@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useApiGet, apiPut } from '../../hooks/useApi';
 import { Users, Clock } from 'lucide-react';
+import { parseHours, formatHours, hoursInputValue } from '../../lib/hoursFormat';
 
 // Hours worked vs paid non-working time, per pay period — merged in from the
 // standalone tracker. The roster is live from Settings, so nobody keeps a
@@ -18,17 +19,30 @@ const weekLabel = (w) => {
   const b = new Date(a.getTime() + 6 * 86400000);
   return `${a.getUTCMonth() + 1}/${a.getUTCDate()}–${b.getUTCMonth() + 1}/${b.getUTCDate()}`;
 };
-const hrs = (n) => (n ? Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—');
+const hrs = (n) => formatHours(n);
 
-function HourInput({ value, onCommit, tone = '' }) {
-  const [draft, setDraft] = useState(value ?? 0);
-  useEffect(() => { setDraft(value ?? 0); }, [value]);
+// Hours are typed and shown as h:mm (39:56) and stored as decimal — see
+// lib/hoursFormat. It has to be a text box, not type="number": a number input
+// rejects the colon outright and a phone keyboard would never offer one.
+// inputMode="text" keeps the numeric keypad's punctuation available.
+function HourInput({ value, onCommit, tone = '', className = 'w-16' }) {
+  const [draft, setDraft] = useState(hoursInputValue(value));
+  // Re-sync when the saved value changes (a refresh after someone else's edit).
+  useEffect(() => { setDraft(hoursInputValue(value)); }, [value]);
+
+  const commit = () => {
+    const next = parseHours(draft);
+    // Normalize what's on screen ("39.93" → "39:56") whether or not it changed.
+    setDraft(hoursInputValue(next));
+    if (Math.abs(next - (Number(value) || 0)) > 0.0001) onCommit(next);
+  };
+
   return (
-    <input type="number" step="0.25" min="0" value={draft}
+    <input type="text" inputMode="text" value={draft} placeholder="0:00"
       onChange={e => setDraft(e.target.value)}
-      onBlur={() => { if (Number(draft) !== Number(value)) onCommit(Number(draft) || 0); }}
+      onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-      className={`w-16 px-1.5 py-1 border border-gray-200 rounded text-sm text-right ${tone}`} />
+      className={`${className} px-1.5 py-1 border border-gray-200 rounded text-sm text-right tabular-nums ${tone}`} />
   );
 }
 
@@ -59,7 +73,8 @@ export default function HoursTab() {
           ))}
         </select>
         <span className="text-xs text-gray-400">
-          Weeks run Sunday–Saturday. Enter hours worked; the rest up to each person&apos;s target shows as paid non-working.
+          Weeks run Sunday–Saturday. Enter hours as <span className="font-medium text-gray-500">h:mm</span> (39:56) — decimals still work.
+          The rest up to each person&apos;s target shows as paid non-working.
         </span>
       </div>
 
@@ -73,7 +88,7 @@ export default function HoursTab() {
         ].map(c => (
           <div key={c.label} className="bg-white rounded-xl border border-gray-200 px-3 py-2">
             <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">{c.label}</p>
-            <p className={`text-lg font-bold ${c.alert ? 'text-amber-600' : 'text-gray-900'}`}>{hrs(c.value) === '—' ? '0' : hrs(c.value)}</p>
+            <p className={`text-lg font-bold tabular-nums ${c.alert ? 'text-amber-600' : 'text-gray-900'}`}>{formatHours(c.value, { zero: '0:00' })}</p>
           </div>
         ))}
       </div>
@@ -186,9 +201,8 @@ export default function HoursTab() {
                   ].map(([label, key]) => (
                     <label key={key} className="block">
                       <span className="block text-[10px] text-gray-400 mb-0.5">{label}</span>
-                      <input type="number" step="0.25" min="0" defaultValue={w[key]}
-                        onBlur={e => { const v = Number(e.target.value) || 0; if (v !== w[key]) save(p.user_id, w.week_start, { [key]: v }); }}
-                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right" />
+                      <HourInput value={w[key]} className="w-full"
+                        onCommit={v => save(p.user_id, w.week_start, { [key]: v })} />
                     </label>
                   ))}
                 </div>

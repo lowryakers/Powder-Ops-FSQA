@@ -439,11 +439,18 @@ router.get('/periods', (req, res) => {
 // Admins and auditors are excluded: this tab tracks hourly staff against a
 // weekly target, and salaried/system accounts only add rows Marnee has to
 // scroll past. They still appear everywhere else in the app.
+// Sorted alphabetically in JS, not in SQL. SQLite's default collation compares
+// raw bytes, so any name starting with an accent — Ángel, Óscar, Ñuñez — sorts
+// after every plain-ASCII name instead of where it belongs, which on this
+// roster dropped a handful of people at the bottom of an otherwise A–Z list.
+// localeCompare knows Á files under A.
+const byName = new Intl.Collator('en', { sensitivity: 'base', ignorePunctuation: true });
+
 function roster(db) {
   return db.prepare(`SELECT id, name, department, weekly_hours_target FROM users
-    WHERE is_active = 1 AND name != 'ReadyBot' AND role NOT IN ('auditor', 'admin')
-    ORDER BY name`).all()
-    .map(u => ({ ...u, target: u.weekly_hours_target || STANDARD_WEEK_HOURS }));
+    WHERE is_active = 1 AND name != 'ReadyBot' AND role NOT IN ('auditor', 'admin')`).all()
+    .map(u => ({ ...u, target: u.weekly_hours_target || STANDARD_WEEK_HOURS }))
+    .sort((a, b) => byName.compare(a.name || '', b.name || ''));
 }
 
 router.get('/hours', (req, res) => {

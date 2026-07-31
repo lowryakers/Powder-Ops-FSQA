@@ -297,13 +297,11 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
     CREATE INDEX IF NOT EXISTS idx_sanitation_date ON sanitation_records(performed_at);
-    -- The QA/cleaning split filters on record_group before ordering by date,
-    -- and the 72-hour rule groups by area. Both were scanning the whole log.
-    CREATE INDEX IF NOT EXISTS idx_sanitation_group_date ON sanitation_records(record_group, performed_at);
+    -- The 72-hour rule groups by area; this was scanning the whole log.
+    -- (The record_group index can't live here — that column arrives as a
+    -- migration, so indexing it before then kills a fresh database. It's
+    -- created beside the ALTER instead.)
     CREATE INDEX IF NOT EXISTS idx_sanitation_area ON sanitation_records(area, performed_at);
-    -- "What ran in this room" — the 72-hour rule and the schedule's progress
-    -- overlay both ask per room.
-    CREATE INDEX IF NOT EXISTS idx_production_entries_room ON production_entries(room, date);
     CREATE INDEX IF NOT EXISTS idx_loto_executions_status ON loto_executions(status);
     CREATE INDEX IF NOT EXISTS idx_loto_executions_procedure ON loto_executions(procedure_id);
 
@@ -753,6 +751,10 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_production_entries_date ON production_entries(date);
     CREATE INDEX IF NOT EXISTS idx_production_entries_mo ON production_entries(mo_number);
     CREATE INDEX IF NOT EXISTS idx_production_entries_team ON production_entries(team);
+    -- "What ran in this room" — the 72-hour rule and the schedule's progress
+    -- overlay both ask per room. Indexed beside its own CREATE TABLE, not up
+    -- with the first index block: that block runs before this table exists.
+    CREATE INDEX IF NOT EXISTS idx_production_entries_room ON production_entries(room, date);
 
     -- Per-team EOD report templates. Batching/Blending records different things
     -- than Filling or Kitting, so each team gets its own set of structured
@@ -1661,6 +1663,32 @@ function runMigrations() {
   addColumnIfMissing('chat_channels', 'post_policy', "TEXT NOT NULL DEFAULT 'all'"); // 'all' | 'admins'
   addColumnIfMissing('chat_channels', 'is_default', 'INTEGER NOT NULL DEFAULT 0');
 
+  // Repair: strip DM memberships that belong to nobody.
+  //
+  // POST /comms/activity/read used to enrol the caller in every channel its
+  // feed touched, and the feed's DM branch was not membership-scoped — so an
+  // admin who cleared the Activity badge once was silently added to every
+  // direct message in the plant, and every one of those private conversations
+  // then appeared in their channel list. The query is scoped now, but the rows
+  // it already wrote outlive the fix.
+  //
+  // chat_channels.dm_key is the sorted list of the real participants, set at
+  // creation on all three DM paths (1:1, group, ReadyBot), so it is the
+  // authority on who belongs. Anyone in a DM but absent from its key was put
+  // there by that bug. Idempotent — a clean database matches nothing.
+  try {
+    const stray = db.prepare(`
+      SELECT m.rowid AS rid FROM chat_channel_members m
+      JOIN chat_channels c ON c.id = m.channel_id
+      WHERE c.kind = 'dm' AND c.dm_key IS NOT NULL AND c.dm_key != ''
+        AND ':' || c.dm_key || ':' NOT LIKE '%:' || m.user_id || ':%'`).all();
+    if (stray.length) {
+      const del = db.prepare('DELETE FROM chat_channel_members WHERE rowid = ?');
+      db.transaction(() => { for (const s of stray) del.run(s.rid); })();
+      console.log(`[migrate] removed ${stray.length} DM membership row(s) that no participant owned`);
+    }
+  } catch { /* pre-comms database */ }
+
   // Comms: sidebar sections (admin-defined groupings like OFFICE / WAREHOUSE /
   // PRODUCTION) and per-channel ordering within a section.
   db.exec(`CREATE TABLE IF NOT EXISTS chat_sections (
@@ -1720,6 +1748,12 @@ function runMigrations() {
   // without moving a single historical record. The same tagger runs again
   // after the seeds (server.js) — on a fresh DB this pass sees an empty table.
   addColumnIfMissing('sanitation_records', 'record_group', "TEXT DEFAULT 'sanitation'");
+  // Both lists filter on record_group before ordering by date. Indexed here,
+  // immediately after the column exists — creating it up with the other
+  // sanitation indexes made a FRESH database fail at boot with "no such column:
+  // record_group", because the table is created there without it. Railway's
+  // persistent volume hid that; a new deploy or a DR restore would not have.
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_sanitation_group_date ON sanitation_records(record_group, performed_at);'); } catch { /* ignore */ }
   tagQaInspectionRecords(db);
 
   // Short sign-in name (first + last) for people whose legal name runs to three

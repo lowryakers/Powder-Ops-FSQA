@@ -288,30 +288,47 @@ router.post('/entries', (req, res) => {
   res.status(201).json(computeMetrics(created));
 });
 
-// PUT /entries/:id/qa-signoff — QA signs off on a production entry
-router.put('/entries/:id/qa-signoff', (req, res) => {
-  const db = getDb();
-  const existing = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Production entry not found' });
-
-  const { qa_signoff_by, qa_notes, qa_action_required } = req.body;
-  if (!qa_signoff_by) return res.status(400).json({ error: 'qa_signoff_by is required' });
+/**
+ * QA's sign-off on one production entry, including the "this note needs a
+ * correction" flag that authorizes the filer to amend it.
+ *
+ * Exported so the QA Review Center signs through this rather than reproducing
+ * the update — one place writes the signature, one audit shape, and the
+ * needs-correction rule (a flag is meaningless without a note saying what to
+ * fix) can't drift between the two screens.
+ *
+ * Returns { error, status } or { entry }.
+ */
+export function signOffProductionEntry(db, id, { by, notes, actionRequired } = {}) {
+  const existing = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
+  if (!existing) return { error: 'Production entry not found', status: 404 };
+  if (!by) return { error: 'qa_signoff_by is required', status: 400 };
 
   // "Needs correction" only means something alongside a note — the note is what
   // tells the supervisor what to fix.
-  const needsAction = !!qa_action_required && !!(qa_notes || '').trim();
-  if (qa_action_required && !needsAction) {
-    return res.status(400).json({ error: 'Say what needs correcting in the notes before flagging this entry.' });
+  const needsAction = !!actionRequired && !!(notes || '').trim();
+  if (actionRequired && !needsAction) {
+    return { error: 'Say what needs correcting in the notes before flagging this entry.', status: 400 };
   }
 
   db.prepare(`
     UPDATE production_entries SET qa_signoff_by = ?, qa_signoff_at = datetime('now'), qa_notes = ?,
       qa_action_required = ?, qa_action_resolved_at = NULL, updated_at = datetime('now') WHERE id = ?
-  `).run(qa_signoff_by, qa_notes || null, needsAction ? 1 : 0, req.params.id);
+  `).run(by, notes || null, needsAction ? 1 : 0, id);
 
-  const updated = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(req.params.id);
-  logAudit(qa_signoff_by, 'qa_signoff', 'production_entry', req.params.id, { qa_notes, qa_action_required: needsAction }, existing, updated);
-  res.json(computeMetrics(updated));
+  const updated = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
+  logAudit(by, 'qa_signoff', 'production_entry', id, { qa_notes: notes, qa_action_required: needsAction }, existing, updated);
+  return { entry: updated };
+}
+
+// PUT /entries/:id/qa-signoff — QA signs off on a production entry
+router.put('/entries/:id/qa-signoff', (req, res) => {
+  const { qa_signoff_by, qa_notes, qa_action_required } = req.body || {};
+  const { error, status, entry } = signOffProductionEntry(getDb(), req.params.id, {
+    by: qa_signoff_by, notes: qa_notes, actionRequired: qa_action_required,
+  });
+  if (error) return res.status(status).json({ error });
+  res.json(computeMetrics(entry));
 });
 
 // GET /entries/qa-actions — entries QA has asked the caller to correct.

@@ -331,6 +331,13 @@ boot order. The `chat_push_subscriptions` diagnostic columns were violating this
 before the chat-schema block that creates the table) — a fresh boot went FATAL. Fixed by moving those
 five `addColumnIfMissing` calls to right after the chat-schema `db.exec` block. Same pattern documented for
 `supply_invoices.extracted_text`.
+**`CREATE INDEX` has the same trap, and it is easier to miss.** An index in the first schema `db.exec` block
+that names a table created later, or a column added later by `addColumnIfMissing`, kills a fresh database at
+boot. Two from the performance pass were doing exactly that and a fresh boot went FATAL twice over:
+`idx_sanitation_group_date` indexed `record_group` (a migration column) and `idx_production_entries_room`
+named a table created 400 lines further down. Each now sits next to the thing it indexes — the index for a
+migration column goes immediately after its `addColumnIfMissing`. **Boot a fresh DB (`DB_PATH=` a new path)
+before shipping any schema change**; the production volume will not tell you.
 
 ## Video uploads (comms + training)
 `server/media.js` is the single source of truth for large uploads: **200 MB video / 25 MB everything else**,
@@ -464,7 +471,47 @@ stamps exactly those rows and nothing else; it is deliberately narrower than `/r
 channel read and would also wipe unread counts for channels the person hasn't opened. Use the same
 `strftime('%Y-%m-%d %H:%M:%f')` clock format as `chat_messages.created_at` — the unread check is a string
 comparison and an ISO value sorts wrong. A public channel someone was @mentioned in may have no membership
-row, so the handler inserts one. "Mark all read" appears in the Activity header only while something is unread.
+row, so the handler inserts one — **`kind = 'public'` only**, see below. "Mark all read" appears in the
+Activity header only while something is unread.
+**The DM branch of every Activity query must join `chat_channel_members`** (`DM_MEMBER_JOIN` in comms.js).
+It selects every DM message in the database and relies on the post-query `canAccess()` to filter — but
+`canAccess()` grants **admins every channel** (that's how channel administration works), so without the join
+an admin's feed listed the whole plant's private conversations, and `POST /activity/read` then *inserted a
+membership row in each one*, permanently adding every DM to their channel list. Mentions and thread replies
+are self-selecting and need no guard; the DM branch does. The auto-join is also restricted to public
+channels now, so no read-a-badge action can ever enrol someone in a private channel or DM. A repair pass in
+`runMigrations` deletes DM memberships whose `user_id` isn't in the channel's `dm_key` (the authority on who
+belongs) — the code fix can't undo rows already written.
+
+## QA Review Center — one queue, four modules
+`server/qa-review.js` is the registry: one `SOURCES` entry per pile of records waiting on a QA signature
+(production entries, QA inspections, cleaning records, scale verifications), each with `pending`/`count`/
+`sign`/`canSign`. `server/api/qa-review.js` exposes `GET /api/qa-review` (counts for every source + rows for
+the selected one, bounded, **oldest first**) and `POST /api/qa-review/sign` `{source, ids}` (batched, but
+per-record — a partial failure reports `failed[]` rather than rolling back real signatures). UI:
+`QAReviewPanel.jsx`, nav entry `qa-review` at the top of Quality, gated by `canSeeQaReview` (QA/quality dept,
+supervisor, admin, or explicit grant).
+**Signing here calls the module's own function — it never writes the columns itself.** `verifySanitationRecord`
+(sanitation.js), `signOffProductionEntry` (production.js) and `verifyScaleCheck` (scale-verification.js) were
+extracted for exactly this, and each module's route now calls the same function. One place writes a
+signature, one audit shape, whichever door QA came through. If a new source needs sign logic, put the logic
+in the module and call it from here.
+The production adapter adds an **already-signed guard** the module route doesn't have: the Production Log only
+offers its button on unsigned entries, but a queue can be worked by two people at once and a stale row must
+not overwrite someone's signature.
+**QMS records and disposals are deliberately excluded** — those are multi-party approvals with an e-signature
+intent statement, and approving one is a decision about product that belongs on the record beside the
+investigation, not on a checkbox in a list.
+
+## Hours as h:mm
+`src/lib/hoursFormat.js` (`parseHours`, `formatHours`, `hoursInputValue`). Time Tracking → Hours is typed and
+read as **39:56**; storage stays **decimal** because every downstream number (weekly target, overtime, the
+paid-non-working balance, period totals, payroll export) is arithmetic on it. Entry stays forgiving —
+"39:56", "39.93" and "39" all work. The input must be `type="text"`: a number input rejects the colon and no
+phone keyboard offers one.
+The Hours roster sorts in **JS with `Intl.Collator`**, not `ORDER BY name`. SQLite's default collation
+compares raw bytes, so accented names (Ángel, Óscar) sort after every plain-ASCII name — which is what made
+an already-sorted list look unsorted.
 
 ## Recurring QA checks that ship pre-scheduled
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).

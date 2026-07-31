@@ -25,6 +25,7 @@ import pmRoutes from './server/api/pm.js';
 import checklistRoutes from './server/api/checklists.js';
 import calibrationRoutes from './server/api/calibration.js';
 import scaleVerificationRoutes from './server/api/scale-verification.js';
+import qaReviewRoutes from './server/api/qa-review.js';
 import sanitationRoutes from './server/api/sanitation.js';
 import auditRoutes from './server/api/audit.js';
 import complianceRoutes, { buildBackupZip, computeCritical } from './server/api/compliance.js';
@@ -1376,6 +1377,9 @@ app.use('/api/checklists', requireModuleWrite('pm', 'operator', 'sanitation'), c
 app.use('/api/calibration', requireModuleWrite('calibration'), calibrationRoutes);
 app.use('/api/scale-verification', requireModuleWrite('calibration'), scaleVerificationRoutes);
 app.use('/api/sanitation', requireModuleWrite('sanitation'), sanitationRoutes);
+// QA Review Center spans several modules, so no single module guard fits — the
+// router checks the reviewer role itself and each source re-checks sign rights.
+app.use('/api/qa-review', qaReviewRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/compliance', complianceRoutes);
 app.use('/api/loto', requireModuleWrite('loto'), lotoRoutes);

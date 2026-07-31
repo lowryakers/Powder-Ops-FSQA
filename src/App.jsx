@@ -24,6 +24,7 @@ const PMPanel = lazy(() => import('./components/compliance/PMPanel.jsx'));
 const CalibrationPanel = lazy(() => import('./components/compliance/CalibrationPanel.jsx'));
 const SanitationPanel = lazy(() => import('./components/compliance/SanitationPanel.jsx'));
 const QAInspectionsPanel = lazy(() => import('./components/compliance/QAInspectionsPanel.jsx'));
+const QAReviewPanel = lazy(() => import('./components/compliance/QAReviewPanel.jsx'));
 const LOTOPanel = lazy(() => import('./components/compliance/LOTOPanel.jsx'));
 const AuditLogPanel = lazy(() => import('./components/compliance/AuditLogPanel.jsx'));
 const OperatorView = lazy(() => import('./components/compliance/OperatorView.jsx'));
@@ -110,6 +111,9 @@ const NAV_GROUPS = [
   {
     label: 'Quality',
     items: [
+      // Sits at the top of Quality on purpose: it's the "what do I owe today"
+      // screen, and it spans the logs below it.
+      { id: 'qa-review', label: 'QA Review', icon: ClipboardCheck, keywords: 'sign off signature verify pending queue backlog' },
       { id: 'coa', label: 'COA / Lab Testing', icon: TestTubes },
       { id: 'quality-schedules', label: 'Quality Schedules', icon: CalendarClock },
       { id: 'hygienic', label: 'Hygienic Design', icon: ClipboardCheck },
@@ -185,6 +189,13 @@ const canSeeCheckedOut = (u) => isRicardo(u) || hasExplicitGrant(u, 'currently-o
 // has only the Out-now grant and must still land here — it's his floor check.
 const canSeeSignOut = (u) => canViewModule(u, 'maintenance-signout')
   || canViewModule(u, 'knife-accountability') || canSeeCheckedOut(u);
+
+// QA Review: the cross-module sign-off queue. QA and quality staff by
+// department, supervisors and admins by role, anyone else by explicit grant —
+// it isn't a role default, because an operator has nothing to do there.
+const canSeeQaReview = (u) => u?.role === 'admin' || u?.role === 'supervisor'
+  || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase())
+  || hasExplicitGrant(u, 'qa-review');
 
 // "Requests" (supply order + time tracking forms) is for every supervisor,
 // regardless of how their module access is trimmed — plus anyone explicitly
@@ -283,6 +294,7 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, 
             if (i.id === 'settings') return false; // lives in the top-right gear icon
             if (i.id === 'sign-out') return canSeeSignOut(user);
             if (i.id === 'office-requests') return canSeeOfficeRequests(user);
+            if (i.id === 'qa-review') return canSeeQaReview(user);
             if (i.adminOnly && user.role !== 'admin') return false;
             if (i.roles && !i.roles.includes(user.role)) return false;
             if (i.aiOnly && !aiOn) return false;
@@ -1395,6 +1407,11 @@ function App() {
   effectiveModules = canSeeOfficeRequests(user)
     ? (effectiveModules.includes('office-requests') ? effectiveModules : [...effectiveModules, 'office-requests'])
     : effectiveModules.filter(id => id !== 'office-requests');
+  // QA Review is QA/supervisor/admin by role, or an explicit grant — the same
+  // rule the sidebar applies, so a deep link can't reach it either.
+  effectiveModules = canSeeQaReview(user)
+    ? (effectiveModules.includes('qa-review') ? effectiveModules : [...effectiveModules, 'qa-review'])
+    : effectiveModules.filter(id => id !== 'qa-review');
   const operatorOnly = effectiveModules.length === 1 && effectiveModules[0] === 'operator';
 
   // If user only has operator view access, render the standalone operator layout
@@ -1552,6 +1569,7 @@ function App() {
           {resolvedTab === 'operator' && <OperatorView />}
           {resolvedTab === 'office-requests' && <OfficeRequestsPanel />}
           {resolvedTab === 'qa-inspections' && <QAInspectionsPanel />}
+          {resolvedTab === 'qa-review' && <QAReviewPanel />}
           {resolvedTab === 'accounts-payable' && <LedgerPanel ledger="ap" />}
           {resolvedTab === 'accounts-receivable' && <LedgerPanel ledger="ar" />}
           {resolvedTab === 'procurement' && <ProcurementPanel />}

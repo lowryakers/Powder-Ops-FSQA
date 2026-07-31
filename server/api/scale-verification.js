@@ -116,20 +116,31 @@ router.post('/', (req, res) => {
   res.status(201).json(record);
 });
 
-// PUT /:id/verify — QA's counter-signature (the "Verified By (QA)" line).
-router.put('/:id/verify', (req, res) => {
-  if (!canVerify(req.user)) return res.status(403).json({ error: 'Only QA, supervisors or admins can verify a scale check.' });
-  const db = getDb();
-  const existing = db.prepare('SELECT * FROM scale_verifications WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Scale verification not found' });
-  if (existing.verified_by) return res.status(400).json({ error: 'Already verified.' });
+/**
+ * QA's counter-signature on one scale check (the "Verified By (QA)" line).
+ * Exported so the QA Review Center signs through here instead of repeating the
+ * update — same write, same audit entry, whichever screen QA is on.
+ * Returns { error, status } or { record }.
+ */
+export function verifyScaleCheck(db, user, id) {
+  if (!canVerify(user)) return { error: 'Only QA, supervisors or admins can verify a scale check.', status: 403 };
+  const existing = db.prepare('SELECT * FROM scale_verifications WHERE id = ?').get(id);
+  if (!existing) return { error: 'Scale verification not found', status: 404 };
+  if (existing.verified_by) return { error: 'Already verified.', status: 400 };
 
   db.prepare("UPDATE scale_verifications SET verified_by = ?, verified_at = datetime('now') WHERE id = ?")
-    .run(req.user?.name || 'QA', existing.id);
+    .run(user?.name || 'QA', existing.id);
   const updated = db.prepare('SELECT * FROM scale_verifications WHERE id = ?').get(existing.id);
-  logAudit(req.user, 'verify', 'scale_verification', existing.id,
+  logAudit(user, 'verify', 'scale_verification', existing.id,
     { form_code: existing.form_code, result: existing.result }, existing, updated);
-  res.json(shape(updated));
+  return { record: shape(updated) };
+}
+
+// PUT /:id/verify — QA's counter-signature (the "Verified By (QA)" line).
+router.put('/:id/verify', (req, res) => {
+  const { error, status, record } = verifyScaleCheck(getDb(), req.user, req.params.id);
+  if (error) return res.status(status).json({ error });
+  res.json(record);
 });
 
 export default router;

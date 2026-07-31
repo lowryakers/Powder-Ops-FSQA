@@ -223,20 +223,34 @@ router.post('/', (req, res) => {
   res.status(201).json(created);
 });
 
-router.put('/:id/verify', (req, res) => {
-  const db = getDb();
-  const existing = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Record not found' });
-
-  const { verified_by } = req.body;
-  if (!verified_by) return res.status(400).json({ error: 'verified_by is required' });
+/**
+ * QA's verification signature on one cleaning or inspection record.
+ *
+ * Exported because the QA Review Center signs the same records from its own
+ * screen. It calls THIS — it does not write the columns itself — so there is
+ * exactly one place a sanitation verification is recorded and exactly one audit
+ * entry shape, no matter which door QA came through.
+ *
+ * Returns { error } or { record }.
+ */
+export function verifySanitationRecord(db, id, verifiedBy) {
+  const existing = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
+  if (!existing) return { error: 'Record not found' };
+  if (!verifiedBy) return { error: 'verified_by is required' };
+  if (existing.verified_by) return { error: 'Already verified.' };
 
   db.prepare("UPDATE sanitation_records SET verified_by = ?, verified_at = datetime('now') WHERE id = ?")
-    .run(verified_by, req.params.id);
+    .run(verifiedBy, id);
 
-  const updated = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(req.params.id);
-  logAudit(verified_by, 'verify', 'sanitation_record', req.params.id, null, existing, updated);
-  res.json(updated);
+  const updated = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
+  logAudit(verifiedBy, 'verify', 'sanitation_record', id, null, existing, updated);
+  return { record: updated };
+}
+
+router.put('/:id/verify', (req, res) => {
+  const { error, record } = verifySanitationRecord(getDb(), req.params.id, req.body?.verified_by);
+  if (error) return res.status(error === 'Record not found' ? 404 : 400).json({ error });
+  res.json(record);
 });
 
 export default router;
