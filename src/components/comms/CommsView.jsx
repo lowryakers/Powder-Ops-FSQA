@@ -3,11 +3,12 @@ import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/use
 import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Bold, Italic, Underline, Strikethrough, List, ListOrdered } from 'lucide-react';
+import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import NotificationStatus from './NotificationStatus.jsx';
 import ZoomableImage from './ZoomableImage.jsx';
 import { useSwipeBack } from '../../lib/useSwipeBack';
+import FormatBar from '../common/FormatBar.jsx';
 import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 import { looksLikeTask, suggestTitle, mentionedUsers, teamForChannel } from '../../lib/taskIntent.js';
@@ -199,56 +200,6 @@ function renderBody(text, users, me) {
 // ── Composer formatting ───────────────────────────────────────────────────────
 // Wrap the current selection in a marker pair. With nothing selected, drop the
 // markers and place the caret between them so you can type into the format.
-function wrapSelection(el, value, before, after = before) {
-  const start = el?.selectionStart ?? value.length;
-  const end = el?.selectionEnd ?? value.length;
-  const inner = value.slice(start, end);
-  const next = value.slice(0, start) + before + inner + after + value.slice(end);
-  const selStart = start + before.length;
-  return { next, selStart, selEnd: selStart + inner.length };
-}
-// Turn the selected lines into a list, stripping any existing list marker first
-// so toggling between bullet/numbered (or off→on) doesn't stack markers.
-function prefixLines(el, value, numbered) {
-  const start = el?.selectionStart ?? value.length;
-  const end = el?.selectionEnd ?? value.length;
-  const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-  let lineEnd = value.indexOf('\n', end);
-  if (lineEnd === -1) lineEnd = value.length;
-  let n = 1;
-  const out = value.slice(lineStart, lineEnd).split('\n').map(l => {
-    const stripped = l.replace(/^\s*(?:[-*]\s+|\d+\.\s+)/, '');
-    return numbered ? `${n++}. ${stripped}` : `- ${stripped}`;
-  }).join('\n');
-  const next = value.slice(0, lineStart) + out + value.slice(lineEnd);
-  return { next, selStart: lineStart, selEnd: lineStart + out.length };
-}
-
-// The B / I / U / S + list toolbar shared by the channel composer and the thread
-// reply box. onChange takes the new text; the caller wires in its own draft
-// saving. onMouseDown preventDefault keeps the textarea's selection alive when a
-// button is clicked.
-function FormatBar({ getEl, value, onChange }) {
-  const apply = (fn) => {
-    const el = getEl?.();
-    const r = fn(el, value ?? '');
-    onChange(r.next);
-    requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(r.selStart, r.selEnd); } });
-  };
-  const cls = 'w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded';
-  const guard = e => e.preventDefault(); // keep the textarea selection alive on click
-  return (
-    <div className="flex items-center gap-0.5">
-      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => wrapSelection(el, v, '*'))} className={cls} data-tip="Bold"><Bold size={14} /></button>
-      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => wrapSelection(el, v, '_'))} className={cls} data-tip="Italic"><Italic size={14} /></button>
-      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => wrapSelection(el, v, '__'))} className={cls} data-tip="Underline"><Underline size={14} /></button>
-      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => wrapSelection(el, v, '~'))} className={cls} data-tip="Strikethrough"><Strikethrough size={14} /></button>
-      <span className="w-px h-4 bg-gray-200 mx-0.5" />
-      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => prefixLines(el, v, false))} className={cls} data-tip="Bulleted list"><List size={14} /></button>
-      <button type="button" onMouseDown={guard} onClick={() => apply((el, v) => prefixLines(el, v, true))} className={cls} data-tip="Numbered list"><ListOrdered size={14} /></button>
-    </div>
-  );
-}
 const parseMsgDate = (iso) => new Date(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
 const fmtTime = (iso) => parseMsgDate(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const dayKey = (iso) => { const d = parseMsgDate(iso); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };

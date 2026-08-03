@@ -104,9 +104,10 @@ bullet `<ul>` and `1. ` runs into a numbered `<ol>`, so the message body renders
 can't hold a list). Inline markers via `renderInline()`: `*bold*`, `_italic_`, `__underline__` (listed
 before italic in the alternation so the two-underscore form wins), `~strike~`, `` `code` ``. Italic/underline
 use lookbehind/lookahead `(?<![A-Za-z0-9_])…(?![A-Za-z0-9_])` so `snake_case` / `MO_4471_lot` don't italicize.
-`<FormatBar>` (B/I/U/S + bullet/numbered) sits above the channel composer, the thread drawer reply, and the
-Threads-inbox reply; `wrapSelection()` / `prefixLines()` edit the textarea and the caller wires its own
-`writeDraft`. `onMouseDown preventDefault` on each button preserves the textarea selection.
+`<FormatBar>` (B/I/U/S + bullet/numbered, now `src/components/common/FormatBar.jsx`) sits above the channel
+composer, the thread drawer reply, and the Threads-inbox reply; `wrapSelection()` / `prefixLines()`
+(`src/lib/textFormat.js`) edit the textarea and the caller wires its own `writeDraft`.
+`onMouseDown preventDefault` on each button preserves the textarea selection.
 **Composer autofocus** (desktop only): a per-channel `wantFocusRef` re-attempts focus on open and again once
 messages render (the old single timeout lost the race to the load+scroll), and stands down if the cursor is
 already somewhere deliberate. ThreadPanel focuses its reply box on `parent.id` change.
@@ -554,6 +555,27 @@ render, so the fireworks don't rearrange between the preview and the PDF.
 setting one clears the other. Uploads reuse the existing `newsletter_images` + R2 path; `GET /issues/:id`
 returns a presigned `banner_image_url` because the editor needs something it can put in an `<img>`.
 `GET /newsletter/covers?month=` serves the gallery with shapes included.
+
+## One formatting grammar, two renderers (`shared/rich-markup.js`)
+`*bold*` `_italic_` `__underline__` `~strike~` `` `code` `` `- bullet` `1. numbered` — the grammar the comms
+composer has always used, now defined **once** in `shared/rich-markup.js` and imported by **both** the browser
+and the server. A second copy would drift, and the first sign of the drift would be a PDF that doesn't match
+what the author saw in the editor. `parseRuns()` (one line → styled runs), `parseBlocks()` (text → `p` / `ul` /
+`ol` / `spacer`), `hasMarkup()` (lets a caller skip the styled path entirely), `toPlainText()`.
+- **Browser:** `<FormatBar>` writes the markers into a plain `<textarea>` (the stored value stays plain text —
+  chat renderer, translation, search and the PDF all still get what they expect); `<RichText>`
+  (`src/components/common/RichText.jsx`) renders `parseBlocks` output as HTML.
+- **Server:** `server/pdf-rich.js` `richBlocks(doc, text, baseFont, options)` is the drop-in for `doc.text()`.
+  It **composes with `pdf-emoji.js` rather than replacing it** — style picks the Helvetica face
+  (`Helvetica-Bold` / `-Oblique` / `-BoldOblique`, `Courier` for code), emoji overrides the font for its own
+  characters, so a bold line with a 🎉 in it works. Bold inside an already-bold heading stays bold instead of
+  cancelling. A non-Helvetica base font is left alone (better to lose the italic than swap someone's font).
+  Same `continued` rule as pdf-emoji: chain runs **within a line only**. Lists draw the marker chained to the
+  text with a hanging indent (`listIndent`, default 14).
+- **Wired:** the whole comms composer stack, and the Newsletter — intro + every section body get a `FormatBar`
+  and a live `FormattedPreview` (shown only when `hasMarkup()`), and all four newsletter PDF text calls go
+  through `richBlocks`. Text with no markup takes the plain path untouched, so wiring this into another export
+  can't change how existing documents lay out.
 
 ## Emoji in generated PDFs
 `server/pdf-emoji.js` + `server/assets/NotoEmoji-Regular.ttf` (OFL 1.1, licence beside it). pdfkit's built-in

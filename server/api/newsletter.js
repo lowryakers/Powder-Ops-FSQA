@@ -2,7 +2,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import PDFDocument from 'pdfkit';
-import { registerEmojiFont, richText } from '../pdf-emoji.js';
+import { registerEmojiFont } from '../pdf-emoji.js';
+import { richBlocks } from '../pdf-rich.js';
 import { COVERS, getCover, coverPayload, coverShapes, COVER_VIEWBOX } from '../newsletter-covers.js';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, getObjectBuffer } from '../storage.js';
@@ -323,7 +324,7 @@ async function renderPdf(db, issue, lang = 'en') {
     if (hasBanner) doc.y = bannerH + 26;
     else doc.moveDown(1);
     doc.fillColor('#26262a').fontSize(24);
-    richText(doc, title, 'Helvetica-Bold', { align: 'left' });
+    richBlocks(doc, title, 'Helvetica-Bold', { align: 'left' });
     doc.moveDown(0.2);
     doc.font('Helvetica').fontSize(10).fillColor('#6c6c73')
       .text(new Date(issue.created_at?.replace(' ', 'T') || Date.now())
@@ -333,7 +334,7 @@ async function renderPdf(db, issue, lang = 'en') {
 
     if (intro) {
       doc.fontSize(11).fillColor('#26262a');
-      richText(doc, intro, 'Helvetica', { align: 'left' });
+      richBlocks(doc, intro, 'Helvetica', { align: 'left' });
       doc.moveDown(1);
     }
 
@@ -345,11 +346,11 @@ async function renderPdf(db, issue, lang = 'en') {
         doc.moveDown(0.15);
       }
       doc.fontSize(14).fillColor('#26262a');
-      richText(doc, s.title, 'Helvetica-Bold');
+      richBlocks(doc, s.title, 'Helvetica-Bold');
       if (s.body) {
         doc.moveDown(0.2);
         doc.fontSize(11).fillColor('#3a3a40');
-        richText(doc, s.body, 'Helvetica', { align: 'left', lineGap: 2 });
+        richBlocks(doc, s.body, 'Helvetica', { align: 'left', lineGap: 2 });
       }
       const img = s.image_id && images.get(s.image_id);
       if (img) {

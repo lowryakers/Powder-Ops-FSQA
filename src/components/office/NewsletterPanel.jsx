@@ -1,6 +1,9 @@
 import { useState, useRef, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import NewsletterBanner from './NewsletterBanner.jsx';
+import FormatBar from '../common/FormatBar.jsx';
+import RichText from '../common/RichText.jsx';
+import { hasMarkup } from '../../../shared/rich-markup.js';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
@@ -149,6 +152,19 @@ function NotesTab({ canEdit, cards, refresh, onBuild, building, tr = (x) => x, l
   );
 }
 
+// Shown only once the author has actually used a marker — otherwise it's a
+// second copy of the same paragraph taking up half the editor. It's how you see
+// that *bold* became bold without downloading a PDF to find out.
+function FormattedPreview({ text, tr = (x) => x }) {
+  if (!hasMarkup(text)) return null;
+  return (
+    <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{tr('Preview')}</p>
+      <RichText text={text} className="text-sm text-gray-800 space-y-1" />
+    </div>
+  );
+}
+
 function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang = 'en', setLang, translating }) {
   const [draft, setDraft] = useState(issue);
   const [saving, setSaving] = useState(false);
@@ -156,6 +172,9 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [uploadingFor, setUploadingFor] = useState(null);
+  // The toolbar edits the textarea's text, so it needs the element.
+  const introRef = useRef(null);
+  const bodyRefs = useRef({});
   const fileRef = useRef(null);
   const shared = draft.status === 'shared';
   // Spanish is a view of the same document, so it reads rather than edits —
@@ -291,9 +310,14 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
             <input value={reading ? tr(draft.title) : draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} disabled={locked}
               className="w-full text-xl font-bold text-gray-900 border-0 border-b border-transparent focus:border-gray-200 focus:outline-none disabled:bg-transparent" />
-            <textarea value={reading ? tr(draft.intro || '') : (draft.intro || '')} onChange={e => setDraft({ ...draft, intro: e.target.value })} disabled={locked}
+            {!locked && !reading && (
+              <FormatBar getEl={() => introRef.current} value={draft.intro || ''}
+                onChange={v => setDraft(d => ({ ...d, intro: v }))} />
+            )}
+            <textarea ref={introRef} value={reading ? tr(draft.intro || '') : (draft.intro || '')} onChange={e => setDraft({ ...draft, intro: e.target.value })} disabled={locked}
               rows={2} placeholder={tr('A short intro (optional)')}
               className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
+            <FormattedPreview text={reading ? tr(draft.intro || '') : draft.intro} tr={tr} />
           </div>
 
           {draft.sections.map((s, i) => (
@@ -310,8 +334,14 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
                   </div>
                 )}
               </div>
-              <textarea value={reading ? tr(s.body || '') : (s.body || '')} onChange={e => setSection(s.id, { body: e.target.value })} disabled={locked} rows={3}
+              {!locked && !reading && (
+                <FormatBar getEl={() => bodyRefs.current[s.id]} value={s.body || ''}
+                  onChange={v => setSection(s.id, { body: v })} />
+              )}
+              <textarea ref={el => { bodyRefs.current[s.id] = el; }}
+                value={reading ? tr(s.body || '') : (s.body || '')} onChange={e => setSection(s.id, { body: e.target.value })} disabled={locked} rows={3}
                 className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
+              <FormattedPreview text={reading ? tr(s.body || '') : s.body} tr={tr} />
               {s.image_url && <img src={s.image_url} alt="" className="rounded-lg max-h-56 object-contain" />}
               {!locked && canEdit && (
                 <div>
