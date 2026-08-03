@@ -560,9 +560,35 @@ TrainingPanel.jsx is the wizard (admin-only **Training Log** button beside Impor
   calling the second "already imported" on an empty database is how an importer loses trust on the preview.
 - Verified end to end on the real file: 608 created from 11 mapped columns, 208 dated from the sheet period,
   re-run 0 created / 1,279 recognised.
-- **Courses the log references that don't exist yet** (Forklift, Pallet Jack, Mixer, Auger, Warehouse,
-  Filling Procedures, Stick Pack, Fire Extinguisher & Exits, cGMP Policy) import as *unmapped* until someone
-  creates them — that's 2,142 completions still waiting on the training/test merge.
+- **`suggestCourse` matches WHOLE WORDS, never substrings, and won't cross the clean/operate line.**
+  Two mis-suggestions caught on the real log, both of which a reviewer might have accepted:
+  "Sanitation & SSOP" *contains* the letters `sop`, so every `… SOP 401` heading scored against Sanitation on
+  nothing but that accident; and "Mixer" overlaps *Cleaning the Hexagon Tumbler Mixer* and *Hexagon Tumbler
+  Mixer Operation* equally, with first-match-wins picking the cleaning one — filing 256 people as trained to
+  clean a machine they were trained to run. Scoring is now per whole word (≥4 chars = 2, 3 chars = 1) with a
+  −3 penalty when only one side of the pair mentions cleaning. Words shorter than 3 chars ("wi") are noise.
+  The old `filter(w => w.length > 3)` also made **"GMP" unmatchable** — the one heading named after its course.
+
+## Work Instruction training courses (`seedWorkInstructionCourses`)
+The plant's own WIs as courses, so the Training Log's `Mixer (WI)` / `Warehouse (WI)` columns have somewhere
+to import to: **WI001** Warehouse, **WI003** Volumetric Stick Pack, **WI004** Hand Filling, **WI007** Auger
+Stick Pack, **WI012** Cleaning the Auger Stick Pack, **WI018** Cleaning the Hexagon Tumbler Mixer, **WI021**
+Hexagon Tumbler Mixer Operation, plus **SAF-201** Fire Extinguisher & Emergency Exit Awareness carrying the
+plant's real 10-question test (transcribed from the signed document, answer key included — not generated).
+- **The course code IS the document number.** "Show me who is trained on WI007" is then a straight lookup.
+- **This is a SECOND seeder and must stay separate from `seedTrainingCourses`.** That one is
+  `if (existing > 0) return` — all-or-nothing on an empty catalog — so it can never introduce a course to a
+  database that already has one, which is every deployed instance. `seedWorkInstructionCourses` runs each
+  boot and adds only missing codes; it must be called *after* it in server.js.
+- **A code that already exists is left completely alone** — an edited title, a cadence someone set, or a
+  course retired with `active = 0` are decisions. Courses are retired, never deleted, so the row survives to
+  say "don't re-add me".
+- Cadence is one-time + retrain-on-revision, not annual: the WI implies retraining when the *document*
+  changes, and inventing an annual rule would put the plant overdue on a date nobody agreed to. SAF-201 is
+  the exception at 12 months (emergency-response awareness genuinely is annual).
+- With these, the log's suggestions go 11 → 24 headings and a full import goes **608 → 1,382** records.
+- **Still unmatched: Forklift (314), Pallet Jack (273), cGMP Policy SOP 401 (216)** — no course and no
+  document supplied yet. `cGMP POLICY SOP 401` deliberately suggests nothing rather than guessing GMP-101.
 
 ## Universal file importer (Monday / Airtable / Drive / Slack / desktop)
 `server/tabular.js` reads **CSV / TSV / XLSX with no new dependencies** (XLSX is a zip of XML via the

@@ -575,19 +575,46 @@ function displayName(name) {
 // Columns that record housekeeping rather than a training.
 const ADMIN_COLUMNS = /^(training tests|training sign sheet|video links what was watched)$/i;
 
-// Suggest a course for a log heading: exact title/code first, then a
-// containment match, so "Sanitation SOP 108 (WI)" finds "Sanitation & SSOP".
+// Suggest a course for a log heading: exact title/code first, then the
+// best-scoring word overlap, so "Sanitation SOP 108 (WI)" finds "Sanitation &
+// SSOP". Only ever a suggestion — the reviewer confirms every one.
+//
+// Two things this has to get right, both learned from the real log:
+//
+//  1. **Short headings must still match.** Filtering words to length > 3 left
+//     "GMP" with nothing to match on, so the one heading whose course is named
+//     after it suggested nothing at all.
+//  2. **Operating a machine and cleaning it are different trainings.** "Mixer"
+//     overlaps "Cleaning the Hexagon Tumbler Mixer" and "Hexagon Tumbler Mixer
+//     Operation" equally on words alone, and first-match-wins picked the
+//     cleaning one. Someone accepting that suggestion would file 256 people as
+//     trained to clean a machine they were trained to run.
+const mentionsCleaning = (s) => /\bclean/.test(s);
+
 function suggestCourse(heading, courses) {
   const h = normName(heading);
   if (!h) return null;
   const exact = courses.find(c => normName(c.title) === h || normName(c.code) === h);
   if (exact) return exact.id;
-  const words = h.split(' ').filter(w => w.length > 3);
-  const partial = courses.find(c => {
-    const t = normName(c.title);
-    return words.length && words.every(w => t.includes(w));
-  }) || courses.find(c => words.some(w => normName(c.title).includes(w)));
-  return partial ? partial.id : null;
+
+  const words = h.split(' ').filter(Boolean);
+  let best = null, bestScore = 0;
+  for (const c of courses) {
+    const title = normName(c.title);
+    // Whole words, never substrings. "Sanitation & SSOP" *contains* the letters
+    // "sop", so every heading ending in "SOP 401" scored against Sanitation and
+    // won on nothing but that accident.
+    const vocab = new Set([...title.split(' '), ...normName(c.code).split(' ')]);
+    let score = 0;
+    for (const w of words) {
+      if (w.length < 3) continue;              // "wi", "of" — noise, not evidence
+      if (vocab.has(w)) score += w.length >= 4 ? 2 : 1;
+    }
+    if (!score) continue;
+    if (mentionsCleaning(title) !== mentionsCleaning(h)) score -= 3;
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return bestScore > 0 ? best.id : null;
 }
 
 function analyzeBuffer(db, buffer) {

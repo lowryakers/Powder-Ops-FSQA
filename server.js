@@ -70,7 +70,7 @@ import coaRoutes from './server/api/coa.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
-import { seedTrainingCourses } from './server/training-seed.js';
+import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath } from './server/middleware/auth.js';
 
@@ -916,9 +916,13 @@ try {
 runControlledSync(db).catch(err =>
   console.error('[controlled] sync failed (non-fatal):', err.message));
 
-// Seed the standard training course catalog + starter tests
+// Seed the standard training course catalog + starter tests, then the plant's
+// own Work Instruction courses. The second call must come after the first and
+// stay separate: seedTrainingCourses bails once the catalog is non-empty, so
+// it can never introduce a course to a database that already has one.
 try {
   seedTrainingCourses(db);
+  seedWorkInstructionCourses(db);
 } catch (err) {
   console.error('[seed] Error seeding training courses (non-fatal):', err.message);
 }
