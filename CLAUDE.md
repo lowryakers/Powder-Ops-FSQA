@@ -594,6 +594,28 @@ untouched**, so wiring it into another export can't change how existing document
 - Only the newsletter is wired up. The other pdfkit exports (COA, QMS, disposals, documents, pay) still have
   the raw-bytes behaviour if someone types an emoji into them; `richText` is the fix when that comes up.
 
+## Badges go stale unless a module says so (`src/lib/dataChanged.js`)
+Every module badge and the bell count come from **one** endpoint, `/compliance/notifications`, fetched in
+App.jsx with `useApiGet(..., [activeTab, user?.id])` — so it refetched **only on navigation**. Clear six time
+entries and the number sat on its old value until you left the module and came back; the work was done, the
+app just never asked again. A module now calls `notifyDataChanged()` after a write that could move a count,
+and App also refetches on `visibilitychange` → visible (someone else's work moves the same numbers while
+you're in another tab). Deliberately a payloadless event: the badge query is server-side and cheap, and a
+module shouldn't have to know which of its writes feeds which badge. **Wire new count-moving writes to it.**
+
+## Bulk edit in a log (the Monday.com shape)
+Time Tracking's log is the reference. Tick the left-hand boxes → a bar above the list shows the count and the
+actions (Mark reviewed, ADP Pending / In ADP / N-A, delete). Three rules worth keeping when copying it:
+- **The selection only covers rows currently visible** (`visibleIds` is the *filtered* list), so a row hidden
+  by a filter can never be changed by something you can't see. "Select all" means all filtered.
+- **Shift-click ticks the range** from the last box you touched, and the span takes the state the clicked row
+  is moving *to*. Clicking twenty boxes one at a time is where people go back to the spreadsheet.
+- **A per-row control acts on the whole selection when that row is in it** (`rowScope()`/`scopeNote()`) —
+  someone who ticked six lines and then clicks one row's ADP pill means all six, and changing one while
+  silently leaving five looks from the screen exactly like nothing happened.
+Server side: `PUT /office/time/adjustments/bulk` and `POST .../bulk-delete` are one transaction but audit
+**each** record individually — a bulk edit has to leave the trail a manual one would.
+
 ## Hours as h:mm
 `src/lib/hoursFormat.js` (`parseHours`, `formatHours`, `hoursInputValue`). Time Tracking → Hours is typed and
 read as **39:56**; storage stays **decimal** because every downstream number (weekly target, overtime, the

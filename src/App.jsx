@@ -4,6 +4,7 @@ import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
 import { setAppBadge } from './lib/appBadge';
+import { onDataChanged } from './lib/dataChanged';
 import { useEdgeSwipe } from './lib/useEdgeSwipe';
 import { useInstallPrompt, installEnvironment } from './lib/useInstallPrompt.js';
 import { visibleModuleIds, canViewModule, hasExplicitGrant } from './utils/permissions';
@@ -1053,6 +1054,18 @@ function App() {
     const handler = () => refreshNotifications();
     window.addEventListener('schedule-notice-changed', handler);
     return () => window.removeEventListener('schedule-notice-changed', handler);
+  }, [refreshNotifications]);
+
+  // Module badges and the bell count come from one endpoint, and it used to be
+  // refetched only when the active tab changed — so clearing six time entries
+  // left the badge on its old number until you navigated away and back. A
+  // module says notifyDataChanged() after a write; coming back to the tab asks
+  // again too, since anyone else's work may have moved the counts meanwhile.
+  useEffect(() => {
+    const off = onDataChanged(() => refreshNotifications());
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshNotifications(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { off(); document.removeEventListener('visibilitychange', onVisible); };
   }, [refreshNotifications]);
 
   useEffect(() => {

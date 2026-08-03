@@ -1,5 +1,6 @@
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, useRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import { notifyDataChanged } from '../../lib/dataChanged';
 import { useAuth } from '../../hooks/useAuth';
 import { Check, Languages, Trash2, UserX, Clock, HelpCircle, Search, ChevronUp, ChevronDown } from 'lucide-react';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
@@ -156,31 +157,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
     return [...l].sort((a, b) => { const av = val(a), bv = val(b); return av < bv ? -dir : av > bv ? dir : 0; });
   }, [entries, typeFilter, statusFilter, periodFilter, adpFilter, q, sortField, sortDir]);
 
-  const markReviewed = async (e) => { await apiPut(`/office/time/adjustments/${e.id}`, { status: 'reviewed' }); refresh(); };
-  // Payroll's last mile: pending → in ADP → N/A, one click per step.
-  const cycleAdp = async (e) => {
-    const order = ['pending', 'entered', 'not_applicable'];
-    const next = order[(order.indexOf(e.adp_status || 'pending') + 1) % order.length];
-    await apiPut(`/office/time/adjustments/${e.id}`, { adp_status: next });
-    refresh();
-  };
-
-  // Periods present in the data, newest first — no date maths for the user.
-  const periods = useMemo(() => {
-    const set = new Set((entries || []).map(e => e.pay_period || payPeriodOf(e.adjustment_date)).filter(Boolean));
-    return [...set].sort().reverse();
-  }, [entries]);
-  const periodSummary = useMemo(() => {
-    const done = list.filter(e => (e.adp_status || 'pending') !== 'pending').length;
-    return { done, total: list.length };
-  }, [list]);
-  const del = async (e) => {
-    if (!confirm(`Delete entry for ${e.employee_name}?`)) return;
-    await apiFetch(`/office/time/adjustments/${e.id}`, { method: 'DELETE' });
-    refresh();
-  };
-
-  // ── Bulk review ───────────────────────────────────────────────────────────
+  // ── Selection ─────────────────────────────────────────────────────────────
   // Filter the log down to what you're working through — a pay period, one
   // person, everything still pending — then act on the whole set at once. The
   // selection only ever covers rows currently visible, so a hidden row can
@@ -188,11 +165,31 @@ function AdjustmentsLog({ tr = (x) => x }) {
   const visibleIds = useMemo(() => list.map(e => e.id), [list]);
   const selected = useMemo(() => visibleIds.filter(id => picked.has(id)), [visibleIds, picked]);
   const allPicked = visibleIds.length > 0 && selected.length === visibleIds.length;
-  const toggleOne = (id) => setPicked(s => {
-    const next = new Set(s);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
+
+  // Shift-click ticks everything between the last box you touched and this one.
+  // Reconciling a pay period means selecting runs of rows, and clicking twenty
+  // boxes one at a time is where people give up and go back to the spreadsheet.
+  const lastPickedRef = useRef(null);
+  const toggleOne = (id, ev) => {
+    const anchor = ev?.nativeEvent?.shiftKey ? lastPickedRef.current : null;
+    setPicked(s => {
+      const next = new Set(s);
+      const a = anchor ? visibleIds.indexOf(anchor) : -1;
+      const b = visibleIds.indexOf(id);
+      if (a !== -1 && b !== -1 && a !== b) {
+        // The span takes the state the clicked row is moving TO, so
+        // shift-clicking an unticked row ticks the whole run.
+        const on = !next.has(id);
+        for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+          if (on) next.add(visibleIds[i]); else next.delete(visibleIds[i]);
+        }
+        return next;
+      }
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    lastPickedRef.current = id;
+  };
   const toggleAll = () => setPicked(s => {
     const next = new Set(s);
     if (allPicked) visibleIds.forEach(id => next.delete(id));
@@ -206,6 +203,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
       await apiPut('/office/time/adjustments/bulk', { ids: selected, ...patch });
       setPicked(new Set());
       refresh();
+      notifyDataChanged();
     } finally { setBusy(false); }
   };
   const deleteBulk = async () => {
@@ -216,7 +214,49 @@ function AdjustmentsLog({ tr = (x) => x }) {
       await apiPost('/office/time/adjustments/bulk-delete', { ids: selected });
       setPicked(new Set());
       refresh();
+      notifyDataChanged();
     } finally { setBusy(false); }
+  };
+
+  // ── Row actions ───────────────────────────────────────────────────────────
+  // A per-row control acts on the whole selection when that row is part of it.
+  // Someone who has just ticked six lines and clicks one row's ADP pill means
+  // all six; changing one and silently leaving five is never what they wanted,
+  // and from the screen they'd have no way to tell it hadn't taken.
+  const rowScope = (e) => (picked.has(e.id) && selected.length > 1 ? selected : [e.id]);
+  const scopeNote = (e) => (rowScope(e).length > 1 ? ` — applies to all ${selected.length} selected` : '');
+
+  const markReviewed = async (e) => {
+    if (rowScope(e).length > 1) return applyBulk({ status: 'reviewed' });
+    await apiPut(`/office/time/adjustments/${e.id}`, { status: 'reviewed' });
+    refresh();
+    notifyDataChanged();
+  };
+  // Payroll's last mile: pending → in ADP → N/A, one click per step.
+  const cycleAdp = async (e) => {
+    const order = ['pending', 'entered', 'not_applicable'];
+    const next = order[(order.indexOf(e.adp_status || 'pending') + 1) % order.length];
+    if (rowScope(e).length > 1) return applyBulk({ adp_status: next });
+    await apiPut(`/office/time/adjustments/${e.id}`, { adp_status: next });
+    refresh();
+    notifyDataChanged();
+  };
+
+  // Periods present in the data, newest first — no date maths for the user.
+  const periods = useMemo(() => {
+    const set = new Set((entries || []).map(e => e.pay_period || payPeriodOf(e.adjustment_date)).filter(Boolean));
+    return [...set].sort().reverse();
+  }, [entries]);
+  const periodSummary = useMemo(() => {
+    const done = list.filter(e => (e.adp_status || 'pending') !== 'pending').length;
+    return { done, total: list.length };
+  }, [list]);
+  const del = async (e) => {
+    if (rowScope(e).length > 1) return deleteBulk();
+    if (!confirm(`Delete entry for ${e.employee_name}?`)) return;
+    await apiFetch(`/office/time/adjustments/${e.id}`, { method: 'DELETE' });
+    refresh();
+    notifyDataChanged();
   };
 
   return (
@@ -263,6 +303,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
           <span className="text-xs font-semibold text-powder-900">
             {selected.length} {selected.length === 1 ? tr('entry selected') : tr('entries selected')}
           </span>
+          <span className="hidden lg:inline text-[11px] text-powder-700/70">{tr('Shift-click to select a range')}</span>
           <div className="flex flex-wrap items-center gap-1.5 ml-auto">
             <button onClick={() => applyBulk({ status: 'reviewed' })} disabled={busy}
               className="inline-flex items-center gap-1 px-2.5 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 disabled:opacity-50">
@@ -295,7 +336,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
           return (
             <div key={e.id} className={`bg-white rounded-xl border border-gray-200 border-l-4 ${e.status === 'new' ? 'border-powder-400' : 'border-gray-200'} p-3 shadow-sm ${picked.has(e.id) ? 'ring-2 ring-powder-300' : ''}`}>
               <div className="flex items-start justify-between gap-2">
-                <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggleOne(e.id)}
+                <input type="checkbox" checked={picked.has(e.id)} onChange={ev => toggleOne(e.id, ev)}
                   className="mt-1 shrink-0 rounded border-gray-300" aria-label={`Select ${e.employee_name}`} />
                 <div className="min-w-0 flex-1">
                   <button onClick={() => setEmployee(e.employee_name)} className="font-medium text-gray-900 hover:text-powder-700">{e.employee_name}</button>
@@ -355,7 +396,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
                   <Fragment key={e.id}>
                   <tr {...expand.rowProps(e.id, `border-b border-gray-100 ${picked.has(e.id) ? 'bg-powder-50' : e.status === 'new' ? 'bg-powder-50/40' : ''}`)}>
                     <td className="px-3 py-2.5" onClick={stopRowClick}>
-                      <input type="checkbox" checked={picked.has(e.id)} onChange={() => toggleOne(e.id)}
+                      <input type="checkbox" checked={picked.has(e.id)} onChange={ev => toggleOne(e.id, ev)}
                         className="rounded border-gray-300" aria-label={`Select ${e.employee_name}`} />
                     </td>
                     <td className="px-2 py-2.5"><ExpandCell open={expand.isExpanded(e.id)} /></td>
@@ -375,7 +416,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
                       {(() => {
                         const a = ADP_STATES.find(x => x.value === (e.adp_status || 'pending'));
                         return (
-                          <button onClick={() => cycleAdp(e)} title={e.adp_entered_by ? `${e.adp_entered_by} · ${(e.adp_entered_at || '').slice(0, 10)}` : 'Click to change'}
+                          <button onClick={() => cycleAdp(e)} title={(e.adp_entered_by ? `${e.adp_entered_by} · ${(e.adp_entered_at || '').slice(0, 10)}` : 'Click to change') + scopeNote(e)}
                             className={`px-2 py-0.5 rounded-full text-xs font-medium ${a.tone}`}>
                             {tr(a.label)}
                           </button>
@@ -386,7 +427,8 @@ function AdjustmentsLog({ tr = (x) => x }) {
                     <td className="px-3 py-2.5 whitespace-nowrap text-right" onClick={stopRowClick}>
                       <div className="flex items-center gap-1 justify-end">
                         {e.status === 'new' && (
-                          <button onClick={() => markReviewed(e)} className="px-2 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700">Mark reviewed</button>
+                          <button onClick={() => markReviewed(e)} title={`Mark reviewed${scopeNote(e)}`}
+                            className="px-2 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700">Mark reviewed</button>
                         )}
                         <button onClick={() => del(e)} className="p-1.5 text-gray-400 hover:text-red-500" data-tip="Delete"><Trash2 size={14} /></button>
                       </div>
@@ -464,6 +506,7 @@ const PAGE_STRINGS = [
   'Pay period: all', 'ADP: all', 'Pending', 'In ADP', 'N/A', 'accounted for in ADP',
   'ADP', 'No entries', 'Reported by', 'Mark reviewed', 'Employee', 'Type', 'Date', 'Message', 'Hours',
   'entry selected', 'entries selected', 'Select all', 'Deselect all', 'Clear',
+  'Shift-click to select a range',
 ];
 
 export default function TimeTrackingPanel() {
