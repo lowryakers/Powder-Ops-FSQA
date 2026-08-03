@@ -21,16 +21,25 @@
 //   sign      (db, user, id) => { error, status } | { ok: true }
 //   canSign   (user) => boolean
 //
-// Sources deliberately NOT here: QMS records (deviation / non-conformance /
-// on-hold) and disposals. Those are multi-party APPROVALS with an e-signature
-// intent statement, not a counter-signature — approving one is a decision about
+// Sources deliberately NOT here: deviations, non-conformances, on-hold records
+// and disposals. Those are multi-party APPROVALS with an e-signature intent
+// statement, not a counter-signature — approving one is a decision about
 // product, and it belongs on the record where the reviewer can see the whole
 // investigation. The panel links to them instead of pretending a row in a list
 // is enough to approve a deviation.
+//
+// The SIGN-OUT logs are a different animal and they ARE here: "the tool came
+// back and its condition was good" is exactly the routine counter-signature a
+// queue is for, and it's the bulk of what QA is looking at. They reuse
+// BULK_APPROVE's `routine` rule rather than a second, looser one — a record
+// that fails it (bad condition, still out) is never offered as a checkbox and
+// has to be opened and signed deliberately.
 
 import { verifySanitationRecord } from './api/sanitation.js';
 import { signOffProductionEntry } from './api/production.js';
 import { verifyScaleCheck } from './api/scale-verification.js';
+import { signQmsApproval, BULK_APPROVE } from './api/qms.js';
+import { getType } from './qms-config.js';
 import { hasExplicitEdit } from './module-access.js';
 
 // Who counts as QA for the purposes of a counter-signature. Matches the rule
@@ -47,6 +56,48 @@ const canSignScale = (u) => isQaReviewer(u) || hasExplicitEdit(u, 'calibration')
 // Oldest first everywhere: the point of the queue is that nothing ages out of
 // sight, so the top of the list is always the thing that has waited longest.
 const LIMIT = 200;
+
+// The sign-out logs, driven off one shared definition. Each is a qms_record
+// type whose required QA approval is a counter-signature, so signing goes
+// through signQmsApproval — the same function the module's own button calls.
+function signOutSource({ key, type, label, form, module, noun, plural }) {
+  const cfg = () => getType(type);
+  const routine = (flat) => BULK_APPROVE[type].routine(flat);
+  const unsigned = (db) => db.prepare(
+    "SELECT * FROM qms_records WHERE record_type = ? AND paper_record = 0").all(type)
+    .map(r => ({ row: r, flat: { ...JSON.parse(r.data || '{}'), status: r.status, record_number: r.record_number, record_date: r.record_date } }))
+    .filter(({ row }) => {
+      let a; try { a = JSON.parse(row.approvals || '{}'); } catch { a = {}; }
+      return !a[BULK_APPROVE[type].role];
+    })
+    .filter(({ flat }) => routine(flat));
+  return {
+    key, label, form, module, noun, plural,
+    // Only routine records are counted, because only routine records can be
+    // signed from here — a count you can't act on is just noise.
+    count: (db) => unsigned(db).length,
+    pending: (db, limit = LIMIT) => unsigned(db)
+      .sort((a, b) => String(a.flat.record_date || '').localeCompare(String(b.flat.record_date || '')))
+      .slice(0, limit)
+      .map(({ row, flat }) => ({
+        id: row.id,
+        title: flat.item_description || flat.item_name || flat.tool_id || 'Item',
+        subtitle: [flat.record_number, flat.lot_number && `Lot ${flat.lot_number}`, flat.mo_number && `MO ${flat.mo_number}`,
+          flat.qty && `qty ${flat.qty}`, flat.qty_pulled && `qty ${flat.qty_pulled}`].filter(Boolean).join(' · '),
+        by: flat.employee_name || flat.signed_by || row.created_by,
+        date: (flat.record_date || '').slice(0, 10),
+        result: null,
+        extra: flat.comments || flat.return_reason || null,
+      })),
+    canSign: (u) => isQaReviewer(u) || hasExplicitEdit(u, module),
+    sign: (db, user, id) => {
+      const c = cfg();
+      if (!c) return { error: 'Unknown record type', status: 400 };
+      const out = signQmsApproval(db, c, id, user, BULK_APPROVE[type].role, { batch: true });
+      return out.error ? { error: out.error, status: out.status || 400 } : { ok: true };
+    },
+  };
+}
 
 export const SOURCES = [
   {
@@ -166,6 +217,15 @@ export const SOURCES = [
       return error ? { error, status } : { ok: true };
     },
   },
+  signOutSource({ key: 'sign-out-equipment', type: 'maintenance_sign_out',
+    label: 'Equipment / Tool / Chemical sign-outs', form: '703-01', module: 'maintenance-signout',
+    noun: 'sign-out', plural: 'sign-outs' }),
+  signOutSource({ key: 'sign-out-knife', type: 'knife_sign_out',
+    label: 'Knife / Blade sign-outs', form: '440-02', module: 'knife-accountability',
+    noun: 'sign-out', plural: 'sign-outs' }),
+  signOutSource({ key: 'component-pulls', type: 'component_sign_out',
+    label: 'Component sign in/out', form: '418-02', module: 'component-signout',
+    noun: 'pull', plural: 'pulls' }),
 ];
 
 export const getSource = (key) => SOURCES.find(s => s.key === key) || null;

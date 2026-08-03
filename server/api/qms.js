@@ -537,10 +537,42 @@ router.post('/:type/:id/approve', (req, res) => {
 // other record type — deviations, NCs, holds…) must be signed individually so
 // the audit trail shows deliberate review. Each signature is still a full
 // per-record e-signature with attestation, marked as batch-reviewed.
-const BULK_APPROVE = {
+// Exported so the QA Review Center works from the SAME definition of "routine"
+// rather than a second, looser one. A record that fails `routine` is never
+// offered as a checkbox anywhere — it has to be opened and signed deliberately.
+export const BULK_APPROVE = {
   maintenance_sign_out: { role: 'quality', routine: (r) => r.status === 'returned' && r.condition_out !== 'Bad' && r.condition_returned !== 'Bad' },
   knife_sign_out: { role: 'quality', routine: (r) => r.status === 'returned' && r.condition_out !== 'Bad' && r.condition_returned !== 'Bad' },
+  // A component pull has no condition to triage on — what QA is confirming is
+  // that the right lot went to the right MO, which is on every row.
+  component_sign_out: { role: 'quality', routine: () => true },
 };
+/**
+ * Sign one QMS approval. The QA Review Center calls this rather than writing
+ * its own SQL, so a signature from the queue is byte-for-byte the signature the
+ * module writes — same attestation, same audit entry.
+ */
+export function signQmsApproval(db, cfg, id, user, roleKey, { batch = false } = {}) {
+  const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(id, cfg.key);
+  if (!row) return { error: 'Not found', status: 404 };
+  const appr = (cfg.approvals || []).find(a => a.key === roleKey);
+  if (!appr) return { error: 'Unknown approval role', status: 400 };
+  if (!canSignApproval(user, appr)) return { error: 'You are not authorized to sign this approval.', status: 403 };
+  const flat = flatten(row);
+  if (flat.approvals[roleKey]) return { error: `${flat.record_number} is already signed.`, status: 409 };
+  const rule = BULK_APPROVE[cfg.key];
+  if (batch && rule && !rule.routine(flat)) {
+    return { error: `${flat.record_number} is not routine — open it and sign it individually.`, status: 400 };
+  }
+  const attestation = batch
+    ? `I certify that I have reviewed this ${(cfg.singular || 'record').toLowerCase()} as part of a batch review of routine returned items in good condition, and approve it in the capacity of ${appr.label}.`
+    : (appr.attestation || `I certify that I have reviewed this ${(cfg.singular || 'record').toLowerCase()} and approve it in the capacity of ${appr.label}.`);
+  const approvals = { ...flat.approvals, [roleKey]: { name: user.name, user_id: user.id, role: user.role, signed_at: new Date().toISOString(), attestation, ...(batch ? { batch: true } : {}) } };
+  db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), id);
+  logAudit(user, `qms_signed_${roleKey}`, cfg.key, id, { record_number: flat.record_number, attestation, ...(batch ? { batch: true } : {}) });
+  return { ok: true };
+}
+
 router.post('/:type/bulk-approve', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
   const rule = BULK_APPROVE[cfg.key];

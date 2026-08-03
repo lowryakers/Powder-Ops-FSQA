@@ -77,20 +77,50 @@ const decorate = (row) => ({
   review: reviewState(row),
 });
 
+// Once a roster row is linked to a person, THE LINK IS THE IDENTITY and the
+// stored name is just a label. Renaming someone in Settings used to leave the
+// roster showing the old name forever: sync only ever matched by name, and it
+// deliberately skips already-linked rows, so there was no path back.
+//
+// So a linked row reports the person's current name, and says so when the two
+// have drifted — the old value stays visible rather than silently vanishing,
+// because it's what the historical rate rows were filed under.
+function withLinkedNames(db, rows) {
+  const ids = [...new Set(rows.map(r => r.user_id).filter(Boolean))];
+  if (!ids.length) return rows;
+  const users = new Map();
+  try {
+    const q = db.prepare(`SELECT id, name, department FROM users WHERE id IN (${ids.map(() => '?').join(',')})`);
+    for (const u of q.all(...ids)) users.set(u.id, u);
+  } catch { return rows; }
+  return rows.map(r => {
+    const u = r.user_id && users.get(r.user_id);
+    if (!u) return { ...r, linked: !!r.user_id };
+    return {
+      ...r,
+      name: u.name,
+      linked: true,
+      renamed_from: u.name !== r.name ? r.name : null,
+      user_department: u.department,
+    };
+  });
+}
+
 // ── Roster (admin only) ──────────────────────────────────────────────────────
 
 router.get('/employees', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const db = getDb();
-  const rows = db.prepare('SELECT * FROM pay_employees ORDER BY active DESC, team, name').all();
+  const rows = withLinkedNames(db, db.prepare('SELECT * FROM pay_employees ORDER BY active DESC, team, name').all());
   res.json(rows.map(decorate));
 });
 
 router.get('/employees/:id', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const db = getDb();
-  const row = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Not on the roster' });
+  const raw = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.params.id);
+  if (!raw) return res.status(404).json({ error: 'Not on the roster' });
+  const [row] = withLinkedNames(db, [raw]);
   const history = db.prepare('SELECT * FROM pay_rate_history WHERE employee_id = ? ORDER BY effective_at DESC, created_at DESC').all(row.id);
   res.json({ ...decorate(row), history });
 });
@@ -214,11 +244,47 @@ router.get('/sync', (req, res) => {
   const linkable = roster
     .filter(r => !r.user_id && userByName.has(normalizeName(r.name)))
     .map(r => ({ employee_id: r.id, name: r.name, user_id: userByName.get(normalizeName(r.name)).id }));
+  // Rows the app cannot resolve on its own. Every one carries the candidate
+  // list so the report is something you can ACT on — an unmatched list with no
+  // button was the actual complaint, not the matching.
+  const candidates = users.map(u => ({ user_id: u.id, name: u.name, department: u.department }));
   const unmatched = roster
     .filter(r => r.active && !r.user_id && !userByName.has(normalizeName(r.name)))
     .map(r => ({ employee_id: r.id, name: r.name }));
 
-  res.json({ missing, linkable, unmatched });
+  // Already linked, but the person has since been renamed in Settings. Not a
+  // problem to fix — the roster follows the link now — but worth showing so a
+  // name change doesn't look like a stranger appearing on the payroll.
+  const renamed = roster
+    .filter(r => r.user_id)
+    .map(r => ({ r, u: users.find(x => x.id === r.user_id) }))
+    .filter(({ u, r }) => u && normalizeName(u.name) !== normalizeName(r.name))
+    .map(({ r, u }) => ({ employee_id: r.id, was: r.name, now: u.name }));
+
+  res.json({ missing, linkable, unmatched, renamed, candidates });
+});
+
+// Link one roster row to a person by hand — the action the unmatched list was
+// missing. Also adopts the person's name, so the row stops carrying whatever
+// spelling it was imported under.
+router.post('/employees/:id/link', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not on the roster' });
+  const userId = req.body?.user_id || null;
+  if (userId) {
+    const u = db.prepare('SELECT id, name FROM users WHERE id = ?').get(userId);
+    if (!u) return res.status(400).json({ error: 'That person is not in Settings.' });
+    db.prepare("UPDATE pay_employees SET user_id = ?, updated_at = datetime('now') WHERE id = ?").run(u.id, row.id);
+    logAudit(req.user, 'update', 'pay_employee', row.id, { linked_to: u.name }, row, null, row.name);
+  } else {
+    // Explicitly unlink — for a roster row that is genuinely not a Settings user.
+    db.prepare("UPDATE pay_employees SET user_id = NULL, updated_at = datetime('now') WHERE id = ?").run(row.id);
+    logAudit(req.user, 'update', 'pay_employee', row.id, { unlinked: true }, row, null, row.name);
+  }
+  const [out] = withLinkedNames(db, [db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(row.id)]);
+  res.json(decorate(out));
 });
 
 // Apply the reconciliation the report above proposed: link what matches by

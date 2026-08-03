@@ -591,7 +591,7 @@ channels now, so no read-a-badge action can ever enrol someone in a private chan
 `runMigrations` deletes DM memberships whose `user_id` isn't in the channel's `dm_key` (the authority on who
 belongs) — the code fix can't undo rows already written.
 
-## QA Review Center — one queue, four modules
+## QA Review Center — one queue, seven sources
 `server/qa-review.js` is the registry: one `SOURCES` entry per pile of records waiting on a QA signature
 (production entries, QA inspections, cleaning records, scale verifications), each with `pending`/`count`/
 `sign`/`canSign`. `server/api/qa-review.js` exposes `GET /api/qa-review` (counts for every source + rows for
@@ -607,9 +607,24 @@ in the module and call it from here.
 The production adapter adds an **already-signed guard** the module route doesn't have: the Production Log only
 offers its button on unsigned entries, but a queue can be worked by two people at once and a stale row must
 not overwrite someone's signature.
-**QMS records and disposals are deliberately excluded** — those are multi-party approvals with an e-signature
-intent statement, and approving one is a decision about product that belongs on the record beside the
-investigation, not on a checkbox in a list.
+**Deviations, non-conformances, on-hold records and disposals are deliberately excluded** — those are
+multi-party approvals with an e-signature intent statement, and approving one is a decision about product
+that belongs on the record beside the investigation, not on a checkbox in a list.
+**The SIGN-OUT logs are in** (Equipment/Tool/Chemical 703-01, Knife 440-02, Component 418-02): "the tool came
+back and its condition was good" is exactly the routine counter-signature a queue is for, and it was the bulk
+of what QA was looking at with no way to see it. They reuse `BULK_APPROVE`'s **`routine`** rule from qms.js
+rather than a second, looser one — a record that fails it (bad condition, still out) is never offered as a
+checkbox and must be opened and signed deliberately. Signing goes through `signQmsApproval()`, the same
+function the module's own button calls, so a queue signature is byte-for-byte the module's signature.
+
+## Pay Tracking: the link is the identity, the name is a label
+A roster row carries both `user_id` and its own `name`, and `pay_employees.name` is UNIQUE — so renaming
+someone in Settings left the roster showing the old name **forever**: `/pay/sync` matches by name and
+deliberately skips already-linked rows, so there was no path back (Josefa → Debora). `withLinkedNames()` now
+reports the linked person's **current** name and keeps the old one in `renamed_from`, since that's what the
+historical `pay_rate_history` rows were filed under. The sync report gained `renamed` (already linked, since
+renamed) and `candidates`, and `POST /pay/employees/:id/link` is the action the unmatched list was missing —
+an unmatched list with no button was the actual complaint, not the matching.
 
 ## Newsletter header covers (the "make it not read like a policy doc" ask)
 `server/newsletter-covers.js` is the gallery: 16 covers grouped Seasons / Holidays / Celebrations /
