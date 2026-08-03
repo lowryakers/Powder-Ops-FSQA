@@ -53,3 +53,11 @@ export function visibleModuleIds(user, allIds) {
   if (Array.isArray(ma)) return allIds.filter(id => ma.includes(id));
   return allIds.filter(id => ma[id]);
 }
+
+// Who may work the QA Review Center — QA/quality by department, supervisors and
+// admins by role, or an explicit grant. Lives here rather than in App.jsx
+// because OperatorView links to QA Review and a second copy of an access rule
+// is how two screens start disagreeing about who can reach a module.
+export const canSeeQaReview = (u) => u?.role === 'admin' || u?.role === 'supervisor'
+  || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase())
+  || hasExplicitGrant(u, 'qa-review');

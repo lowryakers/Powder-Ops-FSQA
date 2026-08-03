@@ -681,6 +681,22 @@ channels now, so no read-a-badge action can ever enrol someone in a private chan
 `runMigrations` deletes DM memberships whose `user_id` isn't in the channel's `dm_key` (the authority on who
 belongs) — the code fix can't undo rows already written.
 
+## Tasks vs approvals: the Operator View does not sign anything
+`/pm/operator-tasks` used to inject pending production entries as virtual
+`QA Sign-off: …` tasks (ids prefixed `qa_`). They are gone. A sign-off is an **approval**, not a task, and
+it belongs in **QA Review**, which already covers all seven pending-signature sources and clears them in
+batches. Listing the same work on both screens, with nothing on either saying so, is what made the QA
+Operator View read as "the Production Log again".
+- The Operator View is now purely work orders — something to go and do, one at a time, on a phone. QA still
+  sees plenty there: BPG (17 zones), Light Inspection (14), Temp & Humidity (3) and Quality Schedules all
+  generate `task_group = 'qa'` work orders, so **QA Inspections were never missing from it**.
+- A teal banner on the QA filter links to QA Review, so nobody wonders where the sign-offs went.
+- `/compliance/notifications` "N production entries pending QA sign-off" now targets **`qa-review`**, not
+  `production-log` — a notification that lands somewhere you can't act is noise.
+- `canSeeQaReview` moved to `src/utils/permissions.js` (App.jsx imports it) because OperatorView needs the
+  same rule; a second copy of an access rule is how two screens start disagreeing about who can reach a
+  module.
+
 ## QA Review Center — one queue, seven sources
 `server/qa-review.js` is the registry: one `SOURCES` entry per pile of records waiting on a QA signature
 (production entries, QA inspections, cleaning records, scale verifications), each with `pending`/`count`/

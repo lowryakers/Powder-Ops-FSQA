@@ -482,7 +482,9 @@ router.get('/notifications', (req, res) => {
   if (chemMissingSDS > 0) items.push({ id: 'chem-sds', tab: 'chemicals', severity: 'warning', count: chemMissingSDS, label: `${chemMissingSDS} chemical${chemMissingSDS > 1 ? 's' : ''} missing SDS documentation` });
   if (flaggedIssues > 0) items.push({ id: 'flagged', tab: 'pm', severity: 'critical', count: flaggedIssues, label: `${flaggedIssues} flagged issue${flaggedIssues > 1 ? 's' : ''} requiring attention` });
   if (sopReviewDue > 0) items.push({ id: 'sop-review', tab: 'sops', severity: 'info', count: sopReviewDue, label: `${sopReviewDue} SOP${sopReviewDue > 1 ? 's' : ''} past review date` });
-  if (pendingQA > 0) items.push({ id: 'production-qa', tab: 'production-log', severity: 'warning', count: pendingQA, label: `${pendingQA} production entr${pendingQA > 1 ? 'ies' : 'y'} pending QA sign-off` });
+  // Points at QA Review, not the Production Log: signing is done in the review
+  // queue now, and a notification that lands somewhere you can't act is noise.
+  if (pendingQA > 0) items.push({ id: 'production-qa', tab: 'qa-review', severity: 'warning', count: pendingQA, label: `${pendingQA} production entr${pendingQA > 1 ? 'ies' : 'y'} pending QA sign-off` });
   for (const q of qmsPending) {
     items.push({ id: `qms-approval-${q.type}`, tab: q.cfg?.moduleId || 'deviations', severity: 'warning', count: q.count, label: `${q.count} ${q.cfg?.label || q.type} record${q.count > 1 ? 's' : ''} awaiting approval` });
   }

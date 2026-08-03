@@ -7,7 +7,7 @@ import { setAppBadge } from './lib/appBadge';
 import { onDataChanged } from './lib/dataChanged';
 import { useEdgeSwipe } from './lib/useEdgeSwipe';
 import { useInstallPrompt, installEnvironment } from './lib/useInstallPrompt.js';
-import { visibleModuleIds, canViewModule, hasExplicitGrant } from './utils/permissions';
+import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview } from './utils/permissions';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
 import AttentionBar from './components/AttentionBar.jsx';
@@ -200,9 +200,6 @@ const canSeeSignOut = (u) => canViewModule(u, 'maintenance-signout')
 // QA Review: the cross-module sign-off queue. QA and quality staff by
 // department, supervisors and admins by role, anyone else by explicit grant —
 // it isn't a role default, because an operator has nothing to do there.
-const canSeeQaReview = (u) => u?.role === 'admin' || u?.role === 'supervisor'
-  || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase())
-  || hasExplicitGrant(u, 'qa-review');
 
 // "Requests" (supply order + time tracking forms) is for every supervisor,
 // regardless of how their module access is trimmed — plus anyone explicitly

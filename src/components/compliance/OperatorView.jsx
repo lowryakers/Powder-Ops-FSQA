@@ -5,9 +5,9 @@ import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, Cale
 import { localDateStr } from '../../utils/dates';
 import FileUpload from '../FileUpload';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
+import { canSeeQaReview } from '../../utils/permissions';
 
 function detectTaskType(task) {
-  if (task.task_type === 'qa_signoff') return 'qa_signoff';
   const t = (task.title || '').toLowerCase();
   const g = task.task_group || '';
   if (t.includes('temp') && t.includes('humid')) return 'temp_humidity';
@@ -90,7 +90,6 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
   };
 
   const canSubmit = () => {
-    if (taskType === 'qa_signoff') return true;
     if (taskType === 'temp_humidity') return readings.temperature && readings.humidity;
     if (taskType === 'chemical_dilution') return readings.chemical_name && readings.ppm_reading && readings.dilution_pass;
     if (taskType === 'light_inspection') return readings.foot_candles && readings.light_pass;
@@ -675,22 +674,6 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
               </>
             )}
 
-            {taskType === 'qa_signoff' && (
-              <>
-                <h4 className="text-xs font-bold text-teal-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> QA Production Sign-off</h4>
-                {task._qa_meta && (
-                  <div className="bg-teal-50 rounded-lg p-3 space-y-1 text-sm border border-teal-200">
-                    <div className="flex justify-between"><span className="text-gray-500">Product:</span><span className="font-medium text-gray-900">{task._qa_meta.product_name}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">MO #:</span><span className="font-medium text-gray-900">{task._qa_meta.mo_number}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Lot #:</span><span className="font-medium text-gray-900">{task._qa_meta.lot_number}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Team:</span><span className="font-medium text-gray-900">{task._qa_meta.team}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Date:</span><span className="font-medium text-gray-900">{task._qa_meta.date}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Submitted by:</span><span className="font-medium text-gray-900">{task._qa_meta.submitted_by}</span></div>
-                  </div>
-                )}
-              </>
-            )}
-
             {/* Step-by-step checkoff for cleaning and equipment PM */}
             {(taskType === 'cleaning' || taskType === 'equipment_pm') && steps.length > 0 && (
               <>
@@ -920,16 +903,6 @@ export default function OperatorView() {
 
   const handleComplete = async (woId, form) => {
     if (blockedByViewAs()) return;
-    if (String(woId).startsWith('qa_')) {
-      const entryId = String(woId).replace('qa_', '');
-      await apiPut(`/production/entries/${entryId}/qa-signoff`, {
-        qa_signoff_by: userName || 'QA',
-        qa_notes: form.notes || null,
-      });
-      showToast('QA sign-off recorded');
-      refresh();
-      return;
-    }
     await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
     showToast(t('toast_completed'));
     refresh();
@@ -937,7 +910,6 @@ export default function OperatorView() {
 
   const handleFlagIssue = async (woId, form) => {
     if (blockedByViewAs()) return;
-    if (String(woId).startsWith('qa_')) return;
     await apiPost(`/pm/work-orders/${woId}/flag-issue`, form);
     showToast(t('toast_issue'), 'info');
     refresh();
@@ -945,7 +917,6 @@ export default function OperatorView() {
 
   const handleSkipNA = async (woId, form) => {
     if (blockedByViewAs()) return;
-    if (String(woId).startsWith('qa_')) return;
     await apiPost(`/pm/work-orders/${woId}/not-applicable`, form);
     showToast(t('toast_na'), 'info');
     refresh();
@@ -1095,6 +1066,18 @@ export default function OperatorView() {
             </button>
           ))}
         </div>
+      )}
+
+      {/* Signatures are not tasks. This screen is "go and do"; anything waiting
+          on a signature is worked in QA Review, which batches all seven
+          pending-signature sources. Say so rather than leaving QA to wonder
+          where the sign-offs went. */}
+      {viewDept === 'qa' && canSeeQaReview(user) && (
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'qa-review' } }))}
+          className="w-full flex items-center justify-between gap-2 text-left text-[12px] bg-teal-50 border border-teal-200 text-teal-900 rounded-xl px-3 py-2.5 hover:bg-teal-100 transition-colors">
+          <span>Records waiting on a QA signature are in <span className="font-semibold">QA Review</span> — sign-offs are approvals, not tasks.</span>
+          <ChevronRight size={16} className="shrink-0" />
+        </button>
       )}
 
       {/* Search bar */}

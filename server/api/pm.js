@@ -801,51 +801,17 @@ router.get('/operator-tasks', (req, res) => {
 
   const rows = db.prepare(sql).all(...params);
 
-  // Also include pending QA production entries as virtual tasks (for QA dept or admin/all view)
+  // Pending production-entry sign-offs used to be injected here as virtual
+  // "QA Sign-off:" tasks. They are not tasks — they are approvals, and they
+  // live in the QA Review Center, which already covers all seven pending-
+  // signature sources (production entries, QA inspections, cleaning records,
+  // scale verifications, the three sign-out logs) and can clear them in
+  // batches. Listing them here as well meant the same work appeared in two
+  // places with nothing on either screen saying so.
   //
-  // Capped. This is the screen floor staff open on a phone, and an unbounded
-  // sign-off backlog turned it into a multi-megabyte response — every entry
-  // ever filed without a signature, newest first. Nobody works a list of
-  // thousands; the oldest are the ones that matter, and the true count travels
-  // as a number so the UI can say "and N more" without shipping them.
-  const QA_TASK_CAP = 200;
-  const qaGroup = group || '';
-  const includeQA = !qaGroup || qaGroup === 'qa' || qaGroup === 'all' || qaGroup === '';
-  let qaTasks = [];
-  if (includeQA) {
-    qaTasks = db.prepare(`
-      SELECT id, date, team, room, product_name, mo_number, lot_number, submitted_by, created_at
-      FROM production_entries
-      WHERE qa_signoff_by IS NULL
-      ORDER BY date ASC
-      LIMIT ?
-    `).all(QA_TASK_CAP).map(e => ({
-      id: 'qa_' + e.id,
-      _production_entry_id: e.id,
-      title: `QA Sign-off: ${e.product_name} (MO ${e.mo_number})`,
-      status: 'open',
-      priority: 'normal',
-      due_date: e.date,
-      assigned_to: null,
-      procedure_steps: [],
-      pm_schedule_id: null,
-      task_group: 'qa',
-      task_type: 'qa_signoff',
-      issue_flagged: 0,
-      equipment_name: e.room,
-      equipment_type: 'production',
-      location: e.room,
-      asset_id: null,
-      frequency_type: null,
-      schedule_title: null,
-      _qa_meta: { lot_number: e.lot_number, submitted_by: e.submitted_by, team: e.team, date: e.date, mo_number: e.mo_number, product_name: e.product_name },
-    }));
-  }
-
-  // Response stays a plain array — every caller maps over it. The true backlog
-  // size is already published by /compliance/notifications ("N production
-  // entries pending QA sign-off"), so the cap costs no information.
-  res.json([...rows.map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })), ...qaTasks]);
+  // This screen is now only work orders: something to go and do, one at a
+  // time. Signing is a review, and reviews happen in QA Review.
+  res.json(rows.map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
 });
 
 router.put('/schedules/:id/items', (req, res) => {
