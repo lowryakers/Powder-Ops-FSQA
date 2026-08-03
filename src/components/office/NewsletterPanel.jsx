@@ -8,7 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
-import { Plus, Trash2, Send, FileText, Image as ImageIcon, ArrowUp, ArrowDown, Eye, X, Newspaper } from 'lucide-react';
+import { Plus, Trash2, Send, FileText, Image as ImageIcon, ArrowUp, ArrowDown, Eye, X, Newspaper, BookOpen } from 'lucide-react';
 
 // The newsletter, in two halves.
 //
@@ -253,7 +253,8 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
     setSharing(true); setError('');
     try {
       await save();
-      await apiPost(`/newsletter/issues/${draft.id}/share`, { message, lang });
+      // Both languages go out every time now; the reader page carries the toggle.
+      await apiPost(`/newsletter/issues/${draft.id}/share`, { message });
       onChanged?.();
       onClose();
     } catch (e) { setError(e.message); } finally { setSharing(false); }
@@ -285,6 +286,14 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
             {/* The preview covers the page, so it carries its own toggle —
                 otherwise "switch to EN to edit" would be impossible to act on. */}
             {setLang && <LangToggle lang={lang} setLang={setLang} translating={translating} />}
+            {/* What the plant actually opens from #announcements — the page
+                with the EN/ES toggle. The PDF is the print/board copy. */}
+            {draft.id && (
+              <a href={`/newsletter/${draft.id}`} target="_blank" rel="noreferrer"
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">
+                <BookOpen size={13} /> {tr('Reader')}
+              </a>
+            )}
             <button onClick={openPdf} className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200">
               <FileText size={13} /> PDF
             </button>
@@ -386,7 +395,7 @@ const PAGE_STRINGS = [
   'Newsletter', 'Notes', 'Newsletters', 'Add a card', 'Build newsletter', 'Building…',
   'Collect news through the month, then send it out in one go.', 'Open', 'Draft', 'Shared',
   'Upcoming event', 'Shout-out', 'Big news', 'Stats', 'General', 'Hold', 'Include', 'Edit',
-  'Newsletter preview', 'Shared newsletter', 'Edit anything before it goes out.', 'Shared by',
+  'Newsletter preview', 'Shared newsletter', 'Edit anything before it goes out.', 'Shared by', 'Reader',
   'Reading in Spanish. Switch to EN to make changes.', 'Message to post with it', 'Save draft',
   'Share to #announcements', 'Sharing…', 'Saving…',
   'Reading in Spanish. The PDF and Share will use Spanish too. Switch to EN to edit.',

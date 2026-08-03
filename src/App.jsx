@@ -63,6 +63,7 @@ const OfficeRequestsPanel = lazy(() => import('./components/office/OfficeRequest
 const LedgerPanel = lazy(() => import('./components/office/LedgerPanel.jsx'));
 const ProcurementPanel = lazy(() => import('./components/office/ProcurementPanel.jsx'));
 const NewsletterPanel = lazy(() => import('./components/office/NewsletterPanel.jsx'));
+const NewsletterReader = lazy(() => import('./components/office/NewsletterReader.jsx'));
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 
 const NAV_GROUPS = [
@@ -1364,6 +1365,21 @@ function App() {
   // URL they sign in from, and never the operating app or comms.
   if (user.role === 'auditor') {
     return <><AuditorView /><UpdateBanner /></>;
+  }
+
+  // The newsletter as a page, which is what #announcements links to — it's the
+  // only place the EN/ES toggle can live, since a PDF is a static file. Sits
+  // after the auth gate so a link opened cold lands on login and then here.
+  if (path.startsWith('/newsletter/')) {
+    const issueId = decodeURIComponent(path.split('/')[2] || '');
+    return (
+      <ModuleBoundary>
+        <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">Loading…</div>}>
+          <NewsletterReader id={issueId} onExit={() => { window.location.href = '/'; }} />
+        </Suspense>
+        <UpdateBanner />
+      </ModuleBoundary>
+    );
   }
 
   // Slim standalone chat — the target of "Open in window" popouts and the

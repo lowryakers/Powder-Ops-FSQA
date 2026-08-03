@@ -605,6 +605,23 @@ setting one clears the other. Uploads reuse the existing `newsletter_images` + R
 returns a presigned `banner_image_url` because the editor needs something it can put in an `<img>`.
 `GET /newsletter/covers?month=` serves the gallery with shapes included.
 
+## Newsletter: a page people read, PDFs people print
+**A PDF cannot have a language toggle** — it's a static file, so whichever language it was rendered in is
+what every reader gets. The toggle is a *page* behaviour, so `/newsletter/<id>` (`NewsletterReader.jsx`,
+routed in App.jsx after the auth gate) is what #announcements links to, and the PDFs are the download for
+printing and posting on the board.
+- **`localizeIssue(issue, lang)`** in `api/newsletter.js` is the single translation path: `GET
+  /issues/:id/read?lang=` and `renderPdf()` both call it, so the page and the download say the same words.
+  Translating again on the client would drift, and the drift only shows up once the issue is already out.
+  `translation_available` reports `aiEnabled()` so the page can say "showing English" instead of leaving
+  someone wondering why ES did nothing.
+- **Share posts BOTH PDFs** (EN + ES) plus the reader link in one message — everyone gets their language
+  without asking, and the printed copies exist in both anyway. Spanish is skipped only when AI is off, since
+  it would just be a second English file under a Spanish name. The link uses **`readyDocOrigin()`**, never
+  `appBaseUrl()` — the launcher host would bounce it.
+- `coverPayload()` takes the cover **object**, not its id (`getCover(id)` first) — the reader endpoint 500'd
+  on exactly that.
+
 ## One formatting grammar, two renderers (`shared/rich-markup.js`)
 `*bold*` `_italic_` `__underline__` `~strike~` `` `code` `` `- bullet` `1. numbered` — the grammar the comms
 composer has always used, now defined **once** in `shared/rich-markup.js` and imported by **both** the browser

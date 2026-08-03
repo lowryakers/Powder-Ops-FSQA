@@ -9,6 +9,7 @@ import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, getObjectBuffer } from '../storage.js';
 import { getChannelByName, postMessageAs } from './comms.js';
 import { aiEnabled, translateCached } from '../ai.js';
+import { readyDocOrigin } from '../links.js';
 
 // The company newsletter.
 //
@@ -256,14 +257,20 @@ function drawCover(doc, cover, x, y, w, h) {
   doc.restore();
 }
 
-async function renderPdf(db, issue, lang = 'en') {
+// One newsletter, in the language that was asked for.
+//
+// The reader page and the PDF both call this, so what someone reads on screen
+// and what comes out of the download are the same words. A second translation
+// path on the client would drift, and the drift would only surface once the
+// issue was already out.
+async function localizeIssue(issue, lang = 'en') {
   let sections = parseSections(issue.sections);
   let title = issue.title;
   let intro = issue.intro;
 
   // Spanish is a translation of the same newsletter, not a second half bolted
-  // on: everything the PDF prints goes through the cached translator, so the
-  // document reads end-to-end in the language that was asked for.
+  // on: everything goes through the cached translator, so it reads end-to-end
+  // in one language.
   if (lang === 'es' && aiEnabled()) {
     const texts = [title, intro || '', ...sections.flatMap(s => [s.title, s.body || ''])];
     try {
@@ -271,8 +278,13 @@ async function renderPdf(db, issue, lang = 'en') {
       title = out[0] || title;
       intro = out[1] || intro;
       sections = sections.map((s, i) => ({ ...s, title: out[2 + i * 2] || s.title, body: out[3 + i * 2] || s.body }));
-    } catch { /* fall back to English rather than fail the download */ }
+    } catch { /* fall back to English rather than fail the page or the download */ }
   }
+  return { title, intro, sections };
+}
+
+async function renderPdf(db, issue, lang = 'en') {
+  const { title, intro, sections } = await localizeIssue(issue, lang);
   const imageIds = sections.map(s => s.image_id).filter(Boolean);
   if (issue.banner_image_id) imageIds.push(issue.banner_image_id);
   const images = new Map();
@@ -366,6 +378,40 @@ async function renderPdf(db, issue, lang = 'en') {
   });
 }
 
+// The reader page: one issue, localized, with the images already presigned.
+//
+// A PDF cannot have a language toggle — it's a static file, so whichever
+// language it was rendered in is what every reader gets. The toggle is a PAGE
+// behaviour, so the newsletter is read as a page and the PDFs stay for
+// printing and posting on the board.
+router.get('/issues/:id/read', async (req, res) => {
+  if (!requireAccess(req, res, 'view')) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM newsletter_issues WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Newsletter not found' });
+  const lang = req.query.lang === 'es' ? 'es' : 'en';
+  const { title, intro, sections } = await localizeIssue(row, lang);
+
+  // Presign what the page needs to put in an <img>.
+  const withImages = [];
+  for (const sec of sections) {
+    withImages.push({ ...sec, image_url: sec.image_id ? await imageUrl(sec.image_id).catch(() => null) : null });
+  }
+  const bannerUrl = row.banner_image_id ? await imageUrl(row.banner_image_id).catch(() => null) : null;
+
+  res.json({
+    id: row.id, lang, title, intro, sections: withImages,
+    // Same date the PDF prints — there is no separate issue_date column.
+    created_at: row.created_at, status: row.status, shared_at: row.shared_at,
+    banner_cover: row.banner_cover, banner_image_url: bannerUrl,
+    // coverPayload takes the cover OBJECT, not its id.
+    cover: getCover(row.banner_cover) ? coverPayload(getCover(row.banner_cover)) : null,
+    // Spanish silently falls back to English when AI is off — say so rather
+    // than leaving someone wondering why the toggle did nothing.
+    translation_available: aiEnabled(),
+  });
+});
+
 router.get('/issues/:id/pdf', async (req, res) => {
   if (!requireAccess(req, res, 'view')) return;
   const db = getDb();
@@ -398,30 +444,44 @@ router.post('/issues/:id/share', async (req, res) => {
   const channel = getChannelByName(db, channelName);
   if (!channel) return res.status(404).json({ error: `No #${channelName} channel found.` });
 
-  const lang = req.body?.lang === 'es' ? 'es' : 'en';
-  let pdf;
-  try { pdf = await renderPdf(db, issue, lang); }
-  catch (e) { return res.status(500).json({ error: `Could not build the PDF: ${e.message}` }); }
+  // BOTH languages, always. Whoever reads the announcement gets their own
+  // language without asking anyone, and the printed copies that go up on the
+  // board have to exist in both anyway. Spanish is skipped only when AI is off,
+  // since it would just be a second English file under a Spanish name.
+  const langs = aiEnabled() ? ['en', 'es'] : ['en'];
+  const base = issue.title.replace(/[^\w -]+/g, '').trim() || 'newsletter';
+  const files = [];
+  try {
+    for (const l of langs) {
+      const pdf = await renderPdf(db, issue, l);
+      const filename = `${base}${l === 'es' ? ' (ES)' : ''}.pdf`;
+      const key = `newsletter/${issue.id}-${filename}`;
+      await putObject(key, pdf, 'application/pdf');
+      files.push({ filename, key, size: pdf.length });
+    }
+  } catch (e) { return res.status(500).json({ error: `Could not build the PDF: ${e.message}` }); }
 
-  const filename = `${issue.title.replace(/[^\w -]+/g, '').trim() || 'newsletter'}${lang === 'es' ? ' (ES)' : ''}.pdf`;
-  const key = `newsletter/${issue.id}-${filename}`;
-  await putObject(key, pdf, 'application/pdf');
-
-  const body = String(req.body?.message || '').trim() || `📣 ${issue.title} is out — have a read.`;
+  // Link to the reader page — the only place the language can be toggled.
+  // readyDocOrigin(), never appBaseUrl(): the launcher host would bounce it.
+  const link = `${readyDocOrigin()}/newsletter/${issue.id}`;
+  const body = String(req.body?.message || '').trim()
+    || `📣 ${issue.title} is out — read it here (EN/ES): ${link}`;
   const message = await postMessageAs(db, channel, req.user, body);
   if (!message) return res.status(500).json({ error: 'Could not post to the channel.' });
 
-  // Attach the PDF to that message so it opens from the conversation.
-  db.prepare(`INSERT INTO chat_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key)
-    VALUES (?, ?, ?, ?, ?, 'application/pdf', ?, ?)`)
-    .run(uuid(), message.id, channel.id, req.user.id, filename, pdf.length, key);
+  // Attach the PDFs to that message so they open from the conversation.
+  const att = db.prepare(`INSERT INTO chat_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key)
+    VALUES (?, ?, ?, ?, ?, 'application/pdf', ?, ?)`);
+  for (const f of files) att.run(uuid(), message.id, channel.id, req.user.id, f.filename, f.size, f.key);
+  const key = files[0].key;
 
   db.prepare(`UPDATE newsletter_issues SET status = 'shared', shared_at = datetime('now'), shared_by = ?,
     channel_id = ?, message_id = ?, pdf_key = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(req.user.name, channel.id, message.id, key, issue.id);
 
-  logAudit(req.user, 'update', 'newsletter', issue.id, { shared_to: channel.name }, issue, null, issue.title);
-  res.json({ ok: true, channel: channel.name, message_id: message.id });
+  logAudit(req.user, 'update', 'newsletter', issue.id,
+    { shared_to: channel.name, languages: langs, link }, issue, null, issue.title);
+  res.json({ ok: true, channel: channel.name, message_id: message.id, link, files: files.map(f => f.filename) });
 });
 
 export default router;
