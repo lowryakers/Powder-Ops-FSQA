@@ -1,6 +1,5 @@
 import { useState, useMemo, useRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
-import { notifyDataChanged } from '../../lib/dataChanged';
 import { useAuth } from '../../hooks/useAuth';
 import { Check, Languages, Trash2, UserX, Clock, HelpCircle, Search, ChevronUp, ChevronDown } from 'lucide-react';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
@@ -203,7 +202,6 @@ function AdjustmentsLog({ tr = (x) => x }) {
       await apiPut('/office/time/adjustments/bulk', { ids: selected, ...patch });
       setPicked(new Set());
       refresh();
-      notifyDataChanged();
     } finally { setBusy(false); }
   };
   const deleteBulk = async () => {
@@ -214,7 +212,6 @@ function AdjustmentsLog({ tr = (x) => x }) {
       await apiPost('/office/time/adjustments/bulk-delete', { ids: selected });
       setPicked(new Set());
       refresh();
-      notifyDataChanged();
     } finally { setBusy(false); }
   };
 
@@ -230,7 +227,6 @@ function AdjustmentsLog({ tr = (x) => x }) {
     if (rowScope(e).length > 1) return applyBulk({ status: 'reviewed' });
     await apiPut(`/office/time/adjustments/${e.id}`, { status: 'reviewed' });
     refresh();
-    notifyDataChanged();
   };
   // Payroll's last mile: pending → in ADP → N/A, one click per step.
   const cycleAdp = async (e) => {
@@ -239,7 +235,6 @@ function AdjustmentsLog({ tr = (x) => x }) {
     if (rowScope(e).length > 1) return applyBulk({ adp_status: next });
     await apiPut(`/office/time/adjustments/${e.id}`, { adp_status: next });
     refresh();
-    notifyDataChanged();
   };
 
   // Periods present in the data, newest first — no date maths for the user.
@@ -256,7 +251,6 @@ function AdjustmentsLog({ tr = (x) => x }) {
     if (!confirm(`Delete entry for ${e.employee_name}?`)) return;
     await apiFetch(`/office/time/adjustments/${e.id}`, { method: 'DELETE' });
     refresh();
-    notifyDataChanged();
   };
 
   return (

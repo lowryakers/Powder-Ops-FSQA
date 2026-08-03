@@ -611,10 +611,21 @@ untouched**, so wiring it into another export can't change how existing document
 Every module badge and the bell count come from **one** endpoint, `/compliance/notifications`, fetched in
 App.jsx with `useApiGet(..., [activeTab, user?.id])` — so it refetched **only on navigation**. Clear six time
 entries and the number sat on its old value until you left the module and came back; the work was done, the
-app just never asked again. A module now calls `notifyDataChanged()` after a write that could move a count,
-and App also refetches on `visibilitychange` → visible (someone else's work moves the same numbers while
-you're in another tab). Deliberately a payloadless event: the badge query is server-side and cheap, and a
-module shouldn't have to know which of its writes feeds which badge. **Wire new count-moving writes to it.**
+app just never asked again. A **every successful non-GET through `hooks/useApi` fires `notifyDataChanged()`** — central, so a module (and
+any module added later) gets live badges without anyone remembering. App also refetches on
+`visibilitychange` → visible, since someone else's work moves the same numbers while you're in another tab.
+Deliberately a payloadless, 300ms-coalesced event: the badge query is server-side and cheap (~4ms at
+production row counts, measured), and a module shouldn't have to know which of its writes feeds which badge.
+- **`NO_BADGE_PATHS` (`/comms/`, `/ai/`) opt out** — chat messages, read receipts and cached translations are
+  writes by HTTP method only, they feed no compliance count, and they happen constantly. Note the asymmetry
+  that makes a skip list safe here: getting it wrong costs a few extra 4ms GETs, while forgetting to opt a
+  module IN is the bug this replaced. So the default is on and the list stays short.
+- The two `/comms/` endpoints that really do create records — **`to-task`** (work order) and **`to-record`**
+  (qms_record) — call `notifyDataChanged()` at their call sites. Add to that list, not to the skip list, if
+  another comms endpoint starts writing outside chat.
+- `apiUpload` fires it too (attaching an SDS clears "chemical missing SDS").
+**Don't add per-module calls** for ordinary writes — they're redundant now and invite two mechanisms doing
+one job.
 
 ## Bulk edit in a log (the Monday.com shape)
 Time Tracking's log is the reference. Tick the left-hand boxes → a bar above the list shows the count and the

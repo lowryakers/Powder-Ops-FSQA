@@ -1,6 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
+import { notifyDataChanged } from '../lib/dataChanged';
 
 const BASE = '/api';
+
+// Any write can move one of the counts behind the sidebar badges and the bell,
+// so every successful non-GET announces itself from here. Doing it centrally
+// rather than per-module is the point: a stale badge was the bug, and it came
+// from a module having to remember.
+//
+// Skipped: chat traffic and cached translations. Those are writes by method
+// only — a message, a read receipt, a translation — they feed no compliance
+// count, and they happen constantly. Note the asymmetry that makes this list
+// safe: getting it wrong costs a few extra 4ms GETs, while forgetting to opt a
+// module IN is the bug being fixed. So the default is on and the list is short.
+// The two comms endpoints that DO create records (to-task, to-record) call
+// notifyDataChanged() at their call sites.
+const NO_BADGE_PATHS = ['/comms/', '/ai/'];
+const movesBadge = (path, method) =>
+  method !== 'GET' && !NO_BADGE_PATHS.some(p => path.startsWith(p));
 
 // While an admin previews the app as another user ("View as"), writes are
 // blocked client-side (the API would still act as the admin, so any change
@@ -37,6 +54,7 @@ async function apiFetch(path, options = {}) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || `API error ${res.status}`);
   }
+  if (movesBadge(path, method)) notifyDataChanged();
   return res.json();
 }
 
@@ -101,6 +119,8 @@ export async function apiUpload(path, formData, method = 'POST', onProgress) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(err.error || `API error ${res.status}`);
     }
+    // Uploads move counts too — attaching an SDS clears "chemical missing SDS".
+    if (movesBadge(path, method)) notifyDataChanged();
     return res.json();
   }
 
@@ -117,7 +137,10 @@ export async function apiUpload(path, formData, method = 'POST', onProgress) {
     xhr.onload = () => {
       let payload = null;
       try { payload = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
-      if (xhr.status >= 200 && xhr.status < 300) return resolve(payload);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (movesBadge(path, method)) notifyDataChanged();
+        return resolve(payload);
+      }
       if (xhr.status === 401) {
         localStorage.removeItem('auth_token');
         window.dispatchEvent(new CustomEvent('app-logout'));

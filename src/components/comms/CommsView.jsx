@@ -3,6 +3,7 @@ import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/use
 import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
+import { notifyDataChanged } from '../../lib/dataChanged';
 import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import NotificationStatus from './NotificationStatus.jsx';
@@ -451,6 +452,10 @@ function MessageToTaskModal({ draft, channel, users, onCancel, onJustSend, onCre
         title: title.trim(), description: draft, task_group: team,
         assigned_to: assignee.trim() || null, due_date: due, priority,
       });
+      // /comms/ writes are excluded from the automatic badge refresh (chat
+      // traffic feeds no compliance count) — but this one creates a work
+      // order, so it has to say so itself. Same for to-record below.
+      notifyDataChanged();
       onCreated();
     } catch (e) { setError(e.message || 'Could not create the task.'); setSaving(false); }
   };
@@ -1303,7 +1308,7 @@ function ConvertRecordModal({ m, onClose }) {
 
   const create = async () => {
     setBusy(true); setError('');
-    try { setDone(await apiPost(`/comms/messages/${m.id}/to-record`, { type })); }
+    try { setDone(await apiPost(`/comms/messages/${m.id}/to-record`, { type })); notifyDataChanged(); }
     catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };
