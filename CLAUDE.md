@@ -319,6 +319,16 @@ is still its own `record_type` with its own write paths; only the way in is shar
 `ModuleHub` grew an optional per-tab `visible(user)` — Out now is a read-only roll-up, so it shows for
 anyone with either form (or Ricardo's explicit `currently-out` grant, which is his whole access). `HUB_OF`
 resolves the old ids, so deep links, quick-tab picks and Settings grants all keep working untouched.
+**"Chemicals" is a behaviour, not a label.** An item in that category *requires a use specification*
+(Food Contact / Non-Food Contact / Food Grade / Non-Food Grade) on sign-out, enforced server-side.
+`activeChemicalNames()` (qms.js) is the single answer to "is this a chemical" — the `approved_chemicals`
+registry **plus** any `maintenance_items` row with `category = 'Chemicals'` — and the kiosk catalogue, the
+in-app picker and the `POST /submit/maintenance-signout` check all read it. Not everything needing a use spec
+is in the registry (baking soda is the case that raised it). Adding the category to the editor's list alone
+would have let an item *look* like a chemical while the sign-out quietly skipped its use spec, which is worse
+than not offering it at all. The category name is **`Chemicals`**, matching the group the registry is merged
+into, so hand-added and registry chemicals share one group instead of two near-identical ones.
+
 **CheckedOutPanel read only `maintenance_sign_out`**, so a knife signed out on 440-02 never appeared in
 "what's out" — the one question that screen exists to answer. It queries both now.
 

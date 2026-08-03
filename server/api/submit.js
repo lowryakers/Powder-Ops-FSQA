@@ -5,6 +5,7 @@ import { getType, CHEMICAL_USE_SPECS } from '../qms-config.js';
 import { getChannelByName, postMessageAs } from './comms.js';
 import { SCALE_FORMS } from '../scale-forms.js';
 import { recordScaleVerification } from './scale-verification.js';
+import { activeChemicalNames } from './qms.js';
 
 const router = Router();
 
@@ -259,8 +260,9 @@ router.get('/maintenance-items', (_req, res) => {
   const db = getDb();
   let rows = [];
   try { rows = db.prepare('SELECT name, category FROM maintenance_items ORDER BY sort_order, name').all(); } catch { /* table optional */ }
-  let chemicals = [];
-  try { chemicals = db.prepare('SELECT name FROM approved_chemicals ORDER BY name').all().map(r => r.name); } catch { /* table optional */ }
+  // One definition of "chemical" — the approved registry PLUS anything filed
+  // under the Chemicals category in the editable item list.
+  const chemicals = activeChemicalNames(db);
   const have = new Set(rows.map(r => r.name));
   const merged = [...rows, ...chemicals.filter(n => !have.has(n)).map(name => ({ name, category: 'Chemicals' }))];
   const groups = [];
@@ -288,8 +290,7 @@ router.post('/maintenance-signout', (req, res) => {
   if (!name || !list.length) return res.status(400).json({ error: 'Item and your name are required.' });
   if (list.length > 25) return res.status(400).json({ error: 'Too many items in one sign-out.' });
 
-  let chemicals = new Set();
-  try { chemicals = new Set(db.prepare('SELECT name FROM approved_chemicals').all().map(r => r.name)); } catch { /* optional */ }
+  const chemicals = new Set(activeChemicalNames(db));
   for (const i of list) {
     if (chemicals.has(i.name)) {
       if (!CHEMICAL_USE_SPECS.includes(i.use_spec)) {

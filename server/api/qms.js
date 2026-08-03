@@ -125,9 +125,25 @@ function maintenanceItemOptions(rows) {
 // Chemicals from the approved registry are checkable-out items too. They're
 // merged in at read time (never stored in maintenance_items) so the sign-out
 // dropdown always tracks the registry.
+// "Is this a chemical?" has one answer, used by the kiosk, the in-app form and
+// the server-side check that a use specification was picked. Two sources:
+// the approved registry, and anything filed under the Chemicals category in the
+// editable item list — because not everything that needs a use spec is in the
+// registry (baking soda is the case that raised this).
+//
+// The category IS the marker, not a label. Adding "Chemicals" to the editor as
+// a display group alone would have made an item look like a chemical while the
+// sign-out quietly skipped its use spec, which is worse than not offering it.
 export function activeChemicalNames(db) {
-  try { return db.prepare('SELECT name FROM approved_chemicals ORDER BY name').all().map(r => r.name); }
-  catch { return []; }
+  const names = new Set();
+  try {
+    for (const r of db.prepare('SELECT name FROM approved_chemicals ORDER BY name').all()) names.add(r.name);
+  } catch { /* table optional */ }
+  try {
+    const rows = db.prepare("SELECT name FROM maintenance_items WHERE category = 'Chemicals' ORDER BY sort_order, name").all();
+    for (const r of rows) names.add(r.name);
+  } catch { /* table optional */ }
+  return [...names];
 }
 function withChemicals(db, rows) {
   const have = new Set(rows.map(r => r.name));

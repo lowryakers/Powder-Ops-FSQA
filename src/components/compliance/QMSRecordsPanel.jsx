@@ -513,7 +513,11 @@ async function uploadFile(file) {
 // Add/rename/recategorize/remove/reorder tools; saved to the DB and reflected in
 // the form. Items carry a category so the dropdown can group them (Tool Box
 // Equipment List / Equipment List).
-const MAINT_CATEGORIES = ['Tool Box Equipment List', 'Equipment List', 'Calibration Weights'];
+// 'Chemicals' matches the group the approved registry is merged into, so a
+// hand-added chemical and a registry one land together rather than in two
+// near-identical groups. Picking it is what makes the sign-out ask for a use
+// specification — see activeChemicalNames() on the server.
+const MAINT_CATEGORIES = ['Tool Box Equipment List', 'Equipment List', 'Calibration Weights', 'Chemicals'];
 function ManageItemsModal({ onDone, onClose }) {
   const [items, setItems] = useState(null);
   const [saving, setSaving] = useState(false);
