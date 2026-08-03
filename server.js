@@ -62,6 +62,7 @@ import structureRoutes from './server/api/structure.js';
 import { seedStructureLists } from './server/structure-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
 import { tagQaInspectionRecords } from './server/qa-records.js';
+import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
 import receivingRoutes from './server/api/receiving.js';
 import importRoutes from './server/api/imports.js';
 import appRequestRoutes from './server/api/requests.js';
@@ -907,6 +908,14 @@ try {
   console.error('[seed] Error seeding production entries (non-fatal):', err.message);
 }
 
+// Change control over the definitions Document Control owns. Runs AFTER every
+// seed, because a seed can create the very records a definition describes — and
+// after the QMS config is loaded, since it reads and rewrites it in place.
+// Deliberately last: nothing else should observe a definition before the gate
+// has decided which version to serve.
+runControlledSync(db).catch(err =>
+  console.error('[controlled] sync failed (non-fatal):', err.message));
+
 // Seed the standard training course catalog + starter tests
 try {
   seedTrainingCourses(db);
@@ -1416,6 +1425,7 @@ app.use('/api/finance', financeRoutes);
 app.use('/api/procurement', procurementRoutes);
 app.use('/api/pay', payRoutes);
 app.use('/api/newsletter', newsletterRoutes);
+app.use('/api/controlled', controlledRoutes);
 
 // Version check (used by client to detect updates)
 app.get('/api/version', (_req, res) => {

@@ -2062,6 +2062,38 @@ function runMigrations() {
     console.warn('[db] newsletter tables unavailable:', e.message);
   }
 
+  // Controlled definitions — what Document Control has approved the app to
+  // serve. Whole table in one CREATE with no migration columns on purpose:
+  // an ALTER or an index naming a column added later is what kills a fresh
+  // database at boot (see the migration-ordering note in CLAUDE.md).
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS controlled_definitions (
+        id                TEXT PRIMARY KEY,
+        scope             TEXT NOT NULL,
+        key               TEXT NOT NULL,
+        label             TEXT,
+        approved_hash     TEXT,
+        approved_snapshot TEXT,
+        approved_at       TEXT,
+        approved_by       TEXT,
+        version           INTEGER NOT NULL DEFAULT 1,
+        pending_hash      TEXT,
+        pending_snapshot  TEXT,
+        pending_seen_at   TEXT,
+        pending_dcr_id    TEXT,
+        rejected_at       TEXT,
+        rejected_by       TEXT,
+        rejected_reason   TEXT,
+        status            TEXT NOT NULL DEFAULT 'approved',
+        UNIQUE (scope, key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_controlled_status ON controlled_definitions(status);
+    `);
+  } catch (e) {
+    console.warn('[db] controlled_definitions unavailable:', e.message);
+  }
+
   // Newsletter banner: either a built-in cover (server/newsletter-covers.js) or
   // an uploaded image. Added here, immediately after the CREATE above — a
   // column migration before its table is what kills a fresh database at boot.

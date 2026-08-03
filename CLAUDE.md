@@ -295,6 +295,29 @@ UI: `ScaleKiosk.jsx` (QR at `/kiosk/scale`, Quick Forms entry `form-scale`, live
 → `ScaleVerificationTab.jsx`, a tab in Calibration Management with one status card per form ("has today's
 check been run") and QA counter-signature. Room links to a `calibration_instruments` row when the name matches.
 
+## Controlled changes: a deployed definition is not the same as one in use
+`server/controlled.js` + `server/api/controlled.js` + `ControlledChangesPanel.jsx`. Document Control decides
+whether a change to a **form definition** (`qms-config` fields / logColumns / formCode) or an **acceptance
+criterion** (`scale-forms` tolerances) takes effect. Those ship in the code, so "doesn't take effect" can't
+mean "isn't deployed" — it means **the app keeps serving the last APPROVED snapshot** and parks the new one.
+- `syncDefinitions(db)` runs once at boot, **last**, after every seed: unchanged → nothing; **never seen →
+  recorded as the approved baseline, silently** (a fresh DB or the release that introduces this must not come
+  up with every form blank — this is the single most important rule here); changed → park as pending and
+  `entry.apply(approvedSnapshot)` rewrites the live config object in place, so `getType()` and every consumer
+  serve the approved version with no extra wiring.
+- **Verified at the point it decides something:** with a deployed 25 kg tolerance of 0.010 and an approved
+  0.003, a reading 0.006 out graded **fail** and the record stored `tolerance 0.003`.
+- Approving promotes and applies **immediately, no restart**. Removing a field is equally a change. A
+  reverted deploy clears the stale pending row. `rejected` is still approvable later (revision issued after
+  the denial) without needing another deploy.
+- Each parked change raises a **Document Change Request** and ReadyBot DMs Document Control — a blocked
+  change nobody is told about is just an outage.
+- **The panel lives in the Document Control nav group, NOT Settings** — Settings is admin-only, so Daniela
+  would never have reached it. Sidebar items can now carry `visible(user)` for exactly this (access by
+  department, not by a module grant).
+- **Log Structure stays out of scope on purpose.** Managed lists and custom fields are the self-serve layer;
+  putting Document Control in front of adding a dropdown option is how people stop using it.
+
 ## Adding a field to a QMS record type (three places, one of them easy to miss)
 `server/qms-config.js` drives the in-app form, the log columns, the record view, the Auditor View and the
 CSV importer off one `fields` entry — add the field there and to `logColumns` and all of those follow.

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign, Scale } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -64,6 +64,7 @@ const LedgerPanel = lazy(() => import('./components/office/LedgerPanel.jsx'));
 const ProcurementPanel = lazy(() => import('./components/office/ProcurementPanel.jsx'));
 const NewsletterPanel = lazy(() => import('./components/office/NewsletterPanel.jsx'));
 const NewsletterReader = lazy(() => import('./components/office/NewsletterReader.jsx'));
+const ControlledChangesPanel = lazy(() => import('./components/compliance/ControlledChangesPanel.jsx'));
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 
 const NAV_GROUPS = [
@@ -145,6 +146,10 @@ const NAV_GROUPS = [
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'certifications', label: 'Certifications', icon: BadgeCheck },
       { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
+      // Deployed changes to controlled definitions waiting on DC. Lives here,
+      // not in Settings — Settings is admin-only, and this is Document
+      // Control's own queue, not an admin toggle.
+      { id: 'controlled-changes', label: 'Controlled Changes', icon: ShieldCheck, visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control' },
       { id: 'org-chart', label: 'Org Chart', icon: Network },
     ],
   },
@@ -297,6 +302,10 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, 
             if (i.id === 'sign-out') return canSeeSignOut(user);
             if (i.id === 'office-requests') return canSeeOfficeRequests(user);
             if (i.id === 'qa-review') return canSeeQaReview(user);
+            // A nav item can decide for itself when module access isn't the
+            // right question — Controlled Changes is Document Control's by
+            // department, not by a module grant.
+            if (i.visible) return i.visible(user);
             if (i.adminOnly && user.role !== 'admin') return false;
             if (i.roles && !i.roles.includes(user.role)) return false;
             if (i.aiOnly && !aiOn) return false;
@@ -1605,6 +1614,7 @@ function App() {
           {resolvedTab === 'newsletter' && <NewsletterPanel />}
           {resolvedTab === 'pay-tracking' && <PayTrackingPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
+          {resolvedTab === 'controlled-changes' && <ControlledChangesPanel />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}
           {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}

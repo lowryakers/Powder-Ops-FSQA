@@ -1649,8 +1649,9 @@ router.post('/messages/:id/remind', (req, res) => {
   res.status(201).json({ id, remind_at: at.toISOString() });
 });
 
-// Get-or-create the ReadyBot ↔ user DM used for reminder delivery.
-function botDm(db, userId) {
+// Get-or-create the ReadyBot ↔ user DM used for reminder delivery — and by
+// anything else that needs to tell one person something (controlled changes).
+export function botDm(db, userId) {
   const bot = getBotUser(db);
   const key = [bot.id, userId].sort().join(':');
   let dm = db.prepare("SELECT * FROM chat_channels WHERE kind = 'dm' AND dm_key = ?").get(key);
