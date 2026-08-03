@@ -99,6 +99,12 @@ export const MAINTENANCE_TOOLBOX_ITEMS = MAINTENANCE_ITEM_GROUPS.flatMap(g => g.
 // chemical from the approved registry (GMP: intended-use must be recorded).
 export const CHEMICAL_USE_SPECS = ['Food Contact', 'Non-Food Contact', 'Food Grade', 'Non-Food Grade'];
 
+// How a signed-out item ended up. A chemical that runs out never comes back,
+// so "Returned" can't be the only way to close a record. Used up is the one
+// that feeds a restock suggestion — see office.js /supply/suggestions.
+export const USED_UP_REASON = 'Used up / ran out';
+export const RETURN_REASONS = ['Returned', USED_UP_REASON, 'Damaged', 'Lost'];
+
 export const QMS_TYPES = {
   document_change_request: {
     key: 'document_change_request',
@@ -532,10 +538,14 @@ export const QMS_TYPES = {
       { key: 'return_date', label: 'Return Date', type: 'date' },
       { key: 'return_time', label: 'Return Time', type: 'text' },
       { key: 'condition_returned', label: 'Returned Condition (Good / Bad)', type: 'select', options: ['Good', 'Bad'] },
+      // Why the item didn't come back the normal way. A reason you can filter
+      // is worth more than a sentence someone has to read, and USED_UP_REASON
+      // is what raises a restock suggestion for the office.
+      { key: 'return_reason', label: 'Outcome', type: 'select', options: RETURN_REASONS },
       { key: 'comments', label: 'Comments', type: 'textarea' },
       { key: 'retrieved_by', label: 'Retrieved By (QA)', type: 'text' },
     ],
-    logColumns: ['record_number', 'item_description', 'qty', 'tool_box', 'use_spec', 'employee_name', 'record_date', 'status', 'approvals'],
+    logColumns: ['record_number', 'item_description', 'qty', 'tool_box', 'use_spec', 'employee_name', 'record_date', 'return_reason', 'status', 'approvals'],
     approvals: [
       { key: 'quality', label: 'Reviewed by QA', required: true, departments: ['qa'] },
     ],

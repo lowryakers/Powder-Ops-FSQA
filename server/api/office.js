@@ -5,6 +5,7 @@ import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { aiEnabled, translateText } from '../ai.js';
 import { extractInvoiceText } from '../invoice-text.js';
+import { USED_UP_REASON } from '../qms-config.js';
 
 // Office Ops: supply ordering + time tracking (replaces two Monday boards).
 // Submitting is open to supervisors + admins (or anyone explicitly granted the
@@ -400,6 +401,107 @@ router.delete('/time/adjustments/:id', (req, res) => {
   db.prepare('DELETE FROM time_adjustments WHERE id = ?').run(req.params.id);
   logAudit(req.user, 'delete', 'time_adjustment', req.params.id, null, existing, null, existing.employee_name);
   res.json({ deleted: req.params.id });
+});
+
+// ── Restock suggestions ──────────────────────────────────────────────────────
+// A chemical that runs out never comes back, so signing it in as "Used up /
+// ran out" is the only honest way to close the record — and it's also the
+// earliest anyone knows to reorder.
+//
+// These are SUGGESTIONS, deliberately not supply requests. Three people
+// finishing the same sanitizer would otherwise put three near-identical rows in
+// the office queue, and a queue with duplicates in it stops being read. So they
+// are grouped by item, live in their own dismissible strip, and only become a
+// real request when someone decides they should — the decision about what gets
+// ordered stays with the person who orders.
+//
+// There's no suggestions table: a suggestion IS a sign-out record whose outcome
+// was "used up", and its state lives on that record. Nothing to keep in sync.
+const SUGGESTION_SQL = `
+  SELECT id, data, record_number, record_date, created_by
+  FROM qms_records
+  WHERE record_type = 'maintenance_sign_out'
+    AND json_extract(data, '$.return_reason') = ?
+    AND COALESCE(json_extract(data, '$.suggestion_state'), 'open') = 'open'
+  ORDER BY record_date DESC, created_at DESC LIMIT 500`;
+
+function openSuggestions(db) {
+  let rows = [];
+  try { rows = db.prepare(SUGGESTION_SQL).all(USED_UP_REASON); } catch { return []; }
+  // Group by item: "3 people reported this" is one thing to act on, not three.
+  const byItem = new Map();
+  for (const r of rows) {
+    let d = {};
+    try { d = JSON.parse(r.data || '{}'); } catch { /* skip */ }
+    const item = (d.item_description || '').trim();
+    if (!item) continue;
+    if (!byItem.has(item)) byItem.set(item, { item_name: item, count: 0, ids: [], last_reported: null, reported_by: [], notes: [] });
+    const g = byItem.get(item);
+    g.count += 1;
+    g.ids.push(r.id);
+    if (!g.last_reported || (r.record_date || '') > g.last_reported) g.last_reported = r.record_date;
+    const who = d.employee_name || r.created_by;
+    if (who && !g.reported_by.includes(who)) g.reported_by.push(who);
+    if (d.comments && !g.notes.includes(d.comments)) g.notes.push(d.comments);
+  }
+  return [...byItem.values()].sort((a, b) => (b.last_reported || '').localeCompare(a.last_reported || ''));
+}
+
+router.get('/supply/suggestions', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json(openSuggestions(getDb()));
+});
+
+// Stamp the state onto each contributing record, so a dismissed or ordered
+// suggestion doesn't come back next time the strip loads.
+function markSuggestion(db, ids, state) {
+  const get = db.prepare('SELECT data FROM qms_records WHERE id = ?');
+  const upd = db.prepare("UPDATE qms_records SET data = ?, updated_at = datetime('now') WHERE id = ?");
+  let n = 0;
+  db.transaction(() => {
+    for (const id of ids) {
+      const row = get.get(id);
+      if (!row) continue;
+      let d = {};
+      try { d = JSON.parse(row.data || '{}'); } catch { d = {}; }
+      d.suggestion_state = state;
+      upd.run(JSON.stringify(d), id);
+      n += 1;
+    }
+  })();
+  return n;
+}
+
+router.post('/supply/suggestions/dismiss', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(x => typeof x === 'string') : [];
+  if (!ids.length) return res.status(400).json({ error: 'Nothing selected' });
+  const db = getDb();
+  const n = markSuggestion(db, ids, 'dismissed');
+  logAudit(req.user, 'update', 'supply_suggestion', null, { dismissed: n, item: req.body?.item_name || null });
+  res.json({ dismissed: n });
+});
+
+// Turn a suggestion into a real supply request. The office still fills in
+// quantity and supplier the normal way; this only saves the retyping and keeps
+// the link back to who reported it.
+router.post('/supply/suggestions/order', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(x => typeof x === 'string') : [];
+  const item = String(req.body?.item_name || '').trim();
+  if (!item) return res.status(400).json({ error: 'Item name is required' });
+  const db = getDb();
+  const id = uuid();
+  const reported = Array.isArray(req.body?.reported_by) ? req.body.reported_by.filter(Boolean) : [];
+  const notes = ['Reported used up on the Sign In/Out log', reported.length ? `by ${reported.join(', ')}` : '']
+    .filter(Boolean).join(' ');
+  db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, urgent, label, notes, requested_by, requested_by_id)
+              VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`)
+    .run(id, item, req.body?.qty ?? null, req.body?.uom || null, req.body?.label || null, notes, req.user.name, req.user.id);
+  if (ids.length) markSuggestion(db, ids, 'ordered');
+  const created = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(id);
+  logAudit(req.user, 'create', 'supply_order', id, { item_name: item, from_suggestion: true, records: ids.length }, null, created, item);
+  res.status(201).json(created);
 });
 
 // ── Hours & spend ────────────────────────────────────────────────────────────

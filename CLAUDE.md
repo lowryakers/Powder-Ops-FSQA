@@ -332,6 +332,20 @@ into, so hand-added and registry chemicals share one group instead of two near-i
 **CheckedOutPanel read only `maintenance_sign_out`**, so a knife signed out on 440-02 never appeared in
 "what's out" — the one question that screen exists to answer. It queries both now.
 
+## "It ran out" is an outcome, not a missing return
+A chemical that runs out never comes back, so "Returned" can't be the only way to close a
+`maintenance_sign_out`. `return_reason` (`RETURN_REASONS` in qms-config.js: Returned / **Used up / ran out** /
+Damaged / Lost) sits beside the existing `comments` box and is in `logColumns`, so it filters — a reason you
+can filter is worth more than a sentence someone has to read.
+**Used up raises a restock SUGGESTION, never a supply request.** `GET|POST /office/supply/suggestions[/dismiss|/order]`
+(office.js). Three people finishing the same sanitizer would otherwise put three near-identical rows in
+Marnee's queue, and a queue with duplicates in it stops being read — so suggestions are **grouped by item**,
+live in their own dismissible amber strip above the orders list, and only become a real request when someone
+clicks Add to orders. What gets ordered stays the office's decision.
+**There is no suggestions table.** A suggestion *is* a sign-out record whose outcome was "used up";
+`data.suggestion_state` (`open` / `dismissed` / `ordered`) lives on that record, so nothing can fall out of
+sync. `openSuggestions()` reads it with `json_extract`, bounded to 500.
+
 ## QMS records: who may change a filed record
 `server/api/qms.js` — **filing stays open on purpose** (anyone who sees a deviation should be able to
 report it), everything after that is records integrity. `mayEdit()`: the filer while unsigned, plus

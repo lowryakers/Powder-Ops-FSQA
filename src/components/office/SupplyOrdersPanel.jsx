@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Search, Repeat, Trash2, Upload, FileText, Download, AlertTriangle, ExternalLink, Pencil, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, Repeat, Trash2, Upload, FileText, Download, AlertTriangle, ExternalLink, Pencil, X, ChevronUp, ChevronDown, Lightbulb, Plus } from 'lucide-react';
 import FilePreview from '../FilePreview.jsx';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
@@ -10,6 +10,66 @@ import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
 const LABELS = ['Warehouse/Production', 'Cleaning', 'Break room', 'Maintenance', 'Office'];
+
+// Items reported "used up / ran out" when they were signed back in — the
+// earliest anyone knows to reorder something.
+//
+// Deliberately SUGGESTIONS in their own strip, not rows in the orders list.
+// Three people finishing the same sanitizer would otherwise put three
+// near-identical requests in the queue, and a queue with duplicates in it
+// stops being read. Grouped by item, dismissible, and one click turns one into
+// a real request — the decision about what gets ordered stays with the office.
+function SuggestionStrip({ tr = (x) => x, onOrdered }) {
+  const { data, refresh } = useApiGet('/office/supply/suggestions');
+  const [busy, setBusy] = useState('');
+  const list = data || [];
+  if (!list.length) return null;
+
+  const act = async (s, kind) => {
+    setBusy(s.item_name);
+    try {
+      if (kind === 'dismiss') await apiPost('/office/supply/suggestions/dismiss', { ids: s.ids, item_name: s.item_name });
+      else {
+        await apiPost('/office/supply/suggestions/order', { ids: s.ids, item_name: s.item_name, reported_by: s.reported_by });
+        onOrdered?.();
+      }
+      refresh();
+    } finally { setBusy(''); }
+  };
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-2">
+      <p className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
+        <Lightbulb size={14} />
+        {list.length} {list.length === 1 ? tr('item reported used up') : tr('items reported used up')}
+        <span className="font-normal text-amber-700/80">· {tr('not requests yet')}</span>
+      </p>
+      <div className="space-y-1.5">
+        {list.map(s => (
+          <div key={s.item_name} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2.5 py-1.5">
+            <span className="font-medium text-sm text-gray-900 min-w-0 break-words">{s.item_name}</span>
+            {s.count > 1 && <span className="px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-bold">×{s.count}</span>}
+            <span className="text-[11px] text-gray-500 truncate">
+              {s.reported_by.slice(0, 3).join(', ')}{s.reported_by.length > 3 ? '…' : ''}
+              {s.last_reported ? ` · ${s.last_reported}` : ''}
+            </span>
+            <div className="ml-auto flex items-center gap-1.5 shrink-0">
+              <button onClick={() => act(s, 'order')} disabled={busy === s.item_name}
+                className="inline-flex items-center gap-1 px-2 py-1 bg-powder-600 text-white rounded-lg text-[11px] font-medium hover:bg-powder-700 disabled:opacity-50">
+                <Plus size={11} /> {tr('Add to orders')}
+              </button>
+              <button onClick={() => act(s, 'dismiss')} disabled={busy === s.item_name}
+                className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-50" data-tip="Dismiss"><X size={13} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {list.some(s => s.notes.length > 0) && (
+        <p className="text-[11px] text-amber-800/80">{list.filter(s => s.notes.length).map(s => `${s.item_name}: ${s.notes[0]}`).join(' · ')}</p>
+      )}
+    </div>
+  );
+}
 const STATUS_FLOW = ['new', 'ordered', 'received', 'paid'];
 // People paste links as "amazon.com/..." as often as with the scheme, and a
 // bare href like that is treated as a path — the click goes nowhere. Normalize
@@ -251,6 +311,7 @@ function OrdersLog({ refreshKey, onChanged }) {
 
   return (
     <div className="space-y-3">
+      <SuggestionStrip onOrdered={refresh} />
       <div className="flex items-center gap-2 flex-wrap">
         {[['open', 'Open'], ['new', 'New'], ['ordered', 'Ordered'], ['received', 'Received'], ['paid', 'Paid'], ['all', 'All']].map(([v, l]) => (
           <button key={v} onClick={() => setStatusFilter(v)}
