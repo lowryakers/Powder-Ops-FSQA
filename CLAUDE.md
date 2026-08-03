@@ -329,6 +329,18 @@ admin/supervisor/QA/document_control; **any approval signature closes the record
 `mayDelete()`: admin only, and **never once signed** — a signed record is changed by status, not removed
 (bulk-delete skips signed rows and reports `skipped_signed` rather than taking the selection down with it).
 `bulk-update` needs a records role; CSV `import` is admin-only.
+**The client must not decide this — the server tells it.** `withPermissions()` stamps `can_edit` /
+`can_delete` / `edit_block_reason` onto every record the API returns, and the UI renders what it's told.
+It used to gate Edit on `canEditModule()` alone — a *module* permission — so someone with edit rights on the
+log was offered the pencil on a record the server would refuse, filled the form in, and the save did nothing
+(`handleUpdate` had no catch, so the 403 rejected silently and the modal just sat there). A deliberate rule
+read as a broken screen. Keep policy in `mayEdit`/`mayDelete` only; a second copy on the client is how the
+two drift apart.
+**The way back from a signature is revoke, not admin.** `DELETE /:type/:id/approve/:role` allows an admin
+**or the original signer** — so the normal case (sign off, then spot a wrong lot #) is self-service: revoke
+your own signature, correct the record, sign again, all three steps audited. Say this before telling anyone
+to find an admin.
+
 This was missing entirely: `/api/qms` mounts with no router guard and the handlers had none, so any
 signed-in operator could edit or hard-delete any deviation, non-conformance or on-hold record. Only
 `bulk-delete` had ever got the admin check. If you add a QMS write path, guard it — the mount will not.

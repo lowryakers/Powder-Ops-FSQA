@@ -284,7 +284,7 @@ router.get('/:type', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
   const db = getDb();
   const rows = db.prepare('SELECT * FROM qms_records WHERE record_type = ? ORDER BY (record_date IS NULL), record_date DESC, created_at DESC').all(cfg.key);
-  res.json(rows.map(flatten));
+  res.json(rows.map(r => withPermissions(flatten(r), r, req.user)));
 });
 
 router.get('/:type/:id', (req, res) => {
@@ -292,7 +292,7 @@ router.get('/:type/:id', (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json(flatten(row));
+  res.json(withPermissions(flatten(row), row, req.user));
 });
 
 // Cross-module automation: a failed organoleptic sensory test means the product
@@ -396,6 +396,25 @@ function mayDelete(user, row) {
   return !hasAnySignature(row);
 }
 
+// What THIS user may do to THIS record, decided by the same two functions the
+// write paths enforce. The client used to gate Edit on module permission alone,
+// which offered the button on records the server would refuse — someone would
+// fill the form in and the save would do nothing. The server is the authority;
+// the client renders what it's told rather than keeping a second copy of the
+// rule, which is how the two drift apart.
+function withPermissions(flat, row, user) {
+  const canEdit = mayEdit(user, row);
+  return {
+    ...flat,
+    can_edit: canEdit,
+    can_delete: mayDelete(user, row),
+    edit_block_reason: canEdit ? null
+      : hasAnySignature(row)
+        ? 'This record carries an approval signature. Only an admin can amend it — or the signature can be revoked first.'
+        : 'You can only correct records you filed. Ask QA, a supervisor or Document Control to amend it.',
+  };
+}
+
 // ── update ───────────────────────────────────────────────────────────────────
 router.put('/:type/:id', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
@@ -421,7 +440,8 @@ router.put('/:type/:id', (req, res) => {
     req.body.capa_id !== undefined ? (req.body.capa_id || null) : existing.capa_id,
     req.body.notes ?? existing.notes, req.params.id);
   logAudit(req.user, 'qms_updated', cfg.key, req.params.id, { record_number: existing.record_number });
-  const updated = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id));
+  const updatedRow = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
+  const updated = withPermissions(flatten(updatedRow), updatedRow, req.user);
   try { syncOrganolepticDisposal(db, cfg, updated, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
   res.json(updated);
 });
@@ -489,7 +509,10 @@ router.post('/:type/:id/approve', (req, res) => {
   approvals[appr.key] = { name: req.user.name, user_id: req.user.id, role: req.user.role, signed_at: new Date().toISOString(), attestation };
   db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), req.params.id);
   logAudit(req.user, `qms_signed_${appr.key}`, cfg.key, req.params.id, { record_number: row.record_number, attestation });
-  res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
+  {
+    const r = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
+    res.json(withPermissions(flatten(r), r, req.user));
+  }
 });
 
 // Bulk QA review — ROUTINE records only. Limited to the high-volume sign-out
@@ -541,7 +564,10 @@ router.delete('/:type/:id/approve/:role', (req, res) => {
   delete approvals[req.params.role];
   db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), req.params.id);
   logAudit(req.user, `qms_unsigned_${req.params.role}`, cfg.key, req.params.id, { record_number: row.record_number });
-  res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id)));
+  {
+    const r = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
+    res.json(withPermissions(flatten(r), r, req.user));
+  }
 });
 
 // ── delete (single) ──────────────────────────────────────────────────────────

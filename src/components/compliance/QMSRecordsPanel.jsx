@@ -250,9 +250,18 @@ function RecordForm({ cfg, initial, onSave, onCancel }) {
     return base;
   });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const docFiles = form.document_url ? [{ url: form.document_url, originalName: 'Attached form' }] : [];
-  const submit = async (e) => { e.preventDefault(); setSaving(true); try { await onSave(form); } finally { setSaving(false); } };
+  // A refused save used to reject silently: the button un-greyed and nothing
+  // else happened, which reads exactly like a broken app. The server sends a
+  // sentence explaining the refusal — show it.
+  const submit = async (e) => {
+    e.preventDefault(); setSaving(true); setError('');
+    try { await onSave(form); }
+    catch (err) { setError(err.message || 'Could not save this record.'); }
+    finally { setSaving(false); }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onCancel}>
@@ -314,6 +323,12 @@ function RecordForm({ cfg, initial, onSave, onCancel }) {
           <span>Logged on paper (historical)<span className="block text-[11px] text-gray-400">Signatures live on the original form — attach it above. Not flagged as awaiting in-system approval.</span></span>
         </label>
         <p className="text-[11px] text-gray-400">Approvals are applied from the record's detail view by an authorized user.</p>
+
+        {error && (
+          <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" /> <span>{error}</span>
+          </div>
+        )}
 
         <div className="flex items-center gap-2 pt-1">
           <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : `Save ${cfg.singular}`}</button>
@@ -460,9 +475,20 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
 
         <div className="flex items-center gap-2 px-5 py-3 border-t border-gray-200">
           <button onClick={downloadPdf} className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 flex items-center gap-1.5"><Download size={14} /> PDF</button>
+          {/* Module permission says whether you may edit THIS LOG; the server
+              says whether you may edit THIS RECORD (a signed record is closed;
+              an unsigned one is the filer's or a records role's to correct).
+              Offering the button and then refusing the save is what made a
+              deliberate rule look like a broken screen. */}
+          {canEdit && rec.can_edit === false && rec.edit_block_reason && (
+            <span className="text-[11px] text-gray-500 flex items-start gap-1.5 flex-1 min-w-0">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-500" />
+              <span>{rec.edit_block_reason}</span>
+            </span>
+          )}
           <div className="flex-1" />
-          {canEdit && <button onClick={() => onDelete(rec)} className="px-3 py-1.5 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 flex items-center gap-1.5"><Trash2 size={14} /> Delete</button>}
-          {canEdit && <button onClick={() => onEdit(rec)} className="px-3 py-1.5 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 flex items-center gap-1.5"><Edit2 size={14} /> Edit</button>}
+          {canEdit && rec.can_delete !== false && <button onClick={() => onDelete(rec)} className="px-3 py-1.5 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 flex items-center gap-1.5"><Trash2 size={14} /> Delete</button>}
+          {canEdit && rec.can_edit !== false && <button onClick={() => onEdit(rec)} className="px-3 py-1.5 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 flex items-center gap-1.5"><Edit2 size={14} /> Edit</button>}
         </div>
       </div>
     </div>
