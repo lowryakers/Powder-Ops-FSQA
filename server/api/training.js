@@ -591,6 +591,12 @@ const ADMIN_COLUMNS = /^(training tests|training sign sheet|video links what was
 //     trained to clean a machine they were trained to run.
 const mentionsCleaning = (s) => /\bclean/.test(s);
 
+// Plant vocabulary a general word match can't reach. Every heading and SOP here
+// writes "cGMP"; the course is named "GMP". Keep this table tiny — it is local
+// knowledge, not a second mapping system, and the mapping step is where real
+// judgement belongs.
+const SYNONYMS = { cgmp: 'gmp' };
+
 function suggestCourse(heading, courses) {
   const h = normName(heading);
   if (!h) return null;
@@ -608,7 +614,7 @@ function suggestCourse(heading, courses) {
     let score = 0;
     for (const w of words) {
       if (w.length < 3) continue;              // "wi", "of" — noise, not evidence
-      if (vocab.has(w)) score += w.length >= 4 ? 2 : 1;
+      if (vocab.has(w) || vocab.has(SYNONYMS[w])) score += w.length >= 4 ? 2 : 1;
     }
     if (!score) continue;
     if (mentionsCleaning(title) !== mentionsCleaning(h)) score -= 3;
@@ -619,7 +625,10 @@ function suggestCourse(heading, courses) {
 
 function analyzeBuffer(db, buffer) {
   const parsed = parseTrainingLog(buffer);
-  const courses = db.prepare('SELECT id, title, code FROM training_courses').all();
+  // ORDER BY so a tie between two equally-plausible courses resolves the same
+  // way every run — a suggestion that changes between two previews of the same
+  // file is worse than one that is merely debatable.
+  const courses = db.prepare('SELECT id, title, code FROM training_courses ORDER BY code, title').all();
   const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
   const userByName = new Map(users.map(u => [personKey(u.name), u]));
 

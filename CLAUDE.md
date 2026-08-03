@@ -586,9 +586,27 @@ plant's real 10-question test (transcribed from the signed document, answer key 
 - Cadence is one-time + retrain-on-revision, not annual: the WI implies retraining when the *document*
   changes, and inventing an annual rule would put the plant overdue on a date nobody agreed to. SAF-201 is
   the exception at 12 months (emergency-response awareness genuinely is annual).
-- With these, the log's suggestions go 11 → 24 headings and a full import goes **608 → 1,382** records.
-- **Still unmatched: Forklift (314), Pallet Jack (273), cGMP Policy SOP 401 (216)** — no course and no
-  document supplied yet. `cGMP POLICY SOP 401` deliberately suggests nothing rather than guessing GMP-101.
+Then the powered industrial trucks, from the plant's own material:
+- **FORK-101** Forklift Safety & Certification carries the real 20-question bilingual quiz, graded against
+  the MASTER KEY sheet that shipped with it. **The Spanish is the plant's own wording** in
+  `training_questions.prompt_es` / `options_es`, not machine translation — a translated safety test is not
+  the test people signed. (Accents and five plain misspellings were corrected; no answer or meaning moved.)
+- **PJ-101** Electric Pallet Jack Safety — course only, no test: none was supplied, and inventing one for a
+  safety topic and presenting it as the plant's would be worse than having none.
+- Both are **36 months**, from 29 CFR 1910.178(l)(4)(iii) (three-yearly operator evaluation) — and the
+  plant's own quiz answers Q17 the same way. The one cadence here taken from a rule rather than left to the
+  user.
+- `SYNONYMS = { cgmp: 'gmp' }` in `suggestCourse` is how `cGMP POLICY SOP 401` reaches GMP-101; every
+  heading and SOP here writes "cGMP" and the course is named "GMP". **Keep that table tiny** — it is local
+  vocabulary, not a second mapping system.
+- The courses query is `ORDER BY code, title` so a tie between two equally-plausible courses resolves the
+  same way every run. A suggestion that changes between two previews of the same file is worse than one
+  that is merely debatable.
+- With all of these, every heading maps: suggestions go 11 → **27 of 27** real headings, and a full import
+  goes **608 → 1,950** records (3,421 recognised on a re-run).
+- **SOP 401 V3 says "biannual cGMP test" where V2 said "annual"** — ambiguous in their own document (twice a
+  year, or every two years?). GMP-101 is left at 12 months until Document Control rules; do not silently
+  change it.
 
 ## Universal file importer (Monday / Airtable / Drive / Slack / desktop)
 `server/tabular.js` reads **CSV / TSV / XLSX with no new dependencies** (XLSX is a zip of XML via the

@@ -94,6 +94,17 @@ const WI_COURSES = [
   { code: 'SAF-201', title: 'Fire Extinguisher & Emergency Exit Awareness', category: 'Safety',
     depts: [], retrain_months: 12, has_test: true,
     description: 'Emergency evacuation and fire extinguisher awareness: alarm response, keeping exit routes clear, the PASS technique, when NOT to fight a fire, primary/secondary exits and the assembly point.' },
+  // Powered industrial trucks. Both are three-yearly because 29 CFR
+  // 1910.178(l)(4)(iii) requires the operator's performance to be evaluated at
+  // least once every three years — and the plant's own quiz answers Q17 the
+  // same way. This is the one cadence here taken from a rule rather than a
+  // guess, so it is set rather than left to the user.
+  { code: 'FORK-101', title: 'Forklift Safety & Certification', category: 'Safety',
+    depts: ['warehouse', 'batching'], retrain_months: 36, has_test: true,
+    description: 'Powered industrial truck operation under 29 CFR 1910.178: forklift characteristics, load centre and centre of gravity, the stability triangle, load handling, pre-shift inspection, trailer and dock safety, travelling on ramps, refuelling and battery changing, and safe mounting and dismounting.' },
+  { code: 'PJ-101', title: 'Electric Pallet Jack Safety', category: 'Safety',
+    depts: ['warehouse'], retrain_months: 36, has_test: false,
+    description: 'Powered pallet jack operation: three-wheel design and the rear drive/brake wheel, the steering-handle controls, stopping by "plugging" and its tipping risk, walkie vs walkie-rider types, and the requirement to be checked out on the specific machine. Pre-use inspection to a company checklist (brakes, controls, emergency switch) with repairs before use. Safe operation: forks lowered, squared and wide enough, load centred and within rated capacity, extra caution on high-lift carriages, all body parts inside the vehicle boundaries, facing the direction of travel, one hand on the controls, horn where needed, wide turns, no riders, no pushing or pulling other loads or vehicles, no raising or lowering while moving, and a complete stop before stepping off.' },
 ];
 
 // The plant's own test, transcribed from the signed document (answer key
@@ -112,6 +123,97 @@ const WI_TESTS = {
       { type: 'multiple_choice', prompt: 'What should you do if you notice a blocked exit?', options: ['Ignore it', 'Move it only if convenient', 'Report it immediately', 'Place a sign over it'], correct: '2' },
       { type: 'multiple_choice', prompt: 'Who should use a fire extinguisher?', options: ['Any employee who wants to try', 'Only trained employees and only if it is safe', 'Only supervisors', 'Only maintenance staff'], correct: '1' },
       { type: 'multiple_choice', prompt: 'What should employees know before an emergency occurs?', options: ['Where the coffee machine is', 'The primary and secondary exits and the assembly point', 'The inventory count', 'The shipping schedule'], correct: '1' },
+    ],
+  },
+  // The plant's own Forklift Safety Quiz, both languages, graded against the
+  // MASTER KEY sheet that shipped with it. The Spanish is the plant's own
+  // wording carried into prompt_es/options_es rather than machine-translated —
+  // a translation of a safety test is not the test people signed. Accents and
+  // a handful of plain misspellings ("Obretos", "montecargas", "programodo",
+  // "desconetar", "obtacles") were corrected; no answer or meaning changed.
+  'FORK-101': {
+    title: 'Forklift Safety Quiz · Prueba de Seguridad con Montacargas', passing_score: 80,
+    questions: [
+      { type: 'multiple_choice', correct: '3',
+        prompt: 'Who can operate forklifts?', prompt_es: '¿Quiénes pueden operar un montacargas?',
+        options: ['Truck drivers.', 'Supervisors.', 'Any employee on duty.', 'Trained and authorized workers.'],
+        options_es: ['Choferes de camión.', 'Supervisores.', 'Cualquier empleado de turno.', 'Obreros entrenados y autorizados.'] },
+      { type: 'multiple_choice', correct: '0',
+        prompt: 'How many people can ride on a forklift?', prompt_es: '¿Cuánta gente puede ir en un montacargas?',
+        options: ['Only the operator, unless the truck is equipped for passengers.', 'The operator plus any other authorized operator.', 'Up to three if reasonable hand holds are available.', 'There is no pre-determined limit.'],
+        options_es: ['Solo el operador, a menos que el montacargas esté hecho para pasajeros.', 'El operador más cualquier otro operador autorizado.', 'Hasta tres si hay manijas adecuadas disponibles.', 'No hay límite predeterminado.'] },
+      { type: 'multiple_choice', correct: '3',
+        prompt: 'The "stability triangle" is used to describe:', prompt_es: 'Se usa el "triángulo de estabilidad" para describir:',
+        options: ['The forklift suspension system.', 'The proper way for getting on and off a forklift.', 'A method for making a "three point turn" with rear steering.', 'How the unit/load center of gravity can tip over a forklift.'],
+        options_es: ['El sistema de suspensión del montacargas.', 'La manera correcta de entrar y salir del montacargas.', 'Un método para dar una "vuelta de tres puntos" con las ruedas traseras.', 'Cómo el centro de gravedad de la unidad/carga puede hacer volcar al montacargas.'] },
+      { type: 'multiple_choice', correct: '2',
+        prompt: 'How often should operators inspect their forklift?', prompt_es: '¿Cuán a menudo deben los operadores revisar su montacargas?',
+        options: ['Hourly.', 'Weekly.', 'Every shift.', 'Monthly.'],
+        options_es: ['Cada hora.', 'Cada semana.', 'Cada turno.', 'Cada mes.'] },
+      { type: 'multiple_choice', correct: '1',
+        prompt: 'Who has the right-of-way?', prompt_es: '¿Quién tiene derecho a la vía?',
+        options: ['The largest forklift.', 'Pedestrians.', 'Forklifts approaching from the right.', 'Forklifts in the main aisle.'],
+        options_es: ['El montacargas más grande.', 'Los peatones.', 'Los montacargas que vienen por la derecha.', 'Los montacargas en el pasillo principal.'] },
+      { type: 'multiple_choice', correct: '0',
+        prompt: 'What is the first thing to do before driving into a trailer?', prompt_es: '¿Qué se debe hacer primero antes de entrar en un tráiler?',
+        options: ['Check that the trailer is secured with chocks or another locking mechanism.', 'Raise the forks high enough to clear the dock plate.', 'Turn on available lighting.', 'Advise dock supervisor that you are entering the trailer.'],
+        options_es: ['Ver si el tráiler está asegurado con trancas u otros mecanismos de seguridad.', 'Alzar las puntas lo justo para pasar la plancha del muelle.', 'Encender las luces.', 'Avisar al supervisor del muelle que va a entrar en el tráiler.'] },
+      { type: 'multiple_choice', correct: '1',
+        prompt: 'How high should a load be carried?', prompt_es: '¿Qué tan alto se debe llevar una carga?',
+        options: ['Low enough to see over.', 'As low as possible, preferably 2 to 4 inches off the ground.', 'High enough to clear obstacles in your path.', 'High enough to see under.'],
+        options_es: ['Lo suficientemente bajo para ver por encima.', 'Lo más bajo posible, preferiblemente de 2 a 4 pulgadas del piso.', 'Lo suficientemente alto para evitar objetos a su paso.', 'Lo suficientemente alto para ver por debajo.'] },
+      { type: 'multiple_choice', correct: '3',
+        prompt: 'When traveling down a ramp or incline:', prompt_es: 'Al bajar una rampa o declive:',
+        options: ['Avoid turning if possible.', 'Back up when loaded.', 'Back down when loaded.', 'Both A. and C.'],
+        options_es: ['Evite girar si es posible.', 'Vaya marcha atrás hacia arriba cuando esté cargado.', 'Vaya marcha atrás hacia abajo cuando esté cargado.', 'A. y C.'] },
+      { type: 'multiple_choice', correct: '2',
+        prompt: 'How soon should repairs be made to a forklift?', prompt_es: '¿Qué tan pronto se debe reparar un montacargas?',
+        options: ['As soon as possible.', 'At the next scheduled maintenance time.', 'Before the unit is used.', 'At the end of your shift.'],
+        options_es: ['En cuanto sea posible.', 'En el próximo mantenimiento programado.', 'Antes de usar la unidad.', 'Al final de su turno.'] },
+      { type: 'multiple_choice', correct: '3',
+        prompt: 'When is it OK to travel with a load raised more than a few inches?', prompt_es: '¿Cuándo está bien ir con la carga elevada más de unas pocas pulgadas?',
+        options: ['Whenever there is sufficient clearance.', 'Whenever you know the floor to be free of bumps.', 'Whenever you need to see under the load.', 'Never.'],
+        options_es: ['Cuando haya suficiente espacio.', 'Cuando sepa que el piso está libre de irregularidades.', 'Cuando necesite ver bajo la carga.', 'Nunca.'] },
+      { type: 'multiple_choice', correct: '0',
+        prompt: 'The minimum distance the forks should extend into a pallet is:', prompt_es: '¿Cuál es la distancia mínima que las puntas deben entrar en una paleta?',
+        options: ['All the way.', 'Half way.', 'Quarter way.', 'Far enough to balance the load.'],
+        options_es: ['Al fondo.', 'A medias.', 'Una cuarta parte.', 'Lo suficiente para equilibrar la carga.'] },
+      { type: 'multiple_choice', correct: '2',
+        prompt: 'When should an operator raise or lower a load?', prompt_es: '¿Cuándo debe un operador subir o bajar una carga?',
+        options: ["As soon as it's secure on the tines.", 'When approaching the lift.', 'Only while stopped.', 'When necessary to improve load balance.'],
+        options_es: ['Apenas esté segura en las puntas.', 'Al acercarse a levantar.', 'Solo al estar detenido.', 'Cuando sea necesario mejorar el equilibrio de la carga.'] },
+      { type: 'multiple_choice', correct: '1',
+        prompt: 'Who is responsible for verifying the security of a trailer before loading or unloading?', prompt_es: '¿Quién es responsable de verificar la seguridad de un tráiler antes de cargar o descargar?',
+        options: ['The dock supervisor.', 'The forklift operator.', 'The truck driver.', 'Whoever the company designates.'],
+        options_es: ['El supervisor del muelle.', 'El operador del montacargas.', 'El camionero.', 'Quien sea que la compañía señale.'] },
+      { type: 'multiple_choice', correct: '0',
+        prompt: 'Training on one type of vehicle:', prompt_es: 'El entrenarse en un tipo de vehículo:',
+        options: ['Qualifies the operator for that type of vehicle.', 'Is sufficient for all company forklifts.', 'Should be done every three years.', 'Should be done every five years.'],
+        options_es: ['Acredita al operador en ese tipo de vehículo.', 'Es suficiente para todo montacargas de la compañía.', 'Se debe realizar cada tres años.', 'Se debe realizar cada cinco años.'] },
+      { type: 'multiple_choice', correct: '3',
+        prompt: 'A forklift is "unattended" and must be shut off with the controls neutralized and the brakes set when:', prompt_es: 'Un montacargas está "sin atender" y debe apagarse con los controles en neutral y los frenos puestos cuando:',
+        options: ['The operator is within sight.', 'The operator is out of sight.', 'The operator is more than 25 feet away.', 'Either B. or C.'],
+        options_es: ['El operador está a la vista.', 'El operador no está a la vista.', 'El operador está a más de 8 metros de distancia.', 'Ya sea B. o C.'] },
+      { type: 'multiple_choice', correct: '0',
+        prompt: 'The first thing to do when changing the battery or refueling:', prompt_es: 'Lo primero que se debe hacer al cambiar la batería o poner combustible:',
+        options: ['Shut off the engine.', 'Disconnect fuel lines or battery cables.', 'Put on correct personal protective equipment.', 'Depends on the unit.'],
+        options_es: ['Apagar el motor.', 'Desconectar el combustible o los cables de la batería.', 'Ponerse el equipo protector personal correcto.', 'Depende de la unidad.'] },
+      { type: 'multiple_choice', correct: '2',
+        prompt: "A forklift operator's performance must be evaluated:", prompt_es: 'Se debe evaluar el trabajo del operador del montacargas:',
+        options: ['Monthly.', 'Yearly.', 'Every three years.', 'Every five years.'],
+        options_es: ['Cada mes.', 'Cada año.', 'Cada tres años.', 'Cada cinco años.'] },
+      { type: 'multiple_choice', correct: '2',
+        prompt: 'When mounting or dismounting a forklift:', prompt_es: 'Al subir o bajar de un montacargas:',
+        options: ['Face away from the forklift.', 'Face toward the forklift.', 'Use three points of contact.', 'Jump on or off.'],
+        options_es: ['No mire hacia el montacargas.', 'Mire hacia el montacargas.', 'Use tres puntos de contacto.', 'Brinque para subir o bajar.'] },
+      { type: 'multiple_choice', correct: '2',
+        prompt: 'You can get under a raised load:', prompt_es: 'Usted puede estar bajo una carga alzada:',
+        options: ['To check for debris that may fall off.', 'To be sure that the fork position is correct.', 'Never get under a raised load.', 'Whenever it is necessary.'],
+        options_es: ['Para ver escombros que hayan caído.', 'Para asegurarse que las puntas estén bien.', 'No se ponga nunca bajo una carga alzada.', 'Cuando sea necesario.'] },
+      { type: 'multiple_choice', correct: '1',
+        prompt: 'Gas or diesel spills:', prompt_es: 'Derrames de gas o diésel:',
+        options: ['Are not a problem as they will evaporate quickly.', 'Should be cleaned up immediately following proper safety procedures.', 'May explode so remove the forklift from the area.', 'None of the above.'],
+        options_es: ['No son problema porque se evaporan enseguida.', 'Se deben limpiar enseguida siguiendo normas apropiadas de seguridad.', 'Pueden explotar, retire el montacargas de la zona.', 'Ninguna de las respuestas indicadas.'] },
     ],
   },
 };
@@ -135,7 +237,11 @@ export function seedWorkInstructionCourses(db) {
     (id, code, title, category, description, retrain_months, required_roles, required_departments, has_test, passing_score, active)
     VALUES (?, ?, ?, ?, ?, ?, '[]', ?, ?, 80, 1)`);
   const insTest = db.prepare('INSERT INTO training_tests (id, course_id, version, title, passing_score, is_current) VALUES (?, ?, 1, ?, ?, 1)');
-  const insQ = db.prepare('INSERT INTO training_questions (id, test_id, position, type, prompt, options, correct_answer, points) VALUES (?, ?, ?, ?, ?, ?, ?, 1)');
+  // prompt_es / options_es carry the plant's OWN Spanish where a test has it.
+  // The floor is bilingual; a safety test people can't read is not a control.
+  const insQ = db.prepare(`INSERT INTO training_questions
+    (id, test_id, position, type, prompt, prompt_es, options, options_es, correct_answer, points)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`);
 
   let added = 0, tests = 0;
   db.transaction(() => {
@@ -150,7 +256,9 @@ export function seedWorkInstructionCourses(db) {
         const testId = uuid();
         insTest.run(testId, courseId, t.title, t.passing_score);
         t.questions.forEach((q, i) =>
-          insQ.run(uuid(), testId, i, q.type, q.prompt, JSON.stringify(q.options), String(q.correct)));
+          insQ.run(uuid(), testId, i, q.type, q.prompt, q.prompt_es || null,
+            JSON.stringify(q.options), q.options_es ? JSON.stringify(q.options_es) : null,
+            String(q.correct)));
         tests++;
       }
     }
