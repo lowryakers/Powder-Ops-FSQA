@@ -458,6 +458,20 @@ memory-buffered `putObject` would have held a whole video in RAM. Comms attachme
 to XHR when a progress callback is passed (fetch can't report upload progress). Videos play inline; AVI/MKV
 and any codec the browser rejects fall back to the download card.
 
+## COA: Tests Requested is a picker, not a text box
+"Tests Requested" on a lab request was free text while the Specifications form had always offered the real
+list — same tests, two ways of writing them. `TestsRequestedPicker` (COAPanel.jsx) shows `TEST_GROUPS`
+(Microbiological / Heavy Metals / Composition & Identity) as chips with a **select-all per panel**, because
+"Micro" and "HM" are how QA talks about this, plus a free-text box for anything else.
+- **The stored value stays a comma-joined STRING.** `tests_requested` is read as text by the log column, the
+  CSV and PDF exports, the by-test stats and the Monday importer; none of them changed.
+- **Panel shorthand is never silently expanded.** 1,150 of 1,391 real requests say `HM & Micro`, not the
+  seven named micro tests. `splitTests()` keeps anything unrecognised verbatim in the free-text box, and an
+  **Expand to named tests** button offers the upgrade — rewriting what a filed request says as a side effect
+  of opening it to change a date is not an edit anyone asked for.
+- The picker replaced a `required` input, so `handleSubmit` validates it itself; the server 400s on an empty
+  `tests_requested` and a form that silently does nothing is worse than one that says why.
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —

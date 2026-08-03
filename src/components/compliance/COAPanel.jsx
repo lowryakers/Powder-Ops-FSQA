@@ -385,6 +385,134 @@ function COAUploadModal({ onClose, onImported }) {
   );
 }
 
+// ──────── Tests Requested picker ────────
+//
+// "Tests Requested" was a free-text box, so the tests on a request were typed
+// by hand ("HM & Micro & Gluten") while the Specifications form has always
+// offered the real list. Same names, two different ways of writing them.
+//
+// The stored value stays a comma-joined STRING — the log column, the CSV and
+// PDF exports, the by-test stats and the Monday importer all read
+// `tests_requested` as text, and none of them have to change.
+//
+// Panels are how QA talks about this ("Micro", "Heavy Metals"), so each group
+// has a select-all — but what gets STORED is the individual tests, which is
+// what results are graded against, one spec row per test.
+const TEST_GROUPS = [
+  { label: 'Microbiological', short: 'Micro', tests: ['Total Aerobic Microbial Count (USP)', 'Total Coliforms (BAM) (MOD)', 'E. Coli BAM (MOD)', 'Salmonella', 'Staphylococcus aureus <2022>', 'Rapid Yeast and Mold', 'Bacillus Subtilis'] },
+  { label: 'Heavy Metals', short: 'HM', tests: ['Arsenic', 'Cadmium', 'Mercury', 'Lead'] },
+  { label: 'Composition & Identity', short: '', tests: ['Gluten', 'FTIR ID', 'Potency', 'Allergens', 'Moisture', 'Minerals Test', 'Organoleptic Test'] },
+];
+const KNOWN_TESTS = TEST_GROUPS.flatMap(g => g.tests);
+
+// Existing requests were typed by hand, with "&" or "," or both. Split on
+// either, keep whatever doesn't match a known test as free text rather than
+// dropping it — editing an old request must never quietly lose what it said.
+function splitTests(value) {
+  const parts = String(value || '').split(/[,&]/).map(s => s.trim()).filter(Boolean);
+  const picked = [];
+  const rest = [];
+  for (const p of parts) {
+    const match = KNOWN_TESTS.find(t => t.toLowerCase() === p.toLowerCase())
+      || (isOrganoleptic(p) ? ORGANOLEPTIC_TYPE : null);
+    if (match && !picked.includes(match)) picked.push(match);
+    else if (!match) rest.push(p);
+  }
+  return { picked, rest: rest.join(', ') };
+}
+
+// Almost every request ever filed says "HM & Micro", not the seven named micro
+// tests — 1,150 of 1,391 in the real log. Those are PANEL names.
+//
+// They are deliberately NOT expanded automatically: rewriting what a filed
+// request says, as a side effect of opening it to change a date, is not an
+// edit anyone asked for. The shorthand is kept verbatim and an Expand button
+// is offered, so precision is a choice someone makes on purpose.
+const PANEL_ALIASES = {
+  hm: 'Heavy Metals', 'heavy metal': 'Heavy Metals', 'heavy metals': 'Heavy Metals',
+  micro: 'Microbiological', microbiological: 'Microbiological', 'micro combo': 'Microbiological',
+};
+const panelFor = (token) => TEST_GROUPS.find(g => g.label === PANEL_ALIASES[String(token).trim().toLowerCase()]);
+
+function TestsRequestedPicker({ value, onChange, specTests }) {
+  const { picked, rest } = splitTests(value);
+  const [other, setOther] = useState(rest);
+
+  const emit = (nextPicked, nextOther) => {
+    const all = [...nextPicked, ...String(nextOther || '').split(',').map(s => s.trim()).filter(Boolean)];
+    onChange(all.join(', '));
+  };
+  const toggle = (t) => {
+    const next = picked.includes(t) ? picked.filter(x => x !== t) : [...picked, t];
+    emit(next, other);
+  };
+  const toggleGroup = (g) => {
+    const allOn = g.tests.every(t => picked.includes(t));
+    const next = allOn ? picked.filter(t => !g.tests.includes(t)) : [...picked, ...g.tests.filter(t => !picked.includes(t))];
+    emit(next, other);
+  };
+  const onSpec = (specTests || []).filter(t => KNOWN_TESTS.includes(t) || isOrganoleptic(t));
+
+  // Leftover tokens that are really panel names, e.g. "HM" → Heavy Metals.
+  const expandable = String(other || '').split(',').map(s => s.trim()).filter(Boolean)
+    .map(token => ({ token, group: panelFor(token) })).filter(x => x.group);
+  const expandPanels = () => {
+    const add = expandable.flatMap(x => x.group.tests).filter(t => !picked.includes(t));
+    const keep = String(other || '').split(',').map(s => s.trim()).filter(Boolean)
+      .filter(token => !panelFor(token)).join(', ');
+    setOther(keep);
+    emit([...picked, ...add], keep);
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <label className="block text-xs font-medium text-gray-700">
+          Tests Requested * <span className="font-normal text-gray-400">— {picked.length} selected</span>
+        </label>
+        {onSpec.length > 0 && (
+          <button type="button" onClick={() => emit([...new Set(onSpec.map(t => isOrganoleptic(t) ? ORGANOLEPTIC_TYPE : t))], other)}
+            className="text-xs text-powder-600 hover:underline font-medium">Select the {onSpec.length} tests on this item's spec</button>
+        )}
+      </div>
+      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+        {TEST_GROUPS.map(g => {
+          const allOn = g.tests.every(t => picked.includes(t));
+          const someOn = !allOn && g.tests.some(t => picked.includes(t));
+          return (
+            <div key={g.label} className="p-2.5">
+              <button type="button" onClick={() => toggleGroup(g)}
+                className="flex items-center gap-2 text-xs font-semibold text-gray-700 hover:text-powder-700 mb-1.5">
+                <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${allOn ? 'bg-powder-600 border-powder-600' : someOn ? 'bg-powder-200 border-powder-400' : 'border-gray-300'}`}>
+                  {allOn && <CheckCircle2 size={10} className="text-white" />}
+                </span>
+                {g.label}{g.short && <span className="font-normal text-gray-400">({g.short})</span>}
+              </button>
+              <div className="flex flex-wrap gap-1.5">
+                {g.tests.map(t => (
+                  <button key={t} type="button" onClick={() => toggle(t)}
+                    className={`px-2 py-1 rounded-lg text-xs border transition-colors ${picked.includes(t)
+                      ? 'bg-powder-600 border-powder-600 text-white'
+                      : 'bg-white border-gray-300 text-gray-700 hover:border-powder-400'}`}>{t}</button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {expandable.length > 0 && (
+        <div className="text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+          <span>This request uses panel shorthand ({expandable.map(x => x.token).join(', ')}). Results grade against one spec row per test.</span>
+          <button type="button" onClick={expandPanels} className="text-amber-800 hover:underline font-medium shrink-0">Expand to named tests</button>
+        </div>
+      )}
+      <input value={other} onChange={e => { setOther(e.target.value); emit(picked, e.target.value); }}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+        placeholder="Anything else — comma separated (optional)" />
+    </div>
+  );
+}
+
 // ──────── Request Form ────────
 function RequestForm({ initial, labs, onSave, onCancel }) {
   const [form, setForm] = useState(initial || {
@@ -394,6 +522,7 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
     origin: '', supplier: '', product_code: '', manufacturer_lot: '', vendor_lot: '', received_date: '',
   });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const [specInfo, setSpecInfo] = useState(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -421,6 +550,14 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // The picker replaced a `required` text input, so the browser no longer
+    // enforces this. The server rejects an empty tests_requested with a 400,
+    // and a form that silently does nothing is worse than one that says why.
+    if (!String(form.tests_requested || '').trim()) {
+      setError('Pick at least one test to request.');
+      return;
+    }
+    setError('');
     setSaving(true);
     try { await onSave(form); } finally { setSaving(false); }
   };
@@ -485,10 +622,8 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
           <input type="date" value={form.product_expiration || ''} onChange={e => set('product_expiration', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Tests Requested *</label>
-          <input required value={form.tests_requested} onChange={e => set('tests_requested', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. HM & Micro & Gluten" />
+        <div className="sm:col-span-2 lg:col-span-4">
+          <TestsRequestedPicker value={form.tests_requested} onChange={v => set('tests_requested', v)} specTests={specInfo?.tests} />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Lab</label>
@@ -524,7 +659,8 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
         <textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)} rows={2}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
       </div>
-      <div className="flex gap-2 justify-end">
+      <div className="flex gap-2 justify-end items-center">
+        {error && <p className="text-sm text-red-600 mr-auto">{error}</p>}
         <button type="button" onClick={onCancel} className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
         <button type="submit" disabled={saving}
           className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
