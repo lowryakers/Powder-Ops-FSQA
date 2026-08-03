@@ -532,6 +532,38 @@ in in-app browsers/WebViews, in Incognito, or when it's already installed — th
 - Auth events logged in `server/api/users.js`: login, logout, login_failed, login_locked, permission_change.
 - Audit API: `server/api/audit.js` (`/`, `/facets`, `/export`, `/entity/:type/:id`); UI `src/components/compliance/AuditLogPanel.jsx`.
 
+## Training Log importer (the matrix spreadsheet, not a table)
+The plant's Training Log is a **matrix**, one sheet per period (October 2022 … March-April 2026): employees
+down the side, trainings across the top, a cell means "this person did this training". 14 sheets, 3,639
+completions, 94 written names, 30 headings. `server/training-log.js` parses it; `POST
+/api/training/import-log/analyze|preview|commit` (admin-only) is the pipeline; `TrainingLogImportModal` in
+TrainingPanel.jsx is the wizard (admin-only **Training Log** button beside Import).
+- **The one human step is the COURSE MAPPING.** The headings drifted over three years — "Food Defense",
+  "Food Defense (WI)", "Food Defense SOP" are one training — and only a person can say so. ~30 decisions
+  instead of 3,639. `suggestCourse()` pre-fills the dropdowns so it's a review, not data entry. A heading
+  left blank is skipped and can be mapped on a later run.
+- **Cells are messy on purpose-of-parsing:** `"2/7/2023 AB"` (date + trainer initials), an Excel serial, initials
+  only, a video URL, or empty. Each training occupies **two** columns (course + "Initial") and people filled
+  either, so both are read and merged. A cell with neither a date nor initials is a stray mark, not a record.
+- **A missing date is never invented.** `periodOf()` dates a cell from its sheet ("April-July 2023" →
+  2023-04-01) and the record says so in its notes; where even the period is unreadable the row is **skipped**
+  and the sheet named in `undated_sheets`. The year regex is `(?<!\d)(20\d{2})(?!\d)` so "March-April2026"
+  resolves but the log's real tab typo **"November- December 20204"** does not silently become 2020.
+- **A person is their name's WORDS, sorted** (`personKey`) — accent-folded, `(?)` stripped. The log writes
+  "Vera, Yetzon" on one sheet and "Yetzon Vera" on the next, and the roster spells accents the log drops;
+  matching the string as written left **92 of 94 people unlinked**, and an unlinked completion can't answer
+  "is this operator current". Sorting the words beats guessing which side of a comma is the surname —
+  "Lopez Fernande, Estefany Maria" would get that wrong. 94 apparent people → 80 real ones.
+  The record stores the **account's** name when there is one, so it reads like every other ReadyDoc record.
+- **Idempotent**: a completion is `personKey + topic + date`. Re-running creates 0. `already_in_readydoc`
+  (a prior import) and `repeated_in_file` (the same event on two sheets) are counted **separately** —
+  calling the second "already imported" on an empty database is how an importer loses trust on the preview.
+- Verified end to end on the real file: 608 created from 11 mapped columns, 208 dated from the sheet period,
+  re-run 0 created / 1,279 recognised.
+- **Courses the log references that don't exist yet** (Forklift, Pallet Jack, Mixer, Auger, Warehouse,
+  Filling Procedures, Stick Pack, Fire Extinguisher & Exits, cGMP Policy) import as *unmapped* until someone
+  creates them — that's 2,142 completions still waiting on the training/test merge.
+
 ## Universal file importer (Monday / Airtable / Drive / Slack / desktop)
 `server/tabular.js` reads **CSV / TSV / XLSX with no new dependencies** (XLSX is a zip of XML via the
 already-present `adm-zip`; the CSV reader is a proper RFC-4180 character scan, not a split). `readTable()`

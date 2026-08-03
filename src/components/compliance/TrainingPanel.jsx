@@ -88,6 +88,215 @@ function ImportModal({ onClose, onDone }) {
   );
 }
 
+// ── Training Log import (the matrix spreadsheet) ──────────────────────────────
+// Four steps on purpose, and the third is the only one that needs a person:
+// the log's headings drifted over three years ("Food Defense", "Food Defense
+// (WI)", "Food Defense SOP" are one training) and only someone who was there
+// can say so. That's ~30 decisions instead of 3,600. Nothing is written until
+// the preview has been seen.
+function TrainingLogImportModal({ onClose, onDone }) {
+  const [file, setFile] = useState(null);
+  const [step, setStep] = useState('file'); // file → map → preview → done
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [analysis, setAnalysis] = useState(null);
+  const [mapping, setMapping] = useState({});
+  const [preview, setPreview] = useState(null);
+  const [result, setResult] = useState(null);
+  const [skipUnknown, setSkipUnknown] = useState(false);
+
+  const send = async (endpoint, extra) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (extra) for (const [k, v] of Object.entries(extra)) fd.append(k, v);
+    return apiUpload(`/training/import-log/${endpoint}`, fd);
+  };
+
+  const run = async (fn) => {
+    setBusy(true); setError('');
+    try { await fn(); } catch (e) { setError(e.message || 'Something went wrong'); }
+    finally { setBusy(false); }
+  };
+
+  const chooseFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    setBusy(true); setError('');
+    const fd = new FormData();
+    fd.append('file', f);
+    apiUpload('/training/import-log/analyze', fd)
+      .then(a => {
+        setAnalysis(a);
+        // Start from the server's suggestions so the reviewer is correcting a
+        // draft, not filling in thirty empty dropdowns.
+        const m = {};
+        for (const h of a.headings) m[h.heading] = h.admin ? 'ignore' : (h.suggested_course_id || '');
+        setMapping(m);
+        setStep('map');
+      })
+      .catch(e => setError(e.message || 'Could not read that spreadsheet'))
+      .finally(() => setBusy(false));
+  };
+
+  const doPreview = () => run(async () => {
+    setPreview(await send('preview', { mapping: JSON.stringify(mapping), skip_unknown_people: String(skipUnknown) }));
+    setStep('preview');
+  });
+
+  const doCommit = () => run(async () => {
+    setResult(await send('commit', { mapping: JSON.stringify(mapping), skip_unknown_people: String(skipUnknown) }));
+    setStep('done');
+    onDone();
+  });
+
+  const mappedCount = Object.values(mapping).filter(v => v && v !== 'ignore').length;
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 pb-3 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-gray-900">Import the Training Log</h3>
+            <p className="text-xs text-gray-500 mt-0.5">The historical spreadsheet — one sheet per period, people down the side, trainings across the top.</p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>}
+
+          {step === 'file' && (
+            <label className="flex flex-col items-center gap-2 border-2 border-dashed border-gray-300 rounded-xl py-10 cursor-pointer hover:bg-gray-50">
+              <Upload size={22} className="text-gray-400" />
+              <span className="text-sm text-gray-600 font-medium">{busy ? 'Reading…' : 'Choose the Training Log (.xlsx)'}</span>
+              <span className="text-xs text-gray-400">Nothing is saved until you approve the preview.</span>
+              <input type="file" accept=".xlsx" className="hidden" onChange={chooseFile} disabled={busy} />
+            </label>
+          )}
+
+          {step === 'map' && analysis && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                {[['Sheets', analysis.sheets.length], ['Completions', analysis.total], ['People', analysis.people.length], ['Headings', analysis.headings.length]].map(([l, v]) => (
+                  <div key={l} className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                    <p className="text-lg font-bold text-gray-900">{v}</p>
+                    <p className="text-[11px] text-gray-500">{l}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-gray-600">
+                Match each column in the log to a course. Anything left blank is skipped — you can re-run this later once the
+                course exists, and already-imported records are never duplicated.
+              </p>
+              <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+                {analysis.headings.map(h => (
+                  <div key={h.heading} className="flex items-center gap-3 p-2.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{h.heading}</p>
+                      <p className="text-[11px] text-gray-500">{h.count} completion{h.count === 1 ? '' : 's'}</p>
+                    </div>
+                    <select value={mapping[h.heading] || ''} onChange={e => setMapping({ ...mapping, [h.heading]: e.target.value })}
+                      className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 w-56 shrink-0">
+                      <option value="">— skip —</option>
+                      <option value="ignore">Not a training (ignore)</option>
+                      {analysis.courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={skipUnknown} onChange={e => setSkipUnknown(e.target.checked)} className="mt-0.5" />
+                <span>
+                  Skip people who aren't in Settings
+                  <span className="block text-xs text-gray-500">
+                    Off by default: a former employee's training is still real history. Leave it off to keep their records under the name as written.
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
+
+          {step === 'preview' && preview && (
+            <>
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                <p className="text-sm font-semibold text-green-900">{preview.will_create} record{preview.will_create === 1 ? '' : 's'} will be created</p>
+                {preview.approximate_dates > 0 && (
+                  <p className="text-xs text-green-800 mt-1">
+                    {preview.approximate_dates} of them take the date from the sheet's period because the cell had none — they're
+                    marked as approximate in the record's notes.
+                  </p>
+                )}
+              </div>
+              <div className="text-sm text-gray-700 space-y-1">
+                <p className="font-medium">Skipped</p>
+                {[
+                  ['Columns marked "not a training"', preview.skipped.ignored],
+                  ['Columns not matched to a course', preview.skipped.unmapped],
+                  ['Already in ReadyDoc', preview.skipped.already_in_readydoc],
+                  ['Same training twice in the file', preview.skipped.repeated_in_file],
+                  ['No matching person', preview.skipped.no_person],
+                  ['No date could be determined', preview.skipped.no_date],
+                ].filter(([, n]) => n > 0).map(([l, n]) => (
+                  <p key={l} className="text-xs text-gray-600 flex justify-between border-b border-gray-100 py-1"><span>{l}</span><span className="font-medium">{n}</span></p>
+                ))}
+              </div>
+              {preview.undated_sheets?.length > 0 && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                  These sheets have no readable period, so their undated cells were skipped rather than guessed:
+                  <span className="font-medium"> {preview.undated_sheets.join(', ')}</span>. Fix the tab name and re-run to pick them up.
+                </p>
+              )}
+              {preview.unmatched_people?.length > 0 && (
+                <details className="text-xs text-gray-600">
+                  <summary className="cursor-pointer font-medium text-gray-700">{preview.unmatched_people.length} people with no Settings account</summary>
+                  <p className="mt-1.5 text-gray-500">{preview.unmatched_people.join(' · ')}</p>
+                </details>
+              )}
+              {preview.sample?.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-1">First few records</p>
+                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 text-xs">
+                    {preview.sample.map((s, i) => (
+                      <div key={i} className="flex justify-between gap-3 p-2">
+                        <span className="font-medium text-gray-900 truncate">{s.employee_name}</span>
+                        <span className="text-gray-600 truncate flex-1">{s.training_topic}</span>
+                        <span className="text-gray-500 shrink-0">{s.training_date}{s.approximate ? ' ~' : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {step === 'done' && result && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+              <p className="text-sm font-semibold text-green-900">Imported {result.created} training record{result.created === 1 ? '' : 's'}.</p>
+              <p className="text-xs text-green-800 mt-1">
+                Re-running this import is safe — records already filed are recognised and skipped, so you can map more
+                columns later and import again.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between items-center gap-2 p-5 pt-3 border-t border-gray-100">
+          <span className="text-xs text-gray-500">
+            {step === 'map' && `${mappedCount} of ${analysis?.headings.length || 0} columns matched to a course`}
+          </span>
+          <div className="flex gap-2">
+            {step === 'preview' && <button onClick={() => setStep('map')} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Back</button>}
+            <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">{step === 'done' ? 'Close' : 'Cancel'}</button>
+            {step === 'map' && <button onClick={doPreview} disabled={busy || !mappedCount} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{busy ? 'Checking…' : 'Preview'}</button>}
+            {step === 'preview' && <button onClick={doCommit} disabled={busy || !preview.will_create} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{busy ? 'Importing…' : `Import ${preview.will_create}`}</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Completion modal ──────────────────────────────────────────────────────────
 function CompletionModal({ initial, courses, users, onClose, onSaved }) {
   const [form, setForm] = useState(initial || {
@@ -682,6 +891,7 @@ export default function TrainingPanel() {
   const aiOn = !!aiStatus?.enabled;
   const [view, setView] = useState('matrix');
   const [importing, setImporting] = useState(false);
+  const [importingLog, setImportingLog] = useState(false);
   const [completion, setCompletion] = useState(null); // {} = new
   const [groupTraining, setGroupTraining] = useState(false);
   const [course, setCourse] = useState(null);
@@ -709,6 +919,10 @@ export default function TrainingPanel() {
         {canEdit && (
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Upload size={15} /> Import</button>
+            {user?.role === 'admin' && (
+              <button onClick={() => setImportingLog(true)} title="Import the historical Training Log spreadsheet"
+                className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><FileText size={15} /> Training Log</button>
+            )}
             <button onClick={() => setCourse({})} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Plus size={15} /> Course</button>
             <button onClick={() => setGroupTraining(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Users size={15} /> Group Training</button>
             <button onClick={() => setCompletion({})} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700"><Plus size={16} /> Log Completion</button>
@@ -888,6 +1102,7 @@ export default function TrainingPanel() {
       )}
 
       {importing && <ImportModal onClose={() => setImporting(false)} onDone={refreshAll} />}
+      {importingLog && <TrainingLogImportModal onClose={() => setImportingLog(false)} onDone={refreshAll} />}
       {completion && <CompletionModal initial={completion.id ? completion : null} courses={courses} users={users} onClose={() => setCompletion(null)} onSaved={() => { setCompletion(null); refreshAll(); }} />}
       {course && <CourseModal initial={course.id ? course : null} onClose={() => setCourse(null)} onSaved={() => { setCourse(null); refreshCourses(); refreshMatrix(); }} />}
       {testCourse && <TestEditor course={testCourse} aiEnabled={aiOn} onClose={() => setTestCourse(null)} onSaved={() => { setTestCourse(null); refreshCourses(); }} />}

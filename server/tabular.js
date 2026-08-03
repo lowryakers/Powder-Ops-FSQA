@@ -83,11 +83,23 @@ const colIndex = (ref) => {
   return n - 1;
 };
 
-export function parseXlsx(buffer) {
+// Sheet names in workbook order, so a caller can import a specific tab (the
+// training log is one sheet per period, and the period is the only place the
+// year comes from).
+export function xlsxSheetNames(buffer) {
+  try {
+    const zip = new AdmZip(buffer);
+    const wb = zip.getEntry('xl/workbook.xml');
+    if (!wb) return [];
+    const xml = wb.getData().toString('utf8');
+    return [...xml.matchAll(/<sheet[^>]*name="([^"]+)"/g)].map(m => decodeXml(m[1]));
+  } catch { return []; }
+}
+
+export function parseXlsx(buffer, sheetIndex = 0) {
   const zip = new AdmZip(buffer);
   const strings = sharedStrings(zip);
-  // First worksheet only — importing a specific tab is a later refinement.
-  const sheet = zip.getEntry('xl/worksheets/sheet1.xml');
+  const sheet = zip.getEntry(`xl/worksheets/sheet${sheetIndex + 1}.xml`);
   if (!sheet) return [];
   const xml = sheet.getData().toString('utf8');
   const rows = [];

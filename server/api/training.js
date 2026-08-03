@@ -5,6 +5,8 @@ import { getDb, logAudit } from '../db.js';
 import { aiEnabled, generateTestQuestions } from '../ai.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo } from '../media.js';
+import multer from 'multer';
+import { parseTrainingLog } from '../training-log.js';
 
 const router = Router();
 
@@ -521,6 +523,244 @@ const materialUpload = mediaUpload({ files: 5 }).array('files', 5);
 const uploadMaterials = (req, res, next) => materialUpload(req, res, (err) => {
   if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
   next();
+});
+
+// ── Training Log import ─────────────────────────────────────────────────────
+//
+// The plant's Training Log spreadsheet is three and a half years of who did
+// which training and when — a matrix, one sheet per period. Importing it is
+// how the completion history gets in; the scanned paper tests are then
+// EVIDENCE attached to records that already exist, rather than a few hundred
+// files nobody can match to a course.
+//
+// Four steps on purpose, like every other importer here: analyze (read the
+// file, propose a mapping), preview (dry run, nothing written), commit (one
+// transaction). Nothing is written until someone has seen the numbers.
+//
+// The one human step that matters is the COURSE MAPPING. The log's headers
+// drifted over three years — "Food Defense", "Food Defense (WI)", "Food
+// Defense SOP" are one training — and only a person can say so. That's ~30
+// decisions instead of 3,639.
+
+const logUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+const normName = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+// A person's name is written two ways in the log — "Vera, Yetzon" on one sheet
+// and "Yetzon Vera" on the next — and the roster spells accents the log drops.
+// Keying on the string as written left 92 of 94 people unmatched, and an
+// unlinked completion doesn't answer "is this operator current", which is the
+// whole reason to import three years of history.
+//
+// So a person's key is their name's WORDS, accent-folded and sorted. Sorting
+// makes it order-independent, which beats deciding which side of a comma is
+// the surname — a call that "Lopez Fernande, Estefany Maria" would get wrong.
+function personKey(name) {
+  return String(name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\(.*?\)/g, ' ')          // "Vergara, Kimberly (?)" — the log author's own uncertainty
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim().split(' ').filter(Boolean).sort().join(' ');
+}
+
+// What goes on the record when there's no account to take the name from.
+// One comma is "Surname, First" and reads better flipped; anything else is
+// left as written rather than guessed at.
+function displayName(name) {
+  const s = String(name || '').replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim().replace(/,+$/, '').trim();
+  const parts = s.split(',').map(p => p.trim()).filter(Boolean);
+  return parts.length === 2 ? `${parts[1]} ${parts[0]}` : s;
+}
+
+// Columns that record housekeeping rather than a training.
+const ADMIN_COLUMNS = /^(training tests|training sign sheet|video links what was watched)$/i;
+
+// Suggest a course for a log heading: exact title/code first, then a
+// containment match, so "Sanitation SOP 108 (WI)" finds "Sanitation & SSOP".
+function suggestCourse(heading, courses) {
+  const h = normName(heading);
+  if (!h) return null;
+  const exact = courses.find(c => normName(c.title) === h || normName(c.code) === h);
+  if (exact) return exact.id;
+  const words = h.split(' ').filter(w => w.length > 3);
+  const partial = courses.find(c => {
+    const t = normName(c.title);
+    return words.length && words.every(w => t.includes(w));
+  }) || courses.find(c => words.some(w => normName(c.title).includes(w)));
+  return partial ? partial.id : null;
+}
+
+function analyzeBuffer(db, buffer) {
+  const parsed = parseTrainingLog(buffer);
+  const courses = db.prepare('SELECT id, title, code FROM training_courses').all();
+  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
+  const userByName = new Map(users.map(u => [personKey(u.name), u]));
+
+  const byCourse = new Map();
+  for (const r of parsed.rows) {
+    if (!byCourse.has(r.course)) byCourse.set(r.course, 0);
+    byCourse.set(r.course, byCourse.get(r.course) + 1);
+  }
+  const headings = [...byCourse.entries()].sort((a, b) => b[1] - a[1]).map(([heading, count]) => ({
+    heading,
+    count,
+    admin: ADMIN_COLUMNS.test(heading),
+    suggested_course_id: ADMIN_COLUMNS.test(heading) ? null : suggestCourse(heading, courses),
+  }));
+
+  // Collapse the log's two spellings of one person into one row — showing
+  // "Vera, Yetzon" and "Yetzon Vera" as two unmatched people is how a reviewer
+  // concludes the import is broken when it isn't.
+  const byPerson = new Map();
+  for (const r of parsed.rows) {
+    const key = personKey(r.employee);
+    if (!key) continue;
+    const u = userByName.get(key);
+    const row = byPerson.get(key)
+      || { name: u ? u.name : displayName(r.employee), user_id: u ? u.id : null, matched: !!u, as_written: new Set() };
+    row.as_written.add(r.employee);
+    byPerson.set(key, row);
+  }
+  const people = [...byPerson.values()]
+    .map(p => ({ ...p, as_written: [...p.as_written].sort() }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    sheets: parsed.sheets,
+    total: parsed.rows.length,
+    undated: parsed.rows.filter(r => !r.dated).length,
+    links: parsed.links.length,
+    headings,
+    people,
+    courses: courses.map(c => ({ id: c.id, title: c.title, code: c.code })),
+  };
+}
+
+router.post('/import-log/analyze', logUpload.single('file'), (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Importing the training log is admin-only.' });
+  if (!req.file) return res.status(400).json({ error: 'Attach the Training Log spreadsheet (.xlsx).' });
+  try {
+    res.json(analyzeBuffer(getDb(), req.file.buffer));
+  } catch (e) {
+    res.status(400).json({ error: `Could not read that spreadsheet: ${e.message}` });
+  }
+});
+
+// Decide what each parsed row becomes, given the caller's mapping. Shared by
+// preview and commit so a dry run and the real thing can never disagree.
+function planRows(db, buffer, mapping, opts) {
+  const parsed = parseTrainingLog(buffer);
+  const courses = new Map(db.prepare('SELECT id, title, code FROM training_courses').all().map(c => [c.id, c]));
+  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
+  const userByName = new Map(users.map(u => [personKey(u.name), u]));
+  // Already-imported rows, so re-running is safe. A completion is identified by
+  // person + topic + date: the same training on the same day is the same event.
+  // The person half uses personKey, so a sheet that writes "Vera, Yetzon" and
+  // one that writes "Yetzon Vera" don't file the same training twice.
+  const existing = new Set(db.prepare(
+    'SELECT employee_name, training_topic, training_date FROM training_records').all()
+    .map(r => `${personKey(r.employee_name)}|${normName(r.training_topic)}|${r.training_date}`));
+
+  const plan = { create: [], skip_ignored: 0, skip_unmapped: 0, skip_existing: 0, skip_repeat: 0, skip_no_person: 0, skip_no_date: 0, undated_sheets: new Set(), unmatched_people: new Set() };
+  const seen = new Set();
+  for (const r of parsed.rows) {
+    const courseId = mapping[r.course];
+    if (courseId === 'ignore' || ADMIN_COLUMNS.test(r.course)) { plan.skip_ignored++; continue; }
+    if (!courseId || !courses.has(courseId)) { plan.skip_unmapped++; continue; }
+    const u = userByName.get(personKey(r.employee));
+    // A departed employee is not a reason to invent an account. The completion
+    // is still real history, so it's kept under the name as recorded unless the
+    // caller asks to skip people who aren't in Settings.
+    if (!u && opts.skipUnknownPeople) { plan.skip_no_person++; plan.unmatched_people.add(displayName(r.employee)); continue; }
+    if (!u) plan.unmatched_people.add(displayName(r.employee));
+    // No date on the cell AND none derivable from the sheet's period. A
+    // training record without a date is not a record, and guessing one is
+    // worse than saying so — the log has a tab typo'd "20204", and inventing
+    // 2020 for it would put a wrong date on someone's compliance history.
+    if (!r.date) { plan.skip_no_date++; plan.undated_sheets.add(r.source); continue; }
+    const course = courses.get(courseId);
+    const key = `${personKey(r.employee)}|${normName(course.title)}|${r.date}`;
+    // Two different reasons to skip, and they must not be reported as one:
+    // "already in ReadyDoc" means a previous import, "repeated in the file"
+    // means the same training on the same day appears on two sheets. Calling
+    // the second one "already imported" on an empty database is how an
+    // importer loses someone's trust on the preview screen.
+    if (existing.has(key)) { plan.skip_existing++; continue; }
+    if (seen.has(key)) { plan.skip_repeat++; continue; }
+    seen.add(key);
+    plan.create.push({
+      // The account's name when there is one, so the imported record reads the
+      // same as every other record in ReadyDoc — the log's own spelling is a
+      // spreadsheet artefact, not the person's name.
+      employee_name: u ? u.name : displayName(r.employee),
+      employee_id: u ? u.id : null,
+      training_topic: course.title,
+      trainer: r.trainer,
+      training_date: r.date,
+      approximate: !r.dated,
+      source: r.source,
+    });
+  }
+  plan.unmatched_people = [...plan.unmatched_people].sort();
+  plan.undated_sheets = [...plan.undated_sheets].sort();
+  return plan;
+}
+
+router.post('/import-log/preview', logUpload.single('file'), (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Importing the training log is admin-only.' });
+  if (!req.file) return res.status(400).json({ error: 'Attach the Training Log spreadsheet (.xlsx).' });
+  const mapping = parseJson(req.body?.mapping, {}) || {};
+  const skipUnknownPeople = String(req.body?.skip_unknown_people) === 'true';
+  try {
+    const plan = planRows(getDb(), req.file.buffer, mapping, { skipUnknownPeople });
+    res.json({
+      will_create: plan.create.length,
+      skipped: {
+        ignored: plan.skip_ignored, unmapped: plan.skip_unmapped,
+        already_in_readydoc: plan.skip_existing, repeated_in_file: plan.skip_repeat,
+        no_person: plan.skip_no_person, no_date: plan.skip_no_date,
+      },
+      undated_sheets: plan.undated_sheets,
+      approximate_dates: plan.create.filter(r => r.approximate).length,
+      unmatched_people: plan.unmatched_people,
+      sample: plan.create.slice(0, 15),
+    });
+  } catch (e) {
+    res.status(400).json({ error: `Could not read that spreadsheet: ${e.message}` });
+  }
+});
+
+router.post('/import-log/commit', logUpload.single('file'), (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Importing the training log is admin-only.' });
+  if (!req.file) return res.status(400).json({ error: 'Attach the Training Log spreadsheet (.xlsx).' });
+  const mapping = parseJson(req.body?.mapping, {}) || {};
+  const skipUnknownPeople = String(req.body?.skip_unknown_people) === 'true';
+  const db = getDb();
+  let plan;
+  try { plan = planRows(db, req.file.buffer, mapping, { skipUnknownPeople }); }
+  catch (e) { return res.status(400).json({ error: `Could not read that spreadsheet: ${e.message}` }); }
+
+  const ins = db.prepare(`INSERT INTO training_records
+    (id, employee_name, employee_id, training_topic, trainer, training_date, completion_date, status, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?)`);
+  db.transaction(() => {
+    for (const r of plan.create) {
+      // Say when the date came from the sheet's period rather than the cell.
+      // An approximate date that looks exact is worse than one that admits it.
+      const note = [`Imported from the Training Log (${r.source})`,
+        r.approximate ? 'date approximate — taken from the sheet period' : null]
+        .filter(Boolean).join(' · ');
+      ins.run(uuid(), r.employee_name, r.employee_id, r.training_topic, r.trainer, r.training_date, r.training_date, note);
+    }
+  })();
+  logAudit(req.user, 'create', 'training_record', null,
+    { imported: plan.create.length, source: 'training_log', file: req.file.originalname }, null, null, 'Training Log import');
+  res.status(201).json({
+    created: plan.create.length,
+    skipped: { ignored: plan.skip_ignored, unmapped: plan.skip_unmapped, already_in_readydoc: plan.skip_existing, repeated_in_file: plan.skip_repeat, no_person: plan.skip_no_person, no_date: plan.skip_no_date },
+    undated_sheets: plan.undated_sheets,
+    unmatched_people: plan.unmatched_people,
+  });
 });
 
 router.get('/courses/:id/materials', async (req, res) => {
