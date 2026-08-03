@@ -253,10 +253,14 @@ export const QMS_TYPES = {
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'part_number', label: 'Part Number', type: 'text' },
       { key: 'lot_number', label: 'Lot Number', type: 'text' },
+      // Which manufacturing order the component was pulled for. Same key as
+      // production_entries.mo_number so "what was signed out for MO 4471" is a
+      // straight match rather than a per-module spelling.
+      { key: 'mo_number', label: 'MO #', type: 'text' },
       { key: 'qty_pulled', label: 'Qty Pulled', type: 'text' },
       { key: 'signed_by', label: 'Signed By', type: 'text' },
     ],
-    logColumns: ['record_number', 'direction', 'item_name', 'part_number', 'lot_number', 'qty_pulled', 'signed_by', 'record_date', 'approvals'],
+    logColumns: ['record_number', 'direction', 'item_name', 'part_number', 'lot_number', 'mo_number', 'qty_pulled', 'signed_by', 'record_date', 'approvals'],
     approvals: [
       { key: 'warehouse', label: 'Warehouse (WH)', roles: ['admin', 'supervisor'], departments: ['warehouse'] },
       { key: 'quality', label: 'Quality (QA)', required: true, departments: ['qa'] },
@@ -267,6 +271,9 @@ export const QMS_TYPES = {
         'item name': 'item_name',
         'part number': 'part_number',
         'lot number': 'lot_number',
+        'mo #': 'mo_number',
+        'mo number': 'mo_number',
+        'mo': 'mo_number',
         'qty pulled': 'qty_pulled',
       },
     },

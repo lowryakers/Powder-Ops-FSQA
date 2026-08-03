@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react';
 import { PackageCheck, CheckCircle, AlertTriangle, LogOut, LogIn } from 'lucide-react';
 
-const EMPTY = { direction: 'Out', item_name: '', part_number: '', lot_number: '', qty_pulled: '', person: '' };
+const EMPTY = { direction: 'Out', item_name: '', part_number: '', lot_number: '', mo_number: '', qty_pulled: '', person: '' };
 
 export default function ComponentKiosk({ defaultName = '' }) {
   const [form, setForm] = useState({ ...EMPTY, person: defaultName });
-  const [options, setOptions] = useState({ item_names: [], part_numbers: [] });
+  const [options, setOptions] = useState({ item_names: [], part_numbers: [], mo_numbers: [] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
   useEffect(() => {
-    fetch('/api/submit/component-options').then(r => r.json()).then(setOptions).catch(() => {});
+    // Merge rather than replace: a response from an older server without one
+    // of the suggestion lists would otherwise leave it undefined and break the
+    // datalist that maps over it.
+    fetch('/api/submit/component-options').then(r => r.json())
+      .then(o => setOptions(prev => ({ ...prev, ...o }))).catch(() => {});
   }, []);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -41,7 +45,9 @@ export default function ComponentKiosk({ defaultName = '' }) {
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Component Signed {result.direction}</h1>
           <p className="text-gray-600 mb-1">{form.item_name}</p>
           <p className="text-sm text-gray-500 mb-6">Logged as <span className="font-medium">{result.record_number}</span> — awaiting WH/QA review.</p>
-          <button onClick={() => { setResult(null); setForm({ ...EMPTY, direction: form.direction, person: form.person }); }}
+          {/* Keep the MO as well as the name: pulling several components for
+              one job is the common case, and it stays visible to be changed. */}
+          <button onClick={() => { setResult(null); setForm({ ...EMPTY, direction: form.direction, person: form.person, mo_number: form.mo_number }); }}
             className="px-6 py-3 bg-powder-600 text-white rounded-xl font-bold hover:bg-powder-700">
             Log Another
           </button>
@@ -105,10 +111,18 @@ export default function ComponentKiosk({ defaultName = '' }) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Lot Number</label>
-            <input value={form.lot_number} onChange={e => set('lot_number', e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Optional" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Lot Number</label>
+              <input value={form.lot_number} onChange={e => set('lot_number', e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Optional" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">MO #</label>
+              <input list="ck-mos" value={form.mo_number} onChange={e => set('mo_number', e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Job it's for" />
+              <datalist id="ck-mos">{(options.mo_numbers || []).map(n => <option key={n} value={n} />)}</datalist>
+            </div>
           </div>
 
           {error && (

@@ -295,6 +295,19 @@ UI: `ScaleKiosk.jsx` (QR at `/kiosk/scale`, Quick Forms entry `form-scale`, live
 → `ScaleVerificationTab.jsx`, a tab in Calibration Management with one status card per form ("has today's
 check been run") and QA counter-signature. Room links to a `calibration_instruments` row when the name matches.
 
+## Adding a field to a QMS record type (three places, one of them easy to miss)
+`server/qms-config.js` drives the in-app form, the log columns, the record view, the Auditor View and the
+CSV importer off one `fields` entry — add the field there and to `logColumns` and all of those follow.
+**The kiosks do not.** `ComponentKiosk` / `KnifeKiosk` / `MaintenanceKiosk` / `ScaleKiosk` are hand-written
+(they're big-tap public forms, not the config renderer), each with its own `POST /api/submit/…` handler that
+destructures the body field by field — so a field added only to the config silently never arrives from the
+kiosk. Component Sign In/Out's **MO #** (`mo_number`, same key as `production_entries.mo_number` so
+"what was pulled for MO 4471" is a straight match) is the worked example: `qms-config.js` fields +
+logColumns + `csv.map` aliases, `submit.js` destructure + `data` + audit detail + the `/component-options`
+suggestion list, and the kiosk input itself. Records filed before the field exists just render `—`.
+Kiosk suggestion lists are built from **that log's own history**, never from the schedule or another module:
+the kiosk is a public unauthenticated path and must not widen what it exposes.
+
 ## Sign In/Out: one place, two controlled forms
 Forms **440-02** (knives/blades) and **703-01** (equipment/tools/chemicals) record the same transaction —
 a person takes an item, brings it back, condition checked both ways. They were separate modules only

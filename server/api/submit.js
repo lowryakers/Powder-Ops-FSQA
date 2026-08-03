@@ -203,13 +203,20 @@ router.post('/flavor-approval/:token', async (req, res) => {
 router.get('/component-options', (_req, res) => {
   const db = getDb();
   const rows = db.prepare("SELECT data FROM qms_records WHERE record_type = 'component_sign_out'").all();
-  const items = new Set(), parts = new Set();
+  const items = new Set(), parts = new Set(), mos = new Set();
   for (const r of rows) {
     const d = parseJson(r.data, {});
     if (d.item_name) items.add(d.item_name);
     if (d.part_number) parts.add(d.part_number);
+    if (d.mo_number) mos.add(d.mo_number);
   }
-  res.json({ item_names: [...items].sort(), part_numbers: [...parts].sort() });
+  // MO suggestions come from this log's own history, not the production
+  // schedule — the kiosk is a public path and shouldn't widen what it exposes.
+  res.json({
+    item_names: [...items].sort(),
+    part_numbers: [...parts].sort(),
+    mo_numbers: [...mos].sort().reverse(),
+  });
 });
 
 // Log a component sign-out (or sign-in) as a new record awaiting in-app WH/QA
@@ -217,7 +224,7 @@ router.get('/component-options', (_req, res) => {
 router.post('/component-signout', (req, res) => {
   const db = getDb();
   const cfg = getType('component_sign_out');
-  const { direction, item_name, part_number, lot_number, qty_pulled, person } = req.body;
+  const { direction, item_name, part_number, lot_number, mo_number, qty_pulled, person } = req.body;
   const name = (person || '').trim();
   if (!name || !item_name || !String(item_name).trim()) {
     return res.status(400).json({ error: 'Item name and your name are required.' });
@@ -230,6 +237,7 @@ router.post('/component-signout', (req, res) => {
     item_name: String(item_name).trim(),
     part_number: part_number || '',
     lot_number: lot_number || '',
+    mo_number: String(mo_number || '').trim(),
     qty_pulled: qty_pulled || '',
     signed_by: name,
   };
@@ -238,7 +246,7 @@ router.post('/component-signout', (req, res) => {
     VALUES (?, 'component_sign_out', ?, ?, NULL, ?, 0, ?)`).run(id, number, today(), JSON.stringify(data), name);
 
   logAudit(name, 'submit_public', 'component_sign_out', id,
-    { record_number: number, direction: data.direction, item_name: data.item_name, via: 'kiosk' }, null, null, data.item_name);
+    { record_number: number, direction: data.direction, item_name: data.item_name, mo_number: data.mo_number, via: 'kiosk' }, null, null, data.item_name);
 
   res.status(201).json({ ok: true, record_number: number, direction: data.direction });
 });
