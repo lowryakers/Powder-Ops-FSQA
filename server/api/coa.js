@@ -128,6 +128,92 @@ router.get('/specifications', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// ── Draft specifications waiting on QA ──────────────────────────────────────
+//
+// Seeded starter specs (server/spec-seed.js) land as `is_active = 0` +
+// `approval_status = 'draft'`, so they cannot grade anything until someone
+// reviews them. This is their queue. Bounded like every other list endpoint.
+router.get('/specifications/drafts', (req, res) => {
+  const db = getDb();
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 2000);
+  const rows = db.prepare(`SELECT * FROM coa_specifications
+    WHERE approval_status = 'draft' AND is_active = 0
+    ORDER BY item_number, test_type LIMIT ?`).all(limit);
+  // Items are derived from the rows actually returned, not from a separate
+  // GROUP BY over the whole table — otherwise a page cut short by `limit`
+  // lists items whose drafts aren't in the payload, and the UI renders empty
+  // groups. `total` is the honest count of everything still waiting.
+  const seen = new Map();
+  for (const r of rows) {
+    if (!seen.has(r.item_number)) seen.set(r.item_number, { item_number: r.item_number, item_description: r.item_description, n: 0 });
+    seen.get(r.item_number).n++;
+  }
+  const total = db.prepare("SELECT COUNT(*) n FROM coa_specifications WHERE approval_status = 'draft' AND is_active = 0").get().n;
+  res.json({ drafts: rows, items: [...seen.values()], shown: rows.length, total });
+});
+
+// Approve drafts into live specifications. From this point they grade results,
+// so a draft whose limit was left blank on purpose (the heavy metals) can be
+// given its number in the same call rather than approved empty and forgotten.
+router.post('/specifications/drafts/approve', (req, res) => {
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const limits = req.body?.limits && typeof req.body.limits === 'object' ? req.body.limits : {};
+
+  const get = db.prepare("SELECT * FROM coa_specifications WHERE id = ? AND approval_status = 'draft'");
+  const setLimits = db.prepare('UPDATE coa_specifications SET min_value = ?, max_value = ? WHERE id = ?');
+  const approve = db.prepare(`UPDATE coa_specifications SET is_active = 1, approval_status = 'approved',
+    reviewed_by = ?, reviewed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`);
+
+  const done = [];
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      const row = get.get(id);
+      if (!row) continue;
+      const l = limits[id];
+      if (l && (l.min_value !== undefined || l.max_value !== undefined)) {
+        const min = l.min_value === '' || l.min_value == null ? null : Number(l.min_value);
+        const max = l.max_value === '' || l.max_value == null ? null : Number(l.max_value);
+        setLimits.run(Number.isFinite(min) ? min : null, Number.isFinite(max) ? max : null, id);
+      }
+      approve.run(req.user.name, id);
+      done.push(id);
+      logAudit(req.user, 'approve', 'coa_specification', id,
+        { item_number: row.item_number, test_type: row.test_type, from: 'draft' },
+        row, db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(id), `${row.item_number} · ${row.test_type}`);
+    }
+  });
+  tx();
+  res.json({ approved: done.length });
+});
+
+// Discarding a draft does NOT delete the row — it stays as the record that
+// this spec was offered and turned down, and it's what stops the seeder
+// filing it again on the next deploy.
+router.post('/specifications/drafts/discard', (req, res) => {
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const get = db.prepare("SELECT * FROM coa_specifications WHERE id = ? AND approval_status = 'draft'");
+  const upd = db.prepare(`UPDATE coa_specifications SET approval_status = 'discarded',
+    reviewed_by = ?, reviewed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`);
+  let n = 0;
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      const row = get.get(id);
+      if (!row) continue;
+      upd.run(req.user.name, id);
+      n++;
+      logAudit(req.user, 'update', 'coa_specification', id,
+        { item_number: row.item_number, test_type: row.test_type, discarded_draft: true }, row, null,
+        `${row.item_number} · ${row.test_type}`);
+    }
+  });
+  tx();
+  res.json({ discarded: n });
+});
+
 router.post('/specifications', (req, res) => {
   const db = getDb();
   const { item_number, item_description, test_type, specification, unit, min_value, max_value, method, sku_number, vendor, revision } = req.body;

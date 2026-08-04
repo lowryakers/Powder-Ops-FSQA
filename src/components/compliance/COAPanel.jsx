@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload, apiFetch } from '../../hooks/useApi';
+import DraftSpecsReview from './DraftSpecsReview.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square, PenLine } from 'lucide-react';
@@ -1749,6 +1750,7 @@ export default function COAPanel() {
       {/* ───── Specifications Tab ───── */}
       {subTab === 'specs' && (
         <>
+          <DraftSpecsReview />
           <div className="flex justify-between items-center">
             <p className="text-sm text-gray-500">{specs?.length || 0} specifications on file</p>
             <div className="flex gap-2">

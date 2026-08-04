@@ -1416,6 +1416,21 @@ function runMigrations() {
   addColumnIfMissing('coa_specifications', 'vendor', 'TEXT');
   addColumnIfMissing('coa_specifications', 'revision', 'TEXT');
 
+  // Seeded specifications arrive as DRAFTS for QA to review.
+  //
+  // `is_active` already means two things at once if you're not careful:
+  // grading only ever reads `is_active = 1`, and the delete route sets it to 0
+  // to RETIRE a spec. So a draft is `is_active = 0` — which gives the safety
+  // property for free, a draft can never grade a result — and
+  // `approval_status` is what tells a draft apart from a retirement.
+  // 'approved' is the default so every spec already on file, typed in
+  // deliberately by QA, keeps meaning exactly what it meant.
+  addColumnIfMissing('coa_specifications', 'approval_status', "TEXT NOT NULL DEFAULT 'approved'");
+  addColumnIfMissing('coa_specifications', 'source', 'TEXT');
+  addColumnIfMissing('coa_specifications', 'reviewed_by', 'TEXT');
+  addColumnIfMissing('coa_specifications', 'reviewed_at', 'TEXT');
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_coa_specs_approval ON coa_specifications(approval_status)'); } catch { /* ignore */ }
+
   // Document review scheduling: each controlled document gets a review frequency
   // (default annual per SQF) that drives an auto-computed next-review date
   // (stored in the existing review_due) and generates Document-Control tasks.

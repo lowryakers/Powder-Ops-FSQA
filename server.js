@@ -64,6 +64,7 @@ import productionRoutes from './server/api/production.js';
 import structureRoutes from './server/api/structure.js';
 import { seedStructureLists } from './server/structure-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
+import { seedGenericSpecifications } from './server/spec-seed.js';
 import { tagQaInspectionRecords } from './server/qa-records.js';
 import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
 import receivingRoutes from './server/api/receiving.js';
@@ -1006,6 +1007,17 @@ try {
   }
 } catch (err) {
   console.error('[seed] Error seeding COA data (non-fatal):', err.message, err.stack);
+}
+
+// Starter COA specifications, filed as DRAFTS (is_active = 0) so nothing can
+// grade a real result until QA reviews it. MUST run after the COA seed above:
+// it works from the items the plant has actually sent to a lab, and on a fresh
+// database that table is empty until the block above fills it. Idempotent per
+// item + test, so a later boot adds only what is genuinely missing.
+try {
+  seedGenericSpecifications(db);
+} catch (err) {
+  console.error('[seed] Error seeding COA specifications (non-fatal):', err.message);
 }
 
 // Seed SOP: Food Safety Policy Statement

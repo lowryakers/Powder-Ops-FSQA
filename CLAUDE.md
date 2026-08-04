@@ -740,6 +740,31 @@ Operator View read as "the Production Log again".
   same rule; a second copy of an access rule is how two screens start disagreeing about who can reach a
   module.
 
+## Starter COA specifications, seeded as drafts (`server/spec-seed.js`)
+The Specifications tab started empty, so an uploaded lab result had nothing to grade itself against — the
+test with no spec is the one that quietly passes. The seeder files the standard panel for the **50 most-
+tested items** (from `coa_requests`, most requests first) as drafts for QA.
+- **A draft can never grade a result, and that's not a promise made here** — drafts are `is_active = 0`, and
+  every grading path already reads `is_active = 1`. `approval_status` ('approved' by default, so every spec
+  QA typed in keeps meaning what it meant) is only what tells a draft apart from a **retirement**, since
+  `DELETE /specifications/:id` also sets `is_active = 0`.
+- **A number is seeded only where a published standard gives one that doesn't depend on the item.** Gluten
+  20 ppm (FDA gluten-free threshold); USP <2021> counts for oral products containing raw material of natural
+  origin. **Heavy metals get NO number** — USP <2232> sets a limit per *daily dose*, and converting it needs
+  the item's serving size, so the requirement is written out and the figure is typed in at approval time
+  (`limits` on the approve call). Seeding a plausible ppm figure someone rubber-stamps would grade real
+  product against a number nobody chose. Potency, minerals, moisture and probiotic counts are absent
+  entirely — those are decisions about the product.
+- **Discard never deletes.** The row surviving as `approval_status = 'discarded'` is both the record that the
+  spec was offered and turned down, and what stops the seeder re-filing it next deploy (idempotency is on
+  item + test across *every* status).
+- **Seed ordering:** `seedGenericSpecifications` must run **after** the COA seed block in server.js — it
+  works from items the plant has sent to a lab, and on a fresh DB that table is empty until then. It was
+  first placed with the other seeds and filed zero rows.
+- API `GET /coa/specifications/drafts` (bounded; `items` derived from the returned rows so a truncated page
+  can't render empty groups, `total` is the honest count) + `POST .../drafts/approve|discard`.
+  UI `DraftSpecsReview.jsx`, an amber strip at the top of the Specifications tab.
+
 ## Internal Audits — Form 403-01, walked one question at a time
 `server/audit-checklist.js` (the form) + `server/api/internal-audits.js` + `InternalAuditsPanel.jsx`.
 19 sections, **104 questions**, transcribed from the plant's own controlled form.
