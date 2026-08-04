@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useApiGet } from '../../hooks/useApi';
+import { useCompactLayout } from '../../lib/useCompactLayout.js';
 import {
   Map as MapIcon, Layers, Printer, X, Droplets, Factory, Wrench, AlertTriangle,
-  Bug, FlaskConical, CalendarDays, ExternalLink,
+  Bug, FlaskConical, CalendarDays, ExternalLink, Maximize2, Minimize2, ChevronRight,
 } from 'lucide-react';
 import {
   PLAN, SPANS, ROOMS, ROOM_KINDS, FIXTURES, FIXTURE_KINDS, TRAPS, TRAPS_UNPLACED,
@@ -29,19 +30,26 @@ const openModule = (tab) => window.dispatchEvent(new CustomEvent('app-navigate',
 // Status colouring is deliberately only about CLEANING, because that's the
 // live fact a floor plan is genuinely useful for. Everything else lives in the
 // detail panel rather than competing for the same colour channel.
+// While this layer is on, EVERY colour on the map means a cleaning fact — a
+// room with no cleaning data falls back to neutral grey, not to its room-kind
+// colour. Batching's kind fill is the same amber as "no clean on record", so
+// keeping the kind colour made a room the cleaning log has never heard of
+// indistinguishable from one that is overdue its first record: the legend
+// naming a fact the colour didn't carry.
+const NO_STATUS = { fill: '#f3f4f6', stroke: '#d1d5db' };
 const statusFill = (s) => {
-  if (!s) return null;
+  if (!s) return NO_STATUS;
   if (s.needs_reclean) return { fill: '#fecaca', stroke: '#ef4444' };
   if (s.reclean_status === 'clean') return { fill: '#dcfce7', stroke: '#22c55e' };
   if (s.reclean_status === 'no_clean_on_record') return { fill: '#fef3c7', stroke: '#f59e0b' };
-  return null;
+  return NO_STATUS;
 };
 
 const STATUS_LEGEND = [
   { label: 'Needs re-cleaning', fill: '#fecaca', stroke: '#ef4444' },
   { label: 'Inside the 72-hour window', fill: '#dcfce7', stroke: '#22c55e' },
   { label: 'No clean on record', fill: '#fef3c7', stroke: '#f59e0b' },
-  { label: 'Rule not applicable', fill: '#f3f4f6', stroke: '#d1d5db' },
+  { label: 'No cleaning status', fill: NO_STATUS.fill, stroke: NO_STATUS.stroke },
 ];
 
 // Whatever the rooms are coloured BY is what the legend explains. Showing the
@@ -95,12 +103,17 @@ function Fixture({ f }) {
   return <rect x={f.x - w / 2} y={f.y - h / 2} width={w} height={h} rx="1" fill={k.color} stroke={k.edge} strokeWidth="0.7" />;
 }
 
+// The label column stacks above the value on a phone. A fixed 8rem label beside
+// a 190px value turns "2026-08-01 · 2 days ago · 1 entered late" into four
+// ragged lines hanging off an empty column.
 function Line({ icon: Icon, label, value, tone }) {
   return (
     <div className="flex items-start gap-2 text-sm">
       <Icon size={14} className="mt-0.5 shrink-0 text-gray-400" />
-      <span className="text-gray-500 w-32 shrink-0">{label}</span>
-      <span className={`min-w-0 ${tone || 'text-gray-900'}`}>{value}</span>
+      <div className="min-w-0 flex-1 sm:flex sm:items-start sm:gap-2">
+        <span className="block text-gray-500 text-xs sm:text-sm sm:w-32 sm:shrink-0">{label}</span>
+        <span className={`block min-w-0 ${tone || 'text-gray-900'}`}>{value}</span>
+      </div>
     </div>
   );
 }
@@ -163,7 +176,7 @@ function DetailPanel({ room, status, zone, zoneInfo, onClose }) {
             <Line icon={FlaskConical} label="Brittle plastic & glass"
               value={`${zone}${zoneInfo?.item_count ? ` · ${zoneInfo.item_count} items` : ''}${zoneInfo?.last_inspection ? ` · last inspected ${String(zoneInfo.last_inspection).slice(0, 10)}` : ''}`} />
             {zoneInfo?.items?.length > 0 && (
-              <ul className="mt-1.5 ml-[9.5rem] space-y-0.5 max-h-40 overflow-y-auto">
+              <ul className="mt-1.5 ml-6 sm:ml-[9.5rem] space-y-0.5 max-h-40 overflow-y-auto">
                 {zoneInfo.items.map((i, n) => (
                   <li key={n} className="text-xs text-gray-600">
                     {i.item}{i.qty ? ` × ${i.qty}` : ''}{i.material ? <span className="text-gray-400"> · {i.material}</span> : null}
@@ -195,10 +208,87 @@ function DetailPanel({ room, status, zone, zoneInfo, onClose }) {
   );
 }
 
+// On a phone the rooms are 7px tall — you cannot tap them, and pinching a
+// floor plan to find one is not a workflow. So the compact layout gets the
+// same rooms as a LIST, grouped by whatever the map is coloured by, and the
+// map above it becomes the picture rather than the only control.
+function statusGroupOf(s) {
+  if (!s) return 'other';
+  if (s.needs_reclean) return 'needs';
+  if (s.reclean_status === 'clean') return 'clean';
+  if (s.reclean_status === 'no_clean_on_record') return 'none';
+  return 'other';
+}
+const STATUS_GROUPS = [
+  { key: 'needs', label: 'Needs re-cleaning', dot: '#ef4444' },
+  { key: 'none', label: 'No clean on record', dot: '#f59e0b' },
+  { key: 'clean', label: 'Inside the 72-hour window', dot: '#22c55e' },
+  { key: 'other', label: 'No cleaning status', dot: '#d1d5db' },
+];
+
+function RoomList({ status, onPick }) {
+  const groups = useMemo(() => {
+    const out = {};
+    for (const r of ROOMS) {
+      const g = r.room ? statusGroupOf(status[r.room]) : 'other';
+      (out[g] ||= []).push(r);
+    }
+    return out;
+  }, [status]);
+
+  return (
+    <div className="space-y-3 md:hidden">
+      <p className="text-xs text-gray-500">
+        Every space on the map, by cleaning status — tap one for its detail.
+      </p>
+      {STATUS_GROUPS.filter(g => groups[g.key]?.length).map(g => (
+        <div key={g.key} className="border border-gray-200 rounded-xl bg-white overflow-hidden">
+          <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: g.dot }} />
+            <span className="text-xs font-semibold text-gray-700">{g.label}</span>
+            <span className="text-xs text-gray-400 ml-auto">{groups[g.key].length}</span>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {groups[g.key].map(r => (
+              <li key={r.id}>
+                <button onClick={() => onPick(r.id)}
+                  className="w-full flex items-center gap-2 px-3 py-3 text-left active:bg-gray-50">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm text-gray-900 truncate">{r.label || r.id}</span>
+                    <span className="block text-xs text-gray-500 truncate">
+                      {ROOM_KINDS[r.kind]?.label}
+                      {r.room && status[r.room]?.last_clean
+                        ? ` · cleaned ${String(status[r.room].last_clean).slice(0, 10)}` : ''}
+                    </span>
+                  </span>
+                  <ChevronRight size={15} className="text-gray-300 shrink-0" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function FacilityMapPanel() {
   const [layers, setLayers] = useState({ fixtures: false, traps: false, bpg: false, status: true });
   const [selected, setSelected] = useState(null);
+  // Fit-to-width by default on a phone: seeing half a building is worse than
+  // seeing all of it small. Zoom restores the readable-label size and the
+  // sideways scroll that comes with it — a deliberate choice, not a surprise.
+  const [zoomed, setZoomed] = useState(false);
+  const compact = useCompactLayout();
+  const detailRef = useRef(null);
   const { data } = useApiGet('/facility/map-status');
+
+  // On a phone the detail lands below the map, so tapping a room at the top
+  // of the plan otherwise looks like nothing happened.
+  useEffect(() => {
+    if (!compact || !selected) return;
+    detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [compact, selected]);
 
   const status = data?.rooms || {};
   const zones = data?.zones || {};
@@ -218,10 +308,9 @@ export default function FacilityMapPanel() {
       const z = ZONE_OF_ROOM[r.id];
       if (z) return { fill: zoneColour[z], stroke: '#64748b' };
     }
-    if (layers.status && r.room) {
-      const s = statusFill(status[r.room]);
-      if (s) return s;
-    }
+    // Every space, not just the ones with a room key — an office coloured by
+    // its kind while the map claims to show cleaning status is the same lie.
+    if (layers.status) return statusFill(r.room ? status[r.room] : null);
     const k = ROOM_KINDS[r.kind];
     return { fill: k.fill, stroke: k.stroke };
   };
@@ -274,8 +363,15 @@ export default function FacilityMapPanel() {
         </button>
       </div>
 
-      <div className="border border-gray-200 rounded-xl bg-white p-3 overflow-x-auto">
-        <svg viewBox={`-6 -6 ${PLAN.width + 12} ${PLAN.height + 26}`} className="w-full min-w-[680px]"
+      <div className="border border-gray-200 rounded-xl bg-white p-3 overflow-x-auto relative">
+        {compact && (
+          <button onClick={() => setZoomed(z => !z)}
+            className="absolute right-4 top-4 z-10 flex items-center gap-1 px-2.5 py-1.5 bg-white/95 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 shadow-sm">
+            {zoomed ? <><Minimize2 size={12} /> Fit</> : <><Maximize2 size={12} /> Zoom</>}
+          </button>
+        )}
+        <svg viewBox={`-6 -6 ${PLAN.width + 12} ${PLAN.height + 26}`}
+          className={`w-full ${compact && !zoomed ? '' : 'min-w-[680px]'}`}
           role="img" aria-label="Facility floor plan">
           {/* building outline */}
           <rect x="0" y="0" width={PLAN.width} height={PLAN.height} fill="#fff" stroke="#334155" strokeWidth="2" />
@@ -316,6 +412,16 @@ export default function FacilityMapPanel() {
 
       <Legend layers={layers} />
 
+      {/* Directly under the map on every layout: tap a room, the answer is the
+          next thing you see rather than something below two legend blocks. */}
+      {selectedRoom && (
+        <div ref={detailRef}>
+          <DetailPanel room={selectedRoom} status={selectedRoom.room ? status[selectedRoom.room] : null}
+            zone={ZONE_OF_ROOM[selectedRoom.id]} zoneInfo={zones[ZONE_OF_ROOM[selectedRoom.id]]}
+            onClose={() => setSelected(null)} />
+        </div>
+      )}
+
       {layers.traps && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
           {TRAPS.length} of {TRAPS.length + TRAPS_UNPLACED.length} stations are placed.
@@ -345,11 +451,7 @@ export default function FacilityMapPanel() {
         </div>
       )}
 
-      {selectedRoom && (
-        <DetailPanel room={selectedRoom} status={selectedRoom.room ? status[selectedRoom.room] : null}
-          zone={ZONE_OF_ROOM[selectedRoom.id]} zoneInfo={zones[ZONE_OF_ROOM[selectedRoom.id]]}
-          onClose={() => setSelected(null)} />
-      )}
+      <RoomList status={status} onPick={setSelected} />
     </div>
   );
 }

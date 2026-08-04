@@ -9,6 +9,7 @@ import CommsSettings from './CommsSettings.jsx';
 import NotificationStatus from './NotificationStatus.jsx';
 import ZoomableImage from './ZoomableImage.jsx';
 import { useSwipeBack } from '../../lib/useSwipeBack';
+import { useCompactLayout } from '../../lib/useCompactLayout.js';
 import FormatBar from '../common/FormatBar.jsx';
 import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
@@ -1613,15 +1614,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // Going back to the list is a decision: come back to the list next time.
   // The compact, one-pane-at-a-time layout — the same `md` breakpoint the
   // markup switches on, tracked live so a rotate or a resize is picked up.
-  const [isCompactLayout, setIsCompactLayout] = useState(
-    () => (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches) || false);
-  useEffect(() => {
-    const mq = window.matchMedia?.('(max-width: 767px)');
-    if (!mq) return;
-    const on = () => setIsCompactLayout(mq.matches);
-    mq.addEventListener?.('change', on);
-    return () => mq.removeEventListener?.('change', on);
-  }, []);
+  const isCompactLayout = useCompactLayout();
 
   const backToList = () => { setMobileThread(false); forgetChannel(); };
   // Drag the conversation right to go back, iMessage-style. Only on the compact

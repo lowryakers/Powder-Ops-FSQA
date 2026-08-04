@@ -937,10 +937,14 @@ export default function TrainingPanel() {
         <StatCard label="Current" value={counts.current} tone="green" active={view === 'matrix'} onClick={() => setView('matrix')} />
       </div>
 
-      <div className="flex items-center gap-1 border-b border-gray-200">
+      {/* Four tabs are ~6px wider than a small Android screen, which was enough
+          to make the whole page pan sideways. A tab strip is the one place a
+          deliberate horizontal scroller is right — wrapping would break the
+          underline into two rows. */}
+      <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto">
         {TABS.map(([id, label]) => (
           <button key={id} onClick={() => setView(id)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${view === id ? 'border-powder-600 text-powder-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{label}</button>
+            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px shrink-0 whitespace-nowrap ${view === id ? 'border-powder-600 text-powder-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{label}</button>
         ))}
       </div>
 

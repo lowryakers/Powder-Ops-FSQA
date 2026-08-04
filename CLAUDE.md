@@ -1201,3 +1201,36 @@ The plant's own floor plan, redrawn as **data** and coloured by what ReadyDoc kn
   reason someone opens that layer, and an unlabelled rectangle carries none of it.
 - Zone item lists on the BP&G layer are the same `pm_schedules.procedure_steps` (`item|qty|material`) the QA
   Inspections module uses, so adding an item to a zone shows up here with no second edit.
+
+## Mobile: what actually broke, and the two rules that catch it
+Everything is checked at **360px** (a small Android), not just 390 — the last 30px is where a row that
+"nearly fits" starts panning the whole page sideways. Two classes of bug, both found this way:
+- **A `shrink-0` row that can't wrap.** The Schedule toolbar (Progress / Notify / **Share**) ran off the
+  right edge at 360px and took the page with it, with Share the button you couldn't reach. It wraps below
+  `sm` now and keeps `sm:shrink-0` so the week heading can't squeeze it on desktop. The Training tab strip
+  was 6px over — a tab strip is the one place a deliberate `overflow-x-auto` scroller is right, because
+  wrapping would break the underline onto two rows.
+- **A wide SVG in a scroller.** `min-w-[680px]` on the Facility Map meant a phone saw the left half of the
+  building and had to scroll inside the card to find the rest. See below.
+**The test is `document.scrollWidth > window.innerWidth`** — measured with a script that walks the DOM for
+elements sticking out past the viewport and *ignores anything inside an `overflow-x: auto` parent*, so a
+deliberate scroller doesn't read as a bug. Run it on new screens.
+
+### The Facility Map on a phone
+- **Fit to width by default, Zoom to read the labels.** Half a building is worse than all of it small.
+- **Fit-to-width makes the rooms ~7px tall, so the map stops being the only control.** The compact layout
+  gets the same rooms as a **tappable list grouped by cleaning status** underneath — that's how you reach a
+  room on a phone; pinching a floor plan is not a workflow. Desktop keeps just the map (`md:hidden`).
+- **The detail panel moved directly under the map** on every layout and scrolls itself into view on compact.
+  Tapping a room at the top of the plan and having the answer appear two legend blocks below reads as
+  nothing happening.
+- **Every colour on the cleaning layer now means a cleaning fact.** A room with no cleaning data falls back
+  to neutral grey instead of its room-kind colour: Batching's kind fill is the *same amber* as "no clean on
+  record", so Batching Rm 3 — which the cleaning log has never heard of — was indistinguishable from a room
+  overdue its first record. The legend was naming a fact the colour didn't carry.
+- `Line` in the detail panel stacks label-above-value below `sm`; a fixed 8rem label beside a ~190px value
+  turned one sentence into four ragged lines hanging off an empty column.
+
+`src/lib/useCompactLayout.js` is the **one** definition of the `md` breakpoint for components that need to
+*behave* differently on a phone (CommsView's inline copy now imports it). A second copy is how a component
+and its own markup start disagreeing about which layout is on screen.

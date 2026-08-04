@@ -1401,7 +1401,11 @@ export default function ProductionSchedule({ user }) {
           Week of {formatDate(monday)}
         </h2>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Wraps on a phone. `shrink-0` on every width meant Progress / Notify /
+            Share ran off the right edge and the whole page panned sideways —
+            with Share the one you couldn't reach. It stays shrink-0 from `sm`
+            up so the week heading can't squeeze it on desktop. */}
+        <div className="flex flex-wrap items-center justify-center gap-1.5 sm:flex-nowrap sm:shrink-0">
         <button onClick={toggleProgress}
           data-tip={showProgress ? 'Hide production progress' : 'Show what has been produced this week beside the schedule'}
           className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 ${showProgress ? 'text-powder-700 bg-powder-50' : 'text-gray-600 hover:bg-gray-100'}`}>
