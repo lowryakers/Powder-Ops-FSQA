@@ -914,6 +914,24 @@ derives sign-in names with, so Spanish two-surname names file under the maternal
 where someone goes by the paternal one, correct it on their record rather than special-casing the sort. The
 column header says "by last name" because the names still display first-name-first.
 
+## Temp & Humidity excursions alert Adam (`server/env-limits.js`)
+Completing the daily Temp & Humidity check (Form 110-04) with an out-of-range reading DMs Adam through
+ReadyBot and pushes to his phone, hooked onto `complete-and-recur` in pm.js — the one path where an operator
+actually enters the numbers.
+- **Humidity alerts at 39%, one point BELOW the procedure's 40% limit.** That gap is the point: an alert
+  that only fires once the limit is breached is a report, not a warning. `exceeded` distinguishes
+  "approaching" from "out of range" so the message says which. Temperature alerts at its limit, 78°F.
+- **A blank or unparseable reading never alerts** — that's a gap in the record, not an excursion, and
+  crying wolf on it is how people learn to ignore the alarm. Readings are text from a phone keypad, so
+  `"41 %"` and `"78F"` parse.
+- Targets Adam by name, falling back to QA admins/supervisors so a rename or an absence can't silence it.
+- **Best-effort and never blocking**: the reading is already recorded before the notification runs, so a
+  comms failure can't fail the check. Audited as `environmental_alert` with the readings and who was told.
+- Limits are acceptance criteria, not settings — not editable in the app, same reasoning as `scale-forms.js`
+  tolerances. If they should be gated by Document Control like those are, add them to `controlled.js`.
+- Only the work-order path is covered. A temp/humidity record filed straight into Sanitation stores its
+  numbers in free-text notes and is not parsed.
+
 ## Recurring QA checks that ship pre-scheduled
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).
 Seeded **once, keyed on title** — an edited frequency, a paused schedule or a deleted one is a decision, and

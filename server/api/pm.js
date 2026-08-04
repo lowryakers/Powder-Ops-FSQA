@@ -4,8 +4,9 @@ import { getDb, logAudit } from '../db.js';
 import { requireDepartment } from '../middleware/auth.js';
 import { generateDocumentReviewTasks, recomputeDocumentReview } from './documents.js';
 import { generateQualityScheduleTasks } from './quality-schedules.js';
-import { getChannelByName, postMessageAs } from './comms.js';
+import { getChannelByName, postMessageAs, botDm } from './comms.js';
 import { pushToUser } from '../push.js';
+import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
 
 // Side-effects to run when any work order transitions to completed, regardless
 // of which completion path handled it. Completing a document-review task
@@ -386,6 +387,11 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     req.params.id);
 
   logAudit(completedBy, 'complete', 'work_order', req.params.id, { notes, readings, reading_result }, null, null);
+  if (isEnvironmentalCheck(existing.title)) {
+    const eqName = db.prepare('SELECT name, room FROM equipment WHERE id = ?').get(existing.equipment_id);
+    notifyEnvironmentalBreach(db, { ...existing, equipment_name: eqName?.room || eqName?.name }, readings, completedBy)
+      .catch(e => console.warn('[env-alert]', e.message));
+  }
   if (needsClearance) {
     logAudit('system', 'clearance_required', 'work_order', req.params.id, 'Food-contact equipment — hygiene clearance pending');
   }
@@ -509,6 +515,44 @@ async function notifyTaskIssue(db, flagger, wo) {
       tag: `issue-${wo.id}`, renotify: true,
     }).catch(() => {});
   }
+}
+
+// A humidity or temperature reading out of range is told to someone straight
+// away, because the whole value of a daily check is catching the day it moves.
+// Best-effort: a notification failure must never make the check itself fail —
+// the reading is already recorded by the time this runs.
+async function notifyEnvironmentalBreach(db, wo, readings, completedBy) {
+  const breaches = environmentalBreaches(readings);
+  if (!breaches.length) return;
+
+  const room = wo.equipment_name || wo.location || wo.title || 'the monitored area';
+  const lines = breaches.map(b => {
+    const state = b.exceeded ? 'OUT OF RANGE' : 'approaching the limit';
+    return `• ${b.label}: *${b.value}${b.unit}* — ${state} (${b.note})`;
+  }).join('\n');
+  const worst = breaches.some(b => b.exceeded) ? 'out of range' : 'approaching its limit';
+  const body = `*Temp & Humidity check ${worst}* — ${room}\n${lines}\n\nLogged by ${completedBy} just now.`;
+
+  // Adam is the named escalation for environmental excursions. Fall back to
+  // the QA supervisors so a rename or an absence never silences this.
+  let targets = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name LIKE 'Adam%' ORDER BY name LIMIT 1").all();
+  if (!targets.length) {
+    targets = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND role IN ('admin','supervisor') AND LOWER(department) IN ('qa','quality')").all();
+  }
+  for (const t of targets) {
+    try {
+      const { bot, dm } = botDm(db, t.id);
+      if (dm) await postMessageAs(db, dm, bot, body);
+    } catch (e) { console.warn('[env-alert] DM failed:', e.message); }
+    // A DM the phone doesn't buzz for is a message read tomorrow.
+    pushToUser(t.id, {
+      title: `Temp & Humidity ${worst}: ${room}`,
+      body: breaches.map(b => `${b.label} ${b.value}${b.unit}`).join(' · '),
+      tag: `env-${wo.id}`, renotify: true,
+    }).catch(() => {});
+  }
+  logAudit('system', 'environmental_alert', 'work_order', wo.id,
+    { room, breaches, notified: targets.map(t => t.name) }, null, null, wo.title);
 }
 
 router.post('/work-orders/:id/flag-issue', (req, res) => {
