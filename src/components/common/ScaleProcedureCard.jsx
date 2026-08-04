@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ListOrdered, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import ScalePlacementDiagram from './ScalePlacementDiagram.jsx';
 
 // The Scale Calibration Verification procedure, shown on the form you're filling in.
 //
@@ -57,6 +58,13 @@ export default function ScaleProcedureCard({ procedure, form, defaultOpen = true
               ))}
             </div>
           )}
+
+          {/* Where the weights go — their own placement scheme, with this
+              form's weights on it. Sits between the numbers and the steps:
+              you read what to place, then where, then what to do. */}
+          <div className="border border-gray-100 rounded-lg p-3 bg-gray-50/60">
+            <ScalePlacementDiagram points={pts} unit={unit} />
+          </div>
 
           <ol className="space-y-1.5">
             {(procedure.steps || []).map((step, i) => (
