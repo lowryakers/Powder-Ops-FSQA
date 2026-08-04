@@ -740,6 +740,21 @@ Operator View read as "the Production Log again".
   same rule; a second copy of an access rule is how two screens start disagreeing about who can reach a
   module.
 
+## Auditor View: process maps (`src/data/processFlows.js`)
+Two shapes, one chapter: **FLOWS** answer "show me your process for X" — a record's life from the event that
+starts it to the signature that closes it, naming the form and the actor at each step; **DEPARTMENTS**
+answer "what does this team do" — what they own, sign and are scheduled for.
+- **Data, not drawings.** `ProcessFlows.jsx` is a small renderer; adding a flow is an entry in the data
+  file. Rendered as structured HTML rather than SVG so it stays readable at any width, prints, and can be
+  selected and copied — a picture that has to be zoomed on a laptop in a conference room is worse than a
+  clear list with the hand-offs made obvious.
+- **`branch: true` marks a path that only runs when something goes wrong** (a failed tasting, a correction,
+  an excursion). It's indented and labelled, because folding the exception into the happy path is how a
+  process map ends up describing something the plant doesn't do.
+- **Actors are ROLES, never people** — the map shouldn't need editing when someone changes job.
+- Keep the wording matched to what the app actually does. A map describing an aspiration is worse than none,
+  because an auditor will test it against the records.
+
 ## Auditor View: reading and printing the actual document
 The registry showed only the row — number, title, revision, status. An auditor asking for SOP 401 wants the
 document, and sending them to another screen is where a self-service binder stops being self-service.

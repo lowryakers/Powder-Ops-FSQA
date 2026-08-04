@@ -2,10 +2,11 @@ import { useState, useRef } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import MarkdownView from '../common/MarkdownView.jsx';
+import ProcessFlows from './ProcessFlows.jsx';
 import {
   Shield, Wrench, Thermometer, Droplets, CheckCircle, AlertTriangle, Download, LogOut,
   FlaskConical, ScrollText, FileText, ChevronDown, ChevronUp, ChevronRight, ArrowLeft,
-  BookOpen, GraduationCap, Scissors, FileWarning, TestTubes, PackageSearch, Printer, X, ExternalLink,
+  BookOpen, GraduationCap, Scissors, FileWarning, TestTubes, PackageSearch, Printer, X, ExternalLink, Workflow,
 } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 
@@ -749,6 +750,9 @@ const CHAPTERS = [
     sections: () => [
       ['Controlled Document Registry', BookOpen, <DocumentsSection key="d" title="Documents" />],
       ['Document Change Requests', FileText, <QmsSection key="dcr" type="document_change_request" />],
+      // How the records actually move, and who owns what. Sits in chapter 1
+      // because it is the orientation an auditor wants before opening any log.
+      ['Process Maps — how records move, who does what', Workflow, <ProcessFlows key="pf" />],
     ],
   },
   {
