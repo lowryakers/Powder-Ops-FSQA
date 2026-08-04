@@ -281,16 +281,24 @@ function UploadProgress({ percent }) {
   );
 }
 
-// Attachments live on R2 behind a presigned URL, which is a different origin —
-// so the <a download> attribute is ignored and the browser just opens the file
-// in a tab. That left right-click → "Save as…" as the only way to keep a
-// screenshot. Fetching the bytes and saving an object URL downloads for real,
-// with the original filename. Falls back to opening the URL if the fetch is
-// blocked for any reason.
+// Attachments live on R2 behind a presigned URL, which is a DIFFERENT ORIGIN —
+// so `<a download>` is ignored and the browser just opens the file in a tab.
+// Fetching the bytes and saving a blob fixes that, but only if the bucket has a
+// CORS rule allowing this origin; without one the fetch throws and the fallback
+// opens a tab, which is what "download behaves like open in a new tab" looks
+// like from the outside.
+//
+// So the bytes now come back through OUR origin (`download_url`), which needs
+// no CORS rule and keeps the filename. The presigned URL stays the fallback for
+// an attachment serialized before this shipped.
 async function downloadAttachment(a) {
-  if (!a?.url) return;
+  const src = a?.download_url || a?.url;
+  if (!src) return;
   try {
-    const res = await fetch(a.url);
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch(src, a?.download_url
+      ? { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      : undefined);
     if (!res.ok) throw new Error('fetch failed');
     const blob = await res.blob();
     const href = URL.createObjectURL(blob);
@@ -302,7 +310,7 @@ async function downloadAttachment(a) {
     el.remove();
     setTimeout(() => URL.revokeObjectURL(href), 10000);
   } catch {
-    window.open(a.url, '_blank', 'noopener');
+    window.open(a.url || src, '_blank', 'noopener');
   }
 }
 

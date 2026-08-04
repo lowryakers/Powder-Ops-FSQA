@@ -1020,6 +1020,36 @@ try {
   console.error('[seed] Error seeding COA specifications (non-fatal):', err.message);
 }
 
+// Seed FORM 431-01 into the controlled registry.
+//
+// The diagram was a file in public/forms with nothing in the registry pointing
+// at it, so an auditor asking "show me your brittle plastic and glass diagram"
+// got a link rather than a controlled document with a revision and a review
+// date. The FILE stays where it is on purpose — it must open even with no R2
+// configured — and this is the registry row that governs it.
+{
+  const hasBpg = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE doc_number = 'FORM 431-01'").get().c;
+  if (hasBpg === 0) {
+    try {
+      db.prepare(`INSERT INTO sop_documents (id, doc_number, title, category, revision, effective_date, review_due, owner, description, source_file)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(uuid(), 'FORM 431-01', 'Brittle Plastic and Glass Diagram', 'quality', 'V4',
+          '2026-08-04', '2027-08-04', 'Daniela Servin',
+          `Facility diagram identifying every zone covered by the monthly Brittle Plastic & Glass inspection (Form 431-02), with the items in each zone and their material.
+
+The diagram itself is at /forms/FORM-431-01-V4-Brittle-Plastic-and-Glass-Diagram.pdf and is linked from the QA Inspections BPG filter and from every BPG inspection record.
+
+The ITEM LISTS this diagram documents are maintained in the app, one schedule per zone (QA Inspections → Brittle Plastic & Glass), in the form item | qty | material. The zone names come from the "bpg_zones" managed list in Settings → Log Structure. Changing an item list there is what keeps this document and the inspections in step; re-issue the diagram through Document Control when the drawing itself changes.
+
+Page 2 covers the Room 11 sub-zones (11.0 through 11.7, 11.B1–11.B3 and 11.QA). Plastic pallet quantities vary with shipments and are used interchangeably between Room 11 and Room 17.`,
+          '/forms/FORM-431-01-V4-Brittle-Plastic-and-Glass-Diagram.pdf');
+      console.log('[seed] Created FORM 431-01 — Brittle Plastic and Glass Diagram');
+    } catch (e) {
+      console.error('[seed] Error seeding FORM 431-01 (non-fatal):', e.message);
+    }
+  }
+}
+
 // Seed SOP: Food Safety Policy Statement
 {
   const hasFSP = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE doc_number = 'POLICY 002'").get().c;

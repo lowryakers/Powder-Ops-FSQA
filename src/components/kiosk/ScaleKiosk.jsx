@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Scale, CheckCircle, AlertTriangle, ChevronLeft } from 'lucide-react';
+import ScaleProcedureCard from '../common/ScaleProcedureCard.jsx';
 
 // Scale Calibration Verification — Forms 417-01 … 417-05.
 //
@@ -22,6 +23,8 @@ function pointState(point, raw) {
 
 export default function ScaleKiosk({ defaultName = '' }) {
   const [forms, setForms] = useState([]);
+  // The directions, so the person at the scale reads them where they type.
+  const [procedure, setProcedure] = useState(null);
   const [rooms, setRooms] = useState([]);
   const [form, setForm] = useState(null);      // the chosen 417-xx definition
   const [values, setValues] = useState(['', '', '']);
@@ -32,7 +35,7 @@ export default function ScaleKiosk({ defaultName = '' }) {
 
   useEffect(() => {
     fetch('/api/submit/scale-forms').then(r => r.json())
-      .then(d => { setForms(d.forms || []); setRooms(d.rooms || []); })
+      .then(d => { setForms(d.forms || []); setRooms(d.rooms || []); setProcedure(d.procedure || null); })
       .catch(() => {});
   }, []);
 
@@ -161,6 +164,10 @@ export default function ScaleKiosk({ defaultName = '' }) {
           </div>
           <h1 className="text-2xl font-bold text-gray-900">{form.short}</h1>
           <p className="text-sm text-gray-500 mt-1">Form {form.code} {form.revision} — three-point check</p>
+        </div>
+
+        <div className="mb-4">
+          <ScaleProcedureCard procedure={procedure} form={form} />
         </div>
 
         <form onSubmit={submit} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-5 shadow-sm">

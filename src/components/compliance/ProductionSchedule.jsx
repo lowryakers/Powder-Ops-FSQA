@@ -224,7 +224,11 @@ const ROOM_SECTIONS = [
     type: 'production',
     headerClass: 'bg-green-50 border-green-200 text-green-800',
     cellTint: 'bg-green-50/40',
-    rooms: ['1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7', '8-1', '8-2'],
+    // Room 8 is gone — it isn't on the facility map, and what used to be
+    // scheduled there is Batching Room 3, which already has its own row below.
+    // `UnplacedAssignments` below catches anything still filed against a room
+    // that no longer has a row, so removing one can't silently strand work.
+    rooms: ['1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7'],
   },
   {
     label: 'Kitting',
@@ -1097,6 +1101,18 @@ export default function ProductionSchedule({ user }) {
     return map;
   }, [data]);
 
+  // Work filed against a room the grid no longer has a row for.
+  //
+  // Rooms come from ROOM_SECTIONS, so removing one (Room 8) makes anything
+  // still scheduled there invisible rather than gone — which is the worst of
+  // both. This names it so someone can move it, and stays silent when there's
+  // nothing to say.
+  const unplaced = useMemo(() => {
+    const known = new Set(ROOM_SECTIONS.flatMap(sec => sec.rooms));
+    return (data?.assignments || []).filter(a =>
+      !known.has(a.room) && (a.team || a.mo_number || a.product_name));
+  }, [data]);
+
   // ── Progress overlay: what has actually run this week ─────────────────────
   // The end-of-day reports for the displayed week, matched back to the
   // schedule so "what we've worked on vs. what's left" is visible without
@@ -1344,6 +1360,17 @@ export default function ProductionSchedule({ user }) {
 
   return (
     <div className="space-y-4">
+      {unplaced.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
+          <span className="font-semibold">{unplaced.length}</span> item{unplaced.length === 1 ? ' is' : 's are'} scheduled
+          in a room that no longer has a row:{' '}
+          <span className="font-medium">{[...new Set(unplaced.map(a => a.room))].join(', ')}</span>.
+          Open the cell it belongs in and re-enter it, or ask an admin to move it.
+          <span className="block text-xs text-amber-800 mt-0.5">
+            {unplaced.map(a => [a.room, a.mo_number, a.product_name].filter(Boolean).join(' · ')).join('  |  ')}
+          </span>
+        </div>
+      )}
       {/* Week Navigation Bar */}
       <div className="flex flex-wrap items-center justify-between gap-y-2 bg-white rounded-xl border border-gray-200 px-4 py-3">
         <div className="flex items-center gap-2 shrink-0">

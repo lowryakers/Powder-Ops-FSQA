@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react';
 import { useApiGet, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle2, XCircle, AlertTriangle, Clock, QrCode } from 'lucide-react';
+import ScaleProcedureCard from '../common/ScaleProcedureCard.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import KioskQrModal from '../kiosk/KioskQrModal.jsx';
@@ -88,6 +89,11 @@ export default function ScaleVerificationTab() {
       </div>
 
       <StatusCards status={status} />
+
+      {/* Reference copy. The check itself is run at the scale from the kiosk,
+          where this card is open by default; here it's collapsed so the log
+          stays the point of the screen. */}
+      <ScaleProcedureCard procedure={formList?.procedure} form={formList?.forms?.find(f => f.code === formCode)} defaultOpen={false} />
 
       {(fails > 0 || unverified > 0) && (
         <div className="flex flex-wrap gap-2">

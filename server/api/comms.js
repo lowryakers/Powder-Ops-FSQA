@@ -5,7 +5,7 @@ import { v4 as uuid } from 'uuid';
 import { deriveUsername } from '../usernames.js';
 import { getDb, logAudit } from '../db.js';
 import { emitToChannel, emitChannelsChanged, emitChannelsRefresh, emitToUser } from '../realtime.js';
-import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo } from '../media.js';
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
 import { aiEnabled, summarizeChat, translateText } from '../ai.js';
@@ -960,7 +960,11 @@ async function attachmentsFor(db, messageId, deleted) {
     id: a.id, filename: a.filename, content_type: a.content_type, size: a.size,
     is_image: (a.content_type || '').startsWith('image/'),
     is_video: isVideo(a.content_type, a.filename),
+    // `url` is the presigned R2 link, used to RENDER (an <img>/<video> needs no
+    // CORS). `download_url` is our own origin and is what a Download button
+    // must use — see the endpoint for why.
     url: await presignGet(a.storage_key, a.filename),
+    download_url: `/api/comms/attachments/${a.id}/download`,
   })));
 }
 
@@ -1378,6 +1382,35 @@ router.post('/channels/:id/messages', async (req, res) => {
 
 // ── Attachments ─────────────────────────────────────────────────────────────
 // Upload one or more files to a channel; they stay unlinked until a message
+// GET /attachments/:id/download — same-origin download.
+//
+// The presigned R2 URL is a DIFFERENT ORIGIN, so `<a download>` is ignored and
+// the browser just opens the file in a tab; the client worked around that by
+// fetching the bytes and saving a blob, which needs a CORS rule on the bucket.
+// Without one the fetch throws and the fallback opens a tab — which is exactly
+// what "download behaves like open in a new tab" looks like.
+//
+// Streaming the bytes back through our own origin removes the question: no
+// CORS, the filename survives, and it behaves the same on a phone. The channel
+// access check runs first, so this widens nothing.
+router.get('/attachments/:id/download', async (req, res) => {
+  const db = getDb();
+  const a = db.prepare('SELECT * FROM chat_attachments WHERE id = ?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  const channel = getChannel(db, a.channel_id);
+  if (!channel || (req.impersonated && channel.kind === 'dm') ||
+      !canAccess(db, channel, req.user.id, req.user.role === 'admin')) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const buf = await getObjectBuffer(a.storage_key);
+  if (!buf) return res.status(404).json({ error: 'File is no longer stored.' });
+  const safe = String(a.filename || 'download').replace(/["\\\r\n]/g, '_');
+  res.setHeader('Content-Type', a.content_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${safe}"`);
+  res.setHeader('Content-Length', buf.length);
+  res.send(buf);
+});
+
 // references them via attachment_ids. Storage-gated.
 router.post('/channels/:id/attachments', uploadFiles, async (req, res) => {
   const files = req.files || [];

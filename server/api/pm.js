@@ -4,6 +4,7 @@ import { getDb, logAudit } from '../db.js';
 import { requireDepartment } from '../middleware/auth.js';
 import { generateDocumentReviewTasks, recomputeDocumentReview } from './documents.js';
 import { generateQualityScheduleTasks } from './quality-schedules.js';
+import { generateRecleanTasks } from './sanitation.js';
 import { getChannelByName, postMessageAs, botDm } from './comms.js';
 import { pushToUser } from '../push.js';
 import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
@@ -67,6 +68,9 @@ export function runPmHousekeeping(db, { force = false } = {}) {
   periodically('mark-missed', markMissedWorkOrders, db);
   periodically('doc-review', generateDocumentReviewTasks, db);
   periodically('quality-schedules', generateQualityScheduleTasks, db);
+  // A room flagged by the 72-hour rule raises its own cleaning task, so it
+  // reaches the cleaner's Operator View without a supervisor triaging it first.
+  periodically('reclean-tasks', generateRecleanTasks, db);
 }
 
 function markMissedWorkOrders(db) {

@@ -98,6 +98,24 @@ const SEED_SCHEDULES = [
     ],
   },
   {
+    // Environmental monitoring of the air, by settle plate. Annual because that
+    // is the cadence the plant asked for; the sampling points are theirs to set
+    // in the schedule's steps rather than assumed here.
+    title: 'Air Testing (Settle Plate)',
+    module_id: 'Environmental Monitoring',
+    description: 'Annual air quality check by settle plate (Petri dish). Expose plates at the agreed sampling points, incubate or send to the outside lab, and file the result against this task.',
+    frequency_type: 'annual',
+    frequency_value: 1,
+    procedure_steps: [
+      'Label each plate with the sampling point, date and time before exposing it',
+      'Expose the plates at the agreed points for the exposure time in the method',
+      'Close, seal and record the end time on each plate',
+      'Send to the contract lab (or incubate per the method) and record where they went',
+      'File the result against this task and record pass/fail against the specification',
+      'If any result is out of specification: open a Non-Conformance and notify the QA Manager',
+    ],
+  },
+  {
     // Their own checklist says "Internal audits are performed monthly", so the
     // schedule comes from the plant's document rather than from a preference.
     title: 'Internal Audit (Form 403-01)',

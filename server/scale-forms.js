@@ -10,6 +10,27 @@
 // NOT user-editable on purpose — changing a tolerance is a document change
 // (a new revision through Document Control), not a settings toggle.
 
+// The procedure that goes with every one of these forms, transcribed from the
+// plant's own Scale Calibration Verification procedure sheet.
+//
+// It is the SAME for all five forms — the only thing that differs between them
+// is the three weights, which the form already knows — so it lives here once
+// and every form renders it. Wording follows the sheet; it is not editable
+// in-app for the same reason the tolerances aren't.
+export const SCALE_PROCEDURE = {
+  title: 'Scale Calibration Verification — procedure',
+  note: 'Perform daily when operating in a production room. Scales are assigned to production rooms — check that the scale\'s asset tag matches the room number. If more than one scale will be used in the same room, notify QA for approval first.',
+  about: 'Three points, in order: minimum, target, maximum. Place the weights at the centre of the scale and at two opposing corners.',
+  steps: [
+    'Zero the scale before you begin.',
+    'Place the MINIMUM weight in the centre of the scale and record the reading.',
+    'Without removing the first weight, add the second weight at a corner to reach the TARGET, and record the reading.',
+    'Add the third weight at the opposite corner to reach the MAXIMUM, and record the reading.',
+    'You may re-check the zero between each point, and re-zero if it has drifted.',
+    'QA/QC verifies the record before production starts.',
+  ],
+};
+
 export const SCALE_FORMS = [
   {
     code: '417-01',

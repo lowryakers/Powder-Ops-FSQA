@@ -5,6 +5,8 @@ import { QMS_TYPES } from '../qms-config.js';
 import { recleanRooms } from './sanitation.js';
 import { requireRole } from '../middleware/auth.js';
 import { hasExplicitGrant } from '../module-access.js';
+// One definition of "waiting on a signature" — see the sign-out badge note below.
+import { getSource, safeCount } from '../qa-review.js';
 
 const router = Router();
 
@@ -485,8 +487,40 @@ router.get('/notifications', (req, res) => {
   // Points at QA Review, not the Production Log: signing is done in the review
   // queue now, and a notification that lands somewhere you can't act is noise.
   if (pendingQA > 0) items.push({ id: 'production-qa', tab: 'qa-review', severity: 'warning', count: pendingQA, label: `${pendingQA} production entr${pendingQA > 1 ? 'ies' : 'y'} pending QA sign-off` });
+  // A sign-out log's badge counts what QA can ACT on, not every unsigned row.
+  //
+  // The generic count above is "any required approval missing", which on the
+  // three sign-out logs includes items still signed out and items returned in
+  // bad condition — neither of which anyone can counter-sign yet. That put 46
+  // on the Equipment tab while QA Review, which only offers ROUTINE returns,
+  // showed a different number on the same screen, and nothing said why.
+  // Reusing the QA Review source is what keeps the two honest: one definition
+  // of "waiting on a signature", read from `server/qa-review.js`.
+  const SIGN_OUT_SOURCE = {
+    maintenance_sign_out: 'sign-out-equipment',
+    knife_sign_out: 'sign-out-knife',
+    component_sign_out: 'component-pulls',
+  };
   for (const q of qmsPending) {
-    items.push({ id: `qms-approval-${q.type}`, tab: q.cfg?.moduleId || 'deviations', severity: 'warning', count: q.count, label: `${q.count} ${q.cfg?.label || q.type} record${q.count > 1 ? 's' : ''} awaiting approval` });
+    const tab = q.cfg?.moduleId || 'deviations';
+    const sourceKey = SIGN_OUT_SOURCE[q.type];
+    if (sourceKey) {
+      const source = getSource(sourceKey);
+      const signable = source ? safeCount(source, db) : q.count;
+      if (signable > 0) {
+        items.push({ id: `qms-approval-${q.type}`, tab, severity: 'warning', count: signable,
+          label: `${signable} ${q.cfg?.label || q.type} record${signable > 1 ? 's' : ''} ready to counter-sign` });
+      }
+      // The rest are real, just not signable yet — they travel as info so the
+      // number that "disappeared" is explained rather than silently dropped.
+      const waiting = q.count - signable;
+      if (waiting > 0) {
+        items.push({ id: `qms-open-${q.type}`, tab, severity: 'info', count: waiting,
+          label: `${waiting} ${q.cfg?.label || q.type} record${waiting > 1 ? 's' : ''} still out or needing attention before sign-off` });
+      }
+      continue;
+    }
+    items.push({ id: `qms-approval-${q.type}`, tab, severity: 'warning', count: q.count, label: `${q.count} ${q.cfg?.label || q.type} record${q.count > 1 ? 's' : ''} awaiting approval` });
   }
   if (disposalsPending > 0) items.push({ id: 'disposal-approvals', tab: 'disposals', severity: 'warning', count: disposalsPending, label: `${disposalsPending} disposal${disposalsPending > 1 ? 's' : ''} awaiting Ops/QA sign-off` });
   if (coaPending > 0) items.push({ id: 'coa-pending', tab: 'coa', severity: 'info', count: coaPending, label: `${coaPending} lab request${coaPending > 1 ? 's' : ''} awaiting results` });

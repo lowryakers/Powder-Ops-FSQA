@@ -120,6 +120,50 @@ export function recleanRooms(db) {
   return out;
 }
 
+// A flagged room becomes a TASK by itself.
+//
+// It used to wait for a supervisor to press "Assign" — until then the only
+// trace was a badge on the Sanitation module, which the cleaner may not even
+// have. So a room that needed re-cleaning was invisible to the one person
+// whose job it was, which is how a few got missed. The Operator View is
+// deliberately only work orders (something to go and do), so the honest fix is
+// to make this one.
+//
+// Idempotent on `flag_key`: the key changes only when the last clean or last
+// use changes, so a room stays at exactly one open task and a new task appears
+// only when the room is dirtied again. Dismiss / N-A still win — an existing
+// action means a human already decided, and no task is raised.
+export function generateRecleanTasks(db) {
+  let rooms;
+  try { rooms = recleanRooms(db).filter(r => r.needs_attention); } catch { return 0; }
+  if (!rooms.length) return 0;
+  const already = db.prepare("SELECT 1 FROM reclean_actions WHERE room = ? AND flag_key = ? LIMIT 1");
+  const findEq = db.prepare('SELECT id FROM equipment WHERE room = ? OR location = ? LIMIT 1');
+  const insWo = db.prepare(`INSERT INTO work_orders (id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status)
+              VALUES (?, ?, ?, ?, 'high', ?, '[]', 'cleaning', 'open')`);
+  const insAction = db.prepare(`INSERT INTO reclean_actions (id, room, flag_key, action, work_order_id, created_by, created_by_id)
+              VALUES (?, ?, ?, 'assigned', ?, 'system', NULL)`);
+  const today = new Date().toISOString().split('T')[0];
+  let created = 0;
+  const tx = db.transaction(() => {
+    for (const entry of rooms) {
+      if (already.get(entry.room, entry.flag_key)) continue;
+      const why = entry.status === 'dirty'
+        ? 'used after its last passed clean'
+        : `idle ${entry.hours_since_clean}h since last clean (72h rule)`;
+      const woId = uuid();
+      const eq = findEq.get(entry.room, entry.room);
+      insWo.run(woId, eq?.id || null, `72h Re-clean — ${entry.room}`,
+        `Room "${entry.room}" needs a full re-clean before next use: ${why}. Log the clean in Sanitation when done.`, today);
+      insAction.run(uuid(), entry.room, entry.flag_key, woId);
+      logAudit('system', 'auto_generate', 'work_order', woId, { room: entry.room, source: 'reclean_72h' }, null, null, `72h Re-clean — ${entry.room}`);
+      created++;
+    }
+  });
+  tx();
+  return created;
+}
+
 function canManageReclean(user) {
   return user?.role === 'admin' || user?.role === 'supervisor' || user?.department === 'qa';
 }
@@ -140,6 +184,22 @@ router.post('/reclean-actions', (req, res) => {
   const entry = recleanRooms(db).find(r => r.room === room);
   if (!entry) return res.status(404).json({ error: 'Room not found' });
   const id = uuid();
+  // Dismissing or N-A'ing a flag also closes the task the rule raised for it —
+  // otherwise the cleaner keeps seeing a job a supervisor has already decided
+  // isn't needed. Cancelled, not deleted: the task existed and the record says
+  // who stood it down.
+  if (['dismissed', 'na', 'not_in_use'].includes(action)) {
+    try {
+      const prior = db.prepare("SELECT work_order_id FROM reclean_actions WHERE room = ? AND flag_key = ? AND work_order_id IS NOT NULL").all(room, entry.flag_key);
+      for (const p of prior) {
+        db.prepare(`UPDATE work_orders SET status = 'cancelled', completed_at = datetime('now'), completed_by = ?,
+          notes = COALESCE(notes || char(10), '') || ?, updated_at = datetime('now')
+          WHERE id = ? AND status IN ('open','in_progress','overdue','missed')`)
+          .run(req.user.name, `Re-clean flag marked "${action.replace(/_/g, ' ')}" by ${req.user.name}${reason ? `: ${reason}` : ''}`, p.work_order_id);
+      }
+    } catch { /* the task may already be gone */ }
+  }
+
   db.prepare(`INSERT INTO reclean_actions (id, room, flag_key, action, reason, created_by, created_by_id)
               VALUES (?, ?, ?, ?, ?, ?, ?)`)
     .run(id, room, entry.flag_key, action, (reason || '').trim() || null, req.user.name, req.user.id);

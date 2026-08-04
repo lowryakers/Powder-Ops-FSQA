@@ -9,7 +9,7 @@ import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { hasExplicitEdit } from '../module-access.js';
-import { SCALE_FORMS, getScaleForm, gradeReadings } from '../scale-forms.js';
+import { SCALE_FORMS, SCALE_PROCEDURE, getScaleForm, gradeReadings } from '../scale-forms.js';
 
 const router = Router();
 const MODULE = 'calibration';
@@ -73,7 +73,9 @@ export function recordScaleVerification(db, body, { actor, source }) {
 
 // GET /forms — the five form definitions (nominals + tolerances) so the client
 // renders the right three rows without hardcoding them a second time.
-router.get('/forms', (_req, res) => res.json({ forms: SCALE_FORMS }));
+// The procedure travels with the forms — the person running the check needs
+// the directions on the same screen as the boxes they're typing into.
+router.get('/forms', (_req, res) => res.json({ forms: SCALE_FORMS, procedure: SCALE_PROCEDURE }));
 
 // GET / — the log.
 router.get('/', (req, res) => {

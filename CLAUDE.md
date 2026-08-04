@@ -1100,3 +1100,49 @@ to mark done, "Show done" to review, delete to discard. Non-admins only ever see
 Deliberately **not** Task Center: app feedback isn't plant work, and mixing it in dilutes the operational
 task list. Adding an area is optional and free-text-free (a fixed short list) so triage can group without
 making the submitter think.
+
+## Three counts that must agree (and one that never fired)
+- **A sign-out log's badge counts what QA can ACT on.** The generic QMS badge is "any required approval
+  missing", which on the three sign-out logs includes items *still signed out* and returns in bad
+  condition — nobody can counter-sign those yet. That put 46 on the Equipment tab while QA Review, which
+  only offers **routine** returns, showed a different number on the same screen. `compliance.js` now reads
+  `safeCount(getSource('sign-out-equipment'|'sign-out-knife'|'component-pulls'))` from **qa-review.js**, so
+  there is one definition of "waiting on a signature"; the remainder travels as an `info` badgeDetail line
+  ("N still out or needing attention") so the number that disappeared is explained. Note "Out now" (25) is a
+  third, different question — what is physically checked out — and is not a badge.
+- **A 72-hour re-clean raises its own task.** It used to wait for a supervisor to press *Assign*; until then
+  the only trace was a badge on Sanitation, which the cleaner may not even have — so the one person whose
+  job it was never saw it. `generateRecleanTasks()` (sanitation.js, hooked into `runPmHousekeeping`) creates
+  the `task_group = 'cleaning'` work order itself, idempotent on `flag_key` (the key changes only when the
+  last clean or last use changes, so one open task per flag and a new one only when the room is dirtied
+  again). Dismiss / N-A / not-in-use **cancel** that task, so a cleaner is never left holding a job a
+  supervisor already stood down. Because housekeeping is throttled to once per 5 minutes, a newly flagged
+  room appears within that window, not instantly.
+- **Comms downloads go through our own origin.** The presigned R2 URL is a different origin, so
+  `<a download>` is ignored and the blob-fetch workaround needs a CORS rule on the bucket; without one the
+  fetch throws and the fallback opens a tab — which is exactly what "download behaves like open in a new
+  tab" looks like. `GET /api/comms/attachments/:id/download` streams the bytes back after the channel
+  access check. `url` (presigned) still RENDERS the image; `download_url` is what a Download button uses.
+
+## Scale verification: the procedure is on the form
+`SCALE_PROCEDURE` in `server/scale-forms.js` — the plant's own Scale Calibration Verification sheet, one
+copy for all five forms because only the three weights differ and the form already knows those. Served with
+`/scale-verification/forms` and the public `/submit/scale-forms`, rendered by
+`src/components/common/ScaleProcedureCard.jsx`: open by default in the kiosk (where the check is actually
+run) and collapsed in the Calibration tab (a log, not a form). The card substitutes **this form's** weights
+into the steps — "add the MAXIMUM (75 kg)", not "add the third weight". Not editable in-app, same reason as
+the tolerances.
+
+## Room 8 is gone from the schedule
+`ROOM_SECTIONS` in ProductionSchedule.jsx lost `'8-1'` / `'8-2'` — Room 8 isn't on the facility map, and what
+ran there is Batching Room 3, which already has its own row. Rooms come from that constant, so removing one
+would make anything still scheduled there **invisible rather than gone**; the `unplaced` banner at the top of
+the schedule names any assignment filed against a room with no row, so a removal can't silently strand work.
+
+## FORM 431-01 is a controlled document, not just a file
+The Brittle Plastic & Glass diagram is seeded into `sop_documents` (`FORM 431-01`, V4) pointing at
+`/forms/FORM-431-01-V4-Brittle-Plastic-and-Glass-Diagram.pdf`. The **file** stays in `public/forms` on
+purpose — it must open with no R2 configured — and the registry row is what gives it a revision, an owner
+and a review date. The **item lists** it documents remain editable in-app as one `pm_schedules` row per zone
+(`item|qty|material`), with zone names in the `bpg_zones` managed list; re-issue the drawing through
+Document Control when the picture itself changes.

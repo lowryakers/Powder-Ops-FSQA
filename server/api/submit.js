@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { getType, CHEMICAL_USE_SPECS } from '../qms-config.js';
 import { getChannelByName, postMessageAs } from './comms.js';
-import { SCALE_FORMS } from '../scale-forms.js';
+import { SCALE_FORMS, SCALE_PROCEDURE } from '../scale-forms.js';
 import { recordScaleVerification } from './scale-verification.js';
 import { activeChemicalNames } from './qms.js';
 
@@ -346,7 +346,9 @@ router.get('/scale-forms', (_req, res) => {
     rooms = db.prepare(`SELECT DISTINCT room FROM calibration_instruments
       WHERE room IS NOT NULL AND room != '' ORDER BY room`).all().map(r => r.room);
   } catch { rooms = []; }
-  res.json({ forms: SCALE_FORMS, rooms });
+  // The kiosk is a public path, so the procedure travels with the forms — the
+  // person on the floor needs the directions beside the boxes.
+  res.json({ forms: SCALE_FORMS, rooms, procedure: SCALE_PROCEDURE });
 });
 
 router.post('/scale-verification', (req, res) => {
