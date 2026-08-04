@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -53,6 +53,7 @@ const MockRecallPanel = lazy(() => import('./components/compliance/MockRecallPan
 const MeetingsPanel = lazy(() => import('./components/compliance/MeetingsPanel.jsx'));
 const InternalAuditsPanel = lazy(() => import('./components/compliance/InternalAuditsPanel.jsx'));
 const DocReviewPanel = lazy(() => import('./components/compliance/DocReviewPanel.jsx'));
+const FacilityMapPanel = lazy(() => import('./components/compliance/FacilityMapPanel.jsx'));
 const ProductionLog = lazy(() => import('./components/compliance/ProductionLog.jsx'));
 const ProductionSchedule = lazy(() => import('./components/compliance/ProductionSchedule.jsx'));
 const ProductionDashboard = lazy(() => import('./components/compliance/ProductionDashboard.jsx'));
@@ -124,6 +125,8 @@ const NAV_GROUPS = [
       { id: 'coa', label: 'COA / Lab Testing', icon: TestTubes },
       { id: 'quality-schedules', label: 'Quality Schedules', icon: CalendarClock },
       { id: 'hygienic', label: 'Hygienic Design', icon: ClipboardCheck },
+      // The plan with live status on it — cleaning, production, BP&G zones.
+      { id: 'facility-map', label: 'Facility Map', icon: MapIcon, keywords: 'floor plan layout rooms zones rodent traps pest sinks extinguishers building' },
       { id: 'qa-inspections', label: 'QA Inspections', icon: Lightbulb, keywords: 'light inspection brittle plastic glass form 110 431' },
       { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
       { id: 'flavor-approvals', label: 'Flavor Approvals', icon: Sparkles },
@@ -1712,6 +1715,7 @@ function App() {
           {resolvedTab === 'meetings' && <MeetingsPanel />}
           {resolvedTab === 'internal-audits' && <InternalAuditsPanel />}
           {resolvedTab === 'doc-review' && <DocReviewPanel />}
+          {resolvedTab === 'facility-map' && <FacilityMapPanel />}
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}

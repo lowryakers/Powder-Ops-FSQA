@@ -1175,3 +1175,27 @@ way Controlled Changes is (not by a module grant).
   reading "180 open requests" is the same inflated number the sign-out badges used to show. `GO_LIVE_DATE` is
   exported from db.js for this (the same cutoff `archivePreSystemBacklog` uses). Note the generic QMS badge
   on the DCR tab still counts all of them — worth aligning next.
+
+## Facility Map (`src/data/facilityMap.js` + `server/api/facility.js` + `FacilityMapPanel.jsx`)
+The plant's own floor plan, redrawn as **data** and coloured by what ReadyDoc knows. Nav entry in Quality.
+- **Geometry on the client, facts on the server.** `facilityMap.js` is a drawing — `PLAN` (1000×410 viewBox),
+  `ROOMS` (x/y/w/h + `kind` + `room`, the name the *records* use), `SPANS` (the wall dimensions off the
+  drawing), `FIXTURES` (hand wash / mop sink / extinguisher / eye wash), `TRAPS`, `BPG_ZONE_AREAS`.
+  `GET /facility/map-status` returns only the live facts, keyed on that `room` name, so **nothing needed a
+  new column** — the map reads the records that already exist.
+- **The 72-hour answer comes from `recleanRooms()`, never recomputed here.** The panel also renders
+  `hours_since_clean` from the server rather than a client `Date.now()`; two clocks is how a map and a module
+  start disagreeing about whether a room is due (and `Date.now()` in render is a compiler lint error anyway).
+- **Layers, not one busy picture**: Cleaning status / Sinks & extinguishers / Pest control / Brittle plastic
+  & glass, plus "Show all (paper view)" for a printout that matches the wall copy. **The legend describes
+  whatever colouring is actually on** — showing the room-kind key while the map is coloured by cleaning
+  status describes a scheme that isn't on screen.
+- **A room with no `room` key is drawn but has no status** — offices, the gate, racking. That's honest: the
+  cleaning log has never had a record for them, and colouring them "clean" would invent one.
+- `TRAPS_UNPLACED` names the rodent stations on the legend whose position isn't readable from the drawing
+  (9, 10, 11, 13). Listing them as unplaced is the record that they exist; guessing a coordinate on a pest
+  control map would be worse than saying where the map stops.
+- The three racking blocks are labelled **Warehouse 1/2/3** to match their BP&G zones — the zone is the whole
+  reason someone opens that layer, and an unlabelled rectangle carries none of it.
+- Zone item lists on the BP&G layer are the same `pm_schedules.procedure_steps` (`item|qty|material`) the QA
+  Inspections module uses, so adding an item to a zone shows up here with no second edit.

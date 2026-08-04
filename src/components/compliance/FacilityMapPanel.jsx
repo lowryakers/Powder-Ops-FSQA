@@ -1,0 +1,355 @@
+import { useState, useMemo } from 'react';
+import { useApiGet } from '../../hooks/useApi';
+import {
+  Map as MapIcon, Layers, Printer, X, Droplets, Factory, Wrench, AlertTriangle,
+  Bug, FlaskConical, CalendarDays, ExternalLink,
+} from 'lucide-react';
+import {
+  PLAN, SPANS, ROOMS, ROOM_KINDS, FIXTURES, FIXTURE_KINDS, TRAPS, TRAPS_UNPLACED,
+  ZONE_OF_ROOM, BPG_ZONE_AREAS,
+} from '../../data/facilityMap.js';
+
+// The facility map, with what ReadyDoc knows drawn on top of it.
+//
+// A PDF of a floor plan answers one question: where things are. This answers
+// the ones people actually ask standing in front of it — when was that room
+// last cleaned, is it inside the 72-hour window, what's scheduled in it, which
+// brittle-plastic zone covers it. Clicking a room opens the record.
+//
+// LAYERS rather than one crowded drawing. The paper map carries everything at
+// once because it has to; a screen doesn't, so fixtures, pest control and the
+// BP&G zones each go on and off. "Show all" puts it back to the paper view for
+// anyone who wants that.
+//
+// Geometry is data (`src/data/facilityMap.js`) — adding a fixture or fixing a
+// room is an edit there, not a design exercise.
+
+const openModule = (tab) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab } }));
+
+// Status colouring is deliberately only about CLEANING, because that's the
+// live fact a floor plan is genuinely useful for. Everything else lives in the
+// detail panel rather than competing for the same colour channel.
+const statusFill = (s) => {
+  if (!s) return null;
+  if (s.needs_reclean) return { fill: '#fecaca', stroke: '#ef4444' };
+  if (s.reclean_status === 'clean') return { fill: '#dcfce7', stroke: '#22c55e' };
+  if (s.reclean_status === 'no_clean_on_record') return { fill: '#fef3c7', stroke: '#f59e0b' };
+  return null;
+};
+
+const STATUS_LEGEND = [
+  { label: 'Needs re-cleaning', fill: '#fecaca', stroke: '#ef4444' },
+  { label: 'Inside the 72-hour window', fill: '#dcfce7', stroke: '#22c55e' },
+  { label: 'No clean on record', fill: '#fef3c7', stroke: '#f59e0b' },
+  { label: 'Rule not applicable', fill: '#f3f4f6', stroke: '#d1d5db' },
+];
+
+// Whatever the rooms are coloured BY is what the legend explains. Showing the
+// room-kind key while the map is coloured by cleaning status describes a
+// scheme that isn't on screen.
+function Legend({ layers }) {
+  const byKind = !layers.bpg && !layers.status;
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-gray-600">
+      {layers.bpg && <span className="font-semibold text-gray-700">Coloured by BP&amp;G zone — key below</span>}
+      {!layers.bpg && layers.status && STATUS_LEGEND.map(v => (
+        <span key={v.label} className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-sm border" style={{ background: v.fill, borderColor: v.stroke }} />
+          {v.label}
+        </span>
+      ))}
+      {byKind && Object.entries(ROOM_KINDS).map(([k, v]) => (
+        <span key={k} className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-sm border" style={{ background: v.fill, borderColor: v.stroke }} />
+          {v.label}
+        </span>
+      ))}
+      {layers.fixtures && Object.entries(FIXTURE_KINDS).map(([k, v]) => (
+        <span key={k} className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-sm border" style={{ background: v.color, borderColor: v.edge }} />
+          {v.label}
+        </span>
+      ))}
+      {layers.traps && (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-sm bg-blue-600" /> Rodent station
+        </span>
+      )}
+    </div>
+  );
+}
+
+function Fixture({ f }) {
+  const k = FIXTURE_KINDS[f.type];
+  if (!k) return null;
+  if (f.type === 'extinguisher') {
+    return (
+      <g>
+        <rect x={f.x - 2} y={f.y} width="4" height="9" rx="1" fill={k.color} stroke={k.edge} strokeWidth="0.6" />
+        <rect x={f.x - 5} y={f.y - 2} width="10" height="2.5" rx="1" fill={k.color} stroke={k.edge} strokeWidth="0.6" />
+      </g>
+    );
+  }
+  const w = f.type === 'foursink' ? 14 : 7;
+  const h = f.type === 'foursink' ? 3.5 : 7;
+  return <rect x={f.x - w / 2} y={f.y - h / 2} width={w} height={h} rx="1" fill={k.color} stroke={k.edge} strokeWidth="0.7" />;
+}
+
+function Line({ icon: Icon, label, value, tone }) {
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <Icon size={14} className="mt-0.5 shrink-0 text-gray-400" />
+      <span className="text-gray-500 w-32 shrink-0">{label}</span>
+      <span className={`min-w-0 ${tone || 'text-gray-900'}`}>{value}</span>
+    </div>
+  );
+}
+
+function DetailPanel({ room, status, zone, zoneInfo, onClose }) {
+  const s = status || {};
+  // Age comes from the server (`hours_since_clean`, the same number the 72-hour
+  // rule works from) rather than being computed here — reading the clock during
+  // render is a side effect, and this way the map and the rule can't disagree
+  // about how old a clean is.
+  const days = Number.isFinite(s.hours_since_clean) ? Math.floor(s.hours_since_clean / 24) : null;
+
+  return (
+    <div className="border border-gray-200 rounded-xl bg-white overflow-hidden">
+      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-100">
+        <div>
+          <h3 className="font-semibold text-gray-900">{room.label || room.id}</h3>
+          <p className="text-xs text-gray-500">
+            {ROOM_KINDS[room.kind]?.label}{room.room && room.room !== room.label ? ` · recorded as "${room.room}"` : ''}
+          </p>
+        </div>
+        <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={16} className="text-gray-400" /></button>
+      </div>
+
+      <div className="p-4 space-y-2">
+        {room.note && <p className="text-xs text-gray-500">{room.note}</p>}
+
+        {!room.room && (
+          <p className="text-xs text-gray-500">
+            This space isn&apos;t a record-keeping area, so there&apos;s nothing filed against it directly.
+          </p>
+        )}
+
+        {room.room && (
+          <>
+            <Line icon={Droplets} label="Last clean"
+              value={s.last_clean
+                ? `${String(s.last_clean).slice(0, 10)}${days != null ? ` · ${days} day${days === 1 ? '' : 's'} ago` : ''}${s.late_entries ? ` · ${s.late_entries} entered late` : ''}`
+                : 'No passed clean on record'}
+              tone={s.last_clean ? 'text-gray-900' : 'text-amber-700'} />
+            <Line icon={AlertTriangle} label="72-hour rule"
+              value={!s.reclean_applicable ? 'Not applicable to this area'
+                : s.needs_reclean ? 'Needs re-cleaning before next use'
+                  : s.reclean_status === 'clean' ? 'Inside the window'
+                    : s.reclean_status === 'dirty' ? 'Used since its last clean'
+                      : s.reclean_status === 'no_clean_on_record' ? 'No clean on record' : '—'}
+              tone={s.needs_reclean ? 'text-red-700 font-medium' : 'text-gray-900'} />
+            <Line icon={Factory} label="Production"
+              value={[
+                s.last_run ? `last run ${s.last_run}` : 'no runs in 30 days',
+                s.runs_30d ? `${s.runs_30d} in 30 days` : null,
+                s.scheduled_this_week ? `${s.scheduled_this_week} scheduled this week` : null,
+              ].filter(Boolean).join(' · ')} />
+            {s.equipment ? <Line icon={Wrench} label="Equipment" value={`${s.equipment} active`} /> : null}
+          </>
+        )}
+
+        {zone && (
+          <div className="pt-2 mt-2 border-t border-gray-100">
+            <Line icon={FlaskConical} label="Brittle plastic & glass"
+              value={`${zone}${zoneInfo?.item_count ? ` · ${zoneInfo.item_count} items` : ''}${zoneInfo?.last_inspection ? ` · last inspected ${String(zoneInfo.last_inspection).slice(0, 10)}` : ''}`} />
+            {zoneInfo?.items?.length > 0 && (
+              <ul className="mt-1.5 ml-[9.5rem] space-y-0.5 max-h-40 overflow-y-auto">
+                {zoneInfo.items.map((i, n) => (
+                  <li key={n} className="text-xs text-gray-600">
+                    {i.item}{i.qty ? ` × ${i.qty}` : ''}{i.material ? <span className="text-gray-400"> · {i.material}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/60 flex flex-wrap gap-2">
+        <button onClick={() => openModule('sanitation')}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50">
+          <Droplets size={12} /> Sanitation
+        </button>
+        <button onClick={() => openModule('production-schedule')}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50">
+          <CalendarDays size={12} /> Schedule
+        </button>
+        {zone && (
+          <button onClick={() => openModule('qa-inspections')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50">
+            <FlaskConical size={12} /> BP&amp;G inspections
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function FacilityMapPanel() {
+  const [layers, setLayers] = useState({ fixtures: false, traps: false, bpg: false, status: true });
+  const [selected, setSelected] = useState(null);
+  const { data } = useApiGet('/facility/map-status');
+
+  const status = data?.rooms || {};
+  const zones = data?.zones || {};
+  const toggle = (k) => setLayers(l => ({ ...l, [k]: !l[k] }));
+
+  // A stable colour per BP&G zone so the same zone reads the same everywhere.
+  const zoneColour = useMemo(() => {
+    const palette = ['#c7d2fe', '#fbcfe8', '#bbf7d0', '#fed7aa', '#bfdbfe', '#ddd6fe',
+      '#fde68a', '#a7f3d0', '#fecaca', '#e9d5ff', '#cffafe', '#d9f99d', '#fbcfe8', '#bae6fd', '#fef08a'];
+    const out = {};
+    Object.keys(BPG_ZONE_AREAS).forEach((z, i) => { out[z] = palette[i % palette.length]; });
+    return out;
+  }, []);
+
+  const fillFor = (r) => {
+    if (layers.bpg) {
+      const z = ZONE_OF_ROOM[r.id];
+      if (z) return { fill: zoneColour[z], stroke: '#64748b' };
+    }
+    if (layers.status && r.room) {
+      const s = statusFill(status[r.room]);
+      if (s) return s;
+    }
+    const k = ROOM_KINDS[r.kind];
+    return { fill: k.fill, stroke: k.stroke };
+  };
+
+  const needsClean = Object.entries(status).filter(([, s]) => s.needs_reclean).length;
+  const selectedRoom = selected ? ROOMS.find(r => r.id === selected) : null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <MapIcon size={20} className="text-powder-600" /> Facility Map
+          </h2>
+          <p className="text-sm text-gray-500 max-w-2xl">
+            The plant, with what ReadyDoc knows drawn on it. Click a room for its last clean, its 72-hour
+            status, what&apos;s scheduled in it and the brittle-plastic zone that covers it.
+          </p>
+        </div>
+        <button onClick={() => window.print()}
+          className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 shrink-0">
+          <Printer size={15} /> Print
+        </button>
+      </div>
+
+      {needsClean > 0 && layers.status && (
+        <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <span><span className="font-semibold">{needsClean}</span> area{needsClean === 1 ? '' : 's'} shown in red
+            need re-cleaning before next use.</span>
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-gray-500 flex items-center gap-1 mr-1"><Layers size={13} /> Layers</span>
+        {[
+          ['status', 'Cleaning status', Droplets],
+          ['fixtures', 'Sinks & extinguishers', Wrench],
+          ['traps', 'Pest control', Bug],
+          ['bpg', 'Brittle plastic & glass', FlaskConical],
+        ].map(([k, label, Icon]) => (
+          <button key={k} onClick={() => toggle(k)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${layers[k] ? 'bg-powder-50 border-powder-300 text-powder-800' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+            <Icon size={13} /> {label}
+          </button>
+        ))}
+        <button onClick={() => setLayers({ fixtures: true, traps: true, bpg: false, status: false })}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">
+          Show all (paper view)
+        </button>
+      </div>
+
+      <div className="border border-gray-200 rounded-xl bg-white p-3 overflow-x-auto">
+        <svg viewBox={`-6 -6 ${PLAN.width + 12} ${PLAN.height + 26}`} className="w-full min-w-[680px]"
+          role="img" aria-label="Facility floor plan">
+          {/* building outline */}
+          <rect x="0" y="0" width={PLAN.width} height={PLAN.height} fill="#fff" stroke="#334155" strokeWidth="2" />
+
+          {ROOMS.map(r => {
+            const c = fillFor(r);
+            const active = selected === r.id;
+            return (
+              <g key={r.id} onClick={() => setSelected(active ? null : r.id)} style={{ cursor: 'pointer' }}>
+                <rect x={r.x} y={r.y} width={r.w} height={r.h} fill={c.fill}
+                  stroke={active ? '#1d4ed8' : c.stroke} strokeWidth={active ? 2.4 : 0.9} rx="1.5" />
+                {r.label && r.h >= 14 && (
+                  <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 2.6} textAnchor="middle"
+                    fontSize={r.w > 100 ? 8 : 6.2} fill={ROOM_KINDS[r.kind]?.text || '#111'}
+                    style={{ pointerEvents: 'none' }}>
+                    {r.label.length > 22 && r.w < 120 ? `${r.label.slice(0, 20)}…` : r.label}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* dimensions from the drawing */}
+          {SPANS.map((s, i) => (
+            <text key={i} x={s.x} y={s.y} textAnchor="middle" fontSize="8" fill="#64748b" fontWeight="600">{s.label}</text>
+          ))}
+
+          {layers.fixtures && FIXTURES.map((f, i) => <Fixture key={i} f={f} />)}
+
+          {layers.traps && TRAPS.map(t => (
+            <g key={t.n}>
+              <rect x={t.x - 5} y={t.y - 4} width="10" height="8" rx="1.5" fill="#1d4ed8" />
+              <text x={t.x} y={t.y + 2.6} textAnchor="middle" fontSize="6" fill="#fff" fontWeight="700">{t.n}</text>
+            </g>
+          ))}
+        </svg>
+      </div>
+
+      <Legend layers={layers} />
+
+      {layers.traps && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+          {TRAPS.length} of {TRAPS.length + TRAPS_UNPLACED.length} stations are placed.
+          Stations <span className="font-semibold">{TRAPS_UNPLACED.join(', ')}</span> are on the paper map but
+          their positions couldn&apos;t be read off it — check the drawing and they can be added.
+        </p>
+      )}
+
+      {layers.bpg && (
+        <div className="border border-gray-200 rounded-xl p-3">
+          <p className="text-xs font-semibold text-gray-700 mb-2">
+            Brittle Plastic &amp; Glass zones (FORM 431-01) — {Object.keys(BPG_ZONE_AREAS).length} zones on the map
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {Object.keys(BPG_ZONE_AREAS).map(z => (
+              <span key={z} className="inline-flex items-center gap-1.5 text-[11px] text-gray-700">
+                <span className="w-3 h-3 rounded-sm border border-gray-400" style={{ background: zoneColour[z] }} />
+                {z}
+                {zones[z]?.item_count ? <span className="text-gray-400">({zones[z].item_count})</span> : null}
+              </span>
+            ))}
+          </div>
+          <button onClick={() => openModule('qa-inspections')}
+            className="mt-2 flex items-center gap-1.5 text-xs text-powder-600 hover:underline">
+            <ExternalLink size={12} /> Zone item lists are edited in QA Inspections
+          </button>
+        </div>
+      )}
+
+      {selectedRoom && (
+        <DetailPanel room={selectedRoom} status={selectedRoom.room ? status[selectedRoom.room] : null}
+          zone={ZONE_OF_ROOM[selectedRoom.id]} zoneInfo={zones[ZONE_OF_ROOM[selectedRoom.id]]}
+          onClose={() => setSelected(null)} />
+      )}
+    </div>
+  );
+}
