@@ -107,10 +107,10 @@ export const SOURCES = [
     module: 'production-log',
     noun: 'entry',
     plural: 'entries',
-    count: (db) => db.prepare('SELECT COUNT(*) c FROM production_entries WHERE qa_signoff_by IS NULL').get().c,
+    count: (db) => db.prepare('SELECT COUNT(*) c FROM production_entries WHERE qa_signoff_by IS NULL AND qa_waived_at IS NULL AND qa_waived_at IS NULL').get().c,
     pending: (db, limit = LIMIT) => db.prepare(
       `SELECT id, date, team, room, product_name, mo_number, lot_number, submitted_by
-       FROM production_entries WHERE qa_signoff_by IS NULL
+       FROM production_entries WHERE qa_signoff_by IS NULL AND qa_waived_at IS NULL
        ORDER BY date ASC, created_at ASC LIMIT ?`).all(limit).map(r => ({
       id: r.id,
       title: [r.product_name, r.mo_number && `MO ${r.mo_number}`].filter(Boolean).join(' · ') || 'Production entry',

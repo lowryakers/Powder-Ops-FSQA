@@ -438,7 +438,7 @@ router.get('/notifications', (req, res) => {
   const flaggedIssues = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE issue_flagged = 1 AND status IN ('open','in_progress','overdue')").get().c;
   const sopReviewDue = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE status != 'archived' AND review_due <= ?").get(today).c;
   let pendingQA = 0;
-  try { pendingQA = db.prepare("SELECT COUNT(*) as c FROM production_entries WHERE qa_signoff_by IS NULL").get().c; } catch {}
+  try { pendingQA = db.prepare("SELECT COUNT(*) as c FROM production_entries WHERE qa_signoff_by IS NULL AND qa_waived_at IS NULL").get().c; } catch {}
 
   // Pending in-system approvals across the QMS logs + disposals + COA, routed
   // to the people who can act on them (QA / Document Control / supervisors /

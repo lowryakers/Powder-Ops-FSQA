@@ -1138,6 +1138,17 @@ function runMigrations() {
   // working unchanged; the full set lives here.
   addColumnIfMissing('production_entries', 'mo_lines', 'TEXT');
 
+  // Pre-launch cleanup: an entry filed before the plant was really using
+  // ReadyDoc can't be signed off now — nobody reviewed that shift, and writing
+  // a QA signature today would be a false record. So it is WAIVED instead:
+  // qa_signoff_by stays NULL forever, and these three columns say who closed
+  // it, when, and why. A waived entry drops out of the pending queues without
+  // ever pretending to have been reviewed.
+  addColumnIfMissing('production_entries', 'qa_waived_at', 'TEXT');
+  addColumnIfMissing('production_entries', 'qa_waived_by', 'TEXT');
+  addColumnIfMissing('production_entries', 'qa_waived_reason', 'TEXT');
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_production_entries_waived ON production_entries(qa_waived_at)'); } catch { /* ignore */ }
+
   // Same idea on the task side. A completed task can be reviewed with a note;
   // marking the note as needing rework reopens the task for whoever did it.
   // review_history keeps every round so a reopened-and-redone task still shows

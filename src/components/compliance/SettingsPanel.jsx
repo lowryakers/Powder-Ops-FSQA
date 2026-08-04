@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { DEPARTMENTS, DEPARTMENT_GROUPS, deptLabel } from '../../constants/departments';
 import QuickBooksSetupCard from './QuickBooksSetupCard.jsx';
 import LogBuilderPanel from '../settings/LogBuilderPanel.jsx';
+import CleanupReviewPanel from '../settings/CleanupReviewPanel.jsx';
 import RequestListPanel from '../common/RequestBox.jsx';
 
 const ROLES = [
@@ -1055,6 +1056,18 @@ export default function SettingsPanel() {
         <div className="space-y-3">
           <h2 className="text-xl font-bold text-gray-900">Log Structure</h2>
           <LogBuilderPanel />
+        </div>
+      )}
+
+      {/* Pre-launch cleanup — closing out what was filed before the plant was
+          really using ReadyDoc. Admin only: it closes compliance records in
+          bulk. */}
+      {currentUser?.role === 'admin' && (
+        <div className="space-y-3">
+          <h2 className="text-xl font-bold text-gray-900">Cleanup Review</h2>
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <CleanupReviewPanel />
+          </div>
         </div>
       )}
 

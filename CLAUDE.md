@@ -697,6 +697,25 @@ Operator View read as "the Production Log again".
   same rule; a second copy of an access rule is how two screens start disagreeing about who can reach a
   module.
 
+## Pre-launch cleanup (`server/cleanup.js` + Settings → Cleanup Review)
+Closing out what was filed before the plant was really using ReadyDoc. **Nothing is deleted and nothing is
+signed** — a deleted task is indistinguishable from one that never existed (exactly the gap an auditor asks
+about), and back-dating a QA signature onto a shift nobody reviewed would be a false record, which is worse.
+- Work orders close as **`cancelled`** with the reason in `notes` + `completed_by`/`completed_at`.
+- Production entries are **WAIVED, never signed**: `qa_signoff_by` stays NULL forever and
+  `qa_waived_at`/`qa_waived_by`/`qa_waived_reason` say who closed it and why. **Every "pending QA" query must
+  carry `AND qa_waived_at IS NULL`** — qa-review.js (count + pending), compliance.js notifications and
+  production.js `entries_pending_qa`. Miss one and waived entries sit in that queue forever.
+- A reason is mandatory (≥3 chars) and goes on every record; closes are audited **individually** plus one
+  summary row, so a bulk action leaves the trail a manual one would.
+- Admin-only: it closes compliance records in bulk and shouldn't be one mis-click from a supervisor clearing
+  their own queue. Two steps on purpose (counts → work one pile with rows visible); no "clear everything
+  before this date" button.
+- Adding a source = one entry in `SOURCES` (`stale`/`count`/`close`), same shape as qa-review.js.
+- Verified: 13 entries waived with 0 signatures written, 25 work orders cancelled with reasons, the QA Review
+  production count and the pending-QA notification both dropped to zero, re-closing a waived record is
+  refused, and a fresh DB boots with the columns + index.
+
 ## QA Review Center — one queue, seven sources
 `server/qa-review.js` is the registry: one `SOURCES` entry per pile of records waiting on a QA signature
 (production entries, QA inspections, cleaning records, scale verifications), each with `pending`/`count`/
