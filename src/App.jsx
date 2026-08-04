@@ -43,6 +43,7 @@ const QMSRecordsPanel = lazy(() => import('./components/compliance/QMSRecordsPan
 const KnifePanel = lazy(() => import('./components/compliance/KnifePanel.jsx'));
 const ReceivingLogPanel = lazy(() => import('./components/warehouse/ReceivingLogPanel.jsx'));
 import { RequestModal } from './components/common/RequestBox.jsx';
+import OfflineBar from './components/common/OfflineBar.jsx';
 const FlavorPanel = lazy(() => import('./components/compliance/FlavorPanel.jsx'));
 const CertificationsPanel = lazy(() => import('./components/compliance/CertificationsPanel.jsx'));
 const CriticalPanel = lazy(() => import('./components/compliance/CriticalPanel.jsx'));
@@ -1633,6 +1634,10 @@ function App() {
             </button>
           </div>
         </header>
+
+        {/* Where your work is: no connection, and/or entries still to send.
+            Directly under the header so it's the first thing on every screen. */}
+        <OfflineBar />
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
           {resolvedTab === null && (

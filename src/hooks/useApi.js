@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { notifyDataChanged } from '../lib/dataChanged';
+import {
+  isNetworkError, mayQueue, queueWrite, flushQueue, cacheRead, cachedRead,
+} from '../lib/offline';
 
 const BASE = '/api';
 
@@ -41,11 +44,34 @@ async function apiFetch(path, options = {}) {
     ...options.headers,
   };
 
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...options,
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (err) {
+    // fetch only rejects when the request never completed — the radio is off,
+    // there's no route. An HTTP 400 resolves and is handled below, because the
+    // server said no and hiding that behind "we'll try later" is how a rejected
+    // record looks saved.
+    if (!isNetworkError(err)) throw err;
+    if (mayQueue(path, method)) {
+      await queueWrite({ path, method, body: options.body ?? null });
+      // Leads with a tick because most forms render this in their error slot,
+      // and a success that looks like a failure is how people stop trusting it.
+      const queued = new Error('\u2713 Saved on this device — it will send by itself when you\'re back online.');
+      queued.queued = true;
+      throw queued;
+    }
+    const offline = new Error(method === 'GET'
+      ? 'No connection.'
+      : 'This needs a connection — signatures and approvals are never sent later, because you have to be looking at the record you sign.');
+    offline.offline = true;
+    throw offline;
+  }
+
   if (!res.ok) {
     if (res.status === 401) {
       localStorage.removeItem('auth_token');
@@ -55,13 +81,50 @@ async function apiFetch(path, options = {}) {
     throw new Error(err.error || `API error ${res.status}`);
   }
   if (movesBadge(path, method)) notifyDataChanged();
-  return res.json();
+  const data = await res.json();
+  // Every successful GET is the copy the floor sees if the network drops on
+  // the next screen. Fire and forget — a cache write must never delay a render.
+  if (method === 'GET') cacheRead(path, data).catch(() => {});
+  return data;
+}
+
+// Replay the outbox. Goes straight to fetch rather than through apiFetch, so a
+// still-flaky connection re-queues nothing and the queue stays the one place
+// pending work lives.
+async function sendQueued(row) {
+  const token = localStorage.getItem('auth_token');
+  const res = await fetch(`${BASE}${row.path}`, {
+    method: row.method,
+    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+    body: row.body ? JSON.stringify(row.body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `API error ${res.status}`);
+  }
+  return res.json().catch(() => null);
+}
+
+export async function flushOutbox() {
+  const out = await flushQueue(sendQueued);
+  if (out.sent > 0) notifyDataChanged();
+  return out;
+}
+
+// Drain on reconnect, and once at start-up for the tab that was closed offline.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { flushOutbox().catch(() => {}); });
+  setTimeout(() => { flushOutbox().catch(() => {}); }, 2000);
 }
 
 export function useApiGet(path, deps = []) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // True when what's on screen came from the offline cache rather than the
+  // server. A screen that quietly shows yesterday's data is worse than one
+  // that says so, so this travels back to the caller.
+  const [offline, setOffline] = useState(false);
   const [tick, setTick] = useState(0);
   const depsKey = JSON.stringify(deps);
 
@@ -73,16 +136,25 @@ export function useApiGet(path, deps = []) {
     setLoading(true);
     setError(null);
     apiFetch(path)
-      .then(d => { if (!stale) setData(d); })
-      .catch(e => { if (!stale) setError(e.message); })
+      .then(d => { if (!stale) { setData(d); setOffline(false); } })
+      .catch(async (e) => {
+        if (stale) return;
+        // Fall back to the last copy of this exact screen. Only for a genuine
+        // network failure — a 403 must still read as a 403.
+        if (e.offline) {
+          const hit = await cachedRead(path);
+          if (hit && !stale) { setData(hit.data); setOffline(true); setError(null); return; }
+        }
+        if (!stale) setError(e.message);
+      })
       .finally(() => { if (!stale) setLoading(false); });
     return () => { stale = true; };
-     
+
   }, [path, depsKey, tick]);
 
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
-  return { data, loading, error, refresh };
+  return { data, loading, error, offline, refresh };
 }
 
 export async function apiPost(path, body) {

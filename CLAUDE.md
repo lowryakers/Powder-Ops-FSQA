@@ -740,6 +740,32 @@ Operator View read as "the Production Log again".
   same rule; a second copy of an access rule is how two screens start disagreeing about who can reach a
   module.
 
+## Working without a connection (`src/lib/offline.js`)
+The Wi-Fi drops in the warehouse and at the back of production. Two narrow mechanisms, not one broad one:
+a **read cache** (every successful GET stored in IndexedDB; a GET that fails with a *network* error serves
+the last copy and `useApiGet` returns `offline: true`) and a **write outbox** (a non-GET that fails with a
+network error is queued and replayed FIFO on reconnect).
+- **CAPTURE IS QUEUED, APPROVAL IS NOT** — `NEVER_QUEUE` in offline.js. Signing is a statement that you
+  reviewed the record *as it stood*; a signature queued at 9am and applied at noon could land on a record
+  someone else changed, and the trail would say you saw it. Approvals, sign-offs, verifications, deletes,
+  auth, cleanup and bulk imports refuse to queue and say they need a connection. Same line the Operator
+  View draws between tasks and approvals.
+- **An HTTP error is an ANSWER, not an outage.** `fetch` only rejects when the request never completed, so
+  only a `TypeError` queues; a 400/403 still surfaces. Treating a rejected record as "we'll send it later"
+  is how a refused save looks filed.
+- **Replay stops at the first failure.** Skipping a failed item and carrying on could apply an edit to a
+  record whose creation never landed. A 4xx on replay drops that item out of the queue and names it in the
+  red bar — a queue that silently discards a rejection is worse than no queue.
+- **A network failure at start-up must not sign you out.** `useAuth` used to `.catch(() => removeItem)` on
+  `/users/me`, so opening the app with no signal cleared the token and showed the login screen — offline
+  mode was dead on arrival. It now distinguishes a *rejected* token (sign out) from a request that never
+  reached the server (render from `localStorage.auth_user`). **`auth_user` is a CACHE, never a credential:**
+  the token still has to be accepted by the server before anything is read or written; all it does is let
+  the shell render.
+- `OfflineBar` (under the header, every screen) shows the two facts separately — no connection, and N
+  entries waiting — because someone can be back online with five queued and someone offline with none.
+- The queued-write message leads with a ✓ because most forms render it in their error slot.
+
 ## Starter COA specifications, seeded as drafts (`server/spec-seed.js`)
 The Specifications tab started empty, so an uploaded lab result had nothing to grade itself against — the
 test with no spec is the one that quietly passes. The seeder files the standard panel for the **50 most-

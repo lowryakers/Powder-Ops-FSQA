@@ -15,14 +15,39 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem('auth_token');
     if (!token) { setLoading(false); return; }
     fetch('/api/users/me', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(u => setUser(u))
-      .catch(() => localStorage.removeItem('auth_token'))
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('rejected'))))
+      .then(u => {
+        setUser(u);
+        // Who you are, kept on the device, so opening the app in the warehouse
+        // with no signal shows the app instead of the login screen. It is a
+        // CACHE, never a credential: the token still has to be accepted by the
+        // server before anything is read or written, and every request carries
+        // it. All this does is let the shell render.
+        try { localStorage.setItem('auth_user', JSON.stringify(u)); } catch { /* quota */ }
+      })
+      .catch((err) => {
+        // A rejected token is a rejected token — sign out. But a request that
+        // never reached the server is not an answer about this token, and
+        // treating it as one is what logged people out the moment the Wi-Fi
+        // dropped. `err.message === 'rejected'` is the real refusal; a TypeError
+        // is the network.
+        if (err?.message === 'rejected') {
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('auth_user');
+          return;
+        }
+        try {
+          const cached = JSON.parse(localStorage.getItem('auth_user') || 'null');
+          if (cached) setUser(cached);
+        } catch { /* nothing cached */ }
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const loginWithToken = useCallback((token, userData) => {
     localStorage.setItem('auth_token', token);
+    // Cached for the offline shell — see the note in the effect above.
+    try { localStorage.setItem('auth_user', JSON.stringify(userData)); } catch { /* quota */ }
     setUser(userData);
   }, []);
 
@@ -45,6 +70,7 @@ export function AuthProvider({ children }) {
       await fetch('/api/users/logout', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
     }
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
     setViewAs(null);
     setViewAsWriteGuard(null);
     setUser(null);
