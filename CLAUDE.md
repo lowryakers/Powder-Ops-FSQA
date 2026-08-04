@@ -1088,7 +1088,9 @@ actually enters the numbers.
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).
 Seeded **once, keyed on title** — an edited frequency, a paused schedule or a deleted one is a decision, and
 a redeploy must not undo it. Currently: **Tap Water Testing** (monthly, Environmental Monitoring — restroom
-and kitchen samples to the outside lab). Everything else stays user-created in Quality Schedules.
+and kitchen samples to the outside lab) and **Air Testing (Settle Plate)** (annual, same module — Petri-dish
+air quality). The sampling points are left to the schedule's own steps rather than assumed, and the annual
+cadence is the one the plant asked for. Everything else stays user-created in Quality Schedules.
 
 ## ReadyDoc feedback ("Request" button)
 `app_requests` table + `server/api/requests.js` + `src/components/common/RequestBox.jsx`.
