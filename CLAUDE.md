@@ -164,6 +164,31 @@ one-line summary** (parent preview + "N replies · last from X", Expand to reope
 the ring + "N new"; a thread you've replied to shows a muted "Replied" chip — so the list is scannable for
 what still needs you.
 
+## One taste test, two records (Flavor Approval → Organoleptic)
+The plant does a single tasting and it is simultaneously a flavor approval (a decision about a batch) and an
+organoleptic evaluation (a rated sensory test). `syncFlavorOrganoleptic` in api/qms.js files the second
+record from the first, hooked onto the same create/update points as `syncOrganolepticDisposal`.
+- **Two records, not one.** They are separate controlled forms with their own numbering, and an auditor
+  asking for the Organoleptic log must get organoleptic records — same reasoning as keeping 440-02 and
+  703-01 apart in Sign In/Out.
+- **Fires only on a decision** (`approved`/`denied`). A pending approval is a batch waiting to be tasted.
+- **Linked both ways and idempotent**: the FA holds `organoleptic_record_id`, the ORG holds
+  `source_flavor_approval_id`, and a re-save UPDATES that record rather than filing a second one. A signed
+  organoleptic record is never rewritten — it's history, and the log says so instead.
+- The FA carries the same sensory keys and 1–5 scale as the ORG form, so the linked record is a copy rather
+  than a mapping. `batch_adjustments` records what was changed to get approval ("added sweetener") — a
+  different fact from "approved as batched".
+- A failed tasting still raises the draft disposal, because the sync calls `syncOrganolepticDisposal` on the
+  record it just created.
+- **Both write paths re-read the row before responding** — the sync writes back to the record (the
+  back-link), so returning the pre-sync object would omit it.
+- `mo_number` on both forms uses the same key as `production_entries.mo_number`.
+  `GET /qms/flavor-approvals/by-mo` returns a map (one request, not a query per row) that the Production
+  Log's expanded detail uses to show the flavor decision and any batch adjustments against a run.
+- **Adding these fields was itself a controlled change**: `syncDefinitions` parked both forms as pending and
+  kept serving the approved snapshot, so the new fields did nothing until Document Control approved them.
+  That is the gate working — expect it on any future QMS form field change.
+
 ## QA notes that ask for a fix
 **Production Log:** QA sign-off has a "this note needs a correction" checkbox (requires a note) →
 `production_entries.qa_action_required`. The flag is *itself the authorization* to amend that one entry, by

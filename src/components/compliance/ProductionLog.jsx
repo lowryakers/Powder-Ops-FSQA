@@ -917,6 +917,9 @@ function LogTable({ user }) {
   // Team → template map, so a saved entry's structured answers render with
   // their proper field labels/order instead of raw keys.
   const { data: templates } = useApiGet('/production/eod-templates');
+  // Flavor approval decisions keyed by MO #, so a run shows whether its batch
+  // was tasted and approved without opening another module.
+  const { data: flavorByMo } = useApiGet('/qms/flavor-approvals/by-mo');
 
   const canSignoff = user.department === 'qa' || user.role === 'admin';
   // Correcting a filed report is a deliberate, separately granted right —
@@ -1170,6 +1173,13 @@ function LogTable({ user }) {
                         { label: 'QA sign-off', value: entry.qa_signoff_by ? `${entry.qa_signoff_by}${entry.qa_signoff_at ? ` · ${formatDate(entry.qa_signoff_at)}` : ''}` : 'Pending' },
                         { label: 'QA notes', value: entry.qa_notes, wide: true },
                         { label: 'Notes', value: entry.notes, wide: true },
+                        ...(flavorByMo?.[entry.mo_number] ? [
+                          { label: 'Flavor approval',
+                            value: `${flavorByMo[entry.mo_number].status === 'approved' ? 'Approved' : 'Denied'}`
+                              + ` · ${flavorByMo[entry.mo_number].record_number}`
+                              + (flavorByMo[entry.mo_number].decided_by ? ` · ${flavorByMo[entry.mo_number].decided_by}` : '') },
+                          { label: 'Batch adjustments', value: flavorByMo[entry.mo_number].batch_adjustments, wide: true },
+                        ] : []),
                       ]}>
                         {entry.mo_lines?.length > 1 && (
                           <div className="mb-2">

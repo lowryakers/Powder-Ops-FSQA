@@ -377,6 +377,7 @@ export const QMS_TYPES = {
     dateLabel: 'Test Date',
     fields: [
       { key: 'product', label: 'Product', type: 'text' },
+      { key: 'mo_number', label: 'MO #', type: 'text' },
       { key: 'lot', label: 'Lot', type: 'text' },
       { key: 'part_number', label: 'Part No (BD / IM / FG)', type: 'text' },
       { key: 'quantity', label: 'Quantity', type: 'text' },
@@ -489,17 +490,36 @@ export const QMS_TYPES = {
       { value: 'denied', label: 'Flavor Denied', tone: 'red', done: true },
     ],
     defaultStatus: 'pending',
+    // A flavor approval already IS a sensory evaluation — someone tastes the
+    // batch and decides. Carrying the same rated attributes the Organoleptic
+    // form asks for means the one taste test can satisfy both records instead
+    // of being typed twice (see syncFlavorOrganoleptic in api/qms.js).
+    //
+    // `mo_number` uses the same key as production_entries.mo_number, so
+    // "what happened with MO 4471" is a straight match across the two logs.
     fields: [
       { key: 'product_name', label: 'Product Name', type: 'text' },
+      { key: 'mo_number', label: 'MO #', type: 'text' },
       { key: 'lot_number', label: 'Lot Number', type: 'text' },
       { key: 'work_order', label: 'Work Order', type: 'text' },
       { key: 'batched_on', label: 'Batched On', type: 'date' },
       { key: 'sample_quantity', label: 'Sample Quantity', type: 'text' },
+      // Sensory ratings — same scale and keys as the Organoleptic form
+      // (1 = worst … 5 = best) so the linked record is a copy, not a mapping.
+      { key: 'appearance', label: 'Appearance (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'texture', label: 'Texture (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'aroma', label: 'Aroma (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'flavor', label: 'Flavor (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'overall', label: 'Overall Satisfaction (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
       { key: 'decided_by', label: 'Approved / Denied By', type: 'text' },
       { key: 'decision_date', label: 'Decision Date', type: 'date' },
+      // What was changed to get the batch approved. Recorded on the approval
+      // itself because "approved after adding sweetener" and "approved as
+      // batched" are different facts about the same lot.
+      { key: 'batch_adjustments', label: 'Adjustments made to the batch (flavor, sweetener, etc.)', type: 'textarea' },
       { key: 'comments', label: 'Comments', type: 'textarea' },
     ],
-    logColumns: ['record_number', 'product_name', 'lot_number', 'work_order', 'batched_on', 'decided_by', 'record_date', 'status'],
+    logColumns: ['record_number', 'product_name', 'mo_number', 'lot_number', 'work_order', 'batched_on', 'decided_by', 'record_date', 'status'],
     approvals: [],
   },
 

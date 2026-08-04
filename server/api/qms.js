@@ -155,6 +155,40 @@ router.get('/maintenance-items', (req, res) => {
   res.json({ items: maintenanceItems(getDb()) });
 });
 
+// Flavor approval status keyed by MO #, so the Production Log and the Schedule
+// can show "flavor approved / denied" against a run without either module
+// having to know how flavor approvals are stored.
+//
+// One request returning a map rather than a lookup per row: the alternative is
+// a query per production entry, and this screen already renders hundreds.
+// Bounded to decided records from the last year — an approval from two years
+// ago is not what anyone is checking against today's schedule.
+router.get('/flavor-approvals/by-mo', (req, res) => {
+  const db = getDb();
+  const out = {};
+  try {
+    const rows = db.prepare(`SELECT record_number, record_date, status, data FROM qms_records
+      WHERE record_type = 'flavor_approval' AND status IN ('approved','denied')
+        AND COALESCE(record_date, date(created_at)) >= date('now', '-1 year')
+      ORDER BY COALESCE(record_date, date(created_at))`).all();
+    for (const r of rows) {
+      const d = parseJson(r.data, {});
+      const mo = String(d.mo_number || '').trim();
+      if (!mo) continue;
+      // Last decision wins — a re-tasted batch is described by its latest call.
+      out[mo] = {
+        record_number: r.record_number,
+        status: r.status,
+        decided_by: d.decided_by || null,
+        decision_date: d.decision_date || r.record_date || null,
+        batch_adjustments: d.batch_adjustments || null,
+        organoleptic_record_id: d.organoleptic_record_id || null,
+      };
+    }
+  } catch { /* table optional */ }
+  res.json(out);
+});
+
 router.put('/maintenance-items', (req, res) => {
   if (!(req.user?.role === 'admin' || req.user?.role === 'supervisor')) {
     return res.status(403).json({ error: 'Only admins or supervisors can edit the item list.' });
@@ -340,6 +374,88 @@ function syncOrganolepticDisposal(db, cfg, rec, user) {
   return id;
 }
 
+// One taste test, two records — Flavor Approval and Organoleptic Sensory.
+//
+// The plant does a single tasting: Danny or Adam tries the batch and decides.
+// That event is simultaneously a flavor approval (a decision about a batch) and
+// an organoleptic evaluation (a rated sensory test). They are separate
+// CONTROLLED FORMS with their own numbering, and an auditor asking for the
+// Organoleptic log must get organoleptic records — so this creates a linked
+// record rather than pretending one log can stand in for the other. Same
+// reasoning as keeping 440-02 and 703-01 apart in Sign In/Out.
+//
+// Linked both ways and idempotent: the flavor approval holds
+// `organoleptic_record_id`, the organoleptic record holds
+// `source_flavor_approval_id`, and a re-save UPDATES that record instead of
+// filing a second one.
+const SENSORY_KEYS = ['appearance', 'texture', 'aroma', 'flavor', 'overall'];
+
+function syncFlavorOrganoleptic(db, cfg, rec, user) {
+  if (cfg.key !== 'flavor_approval') return null;
+  // Only once a decision has been made — a pending approval is a batch waiting
+  // to be tasted, and there is no sensory evaluation to record yet.
+  if (!['approved', 'denied'].includes(String(rec.status || ''))) return null;
+  const org = getType('organoleptic');
+  if (!org) return null;
+
+  const data = {
+    product: rec.product_name || null,
+    mo_number: rec.mo_number || null,
+    lot: rec.lot_number || null,
+    quantity: rec.sample_quantity || null,
+    evaluator: rec.decided_by || user?.name || null,
+    lab_testing: 'No',
+    note: [
+      `Recorded from Flavor Approval ${rec.record_number || ''}`.trim(),
+      rec.batch_adjustments ? `Batch adjustments: ${rec.batch_adjustments}` : null,
+      rec.comments || null,
+    ].filter(Boolean).join(' · '),
+    source_flavor_approval_id: rec.id,
+  };
+  for (const k of SENSORY_KEYS) if (rec[k]) data[k] = String(rec[k]);
+
+  const existingId = rec.organoleptic_record_id;
+  if (existingId) {
+    const row = db.prepare("SELECT * FROM qms_records WHERE id = ? AND record_type = 'organoleptic'").get(existingId);
+    if (row) {
+      // A signed organoleptic record is history — the flavor approval must not
+      // rewrite it. Leave it alone and say so in the log.
+      const appr = parseJson(row.approvals, {});
+      if (Object.values(appr || {}).some(Boolean)) {
+        console.warn(`[flavor→organoleptic] ${row.record_number} is signed; not updating from ${rec.record_number}`);
+        return existingId;
+      }
+      const merged = { ...parseJson(row.data, {}), ...data };
+      db.prepare(`UPDATE qms_records SET record_date = ?, data = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(rec.decision_date || rec.record_date || row.record_date, JSON.stringify(merged), existingId);
+      logAudit(user, 'qms_updated', 'organoleptic', existingId,
+        { synced_from: 'flavor_approval', source_record: rec.record_number }, row, null, row.record_number);
+      const updated = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(existingId));
+      try { syncOrganolepticDisposal(db, org, updated, user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
+      return existingId;
+    }
+  }
+
+  const id = uuid();
+  const number = nextNumber(db, org);
+  db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, created_by)
+    VALUES (?, 'organoleptic', ?, ?, NULL, ?, 0, ?)`).run(
+    id, number, rec.decision_date || rec.record_date || null, JSON.stringify(data), user?.name || 'system');
+  // Back-link on the flavor approval so the next save updates rather than
+  // files a second organoleptic record.
+  const faData = { ...parseJson(db.prepare('SELECT data FROM qms_records WHERE id = ?').get(rec.id)?.data, {}), organoleptic_record_id: id };
+  db.prepare('UPDATE qms_records SET data = ? WHERE id = ?').run(JSON.stringify(faData), rec.id);
+
+  logAudit(user, 'qms_created', 'organoleptic', id,
+    { record_number: number, source: 'flavor_approval', source_record: rec.record_number }, null, null, number);
+
+  // A failed tasting still raises the disposal draft, exactly as it would had
+  // the organoleptic record been filed by hand.
+  const created = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id));
+  try { syncOrganolepticDisposal(db, org, created, user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
+  return id;
+}
+
 // ── create ───────────────────────────────────────────────────────────────────
 router.post('/:type', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
@@ -355,8 +471,13 @@ router.post('/:type', (req, res) => {
   logAudit(req.user, 'qms_created', cfg.key, id, { record_number: number });
   const created = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id));
   try { syncOrganolepticDisposal(db, cfg, created, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
-  try { created.possible_duplicate = findPossibleDuplicate(db, cfg, created); } catch { /* advisory only */ }
-  res.status(201).json(created);
+  try { syncFlavorOrganoleptic(db, cfg, created, req.user); } catch (e) { console.error('[flavor→organoleptic]', e.message); }
+  // Re-read: the sync hooks can write back to this record (the flavor approval
+  // gets its organoleptic_record_id), and the caller should get the row as it
+  // now stands rather than as it was a moment before.
+  const fresh = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id));
+  try { fresh.possible_duplicate = findPossibleDuplicate(db, cfg, fresh); } catch { /* advisory only */ }
+  res.status(201).json(fresh);
 });
 
 // Duplicate watcher: warn (never block) when a just-created record shares two
@@ -459,7 +580,9 @@ router.put('/:type/:id', (req, res) => {
   const updatedRow = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
   const updated = withPermissions(flatten(updatedRow), updatedRow, req.user);
   try { syncOrganolepticDisposal(db, cfg, updated, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
-  res.json(updated);
+  try { syncFlavorOrganoleptic(db, cfg, updated, req.user); } catch (e) { console.error('[flavor→organoleptic]', e.message); }
+  const freshRow = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
+  res.json(withPermissions(flatten(freshRow), freshRow, req.user));
 });
 
 // ── bulk ─────────────────────────────────────────────────────────────────────
