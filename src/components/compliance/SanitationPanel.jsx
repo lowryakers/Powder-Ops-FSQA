@@ -265,12 +265,33 @@ function SanitationDetail({ record, onClose }) {
   );
 }
 
+// A record entered after the day it happened says so, everywhere it appears.
+// Both dates plus the reason is what makes it a true late entry rather than a
+// back-dated one, and an auditor should never have to open a record to find out.
+function LateChip({ record }) {
+  if (!record?.entered_late) return null;
+  const entered = String(record.entered_at || '').slice(0, 10);
+  return (
+    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[11px] font-medium whitespace-nowrap"
+      data-tip={`Entered ${entered}${record.late_entry_reason ? ` — ${record.late_entry_reason}` : ''}`}>
+      entered late
+    </span>
+  );
+}
+
 function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   const [form, setForm] = useState({
     area: '', type: 'pre_op', equipment_id: '', performed_by: '',
     chemical_id: '', chemicals_used: '', concentration: '', contact_time_minutes: '',
     rinse_verified: false, result: 'pass', atp_reading: '', notes: '',
+    // Blank = today. Set it to record work that was actually done earlier —
+    // the server keeps both dates and asks why.
+    performed_at: '', late_entry_reason: '',
   });
+  const todayStr = new Date().toISOString().split('T')[0];
+  // "Earlier" starts the day before, because same-day is just filing at the
+  // end of a shift and needs no explanation.
+  const isBackdated = !!form.performed_at && form.performed_at < todayStr;
 
   const handleChemicalSelect = (chemId) => {
     const chem = (chemicals || []).find(c => String(c.id) === String(chemId));
@@ -293,6 +314,21 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
       <h3 className="font-semibold text-gray-900">New Sanitation Record</h3>
+      {isBackdated && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <label className="block text-xs font-medium text-amber-900 mb-1">
+            Why is this being entered now? *
+          </label>
+          <input required value={form.late_entry_reason}
+            onChange={e => setForm({ ...form, late_entry_reason: e.target.value })}
+            placeholder="e.g. account locked out — cleans done on the day, logged when access was restored"
+            className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm bg-white" />
+          <p className="text-[11px] text-amber-800 mt-1">
+            The record will show both dates — cleaned {form.performed_at}, entered today — and this reason.
+            That is what makes a late entry a true record rather than a back-dated one.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Area *</label>
@@ -309,6 +345,14 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Performed By *</label>
           <input required value={form.performed_by} onChange={e => setForm({ ...form, performed_by: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">
+            Date cleaned <span className="font-normal text-gray-400">— leave blank for today</span>
+          </label>
+          <input type="date" max={todayStr} value={form.performed_at}
+            onChange={e => setForm({ ...form, performed_at: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
         <div>
@@ -432,6 +476,7 @@ export default function SanitationPanel() {
                   {r.equipment_name && <span className="break-words">{r.equipment_name}</span>}
                   <span>{r.performed_by}</span>
                   <span className="text-gray-400">{new Date(r.performed_at).toLocaleString()}</span>
+                  <LateChip record={r} />
                   {r.atp_reading != null && <span>ATP: {r.atp_reading}</span>}
                 </div>
                 <div className="mt-1.5">
@@ -488,7 +533,9 @@ export default function SanitationPanel() {
                       <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs ${TYPE_COLORS[r.type]}`}>{TYPE_LABELS[r.type]}</span></td>
                       <td className="px-4 py-3 text-gray-600">{r.equipment_name || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.performed_by}</td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(r.performed_at).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                        {new Date(r.performed_at).toLocaleString()} <LateChip record={r} />
+                      </td>
                       <td className="px-4 py-3 text-gray-600">{r.chemicals_used || '—'}{r.concentration ? ` (${r.concentration})` : ''}</td>
                       <td className="px-4 py-3 text-gray-600">{r.atp_reading ?? '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_COLORS[r.result]}`}>{r.result}</span></td>

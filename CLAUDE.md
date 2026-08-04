@@ -1146,3 +1146,16 @@ purpose — it must open with no R2 configured — and the registry row is what 
 and a review date. The **item lists** it documents remain editable in-app as one `pm_schedules` row per zone
 (`item|qty|material`), with zone names in the `bpg_zones` managed list; re-issue the drawing through
 Document Control when the picture itself changes.
+
+## A clean that was done but couldn't be logged
+`performed_at` used to be "now" and unsettable, so a cleaner locked out of her account for a few days had no
+way to record work she had actually done. `POST /sanitation` now accepts `performed_at`, under two rules:
+**never in the future** (that would be a record of something that hasn't happened), and **more than a day
+back needs a reason**. Both dates are stored — `entered_at`, `entered_late`, `late_entry_reason` — and the
+`LateChip` shows "entered late" wherever the record appears. **Back-dating is only safe when it is visible:**
+a late entry that looks identical to one filed on the day is a false record; one carrying both dates and a
+reason is the honest account, and is what an auditor expects.
+**Filing a passed clean closes the 72-hour re-clean task for that area** (`closeRecleanTasksFor`). Without it
+the cleaner does the job, files the record, and the task sits in her list anyway — so she either leaves it
+open or completes it separately and the two records disagree about when the work happened. The clean IS the
+completion.

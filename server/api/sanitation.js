@@ -262,26 +262,81 @@ router.get('/:id', (req, res) => {
   res.json(record);
 });
 
+// Filing a clean, including one done days ago.
+//
+// `performed_at` used to be "now" and nothing else, so work that was genuinely
+// done but couldn't be logged — a locked-out account, a dead phone — had no way
+// into the record at all. It can be back-dated now, on two conditions that keep
+// it honest: it can never be in the FUTURE (that would be a record of something
+// that hasn't happened), and anything more than a day back needs a reason. Both
+// dates are stored, so the record reads "cleaned the 30th, entered the 4th"
+// rather than pretending it was filed on the day.
 router.post('/', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id } = req.body;
+  const { area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id, performed_at, late_entry_reason } = req.body;
 
   if (!area || !type || !performed_by || !result) {
     return res.status(400).json({ error: 'area, type, performed_by, and result are required' });
   }
 
+  let when = null;
+  let late = 0;
+  if (performed_at) {
+    // Accept a date or a full timestamp; a bare date means end of that day's
+    // shift rather than midnight, so the 72-hour clock isn't unfairly early.
+    const raw = /^\d{4}-\d{2}-\d{2}$/.test(performed_at) ? `${performed_at} 12:00:00` : String(performed_at);
+    const parsed = new Date(raw.replace(' ', 'T'));
+    if (Number.isNaN(parsed.getTime())) return res.status(400).json({ error: 'That date could not be read.' });
+    if (parsed.getTime() > Date.now() + 60000) {
+      return res.status(400).json({ error: 'A clean cannot be recorded for a future date.' });
+    }
+    const daysBack = (Date.now() - parsed.getTime()) / 86400000;
+    if (daysBack > 1) {
+      if (!String(late_entry_reason || '').trim()) {
+        return res.status(400).json({ error: 'Recording a clean from a previous day needs a reason — say why it is being entered now.' });
+      }
+      late = 1;
+    }
+    when = raw;
+  }
+
   db.prepare(`
-    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id, record_group)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id, record_group, performed_at, entered_at, entered_late, late_entry_reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?)
   `).run(id, area, type, equipment_id || null, performed_by, chemicals_used || null,
     concentration || null, contact_time_minutes ?? null, rinse_verified ? 1 : 0,
-    result, atp_reading ?? null, notes || null, chemical_id || null, recordGroupFor(area));
+    result, atp_reading ?? null, notes || null, chemical_id || null, recordGroupFor(area),
+    when, late, late ? String(late_entry_reason).trim() : null);
 
   const created = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
-  logAudit(performed_by, 'create', 'sanitation_record', id, { area, type, result }, null, created);
+  const closed = result === 'pass' ? closeRecleanTasksFor(db, area, req.user?.name || performed_by, created) : 0;
+  logAudit(req.user || performed_by, 'create', 'sanitation_record', id,
+    { area, type, result, entered_late: !!late, performed_at: created.performed_at, reclean_tasks_closed: closed },
+    null, created);
   res.status(201).json(created);
 });
+
+// Logging a passed clean closes the task the 72-hour rule raised for that room.
+//
+// Without this the cleaner does the job, files the record, and the task sits in
+// her list anyway — so she either leaves it open or completes it separately and
+// the two records disagree about when the work happened. The clean IS the
+// completion, so it completes the task and says which record did it.
+function closeRecleanTasksFor(db, area, who, record) {
+  try {
+    const open = db.prepare(`SELECT id FROM work_orders
+      WHERE title = ? AND status IN ('open','in_progress','overdue','missed')`).all(`72h Re-clean — ${area}`);
+    if (!open.length) return 0;
+    const upd = db.prepare(`UPDATE work_orders SET status = 'completed', completed_at = datetime('now'), completed_by = ?,
+      notes = COALESCE(notes || char(10), '') || ?, updated_at = datetime('now') WHERE id = ?`);
+    for (const w of open) {
+      upd.run(who, `Closed by the cleaning record filed for ${String(record.performed_at || '').slice(0, 10)}.`, w.id);
+      logAudit(who, 'update', 'work_order', w.id, { closed_by_sanitation_record: record.id, area }, null, null, `72h Re-clean — ${area}`);
+    }
+    return open.length;
+  } catch { return 0; }
+}
 
 /**
  * QA's verification signature on one cleaning or inspection record.

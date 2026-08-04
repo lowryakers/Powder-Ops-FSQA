@@ -1232,6 +1232,21 @@ function runMigrations() {
   addColumnIfMissing('work_orders', 'chemical_id', 'TEXT');
   addColumnIfMissing('sanitation_records', 'chemical_id', 'TEXT');
 
+  // Filing a clean that was done days ago.
+  //
+  // `performed_at` defaulted to now and could not be set, so a cleaner locked
+  // out of her account for a few days had no way to record work she had
+  // actually done. She can now, and the record says so: `entered_at` is when it
+  // was keyed, `entered_late` marks the two apart, and a reason is required.
+  //
+  // Back-dating a compliance record is only safe when it is VISIBLE. A late
+  // entry that looks identical to one filed the same day is a false record;
+  // one that carries both dates and a reason is the honest version of what
+  // happened, and is what an auditor expects to see.
+  addColumnIfMissing('sanitation_records', 'entered_at', 'TEXT');
+  addColumnIfMissing('sanitation_records', 'entered_late', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('sanitation_records', 'late_entry_reason', 'TEXT');
+
   // Chemical location tracking
   addColumnIfMissing('approved_chemicals', 'location_for_use', 'TEXT');
   addColumnIfMissing('approved_chemicals', 'sds_url', 'TEXT');
