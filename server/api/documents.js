@@ -258,7 +258,10 @@ function cleanFilename(filename) {
 function guessMeta(filename, text) {
   const base = cleanFilename(filename);
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const numRe = /\b((?:SOP|WI|JD|POL|FORM|F|QP|HACCP)[-\s]?\d{1,4}(?:[-.]\d{1,3})?)\b/i;
+  // Longest prefixes first — the plant numbers documents POLICY 002 and
+  // PROTOCOL 003, and a shorter alternative ("POL") would match first and
+  // truncate them, which is why those two never matched by number.
+  const numRe = /\b((?:PROTOCOL|POLICY|HACCP|FORM|SOP|POL|WI|JD|QP|F)[-\s]?\d{1,4}(?:[-.]\d{1,3})?)\b/i;
   let doc_number = '';
   const fromName = base.match(numRe);
   if (fromName) doc_number = fromName[1].toUpperCase().replace(/\s+/g, '-');
@@ -270,6 +273,12 @@ function guessMeta(filename, text) {
   if (!title || title.length < 3) {
     title = lines.find(l => l.length > 4 && l.length < 90 && !numRe.test(l)) || base;
   }
+  // Document Control names its files with the revision on the end
+  // ("…_Food_Safety_Policy_Statement_V4.pdf"). That's the revision, not part of
+  // the title — left in, uploading V4 of a document renames it to "… V4" and
+  // the next revision renames it again. Only a trailing v/rev token goes; a
+  // title that genuinely ends in a number ("Allergen Control Program 2") stays.
+  title = title.replace(/[\s_-]*\b(?:rev(?:ision)?|ver(?:sion)?|v)\.?\s*\d+(?:\.\d+)?$/i, '').trim() || title;
   return { doc_number, title: title.slice(0, 120) };
 }
 
@@ -292,6 +301,140 @@ router.post('/extract', receiveImportFiles, async (req, res) => {
     }
   }
   res.json({ documents: out });
+});
+
+
+// ── Uploading the latest version of a document already on file ──────────────
+//
+// Document Control's real job right now is not creating documents — it's
+// bringing ~100 existing ones up to date from the finalised paper. So this
+// takes an upload, works out WHICH document it is, and proposes the changes
+// rather than making them.
+//
+// Nothing here writes. The proposal is a diff Daniela reads and applies (or
+// doesn't), because a scanner confidently overwriting a controlled document is
+// exactly the failure mode Document Control exists to prevent.
+
+// Revision and effective date as the plant writes them on the page.
+function guessRevision(text) {
+  const head = String(text || '').slice(0, 4000);
+  const rev = head.match(/\b(?:revision|rev\.?|version|ver\.?)\s*#?\s*:?\s*(V?\d+(?:\.\d+)?)\b/i);
+  const eff = head.match(/\b(?:effective|issued|approved)\s*(?:date)?\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})\b/i);
+  const iso = (d) => {
+    if (!d) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    const m = d.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+    if (!m) return null;
+    const y = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return `${y}-${String(+m[1]).padStart(2, '0')}-${String(+m[2]).padStart(2, '0')}`;
+  };
+  return { revision: rev ? rev[1].toUpperCase() : null, effective_date: iso(eff && eff[1]) };
+}
+
+const normDoc = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+// Which document on file is this upload? Doc number is the reliable signal;
+// an exact title match is the fallback. No match is reported as such rather
+// than guessed — attaching a revision to the wrong document is worse than
+// asking someone which one it is.
+function matchDocument(db, meta) {
+  const all = db.prepare('SELECT id, doc_number, title, revision, effective_date, description, status FROM sop_documents').all();
+  if (meta.doc_number) {
+    const key = normDoc(meta.doc_number);
+    const hit = all.find(d => normDoc(d.doc_number) === key);
+    if (hit) return { doc: hit, matched_on: 'document number' };
+  }
+  const t = String(meta.title || '').trim().toLowerCase();
+  if (t.length > 6) {
+    const hit = all.find(d => String(d.title || '').trim().toLowerCase() === t);
+    if (hit) return { doc: hit, matched_on: 'exact title' };
+  }
+  return { doc: null, matched_on: null };
+}
+
+// What would change, field by field. Content is reported as a size delta
+// rather than a character diff: the point is "the body changed, look at it",
+// and a word-level diff of a whole SOP is not something anyone reads.
+function proposeChanges(doc, extracted) {
+  const changes = [];
+  const add = (field, label, from, to) => {
+    if (to == null || to === '' ) return;
+    if (String(from || '').trim() === String(to).trim()) return;
+    changes.push({ field, label, from: from || null, to });
+  };
+  add('revision', 'Revision', doc.revision, extracted.revision);
+  add('effective_date', 'Effective date', doc.effective_date, extracted.effective_date);
+  add('title', 'Title', doc.title, extracted.title);
+  const oldLen = String(doc.description || '').trim().length;
+  const newLen = String(extracted.content || '').trim().length;
+  if (newLen > 40 && String(doc.description || '').trim() !== String(extracted.content).trim()) {
+    changes.push({
+      field: 'description', label: 'Document body',
+      from: oldLen ? `${oldLen.toLocaleString()} characters on file` : 'empty',
+      to: `${newLen.toLocaleString()} characters from the upload`,
+      content: extracted.content,
+    });
+  }
+  return changes;
+}
+
+// POST /propose-revisions — upload one or more finalised documents, get back
+// what each one WOULD change. Writes nothing.
+router.post('/propose-revisions', receiveImportFiles, async (req, res) => {
+  if (!req.files?.length) return res.status(400).json({ error: 'No files uploaded' });
+  const db = getDb();
+  const out = [];
+  for (const f of req.files) {
+    try {
+      const { text, pages, isMarkdown } = await extractDocText(f);
+      const meta = guessMeta(f.originalname, text);
+      const rev = guessRevision(text);
+      const content = isMarkdown ? text : textToMarkdown(text);
+      const extracted = { ...meta, ...rev, content };
+      const { doc, matched_on } = matchDocument(db, meta);
+      out.push({
+        filename: f.originalname, ok: true, pages, extracted,
+        document: doc ? { id: doc.id, doc_number: doc.doc_number, title: doc.title, revision: doc.revision, status: doc.status } : null,
+        matched_on,
+        changes: doc ? proposeChanges(doc, extracted) : [],
+      });
+    } catch (err) {
+      out.push({ filename: f.originalname, ok: false, error: err.message });
+    }
+  }
+  res.json({ files: out });
+});
+
+// POST /:id/apply-revision — apply the fields Document Control ticked.
+// A version snapshot is written first, so the previous revision is recoverable
+// and the trail shows what the upload replaced.
+router.post('/:id/apply-revision', (req, res) => {
+  const db = getDb();
+  const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  const fields = req.body?.fields || {};
+  const allowed = ['revision', 'effective_date', 'title', 'description'];
+  const sets = [];
+  const vals = [];
+  for (const k of allowed) {
+    if (fields[k] === undefined || fields[k] === null || fields[k] === '') continue;
+    sets.push(`${k} = ?`);
+    vals.push(fields[k]);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'Nothing selected to apply.' });
+
+  db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(uuid(), doc.id, doc.revision, req.user.name,
+      `Superseded by an uploaded revision (${req.body?.filename || 'file'})`, JSON.stringify(doc));
+
+  db.prepare(`UPDATE sop_documents SET ${sets.join(', ')}, source_file = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(...vals, req.body?.filename || doc.source_file, doc.id);
+
+  logAudit(req.user, 'update', 'document', doc.id,
+    { applied: Object.keys(fields), from_revision: doc.revision, to_revision: fields.revision || doc.revision, source: req.body?.filename },
+    doc, db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id), doc.doc_number || doc.title);
+
+  res.json(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id));
 });
 
 // POST /bulk — create many documents at once (from the reviewed import)

@@ -740,6 +740,30 @@ Operator View read as "the Production Log again".
   same rule; a second copy of an access rule is how two screens start disagreeing about who can reach a
   module.
 
+## Bringing ~100 controlled documents up to date from the finalised paper
+Document Control's real job right now isn't *creating* documents — it's updating the ones already in the
+registry. **Update from file** (Controlled Documents header, `canEdit` only) → `RevisionUploadModal` →
+`POST /documents/propose-revisions` (multi-file) → per-file **proposal** → `POST /:id/apply-revision`.
+- **The proposal endpoint writes nothing.** It reads each file, works out which registry row it is, and
+  returns a field-by-field diff. Every change is a tick box and **nothing is applied until it's ticked** — a
+  scanner confidently overwriting a controlled document is exactly the failure Document Control exists to
+  prevent. Applying snapshots the previous revision into `sop_versions` first, then sets only the ticked
+  fields, and audits which ones.
+- **`matchDocument()` matches on document number, falls back to an exact title, and otherwise says it
+  couldn't.** Attaching a revision to the wrong document is worse than asking a human which one it is, so
+  there is no fuzzy match. An unmatched file is reported with what was read out of it.
+- **The body is reported as a size delta, not a character diff** ("1,351 characters on file → 461 from the
+  upload"). Nobody reads a word-level diff of a whole SOP; the point is "the body changed, look at it". Its
+  tick box is the one people most often want off — the revision and effective date are the update, the body
+  is often a worse copy of what's already keyed in.
+- **The filename's revision suffix is not part of the title.** Document Control names its files
+  `…_Food_Safety_Policy_Statement_V4.pdf`, and `guessMeta` derives the title from the filename — so uploading
+  V4 proposed renaming the document to "Food Safety Policy Statement V4", and V5 would have renamed it again.
+  A trailing `v`/`rev`/`version` + number is stripped; a title that genuinely ends in a number
+  ("Allergen Control Program 2") is left alone.
+- The doc-number regex is shared with the PDF importer and lists **longest prefixes first** — `POLICY`/
+  `PROTOCOL` before `POL`, or those two get truncated and never match by number (they never did).
+
 ## Auditor View: process maps (`src/data/processFlows.js`)
 Two shapes, one chapter: **FLOWS** answer "show me your process for X" — a record's life from the event that
 starts it to the signature that closes it, naming the form and the actor at each step; **DEPARTMENTS**

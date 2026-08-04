@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square, Sparkles, Paperclip } from 'lucide-react';
 import MarkdownView from '../common/MarkdownView.jsx';
+import RevisionUploadModal from '../settings/RevisionUploadModal.jsx';
 
 const DOC_TYPE_OPTIONS = [
   { value: 'sop', label: 'SOP' },
@@ -707,6 +708,8 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
   const [creating, setCreating] = useState(false);
   const [viewing, setViewing] = useState(null);
   const [importing, setImporting] = useState(false);
+  // Updating documents already on file, as distinct from importing new ones.
+  const [revising, setRevising] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [bulkEditing, setBulkEditing] = useState(false);
@@ -795,6 +798,10 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
           <div className="flex items-center gap-2">
             <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
               <Upload size={15} /> Import PDFs
+            </button>
+            <button onClick={() => setRevising(true)} title="Upload finalised versions of documents already on file"
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+              <Upload size={15} /> Update from file
             </button>
             <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
               <Plus size={16} /> New {typeLabel}
@@ -905,6 +912,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
           onArchive={handleArchive}
           onClose={() => setViewing(null)} />
       )}
+      {revising && <RevisionUploadModal onClose={() => setRevising(false)} onDone={refresh} />}
       {importing && (
         <BulkImportModal
           defaultDocType={docType}
