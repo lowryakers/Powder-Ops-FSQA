@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import crypto from 'crypto';
 import { requireRole } from '../middleware/auth.js';
+import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
 import { ALL_MODULE_IDS } from '../module-access.js';
 import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
 
@@ -38,7 +39,8 @@ function issueSession(db, user) {
   const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
   let quickTabs;
   try { quickTabs = user.quick_tabs ? JSON.parse(user.quick_tabs) : null; } catch { quickTabs = null; }
-  return { token, user: { id: user.id, name: user.name, username: user.username || user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess, home_workspace: user.home_workspace || 'fsqa', quick_tabs: quickTabs } };
+  const daysLeft = passwordDaysLeft(user.password_changed_at);
+  return { token, user: { id: user.id, name: user.name, username: user.username || user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess, home_workspace: user.home_workspace || 'fsqa', quick_tabs: quickTabs, password_days_left: daysLeft, password_expired: passwordExpired(user.password_changed_at) } };
 }
 
 // --- User CRUD ---
@@ -61,10 +63,10 @@ router.get('/technicians', (_req, res) => {
 });
 
 router.get('/me', (req, res) => {
-  const row = getDb().prepare('SELECT home_workspace, quick_tabs, username FROM users WHERE id = ?').get(req.user.id) || {};
+  const row = getDb().prepare('SELECT home_workspace, quick_tabs, username, password_changed_at FROM users WHERE id = ?').get(req.user.id) || {};
   let quickTabs;
   try { quickTabs = row.quick_tabs ? JSON.parse(row.quick_tabs) : null; } catch { quickTabs = null; }
-  res.json({ id: req.user.id, name: req.user.name, username: row.username || req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs });
+  res.json({ id: req.user.id, name: req.user.name, username: row.username || req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs, password_days_left: passwordDaysLeft(row.password_changed_at), password_expired: passwordExpired(row.password_changed_at) });
 });
 
 // Let a user set their own default landing workspace.
@@ -100,7 +102,7 @@ router.post('/me/password', (req, res) => {
   const me = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
   if (!me?.password_hash) return res.status(400).json({ error: 'No password set yet. Sign out and set one from the login screen.' });
   if (!verifyPassword(String(current_password || ''), me.password_hash)) return res.status(401).json({ error: 'Your current password is incorrect.' });
-  db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(hashPassword(new_password), req.user.id);
+  db.prepare("UPDATE users SET password_hash = ?, password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(hashPassword(new_password), req.user.id);
   logAudit(req.user, 'password_change', 'user', req.user.id, { self: true }, null, null, req.user.name);
   res.json({ ok: true });
 });
@@ -411,7 +413,7 @@ router.post('/set-password', (req, res) => {
   if (user.pin && current_pin !== user.pin) return res.status(401).json({ error: 'Your current PIN is incorrect.' });
 
   // Set the password and retire the PIN.
-  db.prepare("UPDATE users SET password_hash = ?, pin = NULL, updated_at = datetime('now') WHERE id = ?").run(hashPassword(password), user_id);
+  db.prepare("UPDATE users SET password_hash = ?, pin = NULL, password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(hashPassword(password), user_id);
   logAudit(user, 'set_password', 'user', user.id, null, null, null, user.name);
   res.json(issueSession(db, { ...user, password_hash: '1' }));
 });
@@ -424,7 +426,7 @@ router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  db.prepare("UPDATE users SET password_hash = NULL, pin = NULL, updated_at = datetime('now') WHERE id = ?").run(user.id);
+  db.prepare("UPDATE users SET password_hash = NULL, pin = NULL, password_changed_at = NULL, updated_at = datetime('now') WHERE id = ?").run(user.id);
   db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id); // force re-auth
   logAudit(req.user, 'password_reset', 'user', user.id, { by_admin: true, mode: 'send_to_setup' }, null, null, user.name);
   res.json({ ok: true });

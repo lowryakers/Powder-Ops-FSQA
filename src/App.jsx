@@ -490,7 +490,43 @@ function NotificationBell({ notifications, onNavigate }) {
 // Self-service password change, reachable from the account menu. Uses raw fetch
 // (not the useApi wrapper) so a wrong current password surfaces as a form error
 // instead of triggering an auto-logout on 401.
-function ChangePasswordModal({ onClose }) {
+// `forced` = the password is past its yearly change date. The server refuses
+// every other call until it's changed, so there is deliberately no way to
+// dismiss this: an escape hatch here would just produce a session that can't
+// do anything, with no explanation of why.
+// Every layout (main, operator, kiosk, auditor) passes through its own
+// `if (!user)` check, so the expiry gate is inserted after each rather than
+// relying on one of them being the only way in.
+// The "prompt" half of the policy. The gate is the wall; this is the notice
+// that stops the wall being a surprise. Dismissed per session (sessionStorage),
+// so it reappears tomorrow and stays out of the way today.
+function PasswordExpiringBanner({ daysLeft }) {
+  const [hidden, setHidden] = useState(() => sessionStorage.getItem('pw_warn_hidden') === '1');
+  if (hidden || daysLeft == null || daysLeft > 14 || daysLeft <= 0) return null;
+  const dismiss = () => { sessionStorage.setItem('pw_warn_hidden', '1'); setHidden(true); };
+  return (
+    <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3 text-[12px] text-amber-900">
+      <span>
+        Your password must be changed {daysLeft === 1 ? 'tomorrow' : `within ${daysLeft} days`}.{' '}
+        <button onClick={() => window.dispatchEvent(new CustomEvent('app-change-password'))}
+          className="font-semibold underline hover:no-underline">Change it now</button>
+      </span>
+      <button onClick={dismiss} className="text-amber-700 hover:text-amber-900 shrink-0" aria-label="Dismiss">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
+function PasswordExpiredGate() {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <ChangePasswordModal forced onClose={() => {}} />
+    </div>
+  );
+}
+
+function ChangePasswordModal({ onClose, forced = false }) {
   const [cur, setCur] = useState('');
   const [nw, setNw] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -518,16 +554,21 @@ function ChangePasswordModal({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center px-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center px-4" onClick={forced ? undefined : onClose}>
       <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-1">
           <KeyRound size={18} className="text-powder-600" />
-          <h3 className="text-base font-bold text-gray-900">Change your password</h3>
+          <h3 className="text-base font-bold text-gray-900">{forced ? 'Time to change your password' : 'Change your password'}</h3>
         </div>
+        {forced && (
+          <p className="text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mt-2">
+            Passwords are changed at least once a year. Set a new one to carry on — you'll need your current password.
+          </p>
+        )}
         {done ? (
           <div className="mt-3 space-y-3">
             <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg p-3">Password changed. Use your new password next time you sign in.</p>
-            <button onClick={onClose} className="w-full py-2.5 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">Done</button>
+            <button onClick={forced ? () => window.location.reload() : onClose} className="w-full py-2.5 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">Done</button>
           </div>
         ) : (
           <form onSubmit={submit} className="mt-3 space-y-3">
@@ -552,7 +593,7 @@ function ChangePasswordModal({ onClose }) {
               <button type="submit" disabled={busy} className="flex-1 py-2.5 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
                 {busy ? 'Saving…' : 'Change password'}
               </button>
-              <button type="button" onClick={onClose} className="px-4 py-2.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Cancel</button>
+              {!forced && <button type="button" onClick={onClose} className="px-4 py-2.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Cancel</button>}
             </div>
           </form>
         )}
@@ -1254,6 +1295,7 @@ function App() {
       );
     }
     if (!user) return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
+    if (user.password_expired) return <PasswordExpiredGate />;
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
@@ -1293,6 +1335,7 @@ function App() {
       );
     }
     if (!user) return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
+    if (user.password_expired) return <PasswordExpiredGate />;
     return <><AuditorView /><UpdateBanner /></>;
   }
 
@@ -1310,6 +1353,7 @@ function App() {
       );
     }
     if (!user) return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
+    if (user.password_expired) return <PasswordExpiredGate />;
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
@@ -1366,6 +1410,8 @@ function App() {
   if (!user) {
     return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
   }
+
+  if (user.password_expired) return <PasswordExpiredGate />;
 
   // Auditors only ever see the read-only evidence binder — no matter which
   // URL they sign in from, and never the operating app or comms.
@@ -1518,6 +1564,7 @@ function App() {
 
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col">
+        <PasswordExpiringBanner daysLeft={user.password_days_left} />
         {/* Desktop top bar */}
         <header className="hidden md:block bg-white border-b border-gray-200 sticky top-0 z-30">
           <div className="px-6 lg:px-8 py-2.5 flex items-center justify-between max-w-7xl mx-auto">

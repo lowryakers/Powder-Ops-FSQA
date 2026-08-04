@@ -525,6 +525,24 @@ v3 but **not yet exercised against a real company** — verify the pull before b
 `tr()` back. Uses the cached `/ai/translate-content` endpoint, so it silently stays English when AI is off.
 Wired into Supply Orders, Time Tracking and both finance ledgers; reusable anywhere.
 
+## Passwords expire once a year (`server/password-policy.js`)
+`users.password_changed_at` + a 365-day limit, with a 14-day warning banner before it bites.
+- **Enforced in the auth middleware, not the login screen.** A rule the client alone applies is a
+  suggestion. While expired, a session may call exactly three things — `GET /users/me`,
+  `POST /users/me/password`, `POST /users/logout` — and everything else 403s with `password_expired: true`.
+  That also catches a tab left open since before the lapse.
+- **Expiry must NEVER clear `password_hash`.** The admin reset does that, and its whole point is that the
+  next sign-in sets a password *without* proving the old one — doing the same on expiry would let anyone who
+  knows a username take the account the day it lapsed. Verified: `set-password` on an expired-but-set
+  account is refused.
+- **Its own module** because both `middleware/auth.js` and `api/users.js` need it, and users.js already
+  imports `requireRole` from the middleware — putting the helpers in users.js closes an import cycle.
+- **The clock starts when the column is backfilled, not at `created_at`.** Nobody knows when the existing
+  passwords were set, and backfilling from account age would have expired most of the plant on deploy day.
+  Everyone gets a full year from the release, and the policy's start date is a recorded fact.
+- Stamped on all three write paths (self-serve change, first set-password, admin reset clears it to NULL).
+  A NULL never blocks — that user has no password yet and the set-password flow owns them.
+
 ## Sign-in usernames (short) vs full names (records)
 `users.username` = what people type to sign in, derived first + last from `users.name`
 (`server/usernames.js`, backfilled on boot, unique index, admin-editable in Settings). `users.name` stays

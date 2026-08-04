@@ -1,11 +1,23 @@
 import { getDb } from '../db.js';
+import { passwordExpired } from '../password-policy.js';
 
 const SESSION_QUERY = `
-  SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active
+  SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active, u.password_changed_at
   FROM sessions s
   JOIN users u ON s.user_id = u.id
   WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
 `;
+
+// While a password is past its yearly change date, the session can do exactly
+// one thing: change that password. Enforcing it here rather than on the login
+// screen is the difference between a policy and a suggestion — an expired
+// session that keeps a tab open, or one that lapses mid-week, is stopped just
+// the same.
+const PASSWORD_EXPIRY_ALLOWED = [
+  { method: 'POST', path: '/users/me/password' },
+  { method: 'GET', path: '/users/me' },
+  { method: 'POST', path: '/users/logout' },
+];
 
 // Requests that must work before there is a session. Everything else under
 // /api needs a valid bearer token. This is the only list — server.js asks
@@ -48,6 +60,7 @@ function lookupSession(token) {
     department: row.department,
     module_access: parseModuleAccess(row.module_access),
     is_active: row.is_active,
+    password_changed_at: row.password_changed_at,
   };
 }
 
@@ -73,6 +86,14 @@ export function authenticate(req, res, next) {
 
   if (!user.is_active) {
     return res.status(403).json({ error: 'Account deactivated' });
+  }
+
+  if (passwordExpired(user.password_changed_at)
+      && !PASSWORD_EXPIRY_ALLOWED.some(r => r.method === req.method && r.path === req.path)) {
+    return res.status(403).json({
+      error: 'Your password is more than a year old and must be changed before you can continue.',
+      password_expired: true,
+    });
   }
 
   req.user = user;

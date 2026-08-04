@@ -1771,6 +1771,23 @@ function runMigrations() {
   // or four words. `name` stays the full name on every record; this is only
   // what they type to log in. NULLs don't collide in a SQLite unique index, so
   // the index is safe to create before the backfill fills them.
+  // Passwords expire once a year (see PASSWORD_MAX_AGE_DAYS in api/users.js).
+  //
+  // The clock starts when this column is filled, NOT at the account's creation
+  // date. Nobody knows when the existing passwords were actually set, and
+  // backfilling from created_at would expire most of the plant the moment this
+  // deploys — the whole floor locked out on a Monday morning. Starting the
+  // clock now gives everyone a full year and makes the policy's start date an
+  // honest, recorded fact rather than a guess.
+  addColumnIfMissing('users', 'password_changed_at', 'TEXT');
+  try {
+    const started = db.prepare(`UPDATE users SET password_changed_at = datetime('now')
+      WHERE password_hash IS NOT NULL AND password_changed_at IS NULL`).run().changes;
+    if (started) console.log(`[db] Password expiry clock started for ${started} existing user${started === 1 ? '' : 's'}`);
+  } catch (e) {
+    console.warn('[db] password_changed_at backfill skipped:', e.message);
+  }
+
   addColumnIfMissing('users', 'username', 'TEXT');
   try {
     db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE)');
