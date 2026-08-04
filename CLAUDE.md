@@ -1159,3 +1159,19 @@ reason is the honest account, and is what an auditor expects.
 the cleaner does the job, files the record, and the task sits in her list anyway — so she either leaves it
 open or completes it separately and the two records disagree about when the work happened. The clean IS the
 completion.
+
+## Document Control Review Center (`server/doc-review.js` + `api/doc-review.js` + `DocReviewPanel.jsx`)
+Daniela's "what do I owe today", same registry shape as `qa-review.js`: four sources, each with
+`count`/`pending`/`canAct`, and marking a document reviewed calls documents.js's `recomputeDocumentReview`
+rather than writing the columns here. Nav entry at the **top of Document Control**, gated by department the
+way Controlled Changes is (not by a module grant).
+- **Not every pile is batchable, and the screen says so.** A source declares `action` only when it genuinely
+  has one. Documents past review date do ("I've read it, it's still correct" is what a review date asks for);
+  a parked Controlled Change, an open DCR and a draft document do **not** — those are decisions that belong
+  on the record, so those tabs show the list and a way through instead of a button that can't finish the job.
+  Same reasoning that keeps deviations out of QA Review.
+- **"Open DCR" means raised SINCE GO-LIVE and still unsigned.** The 180 rows imported from the paper register
+  carry no status and no approvals — they are a history of changes already made, not a queue, and a tab
+  reading "180 open requests" is the same inflated number the sign-out badges used to show. `GO_LIVE_DATE` is
+  exported from db.js for this (the same cutoff `archivePreSystemBacklog` uses). Note the generic QMS badge
+  on the DCR tab still counts all of them — worth aligning next.

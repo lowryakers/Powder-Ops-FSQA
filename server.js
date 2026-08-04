@@ -41,6 +41,7 @@ import documentRoutes, { generateDocumentReviewTasks } from './server/api/docume
 import qualityScheduleRoutes, { generateQualityScheduleTasks } from './server/api/quality-schedules.js';
 import meetingRoutes from './server/api/meetings.js';
 import internalAuditRoutes from './server/api/internal-audits.js';
+import docReviewRoutes from './server/api/doc-review.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
@@ -1452,6 +1453,7 @@ app.use('/api/documents', requireModuleWrite('sops', 'work-instructions', 'job-d
 app.use('/api/quality-schedules', requireModuleWrite('pm', 'coa', 'sanitation', 'calibration'), qualityScheduleRoutes);
 app.use('/api/meetings', requireModuleWrite('meetings'), meetingRoutes);
 app.use('/api/internal-audits', requireModuleWrite('internal-audits'), internalAuditRoutes);
+app.use('/api/doc-review', docReviewRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);

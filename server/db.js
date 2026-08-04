@@ -2515,7 +2515,7 @@ function normalizeAuditActions() {
 // honest label, rather than sitting as a permanent "missed" backlog that
 // drags audit-readiness metrics down. Idempotent — once archived, re-running
 // touches zero rows, and no new pre-go-live work orders are ever created.
-const GO_LIVE_DATE = '2026-07-01';
+export const GO_LIVE_DATE = '2026-07-01';
 
 function archivePreSystemBacklog() {
   const note = `Pre-system backlog: task predates go-live (${GO_LIVE_DATE}); handled on paper before this system was in use.`;

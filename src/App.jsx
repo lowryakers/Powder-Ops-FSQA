@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -52,6 +52,7 @@ const TrainingPanel = lazy(() => import('./components/compliance/TrainingPanel.j
 const MockRecallPanel = lazy(() => import('./components/compliance/MockRecallPanel.jsx'));
 const MeetingsPanel = lazy(() => import('./components/compliance/MeetingsPanel.jsx'));
 const InternalAuditsPanel = lazy(() => import('./components/compliance/InternalAuditsPanel.jsx'));
+const DocReviewPanel = lazy(() => import('./components/compliance/DocReviewPanel.jsx'));
 const ProductionLog = lazy(() => import('./components/compliance/ProductionLog.jsx'));
 const ProductionSchedule = lazy(() => import('./components/compliance/ProductionSchedule.jsx'));
 const ProductionDashboard = lazy(() => import('./components/compliance/ProductionDashboard.jsx'));
@@ -150,6 +151,11 @@ const NAV_GROUPS = [
     label: 'Document Control',
     items: [
       // One "Documents" entry for SOPs / WIs / Job Descriptions — tabs inside.
+      // Sits at the top of Document Control for the same reason QA Review sits
+      // at the top of Quality: it's the "what do I owe today" screen, and it
+      // spans the modules below it. Same visibility rule as Controlled Changes —
+      // access by department, not by a module grant.
+      { id: 'doc-review', label: 'Doc Control Review', icon: FileCheck2, keywords: 'review due documents change requests controlled changes drafts queue', visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control' || (u?.role === 'supervisor' && ['qa', 'document_control'].includes((u?.department || '').toLowerCase())) },
       { id: 'document-control', label: 'Controlled Documents', icon: FileText, anyOf: ['sops', 'work-instructions', 'job-descriptions'], keywords: 'sop work instructions job descriptions' },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'certifications', label: 'Certifications', icon: BadgeCheck },
@@ -1705,6 +1711,7 @@ function App() {
           {resolvedTab === 'recall' && <MockRecallPanel />}
           {resolvedTab === 'meetings' && <MeetingsPanel />}
           {resolvedTab === 'internal-audits' && <InternalAuditsPanel />}
+          {resolvedTab === 'doc-review' && <DocReviewPanel />}
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}
