@@ -50,6 +50,7 @@ import ApprovePage from './components/ApprovePage.jsx';
 const TrainingPanel = lazy(() => import('./components/compliance/TrainingPanel.jsx'));
 const MockRecallPanel = lazy(() => import('./components/compliance/MockRecallPanel.jsx'));
 const MeetingsPanel = lazy(() => import('./components/compliance/MeetingsPanel.jsx'));
+const InternalAuditsPanel = lazy(() => import('./components/compliance/InternalAuditsPanel.jsx'));
 const ProductionLog = lazy(() => import('./components/compliance/ProductionLog.jsx'));
 const ProductionSchedule = lazy(() => import('./components/compliance/ProductionSchedule.jsx'));
 const ProductionDashboard = lazy(() => import('./components/compliance/ProductionDashboard.jsx'));
@@ -134,6 +135,7 @@ const NAV_GROUPS = [
       // (management review, food safety team) are SQF records; the module
       // covers production and safety meetings too.
       { id: 'meetings', label: 'Meetings', icon: Users, keywords: 'minutes management review food safety team agenda attendance action items' },
+      { id: 'internal-audits', label: 'Internal Audits', icon: ClipboardCheck, keywords: 'form 403-01 checklist audit findings CAR corrective action self audit' },
     ],
   },
   {
@@ -1697,6 +1699,7 @@ function App() {
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
           {resolvedTab === 'meetings' && <MeetingsPanel />}
+          {resolvedTab === 'internal-audits' && <InternalAuditsPanel />}
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}

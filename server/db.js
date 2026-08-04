@@ -2349,6 +2349,53 @@ function runMigrations() {
     console.warn('[db] meetings tables unavailable:', e.message);
   }
 
+  // Internal audits (Form 403-01). One row per audit, one row per checklist
+  // item IN SCOPE — the sections not audited simply have no rows, which is
+  // the honest version of the diagonal pen stroke on the paper form.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS internal_audits (
+        id            TEXT PRIMARY KEY,
+        audit_no      TEXT,
+        checklist_code     TEXT NOT NULL DEFAULT 'Form 403-01',
+        checklist_revision TEXT NOT NULL DEFAULT 'V1',
+        focus_areas   TEXT,
+        audit_date    TEXT NOT NULL,
+        lead_auditor  TEXT,
+        sections      TEXT NOT NULL DEFAULT '[]',
+        status        TEXT NOT NULL DEFAULT 'in_progress'
+                      CHECK (status IN ('in_progress','completed')),
+        summary       TEXT,
+        signed_by     TEXT,
+        signed_at     TEXT,
+        completed_at  TEXT,
+        custom_data   TEXT,
+        created_by    TEXT,
+        created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_internal_audits_date ON internal_audits(audit_date DESC);
+
+      CREATE TABLE IF NOT EXISTS internal_audit_items (
+        id          TEXT PRIMARY KEY,
+        audit_id    TEXT NOT NULL,
+        section     TEXT NOT NULL,
+        item_key    TEXT NOT NULL,
+        prompt      TEXT NOT NULL,
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        result      TEXT CHECK (result IN ('c','nc','na')),
+        comments    TEXT,
+        capa_id     TEXT,
+        answered_by TEXT,
+        answered_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_internal_audit_items_audit ON internal_audit_items(audit_id, sort_order);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_audit_items_key ON internal_audit_items(audit_id, item_key);
+    `);
+  } catch (e) {
+    console.warn('[db] internal audit tables unavailable:', e.message);
+  }
+
   // Fields carried over from the Monday boards these ledgers replace.
   addColumnIfMissing('ap_invoices', 'priority', 'TEXT');
   addColumnIfMissing('ap_invoices', 'invoice_link', 'TEXT');

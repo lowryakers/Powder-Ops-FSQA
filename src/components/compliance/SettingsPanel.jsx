@@ -84,6 +84,7 @@ const MODULE_GROUPS = [
       { id: 'disposals', label: 'Disposals' },
       { id: 'recall', label: 'Mock Recall' },
       { id: 'meetings', label: 'Meetings (minutes, attendance, actions)' },
+      { id: 'internal-audits', label: 'Internal Audits (Form 403-01)' },
     ],
   },
   {

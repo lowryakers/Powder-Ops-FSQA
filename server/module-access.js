@@ -34,6 +34,8 @@ export const ALL_MODULE_IDS = [
   'receiving-log',
   // Meeting minutes: management review, food safety team, production, safety.
   'meetings',
+  // Internal audits (Form 403-01).
+  'internal-audits',
   // Self-serve structure: edit an existing log's fields and dropdown lists in
   // the app. Grant-able so a QA or ops lead can own form structure without
   // needing full admin.

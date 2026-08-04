@@ -740,6 +740,32 @@ Operator View read as "the Production Log again".
   same rule; a second copy of an access rule is how two screens start disagreeing about who can reach a
   module.
 
+## Internal Audits — Form 403-01, walked one question at a time
+`server/audit-checklist.js` (the form) + `server/api/internal-audits.js` + `InternalAuditsPanel.jsx`.
+19 sections, **104 questions**, transcribed from the plant's own controlled form.
+- **The wording is VERBATIM, typos included** ("All spay bottles are clearly identified", "kept off the
+  grown", "Testing specifications are outline"). An auditor comparing the app to Form 403-01 must find the
+  same questions; correcting the text here would make the app disagree with the approved form, and fixing
+  the form is a Document Change Request. Same reason the checklist is **not user-editable** — changing what
+  an internal audit asks is a document change, like `scale-forms.js` tolerances.
+  `checklist_revision` is stamped on every audit, so a record always says which revision it was run against.
+- **Picking sections IS the record of scope.** A real audit covers two or three areas — on paper the auditor
+  drew a diagonal line through the sections they skipped. Only the picked sections get `internal_audit_items`
+  rows; the rest are simply absent, and the PDF says "sections not listed were not in scope". Auditing
+  nothing is refused. Dropping a section mid-audit is refused once anything in it has been **answered** —
+  deleting answered items would erase evidence.
+- **Two ways through the same items, in the same order.** Walkthrough (one question, big buttons, resumes at
+  the first unanswered) and Full checklist (filterable). Both — and the PDF — iterate the checklist's
+  **print order**, never the order sections were ticked, or two people comparing them think they're
+  looking at different records.
+- **A not-compliant answer raises a CAR in the existing `capas` register** (`source_type = 'Internal Audit'`),
+  not a private findings list; its status is read live by the join, and a second raise on the same item is
+  idempotent. Same "one register" rule as meeting actions → work orders.
+- **Sign-off is refused while any item is blank** — an audit filed with blank questions reads later as if
+  those areas passed. Revoke (signer or admin) to correct, then sign again.
+- **The monthly cadence is seeded as a Quality Schedule** ("Internal Audit (Form 403-01)"), because their own
+  checklist says internal audits are performed monthly — the plant's document, not a preference.
+
 ## Meetings (`server/api/meetings.js` + `MeetingsPanel.jsx`)
 Management review and the food safety team meeting are SQF records, so this is a controlled record and not a
 notes app. `meetings` + `meeting_actions`; nav entry in **Quality**; module id `meetings`.

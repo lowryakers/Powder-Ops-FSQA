@@ -97,6 +97,23 @@ const SEED_SCHEDULES = [
       'If any result is out of specification: open a Non-Conformance and notify the QA Manager',
     ],
   },
+  {
+    // Their own checklist says "Internal audits are performed monthly", so the
+    // schedule comes from the plant's document rather than from a preference.
+    title: 'Internal Audit (Form 403-01)',
+    module_id: 'Internal Audit',
+    description: 'Monthly internal audit. Open Internal Audits, start a new audit, pick the focus areas and sections for this month, and walk the checklist. Any not-compliant finding raises a CAR.',
+    frequency_type: 'monthly',
+    frequency_value: 1,
+    procedure_steps: [
+      'Decide the focus area(s) for this month and note them on the audit',
+      'Select the checklist sections that cover those areas',
+      'Walk each question and record compliant, not compliant, or N/A with a comment',
+      'Raise a CAR for every not-compliant finding and assign an owner and due date',
+      'Sign off the audit and file the checklist',
+      'Follow the CARs to closure and verify effectiveness',
+    ],
+  },
 ];
 
 export function seedQualitySchedules(db) {
