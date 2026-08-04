@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
+import MarkdownView from '../common/MarkdownView.jsx';
 import {
   Shield, Wrench, Thermometer, Droplets, CheckCircle, AlertTriangle, Download, LogOut,
   FlaskConical, ScrollText, FileText, ChevronDown, ChevronUp, ChevronRight, ArrowLeft,
-  BookOpen, GraduationCap, Scissors, FileWarning, TestTubes, PackageSearch, Printer,
+  BookOpen, GraduationCap, Scissors, FileWarning, TestTubes, PackageSearch, Printer, X, ExternalLink,
 } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 
@@ -90,10 +91,93 @@ function QmsSection({ type }) {
   );
 }
 
+
+// ── Reading an actual controlled document (and printing it) ─────────────────
+//
+// The registry used to show only the row — number, title, revision, status. An
+// auditor asking "show me SOP 401" wants the document, not its metadata, and
+// asking someone to fetch it on another screen is the moment the binder stops
+// being self-service.
+//
+// Printing opens a clean window rather than styling the app for print: an
+// auditor asking for a paper copy should get the document, not a screenshot of
+// software. The header carries the number, revision and effective date so the
+// paper says which version it is.
+function printDocument(doc, bodyEl) {
+  const w = window.open('', '_blank', 'width=820,height=1000');
+  if (!w) return;
+  const meta = [
+    doc.doc_number && `Document #: ${doc.doc_number}`,
+    doc.revision && `Revision: ${doc.revision}`,
+    doc.effective_date && `Effective: ${doc.effective_date}`,
+    doc.status && `Status: ${doc.status}`,
+    doc.owner && `Owner: ${doc.owner}`,
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${doc.doc_number || ''} ${doc.title}</title>
+    <style>
+      body { font: 12pt/1.5 Georgia, serif; margin: 0.75in; color: #111; }
+      h1 { font-size: 16pt; margin: 0 0 4px; }
+      .meta { font: 9pt/1.4 Helvetica, Arial, sans-serif; color: #444; border-bottom: 1px solid #999; padding-bottom: 8px; margin-bottom: 16px; }
+      .foot { position: fixed; bottom: 0.4in; left: 0.75in; right: 0.75in; font: 8pt Helvetica, Arial, sans-serif; color: #777; border-top: 1px solid #ccc; padding-top: 4px; }
+      table { border-collapse: collapse; } td, th { border: 1px solid #999; padding: 4px 6px; font-size: 10pt; }
+      h3, h4, h5 { margin: 12px 0 4px; } p { margin: 6px 0; } ul, ol { margin: 6px 0 6px 20px; }
+    </style></head><body>
+    <h1>${doc.title}</h1>
+    <div class="meta">${meta}</div>
+    <div>${bodyEl ? bodyEl.innerHTML : ''}</div>
+    <div class="foot">Printed from ReadyDoc ${new Date().toLocaleString()} — uncontrolled when printed. Verify the revision against the registry.</div>
+    </body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 250);
+}
+
+function DocumentViewer({ id, onClose }) {
+  const { data: doc } = useApiGet(id ? `/documents/${id}` : null);
+  const bodyRef = useRef(null);
+  if (!id) return null;
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-8" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 p-5 border-b border-gray-200">
+          <div className="min-w-0">
+            <h3 className="font-bold text-gray-900">{doc?.title || 'Loading…'}</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {[doc?.doc_number, doc?.revision && `Rev ${doc.revision}`, doc?.effective_date && `Effective ${doc.effective_date}`,
+                doc?.owner].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {doc && (
+              <button onClick={() => printDocument(doc, bodyRef.current)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200">
+                <Printer size={14} /> Print
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={16} className="text-gray-500" /></button>
+          </div>
+        </div>
+        <div className="p-5">
+          {doc?.gdrive_url && (
+            <a href={doc.gdrive_url} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline mb-3">
+              <ExternalLink size={13} /> Open the source file
+            </a>
+          )}
+          <div ref={bodyRef} className="prose-sm max-w-none">
+            <MarkdownView text={doc?.description} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Controlled documents registry ────────────────────────────────────────────
 function DocumentsSection({ docType, title }) {
   const { data: docs } = useApiGet(docType ? `/documents?doc_type=${docType}` : '/documents');
   const rows = docs || [];
+  const [openId, setOpenId] = useState(null);
   const doExport = () => {
     if (!rows.length) return;
     exportToCsv(`${title.toLowerCase().replace(/\W+/g, '-')}-registry.csv`, [
@@ -118,9 +202,10 @@ function DocumentsSection({ docType, title }) {
             <thead><tr className="border-b border-gray-200"><Th>Doc #</Th><Th>Title</Th><Th>Rev</Th><Th>Status</Th><Th>Effective</Th><Th>Review Due</Th><Th>Owner</Th></tr></thead>
             <tbody>
               {rows.map(d => (
-                <tr key={d.id} className="border-b border-gray-100">
+                <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => setOpenId(d.id)} title="Open the document">
                   <Td>{d.doc_number || '—'}</Td>
-                  <Td wide>{d.title}</Td>
+                  <Td wide><span className="text-powder-700 hover:underline">{d.title}</span></Td>
                   <Td dim>{d.revision || '—'}</Td>
                   <Td dim><span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${d.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>{d.status}</span></Td>
                   <Td dim>{d.effective_date || '—'}</Td>
@@ -132,6 +217,7 @@ function DocumentsSection({ docType, title }) {
           </table>
         </div>
       )}
+      <DocumentViewer id={openId} onClose={() => setOpenId(null)} />
     </div>
   );
 }

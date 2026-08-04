@@ -740,6 +740,20 @@ Operator View read as "the Production Log again".
   same rule; a second copy of an access rule is how two screens start disagreeing about who can reach a
   module.
 
+## Auditor View: reading and printing the actual document
+The registry showed only the row — number, title, revision, status. An auditor asking for SOP 401 wants the
+document, and sending them to another screen is where a self-service binder stops being self-service.
+- Clicking a registry row opens `DocumentViewer` (AuditorView.jsx): metadata header, the document body, and
+  a link to the source file when there is one.
+- **`MarkdownView` moved to `src/components/common/`** and is imported by BOTH DocumentRegistry and the
+  Auditor View, so an auditor sees a document exactly as Document Control does. A second renderer would
+  drift, and the first sign of the drift would be an auditor reading something that isn't the approved text.
+  It renders React nodes, never innerHTML — document bodies are operator-edited text.
+- **Print opens a clean window**, not the app styled for print: an auditor asking for a paper copy should
+  get the document, not a screenshot of software. The header carries doc number / revision / effective date
+  and the footer stamps *"uncontrolled when printed — verify the revision against the registry"*, which is
+  the thing that stops a printout becoming a shadow copy.
+
 ## Pre-launch cleanup (`server/cleanup.js` + Settings → Cleanup Review)
 Closing out what was filed before the plant was really using ReadyDoc. **Nothing is deleted and nothing is
 signed** — a deleted task is indistinguishable from one that never existed (exactly the gap an auditor asks
