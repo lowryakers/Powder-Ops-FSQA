@@ -2301,6 +2301,54 @@ function runMigrations() {
     console.warn('[db] procurement tables unavailable:', e.message);
   }
 
+  // Meetings — management review, food safety team, production, safety.
+  // The minutes are the record; the ACTIONS are work orders (meeting_actions
+  // only holds the wording as minuted plus the link), so there is one task
+  // list in this app and not two that disagree.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS meetings (
+        id            TEXT PRIMARY KEY,
+        meeting_type  TEXT NOT NULL,
+        title         TEXT NOT NULL,
+        meeting_date  TEXT NOT NULL,
+        start_time    TEXT,
+        end_time      TEXT,
+        location      TEXT,
+        chair         TEXT,
+        agenda        TEXT NOT NULL DEFAULT '[]',
+        minutes       TEXT,
+        attendees     TEXT NOT NULL DEFAULT '[]',
+        status        TEXT NOT NULL DEFAULT 'scheduled'
+                      CHECK (status IN ('scheduled','held','approved')),
+        approved_by   TEXT,
+        approved_at   TEXT,
+        approval_note TEXT,
+        previous_meeting_id TEXT,
+        custom_data   TEXT,
+        created_by    TEXT,
+        created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_meetings_date ON meetings(meeting_date DESC);
+      CREATE INDEX IF NOT EXISTS idx_meetings_type ON meetings(meeting_type, meeting_date DESC);
+
+      CREATE TABLE IF NOT EXISTS meeting_actions (
+        id            TEXT PRIMARY KEY,
+        meeting_id    TEXT NOT NULL,
+        description   TEXT NOT NULL,
+        owner         TEXT,
+        due_date      TEXT,
+        work_order_id TEXT,
+        carried_from  TEXT,
+        created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_meeting_actions_meeting ON meeting_actions(meeting_id);
+    `);
+  } catch (e) {
+    console.warn('[db] meetings tables unavailable:', e.message);
+  }
+
   // Fields carried over from the Monday boards these ledgers replace.
   addColumnIfMissing('ap_invoices', 'priority', 'TEXT');
   addColumnIfMissing('ap_invoices', 'invoice_link', 'TEXT');

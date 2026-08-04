@@ -740,6 +740,28 @@ Operator View read as "the Production Log again".
   same rule; a second copy of an access rule is how two screens start disagreeing about who can reach a
   module.
 
+## Meetings (`server/api/meetings.js` + `MeetingsPanel.jsx`)
+Management review and the food safety team meeting are SQF records, so this is a controlled record and not a
+notes app. `meetings` + `meeting_actions`; nav entry in **Quality**; module id `meetings`.
+- **An action item IS a work order.** `meeting_actions` stores the wording as minuted plus the link; the
+  status is read live off `work_orders` by the join in `actionsFor()`. A second to-do list that quietly
+  disagrees with Task Center is the duplication the Operator View clean-up removed — don't reintroduce it.
+  A due date is therefore **required**: an action without one reaches nobody's task list, so it's a note.
+- **Attendance is marked, never assumed.** Everyone starts `present: false` and someone ticks who was
+  actually in the room; who was invited and who came are different facts and an auditor asks for the second.
+- **Approved minutes are closed** to everyone but an admin (`permissions()` stamps `can_edit` /
+  `edit_block_reason` on every record the API returns — the client renders what it's told, same rule as
+  qms.js). The way back is **revoke** (the signer or an admin), correct, sign again — all three audited.
+  Approve is refused with no minutes, and the button is hidden in that state rather than offered to fail.
+- **Filing minutes is what moves `scheduled` → `held`**; nobody should have to remember a status field.
+  `approved` is only ever reached by signing — `PUT` rejects it as a field value.
+- **"Schedule next" carries open actions forward keeping their ORIGINAL work order.** Re-creating the task
+  would double it in the owner's list and reset the clock on work already late. Attendance restarts unmarked.
+- Meeting types are the **`meeting_types` managed list** and extra questions are custom fields (`meeting`
+  scope) — adding "Allergen review" is a Settings task.
+- The minutes PDF goes through `richBlocks`, so it matches what the author saw, and stamps DRAFT until
+  approved.
+
 ## Bringing ~100 controlled documents up to date from the finalised paper
 Document Control's real job right now isn't *creating* documents — it's updating the ones already in the
 registry. **Update from file** (Controlled Documents header, `canEdit` only) → `RevisionUploadModal` →

@@ -147,6 +147,7 @@ export const KNOWN_SCOPES = [
   { scope: 'qms:on_hold', label: 'Quality Events — On Hold' },
   { scope: 'supply_order', label: 'Supply Orders' },
   { scope: 'disposal', label: 'Disposals' },
+  { scope: 'meeting', label: 'Meetings' },
 ];
 
 router.get('/scopes', (req, res) => {
@@ -243,6 +244,7 @@ const SCOPE_TABLES = {
   receiving_log: 'receiving_log',
   qms: 'qms_records',
   supply_order: 'supply_orders',
+  meeting: 'meetings',
   disposal: 'disposals',
 };
 

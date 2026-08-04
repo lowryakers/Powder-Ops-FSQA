@@ -49,6 +49,7 @@ const CriticalPanel = lazy(() => import('./components/compliance/CriticalPanel.j
 import ApprovePage from './components/ApprovePage.jsx';
 const TrainingPanel = lazy(() => import('./components/compliance/TrainingPanel.jsx'));
 const MockRecallPanel = lazy(() => import('./components/compliance/MockRecallPanel.jsx'));
+const MeetingsPanel = lazy(() => import('./components/compliance/MeetingsPanel.jsx'));
 const ProductionLog = lazy(() => import('./components/compliance/ProductionLog.jsx'));
 const ProductionSchedule = lazy(() => import('./components/compliance/ProductionSchedule.jsx'));
 const ProductionDashboard = lazy(() => import('./components/compliance/ProductionDashboard.jsx'));
@@ -129,6 +130,10 @@ const NAV_GROUPS = [
       { id: 'quality-events', label: 'Quality Events', icon: FileWarning, anyOf: ['deviations', 'non-conformance', 'on-hold'], keywords: 'deviations non-conformance on hold' },
       { id: 'disposals', label: 'Disposals', icon: Trash2 },
       { id: 'recall', label: 'Mock Recall', icon: Package },
+      // Sits in Quality because the two meetings that MUST be recorded
+      // (management review, food safety team) are SQF records; the module
+      // covers production and safety meetings too.
+      { id: 'meetings', label: 'Meetings', icon: Users, keywords: 'minutes management review food safety team agenda attendance action items' },
     ],
   },
   {
@@ -1691,6 +1696,7 @@ function App() {
           {resolvedTab === 'knife-accountability' && <KnifePanel />}
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
+          {resolvedTab === 'meetings' && <MeetingsPanel />}
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}

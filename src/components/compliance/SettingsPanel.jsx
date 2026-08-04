@@ -83,6 +83,7 @@ const MODULE_GROUPS = [
       { id: 'on-hold', label: 'On Hold' },
       { id: 'disposals', label: 'Disposals' },
       { id: 'recall', label: 'Mock Recall' },
+      { id: 'meetings', label: 'Meetings (minutes, attendance, actions)' },
     ],
   },
   {

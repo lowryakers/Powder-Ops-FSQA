@@ -39,6 +39,7 @@ import hygienicDesignRoutes from './server/api/hygienic-design.js';
 import complaintRoutes from './server/api/complaints.js';
 import documentRoutes, { generateDocumentReviewTasks } from './server/api/documents.js';
 import qualityScheduleRoutes, { generateQualityScheduleTasks } from './server/api/quality-schedules.js';
+import meetingRoutes from './server/api/meetings.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
@@ -1406,6 +1407,7 @@ app.use('/api/hygienic-design', requireModuleWrite('hygienic'), hygienicDesignRo
 app.use('/api/complaints', requireModuleWrite('capa'), complaintRoutes);
 app.use('/api/documents', requireModuleWrite('sops', 'work-instructions', 'job-descriptions'), documentRoutes);
 app.use('/api/quality-schedules', requireModuleWrite('pm', 'coa', 'sanitation', 'calibration'), qualityScheduleRoutes);
+app.use('/api/meetings', requireModuleWrite('meetings'), meetingRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);

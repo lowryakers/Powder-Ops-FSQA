@@ -32,6 +32,8 @@ export const ALL_MODULE_IDS = [
   'form-maintenance', 'form-knife', 'form-components',
   // Warehouse receiving record (replaces the Monday board).
   'receiving-log',
+  // Meeting minutes: management review, food safety team, production, safety.
+  'meetings',
   // Self-serve structure: edit an existing log's fields and dropdown lists in
   // the app. Grant-able so a QA or ops lead can own form structure without
   // needing full admin.

@@ -45,6 +45,19 @@ export function seedStructureLists(db) {
     options: BPG_ZONES,
   });
 
+  // Meeting types. Management Review and the Food Safety Team meeting are SQF
+  // records rather than preferences, so they ship; everything else the plant
+  // holds regularly is here as a starting point and editable in Settings.
+  added += ensureList(db, {
+    key: 'meeting_types',
+    label: 'Meeting Types',
+    description: 'The kinds of meeting recorded in Meetings. Management Review and Food Safety Team are required records.',
+    options: [
+      'Management Review', 'Food Safety Team (HACCP)', 'Production / Operations',
+      'Safety', 'Quality Review', 'Training', 'Customer / Supplier', 'Other',
+    ],
+  });
+
   if (added > 0) console.log(`[seed] Structure lists: added ${added} list options`);
   return added;
 }
