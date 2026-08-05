@@ -46,6 +46,7 @@ import facilityRoutes from './server/api/facility.js';
 import retentionRoutes from './server/api/retention.js';
 import partnerRoutes from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
+import reimbursementRoutes from './server/api/reimbursements.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
@@ -57,7 +58,8 @@ import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
 import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
-import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser, startReminderLoop } from './server/api/comms.js';
+import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser, startReminderLoop, botDm } from './server/api/comms.js';
+import { pushToUser } from './server/push.js';
 import smsInboundRoutes from './server/api/sms-inbound.js';
 import { initRealtime } from './server/realtime.js';
 import { aiEnabled } from './server/ai.js';
@@ -1480,6 +1482,12 @@ app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRout
 app.use('/api/partners', requireModuleWrite('partner-reconciliation'), partnerRoutes);
 // Public: token-scoped partner access, guarded inside the router.
 app.use('/api/partner-portal', partnerPortalRoutes);
+// Filing is what View gets you here — anyone granted the module can claim
+// their own money back, and only ever sees their own claims. Approving and
+// PAYING are a second, narrower check inside the router (office or admin),
+// because deciding on someone else's money is not the same permission as
+// asking for your own.
+app.use('/api/reimbursements', requireModuleWrite('reimbursements'), reimbursementRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);
@@ -1577,7 +1585,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

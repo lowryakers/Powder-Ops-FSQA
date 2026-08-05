@@ -10,6 +10,7 @@ import NotificationStatus from './NotificationStatus.jsx';
 import ZoomableImage from './ZoomableImage.jsx';
 import { useSwipeBack } from '../../lib/useSwipeBack';
 import { useCompactLayout } from '../../lib/useCompactLayout.js';
+import { useSeenAfterDwell } from '../../lib/useSeenAfterDwell.js';
 import FormatBar from '../common/FormatBar.jsx';
 import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
@@ -62,9 +63,25 @@ function openAppLink(link) {
     window.dispatchEvent(new CustomEvent('comms-open-channel', {
       detail: { channelId: link.channelId, messageId: link.messageId },
     }));
-  } else {
-    window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: link.tab } }));
+    return;
   }
+  // A module link inside the docked panel or a popout: the `app-navigate`
+  // event is listened for by App, which isn't in this document at all, so it
+  // used to be a button that visibly did nothing. Ask the window that owns
+  // ReadyDoc to do the navigating — the panel stays on Messages, which is the
+  // only thing it should ever show.
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: 'readydoc-navigate', tab: link.tab }, window.location.origin);
+    return;
+  }
+  if (window.opener && !window.opener.closed) {
+    try {
+      window.opener.postMessage({ type: 'readydoc-navigate', tab: link.tab }, window.location.origin);
+      window.opener.focus();
+      return;
+    } catch { /* opener gone or cross-origin */ }
+  }
+  window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: link.tab } }));
 }
 
 // Chat calls people by their short first + last name — the same one they sign
@@ -1068,6 +1085,7 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
   };
   const Icon = thread.channel_kind === 'dm' ? MessageSquare : thread.channel_kind === 'private' ? Lock : Hash;
   const unread = thread.unread || 0;
+  const cardRef = useRef(null);
   // "Acted on" = you've replied in this thread. Shown as a chip so a read
   // thread you've already answered is distinct from one you only skimmed.
   const acted = thread.replies.some(r => r.user_id === me.id);
@@ -1080,8 +1098,27 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
   const isNew = (m) => marker !== null && String(m.created_at) > marker && m.user_id !== me.id;
   const lastReply = thread.replies[thread.replies.length - 1];
 
+  // Sitting and reading a thread clears it. "Mark read" used to be the ONLY
+  // way, so the honest case — you read it, it needed nothing from you, you
+  // moved on — left it unread forever and the badge stopped meaning anything.
+  //
+  // It marks read on the SERVER but deliberately does not refresh this list:
+  // the ring, the "N new" badge and the NEW divider stay put while you are
+  // still looking at the thread. A card that rearranges itself out from under
+  // the sentence you are reading is worse than one that lingers, and the next
+  // time the inbox loads it will be in its read state anyway. `onMarkRead`
+  // still updates the sidebar count, which is the number people watch.
+  //
+  // Collapsed cards are excluded — a one-line summary scrolling past is not
+  // reading the thread.
+  useSeenAfterDwell(cardRef, {
+    enabled: unread > 0 && expanded,
+    ms: 4000,
+    onSeen: () => onMarkRead?.(thread.parent.id),
+  });
+
   return (
-    <div className={`border rounded-xl m-3 overflow-hidden transition-opacity ${
+    <div ref={cardRef} className={`border rounded-xl m-3 overflow-hidden transition-opacity ${
       unread > 0 ? 'border-powder-300 ring-1 ring-powder-100 bg-white'
                  : 'border-gray-200 bg-gray-50/60 opacity-75 hover:opacity-100'}`}>
       <div className="flex items-center gap-1.5 px-4 py-2 border-b border-gray-100 bg-gray-50">
@@ -2429,11 +2466,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
           <button onClick={onBackToModule} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-semibold text-powder-700 bg-powder-50 hover:bg-powder-100 rounded-lg shrink-0" title={`Back to ${backLabel}`}>
             <ArrowLeft size={16} /> {backLabel}
           </button>
-        ) : (
+        ) : onExit ? (
         <button onClick={onExit} className="flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg shrink-0" title="Switch to ReadyDoc">
           <ArrowLeft size={16} /> <span className="hidden sm:inline">ReadyDoc</span>
         </button>
-        )}
+        ) : null}
         {onSplitScreen && (
           <button onClick={onSplitScreen} className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg shrink-0"
             data-tip="Split screen: dock Messages beside the modules">

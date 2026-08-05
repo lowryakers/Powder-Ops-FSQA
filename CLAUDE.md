@@ -1365,3 +1365,84 @@ Uploaded files go to R2 through the shared `server/media.js` + `invoice-text.js`
 lot number printed **inside** the PDF (`extracted_text` is searched, never shipped to the client).
 Verified end to end on a fresh DB: 35 assertions covering the arithmetic, Net-30 exclusion, the 403s, the
 409 on a stale balance, settlement immutability, and every portal boundary.
+
+## Reimbursements (personal card spend) — Accounting tab #4
+`reimbursements` + `reimbursement_receipts` (`server/api/reimbursements.js`, `ReimbursementsPanel.jsx`),
+a tab in the **Accounting** hub. Today it is Marnee and Adam and a personal card; the loop is photograph the
+receipt, say what it was, tick it off when it goes out in payroll — and it should stay that small, because
+every extra field is a reason not to file and the claim nobody files is the one that becomes an argument
+three months later.
+- **The receipt is the record.** The form's file input is `capture="environment"`, so on a phone it opens the
+  camera — this is filled in standing at the till. But a **missing receipt never blocks the claim**: it files
+  and the row says "no receipt" in amber until one is added (`POST /:id/receipts`). Refusing at the till,
+  where someone is holding a phone in a queue, is how the claim doesn't get filed at all.
+- **Paid is stamped, never guessed.** `paid_at` / `paid_by` / `pay_period` / `payment_reference`, because
+  "did I already reimburse that" is the entire question. `POST /pay` takes `ids[]` — one payroll run, several
+  people — but audits **each record individually** plus one batch row, the same rule as Time Tracking's bulk
+  edit. Paying twice is refused and reported in `skipped[]` by reason rather than silently re-stamped.
+- **A rejection is a decision and carries a reason (≥3 chars); it is not a delete.** You may withdraw your
+  own claim only while it is still `submitted` — once someone has decided on it, it is a record.
+- **A person with the module only ever sees their OWN claims.** The list query scopes on
+  `user_id OR person` for anyone who isn't office/admin, and the roster filter is empty for them. This is a
+  pay record; what a colleague spent is not their business. `canSettle` (admin, or supervisor in
+  office/admin) is the second, narrower permission — approving and paying is not the same act as asking for
+  your own money back, so the module grant deliberately doesn't confer it.
+- `can_edit` is stamped server-side and the client renders what it's told (same rule as qms.js). A **paid**
+  claim is closed to everyone but an admin.
+- `reimbursement` is a custom-field scope, so extra questions are a Settings task.
+
+## ReadyBot chases untriaged ReadyDoc requests
+`nudgeStaleRequests` in `server/scheduled-jobs.js` DMs every active admin when an `app_requests` row has been
+open too long. Triage lives in an admin-only Settings pane nobody opens without a reason — which is exactly
+how somebody's suggestion quietly dies and they stop filing them.
+- **`STALE_DAYS = 3` grace.** Being pinged the same afternoon you filed something trains people to ignore
+  the ping.
+- **`NUDGE_EVERY_DAYS = 3` floor**, however many are waiting. A daily reminder about the same three rows is
+  a thing people mute, and a muted reminder is worse than none. It *does* re-send while they stay open —
+  "I've been meaning to get to that" is the state this exists to interrupt.
+- **An empty queue clears `last_request_nudge_at`**, so the next request to go stale is reported promptly
+  instead of sitting out the remainder of a window.
+- Links to `?tab=settings&section=requests`. Bot bold is `*text*`.
+
+## Threads clear themselves when you actually read them (`src/lib/useSeenAfterDwell.js`)
+"Mark read" used to be the only way to clear a thread, so the honest case — you scrolled to it, read the
+replies, decided it needed nothing from you — left it unread forever and the badge stopped meaning anything.
+`useSeenAfterDwell(ref, {ms, enabled, onSeen})` fires once when an element has genuinely been *looked at*:
+enough of it on screen (IntersectionObserver `threshold`), **the tab visible** (leaving the app open on a
+second monitor must not clear your morning), and **continuously** for `ms` — the timer restarts on every
+exit, because half a second here and half a second there is still not reading.
+- Wired to `ThreadInboxCard` at 4s, and only while the card is **expanded** — a collapsed one-line summary
+  scrolling past is not reading the thread.
+- **It marks read on the server but deliberately does NOT refresh the list.** The ring, the "N new" badge and
+  the NEW divider stay put while you're still looking; a card that rearranges itself out from under the
+  sentence you're reading is worse than one that lingers, and the inbox will be in its read state next load.
+  `onMarkRead` still updates the sidebar count, which is the number people watch.
+- `seenRef` is synced in an effect, not during render — a ref written while rendering is a side effect and
+  the lint rule is right about it.
+
+## Split Screen / chat popout: back must stay inside Messages
+The `/chat` route is either the ~420px docked panel (an iframe) or a 460px popout. It used to be given
+`onExit={() => window.location.href = '/'}`, so "← ReadyDoc" or a swipe-back at the end of the chain
+navigated that narrow column to the **whole app** — sidebar and all — inside a panel narrower than a phone.
+- **`/chat` is now given no `onExit` at all.** The back chain (`comms-back`) ends at the channel list, which
+  is the outermost thing inside Messages, and the header's ReadyDoc button is hidden rather than dead: in the
+  docked case ReadyDoc is already on screen beside it, and in the popout case it belongs to the window you
+  came from.
+- **A ReadyDoc module link inside the panel asks the parent window to navigate.** `openAppLink`'s `tab`
+  branch dispatches `app-navigate`, which App listens for — but App isn't in the panel's document at all, so
+  that button previously did nothing whatsoever. It now `postMessage`s `readydoc-navigate` to
+  `window.parent` (docked) or `window.opener` (popout); App's listener is **origin-checked**. The panel stays
+  on Messages and the module opens where the modules live.
+
+## Retention Samples: still empty, and why
+The module is built and working but the log has **no rows** — nothing was ever seeded. The plant's own
+Retention Sample log (the 16-page PDF, boxes 15–19) was read to design the module, but the PDF is not in the
+repo and only pages 1–4 survive in readable form; pages 5–16 exist as ~300-character fragments. **Seeding the
+part that is recoverable would be worse than seeding nothing** — a retention log that lists some of the jars
+reads as "this is what we hold", and a missing jar is exactly the failure the log exists to prevent.
+Re-attach `Retention_Sample_2026_V2.pdf` and it can be transcribed into a `server/retention-seed.js`
+(idempotent on box + item + lot, same shape as the other seeders).
+Shape confirmed from the pages that did survive: one section per box (`BOX # 15`, destruction date), three
+groups within it (**BLEND / IM / FINISH GOOD**, plus raw materials at `90g` in the later boxes), and per row
+item number, item name, lot #, EXP date, the retention count (`5 (2 LAB, 3 RETAIN)`), batches (free text —
+`1 and 2`, `1 BEG, 1 MIDDLE, 1 END`) and a collected-date + initials cell.

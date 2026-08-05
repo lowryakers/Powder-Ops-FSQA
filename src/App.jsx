@@ -75,6 +75,7 @@ const NewsletterReader = lazy(() => import('./components/office/NewsletterReader
 const ControlledChangesPanel = lazy(() => import('./components/compliance/ControlledChangesPanel.jsx'));
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
+const ReimbursementsPanel = lazy(() => import('./components/office/ReimbursementsPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
 
 const NAV_GROUPS = [
@@ -190,7 +191,7 @@ const NAV_GROUPS = [
       // AP, AR and the trading-partner reconciliation are one place to go —
       // they are the same job (money in, money out, what's owed) split only by
       // which direction it points.
-      { id: 'accounting', label: 'Accounting', icon: Landmark, anyOf: ['accounts-payable', 'accounts-receivable', 'partner-reconciliation'], keywords: 'AP AR bills vendors customers invoices owed reconcile settlement M4 net' },
+      { id: 'accounting', label: 'Accounting', icon: Landmark, anyOf: ['accounts-payable', 'accounts-receivable', 'partner-reconciliation', 'reimbursements'], keywords: 'AP AR bills vendors customers invoices owed reconcile settlement M4 net expense reimbursement receipt personal card' },
       { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
       { id: 'pay-tracking', label: 'Pay Tracking', icon: BadgeDollarSign, keywords: 'raise increase evaluation rubric wage rate salary review compensation' },
@@ -898,6 +899,7 @@ const HUB_TABS = {
     { id: 'accounts-payable', label: 'Accounts Payable', render: () => <LedgerPanel ledger="ap" /> },
     { id: 'accounts-receivable', label: 'Accounts Receivable', render: () => <LedgerPanel ledger="ar" /> },
     { id: 'partner-reconciliation', label: 'Partner Reconciliation', render: (u) => <PartnerReconPanel user={u} /> },
+    { id: 'reimbursements', label: 'Reimbursements', render: (u) => <ReimbursementsPanel user={u} /> },
   ],
   'quality-events': [
     { id: 'deviations', label: 'Deviations', render: () => <QMSRecordsPanel recordType="deviation" moduleId="deviations" /> },
@@ -1178,6 +1180,22 @@ function App() {
     const handler = (e) => setActiveTab(e.detail?.tab || 'dashboard');
     window.addEventListener('app-navigate', handler);
     return () => window.removeEventListener('app-navigate', handler);
+  }, []);
+
+  // The docked Messages panel and the chat popout run the /chat route in their
+  // own document, where the `app-navigate` event above has no listener. A
+  // ReadyDoc link clicked in there asks THIS window to navigate instead, so the
+  // panel keeps showing Messages and the module opens where the modules live.
+  // Origin-checked: a message from anywhere else is ignored.
+  useEffect(() => {
+    const onMessage = (e) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type !== 'readydoc-navigate') return;
+      const tab = typeof e.data.tab === 'string' ? e.data.tab : null;
+      if (tab) { setWorkspace('fsqa'); setActiveTab(tab); }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
   }, []);
 
   // Deep links: ?tab=<module> jumps straight to a module (ReadyBot alert
@@ -1503,7 +1521,14 @@ function App() {
   if (path.startsWith('/chat')) {
     const chanFromPath = decodeURIComponent(path.split('/')[2] || '') || null;
     const chanId = new URLSearchParams(window.location.search).get('cid');
-    return <CommsView user={user} openChannelName={chanFromPath} openChannelId={chanId} onExit={() => { window.location.href = '/'; }} />;
+    // NO `onExit` on purpose. This view is either a 420px docked panel or a
+    // 460px popout, and "back" used to navigate it to `/` — loading the entire
+    // app, sidebar and all, into a column narrower than a phone. Without the
+    // prop the back chain stops at the channel list, which is the outermost
+    // thing inside Messages, and the header drops its ReadyDoc button: in the
+    // docked case ReadyDoc is already on screen beside it, and in the popout
+    // case it belongs in the window you came from.
+    return <CommsView user={user} openChannelName={chanFromPath} openChannelId={chanId} />;
   }
 
   // Messages workspace — full-screen, separable from the FSQA workspace.

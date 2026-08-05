@@ -119,6 +119,7 @@ const MODULE_GROUPS = [
       { id: 'accounts-payable', label: 'Accounts Payable' },
       { id: 'accounts-receivable', label: 'Accounts Receivable' },
       { id: 'partner-reconciliation', label: 'Partner Reconciliation (what we owe / are owed net)', note: 'View reads the number and the documents behind it; Edit adds and disputes documents. Approving one as final, settling a period and creating a partner link stay with admins and office supervisors whatever is granted here.' },
+      { id: 'reimbursements', label: 'Reimbursements (personal card spend)', note: 'A person with this only ever sees their OWN claims. Approving and marking paid is admin / office supervisor, whatever is granted here.' },
       { id: 'procurement', label: 'Procurement & Demand Planning' },
       { id: 'newsletter', label: 'Newsletter' },
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },

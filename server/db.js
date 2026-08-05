@@ -1270,6 +1270,55 @@ function initSchema() {
       FOREIGN KEY (partner_id) REFERENCES partner_accounts(id)
     );
 
+    -- Somebody paid for something out of their own pocket. Right now that is
+    -- Marnee and Adam and a personal card, and the whole loop is: photograph
+    -- the receipt, say what it was, and get it back in payroll.
+    --
+    --  · THE RECEIPT IS THE RECORD. A reimbursement with no receipt is a
+    --    request to be trusted; one with a photo is a document. So the amount
+    --    and the image are captured in the same act, on a phone, at the till.
+    --  · PAID IS STAMPED, NEVER GUESSED. paid_at / paid_by / pay_period say
+    --    which payroll run it went out on, because "did I already pay Marnee
+    --    for that" is the question this table exists to answer.
+    --  · A REJECTION IS A DECISION AND CARRIES A REASON. It is not a delete —
+    --    the person submitted it in good faith and is owed an answer.
+    CREATE TABLE IF NOT EXISTS reimbursements (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      person TEXT NOT NULL,
+      spent_on TEXT NOT NULL,
+      amount REAL NOT NULL,
+      category TEXT,
+      merchant TEXT,
+      description TEXT,
+      payment_method TEXT,
+      status TEXT NOT NULL DEFAULT 'submitted'
+        CHECK (status IN ('submitted', 'approved', 'paid', 'rejected')),
+      approved_at TEXT, approved_by TEXT,
+      paid_at TEXT, paid_by TEXT, pay_period TEXT, payment_reference TEXT,
+      rejected_at TEXT, rejected_by TEXT, rejected_reason TEXT,
+      custom_data TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      updated_at TEXT, updated_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_reimbursements_status ON reimbursements(status, spent_on DESC);
+    CREATE INDEX IF NOT EXISTS idx_reimbursements_person ON reimbursements(user_id, spent_on DESC);
+
+    -- One claim can be several receipts (a run to two shops on one card).
+    CREATE TABLE IF NOT EXISTS reimbursement_receipts (
+      id TEXT PRIMARY KEY,
+      reimbursement_id TEXT NOT NULL,
+      storage_key TEXT,
+      filename TEXT,
+      content_type TEXT,
+      size INTEGER,
+      uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      uploaded_by TEXT,
+      FOREIGN KEY (reimbursement_id) REFERENCES reimbursements(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_reimb_receipts ON reimbursement_receipts(reimbursement_id);
+
     CREATE TABLE IF NOT EXISTS facility_room_overrides (
       room_id TEXT PRIMARY KEY,
       label TEXT,
