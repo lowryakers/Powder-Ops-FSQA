@@ -36,10 +36,12 @@ const CLEAN_SCOPE = ['Room', 'Blender', 'Sifter', 'Utensils', 'Scale', 'Floor / 
 const now = () => new Date().toTimeString().slice(0, 5);
 const today = () => new Date().toISOString().slice(0, 10);
 
-const blankFor = (kind) => {
-  if (kind === 'clean') return { level: 'Full Clean', scope: [], sifter_no: '', atp_swab: false, allergen_swab: false, start_time: '', end_time: now(), mo_number: '' };
+// A new line starts in the day's room, because that is usually where he still
+// is — but every line carries its own, because a shift is not one room.
+const blankFor = (kind, room = '') => {
+  if (kind === 'clean') return { level: 'Full Clean', scope: [], sifter_no: '', room, atp_swab: false, allergen_swab: false, start_time: '', end_time: now(), mo_number: '' };
   if (kind === 'note') return { note: '' };
-  return { mo_number: '', lot_number: '', product_name: '', work_stages: [], portion: '', batches: '', batch_weights: '', quantity: '', start_time: '', end_time: now() };
+  return { mo_number: '', lot_number: '', product_name: '', room, work_stages: [], portion: '', batches: '', batch_weights: '', quantity: '', start_time: '', end_time: now() };
 };
 
 const cls = 'w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm';
@@ -52,8 +54,8 @@ const Chip = ({ on, children, ...p }) => (
 
 /* ── Adding / editing one line ────────────────────────────────────────────── */
 
-function ItemSheet({ kind, initial, moOptions, onClose, onSave }) {
-  const [d, setD] = useState(() => ({ ...blankFor(kind), ...(initial || {}) }));
+function ItemSheet({ kind, initial, moOptions, rooms = [], defaultRoom = '', onClose, onSave }) {
+  const [d, setD] = useState(() => ({ ...blankFor(kind, defaultRoom), ...(initial || {}) }));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const set = (k, v) => setD(p => ({ ...p, [k]: v }));
@@ -175,6 +177,17 @@ function ItemSheet({ kind, initial, moOptions, onClose, onSave }) {
             )}
           </>)}
 
+          {kind !== 'note' && rooms.length > 0 && (
+            <label className="block">
+              <span className="block text-[11px] text-gray-600 mb-0.5">Main room</span>
+              <select value={d.room || ''} onChange={e => set('room', e.target.value)} className={cls}>
+                <option value="">Same as the day</option>
+                {rooms.map(r => <option key={r} value={r}>{r}</option>)}
+                {d.room && !rooms.includes(d.room) && <option value={d.room}>{d.room}</option>}
+              </select>
+            </label>
+          )}
+
           {kind !== 'note' && (
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
@@ -222,10 +235,10 @@ function ItemRow({ item, onEdit, onRemove }) {
 
   const body = item.kind === 'note' ? d.note
     : item.kind === 'clean'
-      ? [d.level, d.scope?.join(', '), d.sifter_no && `Sifter ${d.sifter_no}`,
+      ? [d.level, d.room, d.scope?.join(', '), d.sifter_no && `Sifter ${d.sifter_no}`,
         [d.atp_swab && 'ATP', d.allergen_swab && 'Allergen'].filter(Boolean).join(' + ') || null,
         d.mo_number && `for ${d.mo_number}`].filter(Boolean).join(' · ')
-      : [d.mo_number, d.lot_number && `Lot ${d.lot_number}`, d.product_name,
+      : [d.mo_number, d.room, d.lot_number && `Lot ${d.lot_number}`, d.product_name,
         d.work_stages?.length && `${d.work_stages.join(', ')}${d.portion ? ` ${d.portion}` : ''}`,
         d.batches && `${d.batches} batch${Number(d.batches) === 1 ? '' : 'es'}`,
         d.batch_weights].filter(Boolean).join(' · ');
@@ -338,7 +351,7 @@ export default function ProductionDayLog({ teams = TEAMS, rooms = [], defaultTea
           nothing here is required. */}
       <div className="flex flex-wrap items-end gap-2 bg-white rounded-xl border border-gray-200 p-3">
         <label className="block">
-          <span className="block text-[11px] text-gray-600 mb-0.5">Room</span>
+          <span className="block text-[11px] text-gray-600 mb-0.5">Main room</span>
           <select value={log.room || ''} onChange={e => saveHeader({ room: e.target.value })}
             className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm bg-white">
             <option value="">Not set yet</option>
@@ -389,11 +402,13 @@ export default function ProductionDayLog({ teams = TEAMS, rooms = [], defaultTea
       )}
 
       {adding && (
-        <ItemSheet kind={adding} moOptions={moOptions} onClose={() => setAdding(null)}
+        <ItemSheet kind={adding} moOptions={moOptions} rooms={rooms} defaultRoom={log.room || ''}
+          onClose={() => setAdding(null)}
           onSave={(data) => act(() => apiPost(`/production/day-log/${log.id}/items`, { kind: adding, data }))} />
       )}
       {editing && (
-        <ItemSheet kind={editing.kind} initial={editing.data} moOptions={moOptions} onClose={() => setEditing(null)}
+        <ItemSheet kind={editing.kind} initial={editing.data} moOptions={moOptions} rooms={rooms}
+          defaultRoom={log.room || ''} onClose={() => setEditing(null)}
           onSave={(data) => act(() => apiPut(`/production/day-log/items/${editing.id}`, { data }))} />
       )}
     </div>

@@ -3,7 +3,7 @@ import { useApiGet, apiFetch, apiPost, apiPut } from '../../hooks/useApi';
 import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2, Pencil, NotebookPen } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { hasExplicitGrant } from '../../utils/permissions';
-import { PRODUCTION_LINES, lineLabel, FILLING_TEAM, PRODUCTION_TEAMS as TEAMS } from '../../constants/productionLines';
+import { PRODUCTION_LINES, lineLabel, FILLING_TEAM, PRODUCTION_TEAMS as TEAMS, PRODUCTION_ROOMS, RETIRED_ROOMS } from '../../constants/productionLines';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
@@ -11,7 +11,11 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductionDayLog from './ProductionDayLog.jsx';
 
-const ROOMS = ['Batching 1', 'Batching 2', ...Array.from({ length: 16 }, (_, i) => String(i)), 'Other'];
+// The same rooms the schedule offers, so a shift can be reported in the room it
+// was scheduled in. This list used to be built by hand here and had drifted:
+// it still offered Room 8 (retired), had never heard of Batching 3, and listed
+// rooms 0 and 9-14 that nothing is ever scheduled in.
+const ROOMS = [...PRODUCTION_ROOMS, 'Other'];
 
 function formatDate(d) {
   if (!d) return '';
@@ -55,8 +59,8 @@ const INITIAL_FORM = {
 /* ── Multi-MO lines (a Batching shift runs several MOs) ──── */
 
 const WORK_STAGES = ['Weighed', 'Sifted', 'Blended'];
-const blankMoLine = () => ({
-  product_name: '', mo_number: '', lot_number: '', work_stages: [], portion: '',
+const blankMoLine = (room = '') => ({
+  product_name: '', mo_number: '', lot_number: '', room, work_stages: [], portion: '',
   batches: '', batch_weights: '', quantity: '', start_time: '', end_time: '',
   is_adjustment: false, note: '',
 });
@@ -65,19 +69,34 @@ const blankMoLine = () => ({
 // the room alongside a full strip of the blender is the ordinary case, and one
 // blanket answer forced the operator to misstate one of them.
 const CLEAN_SCOPE = ['Room', 'Blender', 'Sifter', 'Utensils', 'Scale', 'Floor / drains'];
-const blankClean = () => ({
-  level: 'Full Clean', scope: [], sifter_no: '', atp_swab: false, allergen_swab: false,
+const blankClean = (room = '') => ({
+  level: 'Full Clean', scope: [], sifter_no: '', room, atp_swab: false, allergen_swab: false,
   start_time: '', end_time: '', mo_number: '', note: '',
 });
 // Which teams record more than one MO in a single shift. Batching blends
 // several orders a day; Filling/Kitting stay one MO per entry.
 const usesMoLines = (team) => team === 'Batching';
 
+// Room, per task. A shift is not one room — one MO is blended in Batching 1
+// and the next in Batching 2 — so every repeatable card carries its own, and
+// new cards start on the shift's main room because that is usually right.
+function RoomPicker({ value, onChange, rooms, className }) {
+  return (
+    <select value={value || ''} onChange={e => onChange(e.target.value)} className={className}>
+      <option value="">Same as shift</option>
+      {rooms.map(r => <option key={r} value={r}>{r}</option>)}
+      {/* A room retired since this was filed must stay selected rather than
+          silently becoming another room. */}
+      {value && !rooms.includes(value) && <option value={value}>{value}</option>}
+    </select>
+  );
+}
+
 // Repeatable MO editor: one card per manufacturing order worked in the shift.
 // Reused by the entry form and the amend modal so both build the same shape.
-function MoLinesField({ lines, setLines }) {
+function MoLinesField({ lines, setLines, defaultRoom = '', rooms = ROOMS }) {
   const setLine = (i, patch) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const add = () => setLines(ls => [...ls, blankMoLine()]);
+  const add = () => setLines(ls => [...ls, blankMoLine(defaultRoom)]);
   const remove = (i) => setLines(ls => (ls.length > 1 ? ls.filter((_, j) => j !== i) : ls));
   const cls = 'w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm';
   return (
@@ -115,6 +134,10 @@ function MoLinesField({ lines, setLines }) {
             <div>
               <label className="block text-[11px] text-gray-600 mb-0.5">Lot #</label>
               <input value={l.lot_number} onChange={e => setLine(i, { lot_number: e.target.value })} className={cls} placeholder="Lot #" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] text-gray-600 mb-0.5">Room this run was in</label>
+              <RoomPicker value={l.room} rooms={rooms} className={cls} onChange={v => setLine(i, { room: v })} />
             </div>
             {/* An MO legitimately spans days at different stages — weighed on
                 the Monday, sifted and blended on the Tuesday — so the stages
@@ -180,9 +203,9 @@ function MoLinesField({ lines, setLines }) {
 //
 // Each event may name an MO, so a clean done for one specific run is
 // attributable to it rather than to the shift in general.
-function CleaningEventsField({ events, setEvents, moOptions }) {
+function CleaningEventsField({ events, setEvents, moOptions, defaultRoom = '', rooms = ROOMS }) {
   const setEvent = (i, patch) => setEvents(es => es.map((e, j) => (j === i ? { ...e, ...patch } : e)));
-  const add = () => setEvents(es => [...es, blankClean()]);
+  const add = () => setEvents(es => [...es, blankClean(defaultRoom)]);
   const remove = (i) => setEvents(es => es.filter((_, j) => j !== i));
   const cls = 'w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm';
 
@@ -205,6 +228,10 @@ function CleaningEventsField({ events, setEvents, moOptions }) {
             <div>
               <label className="block text-[11px] text-gray-600 mb-0.5">Sifter # (if one was used)</label>
               <input value={c.sifter_no} onChange={e => setEvent(i, { sifter_no: e.target.value })} className={cls} placeholder="160" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] text-gray-600 mb-0.5">Room this clean was in</label>
+              <RoomPicker value={c.room} rooms={rooms} className={cls} onChange={v => setEvent(i, { room: v })} />
             </div>
             <div className="sm:col-span-2">
               <label className="block text-[11px] text-gray-600 mb-1">What was cleaned at this level</label>
@@ -271,6 +298,7 @@ function CleaningSummary({ events }) {
         return (
           <div key={i} className="text-xs text-gray-700">
             <span className="font-medium text-gray-900">{c.level || 'Clean'}</span>
+            {c.room && <span className="ml-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-medium">{c.room}</span>}
             {c.scope?.length ? <span> · {c.scope.join(', ')}</span> : null}
             {c.sifter_no && <span className="text-gray-500"> · Sifter {c.sifter_no}</span>}
             {swabs.length ? <span className="text-gray-500"> · {swabs.join(' + ')} swab</span> : null}
@@ -293,6 +321,7 @@ function MoLinesSummary({ lines }) {
         <div key={i} className="text-xs text-gray-700">
           {l.is_adjustment && <span className="mr-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold">ADJUSTMENT</span>}
           <span className="font-medium text-gray-900">{l.mo_number || '—'}</span>
+          {l.room && <span className="ml-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-medium">{l.room}</span>}
           {l.product_name && <span> · {l.product_name}</span>}
           {l.lot_number && <span className="text-gray-500"> · Lot {l.lot_number}</span>}
           {l.work_stages?.length ? <span className="text-gray-500"> · {l.work_stages.join(', ')}{l.portion ? ` ${l.portion}` : ''}</span> : null}
@@ -506,7 +535,9 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Room *</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">
+            Main room *{multiMo && <span className="ml-1 font-normal text-gray-400">(each MO and clean can set its own)</span>}
+          </label>
           <select required value={form.room} onChange={e => set('room', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             <option value="">Select room...</option>
@@ -578,14 +609,14 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
       {multiMo && (
         <div className="rounded-lg border border-powder-200 bg-powder-50/50 p-3">
           <p className="text-xs font-semibold text-powder-800 mb-2">MOs worked this shift</p>
-          <MoLinesField lines={moLines} setLines={setMoLines} />
+          <MoLinesField lines={moLines} setLines={setMoLines} defaultRoom={form.room} />
         </div>
       )}
 
       {multiMo && (
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <p className="text-xs font-semibold text-gray-700 mb-2">Cleaning this shift</p>
-          <CleaningEventsField events={cleans} setEvents={setCleans}
+          <CleaningEventsField events={cleans} setEvents={setCleans} defaultRoom={form.room}
             moOptions={moLines.map(l => l.mo_number).filter(Boolean)} />
         </div>
       )}
@@ -896,7 +927,7 @@ function AmendModal({ entry, onClose, onSaved }) {
           {multiMo && (
             <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3">
               <p className="text-xs font-semibold text-gray-700 mb-2">MOs worked this shift</p>
-              <MoLinesField lines={moLines} setLines={setMoLines} />
+              <MoLinesField lines={moLines} setLines={setMoLines} defaultRoom={form.room} />
               <p className="text-xs font-semibold text-gray-700 mt-3 mb-1.5">Cleaning this shift</p>
               <CleaningEventsField events={cleans} setEvents={setCleans}
                 moOptions={moLines.map(l => l.mo_number).filter(Boolean)} />
@@ -915,8 +946,15 @@ function AmendModal({ entry, onClose, onSaved }) {
                     {dirty && <span className="ml-1 text-[10px] font-semibold text-amber-700">was {showVal(entry[f.key])}</span>}
                   </label>
                   {f.type === 'select' ? (
+                    // A retired option (Room 8, an old team name) has to stay
+                    // selectable on a record that already carries it. Without
+                    // this the select falls back to its first option and an
+                    // amendment to the notes silently moves the shift to
+                    // another room.
                     <select value={form[f.key]} onChange={e => set(e.target.value)} className={cls}>
-                      {f.options.map(o => <option key={o} value={o}>{o}</option>)}
+                      {(f.options.includes(form[f.key]) || !form[f.key]
+                        ? f.options : [form[f.key], ...f.options]
+                      ).map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   ) : f.type === 'textarea' ? (
                     <textarea value={form[f.key]} onChange={e => set(e.target.value)} rows={2} className={cls} />
@@ -1186,7 +1224,14 @@ function LogTable({ user }) {
     if (!entries) return [];
     let rows = Array.isArray(entries) ? entries : entries.data || [];
     if (teamFilter) rows = rows.filter(r => r.team === teamFilter);
-    if (roomFilter) rows = rows.filter(r => r.room === roomFilter);
+    // A shift that ran in two rooms must come up under BOTH. Matching only the
+    // scalar column would hide the Batching 2 half of Bernardo's day from
+    // anyone filtering for Batching 2.
+    if (roomFilter) {
+      rows = rows.filter(r => r.room === roomFilter
+        || (Array.isArray(r.mo_lines) && r.mo_lines.some(l => l.room === roomFilter))
+        || (Array.isArray(r.cleaning_events) && r.cleaning_events.some(c => c.room === roomFilter)));
+    }
     if (moSearch) {
       const q = moSearch.toLowerCase();
       rows = rows.filter(r => (r.mo_number || '').toLowerCase().includes(q)
@@ -1213,6 +1258,18 @@ function LogTable({ user }) {
 
   // Cap what's in the DOM; `filtered` decides what's in the list.
   const view = useCappedList(filtered);
+
+  // Rooms to offer in the FILTER: the ones still in use, plus the retired ones,
+  // plus anything else the loaded entries were actually filed against. Retiring
+  // a room must not make the shifts run there unfindable — a filed record you
+  // can't filter to reads as deleted. The retired list is explicit rather than
+  // inferred from the rows, because the log fetches a date window and a shift
+  // run in Room 8 last spring isn't in it.
+  const roomOptions = useMemo(() => {
+    const known = [...ROOMS, ...RETIRED_ROOMS];
+    const seen = new Set((entries || []).map(e => e.room).filter(Boolean));
+    return [...known, ...[...seen].filter(r => !known.includes(r)).sort()];
+  }, [entries]);
 
   return (
     <div className="space-y-4">
@@ -1254,7 +1311,7 @@ function LogTable({ user }) {
             <select value={roomFilter} onChange={e => setRoomFilter(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
               <option value="">All Rooms</option>
-              {ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
+              {roomOptions.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
           <div>

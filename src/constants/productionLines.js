@@ -31,6 +31,44 @@ export const PRODUCTION_TEAMS = [
   'Batching', 'Filling', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other',
 ];
 
+/**
+ * The rooms work actually happens in — the facility's vocabulary, in one place.
+ *
+ * The schedule and the Production Log each used to keep their own list, and
+ * they had drifted badly: the schedule had dropped Room 8 and gained Batching 3
+ * and the half-rooms (1.2, 4.1, 4.2), while the log was still offering Room 8,
+ * had never heard of Batching 3, and listed 0 and 9–14 — rooms nobody schedules.
+ * So the same shift could be scheduled in one room and only be reportable in
+ * another. One list, imported by both.
+ *
+ * Grouping is part of the vocabulary (a batching room is not a production
+ * room); the colours the schedule paints each group with are not, and stay
+ * there. Retiring a room here removes it from new work only — see the Room
+ * filter in ProductionLog and `UnplacedAssignments` in ProductionSchedule,
+ * which both keep already-filed work reachable.
+ */
+export const ROOM_GROUPS = [
+  { id: 'production', label: 'Production Rooms', rooms: ['1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7'] },
+  { id: 'kitting', label: 'Kitting', rooms: ['15'] },
+  { id: 'batching', label: 'Batching Rooms', rooms: ['Batching 1', 'Batching 2', 'Batching 3'] },
+];
+
+export const PRODUCTION_ROOMS = ROOM_GROUPS.flatMap(g => g.rooms);
+
+/**
+ * Rooms work was filed against that are no longer in use.
+ *
+ * Retired, not deleted — the same rule the managed lists follow. They are never
+ * offered on a new entry, and they stay in the log's Room filter permanently,
+ * because a filed record you cannot filter to is indistinguishable from one
+ * that was deleted. Deriving this from the loaded rows instead would look like
+ * it worked and quietly fail: the log fetches a date window, so a shift run in
+ * Room 8 last spring simply isn't in the data the filter is built from.
+ *
+ * Room 8 isn't on the facility map; what ran there is Batching Room 3.
+ */
+export const RETIRED_ROOMS = ['8'];
+
 // Old team name → the line tag it becomes. Used by the migration and by any
 // import that still speaks the pre-merge vocabulary (e.g. a schedule sheet
 // exported before the change).

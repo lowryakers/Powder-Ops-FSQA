@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Chec
 import DiscussLink from '../DiscussLink.jsx';
 import { useDragPager } from '../../lib/useDragPager';
 import ScheduleProgressPanel from './ScheduleProgressPanel.jsx';
-import { PRODUCTION_TEAMS as TEAMS } from '../../constants/productionLines';
+import { PRODUCTION_TEAMS as TEAMS, ROOM_GROUPS } from '../../constants/productionLines';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -218,33 +218,18 @@ function SnapshotModal({ model, weekLabel, weekStartStr, onClose }) {
   );
 }
 
-const ROOM_SECTIONS = [
-  {
-    label: 'Production Rooms',
-    type: 'production',
-    headerClass: 'bg-green-50 border-green-200 text-green-800',
-    cellTint: 'bg-green-50/40',
-    // Room 8 is gone — it isn't on the facility map, and what used to be
-    // scheduled there is Batching Room 3, which already has its own row below.
-    // `UnplacedAssignments` below catches anything still filed against a room
-    // that no longer has a row, so removing one can't silently strand work.
-    rooms: ['1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7'],
-  },
-  {
-    label: 'Kitting',
-    type: 'kitting',
-    headerClass: 'bg-blue-50 border-blue-200 text-blue-800',
-    cellTint: 'bg-blue-50/40',
-    rooms: ['15'],
-  },
-  {
-    label: 'Batching Rooms',
-    type: 'batching',
-    headerClass: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-    cellTint: 'bg-yellow-50/40',
-    rooms: ['Batching 1', 'Batching 2', 'Batching 3'],
-  },
-];
+// Which rooms exist is the facility's vocabulary and lives in the shared
+// constants (Room 8 is gone from it — it isn't on the facility map, and what
+// used to be scheduled there is Batching Room 3). How each group is COLOURED is
+// this screen's business, so it stays here. `UnplacedAssignments` below catches
+// anything still filed against a room that no longer has a row, so retiring one
+// can't silently strand work.
+const GROUP_STYLE = {
+  production: { headerClass: 'bg-green-50 border-green-200 text-green-800', cellTint: 'bg-green-50/40' },
+  kitting: { headerClass: 'bg-blue-50 border-blue-200 text-blue-800', cellTint: 'bg-blue-50/40' },
+  batching: { headerClass: 'bg-yellow-50 border-yellow-200 text-yellow-800', cellTint: 'bg-yellow-50/40' },
+};
+const ROOM_SECTIONS = ROOM_GROUPS.map(g => ({ ...g, type: g.id, ...GROUP_STYLE[g.id] }));
 
 const PRODUCTION_ROOMS = ROOM_SECTIONS.find(s => s.type === 'production')?.rooms || [];
 const KITTING_ROOMS = ROOM_SECTIONS.find(s => s.type === 'kitting')?.rooms || [];

@@ -117,6 +117,13 @@ function normalizeMoLines(raw) {
       product_name: text(l?.product_name),
       mo_number: text(l?.mo_number, 60),
       lot_number: text(l?.lot_number, 60),
+      // Which room THIS run was in. A shift is not one room — Bernardo blends
+      // one MO in Batching 1 and the next in Batching 2 — and a single
+      // shift-level room silently filed the second one in the wrong place. The
+      // entry's own `room` column stays (it is NOT NULL and every filter, KPI
+      // and the facility map read it); it is the shift's main room, and this is
+      // where the run actually happened.
+      room: text(l?.room, 60),
       // Which stages were done on THIS line. An MO appears on two days with
       // different stages ticked, and that is the record of where it got to.
       work_stages: Array.isArray(l?.work_stages)
@@ -151,6 +158,9 @@ export function normalizeCleaningEvents(raw) {
       // cleaned to different levels, which is the whole reason this is a list.
       scope: Array.isArray(c?.scope) ? c.scope.map(x => text(x, 60)).filter(Boolean) : [],
       sifter_no: text(c?.sifter_no, 40),
+      // Which room was cleaned. Same reason as the MO line: cleaning Room 1 and
+      // cleaning the Batching 2 blender are two events in two places.
+      room: text(c?.room, 60),
       atp_swab: !!c?.atp_swab,
       allergen_swab: !!c?.allergen_swab,
       start_time: clock(c?.start_time),
@@ -348,10 +358,15 @@ export function dayLogToEntry(log) {
     .flatMap(i => [i.data.start_time, i.data.end_time]).filter(Boolean).sort();
 
   const lines = normalizeMoLines(moItems.map(i => i.data));
+  // The shift's main room. Every line carries its own; this is the scalar the
+  // entry's NOT NULL column needs, so fall back to the first room actually
+  // worked in rather than filing a shift with no room at all.
+  const firstRoom = [...moItems, ...log.items.filter(i => i.kind === 'clean')]
+    .map(i => i.data.room).find(Boolean) || '';
   return {
     date: log.log_date,
     team: log.team,
-    room: log.room || '',
+    room: log.room || firstRoom,
     start_time: log.start_time || times[0] || '',
     end_time: log.end_time || times[times.length - 1] || '',
     people_count: log.people_count ?? '',

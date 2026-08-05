@@ -1191,11 +1191,29 @@ run) and collapsed in the Calibration tab (a log, not a form). The card substitu
 into the steps — "add the MAXIMUM (75 kg)", not "add the third weight". Not editable in-app, same reason as
 the tolerances.
 
-## Room 8 is gone from the schedule
-`ROOM_SECTIONS` in ProductionSchedule.jsx lost `'8-1'` / `'8-2'` — Room 8 isn't on the facility map, and what
-ran there is Batching Room 3, which already has its own row. Rooms come from that constant, so removing one
-would make anything still scheduled there **invisible rather than gone**; the `unplaced` banner at the top of
-the schedule names any assignment filed against a room with no row, so a removal can't silently strand work.
+## Rooms: one vocabulary, and a room per TASK
+`ROOM_GROUPS` / `PRODUCTION_ROOMS` / `RETIRED_ROOMS` in `constants/productionLines.js`. The schedule and the
+Production Log each used to keep their own room list and had drifted badly: the schedule had dropped Room 8
+and gained Batching 3 and the half-rooms (1.2 / 4.1 / 4.2), while the log still offered Room 8, had never
+heard of Batching 3, and listed rooms 0 and 9–14 that nothing is ever scheduled in — so a shift could be
+scheduled in a room it could not be reported in. The **grouping** is vocabulary and lives in the constant;
+the **colours** the schedule paints each group with stay in ProductionSchedule (`GROUP_STYLE`).
+- **Room 8 is retired, not deleted.** It isn't on the facility map and what ran there is Batching Room 3.
+  `RETIRED_ROOMS` is offered in the log's Room **filter** forever but never on a new entry — a filed record
+  you can't filter to reads as deleted. It is an **explicit list, not derived from the loaded rows**: the log
+  fetches a date window, so inferring it from the data looks like it works and silently fails for a shift run
+  last spring. The schedule's `unplaced` banner is the same idea for assignments.
+- **The amend form keeps a retired value selected.** A `<select>` whose value isn't among its options falls
+  back to the first one, so amending a Room 8 entry's notes would have silently moved it to Batching 1.
+- **A shift is not one room.** `mo_lines[].room` and `cleaning_events[].room` — Bernardo blends one MO in
+  Batching 1 and the next in Batching 2, and one shift-level answer filed the second in the wrong place. New
+  cards default to the shift's main room (usually right) and can be changed. Blank means "same as the shift"
+  and is left blank rather than back-filled, so the record doesn't claim a room nobody chose.
+- **`production_entries.room` stays** — it's NOT NULL and every filter, KPI, `computeMetrics`, the missed-report
+  matcher and the facility map read it. It is the shift's MAIN room, labelled that way in the form. The log's
+  Room filter matches the scalar **or any line's or clean's room**, or the Batching 2 half of the day would be
+  invisible to anyone filtering for Batching 2. `dayLogToEntry` falls back to the first room actually worked
+  in when the day has no main room, so a day log can never produce an entry with no room at all.
 
 ## FORM 431-01 is a controlled document, not just a file
 The Brittle Plastic & Glass diagram is seeded into `sop_documents` (`FORM 431-01`, V4) pointing at
