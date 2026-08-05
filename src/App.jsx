@@ -1715,7 +1715,7 @@ function App() {
           {resolvedTab === 'meetings' && <MeetingsPanel />}
           {resolvedTab === 'internal-audits' && <InternalAuditsPanel />}
           {resolvedTab === 'doc-review' && <DocReviewPanel />}
-          {resolvedTab === 'facility-map' && <FacilityMapPanel />}
+          {resolvedTab === 'facility-map' && <FacilityMapPanel user={user} />}
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}

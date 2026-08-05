@@ -1056,6 +1056,46 @@ function initSchema() {
       note TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_app_requests_status ON app_requests(status, created_at DESC);
+
+    -- A screenshot says in one image what a paragraph struggles to. Files and
+    -- links share one table because they are the same thing to the reader —
+    -- something to look at alongside the request. A link carries a url and no
+    -- storage key; an upload carries a storage key and is presigned on read,
+    -- so a request with a Drive link still works with no R2 configured.
+    CREATE TABLE IF NOT EXISTS app_request_attachments (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'file' CHECK (kind IN ('file', 'link')),
+      filename TEXT,
+      content_type TEXT,
+      size INTEGER,
+      storage_key TEXT,
+      url TEXT,
+      added_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (request_id) REFERENCES app_requests(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_app_request_attachments ON app_request_attachments(request_id);
+
+    -- ── Facility map: what is currently IN a space ───────────────────────────
+    -- The plant runs on casters and tents: the walls stay put but the line in a
+    -- room changes. So the geometry stays in the client's drawing and only the
+    -- naming is data: label (what the map says) and equipment (the line
+    -- sited there right now).
+    --
+    -- The records key is deliberately NOT here. production_entries.room and
+    -- sanitation_records.area already hold it on every filed record, and
+    -- rewriting it would orphan that history from the map without touching the
+    -- records themselves. Renaming a space is a display decision; re-keying a
+    -- log is not.
+    CREATE TABLE IF NOT EXISTS facility_room_overrides (
+      room_id TEXT PRIMARY KEY,
+      label TEXT,
+      equipment TEXT,
+      note TEXT,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   runMigrations();

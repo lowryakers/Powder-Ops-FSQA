@@ -11,10 +11,14 @@
 // records already use, so nothing needed a new column to make this work.
 
 import { Router } from 'express';
-import { getDb } from '../db.js';
+import { getDb, logAudit } from '../db.js';
 import { recleanRooms } from './sanitation.js';
 
 const router = Router();
+
+// Renaming a space or saying which line is in it is a plant-floor decision, not
+// a controlled-document one — supervisors and admins can do it.
+const canEditRooms = (u) => u?.role === 'admin' || u?.role === 'supervisor';
 
 // One pass per fact, grouped — not a query per room. There are ~30 spaces and
 // this is on a screen someone opens repeatedly; the performance note in
@@ -105,7 +109,52 @@ router.get('/map-status', (req, res) => {
     }
   } catch { /* optional */ }
 
+  // What the plant has renamed or re-equipped since the drawing was made.
+  try {
+    out.overrides = {};
+    for (const r of db.prepare('SELECT * FROM facility_room_overrides').all()) {
+      out.overrides[r.room_id] = { label: r.label, equipment: r.equipment, note: r.note, updated_by: r.updated_by, updated_at: r.updated_at };
+    }
+  } catch { out.overrides = {}; }
+
   res.json(out);
+});
+
+// Rename a space, or record which line is sited in it. Both are display facts;
+// the records key the room's history is filed under is not editable here — see
+// the schema comment on facility_room_overrides.
+router.put('/rooms/:roomId', (req, res) => {
+  if (!canEditRooms(req.user)) return res.status(403).json({ error: 'Only a supervisor or admin can change the map.' });
+  const db = getDb();
+  const id = String(req.params.roomId || '').trim();
+  if (!id) return res.status(400).json({ error: 'Which room?' });
+
+  const clean = (v) => {
+    const s = String(v ?? '').trim();
+    return s ? s.slice(0, 120) : null;
+  };
+  const label = clean(req.body?.label);
+  const equipment = clean(req.body?.equipment);
+  const note = req.body?.note !== undefined ? (String(req.body.note).trim().slice(0, 500) || null) : null;
+  const before = db.prepare('SELECT * FROM facility_room_overrides WHERE room_id = ?').get(id) || null;
+
+  // Clearing every field removes the override entirely, so the room falls back
+  // to what the drawing says rather than carrying an empty row forever.
+  if (!label && !equipment && !note) {
+    db.prepare('DELETE FROM facility_room_overrides WHERE room_id = ?').run(id);
+    logAudit(req.user, 'update', 'facility_room', id, { reset: true }, before, null, id);
+    return res.json({ ok: true, reset: true });
+  }
+
+  db.prepare(`INSERT INTO facility_room_overrides (room_id, label, equipment, note, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(room_id) DO UPDATE SET label = excluded.label, equipment = excluded.equipment,
+      note = excluded.note, updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
+    .run(id, label, equipment, note, req.user?.name || null);
+
+  const after = db.prepare('SELECT * FROM facility_room_overrides WHERE room_id = ?').get(id);
+  logAudit(req.user, 'update', 'facility_room', id, { label, equipment }, before, after, label || id);
+  res.json(after);
 });
 
 export default router;

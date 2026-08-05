@@ -296,8 +296,15 @@ function EquipmentDetailRow({ eq, colSpan, onEdit }) {
   );
 }
 
+// `task_group` is who this equipment's PM work goes to. Reassigning a whole
+// department's kit one row at a time is exactly what bulk edit is for, and the
+// server already accepted the field and propagated it to the PM schedules and
+// open work orders (syncTaskGroupToPM) — only the picker was missing.
+const PM_ASSIGNEES = ['maintenance', 'warehouse', 'qa', 'cleaning'];
+
 const BULK_FIELDS = [
   { key: 'type', label: 'Type', type: 'select', options: TYPES },
+  { key: 'task_group', label: 'PM Assigned To', type: 'select', options: PM_ASSIGNEES },
   { key: 'location', label: 'Location', type: 'text' },
   { key: 'room', label: 'Room', type: 'text' },
   { key: 'manufacturer', label: 'Manufacturer', type: 'text' },

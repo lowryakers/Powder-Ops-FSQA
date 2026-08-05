@@ -11,9 +11,39 @@
 
 import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
+import { createReadStream } from 'fs';
 import { getDb, logAudit } from '../db.js';
+import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 
 const router = Router();
+
+// Same wrapper shape as training materials: multer's own errors come back as a
+// readable 413 rather than an unhandled throw.
+const attachmentUpload = mediaUpload({ files: 5 }).array('files', 5);
+const uploadAttachments = (req, res, next) => attachmentUpload(req, res, (err) => {
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  next();
+});
+
+// Attachments come back with the row, so a request reads as one thing rather
+// than a body plus a second fetch. Uploads are presigned per read (short-lived
+// URLs); links are returned as typed.
+async function withAttachments(db, rows) {
+  if (!rows.length) return rows;
+  const ids = rows.map(r => r.id);
+  const all = db.prepare(`SELECT * FROM app_request_attachments
+    WHERE request_id IN (${ids.map(() => '?').join(',')}) ORDER BY created_at`).all(...ids);
+  const byReq = {};
+  for (const a of all) {
+    (byReq[a.request_id] ||= []).push({
+      id: a.id, kind: a.kind, filename: a.filename, content_type: a.content_type, size: a.size,
+      added_by: a.added_by, created_at: a.created_at,
+      url: a.kind === 'link' ? a.url : (a.storage_key ? await presignGet(a.storage_key, a.filename) : null),
+    });
+  }
+  return rows.map(r => ({ ...r, attachments: byReq[r.id] || [] }));
+}
 
 // Anyone who can see the app can report a problem with it — narrowing this
 // would just mean the reports arrive as hallway conversation instead.
@@ -30,7 +60,9 @@ router.get('/', (req, res) => {
   // A non-admin only sees their own — this is a suggestion box, not a forum.
   if (mine || !canTriage(req.user)) { sql += ' AND submitted_by_id = ?'; params.push(req.user?.id); }
   sql += " ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, created_at DESC LIMIT 300";
-  res.json(db.prepare(sql).all(...params));
+  Promise.resolve(withAttachments(db, db.prepare(sql).all(...params)))
+    .then(rows => res.json(rows))
+    .catch(() => res.json(db.prepare(sql).all(...params)));
 });
 
 // Counts for the badge — open items only.
@@ -75,8 +107,75 @@ router.delete('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM app_requests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Request not found' });
+  // Take the attachments with it, objects included — an orphaned screenshot in
+  // the bucket is cost with nothing pointing at it.
+  for (const a of db.prepare('SELECT storage_key FROM app_request_attachments WHERE request_id = ?').all(existing.id)) {
+    if (a.storage_key) deleteObject(a.storage_key);
+  }
+  db.prepare('DELETE FROM app_request_attachments WHERE request_id = ?').run(existing.id);
   db.prepare('DELETE FROM app_requests WHERE id = ?').run(req.params.id);
   logAudit(req.user, 'delete', 'app_request', req.params.id, null, existing, null, (existing.body || '').slice(0, 80));
+  res.json({ ok: true });
+});
+
+/* ── Attachments: a screenshot, a photo of the machine, a Drive link ──────── */
+
+// Only the person who filed it, or an admin — an attachment is part of someone
+// else's report.
+const mayAttach = (u, r) => u?.role === 'admin' || (r.submitted_by_id && r.submitted_by_id === u?.id);
+
+router.post('/:id/attachments', uploadAttachments, async (req, res) => {
+  const files = req.files || [];
+  try {
+    const db = getDb();
+    const r = db.prepare('SELECT * FROM app_requests WHERE id = ?').get(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Request not found' });
+    if (!mayAttach(req.user, r)) return res.status(403).json({ error: 'You can only attach to your own requests.' });
+
+    const out = [];
+    // A link needs no storage at all, so it works with R2 switched off.
+    const link = String(req.body?.url || '').trim();
+    if (link) {
+      if (!/^https?:\/\//i.test(link)) return res.status(400).json({ error: 'A link must start with http:// or https://' });
+      const id = uuid();
+      db.prepare(`INSERT INTO app_request_attachments (id, request_id, kind, filename, url, added_by)
+        VALUES (?, ?, 'link', ?, ?, ?)`)
+        .run(id, r.id, (req.body?.title || link).slice(0, 200), link.slice(0, 2000), req.user?.name || null);
+      out.push({ id, kind: 'link', filename: req.body?.title || link, url: link });
+    }
+
+    if (files.length) {
+      if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server. A link still works.' });
+      const tooBig = rejectOversize(files);
+      if (tooBig) return res.status(413).json({ error: tooBig });
+      for (const f of files) {
+        const id = uuid();
+        const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+        const key = `app-requests/${r.id}/${id}-${safe}`;
+        await putStream(key, createReadStream(f.path), f.mimetype);
+        db.prepare(`INSERT INTO app_request_attachments (id, request_id, kind, filename, content_type, size, storage_key, added_by)
+          VALUES (?, ?, 'file', ?, ?, ?, ?, ?)`)
+          .run(id, r.id, (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null, key, req.user?.name || null);
+        out.push({ id, kind: 'file', filename: f.originalname, content_type: f.mimetype, size: f.size });
+      }
+    }
+
+    if (!out.length) return res.status(400).json({ error: 'Nothing to attach.' });
+    logAudit(req.user, 'update', 'app_request', r.id, { attached: out.map(o => o.filename) }, null, null, (r.body || '').slice(0, 80));
+    res.status(201).json(out);
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+router.delete('/attachments/:id', (req, res) => {
+  const db = getDb();
+  const a = db.prepare('SELECT * FROM app_request_attachments WHERE id = ?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  const r = db.prepare('SELECT * FROM app_requests WHERE id = ?').get(a.request_id);
+  if (r && !mayAttach(req.user, r)) return res.status(403).json({ error: 'You can only change your own requests.' });
+  db.prepare('DELETE FROM app_request_attachments WHERE id = ?').run(a.id);
+  if (a.storage_key) deleteObject(a.storage_key);
   res.json({ ok: true });
 });
 

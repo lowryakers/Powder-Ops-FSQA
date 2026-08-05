@@ -89,18 +89,19 @@ function SortHeader({ label, field, sortField, sortDir, onSort, className = '' }
 
 // The message shown in the admin log: auto-translated English first, with the
 // original underneath when they differ.
-function EntryMessage({ e, compact = false }) {
+function EntryMessage({ e, compact = false, clamp = false }) {
+  const clampCls = clamp ? ' line-clamp-2' : '';
   if (e.message_en && e.message_en !== e.message) {
     return (
-      <div className={compact ? 'text-sm text-gray-800' : 'mt-1.5 text-sm text-gray-800'}>
+      <div className={(compact ? 'text-sm text-gray-800' : 'mt-1.5 text-sm text-gray-800') + clampCls}>
         <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-powder-500 mr-1"><Languages size={10} /> EN</span>
         {e.message_en}
-        {e.message && <div className="text-xs text-gray-400 mt-0.5 italic">Original: {e.message}</div>}
+        {e.message && !clamp && <div className="text-xs text-gray-400 mt-0.5 italic">Original: {e.message}</div>}
       </div>
     );
   }
   const txt = [e.message, e.details].filter(Boolean).join(' — ');
-  return txt ? <p className={compact ? 'text-sm text-gray-800' : 'mt-1.5 text-sm text-gray-800'}>{txt}</p> : <span className="text-gray-300">—</span>;
+  return txt ? <p className={(compact ? 'text-sm text-gray-800' : 'mt-1.5 text-sm text-gray-800') + clampCls}>{txt}</p> : <span className="text-gray-300">—</span>;
 }
 
 // Biweekly periods, matching the server's payPeriodFor(): the value is the
@@ -399,7 +400,12 @@ function AdjustmentsLog({ tr = (x) => x }) {
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.tone}`}>{t.label}</span></td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{e.adjustment_date}</td>
-                    <td className="px-3 py-2.5 min-w-[260px] w-full"><EntryMessage e={e} compact /></td>
+                    {/* Was `min-w-[260px] w-full`, which made this column absorb
+                        every spare pixel and push Status / ADP off the right of
+                        the table — the two columns you come here to act on. It
+                        is capped and clamped now; the full text is one click
+                        away in the expanded row, so nothing is lost. */}
+                    <td className="px-3 py-2.5 max-w-[22rem]"><EntryMessage e={e} compact clamp /></td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{e.submitted_by || '—'}<div className="text-gray-400">{(e.created_at || '').slice(0, 10)}</div></td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       {e.status === 'new'

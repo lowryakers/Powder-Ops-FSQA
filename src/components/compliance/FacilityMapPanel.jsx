@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useApiGet } from '../../hooks/useApi';
+import { useApiGet, apiPut } from '../../hooks/useApi';
 import { useCompactLayout } from '../../lib/useCompactLayout.js';
 import {
   Map as MapIcon, Layers, Printer, X, Droplets, Factory, Wrench, AlertTriangle,
   Bug, FlaskConical, CalendarDays, ExternalLink, Maximize2, Minimize2, ChevronRight,
+  Pencil, Save, RotateCcw,
 } from 'lucide-react';
 import {
   PLAN, SPANS, ROOMS, ROOM_KINDS, FIXTURES, FIXTURE_KINDS, TRAPS, TRAPS_UNPLACED,
@@ -118,7 +119,75 @@ function Line({ icon: Icon, label, value, tone }) {
   );
 }
 
-function DetailPanel({ room, status, zone, zoneInfo, onClose }) {
+// Rename the space, or say which line is standing in it today. Everything on
+// casters means the drawing is right about the walls and out of date about the
+// equipment within a month; this is how the plant keeps up without a deploy.
+function RoomEditor({ room, override, onSaved, onCancel }) {
+  const [label, setLabel] = useState(override?.label || room.label || '');
+  const [equipment, setEquipment] = useState(override?.equipment || '');
+  const [note, setNote] = useState(override?.note || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const save = async (reset) => {
+    setBusy(true); setErr(null);
+    try {
+      await apiPut(`/facility/rooms/${encodeURIComponent(room.id)}`,
+        reset ? { label: '', equipment: '', note: '' } : { label, equipment, note });
+      onSaved();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  };
+
+  return (
+    <div className="p-4 space-y-3 border-t border-gray-100 bg-gray-50/60">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-600 mb-1">Name on the map</span>
+          <input value={label} onChange={e => setLabel(e.target.value)}
+            placeholder={room.label} className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-600 mb-1">Equipment / line in here now</span>
+          <input value={equipment} onChange={e => setEquipment(e.target.value)}
+            placeholder="e.g. Bottling line, Auger stick pack"
+            className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        </label>
+      </div>
+      <label className="block">
+        <span className="block text-xs font-medium text-gray-600 mb-1">Note (optional)</span>
+        <input value={note} onChange={e => setNote(e.target.value)}
+          placeholder="anything worth knowing about this space"
+          className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+      </label>
+      {room.room && (
+        <p className="text-[11px] text-gray-500">
+          Records for this space are filed under <span className="font-mono font-semibold">{room.room}</span>.
+          That stays as it is — every clean and production entry already filed carries it, and changing it
+          here would cut this room off from its own history without altering a single record.
+        </p>
+      )}
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" disabled={busy} onClick={() => save(false)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 disabled:opacity-50">
+          <Save size={12} /> {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={onCancel}
+          className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-white">Cancel</button>
+        {override && (
+          <button type="button" disabled={busy} onClick={() => save(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-600 hover:bg-white ml-auto"
+            title="Go back to what the original drawing says">
+            <RotateCcw size={12} /> Reset to the drawing
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DetailPanel({ room, status, zone, zoneInfo, onClose, override, canEdit, onSaved }) {
+  const [editing, setEditing] = useState(false);
   const s = status || {};
   // Age comes from the server (`hours_since_clean`, the same number the 72-hour
   // rule works from) rather than being computed here — reading the clock during
@@ -129,14 +198,33 @@ function DetailPanel({ room, status, zone, zoneInfo, onClose }) {
   return (
     <div className="border border-gray-200 rounded-xl bg-white overflow-hidden">
       <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-100">
-        <div>
-          <h3 className="font-semibold text-gray-900">{room.label || room.id}</h3>
+        <div className="min-w-0">
+          <h3 className="font-semibold text-gray-900">{override?.label || room.label || room.id}</h3>
           <p className="text-xs text-gray-500">
-            {ROOM_KINDS[room.kind]?.label}{room.room && room.room !== room.label ? ` · recorded as "${room.room}"` : ''}
+            {ROOM_KINDS[room.kind]?.label}{room.room && room.room !== (override?.label || room.label) ? ` · recorded as "${room.room}"` : ''}
           </p>
+          {override?.equipment && (
+            <p className="mt-0.5 text-xs text-powder-700 font-medium flex items-center gap-1">
+              <Wrench size={11} /> {override.equipment}
+            </p>
+          )}
+          {override?.note && <p className="mt-0.5 text-xs text-gray-500">{override.note}</p>}
         </div>
-        <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={16} className="text-gray-400" /></button>
+        <div className="flex items-center gap-1 shrink-0">
+          {canEdit && (
+            <button onClick={() => setEditing(e => !e)} className="p-1 hover:bg-gray-100 rounded-lg"
+              data-tip="Rename this space or say what line is in it">
+              <Pencil size={14} className="text-gray-400" />
+            </button>
+          )}
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={16} className="text-gray-400" /></button>
+        </div>
       </div>
+
+      {editing && (
+        <RoomEditor room={room} override={override}
+          onSaved={() => { setEditing(false); onSaved?.(); }} onCancel={() => setEditing(false)} />
+      )}
 
       <div className="p-4 space-y-2">
         {room.note && <p className="text-xs text-gray-500">{room.note}</p>}
@@ -226,7 +314,7 @@ const STATUS_GROUPS = [
   { key: 'other', label: 'No cleaning status', dot: '#d1d5db' },
 ];
 
-function RoomList({ status, onPick }) {
+function RoomList({ status, overrides = {}, onPick }) {
   const groups = useMemo(() => {
     const out = {};
     for (const r of ROOMS) {
@@ -254,9 +342,9 @@ function RoomList({ status, onPick }) {
                 <button onClick={() => onPick(r.id)}
                   className="w-full flex items-center gap-2 px-3 py-3 text-left active:bg-gray-50">
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-gray-900 truncate">{r.label || r.id}</span>
+                    <span className="block text-sm text-gray-900 truncate">{overrides[r.id]?.label || r.label || r.id}</span>
                     <span className="block text-xs text-gray-500 truncate">
-                      {ROOM_KINDS[r.kind]?.label}
+                      {overrides[r.id]?.equipment || ROOM_KINDS[r.kind]?.label}
                       {r.room && status[r.room]?.last_clean
                         ? ` · cleaned ${String(status[r.room].last_clean).slice(0, 10)}` : ''}
                     </span>
@@ -272,7 +360,7 @@ function RoomList({ status, onPick }) {
   );
 }
 
-export default function FacilityMapPanel() {
+export default function FacilityMapPanel({ user }) {
   const [layers, setLayers] = useState({ fixtures: false, traps: false, bpg: false, status: true });
   const [selected, setSelected] = useState(null);
   // Fit-to-width by default on a phone: seeing half a building is worse than
@@ -281,7 +369,8 @@ export default function FacilityMapPanel() {
   const [zoomed, setZoomed] = useState(false);
   const compact = useCompactLayout();
   const detailRef = useRef(null);
-  const { data } = useApiGet('/facility/map-status');
+  const { data, refresh } = useApiGet('/facility/map-status');
+  const canEdit = user?.role === 'admin' || user?.role === 'supervisor';
 
   // On a phone the detail lands below the map, so tapping a room at the top
   // of the plan otherwise looks like nothing happened.
@@ -292,6 +381,11 @@ export default function FacilityMapPanel() {
 
   const status = data?.rooms || {};
   const zones = data?.zones || {};
+  // What the plant has renamed since the drawing was made. The map draws these
+  // instead of the shipped labels, so a line moving rooms is one edit, not a
+  // deploy.
+  const overrides = data?.overrides || {};
+  const nameOf = (r) => overrides[r.id]?.label || r.label;
   const toggle = (k) => setLayers(l => ({ ...l, [k]: !l[k] }));
 
   // A stable colour per BP&G zone so the same zone reads the same everywhere.
@@ -383,11 +477,11 @@ export default function FacilityMapPanel() {
               <g key={r.id} onClick={() => setSelected(active ? null : r.id)} style={{ cursor: 'pointer' }}>
                 <rect x={r.x} y={r.y} width={r.w} height={r.h} fill={c.fill}
                   stroke={active ? '#1d4ed8' : c.stroke} strokeWidth={active ? 2.4 : 0.9} rx="1.5" />
-                {r.label && r.h >= 14 && (
+                {nameOf(r) && r.h >= 14 && (
                   <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 2.6} textAnchor="middle"
                     fontSize={r.w > 100 ? 8 : 6.2} fill={ROOM_KINDS[r.kind]?.text || '#111'}
                     style={{ pointerEvents: 'none' }}>
-                    {r.label.length > 22 && r.w < 120 ? `${r.label.slice(0, 20)}…` : r.label}
+                    {nameOf(r).length > 22 && r.w < 120 ? `${nameOf(r).slice(0, 20)}…` : nameOf(r)}
                   </text>
                 )}
               </g>
@@ -418,6 +512,7 @@ export default function FacilityMapPanel() {
         <div ref={detailRef}>
           <DetailPanel room={selectedRoom} status={selectedRoom.room ? status[selectedRoom.room] : null}
             zone={ZONE_OF_ROOM[selectedRoom.id]} zoneInfo={zones[ZONE_OF_ROOM[selectedRoom.id]]}
+            override={overrides[selectedRoom.id]} canEdit={canEdit} onSaved={refresh}
             onClose={() => setSelected(null)} />
         </div>
       )}
@@ -451,7 +546,7 @@ export default function FacilityMapPanel() {
         </div>
       )}
 
-      <RoomList status={status} onPick={setSelected} />
+      <RoomList status={status} overrides={overrides} onPick={setSelected} />
     </div>
   );
 }

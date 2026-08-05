@@ -59,7 +59,10 @@ export const ROOMS = [
   { id: 'receiving-hold', label: 'Receiving hold area', kind: 'hold', room: 'Receiving Hold', x: 2, y: 371, w: 86, h: 20 },
 
   // ── Production room column ──────────────────────────────────────────────
-  { id: 'vffs', label: 'Large VFFS', kind: 'production', room: 'Large VFFS', x: 153, y: 81, w: 74, h: 20 },
+  // `room` is the key this space's records are filed under and stays as it is;
+  // `label` is what the map says, and the plant can change it in-app (Edit on
+  // the detail panel) when the line in the space changes.
+  { id: 'vffs', label: 'Bottling line', kind: 'production', room: 'Large VFFS', x: 153, y: 81, w: 74, h: 20 },
   { id: 'room-1', label: 'Room 1', kind: 'production', room: '1', x: 153, y: 102, w: 74, h: 19 },
   { id: 'room-2', label: 'Pouching machine Rm 2', kind: 'production', room: '2', x: 153, y: 122, w: 74, h: 41 },
   { id: 'room-3', label: 'Room 3', kind: 'production', room: '3', x: 153, y: 164, w: 74, h: 19 },
