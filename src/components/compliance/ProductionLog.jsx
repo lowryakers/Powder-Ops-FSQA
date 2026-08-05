@@ -83,7 +83,7 @@ const usesMoLines = (team) => team === 'Batching';
 function RoomPicker({ value, onChange, rooms, className }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)} className={className}>
-      <option value="">Same as shift</option>
+      <option value="">Room not set</option>
       {rooms.map(r => <option key={r} value={r}>{r}</option>)}
       {/* A room retired since this was filed must stay selected rather than
           silently becoming another room. */}
@@ -96,7 +96,10 @@ function RoomPicker({ value, onChange, rooms, className }) {
 // Reused by the entry form and the amend modal so both build the same shape.
 function MoLinesField({ lines, setLines, defaultRoom = '', rooms = ROOMS }) {
   const setLine = (i, patch) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const add = () => setLines(ls => [...ls, blankMoLine(defaultRoom)]);
+  // A new card starts in the room the last one was in. There is no shift-level
+  // room to inherit any more, and most runs continue where the last one was —
+  // so this is one tap in the common case and still changeable.
+  const add = () => setLines(ls => [...ls, blankMoLine([...ls].reverse().map(l => l.room).find(Boolean) || defaultRoom)]);
   const remove = (i) => setLines(ls => (ls.length > 1 ? ls.filter((_, j) => j !== i) : ls));
   const cls = 'w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm';
   return (
@@ -205,7 +208,7 @@ function MoLinesField({ lines, setLines, defaultRoom = '', rooms = ROOMS }) {
 // attributable to it rather than to the shift in general.
 function CleaningEventsField({ events, setEvents, moOptions, defaultRoom = '', rooms = ROOMS }) {
   const setEvent = (i, patch) => setEvents(es => es.map((e, j) => (j === i ? { ...e, ...patch } : e)));
-  const add = () => setEvents(es => [...es, blankClean(defaultRoom)]);
+  const add = () => setEvents(es => [...es, blankClean([...es].reverse().map(e => e.room).find(Boolean) || defaultRoom)]);
   const remove = (i) => setEvents(es => es.filter((_, j) => j !== i));
   const cls = 'w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm';
 
@@ -436,6 +439,14 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
   // The earliest start and the latest finish across everything worked. Same
   // rule as the server's derivation and dayLogToEntry, so the three cannot
   // disagree about when the shift ran.
+  // Every room the shift touched, in the order they first appear. The first is
+  // what the entry's scalar room column becomes.
+  const roomsUsed = useMemo(() => {
+    const seen = [];
+    for (const x of [...moLines, ...cleans]) if (x.room && !seen.includes(x.room)) seen.push(x.room);
+    return seen;
+  }, [moLines, cleans]);
+
   const shiftWindow = useMemo(() => {
     const all = [...moLines, ...cleans];
     const pick = (k) => all.map(x => x[k]).filter(Boolean).sort();
@@ -469,6 +480,10 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
       setMessage({ type: 'error', text: 'Set a start and finish time on at least one MO or clean — the shift window comes from those.' });
       return;
     }
+    if (multiMo && !roomsUsed.length) {
+      setMessage({ type: 'error', text: 'Set a room on at least one MO or clean.' });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -484,6 +499,7 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
         payload.cleaning_events = cleans;
         payload.start_time = shiftWindow.start;
         payload.end_time = shiftWindow.end;
+        payload.room = roomsUsed[0];
         delete payload.product_name; delete payload.mo_number;
         delete payload.lot_number; delete payload.quantity_completed;
       } else {
@@ -553,16 +569,33 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
             {TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            Main room *{multiMo && <span className="ml-1 font-normal text-gray-400">(each MO and clean can set its own)</span>}
-          </label>
-          <select required value={form.room} onChange={e => set('room', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">Select room...</option>
-            {ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
+        {/* Same reasoning as the shift window: the room belongs to the work,
+            not to the shift. A Batching day runs across several rooms, so
+            asking for one at the top could only ever be wrong for the rest. */}
+        {multiMo ? (
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Rooms</label>
+            <div className="w-full px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm bg-gray-50 text-gray-700">
+              {roomsUsed.length ? (
+                <>
+                  <span className="font-medium">{roomsUsed.join(', ')}</span>
+                  <span className="text-gray-500 text-xs"> · from the work below</span>
+                </>
+              ) : (
+                <span className="text-gray-500">Set a room on an MO or a clean below.</span>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Room *</label>
+            <select required value={form.room} onChange={e => set('room', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">Select room...</option>
+              {ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+        )}
         {/* Filling is one team across several machines, so the run records
             which line it went through. */}
         {form.team === FILLING_TEAM && (
@@ -648,14 +681,15 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
       {multiMo && (
         <div className="rounded-lg border border-powder-200 bg-powder-50/50 p-3">
           <p className="text-xs font-semibold text-powder-800 mb-2">MOs worked this shift</p>
-          <MoLinesField lines={moLines} setLines={setMoLines} defaultRoom={form.room} />
+          <MoLinesField lines={moLines} setLines={setMoLines} />
         </div>
       )}
 
       {multiMo && (
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <p className="text-xs font-semibold text-gray-700 mb-2">Cleaning this shift</p>
-          <CleaningEventsField events={cleans} setEvents={setCleans} defaultRoom={form.room}
+          <CleaningEventsField events={cleans} setEvents={setCleans}
+            defaultRoom={moLines.map(l => l.room).find(Boolean) || ''}
             moOptions={moLines.map(l => l.mo_number).filter(Boolean)} />
         </div>
       )}
@@ -966,7 +1000,7 @@ function AmendModal({ entry, onClose, onSaved }) {
           {multiMo && (
             <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3">
               <p className="text-xs font-semibold text-gray-700 mb-2">MOs worked this shift</p>
-              <MoLinesField lines={moLines} setLines={setMoLines} defaultRoom={form.room} />
+              <MoLinesField lines={moLines} setLines={setMoLines} />
               <p className="text-xs font-semibold text-gray-700 mt-3 mb-1.5">Cleaning this shift</p>
               <CleaningEventsField events={cleans} setEvents={setCleans}
                 moOptions={moLines.map(l => l.mo_number).filter(Boolean)} />

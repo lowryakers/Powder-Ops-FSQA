@@ -595,6 +595,13 @@ router.post('/entries', (req, res) => {
     const times = (k) => all.map(x => x[k]).filter(Boolean).sort();
     if (!start_time) start_time = times('start_time')[0] || '';
     if (!end_time) { const e = times('end_time'); end_time = e[e.length - 1] || ''; }
+    // Same for the room. The scalar column is NOT NULL and is what every
+    // filter, KPI, computeMetrics, the missed-report matcher and the facility
+    // map read, so it still has to hold one value — but a shift runs across
+    // several rooms, so it is the room of the FIRST run rather than a separate
+    // answer typed at the top. Line 0 for the same reason product/MO/lot come
+    // from line 0; a clean-only shift falls back to where the cleaning was.
+    if (!room) room = lines.map(l => l.room).find(Boolean) || cleans.map(c => c.room).find(Boolean) || '';
   }
 
   if (!date || !team || !room || !product_name || !mo_number || !lot_number || !start_time || !end_time || quantity_completed == null || !people_count || !submitted_by) {

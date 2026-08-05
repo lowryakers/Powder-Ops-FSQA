@@ -1209,11 +1209,18 @@ the **colours** the schedule paints each group with stay in ProductionSchedule (
   Batching 1 and the next in Batching 2, and one shift-level answer filed the second in the wrong place. New
   cards default to the shift's main room (usually right) and can be changed. Blank means "same as the shift"
   and is left blank rather than back-filled, so the record doesn't claim a room nobody chose.
-- **`production_entries.room` stays** — it's NOT NULL and every filter, KPI, `computeMetrics`, the missed-report
-  matcher and the facility map read it. It is the shift's MAIN room, labelled that way in the form. The log's
-  Room filter matches the scalar **or any line's or clean's room**, or the Batching 2 half of the day would be
-  invisible to anyone filtering for Batching 2. `dayLogToEntry` falls back to the first room actually worked
-  in when the day has no main room, so a day log can never produce an entry with no room at all.
+- **`production_entries.room` stays but is DERIVED, not asked for.** It's NOT NULL and every filter, KPI,
+  `computeMetrics`, the missed-report matcher and the facility map read it — so it still holds one value, but
+  for multi-MO teams that value is **the first run's room** (line 0, the same mirroring rule as
+  product/MO/lot), falling back to where the cleaning was on a clean-only shift. There is no shift-level room
+  input on the Batching form at all; a read-only *Rooms* line lists every room the shift touched. Filled
+  **only when absent**, so single-MO teams and deliberate overrides still win, and an entry with no room
+  anywhere is refused rather than filed blank.
+- **A new MO or clean card starts in the room the last one was in** — most work continues where it was, and
+  with no shift-level room there is nothing else to inherit. Blank means blank; nothing is back-filled.
+- The log's Room filter matches the scalar **or any line's or clean's room**, or the Batching 2 half of the
+  day would be invisible to anyone filtering for Batching 2. `dayLogToEntry` applies the same fallback, so a
+  day log can never produce an entry with no room at all.
 
 ## FORM 431-01 is a controlled document, not just a file
 The Brittle Plastic & Glass diagram is seeded into `sop_documents` (`FORM 431-01`, V4) pointing at

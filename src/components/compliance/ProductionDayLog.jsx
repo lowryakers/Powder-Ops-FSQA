@@ -181,7 +181,7 @@ function ItemSheet({ kind, initial, moOptions, rooms = [], defaultRoom = '', onC
             <label className="block">
               <span className="block text-[11px] text-gray-600 mb-0.5">Main room</span>
               <select value={d.room || ''} onChange={e => set('room', e.target.value)} className={cls}>
-                <option value="">Same as the day</option>
+                <option value="">Room not set</option>
                 {rooms.map(r => <option key={r} value={r}>{r}</option>)}
                 {d.room && !rooms.includes(d.room) && <option value={d.room}>{d.room}</option>}
               </select>
@@ -303,6 +303,17 @@ export default function ProductionDayLog({ teams = TEAMS, rooms = [], defaultTea
     .filter(i => i.kind === 'mo' || i.kind === 'adjustment')
     .map(i => i.data.mo_number).filter(Boolean))], [log]);
 
+  const roomsUsed = useMemo(() => {
+    const seen = [];
+    for (const i of log?.items || []) if (i.data?.room && !seen.includes(i.data.room)) seen.push(i.data.room);
+    return seen;
+  }, [log]);
+  // A new line starts wherever the last one was — most work continues in the
+  // same room, and there is no shift-level room to inherit.
+  const lastRoom = useMemo(
+    () => [...(log?.items || [])].reverse().map(i => i.data?.room).find(Boolean) || '',
+    [log]);
+
   if (!log) {
     return (
       <div className="space-y-3">
@@ -349,22 +360,22 @@ export default function ProductionDayLog({ teams = TEAMS, rooms = [], defaultTea
       {/* The two shift facts the logged lines can't imply. Set once in the
           morning, or left for the review screen — either is fine, which is why
           nothing here is required. */}
-      <div className="flex flex-wrap items-end gap-2 bg-white rounded-xl border border-gray-200 p-3">
-        <label className="block">
-          <span className="block text-[11px] text-gray-600 mb-0.5">Main room</span>
-          <select value={log.room || ''} onChange={e => saveHeader({ room: e.target.value })}
-            className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm bg-white">
-            <option value="">Not set yet</option>
-            {rooms.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </label>
+      {/* Headcount is genuinely a shift fact. The room is not — it belongs to
+          each line, so it is set there and only summarised here. */}
+      <div className="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-gray-200 p-3">
         <label className="block">
           <span className="block text-[11px] text-gray-600 mb-0.5">People on shift</span>
           <input type="number" min="1" defaultValue={log.people_count ?? ''}
             onBlur={e => saveHeader({ people_count: e.target.value })}
             className="w-24 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" placeholder="—" />
         </label>
-        <span className="text-[11px] text-gray-400 pb-2">{log.team}</span>
+        <div className="pb-1.5">
+          <span className="block text-[11px] text-gray-600 mb-0.5">Rooms so far</span>
+          <span className="text-sm text-gray-800">
+            {roomsUsed.length ? roomsUsed.join(', ') : <span className="text-gray-400">set on each line</span>}
+          </span>
+        </div>
+        <span className="text-[11px] text-gray-400 pb-2 ml-auto">{log.team}</span>
       </div>
 
       {/* The add buttons stay at the top so they're reachable without scrolling
@@ -402,13 +413,13 @@ export default function ProductionDayLog({ teams = TEAMS, rooms = [], defaultTea
       )}
 
       {adding && (
-        <ItemSheet kind={adding} moOptions={moOptions} rooms={rooms} defaultRoom={log.room || ''}
+        <ItemSheet kind={adding} moOptions={moOptions} rooms={rooms} defaultRoom={lastRoom}
           onClose={() => setAdding(null)}
           onSave={(data) => act(() => apiPost(`/production/day-log/${log.id}/items`, { kind: adding, data }))} />
       )}
       {editing && (
         <ItemSheet kind={editing.kind} initial={editing.data} moOptions={moOptions} rooms={rooms}
-          defaultRoom={log.room || ''} onClose={() => setEditing(null)}
+          defaultRoom={lastRoom} onClose={() => setEditing(null)}
           onSave={(data) => act(() => apiPut(`/production/day-log/items/${editing.id}`, { data }))} />
       )}
     </div>
