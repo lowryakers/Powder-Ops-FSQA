@@ -1167,13 +1167,21 @@ function App() {
   // links use this), ?form=<kiosk> pops a quick form over whatever's open
   // (kiosk QR codes scanned by signed-in users). Params are consumed once.
   const [kioskForm, setKioskForm] = useState(null); // 'knife' | 'components' | 'maintenance' | 'scale'
+  // `?section=` addresses a pane inside a module (currently Settings). It is
+  // read HERE and handed down rather than read by the module itself: this
+  // effect wipes the query string, and a lazily-loaded module mounts after it
+  // has run, so a module reading window.location.search would always find it
+  // already gone.
+  const [deepSection, setDeepSection] = useState(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab');
     const form = params.get('form');
+    const section = params.get('section');
     if (tab) { setWorkspace('fsqa'); setActiveTab(tab); }
+    if (section) setDeepSection(section);
     if (form && ['knife', 'components', 'maintenance', 'scale'].includes(form)) setKioskForm(form);
-    if (tab || form) window.history.replaceState({}, '', window.location.pathname);
+    if (tab || form || section) window.history.replaceState({}, '', window.location.pathname);
   }, []);
 
   // Jump from a module to a specific comms channel, remembering the origin.
@@ -1725,7 +1733,7 @@ function App() {
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}
-          {resolvedTab === 'settings' && <SettingsPanel />}
+          {resolvedTab === 'settings' && <SettingsPanel initialSection={deepSection} />}
           </Suspense>
           </ModuleBoundary>
         </main>

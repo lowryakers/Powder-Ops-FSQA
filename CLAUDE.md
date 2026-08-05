@@ -1258,3 +1258,29 @@ module id `retention-samples`.
 - Filing is open (anyone who pulls samples), correcting someone else's needs QA/admin, destroying needs QA
   leadership or an admin — the same ladder the Receiving Log uses. `retention_sample` is a custom-field
   scope, so extra questions are a Settings task.
+
+## Settings is a registry, not a page (`SettingsShell.jsx` + `SettingsPanel.jsx`)
+Settings was one render stacking seven blocks with their permission rules written inline between them, so
+finding one thing meant reading past six, and adding an area meant appending JSX to a 1,145-line component.
+- **A section is DATA.** `SECTIONS` in SettingsPanel.jsx: `{ id, label, description, keywords, icon,
+  visible(user), Component }`, in three groups (People / How the app works / Data & connections). Adding a
+  settings area is one entry plus a component — nothing else.
+- **The nav and the pane are built from the SAME `visible` predicate**, so they cannot disagree. The old
+  shape put the rule in the middle of the markup, where a heading could render with nothing under it. A
+  section a user can't see is unreachable by a stale `?section=` link or a remembered id too — the fallback
+  is the first section they *can* see (wide) or the index (compact), never a blank pane.
+- **Only the open section mounts**, so opening Settings no longer fires every section's queries at once.
+- **One pane at a time on a phone**, via `useCompactLayout` — index, tap, Back — the same rule as comms. On
+  a wide screen the rail sits beside the pane. Verified at 1024/1280/1440 and 360.
+- **`?tab=settings&section=<id>` deep-links a pane, and App.jsx reads it, not the shell.** App's deep-link
+  effect does `history.replaceState` to consume the query string, and a lazily-loaded module mounts *after*
+  that runs — so a module reading `window.location.search` itself always finds it already gone. It's read
+  once in App and passed down as `initialSection`. The last-opened section is remembered in
+  `localStorage.settings_section`.
+- The file split follows the same logic: `settings/UsersSection.jsx` (by far the largest, ~900 lines),
+  `settings/DataBackupSection.jsx`, `settings/ShareableLinksSection.jsx`. SettingsPanel.jsx is now ~120
+  lines of registry.
+- **Known, carried over from the old code:** `canBuildLogs` allows a non-admin with a `log-builder` edit
+  grant, but that branch cannot fire — Settings is admin-only at the *door* (both gear buttons test
+  `user.role === 'admin'`, and `settings` is in `ADMIN_ALWAYS`). The rule is kept because it's the right rule
+  for the section; making the grant usable is a decision about who gets into Settings at all.
