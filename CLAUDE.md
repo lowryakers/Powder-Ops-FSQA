@@ -1393,6 +1393,19 @@ finding one thing meant reading past six, and adding an area meant appending JSX
   `user.role === 'admin'`, and `settings` is in `ADMIN_ALWAYS`). The rule is kept because it's the right rule
   for the section; making the grant usable is a decision about who gets into Settings at all.
 
+### Module Access: 54 modules is a list, not a scroller
+`ModuleAccessEditor` (UsersSection.jsx) rendered all 54 modules one per row inside a `max-h-72` box — about
+five screens of scrolling to reach the last group, so setting one permission meant hunting for it.
+- **A column FLOW (`columns-1 md:columns-2 2xl:columns-3`), not a grid.** The groups are wildly different
+  lengths, and a grid would leave a short group's cell padded out to the height of the tallest one in its
+  row. A CSS column flow packs them, and `break-inside-avoid` on each group keeps its heading with its own
+  modules. The third column waits for `2xl` on purpose — at 1440 the settings pane is ~830px, and three
+  columns there wrap the module notes into eight-line ribbons.
+- **The filter is the fast path to one module**, matching label + id + note; a group with no match is dropped
+  entirely rather than left as an empty heading.
+- The editor is hidden altogether when someone has full access (`allAccess`), so **test it against a
+  partial-access user** — opening an admin shows the "Full access (all modules)" checkbox and nothing else.
+
 ## One tab strip for every module (`ModuleTabs.jsx` + `lib/useModuleTabs.js`)
 Nine modules had grown their own internal tab strip in **four different visual styles** — filled pills
 (Calibration, LOTO), underlines (Training, Retention), and two flavours of segmented control (Production Log,

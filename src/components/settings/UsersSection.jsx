@@ -148,6 +148,10 @@ function normalizeAccess(value) {
 // "leave this module alone" (absent from the map).
 function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
   const map = additive ? (value || {}) : normalizeAccess(value);
+  // 54 modules, one per row, in a 288px scroller was about five screens of
+  // scrolling to reach the bottom group. A filter is the fastest way to one
+  // module; the column flow below is what makes the whole list visible at once.
+  const [q, setQ] = useState('');
   const allAccess = !additive && map == null; // null = full access to everything
 
   const levelOf = (id) => {
@@ -193,6 +197,15 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
     onChange(isAllEdit ? null : base);
   };
 
+  // Filtering hides a group entirely once nothing in it matches, so the
+  // remaining columns stay short rather than leaving empty headings behind.
+  const needle = q.trim().toLowerCase();
+  const visibleGroups = needle
+    ? MODULE_GROUPS
+      .map(g => ({ ...g, modules: g.modules.filter(m => `${m.label} ${m.id} ${m.note || ''}`.toLowerCase().includes(needle)) }))
+      .filter(g => g.modules.length)
+    : MODULE_GROUPS;
+
   const LEVELS = additive ? [
     { value: 'keep', label: 'Keep' },
     { value: 'none', label: 'None' },
@@ -217,15 +230,26 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
         </div>
       )}
       {!allAccess && (
-        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-72 overflow-y-auto space-y-3">
-          <p className="text-[11px] text-gray-500">
-            {additive
-              ? <>Modules left on <strong>Keep</strong> are not changed for anyone. Set a module to None / View / Edit to apply just that change.</>
-              : <>Set each module to <strong>None</strong> (hidden), <strong>View</strong> (read-only), or <strong>Edit</strong>.</>}
-          </p>
-          {MODULE_GROUPS.map(group => (
-            <div key={group.label} className="space-y-1">
-              <div className="flex items-center justify-between">
+        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-[26rem] lg:max-h-[60vh] overflow-y-auto">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+            <p className="text-[11px] text-gray-500 max-w-lg">
+              {additive
+                ? <>Modules left on <strong>Keep</strong> are not changed for anyone. Set a module to None / View / Edit to apply just that change.</>
+                : <>Set each module to <strong>None</strong> (hidden), <strong>View</strong> (read-only), or <strong>Edit</strong>.</>}
+            </p>
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a module…"
+              className="px-2.5 py-1 border border-gray-300 rounded-lg text-xs w-44 bg-white" />
+          </div>
+          {visibleGroups.length === 0 && (
+            <p className="text-xs text-gray-400 py-4 text-center">No module matches “{q}”.</p>
+          )}
+          {/* A column FLOW rather than a grid: each group keeps its heading with
+              its own modules and the columns fill unevenly, which is right when
+              the groups are different lengths. */}
+          <div className="columns-1 md:columns-2 2xl:columns-3 gap-4 space-y-3">
+          {visibleGroups.map(group => (
+            <div key={group.label} className="space-y-1 break-inside-avoid mb-3">
+              <div className="flex items-baseline justify-between gap-2 flex-wrap">
                 <div className="text-[10px] font-bold uppercase text-gray-500">{group.label}</div>
                 {!disabled && (
                   <div className="flex items-center gap-1 text-[10px] text-gray-400">
@@ -259,6 +283,7 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
               })}
             </div>
           ))}
+          </div>
         </div>
       )}
     </div>
