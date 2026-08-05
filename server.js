@@ -44,6 +44,8 @@ import internalAuditRoutes from './server/api/internal-audits.js';
 import docReviewRoutes from './server/api/doc-review.js';
 import facilityRoutes from './server/api/facility.js';
 import retentionRoutes from './server/api/retention.js';
+import partnerRoutes from './server/api/partners.js';
+import partnerPortalRoutes from './server/api/partner-portal.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
@@ -899,12 +901,28 @@ try {
   console.error('[seed] Error seeding data (non-fatal):', err.message);
 }
 
+// M4 Dynamics: the contract formulator whose lab sits inside the plant, and the
+// only counterparty Powder Ops both buys from and sells to. Seeded once and
+// keyed on the table being empty — an edited contact or payment term is a
+// decision, and a redeploy must not undo it. The table is generic because a
+// second contract partner should cost one row, not a rewrite.
+function seedPartnerAccounts(db) {
+  if (db.prepare('SELECT COUNT(*) c FROM partner_accounts').get().c > 0) return 0;
+  db.prepare(`INSERT INTO partner_accounts (id, name, code, contact_name, terms_days, notes)
+    VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(uuid(), 'M4 Dynamics', 'M4', 'Matt Schramm', 30,
+      'Contract formulator; lab and office on site. Ingredients and flavours move both directions and each company runs production for the other, so the account is settled monthly by netting rather than paid invoice by invoice.');
+  console.log('[seed] Added M4 Dynamics as a reconciliation partner');
+  return 1;
+}
+
 // Seed production entries
 try {
   seedProductionEntries(db);
   seedEodTemplates(db);
   seedStructureLists(db);
   seedQualitySchedules(db);
+  seedPartnerAccounts(db);
 
   // Sticks + Hand Fill → Filling. Runs after every seed, because the historical
   // production seed still speaks the pre-merge team names on a fresh database.
@@ -1459,6 +1477,9 @@ app.use('/api/doc-review', docReviewRoutes);
 // Read-only: the map shows facts from records the caller can already see.
 app.use('/api/facility', facilityRoutes);
 app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRoutes);
+app.use('/api/partners', requireModuleWrite('partner-reconciliation'), partnerRoutes);
+// Public: token-scoped partner access, guarded inside the router.
+app.use('/api/partner-portal', partnerPortalRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);

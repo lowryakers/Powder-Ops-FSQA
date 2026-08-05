@@ -31,6 +31,10 @@ const PUBLIC_ROUTES = [
   { method: 'GET', path: '/users/lookup' },
   { method: 'POST', path: '/sms/inbound' },   // Twilio — signature-checked in the handler
   { prefix: '/submit/' },                     // public kiosk forms (QR codes)
+  // The partner reconciliation portal. Authenticated by a hashed token in the
+  // URL and scoped to one partner account inside the handler — read, upload and
+  // dispute only. See server/api/partner-portal.js for why that set is safe.
+  { prefix: '/partner-portal/' },
   { path: '/version' },
   { path: '/health' },
 ];

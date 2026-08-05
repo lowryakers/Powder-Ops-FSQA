@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Receipt, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Archive} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Archive} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -74,6 +74,8 @@ const NewsletterPanel = lazy(() => import('./components/office/NewsletterPanel.j
 const NewsletterReader = lazy(() => import('./components/office/NewsletterReader.jsx'));
 const ControlledChangesPanel = lazy(() => import('./components/compliance/ControlledChangesPanel.jsx'));
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
+const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
+const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
 
 const NAV_GROUPS = [
   {
@@ -185,8 +187,10 @@ const NAV_GROUPS = [
       { id: 'office-requests', label: 'Requests', icon: ShoppingCart },
       { id: 'supply-orders', label: 'Supply Orders', icon: ShoppingCart, adminOnly: true },
       { id: 'time-tracking', label: 'Time Tracking', icon: AlarmClock, adminOnly: true },
-      { id: 'accounts-payable', label: 'Accounts Payable', icon: Receipt, keywords: 'AP bills vendors invoices owed' },
-      { id: 'accounts-receivable', label: 'Accounts Receivable', icon: Landmark, keywords: 'AR customers invoices billed' },
+      // AP, AR and the trading-partner reconciliation are one place to go —
+      // they are the same job (money in, money out, what's owed) split only by
+      // which direction it points.
+      { id: 'accounting', label: 'Accounting', icon: Landmark, anyOf: ['accounts-payable', 'accounts-receivable', 'partner-reconciliation'], keywords: 'AP AR bills vendors customers invoices owed reconcile settlement M4 net' },
       { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
       { id: 'pay-tracking', label: 'Pay Tracking', icon: BadgeDollarSign, keywords: 'raise increase evaluation rubric wage rate salary review compensation' },
@@ -886,6 +890,15 @@ const HUB_TABS = {
     { id: 'maintenance-signout', label: 'Equipment, Tools & Chemicals', render: () => <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" /> },
     { id: 'knife-accountability', label: 'Knives & Blades', render: () => <KnifePanel /> },
   ],
+  // Money in, money out, and what's owed net between us and a trading partner.
+  // Reconciliation is a tab rather than its own module because it is read
+  // against the same ledgers — someone checking the M4 number wants the AP and
+  // AR rows a click away, not a screen away.
+  accounting: [
+    { id: 'accounts-payable', label: 'Accounts Payable', render: () => <LedgerPanel ledger="ap" /> },
+    { id: 'accounts-receivable', label: 'Accounts Receivable', render: () => <LedgerPanel ledger="ar" /> },
+    { id: 'partner-reconciliation', label: 'Partner Reconciliation', render: (u) => <PartnerReconPanel user={u} /> },
+  ],
   'quality-events': [
     { id: 'deviations', label: 'Deviations', render: () => <QMSRecordsPanel recordType="deviation" moduleId="deviations" /> },
     { id: 'non-conformance', label: 'Non-Conformance', render: () => <QMSRecordsPanel recordType="non_conformance" moduleId="non-conformance" /> },
@@ -913,7 +926,7 @@ function ModuleHub({ hubId, user, initialTab, badges }) {
   return (
     <div className="space-y-4">
       <ModuleTabs tabs={withBadges} value={active.id} onChange={setTab} hideWhenSingle={false} />
-      {active.render()}
+      {active.render(user)}
     </div>
   );
 }
@@ -1298,6 +1311,22 @@ function App() {
   // Flavor-approval magic link (texted to the approver) — public, token-gated.
   if (path.startsWith('/approve/')) {
     return <ApprovePage token={path.split('/')[2] || ''} />;
+  }
+
+  // A trading partner's own view of the shared ledger. Public and token-gated
+  // for the same reason as the flavor link: the person on the other end has no
+  // ReadyDoc account and shouldn't need one to see the number we're both
+  // settling against. Sits BEFORE the auth gate — a signed-in Powder Ops user
+  // opening the link should still see what the partner sees.
+  if (path.startsWith('/partner/')) {
+    return (
+      <ModuleBoundary>
+        <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">Loading…</div>}>
+          <PartnerPortalPage token={decodeURIComponent(path.split('/')[2] || '')} />
+        </Suspense>
+        <UpdateBanner />
+      </ModuleBoundary>
+    );
   }
 
   if (path === '/kiosk/components') {
@@ -1690,8 +1719,8 @@ function App() {
           {resolvedTab === 'office-requests' && <OfficeRequestsPanel />}
           {resolvedTab === 'qa-inspections' && <QAInspectionsPanel />}
           {resolvedTab === 'qa-review' && <QAReviewPanel />}
-          {resolvedTab === 'accounts-payable' && <LedgerPanel ledger="ap" />}
-          {resolvedTab === 'accounts-receivable' && <LedgerPanel ledger="ar" />}
+          {(resolvedTab === 'accounting' || HUB_OF[resolvedTab] === 'accounting') &&
+            <ModuleHub key={`acct-${resolvedTab}`} hubId="accounting" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'procurement' && <ProcurementPanel />}
           {resolvedTab === 'newsletter' && <NewsletterPanel />}
           {resolvedTab === 'pay-tracking' && <PayTrackingPanel />}

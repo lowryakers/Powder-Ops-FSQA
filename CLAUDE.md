@@ -1315,3 +1315,53 @@ itself always finds an empty string. `deepLink.js` captures the query string at 
 **`getParam` is pure; `consumeParam` runs in an effect.** React StrictMode deliberately double-invokes a
 `useState` initializer and keeps the SECOND result, so a destructive read during render gives the value to
 the throwaway call and `null` to the one that counts. That cost a working `?view=` link before it was caught.
+
+## Accounting: AP, AR and the M4 reconciliation (one number, both companies)
+Powder Ops and M4 Dynamics invoice each other constantly — flavours moving both ways, each running
+production for the other — and it had stalled because each company was adding up its own emails and getting
+a different answer. `accounting` is a **hub** (`HUB_TABS`, Office group) holding **Accounts Payable /
+Accounts Receivable / Partner Reconciliation**; the three are the same job split only by which way the money
+points, and someone checking the M4 number wants the AP and AR rows a click away, not a screen away.
+The module grant is `partner-reconciliation`; AP and AR keep their own.
+
+**`server/partner-recon.js` is the whole arithmetic and is a PURE function** — rows in, numbers out, no
+Express, no writes. The number both companies have to trust should be checkable without standing up a
+server, and the client never re-adds anything: a second opinion computed in the browser is the original
+problem in a new place.
+- **One ledger, both directions.** `partner_documents.direction` (receivable = they owe us, payable = we owe
+  them) says who owes; two tables is exactly how two companies end up reconciling from different books.
+- **A credit is a positive amount with a type**, not a negative amount — "how much was that credit" stays
+  answerable without reading a minus sign. `signedAmount()` applies the −1.
+- **Nothing counts until it is FINAL.** A document is draft until the work behind it happened (goods went
+  out, the run finished). Approving as final is what lets it into the number, and it is office/admin only.
+- **A dispute EXCLUDES rather than blocks.** One disagreement must not stop the other eleven settling — the
+  row drops out and is named in the report with its reason. That is the mechanism that prevents the standoff.
+- **Net 30 decides INCLUSION, and the simplified view does not nullify it.** An invoice raised on the 28th
+  isn't owed at month end; it sits out, lands next period, and the report says so by name (`not_due`).
+- **`classify()` is the single place eligibility is decided**, so the total and the "not in this number"
+  report can never tell different stories about the same row. Every exclusion carries a plain-English reason
+  (`EXCLUSION`), which is the report the user asked for: how we got to Z and what wasn't in it.
+- **A settlement is immutable.** Paying stamps the exact set of documents into `partner_settlements`;
+  without that, next month's figure can't be trusted and "what did we settle in July" has no answer. A
+  settled document refuses edit and delete.
+- **The settle total is recomputed server-side and `expected_net` mismatches 409.** If someone finalised
+  another invoice while the screen was open the number moved, and paying against a stale figure is exactly
+  the failure this tool exists to prevent.
+
+**The partner portal** (`server/api/partner-portal.js`, `/partner/<token>`, `PartnerPortalPage.jsx`) is
+public and token-gated like the flavor-approval magic link — the person at M4 has no ReadyDoc account and
+shouldn't need one to see the number we're both settling against. The surface is deliberately narrow: read
+the ledger, upload their own invoices/POs (which land as **draft**, `source = 'partner-portal'`, so a
+partner can never put money into a settlement on their own), and raise a dispute (which can only ever remove
+money). **Approving as final, voiding, settling and creating links simply have no endpoint there.**
+Tokens are stored as a SHA-256 hash and the clear text is returned exactly once; revoking is immediate.
+- **`owed_to` on the portal names who is OWED, same meaning as internally, translated to their side**
+  (`us` → `powder-ops`, `them` → `you`). The first cut had it inverted, which showed M4 as being paid in a
+  month they owed us — caught by the end-to-end test, and the reason that test asserts both directions.
+- `net_amount` flips sign so it reads as `you_are_owed − you_owe`; the settlement history keeps the raw
+  internal `owed_to` and is worded per row.
+
+Uploaded files go to R2 through the shared `server/media.js` + `invoice-text.js` path, so a search finds a
+lot number printed **inside** the PDF (`extracted_text` is searched, never shipped to the client).
+Verified end to end on a fresh DB: 35 assertions covering the arithmetic, Net-30 exclusion, the 403s, the
+409 on a stale balance, settlement immutability, and every portal boundary.

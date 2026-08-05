@@ -1158,6 +1158,118 @@ function initSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_retention_samples_external ON retention_samples(external_id)
       WHERE external_id IS NOT NULL;
 
+    -- ── Partner reconciliation (Powder Ops ⇄ M4 Dynamics) ───────────────────
+    -- Two companies that invoice each other constantly and had ground to a halt
+    -- because each was reconciling from its own emails. The whole design goal is
+    -- X − Y = Z: one number, at the end of the month, that both sides can see
+    -- was derived the same way.
+    --
+    -- FOUR RULES THIS SCHEMA EXISTS TO ENFORCE:
+    --
+    --  1. ONE LEDGER, BOTH DIRECTIONS. The direction column says who owes, not which
+    --     table a row lives in. Two tables is exactly how two companies end up
+    --     reconciling from different books, which is the problem being solved.
+    --  2. NOTHING COUNTS UNTIL IT IS FINAL. A document is draft until the work
+    --     behind it is actually done — goods delivered, or production finished.
+    --     Only final documents reach the net.
+    --  3. EITHER SIDE CAN DISPUTE, AND A DISPUTE EXCLUDES RATHER THAN BLOCKS.
+    --     A disagreement over one invoice must not stop the other eleven from
+    --     settling; the disputed row drops out of the number and is named in the
+    --     report. That is the mechanism that prevents the standoff.
+    --  4. A SETTLEMENT IS IMMUTABLE. Paying stamps the exact set of documents
+    --     that made up that number. Without it, next month's figure cannot be
+    --     trusted and "what did we settle in July" has no answer.
+    CREATE TABLE IF NOT EXISTS partner_accounts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      code TEXT,
+      contact_name TEXT,
+      contact_email TEXT,
+      -- Net terms per partner and per direction: the two companies need not
+      -- have agreed the same terms with each other.
+      terms_days INTEGER NOT NULL DEFAULT 30,
+      notes TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS partner_documents (
+      id TEXT PRIMARY KEY,
+      partner_id TEXT NOT NULL,
+      -- receivable = they owe us (we issued it) · payable = we owe them
+      direction TEXT NOT NULL CHECK (direction IN ('receivable', 'payable')),
+      doc_type TEXT NOT NULL DEFAULT 'invoice' CHECK (doc_type IN ('invoice', 'po', 'credit')),
+      doc_number TEXT,
+      reference TEXT,
+      description TEXT,
+      issued_date TEXT,
+      terms_days INTEGER,
+      due_date TEXT,
+      amount REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'final', 'disputed', 'void')),
+      finalized_at TEXT,
+      finalized_by TEXT,
+      disputed_reason TEXT,
+      disputed_at TEXT,
+      disputed_by TEXT,
+      settlement_id TEXT,
+      -- The uploaded PO or invoice, and its text so a search finds a lot number
+      -- printed inside the PDF rather than only what someone keyed in.
+      storage_key TEXT,
+      filename TEXT,
+      content_type TEXT,
+      size INTEGER,
+      extracted_text TEXT,
+      source TEXT NOT NULL DEFAULT 'internal',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      updated_at TEXT,
+      updated_by TEXT,
+      FOREIGN KEY (partner_id) REFERENCES partner_accounts(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_partner_docs_partner ON partner_documents(partner_id, status);
+    CREATE INDEX IF NOT EXISTS idx_partner_docs_due ON partner_documents(due_date);
+    CREATE INDEX IF NOT EXISTS idx_partner_docs_settlement ON partner_documents(settlement_id);
+
+    CREATE TABLE IF NOT EXISTS partner_settlements (
+      id TEXT PRIMARY KEY,
+      partner_id TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      receivable_total REAL NOT NULL DEFAULT 0,
+      payable_total REAL NOT NULL DEFAULT 0,
+      net_amount REAL NOT NULL DEFAULT 0,
+      -- Who pays whom, recorded rather than re-derived from the sign later.
+      owed_to TEXT CHECK (owed_to IN ('us', 'them', 'nobody')),
+      document_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'paid')),
+      paid_at TEXT,
+      paid_by TEXT,
+      payment_reference TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      FOREIGN KEY (partner_id) REFERENCES partner_accounts(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_partner_settlements ON partner_settlements(partner_id, period_end DESC);
+
+    -- A scoped link the partner uses to see the same ledger and upload their
+    -- own paperwork. Read + upload only — approving, disputing and settling stay
+    -- with whoever owns the account. Hashed like a session token, never stored
+    -- in the clear.
+    CREATE TABLE IF NOT EXISTS partner_portal_tokens (
+      id TEXT PRIMARY KEY,
+      partner_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      label TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      expires_at TEXT,
+      revoked_at TEXT,
+      last_used_at TEXT,
+      FOREIGN KEY (partner_id) REFERENCES partner_accounts(id)
+    );
+
     CREATE TABLE IF NOT EXISTS facility_room_overrides (
       room_id TEXT PRIMARY KEY,
       label TEXT,
