@@ -212,6 +212,16 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
               {task.location && <span className="text-gray-400"> &middot; {task.location}</span>}
             </p>
 
+            {/* What was actually asked for. A task raised from a chat message
+                keeps the original wording as its description, and the title is
+                only a summary of it — showing the title alone left the operator
+                reading half a sentence with no way to see the rest. */}
+            {task.description && (
+              <p className="text-sm text-gray-700 mt-1.5 whitespace-pre-wrap break-words">
+                {tc(task.description)}
+              </p>
+            )}
+
             {/* Meta row: badges + due */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               {task.issue_flagged === 1 && (

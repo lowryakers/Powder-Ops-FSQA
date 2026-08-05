@@ -758,6 +758,51 @@ router.post('/schedule/bulk-move', (req, res) => {
   res.json({ success: true, moved: moved.length, assignments: moved });
 });
 
+// POST /schedule/reorder — set the run order within ONE cell.
+//
+// A room running four MOs on a Thursday has always been four rows in one cell;
+// `slot` decided their order and nothing let anyone choose it. This is Adam
+// ranking the day's work: the order of `ids` becomes slot 0..n-1, and the top
+// line is what gets run first.
+//
+// Deliberately one cell at a time. bulk-move already crosses days, weeks and
+// rooms; letting a reorder do that too would make an accidental drag capable of
+// rescheduling work rather than just resequencing it — so a request whose rows
+// don't all share a week, day and room is refused rather than half-applied.
+router.post('/schedule/reorder', (req, res) => {
+  const db = getDb();
+  const { ids, updated_by } = req.body;
+  if (!Array.isArray(ids) || ids.length < 2) {
+    return res.status(400).json({ error: 'ids must be an array of at least two assignments' });
+  }
+
+  const rows = ids.map(id => db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(id));
+  if (rows.some(r => !r)) return res.status(404).json({ error: 'One or more assignments no longer exist' });
+
+  const cellOf = (r) => `${r.week_start}|${r.day_of_week}|${r.room}`;
+  const cell = cellOf(rows[0]);
+  if (rows.some(r => cellOf(r) !== cell)) {
+    return res.status(400).json({ error: 'Reordering applies within one room on one day. Use move to change the day or room.' });
+  }
+
+  const update = db.prepare("UPDATE production_schedule SET slot = ?, updated_by = ?, updated_at = datetime('now') WHERE id = ?");
+  const tx = db.transaction(() => {
+    rows.forEach((row, i) => update.run(i, updated_by || null, row.id));
+  });
+  tx();
+
+  const after = ids.map(id => db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(id));
+  // One audit row for the whole resequence — the interesting fact is the new
+  // order, not n separate slot changes.
+  logAudit(updated_by || 'system', 'update', 'production_schedule', rows[0].id, {
+    reorder: true,
+    cell: { week: rows[0].week_start, day: rows[0].day_of_week, room: rows[0].room },
+    order: after.map(r => r.mo_number || r.product_name || r.team).filter(Boolean),
+  }, null, null, rows[0].room);
+
+  res.json({ success: true, assignments: after });
+});
+
 // DELETE /schedule/:id — delete a schedule assignment
 router.delete('/schedule/:id', (req, res) => {
   const db = getDb();

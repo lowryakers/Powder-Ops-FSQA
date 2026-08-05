@@ -828,7 +828,10 @@ router.get('/operator-tasks', (req, res) => {
   const canViewAll = req.user?.role === 'admin';
   const group = canViewAll ? req.query.group : (req.user?.department || 'warehouse');
 
-  let sql = `SELECT wo.id, wo.title, wo.status, wo.priority, wo.due_date, wo.assigned_to,
+  // `description` carries the original wording of a task raised from a chat
+  // message. Without it the operator sees only the summarised title — half a
+  // sentence, with the instruction it summarises nowhere on the screen.
+  let sql = `SELECT wo.id, wo.title, wo.description, wo.status, wo.priority, wo.due_date, wo.assigned_to,
     wo.procedure_steps, wo.pm_schedule_id, wo.task_group,
     wo.issue_flagged, wo.issue_notes, wo.issue_attachments, wo.issue_flagged_by, wo.issue_flagged_at,
     e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id,

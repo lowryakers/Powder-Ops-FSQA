@@ -450,15 +450,28 @@ function MessageToTaskModal({ draft, channel, users, onCancel, onJustSend, onCre
   // Tomorrow by default — today is usually already spoken for.
   const [due, setDue] = useState(() => new Date(Date.now() + 86400000).toISOString().slice(0, 10));
   const [priority, setPriority] = useState('normal');
+  // What finished looks like. One extra optional field, not five — the reason
+  // these tasks arrive thin is that the supervisor is mid-conversation, and
+  // every required box is a reason to hit "Just send it" instead.
+  const [doneWhen, setDoneWhen] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // The suggested title is a trimmed first sentence, so on a long message it
+  // ends in an ellipsis. Say so rather than letting it ship as the task name.
+  const titleIsTruncated = title.trim().endsWith('…');
 
   const create = async () => {
     if (!title.trim()) { setError('A title is required.'); return; }
     setSaving(true); setError('');
     try {
+      // The original message stays the description verbatim; the acceptance
+      // note is appended so the assignee reads the ask and the bar together.
+      const description = doneWhen.trim()
+        ? `${draft}\n\nDone when: ${doneWhen.trim()}`
+        : draft;
       await apiPost(`/comms/channels/${channel.id}/to-task`, {
-        title: title.trim(), description: draft, task_group: team,
+        title: title.trim(), description, task_group: team,
         assigned_to: assignee.trim() || null, due_date: due, priority,
       });
       // /comms/ writes are excluded from the automatic badge refresh (chat
@@ -487,8 +500,25 @@ function MessageToTaskModal({ draft, channel, users, onCancel, onJustSend, onCre
         </blockquote>
 
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Task</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">
+            Task <span className="font-normal text-gray-400">— what needs doing, in a few words</span>
+          </label>
           <input value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. Close out MO76721 and report the total"
+            className={`w-full px-3 py-2 border rounded-lg text-sm ${titleIsTruncated ? 'border-amber-300 bg-amber-50/40' : 'border-gray-300'}`} />
+          {titleIsTruncated && (
+            <p className="text-[11px] text-amber-700 mt-1">
+              This is the start of the message, cut short. Give it a real name — it&apos;s the line the
+              assignee sees on their task list.
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">
+            Done when <span className="font-normal text-gray-400">(optional)</span>
+          </label>
+          <input value={doneWhen} onChange={e => setDoneWhen(e.target.value)}
+            placeholder="how they'll know it's finished"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
         <div className="grid grid-cols-2 gap-3">

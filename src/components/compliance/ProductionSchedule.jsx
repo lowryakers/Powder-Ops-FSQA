@@ -1044,6 +1044,8 @@ export default function ProductionSchedule({ user }) {
   });
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverKey, setDragOverKey] = useState(null);
+  // Which line the pointer is over, so a same-cell drag shows where it will land.
+  const [dragOverEntry, setDragOverEntry] = useState(null);
   const [downstreamFor, setDownstreamFor] = useState(null); // { product_name, mo_number, batchDay }
 
   // Select-multiple → move as a batch. Drag & drop still works one at a time;
@@ -1210,6 +1212,25 @@ export default function ProductionSchedule({ user }) {
     }
   }, [refresh, user]);
 
+  // Dropping one line onto another in the SAME cell resequences the day rather
+  // than moving anything. Top of the cell is what gets run first, which is the
+  // whole point — a supervisor ranking four MOs shouldn't have to retype them.
+  const handleReorder = useCallback(async (dragId, targetId, dayIndex, room) => {
+    if (!dragId || dragId === targetId) return;
+    const entries = (assignmentMap[`${dayIndex}-${room}`] || []).filter(a => a.team || a.mo_number || a.product_name);
+    const ids = entries.map(a => a.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    try {
+      await apiPost('/production/schedule/reorder', { ids, updated_by: user?.name || '' });
+      refresh();
+    } catch (err) {
+      console.error('Failed to reorder the day:', err);
+    }
+  }, [assignmentMap, refresh, user]);
+
   const exitSelectMode = useCallback(() => {
     setSelectMode(false);
     setSelectedIds(new Set());
@@ -1281,7 +1302,7 @@ export default function ProductionSchedule({ user }) {
       return (
         <td key={dayIndex} className={`border border-gray-200 px-2 py-1.5 ${cellTint} ${dropHighlight}`} {...dropProps(dayIndex, room, roomType)}>
           <div className="space-y-1">
-            {entries.map(a => {
+            {entries.map((a, idx) => {
               const color = TEAM_COLORS[a.team] || '#64748b';
               const picked = selectedIds.has(a.id);
               return (
@@ -1293,18 +1314,42 @@ export default function ProductionSchedule({ user }) {
                   e.dataTransfer.effectAllowed = 'move';
                   setDraggingId(a.id);
                 } : undefined}
-                onDragEnd={() => { setDraggingId(null); setDragOverKey(null); }}
-                className={`group/entry relative flex items-start gap-1 text-xs leading-tight rounded-md pl-2 pr-1 py-1 bg-white border shadow-sm transition-colors ${picked ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200/80'} ${canEdit ? (selectMode ? 'cursor-pointer hover:border-blue-300' : 'cursor-grab active:cursor-grabbing hover:border-gray-300 hover:bg-gray-50') : ''} ${draggingId === a.id ? 'opacity-40' : ''}`}
+                onDragEnd={() => { setDraggingId(null); setDragOverKey(null); setDragOverEntry(null); }}
+                onDragOver={canEdit && !selectMode && draggingId && draggingId !== a.id ? (e) => {
+                  // Only a same-cell drag is a reorder; anything else is a move
+                  // and belongs to the cell's own drop handler.
+                  if (!entries.some(x => x.id === draggingId)) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (dragOverEntry !== a.id) setDragOverEntry(a.id);
+                } : undefined}
+                onDragLeave={() => { if (dragOverEntry === a.id) setDragOverEntry(null); }}
+                onDrop={canEdit && !selectMode ? (e) => {
+                  const id = e.dataTransfer.getData('text/plain') || draggingId;
+                  if (!id || !entries.some(x => x.id === id)) return; // cross-cell → let the cell handle it
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDragOverEntry(null); setDragOverKey(null); setDraggingId(null);
+                  handleReorder(id, a.id, dayIndex, room);
+                } : undefined}
+                className={`group/entry relative flex items-start gap-1 text-xs leading-tight rounded-md pl-2 pr-1 py-1 bg-white border shadow-sm transition-colors ${picked ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200/80'} ${canEdit ? (selectMode ? 'cursor-pointer hover:border-blue-300' : 'cursor-grab active:cursor-grabbing hover:border-gray-300 hover:bg-gray-50') : ''} ${draggingId === a.id ? 'opacity-40' : ''} ${dragOverEntry === a.id ? 'border-t-2 border-t-blue-500' : ''}`}
                 style={{ borderLeft: `3px solid ${color}` }}
                 onClick={canEdit
                   ? () => (selectMode ? toggleSelected(a.id) : setEditCell({ dayIndex, room, roomType, slot: a.slot || 0, data: a }))
                   : undefined}
-                title={canEdit ? (selectMode ? 'Click to select' : 'Drag to move · click to edit') : undefined}
+                title={canEdit ? (selectMode ? 'Click to select'
+                  : entries.length > 1 ? 'Drag onto another line to re-rank the day · drag to another cell to move · click to edit'
+                    : 'Drag to move · click to edit') : undefined}
               >
                 {canEdit && selectMode && (
                   picked
                     ? <CheckSquare size={12} className="text-blue-600 mt-0.5 shrink-0" />
                     : <Square size={12} className="text-gray-300 mt-0.5 shrink-0" />
+                )}
+                {entries.length > 1 && (
+                  <span className="mt-0.5 shrink-0 w-4 h-4 rounded-full bg-gray-100 text-gray-600 text-[9px] font-bold flex items-center justify-center"
+                    title={`Run order ${idx + 1} of ${entries.length}`}>{idx + 1}</span>
                 )}
                 {canEdit && !selectMode && <GripVertical size={11} className="text-gray-300 mt-0.5 shrink-0 opacity-0 group-hover/entry:opacity-100" />}
                 <div className="space-y-0.5 min-w-0 flex-1">
