@@ -1630,6 +1630,21 @@ exports: 164 accounts, 370 vendors, 31 customers, 736 bills, 160 invoices.
   and 160 invoices of history back to 2022. One bill is dated **09/22/2002** (Canyon Overhead Doors,
   $1,244.75) — almost certainly a 2022 typo in QuickBooks, imported verbatim rather than silently corrected.
 
+## What the Journal actually says (the stage-3 sizing answer)
+Counted from their real Journal export, all dates — the question was whether replacing the general ledger is
+a reporting exercise or a real accounting project. **It is neither of the things we guessed.**
+- **592 journal entries since 2022, and 540 of them are MRPEasy.** The `Num` column reads
+  `mrp202409132203`; the descriptions are "Received purchase orders", "Finished manufacturing orders",
+  "Work in Progress", "Applied overhead cost", "Shipped goods". MRPEasy posts inventory/WIP/COGS into
+  QuickBooks automatically, and started doing so in 2024 (1 entry in 2022, 2 in 2023, then 228 / 265 / 96).
+- **The genuine accountant judgement is 52 entries over four years** (~13/yr): year-end depreciation, the
+  intercompany reclasses to Prodough and Matt, the monthly payroll journal, and a handful of corrections.
+- Trial balance ties at **$11,806,803** debit = credit.
+- **So the blocker on stage 3 is NOT the accountant — it is MRPEasy.** Anything replacing QuickBooks has to
+  receive those postings or reproduce that inventory accounting. That is an integration question, and it is
+  the one to answer before promising a GL. (Note `receiving_log.part_in_mrp` / `received_in_mrp` already
+  exist — MRPEasy is upstream of Receiving too.)
+
 ## The Batching EOD, rebuilt around what Bernardo actually writes down
 He was keeping the shift in his phone's Notes and then re-typing a lossy summary into ReadyDoc — the
 clearest possible signal the form wasn't asking for what he records. His notes look like:
