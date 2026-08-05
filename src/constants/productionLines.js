@@ -25,6 +25,12 @@ export const lineLabel = (v) => LINE_LABELS[v] || '';
 // spelled out in a dozen components.
 export const FILLING_TEAM = 'Filling';
 
+// Who files a production entry. The log, the schedule and the day log all offer
+// this list, and three copies of it is how one of them ends up missing a team.
+export const PRODUCTION_TEAMS = [
+  'Batching', 'Filling', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other',
+];
+
 // Old team name → the line tag it becomes. Used by the migration and by any
 // import that still speaks the pre-merge vocabulary (e.g. a schedule sheet
 // exported before the change).

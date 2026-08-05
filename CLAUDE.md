@@ -244,6 +244,38 @@ change in the audit trail, scalars re-mirrored). **One QA sign-off per entry = t
 `normalizeMoLines()` in production.js is the single normalizer (drops blank lines, coerces numbers).
 Per-MO fields (batches/weights) therefore left the EOD template — it's shift-level only now.
 
+## "My Day": the running day log Bernardo was keeping in his Notes app
+The entry form is one all-at-once submission and a shift is not one moment, so he logged the day in his
+phone and re-typed a lossy summary at 5pm. `production_day_logs` + `production_day_items` (db.js),
+day-log routes in api/production.js, `ProductionDayLog.jsx` as the **My Day** tab of the Production Log
+(same `canEod` right as the entry form — the tab exists to produce one).
+- **Separate tables, NOT a status column on `production_entries`.** A draft living in the entries table
+  would need `AND status = 'filed'` on every existing query — the KPIs, QA sign-off, missed-report matching,
+  COA, the compliance badges — and missing one leaks an unfinished shift into a compliance record. A day log
+  never appears in the log, never counts toward sign-off, never touches a KPI.
+- **Every add saves server-side immediately.** Not localStorage: he logs on the floor phone and finalises at
+  a desk, and eight hours lost to a cleared browser is what sends someone back to Notes.
+  `POST /day-log` is **get-or-create** (unique partial index on `person+log_date+team WHERE status='open'`),
+  so opening the tab twice, or on a second device, lands on the same day.
+- **Four kinds of line** — clean / MO run / adjustment / note — each normalized by the SAME function the
+  filed entry uses (`normalizeCleaningEvents`, `normalizeMoLines`), so a line accepted at 9am cannot be
+  rejected at filing. `note` is the escape hatch that stops the structured kinds having to cover everything.
+  A clean can name one MO, which is how "different cleans for that specific MO" is recorded.
+- **`PUT /day-log/:id` validates nothing.** A form that refuses a half-filled field mid-shift is a form he
+  stops using; validation belongs at filing.
+- **`dayLogToEntry()` is a pure preview that writes nothing** — Create EOD Report opens the entry form
+  pre-filled for review (`initial` + `dayLogId` props, remounted on the log id). The shift window defaults to
+  the earliest and latest times actually logged. **`POST /day-log/:id/filed` is called by the CLIENT only
+  after the entry POST succeeds**, so a failed submission never closes the day and loses the logging.
+- A filed day refuses new lines and refuses deletion — it is the record of how its entry was built. An
+  unfiled one can be discarded (audited). Days left open from earlier are named in an amber strip, not
+  hidden: an unfinished shift is either a report nobody filed or a log somebody meant to drop.
+- **Quantity inputs carry `step="any"`.** A bare `type="number"` defaults to `step=1` and silently refuses
+  687.8 kg — the browser blocks the submit with a tooltip that reads as the app being broken. Batches and
+  headcount are whole and stay at the default.
+- `PRODUCTION_TEAMS` moved to `constants/productionLines.js`; the log, the schedule and the day log had
+  three copies of that array.
+
 ## Self-serve structure: managed lists + custom fields (the "Airtable" ask)
 Adding a field to a log or an option to a dropdown is a Settings task, not a deploy.
 - **Schema:** `app_lists` + `app_list_options` (managed dropdowns), `custom_field_defs` (per-scope field

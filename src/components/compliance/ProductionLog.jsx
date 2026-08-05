@@ -1,16 +1,16 @@
 import { useState, useMemo, Fragment } from 'react';
-import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2, Pencil } from 'lucide-react';
+import { useApiGet, apiFetch, apiPost, apiPut } from '../../hooks/useApi';
+import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2, Pencil, NotebookPen } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { hasExplicitGrant } from '../../utils/permissions';
-import { PRODUCTION_LINES, lineLabel, FILLING_TEAM } from '../../constants/productionLines';
+import { PRODUCTION_LINES, lineLabel, FILLING_TEAM, PRODUCTION_TEAMS as TEAMS } from '../../constants/productionLines';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
+import ProductionDayLog from './ProductionDayLog.jsx';
 
-const TEAMS = ['Batching', 'Filling', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const ROOMS = ['Batching 1', 'Batching 2', ...Array.from({ length: 16 }, (_, i) => String(i)), 'Other'];
 
 function formatDate(d) {
@@ -150,7 +150,7 @@ function MoLinesField({ lines, setLines }) {
             </div>
             <div>
               <label className="block text-[11px] text-gray-600 mb-0.5">Quantity (optional)</label>
-              <input type="number" min="0" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} className={cls}
+              <input type="number" min="0" step="any" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} className={cls}
                 placeholder={l.is_adjustment ? 'not counted' : '0'} disabled={l.is_adjustment} />
             </div>
             <div className="sm:col-span-2">
@@ -369,22 +369,40 @@ function EodSummary({ template, data }) {
 
 /* ── Entry Form ──────────────────────────────────────────── */
 
-function EntryForm({ user, onSuccess }) {
-  const [form, setForm] = useState({ ...INITIAL_FORM });
+// Turning a day log's preview back into the form's own shapes. The server
+// normalizes numbers; the inputs are controlled and want strings, so a number
+// goes back to text here rather than rendering as `0` in an empty box.
+const s = (v) => (v === null || v === undefined ? '' : String(v));
+function hydrateLines(lines) {
+  const out = (lines || []).map(l => ({ ...blankMoLine(), ...l, batches: s(l.batches), quantity: s(l.quantity) }));
+  return out.length ? out : [blankMoLine()];
+}
+
+/**
+ * @param initial   a day log's preview payload — the form opens pre-filled for
+ *                  review instead of blank. The day log is a working note; this
+ *                  is where it becomes a record, so a person looks at it first.
+ * @param dayLogId  the log it came from, closed only AFTER the entry is filed.
+ */
+function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
+  const [form, setForm] = useState(() => ({
+    ...INITIAL_FORM,
+    ...(initial ? { ...initial, quantity_completed: s(initial.quantity_completed), people_count: s(initial.people_count) } : {}),
+  }));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   // Per-team EOD templates: the extra structured survey a team fills in beyond
   // the shared fields. `structured` holds this entry's answers.
   const { data: templates } = useApiGet('/production/eod-templates');
-  const [structured, setStructured] = useState({});
+  const [structured, setStructured] = useState(() => initial?.structured_data || {});
   const template = templates?.[form.team] || null;
   // Multi-MO teams (Batching) record a line per order instead of one MO.
   const multiMo = usesMoLines(form.team);
-  const [moLines, setMoLines] = useState([blankMoLine()]);
+  const [moLines, setMoLines] = useState(() => hydrateLines(initial?.mo_lines));
   // Cleans are logged wherever MO lines are — the same teams that run several
   // orders a shift are the ones cleaning between them. Extending it to another
   // team is one entry in usesMoLines.
-  const [cleans, setCleans] = useState([]);
+  const [cleans, setCleans] = useState(() => initial?.cleaning_events || []);
 
   const set = (key, val) => setForm(prev => ({
     ...prev,
@@ -423,10 +441,18 @@ function EntryForm({ user, onSuccess }) {
       } else {
         payload.quantity_completed = Number(form.quantity_completed);
       }
-      await apiPost('/production/entries', payload);
+      const created = await apiPost('/production/entries', payload);
+      // Close the day log only once its entry exists. Doing it first would lose
+      // a shift's worth of logging to a failed submission.
+      if (dayLogId) {
+        try { await apiPost(`/production/day-log/${dayLogId}/filed`, { entry_id: created?.id }); }
+        catch { /* the entry is filed; a stale open day is visible and fixable */ }
+      }
       setMessage({ type: 'success', text: 'Entry submitted successfully.' });
       setForm({ ...INITIAL_FORM, date: todayStr() });
       setStructured({});
+      setMoLines([blankMoLine()]);
+      setCleans([]);
       onSuccess?.();
       setTimeout(() => setMessage(null), 3000);
     } catch (err) {
@@ -441,6 +467,23 @@ function EntryForm({ user, onSuccess }) {
       <h3 className="font-semibold text-gray-900 flex items-center gap-2">
         <Plus size={16} /> New Production Entry
       </h3>
+
+      {/* Arriving from the day log. The times, MOs and cleans below are what was
+          logged through the shift — this screen is the review, and nothing is
+          filed until Submit. */}
+      {dayLogId && (
+        <div className="rounded-lg border border-powder-200 bg-powder-50 px-3 py-2 flex items-start justify-between gap-3 flex-wrap">
+          <p className="text-xs text-powder-900">
+            <span className="font-semibold">Built from your day log{initial?.date ? ` for ${initial.date}` : ''}.</span>{' '}
+            Check it over and change anything — nothing is filed until you submit.
+          </p>
+          {onBackToDay && (
+            <button type="button" onClick={onBackToDay} className="text-xs font-medium text-powder-700 underline shrink-0">
+              Back to the day log
+            </button>
+          )}
+        </div>
+      )}
 
       {message && (
         <div className={`px-3 py-2 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
@@ -514,7 +557,7 @@ function EntryForm({ user, onSuccess }) {
         {!multiMo && (
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Quantity Completed *</label>
-            <input required type="number" min="0" value={form.quantity_completed} onChange={e => set('quantity_completed', e.target.value)}
+            <input required type="number" min="0" step="any" value={form.quantity_completed} onChange={e => set('quantity_completed', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="0" />
           </div>
         )}
@@ -1588,6 +1631,19 @@ function TemplateEditor() {
 export default function ProductionLog({ user, directEntry }) {
   const [tab, setTab] = useState('log');
   const [refreshKey, setRefreshKey] = useState(0);
+  // The day log being turned into a report: { id, initial }. Held here rather
+  // than in EntryForm so leaving the tab and coming back doesn't lose it.
+  const [fromDay, setFromDay] = useState(null);
+
+  const openReport = async (log) => {
+    try {
+      const initial = await apiFetch(`/production/day-log/${log.id}/preview`);
+      setFromDay({ id: log.id, initial });
+      setTab('form');
+    } catch (err) {
+      window.alert(err.message || 'Could not build the report.');
+    }
+  };
 
   if (directEntry) {
     return <EntryForm user={user} onSuccess={() => setRefreshKey(k => k + 1)} />;
@@ -1605,7 +1661,12 @@ export default function ProductionLog({ user, directEntry }) {
     || !!(ma && !Array.isArray(ma) && ma['production-log'] === 'edit');
   const tabs = [
     { id: 'log', label: 'Production Log', icon: ClipboardList },
-    ...(canEod ? [{ id: 'form', label: 'Entry Form', icon: Plus }] : []),
+    // My Day sits beside the entry form and needs the same right: it exists to
+    // produce one.
+    ...(canEod ? [
+      { id: 'day', label: 'My Day', icon: NotebookPen },
+      { id: 'form', label: 'Entry Form', icon: Plus },
+    ] : []),
     ...(canEditTemplates ? [{ id: 'templates', label: 'EOD Templates', icon: Pencil }] : []),
   ];
 
@@ -1614,8 +1675,20 @@ export default function ProductionLog({ user, directEntry }) {
       <ModuleTabs tabs={tabs} value={tab} onChange={setTab} />
 
       {/* Tab Content */}
+      {tab === 'day' && (
+        <ProductionDayLog rooms={ROOMS} onCreateReport={openReport}
+          defaultTeam={usesMoLines(user?.department) ? user.department : 'Batching'} />
+      )}
       {tab === 'form' && (
-        <EntryForm user={user} onSuccess={() => { setRefreshKey(k => k + 1); setTab('log'); }} />
+        <EntryForm
+          // Remounting on the source log is what lets the form seed itself from
+          // the preview; without the key it would keep the previous day's state.
+          key={fromDay?.id || 'blank'}
+          user={user}
+          initial={fromDay?.initial}
+          dayLogId={fromDay?.id}
+          onBackToDay={fromDay ? () => setTab('day') : undefined}
+          onSuccess={() => { setFromDay(null); setRefreshKey(k => k + 1); setTab('log'); }} />
       )}
       {tab === 'log' && (
         <LogTable key={refreshKey} user={user} />

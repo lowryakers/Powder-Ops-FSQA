@@ -4,11 +4,11 @@ import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Chec
 import DiscussLink from '../DiscussLink.jsx';
 import { useDragPager } from '../../lib/useDragPager';
 import ScheduleProgressPanel from './ScheduleProgressPanel.jsx';
+import { PRODUCTION_TEAMS as TEAMS } from '../../constants/productionLines';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
-const TEAMS = ['Batching', 'Filling', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const CLEANING_LEVELS = ['N/A', 'Partial', 'Full Clean'];
 
 const TEAM_COLORS = {

@@ -1441,6 +1441,65 @@ function initSchema() {
       created_by TEXT
     );
 
+    -- The running day log — what somebody is doing RIGHT NOW, before it becomes
+    -- an EOD report.
+    --
+    -- Bernardo was keeping his day in his phone's Notes and re-typing it here
+    -- at 5pm, because the entry form is a single all-at-once submission and a
+    -- shift is not a single moment. This is the missing half: add a line when
+    -- the thing happens, walk away, come back, and file the report from it.
+    --
+    -- IT IS A SEPARATE TABLE, NOT A STATUS ON production_entries, and that is
+    -- the most important decision here. A draft living in the entries table
+    -- would need an AND status = 'filed' on every existing query — the log, the
+    -- QA sign-off queue, the missed-report scan, the KPIs — and missing one
+    -- would leak an unfinished shift into a compliance record. Same class of
+    -- bug as the qa_waived_at rule. Nothing reads these tables except the day
+    -- log itself and the one function that turns it into an entry.
+    CREATE TABLE IF NOT EXISTS production_day_logs (
+      id TEXT PRIMARY KEY,
+      log_date TEXT NOT NULL,
+      team TEXT NOT NULL,
+      room TEXT,
+      user_id TEXT,
+      person TEXT NOT NULL,
+      -- Shift-level answers, held here until the report is created so a
+      -- half-filled form survives a phone going to sleep.
+      start_time TEXT, end_time TEXT, people_count INTEGER,
+      notes TEXT,
+      structured_data TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'filed')),
+      -- The entry it became. Kept, rather than deleting the log, because it is
+      -- the record of what was observed when — and a line logged at 07:46 for
+      -- work done 06:40-07:45 is a contemporaneous note, which is worth more
+      -- than one typed from memory at the end of the day.
+      entry_id TEXT,
+      filed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT
+    );
+    -- One open day per person per team per date. Re-opening the module mid
+    -- shift has to find the SAME log, not start a second one.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_day_log_open
+      ON production_day_logs(person, log_date, team) WHERE status = 'open';
+    CREATE INDEX IF NOT EXISTS idx_day_log_person ON production_day_logs(person, log_date DESC);
+
+    -- One line of the day. The data column is the item's own shape, validated
+    -- on write by the SAME normalizers the filed entry uses — so "it looked
+    -- fine in the day log and was rejected at filing" cannot happen.
+    CREATE TABLE IF NOT EXISTS production_day_items (
+      id TEXT PRIMARY KEY,
+      log_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('clean', 'mo', 'adjustment', 'note')),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      data TEXT,
+      -- When it was WRITTEN DOWN, as opposed to when the work happened.
+      logged_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      FOREIGN KEY (log_id) REFERENCES production_day_logs(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_day_items_log ON production_day_items(log_id, sort_order);
+
     CREATE TABLE IF NOT EXISTS facility_room_overrides (
       room_id TEXT PRIMARY KEY,
       label TEXT,

@@ -172,6 +172,241 @@ export function lineQuantity(lines) {
   return (lines || []).reduce((s, l) => s + (l.is_adjustment ? 0 : (l.quantity || 0)), 0);
 }
 
+/* ── The running day log ──────────────────────────────────────────────────── */
+//
+// A shift is not a single moment, but the entry form is a single submission —
+// which is why Bernardo was keeping his day in his phone and re-typing it at
+// 5pm. These routes are the other half: add a line when the thing happens,
+// navigate away, come back, and file the report from what is already there.
+//
+// A day log is NOT a production entry and must never be mistaken for one. It
+// lives in its own tables (see db.js for why), and the only path from one to
+// the other is the client filing a normal entry and then calling
+// POST /day-log/:id/filed, so the day closes only once the record exists.
+
+// Each kind of line is validated by the SAME normalizer the filed entry uses,
+// so a line that is accepted here cannot be rejected at filing time.
+function normalizeDayItem(kind, data) {
+  if (kind === 'clean') return normalizeCleaningEvents([data])[0] || null;
+  if (kind === 'mo' || kind === 'adjustment') {
+    const line = normalizeMoLines([{ ...data, is_adjustment: kind === 'adjustment' }])[0];
+    return line || null;
+  }
+  // A note is whatever he wants to say. It is the escape hatch that keeps the
+  // structured kinds from having to cover everything.
+  const body = String(data?.note ?? '').trim().slice(0, 2000);
+  return body ? { note: body } : null;
+}
+
+function dayLogRow(db, id) {
+  const log = db.prepare('SELECT * FROM production_day_logs WHERE id = ?').get(id);
+  if (!log) return null;
+  const items = db.prepare('SELECT * FROM production_day_items WHERE log_id = ? ORDER BY sort_order, logged_at').all(id);
+  return {
+    ...log,
+    structured_data: parseJson(log.structured_data, null),
+    items: items.map(i => ({ ...i, data: parseJson(i.data, {}) })),
+  };
+}
+
+// A person's own log is theirs; the office and QA can read anyone's, because
+// "what has Batching got so far today" is a fair question mid-shift.
+const ownsLog = (u, log) => log.person === u?.name || log.user_id === u?.id
+  || ['admin', 'supervisor'].includes(u?.role);
+
+// Get-or-create today's log. Deliberately idempotent: opening the tab twice, or
+// on two devices, must land on the SAME day rather than starting a second one.
+router.post('/day-log', (req, res) => {
+  const db = getDb();
+  const person = req.user?.name;
+  if (!person) return res.status(401).json({ error: 'Not authenticated' });
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.date || '')) ? req.body.date
+    : new Date().toISOString().slice(0, 10);
+  const team = String(req.body?.team || '').trim();
+  if (!team) return res.status(400).json({ error: 'Which team is this shift for?' });
+
+  const existing = db.prepare(`SELECT id FROM production_day_logs
+    WHERE person = ? AND log_date = ? AND team = ? AND status = 'open'`).get(person, date, team);
+  if (existing) return res.json(dayLogRow(db, existing.id));
+
+  const id = uuid();
+  db.prepare(`INSERT INTO production_day_logs (id, log_date, team, room, user_id, person)
+    VALUES (?,?,?,?,?,?)`).run(id, date, team, String(req.body?.room || '').trim() || null, req.user?.id || null, person);
+  res.status(201).json(dayLogRow(db, id));
+});
+
+// Everything still open for this person — so a shift left half-logged
+// yesterday is visible rather than silently abandoned.
+router.get('/day-log', (req, res) => {
+  const db = getDb();
+  const mine = db.prepare(`SELECT * FROM production_day_logs
+    WHERE (person = ? OR user_id = ?) AND status = 'open' ORDER BY log_date DESC LIMIT 20`)
+    .all(req.user?.name || '', req.user?.id || '');
+  res.json(mine.map(l => dayLogRow(db, l.id)));
+});
+
+router.get('/day-log/:id', (req, res) => {
+  const db = getDb();
+  const log = dayLogRow(db, req.params.id);
+  if (!log) return res.status(404).json({ error: 'Not found' });
+  if (!ownsLog(req.user, log)) return res.status(403).json({ error: 'Not your day log.' });
+  res.json(log);
+});
+
+// The shift-level answers, saved as he goes. Everything here is optional and
+// nothing is validated yet — that happens when the report is created. A form
+// that refuses a half-filled field at 9am is a form he stops using.
+router.put('/day-log/:id', (req, res) => {
+  const db = getDb();
+  const log = db.prepare('SELECT * FROM production_day_logs WHERE id = ?').get(req.params.id);
+  if (!log) return res.status(404).json({ error: 'Not found' });
+  if (!ownsLog(req.user, log)) return res.status(403).json({ error: 'Not your day log.' });
+  if (log.status === 'filed') return res.status(400).json({ error: 'This day has already been filed.' });
+  const b = req.body || {};
+  const people = Number(b.people_count);
+  db.prepare(`UPDATE production_day_logs SET room = ?, start_time = ?, end_time = ?,
+      people_count = ?, notes = ?, structured_data = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(
+      b.room !== undefined ? (String(b.room).trim() || null) : log.room,
+      b.start_time !== undefined ? (String(b.start_time).slice(0, 5) || null) : log.start_time,
+      b.end_time !== undefined ? (String(b.end_time).slice(0, 5) || null) : log.end_time,
+      b.people_count !== undefined ? (Number.isFinite(people) ? people : null) : log.people_count,
+      b.notes !== undefined ? (String(b.notes).slice(0, 4000) || null) : log.notes,
+      b.structured_data !== undefined
+        ? (b.structured_data && typeof b.structured_data === 'object' ? JSON.stringify(b.structured_data) : null)
+        : log.structured_data,
+      log.id);
+  res.json(dayLogRow(db, log.id));
+});
+
+router.post('/day-log/:id/items', (req, res) => {
+  const db = getDb();
+  const log = db.prepare('SELECT * FROM production_day_logs WHERE id = ?').get(req.params.id);
+  if (!log) return res.status(404).json({ error: 'Not found' });
+  if (!ownsLog(req.user, log)) return res.status(403).json({ error: 'Not your day log.' });
+  if (log.status === 'filed') return res.status(400).json({ error: 'This day has already been filed.' });
+
+  const kind = ['clean', 'mo', 'adjustment', 'note'].includes(req.body?.kind) ? req.body.kind : null;
+  if (!kind) return res.status(400).json({ error: 'What kind of line is this?' });
+  const data = normalizeDayItem(kind, req.body?.data || {});
+  if (!data) {
+    return res.status(400).json({
+      error: kind === 'note' ? 'Write something first.'
+        : kind === 'clean' ? 'Say what was cleaned, or at what level.'
+          : 'An MO number or a product name is needed.',
+    });
+  }
+  const next = (db.prepare('SELECT MAX(sort_order) m FROM production_day_items WHERE log_id = ?').get(log.id).m ?? -1) + 1;
+  const id = uuid();
+  db.prepare(`INSERT INTO production_day_items (id, log_id, kind, sort_order, data, created_by)
+    VALUES (?,?,?,?,?,?)`).run(id, log.id, kind, next, JSON.stringify(data), req.user?.name || null);
+  db.prepare("UPDATE production_day_logs SET updated_at = datetime('now') WHERE id = ?").run(log.id);
+  res.status(201).json(dayLogRow(db, log.id));
+});
+
+router.put('/day-log/items/:itemId', (req, res) => {
+  const db = getDb();
+  const item = db.prepare('SELECT * FROM production_day_items WHERE id = ?').get(req.params.itemId);
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  const log = db.prepare('SELECT * FROM production_day_logs WHERE id = ?').get(item.log_id);
+  if (!ownsLog(req.user, log)) return res.status(403).json({ error: 'Not your day log.' });
+  if (log.status === 'filed') return res.status(400).json({ error: 'This day has already been filed.' });
+  const data = normalizeDayItem(item.kind, req.body?.data || {});
+  if (!data) return res.status(400).json({ error: 'That leaves the line empty.' });
+  db.prepare('UPDATE production_day_items SET data = ? WHERE id = ?').run(JSON.stringify(data), item.id);
+  db.prepare("UPDATE production_day_logs SET updated_at = datetime('now') WHERE id = ?").run(log.id);
+  res.json(dayLogRow(db, log.id));
+});
+
+router.delete('/day-log/items/:itemId', (req, res) => {
+  const db = getDb();
+  const item = db.prepare('SELECT * FROM production_day_items WHERE id = ?').get(req.params.itemId);
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  const log = db.prepare('SELECT * FROM production_day_logs WHERE id = ?').get(item.log_id);
+  if (!ownsLog(req.user, log)) return res.status(403).json({ error: 'Not your day log.' });
+  if (log.status === 'filed') return res.status(400).json({ error: 'This day has already been filed.' });
+  db.prepare('DELETE FROM production_day_items WHERE id = ?').run(item.id);
+  db.prepare("UPDATE production_day_logs SET updated_at = datetime('now') WHERE id = ?").run(log.id);
+  res.json(dayLogRow(db, log.id));
+});
+
+/**
+ * Turn the day into the entry payload — WITHOUT writing anything.
+ *
+ * This is what "Create EOD Report" opens for review. It is deliberately a
+ * preview: the day log is a working note and the entry is a compliance record,
+ * and a person should look at the second before it exists. The shift window
+ * defaults to the earliest and latest times actually logged, which is nearly
+ * always right and is still editable.
+ */
+export function dayLogToEntry(log) {
+  const moItems = log.items.filter(i => i.kind === 'mo' || i.kind === 'adjustment');
+  const cleans = log.items.filter(i => i.kind === 'clean').map(i => i.data);
+  const notes = log.items.filter(i => i.kind === 'note').map(i => i.data.note).filter(Boolean);
+
+  const times = [...moItems, ...log.items.filter(i => i.kind === 'clean')]
+    .flatMap(i => [i.data.start_time, i.data.end_time]).filter(Boolean).sort();
+
+  const lines = normalizeMoLines(moItems.map(i => i.data));
+  return {
+    date: log.log_date,
+    team: log.team,
+    room: log.room || '',
+    start_time: log.start_time || times[0] || '',
+    end_time: log.end_time || times[times.length - 1] || '',
+    people_count: log.people_count ?? '',
+    // The free-text lines become the entry's notes, in the order they were
+    // written. Anything already typed into the shift notes goes first.
+    notes: [log.notes, ...notes].filter(Boolean).join('\n'),
+    structured_data: log.structured_data || {},
+    mo_lines: lines,
+    cleaning_events: cleans,
+    quantity_completed: lineQuantity(lines),
+  };
+}
+
+router.get('/day-log/:id/preview', (req, res) => {
+  const db = getDb();
+  const log = dayLogRow(db, req.params.id);
+  if (!log) return res.status(404).json({ error: 'Not found' });
+  if (!ownsLog(req.user, log)) return res.status(403).json({ error: 'Not your day log.' });
+  res.json(dayLogToEntry(log));
+});
+
+// Mark the day filed once its entry exists. Called by the client after the
+// entry POST succeeds, so a failed submission never closes the day and loses
+// what was logged.
+router.post('/day-log/:id/filed', (req, res) => {
+  const db = getDb();
+  const log = db.prepare('SELECT * FROM production_day_logs WHERE id = ?').get(req.params.id);
+  if (!log) return res.status(404).json({ error: 'Not found' });
+  if (!ownsLog(req.user, log)) return res.status(403).json({ error: 'Not your day log.' });
+  const entryId = String(req.body?.entry_id || '').trim();
+  if (!entryId) return res.status(400).json({ error: 'Which entry did it become?' });
+  db.prepare(`UPDATE production_day_logs SET status = 'filed', entry_id = ?,
+    filed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`).run(entryId, log.id);
+  logAudit(req.user, 'update', 'production_day_log', log.id,
+    { filed_as: entryId, items: db.prepare('SELECT COUNT(*) n FROM production_day_items WHERE log_id = ?').get(log.id).n },
+    null, null, `${log.team} — ${log.log_date}`);
+  res.json({ ok: true });
+});
+
+// Abandoning a day. Allowed, because a log started on the wrong team or the
+// wrong date is just clutter — but it is audited, since it is somebody's
+// working record of a shift.
+router.delete('/day-log/:id', (req, res) => {
+  const db = getDb();
+  const log = db.prepare('SELECT * FROM production_day_logs WHERE id = ?').get(req.params.id);
+  if (!log) return res.status(404).json({ error: 'Not found' });
+  if (!ownsLog(req.user, log)) return res.status(403).json({ error: 'Not your day log.' });
+  if (log.status === 'filed') return res.status(400).json({ error: 'A filed day is the record of how its entry was built.' });
+  const n = db.prepare('SELECT COUNT(*) n FROM production_day_items WHERE log_id = ?').get(log.id).n;
+  db.prepare('DELETE FROM production_day_items WHERE log_id = ?').run(log.id);
+  db.prepare('DELETE FROM production_day_logs WHERE id = ?').run(log.id);
+  logAudit(req.user, 'delete', 'production_day_log', log.id, { discarded_items: n }, log, null, `${log.team} — ${log.log_date}`);
+  res.json({ ok: true });
+});
+
 // ── EOD report templates (per team) ──────────────────────────────────────────
 // A team's structured EOD survey. GET is open to anyone filing a report (they
 // need it to render the form); editing the template is a log-edit act.
