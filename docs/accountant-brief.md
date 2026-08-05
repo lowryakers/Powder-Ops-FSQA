@@ -13,12 +13,12 @@ netting and bank reconciliation into ReadyDoc, our own system. It's live and in
 use. QuickBooks is still the system of record and nothing has changed on your
 side.
 
-Before we go any further I pulled the Journal, all dates, and counted what's
-actually in there. Of **592 journal entries since 2022, 540 are MRPEasy** posting
-inventory, WIP and COGS automatically. The remaining **52 over four years** are
-the real accounting: year-end depreciation, the intercompany reclasses to
-Prodough and Matt, and the monthly payroll journal. The trial balance ties at
-$11.8m.
+Before going further I pulled the Journal, all dates, and counted it. Of **592
+journal entries since 2022, 568 are MRPEasy** — the automated inventory, WIP and
+COGS postings, which stop at **30 April 2026** when the integration came out.
+The genuine accounting is **24 entries in four years**: year-end depreciation,
+the intercompany reclasses to Prodough and Matt, and a handful of corrections.
+Trial balance ties at $11.8m.
 
 So the bookkeeping looks like something we can own, and the accounting doesn't.
 That's the split we'd like to formalise — stop paying for the first, keep paying
@@ -31,8 +31,10 @@ you for the second.
 2. **What do you need at year end**, in the form you want it?
 3. **Does anything here worry you** — a filing, an audit, a lender, a future
    sale? We're able to build this; that isn't the same as it being wise.
-4. **The MRPEasy feed** is the piece we can't just re-create. If QuickBooks went
-   away, is there a reason those postings couldn't come into our system instead?
+4. **Since the MRPEasy feed came out on 30 April, where is the inventory and
+   COGS accounting happening now?** Nothing has posted WIP or cost of goods
+   since. We're also moving off MRPEasy to Keychain, so whatever the answer is,
+   we'd rather design for it than rebuild the old link.
 
 If it's easier, a 30-minute call beats a reply.
 
@@ -72,7 +74,7 @@ Dynamic" depending on the report.
 | 1 | AP, AR, reimbursements, M4 netting | Done, in use |
 | 2 | Bank reconciliation | Done |
 | 2b | Books copied out of QuickBooks | Done |
-| 3 | Chart of accounts + general ledger | Needs his answers, and the MRPEasy question |
+| 3 | Chart of accounts + general ledger | Needs his answers, and the inventory/COGS question |
 | 4 | Financial statements + year-end | Depends on 3 |
 | 5 | Turn off QuickBooks | Only after a parallel period he's happy with |
 

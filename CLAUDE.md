@@ -1642,17 +1642,18 @@ exports: 164 accounts, 370 vendors, 31 customers, 736 bills, 160 invoices.
 ## What the Journal actually says (the stage-3 sizing answer)
 Counted from their real Journal export, all dates — the question was whether replacing the general ledger is
 a reporting exercise or a real accounting project. **It is neither of the things we guessed.**
-- **592 journal entries since 2022, and 540 of them are MRPEasy.** The `Num` column reads
-  `mrp202409132203`; the descriptions are "Received purchase orders", "Finished manufacturing orders",
-  "Work in Progress", "Applied overhead cost", "Shipped goods". MRPEasy posts inventory/WIP/COGS into
-  QuickBooks automatically, and started doing so in 2024 (1 entry in 2022, 2 in 2023, then 228 / 265 / 96).
-- **The genuine accountant judgement is 52 entries over four years** (~13/yr): year-end depreciation, the
-  intercompany reclasses to Prodough and Matt, the monthly payroll journal, and a handful of corrections.
-- Trial balance ties at **$11,806,803** debit = credit.
-- **So the blocker on stage 3 is NOT the accountant — it is MRPEasy.** Anything replacing QuickBooks has to
-  receive those postings or reproduce that inventory accounting. That is an integration question, and it is
-  the one to answer before promising a GL. (Note `receiving_log.part_in_mrp` / `received_in_mrp` already
-  exist — MRPEasy is upstream of Receiving too.)
+- **592 journal entries since 2022, and 568 of them are MRPEasy** — identified exactly by the `Num` prefix
+  (`mrp202409132203`), not by guessing at descriptions. They post inventory/WIP/COGS automatically:
+  "Received purchase orders", "Finished manufacturing orders", "Applied overhead cost", "Shipped goods".
+- **The genuine accountant judgement is 24 entries in FOUR YEARS** (~6/yr): year-end depreciation, the
+  intercompany reclasses to Prodough and Matt, corrections. Trial balance ties at **$11,806,803**.
+- **The MRPEasy feed is DEAD — last posting 30 April 2026.** The accountant removed the integration during
+  this year's clean-up because it was inaccurate; the plant is also migrating off MRPEasy to Keychain. So
+  the earlier read ("the blocker on stage 3 is MRPEasy") is wrong: there is no feed to receive. What it
+  leaves is a real question for the accountant — **nothing has posted WIP or COGS since 30 April**, so
+  where is inventory accounting happening now?
+- (`receiving_log.part_in_mrp` / `received_in_mrp` still exist — MRPEasy was upstream of Receiving too, and
+  those fields will need revisiting on the Keychain move.)
 
 ## The Batching EOD, rebuilt around what Bernardo actually writes down
 He was keeping the shift in his phone's Notes and then re-typing a lossy summary into ReadyDoc — the
