@@ -1597,9 +1597,38 @@ Module grant `banking`.
   auto-match threshold, ambiguity, candidate consumption, the reconcile arithmetic) and 34 end to end
   (import, dedupe on re-import, right-vendor-over-same-amount-decoy, the two close refusals, frozen closed
   periods, reopen ordering, opening-balance protection, and the feed-off paths).
-- **Docs for the humans:** `docs/quickbooks-api-setup.md` (getting the four QBO env vars) and
-  `docs/accountant-brief.md` (what stage 3 would mean and what we need from the accountant before building
-  a general ledger).
+- **Docs for the humans:** `docs/quickbooks-api-setup.md` (getting the four QBO env vars),
+  `docs/quickbooks-app-assessment.md` (Intuit rejected the app on *relevance* — a description problem, not
+  an app problem; the exact wording to resubmit with) and `docs/accountant-brief.md`.
+
+## Getting the books out of QuickBooks WITHOUT the API
+Intuit's app review can block the API indefinitely, so the report exports QuickBooks produces natively are a
+**first-class way in, not a fallback** — four `TARGETS` in `server/api/imports.js` plus an import section on
+the QuickBooks tab that shows whether or not the API is connected. Verified end to end on the plant's real
+exports: 164 accounts, 370 vendors, 31 customers, 736 bills, 160 invoices.
+- **A QuickBooks report is not a table.** Every one interleaves subtotal rows ("Total for 1 - 30 days past
+  due", "TOTAL") with the data, and a Transaction List filtered to Bills still contains every Bill Payment
+  against them — **733 of 1,471 rows** in the real export. Importing those would have invented 733 bills
+  that were never issued. `skipRow(src)` runs on the source row before mapping and its rows are counted as
+  **`filtered`, separately from `skip`** — a subtotal is not a broken row, and 734 errors on a good file is
+  how someone concludes the importer is broken.
+- **ABSENCE MUST NOT ERASE.** The A/P Aging Detail carries an open balance and is the authority on what is
+  owed; a Transaction List has no such column and is history. Letting history answer "is this paid?" marked
+  every outstanding bill settled and dropped AP from **$112,012.56 to $83,644** — caught by the test, not by
+  reading the code. So a field the file doesn't carry stays `undefined`, `insertDefaults` fills it for NEW
+  rows only (history is paid), and the UPDATE is built per row from the columns that file actually has.
+- **Identity must not hinge on a name QuickBooks spells inconsistently.** The aging report says
+  "V00301 M4 Dynamic" where the transaction list says "M4 Dynamic", and keying on the vendor imported the
+  same two bills twice. A bill is `invoice_number + invoice_date + amount`; the vendor is a label.
+- `qbo_accounts.qb_id` / `qbo_contacts.qb_id` had to become **nullable** — those rows now arrive from either
+  the API (which supplies an id) or a spreadsheet (which doesn't). Rebuilt in place, guarded on the table
+  being empty.
+- Field-level extensions the targets needed: `const` (a vendor list has no "kind" column — every row is a
+  vendor), `derive`, `columns` (what is WRITTEN, when it differs from the `fields` that are READ — a ledger
+  reads an open balance in order to write a status), `transform` and `insertDefaults`.
+- **Their books, as of the export:** AP $112,012.56 open across 5 bills, AR nothing outstanding, 737 bills
+  and 160 invoices of history back to 2022. One bill is dated **09/22/2002** (Canyon Overhead Doors,
+  $1,244.75) — almost certainly a 2022 typo in QuickBooks, imported verbatim rather than silently corrected.
 
 ## The Batching EOD, rebuilt around what Bernardo actually writes down
 He was keeping the shift in his phone's Notes and then re-typing a lossy summary into ReadyDoc — the

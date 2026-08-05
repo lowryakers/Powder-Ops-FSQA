@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useApiGet, apiPost } from '../../hooks/useApi';
+import ImportPanel from '../common/ImportPanel.jsx';
 import {
   RefreshCw, Search, Database, CheckCircle2, AlertTriangle, Link2Off,
-  ArrowDownToLine, Landmark, PlugZap, FlaskConical,
+  ArrowDownToLine, Landmark, PlugZap, FlaskConical, FileSpreadsheet,
 } from 'lucide-react';
 
 // The QuickBooks side of the Accounting hub.
@@ -70,6 +71,64 @@ function SandboxNote({ environment, company, setupHelp }) {
       <p className="text-xs text-gray-500 mt-1.5">
         This proves the integration works end to end. It cannot read our own books — only production keys can.
       </p>
+    </div>
+  );
+}
+
+
+/**
+ * Bringing the books in from QuickBooks' own report exports.
+ *
+ * This is not a fallback for the API — it is the other way in, and the one
+ * that works today. Intuit's app review can block the API indefinitely; a
+ * report export cannot be blocked by anybody.
+ *
+ * ORDER MATTERS and the screen says so. The A/P Aging Detail is the authority
+ * on what is still owed; a Transaction List is history and carries no balance
+ * column at all. Loading history first and the aging report second is fine —
+ * an import never overwrites a column its file has nothing to say about — but
+ * loading the aging report first reads more clearly, because the outstanding
+ * total is right from the first import.
+ */
+const EXPORTS = [
+  { target: 'qbo_accounts', label: 'Chart of Accounts', report: 'Reports → Account List' },
+  { target: 'qbo_vendors', label: 'Vendors', report: 'Reports → Vendor Contact List' },
+  { target: 'qbo_customers', label: 'Customers', report: 'Reports → Customer Contact List' },
+  { target: 'ap_invoices', label: 'Bills → Accounts Payable', report: 'A/P Aging Detail first, then Transaction List by Date' },
+  { target: 'ar_invoices', label: 'Invoices → Accounts Receivable', report: 'A/R Aging Detail first, then Transaction List by Date' },
+];
+
+function ImportSection({ onDone }) {
+  const [open, setOpen] = useState(null);
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <h3 className="font-semibold text-gray-900 flex items-center gap-1.5">
+        <FileSpreadsheet size={15} /> Bring the books in from a QuickBooks export
+      </h3>
+      <p className="text-xs text-gray-500 mt-0.5 max-w-2xl">
+        Run the report in QuickBooks, <strong>set the date range to All Dates</strong> (the default is the
+        current quarter, which is how a migration quietly loses years), export to Excel, and drop it here.
+        Nothing is written until you have read the dry run. Re-importing the same file updates in place.
+      </p>
+      <div className="mt-3 space-y-2">
+        {EXPORTS.map(e => (
+          <div key={e.target} className="rounded-lg border border-gray-200">
+            <button onClick={() => setOpen(open === e.target ? null : e.target)}
+              className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left hover:bg-gray-50">
+              <span>
+                <span className="text-sm font-medium text-gray-900">{e.label}</span>
+                <span className="block text-[11px] text-gray-500">{e.report}</span>
+              </span>
+              <span className="text-xs text-powder-700 shrink-0">{open === e.target ? 'Close' : 'Import'}</span>
+            </button>
+            {open === e.target && (
+              <div className="border-t border-gray-200 p-3">
+                <ImportPanel target={e.target} targetLabel={e.label} onDone={onDone} />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -151,6 +210,10 @@ export default function QuickBooksPanel({ user }) {
         </div>
 
         <SandboxNote environment={status?.environment} setupHelp />
+
+        {/* Deliberately available while the API is not. This is the route that
+            doesn't need Intuit's permission. */}
+        <ImportSection onDone={() => { refreshPulled(); refreshStatus(); }} />
       </div>
     );
   }
@@ -333,6 +396,8 @@ export default function QuickBooksPanel({ user }) {
           </div>
         )}
       </div>
+
+      <ImportSection onDone={() => { refreshPulled(); refreshStatus(); }} />
 
       <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-1.5">
         <p className="text-xs text-gray-600 flex items-start gap-1.5">

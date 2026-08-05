@@ -351,12 +351,16 @@ router.get('/quickbooks/pulled', (req, res) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
   const db = getDb();
   const one = (sql, fallback = 0) => { try { return db.prepare(sql).get()?.n ?? fallback; } catch { return fallback; } };
+  // Counts what came OUT of QuickBooks by either route — the API pull (qb_id)
+  // or a report export (source). Counting only the API would show zero after a
+  // successful spreadsheet import, which reads as the import having failed.
+  const fromQbo = "(qb_id IS NOT NULL OR source LIKE 'import:%')";
   res.json({
     accounts: one('SELECT COUNT(*) n FROM qbo_accounts'),
     vendors: one("SELECT COUNT(*) n FROM qbo_contacts WHERE kind = 'vendor'"),
     customers: one("SELECT COUNT(*) n FROM qbo_contacts WHERE kind = 'customer'"),
-    ap: one('SELECT COUNT(*) n FROM ap_invoices WHERE qb_id IS NOT NULL'),
-    ar: one('SELECT COUNT(*) n FROM ar_invoices WHERE qb_id IS NOT NULL'),
+    ap: one(`SELECT COUNT(*) n FROM ap_invoices WHERE ${fromQbo}`),
+    ar: one(`SELECT COUNT(*) n FROM ar_invoices WHERE ${fromQbo}`),
   });
 });
 

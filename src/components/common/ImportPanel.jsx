@@ -150,6 +150,11 @@ export default function ImportPanel({ target, targetLabel, fields, onDone }) {
               { label: 'New records', value: preview.create, tone: 'text-green-700' },
               { label: 'Updated', value: preview.update, tone: 'text-blue-700' },
               { label: 'Skipped', value: preview.skip, tone: 'text-amber-700' },
+              // Rows the target deliberately doesn't want — a QuickBooks
+              // report's subtotal lines, or the bill payments mixed in with
+              // the bills. Shown apart from Skipped, because 734 of those
+              // reported as problems is how a good file looks broken.
+              ...(preview.filtered ? [{ label: 'Not applicable', value: preview.filtered, tone: 'text-gray-500' }] : []),
             ].map(c => (
               <div key={c.label} className="rounded-lg border border-gray-200 p-3">
                 <div className="text-xs text-gray-500">{c.label}</div>

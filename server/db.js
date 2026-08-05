@@ -2427,6 +2427,23 @@ function runMigrations() {
   // dollars, status as a short vocabulary the KPI cards can add up. Attached
   // files live in finance_files (R2 like every other upload) and their text is
   // indexed so search covers what's inside the PDF.
+  // The two QuickBooks mirror tables shipped with `qb_id NOT NULL`, which
+  // assumed the API was the only way in. It isn't — an Intuit app review can
+  // block it indefinitely, and a report export has to work regardless. SQLite
+  // can't relax a NOT NULL in place, so the old shape is rebuilt. Guarded on
+  // being EMPTY: these only ever fill from a QuickBooks pull, so anywhere the
+  // pull has run this is a no-op rather than a data loss.
+  for (const tbl of ['qbo_accounts', 'qbo_contacts']) {
+    try {
+      const cols = db.prepare(`PRAGMA table_info(${tbl})`).all();
+      const qb = cols.find(c => c.name === 'qb_id');
+      if (qb?.notnull === 1 && db.prepare(`SELECT COUNT(*) n FROM ${tbl}`).get().n === 0) {
+        db.exec(`DROP TABLE ${tbl}`);
+        console.log(`[migrate] Rebuilt ${tbl} so a spreadsheet import can fill it`);
+      }
+    } catch { /* table not created yet — the CREATE below makes the right shape */ }
+  }
+
   try {
     db.exec(`
       CREATE TABLE IF NOT EXISTS ap_invoices (
@@ -2488,7 +2505,11 @@ function runMigrations() {
       -- places is worse than an account you have to go and read.
       CREATE TABLE IF NOT EXISTS qbo_accounts (
         id               TEXT PRIMARY KEY,
-        qb_id            TEXT NOT NULL,
+        -- Nullable: these rows arrive EITHER from the API (which supplies an
+        -- id) or from a spreadsheet export (which does not). A report export
+        -- has to be a first-class way in, because the API is gated behind an
+        -- Intuit app review that may never clear.
+        qb_id            TEXT,
         acct_number      TEXT,
         name             TEXT NOT NULL,
         fully_qualified  TEXT,
@@ -2498,9 +2519,16 @@ function runMigrations() {
         parent_qb_id     TEXT,
         active           INTEGER NOT NULL DEFAULT 1,
         current_balance  REAL,
-        synced_at        TEXT NOT NULL DEFAULT (datetime('now'))
+        description      TEXT,
+        source           TEXT,
+        external_id      TEXT,
+        created_by       TEXT,
+        synced_at        TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
       );
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_qbo_accounts_qb ON qbo_accounts(qb_id);
+      -- Partial, so the many import rows with no QuickBooks id don't collide.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_qbo_accounts_qb ON qbo_accounts(qb_id) WHERE qb_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_qbo_accounts_ext ON qbo_accounts(external_id) WHERE external_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_qbo_accounts_type ON qbo_accounts(classification, account_type);
 
       -- Vendors and customers. One table with a kind, because they are the same
@@ -2509,16 +2537,22 @@ function runMigrations() {
       CREATE TABLE IF NOT EXISTS qbo_contacts (
         id          TEXT PRIMARY KEY,
         kind        TEXT NOT NULL CHECK (kind IN ('vendor','customer')),
-        qb_id       TEXT NOT NULL,
+        qb_id       TEXT,
         name        TEXT NOT NULL,
         company     TEXT,
         email       TEXT,
         phone       TEXT,
         active      INTEGER NOT NULL DEFAULT 1,
         balance     REAL,
-        synced_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        address     TEXT,
+        source      TEXT,
+        external_id TEXT,
+        created_by  TEXT,
+        synced_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
       );
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_qbo_contacts_qb ON qbo_contacts(kind, qb_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_qbo_contacts_qb ON qbo_contacts(kind, qb_id) WHERE qb_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_qbo_contacts_ext ON qbo_contacts(external_id) WHERE external_id IS NOT NULL;
 
       CREATE TABLE IF NOT EXISTS finance_files (
         id             TEXT PRIMARY KEY,
@@ -2924,6 +2958,15 @@ function runMigrations() {
   }
 
   // Fields carried over from the Monday boards these ledgers replace.
+  // Provenance for the universal importer: which file a row came from and its
+  // stable identity within it, so a re-import updates in place.
+  for (const tbl of ['ap_invoices', 'ar_invoices']) {
+    addColumnIfMissing(tbl, 'source', 'TEXT');
+    addColumnIfMissing(tbl, 'external_id', 'TEXT');
+  }
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ap_ext ON ap_invoices(external_id) WHERE external_id IS NOT NULL;
+           CREATE UNIQUE INDEX IF NOT EXISTS idx_ar_ext ON ar_invoices(external_id) WHERE external_id IS NOT NULL;`);
+
   addColumnIfMissing('ap_invoices', 'priority', 'TEXT');
   addColumnIfMissing('ap_invoices', 'invoice_link', 'TEXT');
   addColumnIfMissing('ap_invoices', 'ach_link', 'TEXT');

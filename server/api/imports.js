@@ -89,7 +89,177 @@ const TARGETS = {
     identity: ['inspection_no', 'date_received', 'po_number', 'part_number', 'vendor_lot'],
     identityFallback: ['date_received', 'part_description', 'quantity_received'],
   },
+
+  /* ── QuickBooks report exports ─────────────────────────────────────────────
+   *
+   * The API route to this data is gated behind an Intuit app review that may
+   * never clear, so the reports QuickBooks exports natively are a first-class
+   * way in rather than a fallback. Column names below are the ones the real
+   * Powder Ops exports actually use, read from the files rather than guessed.
+   *
+   * Every QuickBooks report interleaves subtotal rows with the data, which is
+   * what `skipRow` exists for.
+   */
+
+  qbo_accounts: {
+    label: 'Chart of Accounts (QuickBooks)',
+    table: 'qbo_accounts',
+    module: 'accounts-payable',
+    // NOTE: a QuickBooks Account List gives the FULLY QUALIFIED name in the
+    // Account Name column — "Payroll Liabilities:401K Liability" — which is
+    // how QuickBooks itself displays it, so it is stored as-is rather than
+    // split into a parent that the export never states explicitly.
+    fields: [
+      { key: 'name', label: 'Account Name', required: true, aliases: ['account name', 'account', 'name', 'full name'] },
+      { key: 'account_type', label: 'Type', aliases: ['type', 'account type'] },
+      { key: 'account_sub_type', label: 'Detail Type', aliases: ['detail type', 'detail', 'sub type', 'account sub type'] },
+      { key: 'description', label: 'Description', aliases: ['description', 'desc'] },
+      { key: 'current_balance', label: 'Balance', type: 'number', aliases: ['total balance', 'balance', 'current balance'] },
+    ],
+    skipRow: (r) => /^total\b/i.test(clean(r['Account Name'] ?? r['Column 1'] ?? '')),
+    filteredNote: 'subtotal and total rows',
+    identity: ['name'],
+    identityFallback: ['name', 'account_type'],
+  },
+
+  qbo_vendors: {
+    label: 'Vendors (QuickBooks)',
+    table: 'qbo_contacts',
+    module: 'accounts-payable',
+    fields: [
+      { key: 'kind', label: 'Kind', const: 'vendor' },
+      { key: 'name', label: 'Vendor', required: true, aliases: ['vendor', 'vendor display name', 'name', 'display name'] },
+      { key: 'company', label: 'Company', aliases: ['company', 'company name'] },
+      { key: 'email', label: 'Email', aliases: ['email', 'e-mail'] },
+      { key: 'phone', label: 'Phone', aliases: ['phone numbers', 'phone', 'phone number'] },
+      { key: 'address', label: 'Address', aliases: ['billing address', 'bill address', 'address'] },
+      { key: 'balance', label: 'Open Balance', type: 'number', aliases: ['open balance', 'balance'] },
+    ],
+    skipRow: (r) => /^total\b/i.test(clean(r.Vendor ?? '')),
+    filteredNote: 'total rows',
+    identity: ['kind', 'name'],
+    identityFallback: ['kind', 'company', 'email'],
+  },
+
+  qbo_customers: {
+    label: 'Customers (QuickBooks)',
+    table: 'qbo_contacts',
+    module: 'accounts-receivable',
+    fields: [
+      { key: 'kind', label: 'Kind', const: 'customer' },
+      { key: 'name', label: 'Customer', required: true, aliases: ['customer full name', 'customer', 'name', 'display name'] },
+      { key: 'company', label: 'Company', aliases: ['company', 'company name'] },
+      { key: 'email', label: 'Email', aliases: ['email', 'e-mail'] },
+      { key: 'phone', label: 'Phone', aliases: ['phone numbers', 'phone', 'phone number'] },
+      { key: 'address', label: 'Address', aliases: ['bill address', 'billing address', 'address'] },
+      { key: 'balance', label: 'Open Balance', type: 'number', aliases: ['open balance', 'balance'] },
+    ],
+    skipRow: (r) => /^total\b/i.test(clean(r['Customer full name'] ?? '')),
+    filteredNote: 'total rows',
+    identity: ['kind', 'name'],
+    identityFallback: ['kind', 'email'],
+  },
+
+  ap_invoices: {
+    label: 'Bills → Accounts Payable (QuickBooks)',
+    table: 'ap_invoices',
+    module: 'accounts-payable',
+    // Takes either report. An A/P Aging Detail carries the open balance, so
+    // those rows land as still-owed; a Transaction List has no balance column
+    // and lands as paid, which is what a historical bill is.
+    fields: [
+      { key: 'vendor', label: 'Vendor', required: true, aliases: ['vendor display name', 'vendor', 'name', 'supplier'] },
+      { key: 'invoice_number', label: 'Bill #', aliases: ['num', 'bill #', 'invoice #', 'number', 'doc number'] },
+      { key: 'invoice_date', label: 'Bill Date', type: 'date', required: true, aliases: ['date', 'bill date', 'txn date', 'transaction date'] },
+      { key: 'due_date', label: 'Due Date', type: 'date', aliases: ['due date', 'due'] },
+      { key: 'amount', label: 'Amount', type: 'number', required: true, aliases: ['amount', 'total', 'total amount'] },
+      { key: 'notes', label: 'Memo', aliases: ['memo', 'description', 'notes'] },
+      { key: 'open_balance', label: 'Open Balance', type: 'number', aliases: ['open balance', 'balance', 'amount due'] },
+    ],
+    // What is still owed decides the status, and the paid figure follows from
+    // it. A row with no open-balance column at all is history: fully paid.
+    columns: ['vendor', 'invoice_number', 'invoice_date', 'due_date', 'amount', 'notes', 'amount_paid', 'status'],
+    transform: (row) => applyLedgerDerivation('ap_invoices', row),
+    // A bill from a plain transaction list is history: if it were still owed,
+    // the aging report would carry it.
+    insertDefaults: (row) => ({ status: 'paid', amount_paid: Number(row.amount) || 0 }),
+    // Deliberately NOT keyed on the vendor name. QuickBooks spells the same
+    // supplier differently between reports — the aging says "V00301 M4
+    // Dynamic" where the transaction list says "M4 Dynamic" — and keying on it
+    // imported the same two bills twice. A bill number with its date and
+    // amount is the bill; the vendor string is a label.
+    identity: ['invoice_number', 'invoice_date', 'amount'],
+    identityFallback: ['vendor', 'invoice_date', 'amount'],
+    // A Transaction List filtered to Bills still contains every Bill Payment
+    // against them — 733 of 1,471 rows in the real export. Importing those
+    // would invent 733 bills that were never issued. Subtotal rows go too.
+    skipRow: (r) => {
+      // Where the file states a transaction type, only Bills are bills. Where
+      // it states none, the row is a subtotal or the TOTAL line — those carry
+      // "TOTAL" in the date column, so emptiness is not a reliable test.
+      if ('Transaction type' in r) return clean(r['Transaction type']) !== 'Bill';
+      return /^total\b/i.test(clean(r['Column 1'] ?? '')) || !toDate(r.Date);
+    },
+    filteredNote: 'bill payments, subtotals and total rows',
+  },
+
+  ar_invoices: {
+    label: 'Invoices → Accounts Receivable (QuickBooks)',
+    table: 'ar_invoices',
+    module: 'accounts-receivable',
+    fields: [
+      { key: 'customer', label: 'Customer', required: true, aliases: ['customer full name', 'customer', 'name'] },
+      { key: 'invoice_number', label: 'Invoice #', aliases: ['num', 'invoice #', 'number', 'doc number'] },
+      { key: 'invoice_date', label: 'Invoice Date', type: 'date', required: true, aliases: ['date', 'invoice date', 'txn date'] },
+      { key: 'due_date', label: 'Due Date', type: 'date', aliases: ['due date', 'due'] },
+      { key: 'amount', label: 'Amount', type: 'number', required: true, aliases: ['amount', 'total', 'total amount'] },
+      { key: 'notes', label: 'Memo', aliases: ['memo', 'description', 'notes'] },
+      { key: 'open_balance', label: 'Open Balance', type: 'number', aliases: ['open balance', 'balance', 'amount due'] },
+    ],
+    columns: ['customer', 'invoice_number', 'invoice_date', 'due_date', 'amount', 'notes', 'amount_received', 'status'],
+    transform: (row) => applyLedgerDerivation('ar_invoices', row),
+    insertDefaults: (row) => ({ status: 'paid', amount_received: Number(row.amount) || 0 }),
+    identity: ['invoice_number', 'invoice_date', 'amount'],
+    identityFallback: ['customer', 'invoice_date', 'amount'],
+    skipRow: (r) => {
+      if ('Transaction type' in r) return clean(r['Transaction type']) !== 'Invoice';
+      return /^total\b/i.test(clean(r['Column 1'] ?? '')) || !toDate(r.Date);
+    },
+    filteredNote: 'payments, subtotals and total rows',
+  },
 };
+
+// `open_balance` is read from the file but is not a column on either ledger —
+// it is how the status and the paid figure are worked out. A bill with no open
+// balance at all came from a plain transaction list, which is history: paid.
+const LEDGER_STATUS = {
+  ap_invoices: { paidField: 'amount_paid', open: 'approved', settled: 'paid' },
+  ar_invoices: { paidField: 'amount_received', open: 'sent', settled: 'paid' },
+};
+
+function applyLedgerDerivation(targetKey, row) {
+  const cfg = LEDGER_STATUS[targetKey];
+  if (!cfg) return row;
+  const out = { ...row };
+  delete out.open_balance;
+
+  // THE FILE MAY NOT KNOW. An Aging Detail carries an open balance and is the
+  // authority on what is still owed; a Transaction List has no such column and
+  // is history. Letting history answer "is this paid?" is how importing the
+  // second file marked every outstanding bill settled and dropped AP from
+  // $112,012.56 to $83,644 — caught by this exact test.
+  //
+  // So when the column is absent these are left UNDEFINED: a new row takes the
+  // insert default (history is paid), and an existing row keeps whatever the
+  // aging report already told us.
+  if (row.open_balance === undefined) return out;
+
+  const amount = Number(row.amount) || 0;
+  const open = row.open_balance === null ? 0 : Number(row.open_balance) || 0;
+  out[cfg.paidField] = Math.max(0, amount - open);
+  out.status = open <= 0 ? cfg.settled : cfg.open;
+  return out;
+}
 
 const norm = (s) => clean(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -100,6 +270,7 @@ function suggestMapping(target, headers) {
   const map = {};
   const used = new Set();
   for (const f of target.fields) {
+    if (f.const !== undefined || f.derive) continue;   // not read from the file
     const cands = [norm(f.label), norm(f.key), ...(f.aliases || []).map(norm)];
     let hit = headers.find(h => !used.has(h) && cands.includes(norm(h)));
     if (!hit) hit = headers.find(h => !used.has(h) && cands.some(c => c && norm(h).includes(c)));
@@ -145,11 +316,27 @@ function contentHash(target, row) {
   return createHash('sha1').update(parts.join('|').toLowerCase()).digest('hex');
 }
 
+// Some source files carry rows that are not records at all, and some carry
+// records for a DIFFERENT target. A QuickBooks report puts "Total for 1 - 30
+// days past due" and "TOTAL" subtotal rows in with the data, and a Transaction
+// List filtered to Bills still contains every Bill Payment against them — 733
+// of them in the real export. Importing those would invent 733 bills that were
+// never issued.
+//
+// So a target may declare `skipRow(src)`. It runs on the SOURCE row before any
+// mapping, and its rows are counted as `filtered` rather than `skip` — a
+// subtotal line is not a broken row, and reporting 738 errors on a good file is
+// how someone concludes the import is broken and gives up.
+const filteredOut = (target, src) => !!(target.skipRow && target.skipRow(src));
+
 // Apply a mapping to one source row and validate it.
 function buildRow(target, mapping, src) {
   const out = {};
   const errors = [];
   for (const f of target.fields) {
+    // A constant: the file doesn't carry it because the file IS that thing.
+    // A vendor contact list has no "kind" column; every row is a vendor.
+    if (f.const !== undefined) { out[f.key] = f.const; continue; }
     const header = mapping[f.key];
     if (!header) continue;
     const raw = src[header];
@@ -160,6 +347,11 @@ function buildRow(target, mapping, src) {
     else v = clean(raw) || null;
     out[f.key] = v;
   }
+  // Values computed from the mapped ones — a status implied by an open
+  // balance, say. Runs after mapping so it can read the finished row.
+  for (const f of target.fields) {
+    if (f.derive) out[f.key] = f.derive(out) ?? null;
+  }
   for (const f of target.fields) {
     if (f.required && (out[f.key] === null || out[f.key] === undefined || out[f.key] === '')) {
       errors.push(`${f.label} is required`);
@@ -167,6 +359,12 @@ function buildRow(target, mapping, src) {
   }
   return { row: out, errors };
 }
+
+// What is READ from the file (fields) and what is WRITTEN to the table are not
+// always the same set: a ledger reads an open balance in order to work out the
+// status and the paid figure, and writes those instead.
+const columnsOf = (target) => target.columns || target.fields.map(f => f.key);
+const shapeRow = (target, row) => (target.transform ? target.transform(row) : row);
 
 const canImport = (u, target) => u?.role === 'admin' || hasExplicitEdit(u, target.module);
 
@@ -221,12 +419,13 @@ router.post('/:id/preview', (req, res) => {
   const rows = JSON.parse(batch.rows_json);
   const existing = new Set(db.prepare(`SELECT external_id FROM ${target.table} WHERE external_id IS NOT NULL`).all().map(r => r.external_id));
 
-  let create = 0, update = 0, skip = 0;
+  let create = 0, update = 0, skip = 0, filtered = 0;
   const issues = [];
   const seenContent = new Set();   // identical rows entered twice
   const keyCounts = new Map();     // occurrences of each business key
   const preview = [];
   rows.forEach((src, i) => {
+    if (filteredOut(target, src)) { filtered++; return; }
     const { row, errors } = buildRow(target, mapping, src);
     if (errors.length) {
       skip++;
@@ -252,7 +451,10 @@ router.post('/:id/preview', (req, res) => {
     if (preview.length < 8) preview.push(row);
   });
 
-  res.json({ batch_id: batch.id, total: rows.length, create, update, skip, issues, preview });
+  res.json({
+    batch_id: batch.id, total: rows.length, create, update, skip, filtered, issues, preview,
+    filtered_note: target.filteredNote || null,
+  });
 });
 
 // Step 3 — write. Upsert on external_id inside one transaction so a failure
@@ -268,9 +470,9 @@ router.post('/:id/commit', (req, res) => {
   const mapping = req.body?.mapping || {};
   const rows = JSON.parse(batch.rows_json);
   const source = `import:${(batch.filename || 'file').slice(0, 40)}`;
-  const cols = target.fields.map(f => f.key);
+  const cols = columnsOf(target);
 
-  let created = 0, updated = 0, skipped = 0;
+  let created = 0, updated = 0, skipped = 0, filtered = 0;
   const seenContent = new Set();
   const keyCounts = new Map();
 
@@ -278,11 +480,25 @@ router.post('/:id/commit', (req, res) => {
     (id, ${cols.join(', ')}, source, external_id, created_by)
     VALUES (?, ${cols.map(() => '?').join(', ')}, ?, ?, ?)`);
   const findByExt = db.prepare(`SELECT id FROM ${target.table} WHERE external_id = ?`);
-  const updateStmt = db.prepare(`UPDATE ${target.table}
-    SET ${cols.map(c => `${c} = ?`).join(', ')}, source = ?, updated_at = datetime('now') WHERE id = ?`);
+
+  // An UPDATE only touches the columns THIS file actually carries. A column
+  // the source has nothing to say about must keep its existing value rather
+  // than being overwritten with a blank — importing a history export must not
+  // erase an open balance the aging report established. Statements are cached
+  // per column-set, since there are only a handful.
+  const updateCache = new Map();
+  const updateFor = (setCols) => {
+    const key = setCols.join(',');
+    if (!updateCache.has(key)) {
+      updateCache.set(key, db.prepare(`UPDATE ${target.table}
+        SET ${setCols.map(c => `${c} = ?`).join(', ')}, source = ?, updated_at = datetime('now') WHERE id = ?`));
+    }
+    return updateCache.get(key);
+  };
 
   db.transaction(() => {
     for (const src of rows) {
+      if (filteredOut(target, src)) { filtered++; continue; }
       const { row, errors } = buildRow(target, mapping, src);
       if (errors.length) { skipped++; continue; }
       // Mirrors the preview exactly, so what was approved is what gets written.
@@ -293,14 +509,23 @@ router.post('/:id/commit', (req, res) => {
       const occ = keyCounts.get(bk) || 0;
       keyCounts.set(bk, occ + 1);
       const ext = identityFor(target, row, occ);
-      const values = cols.map(c => row[c] ?? null);
+      const shaped = shapeRow(target, row);
       const hit = ext ? findByExt.get(ext) : null;
-      if (hit) { updateStmt.run(...values, source, hit.id); updated++; }
-      else { insert.run(uuid(), ...values, source, ext, req.user?.name || null); created++; }
+      if (hit) {
+        const setCols = cols.filter(c => shaped[c] !== undefined);
+        if (setCols.length) updateFor(setCols).run(...setCols.map(c => shaped[c] ?? null), source, hit.id);
+        updated++;
+      } else {
+        // What the file couldn't say, filled in for a NEW row only.
+        const defaults = target.insertDefaults ? target.insertDefaults(shaped) : {};
+        const values = cols.map(c => (shaped[c] !== undefined ? shaped[c] : defaults[c]) ?? null);
+        insert.run(uuid(), ...values, source, ext, req.user?.name || null);
+        created++;
+      }
     }
   })();
 
-  const result = { created, updated, skipped, total: rows.length };
+  const result = { created, updated, skipped, filtered, total: rows.length };
   db.prepare("UPDATE import_batches SET committed_at = datetime('now'), mapping = ?, result = ? WHERE id = ?")
     .run(JSON.stringify(mapping), JSON.stringify(result), batch.id);
   logAudit(req.user, 'import', 'import_batch', batch.id,
