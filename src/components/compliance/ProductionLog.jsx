@@ -433,6 +433,16 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
   // team is one entry in usesMoLines.
   const [cleans, setCleans] = useState(() => initial?.cleaning_events || []);
 
+  // The earliest start and the latest finish across everything worked. Same
+  // rule as the server's derivation and dayLogToEntry, so the three cannot
+  // disagree about when the shift ran.
+  const shiftWindow = useMemo(() => {
+    const all = [...moLines, ...cleans];
+    const pick = (k) => all.map(x => x[k]).filter(Boolean).sort();
+    const ends = pick('end_time');
+    return { start: pick('start_time')[0] || '', end: ends[ends.length - 1] || '' };
+  }, [moLines, cleans]);
+
   const set = (key, val) => setForm(prev => ({
     ...prev,
     [key]: val,
@@ -452,6 +462,13 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
       setMessage({ type: 'error', text: 'Add at least one MO (with an MO # or product).' });
       return;
     }
+    // The browser can't enforce `required` on a field that isn't rendered, so
+    // the derived window is checked here — and the message says where to fix
+    // it, since the empty box is not on this part of the form.
+    if (multiMo && (!shiftWindow.start || !shiftWindow.end)) {
+      setMessage({ type: 'error', text: 'Set a start and finish time on at least one MO or clean — the shift window comes from those.' });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -465,6 +482,8 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
         // Let the server derive product/MO/lot/quantity from the lines.
         payload.mo_lines = moLines;
         payload.cleaning_events = cleans;
+        payload.start_time = shiftWindow.start;
+        payload.end_time = shiftWindow.end;
         delete payload.product_name; delete payload.mo_number;
         delete payload.lot_number; delete payload.quantity_completed;
       } else {
@@ -575,16 +594,36 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Lot number" />
           </div>
         </>)}
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Project Start Time *</label>
-          <input required type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Project End Time *</label>
-          <input required type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
+        {/* On a multi-MO team the times live on the work itself — each MO run
+            and each clean has its own window — so the shift window is derived
+            from them rather than typed a third time. A copy you have to keep
+            in step is the copy that goes stale. */}
+        {multiMo ? (
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Shift window</label>
+            <div className="w-full px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm bg-gray-50 text-gray-700">
+              {shiftWindow.start || shiftWindow.end ? (
+                <>
+                  <span className="font-medium">{shiftWindow.start || '?'} – {shiftWindow.end || '?'}</span>
+                  <span className="text-gray-500 text-xs"> · from the times on each MO and clean below</span>
+                </>
+              ) : (
+                <span className="text-gray-500">Set a start and finish on an MO or a clean below.</span>
+              )}
+            </div>
+          </div>
+        ) : (<>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Project Start Time *</label>
+            <input required type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Project End Time *</label>
+            <input required type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+        </>)}
         {!multiMo && (
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Quantity Completed *</label>

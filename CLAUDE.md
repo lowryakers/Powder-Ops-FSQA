@@ -1625,6 +1625,14 @@ optional and ties a clean to **one specific MO** rather than to the shift.
   week is the case: 182.9 + 952.3 = 1,135.2, **not** 1,535.7.
 - Times are stored as text, not timestamps: "05:15" on a night shift belongs to the entry's date, and
   inventing a date-time would put half of Bernardo's shifts on the wrong day.
+- **The shift window is DERIVED, not typed.** Every MO run and every clean already carries its own start
+  and finish, so `start_time`/`end_time` are the earliest and latest of those — the top-level "Project Start
+  / End Time" inputs are gone for multi-MO teams and replaced by a read-only *Shift window* line. A third
+  copy of a fact recorded twice is the copy nobody updates. The entry form, `POST /entries` and
+  `dayLogToEntry` all apply the same rule so they cannot disagree. The columns stay NOT NULL, so the server
+  fills them **only when absent** — a team without per-line times, or a deliberate override, still wins —
+  and an entry with no times anywhere is refused rather than filed with a blank window. The form validates
+  this itself, because the browser can't enforce `required` on an input that isn't rendered.
 
 **The seeded Blending EOD template shrank to two fields** (Adjustments / notes, Equipment issues /
 downtime) because the structured fields took the rest — `clean_type`, `cleaned_items`, `clean_time`,

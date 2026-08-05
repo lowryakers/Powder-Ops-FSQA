@@ -576,11 +576,25 @@ router.post('/entries', (req, res) => {
   // is mirrored into the scalar product/MO/lot/quantity columns so everything
   // that reads those columns keeps working; the full list is stored in mo_lines.
   const lines = normalizeMoLines(mo_lines);
+  const cleans = normalizeCleaningEvents(cleaning_events);
   if (lines.length) {
     product_name = lines[0].product_name || product_name;
     mo_number = lines[0].mo_number || mo_number;
     lot_number = lines[0].lot_number || lot_number;
     if (quantity_completed == null) quantity_completed = lineQuantity(lines);
+  }
+
+  // The shift window is DERIVED from the work, not typed a second time. Each
+  // MO run and each clean already carries its own start and finish, so the
+  // shift ran from the earliest of them to the latest — asking for it again at
+  // the top of the form is a third copy of a fact already recorded twice, and
+  // the copy someone forgets to update. Only filled when absent, so a team
+  // without per-line times (or anyone deliberately overriding) still wins.
+  if (lines.length || cleans.length) {
+    const all = [...lines, ...cleans];
+    const times = (k) => all.map(x => x[k]).filter(Boolean).sort();
+    if (!start_time) start_time = times('start_time')[0] || '';
+    if (!end_time) { const e = times('end_time'); end_time = e[e.length - 1] || ''; }
   }
 
   if (!date || !team || !room || !product_name || !mo_number || !lot_number || !start_time || !end_time || quantity_completed == null || !people_count || !submitted_by) {
@@ -591,7 +605,6 @@ router.post('/entries', (req, res) => {
   const structured = structured_data && typeof structured_data === 'object' && !Array.isArray(structured_data)
     ? JSON.stringify(structured_data) : null;
   const moLinesJson = lines.length ? JSON.stringify(lines) : null;
-  const cleans = normalizeCleaningEvents(cleaning_events);
   const cleansJson = cleans.length ? JSON.stringify(cleans) : null;
 
   const id = uuid();
