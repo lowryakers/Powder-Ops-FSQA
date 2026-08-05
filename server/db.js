@@ -1540,6 +1540,14 @@ function runMigrations() {
   addColumnIfMissing('production_entries', 'qa_waived_at', 'TEXT');
   addColumnIfMissing('production_entries', 'qa_waived_by', 'TEXT');
   addColumnIfMissing('production_entries', 'qa_waived_reason', 'TEXT');
+  // A shift's cleans, as a JSON array. Cleaning is an EVENT with its own time
+  // window — not a shift-level attribute — because the room, the sifter and the
+  // utensils are cleaned at different times and to different levels, and a
+  // second clean can follow a changeover mid-shift. A single "Cleaning
+  // performed: Full" answer forced the operator to overstate one or understate
+  // the other. Each event may name an MO, so a clean done for one specific run
+  // is attributable to it.
+  addColumnIfMissing('production_entries', 'cleaning_events', 'TEXT');
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_production_entries_waived ON production_entries(qa_waived_at)'); } catch { /* ignore */ }
 
   // Same idea on the task side. A completed task can be reviewed with a note;

@@ -79,6 +79,7 @@ function computeMetrics(entry) {
     amendments: parseAmendments(entry.amendments),
     structured_data: parseJson(entry.structured_data, null),
     mo_lines: parseJson(entry.mo_lines, null),
+    cleaning_events: parseJson(entry.cleaning_events, null),
     duration_hours, units_per_hour, units_per_minute, units_per_min_per_person,
   };
 }
@@ -90,19 +91,85 @@ const parseAmendments = (raw) => { try { return JSON.parse(raw || '[]'); } catch
 // Normalize the multi-MO line list (Batching runs several MOs a shift). Keeps
 // only lines that name an MO or product; numbers are coerced, blanks dropped.
 // Returns [] when nothing usable is present so callers can treat it as "none".
+// The three stages a blend passes through, in the order the plant does them.
+// Fixed rather than free text because "what has actually been weighed but not
+// yet blended" is a question worth being able to ask across a week — and
+// because an MO legitimately spans days at different stages (weighed on the
+// Monday, sifted and blended on the Tuesday).
+export const WORK_STAGES = ['Weighed', 'Sifted', 'Blended'];
+
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+const text = (v, max = 200) => String(v ?? '').trim().slice(0, max);
+// A time as an operator writes it. Kept as text, not coerced to a timestamp:
+// "05:15" on a night shift belongs to the entry's date, and inventing a
+// date-time here would put half of Bernardo's shifts on the wrong day.
+const clock = (v) => {
+  const m = String(v ?? '').trim().match(/^(\d{1,2}):?(\d{2})$/);
+  if (!m) return '';
+  const h = Number(m[1]), mi = Number(m[2]);
+  return (h >= 0 && h <= 23 && mi >= 0 && mi <= 59) ? `${String(h).padStart(2, '0')}:${m[2]}` : '';
+};
+
 function normalizeMoLines(raw) {
   if (!Array.isArray(raw)) return [];
-  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
   return raw
     .map(l => ({
-      product_name: String(l?.product_name || '').trim(),
-      mo_number: String(l?.mo_number || '').trim(),
-      lot_number: String(l?.lot_number || '').trim(),
+      product_name: text(l?.product_name),
+      mo_number: text(l?.mo_number, 60),
+      lot_number: text(l?.lot_number, 60),
+      // Which stages were done on THIS line. An MO appears on two days with
+      // different stages ticked, and that is the record of where it got to.
+      work_stages: Array.isArray(l?.work_stages)
+        ? WORK_STAGES.filter(w => l.work_stages.includes(w)) : [],
+      // "100%", "20%", "80% Left" — kept verbatim. It is a qualifier on the
+      // stage, and normalising "80% Left" to a number loses which 80%.
+      portion: text(l?.portion, 40),
       batches: num(l?.batches),
-      batch_weights: String(l?.batch_weights || '').trim(),
+      batch_weights: text(l?.batch_weights, 500),
       quantity: num(l?.quantity),
+      start_time: clock(l?.start_time),
+      end_time: clock(l?.end_time),
+      // A rework of a run already filed. It occupies the line's time and is
+      // part of the day's record, but it produces NO new product — see the
+      // quantity rule at the write paths.
+      is_adjustment: !!l?.is_adjustment,
+      note: text(l?.note, 500),
     }))
     .filter(l => l.mo_number || l.product_name);
+}
+
+// A shift's cleans. Each is a real event with a time window, so two cleans in
+// one shift — the morning strip-down and a changeover wipe — are two rows
+// rather than one blurred answer.
+export function normalizeCleaningEvents(raw) {
+  if (!Array.isArray(raw)) return [];
+  const LEVELS = ['Partial Clean', 'Full Clean'];
+  return raw
+    .map(c => ({
+      level: LEVELS.includes(c?.level) ? c.level : '',
+      // What was cleaned, as separate ticks — the room and the equipment are
+      // cleaned to different levels, which is the whole reason this is a list.
+      scope: Array.isArray(c?.scope) ? c.scope.map(x => text(x, 60)).filter(Boolean) : [],
+      sifter_no: text(c?.sifter_no, 40),
+      atp_swab: !!c?.atp_swab,
+      allergen_swab: !!c?.allergen_swab,
+      start_time: clock(c?.start_time),
+      end_time: clock(c?.end_time),
+      // Optional: a clean done for one specific run rather than for the shift.
+      mo_number: text(c?.mo_number, 60),
+      note: text(c?.note, 500),
+    }))
+    // A row with no level and nothing cleaned is an empty card the operator
+    // added and didn't use.
+    .filter(c => c.level || c.scope.length || c.sifter_no);
+}
+
+// Shift quantity is the sum of the lines that recorded one — EXCLUDING
+// adjustments. An adjustment reworks product already counted on the day it was
+// made; adding it again would inflate the week's output by however much was
+// re-blended, which is the number the Production KPIs are built on.
+export function lineQuantity(lines) {
+  return (lines || []).reduce((s, l) => s + (l.is_adjustment ? 0 : (l.quantity || 0)), 0);
 }
 
 // ── EOD report templates (per team) ──────────────────────────────────────────
@@ -253,7 +320,7 @@ router.post('/missed-reports/restore', requireRole('admin', 'supervisor'), (req,
 // POST /entries — create a new production entry
 router.post('/entries', (req, res) => {
   const db = getDb();
-  let { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes, structured_data, mo_lines } = req.body;
+  let { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes, structured_data, mo_lines, cleaning_events } = req.body;
 
   // A shift can carry several MOs (Batching). When mo_lines is present, line 0
   // is mirrored into the scalar product/MO/lot/quantity columns so everything
@@ -263,9 +330,7 @@ router.post('/entries', (req, res) => {
     product_name = lines[0].product_name || product_name;
     mo_number = lines[0].mo_number || mo_number;
     lot_number = lines[0].lot_number || lot_number;
-    // Shift quantity is the sum of the lines that recorded one (0 if none did).
-    const lineQty = lines.reduce((s, l) => s + (l.quantity || 0), 0);
-    if (quantity_completed == null) quantity_completed = lineQty;
+    if (quantity_completed == null) quantity_completed = lineQuantity(lines);
   }
 
   if (!date || !team || !room || !product_name || !mo_number || !lot_number || !start_time || !end_time || quantity_completed == null || !people_count || !submitted_by) {
@@ -276,12 +341,14 @@ router.post('/entries', (req, res) => {
   const structured = structured_data && typeof structured_data === 'object' && !Array.isArray(structured_data)
     ? JSON.stringify(structured_data) : null;
   const moLinesJson = lines.length ? JSON.stringify(lines) : null;
+  const cleans = normalizeCleaningEvents(cleaning_events);
+  const cleansJson = cleans.length ? JSON.stringify(cleans) : null;
 
   const id = uuid();
   db.prepare(`
-    INSERT INTO production_entries (id, date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by, structured_data, mo_lines)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by, structured, moLinesJson);
+    INSERT INTO production_entries (id, date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by, structured_data, mo_lines, cleaning_events)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by, structured, moLinesJson, cleansJson);
 
   const created = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
   logAudit(submitted_by, 'create', 'production_entry', id, req.body, null, created);
@@ -466,11 +533,26 @@ router.put('/entries/:id', (req, res) => {
             updates.push(`${f} = ?`); values.push(v);
           }
         }
-        const qty = nextLines.reduce((s, l) => s + (l.quantity || 0), 0);
+        // Same rule as the create path: an adjustment reworks product already
+        // counted and must not be added to the shift again.
+        const qty = lineQuantity(nextLines);
         if (qty && req.body.quantity_completed === undefined && Number(existing.quantity_completed) !== qty) {
           updates.push('quantity_completed = ?'); values.push(qty);
         }
       }
+    }
+  }
+
+  // The shift's cleans amend as a whole, for the same reason MO lines do —
+  // they are a JSON array, and "the third clean's end time changed" is not a
+  // scalar diff anyone would read.
+  if (req.body.cleaning_events !== undefined) {
+    const nextCleans = normalizeCleaningEvents(req.body.cleaning_events);
+    const nextJson = nextCleans.length ? JSON.stringify(nextCleans) : null;
+    if (String(existing.cleaning_events ?? '') !== String(nextJson ?? '')) {
+      changes.push({ field: 'cleaning_events', label: 'Cleaning', from: existing.cleaning_events || null, to: nextJson });
+      updates.push('cleaning_events = ?');
+      values.push(nextJson);
     }
   }
 

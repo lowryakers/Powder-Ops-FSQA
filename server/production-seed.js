@@ -502,15 +502,37 @@ export function seedProductionEntries(db) {
 // Shift-level fields only. The per-MO data (product / MO / lot / batches /
 // batch weights) lives on the entry's MO lines now — a Batching shift runs
 // several MOs, so those repeat per line instead of once on the survey.
+// What is LEFT in the survey after the structured fields took the rest.
+//
+// Bernardo kept this shift in his phone's Notes and then re-typed it here,
+// which is the clearest possible signal that the form wasn't asking for what
+// he records. His notes look like this:
+//
+//   Full Clean (ATP Swab and Allergen Swab) Room 1, Sifter (160) and Utensils (06:40-07:45)
+//   MO76736 Lot.101692 … (Weighed, Sifted and Blended 2 Batches No.1=343.4kg…) (08:00-12:45)
+//   ADJUSTMENT MO76759 Lot.101714 … 1 Batch (15:05-15:25)
+//
+// So a clean is an EVENT with its own window and its own scope, and each MO
+// carries its own stages, portion, weights and window. Neither fits a flat
+// per-shift survey, and both are now first-class repeatable fields on the
+// entry (`cleaning_events`, `mo_lines`).
+//
+// That empties this template of everything it used to ask twice:
+//   · clean_type / cleaned_items / clean_time / sifter_no / atp_swab /
+//     allergen_swab  → cleaning events
+//   · weighing ("80% Left, 20% – 2 batches")  → the MO line's stages + portion
+//   · blend_time ("Sift & blend time window") → the MO line's own window
+//
+// The old keys are NOT reused. They asked broader questions, and re-labelling
+// their historical answers as answers to narrower ones would quietly rewrite
+// what those shifts recorded; filed entries keep them and render them as
+// history (EodSummary shows answer keys the template no longer defines,
+// exactly for this).
+//
+// What remains is what genuinely belongs to the shift rather than to a clean
+// or a run — and the template is still admin-editable, so adding to it is a
+// Settings task, not a deploy.
 const BATCHING_EOD_FIELDS = [
-  { key: 'clean_type', label: 'Cleaning performed', type: 'select', options: ['Partial Clean', 'Full Clean', 'No clean this shift'] },
-  { key: 'atp_swab', label: 'ATP swab taken', type: 'checkbox' },
-  { key: 'allergen_swab', label: 'Allergen swab taken', type: 'checkbox' },
-  { key: 'cleaned_items', label: 'Cleaned / swabbed (blender, room, sifter #, utensils)', type: 'text' },
-  { key: 'clean_time', label: 'Cleaning time window', type: 'text' },
-  { key: 'sifter_no', label: 'Sifter #', type: 'text' },
-  { key: 'weighing', label: 'Weighing progress (e.g. 80% Left, 20% – 2 batches)', type: 'text' },
-  { key: 'blend_time', label: 'Sift & blend time window', type: 'text' },
   { key: 'adjustments', label: 'Adjustments / notes', type: 'textarea' },
   { key: 'equipment_issues', label: 'Equipment issues / downtime', type: 'textarea' },
 ];
@@ -530,5 +552,13 @@ export function seedEodTemplates(db) {
     db.prepare("UPDATE eod_templates SET title = ?, fields = ? WHERE team = 'Batching' AND updated_by = 'system'")
       .run('Blending EOD Report', fields);
     console.log('[seed] Refreshed default Batching (Blending) EOD template');
+  } else {
+    // Somebody has edited this template in the app, so it is theirs and the
+    // seed leaves it alone — that guard is the whole reason the survey is
+    // self-serve. But a change to the default that then silently never appears
+    // is indistinguishable from a broken deploy, so say so out loud: the
+    // change is made in Production Log -> EOD Templates instead.
+    console.log(`[seed] Batching EOD template was edited in-app by ${row.updated_by} — leaving it alone. `
+      + 'Changes to the shipped default must be applied in Production Log → EOD Templates.');
   }
 }

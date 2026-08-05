@@ -54,7 +54,21 @@ const INITIAL_FORM = {
 
 /* ── Multi-MO lines (a Batching shift runs several MOs) ──── */
 
-const blankMoLine = () => ({ product_name: '', mo_number: '', lot_number: '', batches: '', batch_weights: '', quantity: '' });
+const WORK_STAGES = ['Weighed', 'Sifted', 'Blended'];
+const blankMoLine = () => ({
+  product_name: '', mo_number: '', lot_number: '', work_stages: [], portion: '',
+  batches: '', batch_weights: '', quantity: '', start_time: '', end_time: '',
+  is_adjustment: false, note: '',
+});
+// What a clean covers. The room and the equipment are separate ticks because
+// they are cleaned to different levels in the same shift — a partial wipe of
+// the room alongside a full strip of the blender is the ordinary case, and one
+// blanket answer forced the operator to misstate one of them.
+const CLEAN_SCOPE = ['Room', 'Blender', 'Sifter', 'Utensils', 'Scale', 'Floor / drains'];
+const blankClean = () => ({
+  level: 'Full Clean', scope: [], sifter_no: '', atp_swab: false, allergen_swab: false,
+  start_time: '', end_time: '', mo_number: '', note: '',
+});
 // Which teams record more than one MO in a single shift. Batching blends
 // several orders a day; Filling/Kitting stay one MO per entry.
 const usesMoLines = (team) => team === 'Batching';
@@ -70,11 +84,24 @@ function MoLinesField({ lines, setLines }) {
     <div className="space-y-2">
       {lines.map((l, i) => (
         <div key={i} className="rounded-lg border border-gray-200 bg-gray-50/60 p-2.5">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-semibold text-gray-500">MO {i + 1}</span>
-            {lines.length > 1 && (
-              <button type="button" onClick={() => remove(i)} className="p-0.5 text-gray-400 hover:text-red-600" title="Remove this MO"><X size={14} /></button>
-            )}
+          {/* The adjustment toggle sits on its own row below the heading at
+              phone width — squeezed beside "MO 1" it wrapped into three lines
+              and pushed the remove button off the end. */}
+          <div className="mb-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold text-gray-500">MO {i + 1}</span>
+              {lines.length > 1 && (
+                <button type="button" onClick={() => remove(i)} className="p-0.5 text-gray-400 hover:text-red-600" title="Remove this MO"><X size={14} /></button>
+              )}
+            </div>
+            {/* Bernardo writes these as ADJUSTMENT lines. They occupy the day
+                and belong in the record, but they rework product already
+                counted — so the quantity is not added to the shift again. */}
+            <label className="mt-1 flex items-start gap-1.5 text-[11px] text-gray-600">
+              <input type="checkbox" className="mt-0.5 shrink-0" checked={!!l.is_adjustment}
+                onChange={e => setLine(i, { is_adjustment: e.target.checked, ...(e.target.checked ? { quantity: '' } : {}) })} />
+              Adjustment (rework — not counted again)
+            </label>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="sm:col-span-2">
@@ -89,13 +116,42 @@ function MoLinesField({ lines, setLines }) {
               <label className="block text-[11px] text-gray-600 mb-0.5">Lot #</label>
               <input value={l.lot_number} onChange={e => setLine(i, { lot_number: e.target.value })} className={cls} placeholder="Lot #" />
             </div>
+            {/* An MO legitimately spans days at different stages — weighed on
+                the Monday, sifted and blended on the Tuesday — so the stages
+                are per LINE, not per MO. */}
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] text-gray-600 mb-1">Work done on this line</label>
+              <div className="flex flex-wrap gap-1.5">
+                {WORK_STAGES.map(w => {
+                  const on = (l.work_stages || []).includes(w);
+                  return (
+                    <button key={w} type="button"
+                      onClick={() => setLine(i, { work_stages: on ? l.work_stages.filter(x => x !== w) : [...(l.work_stages || []), w] })}
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${on ? 'border-powder-400 bg-powder-50 text-powder-800' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}>
+                      {w}
+                    </button>
+                  );
+                })}
+                <input value={l.portion} onChange={e => setLine(i, { portion: e.target.value })}
+                  className="px-2 py-1 border border-gray-300 rounded-lg text-xs w-28" placeholder="100% / 80% Left" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">Started</label>
+              <input type="time" value={l.start_time} onChange={e => setLine(i, { start_time: e.target.value })} className={cls} />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">Finished</label>
+              <input type="time" value={l.end_time} onChange={e => setLine(i, { end_time: e.target.value })} className={cls} />
+            </div>
             <div>
               <label className="block text-[11px] text-gray-600 mb-0.5">Batches</label>
               <input type="number" min="0" value={l.batches} onChange={e => setLine(i, { batches: e.target.value })} className={cls} placeholder="0" />
             </div>
             <div>
               <label className="block text-[11px] text-gray-600 mb-0.5">Quantity (optional)</label>
-              <input type="number" min="0" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} className={cls} placeholder="0" />
+              <input type="number" min="0" value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} className={cls}
+                placeholder={l.is_adjustment ? 'not counted' : '0'} disabled={l.is_adjustment} />
             </div>
             <div className="sm:col-span-2">
               <label className="block text-[11px] text-gray-600 mb-0.5">Batch weights</label>
@@ -112,6 +168,121 @@ function MoLinesField({ lines, setLines }) {
   );
 }
 
+/* ── Cleaning events ─────────────────────────────────────── */
+
+// A shift's cleans, as separate events.
+//
+// This used to be one select on the EOD survey ("Cleaning performed: Full /
+// Partial"), which could not describe what actually happens: the room gets a
+// partial wipe while the blender is stripped, a second clean follows a
+// changeover, and each has its own time window. Bernardo was keeping the real
+// version in his phone and re-typing a lossy summary here.
+//
+// Each event may name an MO, so a clean done for one specific run is
+// attributable to it rather than to the shift in general.
+function CleaningEventsField({ events, setEvents, moOptions }) {
+  const setEvent = (i, patch) => setEvents(es => es.map((e, j) => (j === i ? { ...e, ...patch } : e)));
+  const add = () => setEvents(es => [...es, blankClean()]);
+  const remove = (i) => setEvents(es => es.filter((_, j) => j !== i));
+  const cls = 'w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm';
+
+  return (
+    <div className="space-y-2">
+      {events.map((c, i) => (
+        <div key={i} className="rounded-lg border border-gray-200 bg-gray-50/60 p-2.5">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <span className="text-[11px] font-semibold text-gray-500">Clean {i + 1}</span>
+            <button type="button" onClick={() => remove(i)} className="p-0.5 text-gray-400 hover:text-red-600" title="Remove this clean"><X size={14} /></button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">Level</label>
+              <select value={c.level} onChange={e => setEvent(i, { level: e.target.value })} className={cls}>
+                <option value="Full Clean">Full Clean</option>
+                <option value="Partial Clean">Partial Clean</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">Sifter # (if one was used)</label>
+              <input value={c.sifter_no} onChange={e => setEvent(i, { sifter_no: e.target.value })} className={cls} placeholder="160" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] text-gray-600 mb-1">What was cleaned at this level</label>
+              <div className="flex flex-wrap gap-1.5">
+                {CLEAN_SCOPE.map(x => {
+                  const on = (c.scope || []).includes(x);
+                  return (
+                    <button key={x} type="button"
+                      onClick={() => setEvent(i, { scope: on ? c.scope.filter(y => y !== x) : [...(c.scope || []), x] })}
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${on ? 'border-powder-400 bg-powder-50 text-powder-800' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}>
+                      {x}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Add a second clean below if the room and the equipment were done to different levels.
+              </p>
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">Started</label>
+              <input type="time" value={c.start_time} onChange={e => setEvent(i, { start_time: e.target.value })} className={cls} />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-600 mb-0.5">Finished</label>
+              <input type="time" value={c.end_time} onChange={e => setEvent(i, { end_time: e.target.value })} className={cls} />
+            </div>
+            <div className="sm:col-span-2 flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-1.5 text-xs text-gray-700">
+                <input type="checkbox" checked={!!c.atp_swab} onChange={e => setEvent(i, { atp_swab: e.target.checked })} /> ATP swab taken
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-gray-700">
+                <input type="checkbox" checked={!!c.allergen_swab} onChange={e => setEvent(i, { allergen_swab: e.target.checked })} /> Allergen swab taken
+              </label>
+              {moOptions?.length > 0 && (
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 ml-auto">
+                  For
+                  <select value={c.mo_number} onChange={e => setEvent(i, { mo_number: e.target.value })}
+                    className="px-2 py-1 border border-gray-300 rounded-lg text-xs">
+                    <option value="">the whole shift</option>
+                    {moOptions.map(mo => <option key={mo} value={mo}>{mo}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+      <button type="button" onClick={add}
+        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
+        <Plus size={13} /> {events.length ? 'Add another clean' : 'Add a clean'}
+      </button>
+    </div>
+  );
+}
+
+// A saved entry's cleans, read-only, for the log.
+function CleaningSummary({ events }) {
+  if (!Array.isArray(events) || !events.length) return null;
+  return (
+    <div className="mt-1.5 space-y-1">
+      {events.map((c, i) => {
+        const swabs = [c.atp_swab && 'ATP', c.allergen_swab && 'Allergen'].filter(Boolean);
+        return (
+          <div key={i} className="text-xs text-gray-700">
+            <span className="font-medium text-gray-900">{c.level || 'Clean'}</span>
+            {c.scope?.length ? <span> · {c.scope.join(', ')}</span> : null}
+            {c.sifter_no && <span className="text-gray-500"> · Sifter {c.sifter_no}</span>}
+            {swabs.length ? <span className="text-gray-500"> · {swabs.join(' + ')} swab</span> : null}
+            {(c.start_time || c.end_time) && <span className="text-gray-500"> · {c.start_time || '?'}–{c.end_time || '?'}</span>}
+            {c.mo_number && <span className="text-gray-500"> · for {c.mo_number}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // A saved entry's MO lines, read-only, for the log. Falls back to the scalar
 // columns for pre-multi-MO entries so old rows still render.
 function MoLinesSummary({ lines }) {
@@ -120,11 +291,14 @@ function MoLinesSummary({ lines }) {
     <div className="mt-1.5 space-y-1">
       {lines.map((l, i) => (
         <div key={i} className="text-xs text-gray-700">
+          {l.is_adjustment && <span className="mr-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold">ADJUSTMENT</span>}
           <span className="font-medium text-gray-900">{l.mo_number || '—'}</span>
           {l.product_name && <span> · {l.product_name}</span>}
           {l.lot_number && <span className="text-gray-500"> · Lot {l.lot_number}</span>}
+          {l.work_stages?.length ? <span className="text-gray-500"> · {l.work_stages.join(', ')}{l.portion ? ` ${l.portion}` : ''}</span> : null}
           {(l.batches != null && l.batches !== '') && <span className="text-gray-500"> · {l.batches} batch{Number(l.batches) === 1 ? '' : 'es'}</span>}
           {l.batch_weights && <span className="text-gray-500"> · {l.batch_weights}</span>}
+          {(l.start_time || l.end_time) && <span className="text-gray-500"> · {l.start_time || '?'}–{l.end_time || '?'}</span>}
           {(l.quantity != null && l.quantity !== '') && <span className="text-gray-500"> · qty {Number(l.quantity).toLocaleString()}</span>}
         </div>
       ))}
@@ -207,6 +381,10 @@ function EntryForm({ user, onSuccess }) {
   // Multi-MO teams (Batching) record a line per order instead of one MO.
   const multiMo = usesMoLines(form.team);
   const [moLines, setMoLines] = useState([blankMoLine()]);
+  // Cleans are logged wherever MO lines are — the same teams that run several
+  // orders a shift are the ones cleaning between them. Extending it to another
+  // team is one entry in usesMoLines.
+  const [cleans, setCleans] = useState([]);
 
   const set = (key, val) => setForm(prev => ({
     ...prev,
@@ -216,7 +394,7 @@ function EntryForm({ user, onSuccess }) {
   }));
   // Switching teams starts the survey fresh — a Batching answer shouldn't carry
   // into a Filling report.
-  const setTeam = (val) => { set('team', val); setStructured({}); setMoLines([blankMoLine()]); };
+  const setTeam = (val) => { set('team', val); setStructured({}); setMoLines([blankMoLine()]); setCleans([]); };
   const setField = (k, v) => setStructured(s => ({ ...s, [k]: v }));
 
   const handleSubmit = async (e) => {
@@ -239,6 +417,7 @@ function EntryForm({ user, onSuccess }) {
       if (multiMo) {
         // Let the server derive product/MO/lot/quantity from the lines.
         payload.mo_lines = moLines;
+        payload.cleaning_events = cleans;
         delete payload.product_name; delete payload.mo_number;
         delete payload.lot_number; delete payload.quantity_completed;
       } else {
@@ -357,6 +536,14 @@ function EntryForm({ user, onSuccess }) {
         <div className="rounded-lg border border-powder-200 bg-powder-50/50 p-3">
           <p className="text-xs font-semibold text-powder-800 mb-2">MOs worked this shift</p>
           <MoLinesField lines={moLines} setLines={setMoLines} />
+        </div>
+      )}
+
+      {multiMo && (
+        <div className="rounded-lg border border-gray-200 bg-white p-3">
+          <p className="text-xs font-semibold text-gray-700 mb-2">Cleaning this shift</p>
+          <CleaningEventsField events={cleans} setEvents={setCleans}
+            moOptions={moLines.map(l => l.mo_number).filter(Boolean)} />
         </div>
       )}
 
@@ -588,10 +775,9 @@ function AmendModal({ entry, onClose, onSaved }) {
     return f;
   });
   const [moLines, setMoLines] = useState(() =>
-    (entry.mo_lines || []).map(l => ({
-      product_name: l.product_name || '', mo_number: l.mo_number || '', lot_number: l.lot_number || '',
-      batches: l.batches ?? '', batch_weights: l.batch_weights || '', quantity: l.quantity ?? '',
-    })));
+    (entry.mo_lines || []).map(l => ({ ...blankMoLine(), ...l, batches: l.batches ?? '', quantity: l.quantity ?? '' })));
+  const [cleans, setCleans] = useState(() =>
+    (entry.cleaning_events || []).map(c => ({ ...blankClean(), ...c })));
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -599,13 +785,26 @@ function AmendModal({ entry, onClose, onSaved }) {
   const changed = amendFields.filter(f => String(entry[f.key] ?? '') !== String(form[f.key] ?? ''));
   // Compare the line list to the saved one (normalized to strings) to know if
   // the MOs were edited.
+  // Every field the editor can touch is compared, or an edited stage, portion
+  // or time window would not register as a change and the amend button would
+  // stay disabled with the form visibly altered.
   const norm = (ls) => JSON.stringify((ls || []).map(l => ({
     product_name: String(l.product_name || '').trim(), mo_number: String(l.mo_number || '').trim(),
     lot_number: String(l.lot_number || '').trim(), batches: l.batches === '' || l.batches == null ? '' : String(l.batches),
     batch_weights: String(l.batch_weights || '').trim(), quantity: l.quantity === '' || l.quantity == null ? '' : String(l.quantity),
+    work_stages: [...(l.work_stages || [])].sort(), portion: String(l.portion || '').trim(),
+    start_time: String(l.start_time || ''), end_time: String(l.end_time || ''),
+    is_adjustment: !!l.is_adjustment, note: String(l.note || '').trim(),
   })).filter(l => l.mo_number || l.product_name));
+  const normCleans = (cs) => JSON.stringify((cs || []).map(c => ({
+    level: c.level || '', scope: [...(c.scope || [])].sort(), sifter_no: String(c.sifter_no || '').trim(),
+    atp_swab: !!c.atp_swab, allergen_swab: !!c.allergen_swab,
+    start_time: String(c.start_time || ''), end_time: String(c.end_time || ''),
+    mo_number: String(c.mo_number || '').trim(), note: String(c.note || '').trim(),
+  })).filter(c => c.level || c.scope.length || c.sifter_no));
+  const cleansChanged = multiMo && normCleans(cleans) !== normCleans(entry.cleaning_events);
   const moChanged = multiMo && norm(moLines) !== norm(entry.mo_lines);
-  const ready = (changed.length > 0 || moChanged) && reason.trim().length >= MIN_REASON;
+  const ready = (changed.length > 0 || moChanged || cleansChanged) && reason.trim().length >= MIN_REASON;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -614,6 +813,7 @@ function AmendModal({ entry, onClose, onSaved }) {
       const patch = { reason: reason.trim() };
       for (const f of changed) patch[f.key] = form[f.key];
       if (moChanged) patch.mo_lines = moLines;
+      if (cleansChanged) patch.cleaning_events = cleans;
       await apiPut(`/production/entries/${entry.id}`, patch);
       onSaved();
       onClose();
@@ -654,6 +854,9 @@ function AmendModal({ entry, onClose, onSaved }) {
             <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3">
               <p className="text-xs font-semibold text-gray-700 mb-2">MOs worked this shift</p>
               <MoLinesField lines={moLines} setLines={setMoLines} />
+              <p className="text-xs font-semibold text-gray-700 mt-3 mb-1.5">Cleaning this shift</p>
+              <CleaningEventsField events={cleans} setEvents={setCleans}
+                moOptions={moLines.map(l => l.mo_number).filter(Boolean)} />
             </div>
           )}
 
@@ -1062,6 +1265,7 @@ function LogTable({ user }) {
                 </div>
               )}
               {entry.mo_lines?.length > 1 && <MoLinesSummary lines={entry.mo_lines} />}
+              <CleaningSummary events={entry.cleaning_events} />
               {entry.notes && <div className="mt-2 text-xs text-gray-700 bg-gray-50 rounded-lg px-2 py-1.5 break-words"><span className="font-medium text-gray-900">Notes:</span> {entry.notes}</div>}
               <EodSummary template={templates?.[entry.team]} data={entry.structured_data} />
               <AmendmentTrail amendments={entry.amendments} />
@@ -1186,6 +1390,7 @@ function LogTable({ user }) {
                           <div className="mb-2">
                             <div className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">MOs this shift</div>
                             <MoLinesSummary lines={entry.mo_lines} />
+                            <CleaningSummary events={entry.cleaning_events} />
                           </div>
                         )}
                         <EodSummary template={templates?.[entry.team]} data={entry.structured_data} />

@@ -1519,3 +1519,51 @@ Module grant `banking`.
 - **Docs for the humans:** `docs/quickbooks-api-setup.md` (getting the four QBO env vars) and
   `docs/accountant-brief.md` (what stage 3 would mean and what we need from the accountant before building
   a general ledger).
+
+## The Batching EOD, rebuilt around what Bernardo actually writes down
+He was keeping the shift in his phone's Notes and then re-typing a lossy summary into ReadyDoc — the
+clearest possible signal the form wasn't asking for what he records. His notes look like:
+```
+Full Clean (ATP Swab and Allergen Swab) Room 1, Sifter (160) and Utensils (06:40-07:45)
+MO76736 Lot.101692 … (Weighed, Sifted and Blended 2 Batches No.1=343.4kg…) (08:00-12:45)
+ADJUSTMENT MO76759 Lot.101714 … 1 Batch (15:05-15:25)
+```
+So neither cleaning nor per-MO work fits a flat per-shift survey. Both are now first-class repeatable
+fields on the entry.
+
+**`production_entries.cleaning_events`** (JSON) — `{level, scope[], sifter_no, atp_swab, allergen_swab,
+start_time, end_time, mo_number, note}`. **A clean is an EVENT, not a shift attribute.** The old single
+"Cleaning performed: Full / Partial" select forced a partial wipe of the room and a full strip of the
+blender into one answer, so the operator had to overstate one of them; and a second clean after a
+changeover had nowhere to go. `scope` is a tick list (Room / Blender / Sifter / Utensils / Scale / Floor &
+drains) so **the room and the equipment can be at different levels** — file two events. `mo_number` is
+optional and ties a clean to **one specific MO** rather than to the shift.
+
+**`mo_lines` gained `work_stages` / `portion` / `start_time` / `end_time` / `is_adjustment` / `note`.**
+- `WORK_STAGES` = Weighed / Sifted / Blended, **fixed** rather than free text, because an MO legitimately
+  spans days at different stages (weighed Monday 15:15, sifted and blended Tuesday 05:15) and "what is
+  weighed but not yet blended" is worth being able to ask.
+- `portion` ("100%", "20%", "80% Left") is kept **verbatim** — normalising "80% Left" to a number loses
+  which 80%.
+- **`is_adjustment` lines contribute ZERO to `quantity_completed`** (`lineQuantity()`, used by both the
+  create and amend paths). An adjustment reworks product already counted on the day it was made; adding it
+  again would inflate the week's output — the number Production KPIs are built on. Wednesday of the sample
+  week is the case: 182.9 + 952.3 = 1,135.2, **not** 1,535.7.
+- Times are stored as text, not timestamps: "05:15" on a night shift belongs to the entry's date, and
+  inventing a date-time would put half of Bernardo's shifts on the wrong day.
+
+**The seeded Blending EOD template shrank to two fields** (Adjustments / notes, Equipment issues /
+downtime) because the structured fields took the rest — `clean_type`, `cleaned_items`, `clean_time`,
+`sifter_no`, `atp_swab`, `allergen_swab` → cleaning events; `weighing` → the MO line's stages + portion;
+`blend_time` → the MO line's own window.
+- **The retired keys are NOT reused.** They asked broader questions and re-labelling their historical
+  answers as answers to narrower ones would quietly rewrite what those shifts recorded. Filed entries keep
+  them and `EodSummary` renders any answer key the template no longer defines, exactly for this.
+- **`seedEodTemplates` still refuses to clobber a hand-edited template** (`updated_by !== 'system'`) — but
+  it now LOGS when it skips, because a change to the shipped default that silently never appears is
+  indistinguishable from a broken deploy. In that case the change is made in Production Log → EOD Templates.
+- Cleaning events are gated by `usesMoLines(team)` (Batching today); extending them to another team is one
+  entry in that helper.
+Verified end to end by filing Bernardo's real Mon–Thu: 26 assertions, including the adjustment not
+inflating output, two different-level cleans in one shift, a clean tied to one MO, an MO continuing at a
+later stage the next day, and rejection of invented stages/levels/times.
