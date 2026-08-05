@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApiGet, apiPost } from '../../hooks/useApi';
 import {
   RefreshCw, Search, Database, CheckCircle2, AlertTriangle, Link2Off,
-  ArrowDownToLine, Landmark,
+  ArrowDownToLine, Landmark, PlugZap, FlaskConical,
 } from 'lucide-react';
 
 // The QuickBooks side of the Accounting hub.
@@ -27,6 +27,52 @@ const when = (iso) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 };
 const num = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString());
+
+/**
+ * Development keys read Intuit's SANDBOX — a demo company with invented
+ * vendors and invoices. Production keys read the real one. Nothing on this
+ * screen looks different between the two, which is the danger: a discovery
+ * report run against the sandbox is a perfectly convincing set of numbers
+ * about somebody else's business, and sizing a QuickBooks replacement against
+ * it would be worse than having no numbers at all. So sandbox says so, loudly,
+ * every time.
+ */
+function SandboxNote({ environment, company, setupHelp }) {
+  if (environment === 'sandbox') {
+    return (
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+        <p className="text-sm font-semibold text-blue-900 flex items-center gap-1.5">
+          <FlaskConical size={14} /> Sandbox — this is not Powder Ops
+        </p>
+        <p className="text-xs text-blue-900 mt-1 max-w-2xl">
+          Development keys can only reach Intuit&apos;s demo company
+          {company ? <> (currently <strong>{company}</strong>)</> : null}. That is genuinely useful — it
+          proves the connection, the paging and the pull all work against real Intuit servers. But every
+          number below is invented test data. <strong>Do not use it to decide anything about our books</strong>;
+          for that we need production keys, which means finishing the app profile on developer.intuit.com.
+        </p>
+      </div>
+    );
+  }
+  if (!setupHelp) return null;
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+      <p className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+        <FlaskConical size={14} /> Using development keys?
+      </p>
+      <ul className="text-xs text-gray-600 mt-1 space-y-1 list-disc pl-4 max-w-2xl">
+        <li>Add <code>QBO_ENV=sandbox</code>. Without it these calls go to the production API and are
+          refused, which reads as a broken connection rather than a wrong setting.</li>
+        <li>Use the <strong>sandbox company&apos;s</strong> realm id — the one shown in the OAuth Playground,
+          not the Company ID from the real QuickBooks settings. They are different numbers.</li>
+        <li>Get the refresh token from the Playground with environment set to <strong>Sandbox</strong>.</li>
+      </ul>
+      <p className="text-xs text-gray-500 mt-1.5">
+        This proves the integration works end to end. It cannot read our own books — only production keys can.
+      </p>
+    </div>
+  );
+}
 
 function Stat({ label, value, tone = '' }) {
   return (
@@ -54,12 +100,24 @@ export default function QuickBooksPanel({ user }) {
     setBusy(what); setMsg(null);
     try {
       const r = await apiPost(path, body);
-      setMsg({ tone: 'ok', text: describe(r) });
+      // A test that reaches Intuit and is refused answers 200 with ok:false —
+      // that is a failure to report, not a success with unusual wording.
+      setMsg({ tone: r?.ok === false ? 'bad' : 'ok', text: describe(r) });
       refreshStatus(); refreshInventory(); refreshPulled();
     } catch (e) {
       setMsg({ tone: 'bad', text: e.message });
     } finally { setBusy(null); }
   };
+
+  // Each of the four, with what it is and where it comes from — because "not
+  // connected" without saying which part is missing sends someone back through
+  // all four screens looking for the one that's wrong.
+  const VARS = [
+    { key: 'QBO_CLIENT_ID', what: 'Client ID', where: 'developer.intuit.com → your app → Keys & credentials' },
+    { key: 'QBO_CLIENT_SECRET', what: 'Client Secret', where: 'same screen as the Client ID' },
+    { key: 'QBO_REALM_ID', what: 'Company (realm) ID', where: 'the OAuth Playground, or QuickBooks → Account and settings → Billing' },
+    { key: 'QBO_REFRESH_TOKEN', what: 'Refresh token', where: 'developer.intuit.com → Tools → OAuth 2.0 Playground → Get tokens' },
+  ];
 
   if (!status?.enabled) {
     return (
@@ -67,19 +125,32 @@ export default function QuickBooksPanel({ user }) {
         <h2 className="text-xl font-bold text-gray-900">QuickBooks</h2>
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
-            <Link2Off size={15} /> Not connected yet
+            <Link2Off size={15} /> Not connected yet — {status?.missing?.length || 4} of 4 values still needed
           </p>
-          <p className="text-sm text-amber-900 mt-1.5 max-w-2xl">
-            Four values go into Railway — <code className="text-xs">QBO_CLIENT_ID</code>,{' '}
-            <code className="text-xs">QBO_CLIENT_SECRET</code>, <code className="text-xs">QBO_REFRESH_TOKEN</code> and{' '}
-            <code className="text-xs">QBO_REALM_ID</code>. The step-by-step is in{' '}
-            <code className="text-xs">docs/quickbooks-api-setup.md</code>. Until then this screen has nothing
-            to read, and nothing else in ReadyDoc is affected.
-          </p>
-          <p className="text-xs text-amber-800 mt-2">
-            The connection is read-only by design — there is no code here that writes back to QuickBooks.
+          <ul className="mt-2 space-y-1.5">
+            {VARS.map(v => {
+              const have = status?.present?.[v.key];
+              return (
+                <li key={v.key} className="flex items-start gap-2 text-sm">
+                  <span className={`mt-0.5 shrink-0 ${have ? 'text-green-600' : 'text-amber-600'}`}>
+                    {have ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                  </span>
+                  <span className={have ? 'text-green-900' : 'text-amber-900'}>
+                    <code className="text-xs">{v.key}</code> — {v.what}
+                    {!have && <span className="block text-xs text-amber-800">{v.where}</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-xs text-amber-800 mt-3">
+            Set them in Railway → Variables. The full walkthrough is{' '}
+            <code className="text-xs">docs/quickbooks-api-setup.md</code>. Nothing else in ReadyDoc is
+            affected meanwhile, and the connection is read-only by design.
           </p>
         </div>
+
+        <SandboxNote environment={status?.environment} setupHelp />
       </div>
     );
   }
@@ -95,20 +166,32 @@ export default function QuickBooksPanel({ user }) {
         <div>
           <h2 className="text-xl font-bold text-gray-900">QuickBooks</h2>
           <p className="text-xs text-gray-500">
-            Connected to {status.environment}
+            {status.company ? <>Connected to <strong>{status.company}</strong> · {status.environment}</>
+              : `Connected to ${status.environment}`}
             {status.full_pull_at
               ? ` · full copy pulled ${when(status.full_pull_at)}`
               : ' · no full copy pulled yet'}
           </p>
         </div>
-        <button
-          onClick={() => run('sync', '/finance/quickbooks/sync', {},
-            r => `Sync: ${r.bills.created + r.invoices.created} new, ${r.bills.updated + r.invoices.updated} updated since ${r.since}.`)}
-          disabled={!!busy}
-          className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 shrink-0">
-          <RefreshCw size={14} className={busy === 'sync' ? 'animate-spin' : ''} /> Sync changes
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => run('test', '/finance/quickbooks/test', {},
+              r => (r.ok ? `Reached ${r.company || 'the company'} (realm ${r.realm_id}, ${r.environment}).` : r.error))}
+            disabled={!!busy}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50">
+            <PlugZap size={14} className={busy === 'test' ? 'animate-pulse' : ''} /> Test connection
+          </button>
+          <button
+            onClick={() => run('sync', '/finance/quickbooks/sync', {},
+              r => `Sync: ${r.bills.created + r.invoices.created} new, ${r.bills.updated + r.invoices.updated} updated since ${r.since}.`)}
+            disabled={!!busy}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50">
+            <RefreshCw size={14} className={busy === 'sync' ? 'animate-spin' : ''} /> Sync changes
+          </button>
+        </div>
       </div>
+
+      <SandboxNote environment={status.environment} company={status.company} />
 
       {msg && (
         <p className={`text-sm px-3 py-2 rounded-lg ${msg.tone === 'ok' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>

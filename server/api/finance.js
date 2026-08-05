@@ -6,7 +6,7 @@ import { storageEnabled, putObject, presignGet, deleteObject, getObjectBuffer } 
 import { extractInvoiceText } from '../invoice-text.js';
 import {
   quickbooksEnabled, quickbooksStatus, syncFromQuickBooks,
-  discoverQuickBooks, lastInventory,
+  discoverQuickBooks, lastInventory, testQuickBooks,
 } from '../quickbooks.js';
 
 // Accounts Payable / Accounts Receivable for the office (Jake).
@@ -314,6 +314,14 @@ router.post('/quickbooks/sync', async (req, res) => {
   } catch (e) {
     res.status(502).json({ error: e.message || 'QuickBooks sync failed' });
   }
+});
+
+// Prove the connection and name the company it reached. Deliberately allowed
+// even when not configured — reporting which values are missing is most of its
+// value before anything works.
+router.post('/quickbooks/test', async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
+  res.json(await testQuickBooks());
 });
 
 // "What do we actually use?" — counted from their books rather than recalled.

@@ -39,13 +39,29 @@ export function quickbooksStatus() {
     if (!db) return null;
     try { return db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)?.value || null; } catch { return null; }
   };
+  // Which of the four values are present — NEVER their contents. "Connect
+  // QuickBooks" is a four-part setup done in a browser tab far from this
+  // screen, and "it says not connected" with no indication of which part is
+  // missing is how someone re-does all four looking for the one that's wrong.
+  const present = {
+    QBO_CLIENT_ID: !!process.env.QBO_CLIENT_ID,
+    QBO_CLIENT_SECRET: !!process.env.QBO_CLIENT_SECRET,
+    QBO_REALM_ID: !!process.env.QBO_REALM_ID,
+    QBO_REFRESH_TOKEN: !!(process.env.QBO_REFRESH_TOKEN || storedRefreshToken()),
+  };
   return {
     enabled: quickbooksEnabled(),
     environment: process.env.QBO_ENV === 'sandbox' ? 'sandbox' : 'production',
+    present,
+    missing: Object.keys(present).filter(k => !present[k]),
     last_sync: setting('qbo_last_sync'),
     // A full pull is the migration. Whether it has ever run is the difference
     // between "we have a copy of the books" and "we have the last 12 months".
     full_pull_at: setting('qbo_full_pull_at'),
+    // Whose books we last actually reached. Development keys can only ever
+    // reach Intuit's sandbox, so this being someone else's company name is the
+    // difference between a working connection and a useful one.
+    company: setting('qbo_company_name'),
   };
 }
 
@@ -68,14 +84,21 @@ function setSetting(key, value) {
   } catch { /* settings table optional */ }
 }
 
-// Access tokens last an hour; keep the live one in memory and refresh on demand.
+// Access tokens last an hour; keep the live one in memory and refresh on
+// demand. The cache is keyed on the credentials it was minted under, so
+// changing any of them invalidates it — otherwise a corrected value appears to
+// have no effect for up to an hour, which reads as "I fixed it and nothing
+// changed" and sends someone off to correct something that was already right.
 let accessToken = null;
 let accessTokenExpiry = 0;
+let accessTokenKey = null;
 
 async function getAccessToken() {
-  if (accessToken && Date.now() < accessTokenExpiry - 60_000) return accessToken;
-
   const refresh = storedRefreshToken() || process.env.QBO_REFRESH_TOKEN;
+  const key = `${process.env.QBO_CLIENT_ID}|${process.env.QBO_REALM_ID}|${refresh}`;
+  if (accessToken && accessTokenKey === key && Date.now() < accessTokenExpiry - 60_000) return accessToken;
+  accessToken = null;
+
   if (!refresh) throw new Error('No QuickBooks refresh token available.');
   const basic = Buffer.from(`${process.env.QBO_CLIENT_ID}:${process.env.QBO_CLIENT_SECRET}`).toString('base64');
 
@@ -91,6 +114,7 @@ async function getAccessToken() {
   const data = await res.json();
   accessToken = data.access_token;
   accessTokenExpiry = Date.now() + (Number(data.expires_in || 3600) * 1000);
+  accessTokenKey = key;
   // Intuit rotates refresh tokens — persist the new one or the connection dies
   // the next time this process restarts.
   if (data.refresh_token && data.refresh_token !== refresh) setSetting(SETTING_KEY, data.refresh_token);
@@ -137,6 +161,74 @@ async function countOf(entity) {
 }
 
 const day = (v) => (v ? String(v).slice(0, 10) : null);
+
+/* ── Test the connection, and say what is wrong when it isn't ─────────────── */
+//
+// Four values set in a Railway tab, from three different screens on Intuit's
+// site, one of which is only reachable through an OAuth round trip. When that
+// doesn't work, the raw Intuit error ("AuthenticationFailed") tells you nothing
+// about which of the four is wrong. This maps the failures onto the actual
+// cause, so a misconfiguration is a sentence rather than an afternoon.
+
+// Development keys reach ONLY the sandbox; production keys reach ONLY the real
+// company. Mixing them is by far the most common setup failure, and it is the
+// one that looks like a broken app rather than a wrong value.
+function diagnose(message) {
+  const m = String(message || '');
+  const env = process.env.QBO_ENV === 'sandbox' ? 'sandbox' : 'production';
+  if (/invalid_grant/i.test(m)) {
+    return 'The refresh token was rejected. It expires after 100 days unused, and is also invalidated if '
+      + 'something else refreshed it. Redo step 4 of the setup (OAuth Playground → Get tokens) and paste '
+      + 'the new one into QBO_REFRESH_TOKEN.';
+  }
+  // ORDER MATTERS: "ApplicationAuthenticationFailed" (wrong company) contains
+  // "AuthenticationFailed" (wrong keys), so the longer, more specific name has
+  // to be tested first or every wrong-realm setup is reported as wrong keys —
+  // and the person goes and regenerates two values that were already correct.
+  if (/ApplicationAuthenticationFailed|AuthorizationFailed|\(403\)/i.test(m)) {
+    return `The credentials are valid but not for company ${process.env.QBO_REALM_ID}. With development `
+      + 'keys the realm id must be the SANDBOX company shown in the OAuth Playground — not the Company ID '
+      + 'from your real QuickBooks settings.';
+  }
+  if (/invalid_client|AuthenticationFailed|\(401\)/i.test(m)) {
+    return `The client id and secret were rejected for the ${env} environment. Development keys only work `
+      + `with QBO_ENV=sandbox; production keys only work without it. Check that the keys and QBO_ENV agree.`;
+  }
+  if (/404/.test(m)) {
+    return `No company ${process.env.QBO_REALM_ID} on the ${env} API. That realm id belongs to the other `
+      + 'environment, or has a stray space in it.';
+  }
+  return m;
+}
+
+/**
+ * One cheap call that proves the whole chain — token refresh, realm, API base —
+ * and comes back with the company NAME. That last part matters more than it
+ * sounds: it is the only thing on screen that distinguishes "connected" from
+ * "connected to the right books".
+ */
+export async function testQuickBooks() {
+  if (!quickbooksEnabled()) {
+    const missing = quickbooksStatus().missing;
+    return { ok: false, error: `Not configured yet — still missing ${missing.join(', ')}.`, missing };
+  }
+  try {
+    const r = await query('SELECT * FROM CompanyInfo');
+    const info = r.CompanyInfo?.[0] || {};
+    const name = info.CompanyName || info.LegalName || null;
+    if (name) setSetting('qbo_company_name', name);
+    return {
+      ok: true,
+      company: name,
+      legal_name: info.LegalName || null,
+      country: info.Country || null,
+      realm_id: process.env.QBO_REALM_ID,
+      environment: process.env.QBO_ENV === 'sandbox' ? 'sandbox' : 'production',
+    };
+  } catch (e) {
+    return { ok: false, error: diagnose(e.message), raw: String(e.message).slice(0, 300) };
+  }
+}
 
 /* ── Discovery: what is actually in these books ───────────────────────────── */
 //
