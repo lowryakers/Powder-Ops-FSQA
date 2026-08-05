@@ -426,7 +426,7 @@ const SUGGESTION_SQL = `
   ORDER BY record_date DESC, created_at DESC LIMIT 500`;
 
 function openSuggestions(db) {
-  let rows = [];
+  let rows;
   try { rows = db.prepare(SUGGESTION_SQL).all(USED_UP_REASON); } catch { return []; }
   // Group by item: "3 people reported this" is one thing to act on, not three.
   const byItem = new Map();
@@ -462,7 +462,7 @@ function markSuggestion(db, ids, state) {
     for (const id of ids) {
       const row = get.get(id);
       if (!row) continue;
-      let d = {};
+      let d;
       try { d = JSON.parse(row.data || '{}'); } catch { d = {}; }
       d.suggestion_state = state;
       upd.run(JSON.stringify(d), id);

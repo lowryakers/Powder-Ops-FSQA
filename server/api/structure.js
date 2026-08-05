@@ -149,6 +149,7 @@ export const KNOWN_SCOPES = [
   { scope: 'disposal', label: 'Disposals' },
   { scope: 'meeting', label: 'Meetings' },
   { scope: 'internal_audit', label: 'Internal Audits' },
+  { scope: 'retention_sample', label: 'Retention Samples' },
 ];
 
 router.get('/scopes', (req, res) => {
@@ -248,6 +249,7 @@ const SCOPE_TABLES = {
   meeting: 'meetings',
   internal_audit: 'internal_audits',
   disposal: 'disposals',
+  retention_sample: 'retention_samples',
 };
 
 export default router;

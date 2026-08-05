@@ -43,6 +43,7 @@ import meetingRoutes from './server/api/meetings.js';
 import internalAuditRoutes from './server/api/internal-audits.js';
 import docReviewRoutes from './server/api/doc-review.js';
 import facilityRoutes from './server/api/facility.js';
+import retentionRoutes from './server/api/retention.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
@@ -1457,6 +1458,7 @@ app.use('/api/internal-audits', requireModuleWrite('internal-audits'), internalA
 app.use('/api/doc-review', docReviewRoutes);
 // Read-only: the map shows facts from records the caller can already see.
 app.use('/api/facility', facilityRoutes);
+app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);

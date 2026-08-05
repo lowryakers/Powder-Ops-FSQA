@@ -1088,6 +1088,76 @@ function initSchema() {
     -- rewriting it would orphan that history from the map without touching the
     -- records themselves. Renaming a space is a display decision; re-keying a
     -- log is not.
+    -- ── Retention samples ────────────────────────────────────────────────────
+    -- What was pulled and kept from each job, and where it physically is.
+    --
+    -- Transcribed from the plant's own Retention Sample log. Four things that
+    -- shaped this table:
+    --
+    --  1. LAB AND RETAIN ARE COUNTED SEPARATELY. The paper writes one cell,
+    --     "5 (2 LAB, 3 RETAIN)", but they are different objects with different
+    --     fates: the lab portion leaves the building and comes back as a COA,
+    --     the retain sits in the box until its destruction date. A single
+    --     total cannot answer "did the lab samples actually go out".
+    --  2. A BOX HAS A DESTRUCTION DATE, not a sample. The log is organised by
+    --     box (15, 16, 17…) and each box carries one date; that is how the
+    --     plant actually disposes of them, a box at a time.
+    --  3. STAGE spans the whole process — raw material (kept at 90 g from
+    --     receiving), blend, intermediate, finished good. It is not a COA
+    --     concept, which is why this is its own module rather than a COA tab.
+    --  4. The batches column is free text ("1 & 2", "1 BEG, 1 MIDDLE, 1 END") because
+    --     that is what the log records, and normalising it would lose the
+    --     "beginning / middle / end of the run" detail that makes a stick-pack
+    --     retain meaningful.
+    CREATE TABLE IF NOT EXISTS retention_boxes (
+      id TEXT PRIMARY KEY,
+      box_no TEXT NOT NULL UNIQUE,
+      destruction_date TEXT,
+      location TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed', 'destroyed')),
+      closed_at TEXT,
+      destroyed_at TEXT,
+      destroyed_by TEXT,
+      destruction_notes TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS retention_samples (
+      id TEXT PRIMARY KEY,
+      box_id TEXT,
+      stage TEXT NOT NULL DEFAULT 'finished_good'
+        CHECK (stage IN ('raw_material', 'blend', 'intermediate', 'finished_good')),
+      item_number TEXT,
+      item_name TEXT NOT NULL,
+      lot_number TEXT,
+      mo_number TEXT,
+      expiration_date TEXT,
+      retain_count INTEGER NOT NULL DEFAULT 0,
+      lab_count INTEGER NOT NULL DEFAULT 0,
+      sample_size TEXT,
+      batches TEXT,
+      collected_date TEXT,
+      collected_by TEXT,
+      coa_request_id TEXT,
+      comments TEXT,
+      custom_data TEXT,
+      external_id TEXT,
+      source TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      updated_at TEXT,
+      updated_by TEXT,
+      FOREIGN KEY (box_id) REFERENCES retention_boxes(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_retention_samples_box ON retention_samples(box_id);
+    CREATE INDEX IF NOT EXISTS idx_retention_samples_lot ON retention_samples(lot_number);
+    CREATE INDEX IF NOT EXISTS idx_retention_samples_mo ON retention_samples(mo_number);
+    CREATE INDEX IF NOT EXISTS idx_retention_samples_collected ON retention_samples(collected_date DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_retention_samples_external ON retention_samples(external_id)
+      WHERE external_id IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS facility_room_overrides (
       room_id TEXT PRIMARY KEY,
       label TEXT,

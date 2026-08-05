@@ -1234,3 +1234,27 @@ deliberate scroller doesn't read as a bug. Run it on new screens.
 `src/lib/useCompactLayout.js` is the **one** definition of the `md` breakpoint for components that need to
 *behave* differently on a phone (CommsView's inline copy now imports it). A second copy is how a component
 and its own markup start disagreeing about which layout is on screen.
+
+## Retention Samples (`server/api/retention.js` + `RetentionSamplesPanel.jsx`)
+The plant's physical library of what it made — a retain of every blend, intermediate and finished good, plus
+90 g of every raw material received. Transcribed from their own Retention Sample log. Nav entry in Quality;
+module id `retention-samples`.
+- **Why it is NOT a COA tab** (the question asked directly): a COA request is about a **test**, this is about
+  an **object** — a jar with a lot number sitting in box 17, to be destroyed in April 2028. They meet at
+  exactly one point, where a pull's lab portion goes for testing, and that point is a link
+  (`coa_request_id`), not a merge. Retention also spans **receiving** to finished good: raw-material retains
+  come off an inbound pallet and have no COA request at all.
+- **Lab and retain are counted separately, always.** The paper writes one cell, `5 (2 LAB, 3 RETAIN)`, but
+  those are different objects with different fates — the lab samples leave the building and come back as a
+  result, the retains stay until the box is destroyed. A single total cannot answer "did the lab samples
+  actually go out", which is the question the log exists to answer.
+- **A box has the destruction date, not a sample.** `retention_boxes` (15, 16, 17…) each carry one date,
+  because that is how the plant actually disposes of them — a box at a time.
+- **Destroying a box never deletes its samples.** The whole point of the log is that it can still say what
+  was held and when it went. Destruction needs a reason (≥3 chars), is refused before the due date unless
+  `early: true` is passed as a deliberate second act, is refused twice, and closes the box to new filings.
+- **`batches` is free text** ("1 & 2", "1 BEG, 1 MIDDLE, 1 END") because that is what the log records, and
+  normalising it would lose the beginning/middle/end-of-run detail that makes a stick-pack retain meaningful.
+- Filing is open (anyone who pulls samples), correcting someone else's needs QA/admin, destroying needs QA
+  leadership or an admin — the same ladder the Receiving Log uses. `retention_sample` is a custom-field
+  scope, so extra questions are a Settings task.

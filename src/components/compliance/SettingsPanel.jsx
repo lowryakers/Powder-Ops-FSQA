@@ -85,6 +85,7 @@ const MODULE_GROUPS = [
       { id: 'recall', label: 'Mock Recall' },
       { id: 'meetings', label: 'Meetings (minutes, attendance, actions)' },
       { id: 'internal-audits', label: 'Internal Audits (Form 403-01)' },
+      { id: 'retention-samples', label: 'Retention Samples (retains, lab pulls, boxes)' },
     ],
   },
   {
