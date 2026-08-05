@@ -3,6 +3,8 @@ import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/us
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { useCappedList } from '../../lib/useCappedList';
+import { useTableSort } from '../../lib/useTableSort';
+import SortHeader from '../common/SortHeader.jsx';
 import ShowMore from '../common/ShowMore.jsx';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import ModuleTabs from '../common/ModuleTabs.jsx';
@@ -22,6 +24,22 @@ import {
 // cell, but those are different objects with different fates — the lab samples
 // leave the building, the retains stay until the box is destroyed — and one
 // total can't answer "did the lab samples actually go out".
+
+// The sample log's columns, as DATA — the header maps over these and
+// `useTableSort` reads the `type` off them, so a column can't be sortable in
+// one place and not the other. Entries with no `key` are the chevron and the
+// action cell: not sortable, and they shouldn't pretend to be.
+const SAMPLE_COLUMNS = [
+  { width: '2rem' },
+  { key: 'item_name', label: 'Item' },
+  { key: 'stage', label: 'Stage' },
+  { key: 'lot_number', label: 'Lot #' },
+  { key: 'retain_count', label: 'Retain', type: 'number', align: 'right' },
+  { key: 'lab_count', label: 'Lab', type: 'number', align: 'right' },
+  { key: 'collected_date', label: 'Collected', type: 'date' },
+  { key: 'box_no', label: 'Box', type: 'number' },
+  { width: '5rem' },
+];
 
 const STAGES = [
   { value: 'raw_material', label: 'Raw material', tone: 'bg-amber-100 text-amber-800' },
@@ -517,7 +535,10 @@ export default function RetentionSamplesPanel({ user }) {
     || (user?.role === 'supervisor' && ['qa', 'quality'].includes((user?.department || '').toLowerCase()));
 
   const samples = useMemo(() => data?.samples || [], [data]);
-  const view = useCappedList(samples);
+  // Sorting happens BEFORE the render cap, or "sort by oldest collected" would
+  // only order the hundred rows that happened to be on screen.
+  const { sorted, sortCol, sortDir, toggleSort } = useTableSort(samples, SAMPLE_COLUMNS, 'collected_date', 'desc');
+  const view = useCappedList(sorted);
 
   const reloadAll = () => { refresh(); refreshBoxes(); refreshStats(); setEditing(null); };
 
@@ -650,15 +671,10 @@ export default function RetentionSamplesPanel({ user }) {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    <th className="w-8 px-2 py-2.5" />
-                    <th className="text-left px-3 py-2.5 font-medium text-gray-600">Item</th>
-                    <th className="text-left px-3 py-2.5 font-medium text-gray-600">Stage</th>
-                    <th className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">Lot #</th>
-                    <th className="text-right px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">Retain</th>
-                    <th className="text-right px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">Lab</th>
-                    <th className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">Collected</th>
-                    <th className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">Box</th>
-                    <th className="px-3 py-2.5 w-20" />
+                    {SAMPLE_COLUMNS.map((c, i) => (
+                      <SortHeader key={c.key || `x${i}`} col={c}
+                        sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                    ))}
                   </tr>
                 </thead>
                 <tbody>

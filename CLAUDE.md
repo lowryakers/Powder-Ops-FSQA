@@ -458,6 +458,24 @@ This was missing entirely: `/api/qms` mounts with no router guard and the handle
 signed-in operator could edit or hard-delete any deviation, non-conformance or on-hold record. Only
 `bulk-delete` had ever got the admin check. If you add a QMS write path, guard it — the mount will not.
 
+## Sorting a log by its header (`src/lib/useTableSort.js` + `common/SortHeader.jsx`)
+Nine logs had each grown their own copy of the same four pieces of state, the same comparator and the same
+chevron — which is exactly how the **Retention log ended up as the one that never got it**. A tenth private
+copy would have fixed that screen and left the pattern intact, so the shared pair went in instead.
+- **Columns are DATA.** One array drives both the header and the sort, so a column cannot be sortable in one
+  place and not the other. An entry with no `key` (the chevron cell, the actions cell) renders as a plain
+  `<th>` and is not clickable.
+- **Comparators come from the column's `type`**, because the naive string compare most of the copies used
+  sorts 9 after 10. `number` is numeric, `date` compares ISO strings as text and falls back to `Date`
+  parsing otherwise, and `text` uses `Intl.Collator` so accented names file where a reader expects.
+- **Blanks sort last in BOTH directions** — an empty cell is missing data, not a low value, and burying it
+  under the rows someone came to read is right.
+- **Sort before the render cap.** `useCappedList` renders the first 100; sorting after it would only order
+  the hundred rows that happened to be on screen. Retention does `useTableSort` → `useCappedList`.
+- The hook copies the array before sorting — sorting in place would mutate the cached API response.
+- Wired into Retention Samples. The other eight logs still have their own copies and work fine; convert them
+  when one of them next needs touching rather than churning eight screens at once.
+
 ## Click a log row to expand it
 `src/lib/useRowExpand.js` (`useRowExpand()`, `stopRowClick`) + `src/components/common/RowDetail.jsx`
 (`<ExpandCell>`, `<DetailRow>`, `<DetailFields>`). A table opts in with a `w-8` chevron column,
