@@ -1406,6 +1406,23 @@ five screens of scrolling to reach the last group, so setting one permission mea
 - The editor is hidden altogether when someone has full access (`allAccess`), so **test it against a
   partial-access user** — opening an admin shows the "Full access (all modules)" checkbox and nothing else.
 
+### The roster on a phone: a table's scroller must not swallow a form
+The user roster is a `min-w-[560px]` table in an `overflow-x-auto` wrapper. At 360px that leaves ~326px of
+column, so **Status and the Edit / Deactivate / Remove buttons sat off the right edge** — you could not
+edit or deactivate anyone on a phone without discovering a sideways scroll. Worse, the inline Edit User form
+renders in a `<td colSpan={5}>` *inside that same scroller*, so half of every field was unreachable too.
+- Below `md` the same rows render as **cards** (`UserCard`) and the edit form is a plain full-width block
+  underneath, outside any scroller. `hidden md:block` on the table, `md:hidden` on the list.
+- **The cells are shared components** — `UserName` / `DeptChip` / `AccessNote` / `StatusChip` /
+  `UserActions` — used by both layouts. A second copy of the department colour map is how the table and the
+  cards start disagreeing about who is in QA.
+- **A `fixed inset-0` centred flex modal CLIPS content taller than the viewport rather than scrolling it**,
+  so the Bulk-add modal's Add button was simply gone on a short phone. `max-h-[92vh] overflow-y-auto` on the
+  panel. Bulk Permissions already had it.
+- `ml-auto` on Add User became `sm:ml-auto` — on a wrapped header it stranded the button on a line of its own.
+- Everything else in Settings (Log structure, Requests, Backup, Links, Integrations, Cleanup) already passed
+  at 360; only the Requests header needed wrapping (title was squeezed beside two `shrink-0` buttons).
+
 ## One tab strip for every module (`ModuleTabs.jsx` + `lib/useModuleTabs.js`)
 Nine modules had grown their own internal tab strip in **four different visual styles** — filled pills
 (Calibration, LOTO), underlines (Training, Retention), and two flavours of segmented control (Production Log,

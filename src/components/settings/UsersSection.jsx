@@ -596,75 +596,115 @@ const ROLE_CONFIG = {
   auditor: { label: 'Auditors', color: 'emerald', desc: 'Read-only compliance view' },
 };
 
-function UserRow({ u, onEdit, onToggle, onRemove, isEditing }) {
-  const moduleAccess = (() => {
+// The roster is a table on a wide screen and a list of cards on a phone, so the
+// pieces of a row live here rather than in either layout. Two copies of the
+// department colour map is how the two views start disagreeing about who is in
+// QA.
+function moduleCountOf(u) {
+  const access = (() => {
     if (!u.module_access) return null;
     if (typeof u.module_access === 'string') { try { return JSON.parse(u.module_access); } catch { return null; } }
     return u.module_access;
   })();
-  const moduleCount = !moduleAccess ? ALL_MODULE_IDS.length : (Array.isArray(moduleAccess) ? moduleAccess.length : Object.keys(moduleAccess).length);
+  return {
+    access,
+    count: !access ? ALL_MODULE_IDS.length : (Array.isArray(access) ? access.length : Object.keys(access).length),
+  };
+}
 
+function DeptChip({ department }) {
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
+      department === 'qa' ? 'bg-teal-100 text-teal-700'
+      : department === 'document_control' ? 'bg-purple-100 text-purple-700'
+      : department === 'cleaning' ? 'bg-amber-100 text-amber-700'
+      : department === 'production' ? 'bg-green-100 text-green-700'
+      : department === 'maintenance' ? 'bg-orange-100 text-orange-700'
+      : department === 'office' ? 'bg-slate-100 text-slate-700'
+      : 'bg-indigo-100 text-indigo-700'
+    }`}>
+      {deptLabel(department)}
+    </span>
+  );
+}
+
+function AccessNote({ u }) {
+  const { access, count } = moduleCountOf(u);
+  return u.role === 'admin' && !access
+    ? <span className="text-[10px] text-gray-400">All modules</span>
+    : <span className="text-[10px] text-gray-500">{count}/{ALL_MODULE_IDS.length} modules</span>;
+}
+
+function StatusChip({ active }) {
+  return active
+    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800"><span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Active</span>
+    : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-200 text-gray-600"><span className="h-1.5 w-1.5 rounded-full bg-gray-400" /> Inactive</span>;
+}
+
+function UserName({ u }) {
+  return (
+    <>
+      <span className="font-medium text-gray-900">{u.name}</span>
+      {u.username && u.username !== u.name && (
+        <span className="ml-2 text-[11px] text-gray-400">signs in as {u.username}</span>
+      )}
+      {u.is_contractor ? (
+        <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
+      ) : null}
+      {u.contractor_company && <div className="text-[10px] text-gray-400">{u.contractor_company}</div>}
+    </>
+  );
+}
+
+function UserActions({ u, onEdit, onToggle, onRemove, isEditing, className = '' }) {
+  return (
+    <div className={`flex gap-1.5 items-center ${className}`}>
+      <button onClick={() => onEdit(u)} className={`px-2 py-1 rounded-lg text-xs font-medium border ${isEditing ? 'border-powder-300 text-powder-700 bg-powder-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`} title="Edit role, department, access">
+        {isEditing ? 'Close' : 'Edit'}
+      </button>
+      {u.is_active ? (
+        <button onClick={() => onToggle(u)} className="px-2 py-1 rounded-lg text-xs font-medium border border-amber-200 text-amber-700 hover:bg-amber-50" title="Blocks login but keeps all history">
+          Deactivate
+        </button>
+      ) : (
+        <>
+          <button onClick={() => onToggle(u)} className="px-2 py-1 rounded-lg text-xs font-medium border border-green-200 text-green-700 hover:bg-green-50" title="Restore login access">
+            Activate
+          </button>
+          <button onClick={() => onRemove(u)} className="px-2 py-1 rounded-lg text-xs font-medium border border-red-200 text-red-600 hover:bg-red-50" title="Permanently delete (only if they have no history)">
+            Remove
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function UserRow({ u, onEdit, onToggle, onRemove, isEditing }) {
   return (
     <tr className={`border-b border-gray-100 hover:bg-gray-50 ${isEditing ? 'bg-powder-50' : ''}`}>
-      <td className="px-4 py-3 w-full">
-        <span className="font-medium text-gray-900">{u.name}</span>
-        {u.username && u.username !== u.name && (
-          <span className="ml-2 text-[11px] text-gray-400">signs in as {u.username}</span>
-        )}
-        {u.is_contractor ? (
-          <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
-        ) : null}
-        {u.contractor_company && <div className="text-[10px] text-gray-400">{u.contractor_company}</div>}
-      </td>
-      <td className="px-4 py-3">
-        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-          u.department === 'qa' ? 'bg-teal-100 text-teal-700'
-          : u.department === 'document_control' ? 'bg-purple-100 text-purple-700'
-          : u.department === 'cleaning' ? 'bg-amber-100 text-amber-700'
-          : u.department === 'production' ? 'bg-green-100 text-green-700'
-          : u.department === 'maintenance' ? 'bg-orange-100 text-orange-700'
-          : u.department === 'office' ? 'bg-slate-100 text-slate-700'
-          : 'bg-indigo-100 text-indigo-700'
-        }`}>
-          {deptLabel(u.department)}
-        </span>
-      </td>
-      <td className="px-4 py-3">
-        {u.role === 'admin' && !moduleAccess ? (
-          <span className="text-[10px] text-gray-400">All modules</span>
-        ) : (
-          <span className="text-[10px] text-gray-500">{moduleCount}/{ALL_MODULE_IDS.length} modules</span>
-        )}
-      </td>
-      <td className="px-4 py-3 whitespace-nowrap">
-        {u.is_active ? (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800"><span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Active</span>
-        ) : (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-200 text-gray-600"><span className="h-1.5 w-1.5 rounded-full bg-gray-400" /> Inactive</span>
-        )}
-      </td>
+      <td className="px-4 py-3 w-full"><UserName u={u} /></td>
+      <td className="px-4 py-3"><DeptChip department={u.department} /></td>
+      <td className="px-4 py-3"><AccessNote u={u} /></td>
+      <td className="px-4 py-3 whitespace-nowrap"><StatusChip active={u.is_active} /></td>
       <td className="px-4 py-3 text-right">
-        <div className="flex gap-1.5 justify-end items-center">
-          <button onClick={() => onEdit(u)} className={`px-2 py-1 rounded-lg text-xs font-medium border ${isEditing ? 'border-powder-300 text-powder-700 bg-powder-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`} title="Edit role, department, access">
-            {isEditing ? 'Close' : 'Edit'}
-          </button>
-          {u.is_active ? (
-            <button onClick={() => onToggle(u)} className="px-2 py-1 rounded-lg text-xs font-medium border border-amber-200 text-amber-700 hover:bg-amber-50" title="Blocks login but keeps all history">
-              Deactivate
-            </button>
-          ) : (
-            <>
-              <button onClick={() => onToggle(u)} className="px-2 py-1 rounded-lg text-xs font-medium border border-green-200 text-green-700 hover:bg-green-50" title="Restore login access">
-                Activate
-              </button>
-              <button onClick={() => onRemove(u)} className="px-2 py-1 rounded-lg text-xs font-medium border border-red-200 text-red-600 hover:bg-red-50" title="Permanently delete (only if they have no history)">
-                Remove
-              </button>
-            </>
-          )}
-        </div>
+        <UserActions u={u} onEdit={onEdit} onToggle={onToggle} onRemove={onRemove} isEditing={isEditing} className="justify-end" />
       </td>
     </tr>
+  );
+}
+
+function UserCard({ u, onEdit, onToggle, onRemove, isEditing }) {
+  return (
+    <div className={`px-4 py-3 ${isEditing ? 'bg-powder-50' : ''}`}>
+      <div className="min-w-0"><UserName u={u} /></div>
+      <div className="flex items-center gap-2 flex-wrap mt-1.5">
+        <DeptChip department={u.department} />
+        <StatusChip active={u.is_active} />
+        <AccessNote u={u} />
+      </div>
+      <UserActions u={u} onEdit={onEdit} onToggle={onToggle} onRemove={onRemove} isEditing={isEditing} className="mt-2 flex-wrap" />
+    </div>
   );
 }
 
@@ -688,8 +728,14 @@ function RoleSection({ users, config, onEdit, onToggle, onRemove, defaultOpen, e
         </div>
         {open ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
       </button>
+      {/* The table needs 560px to lay out, so on a phone it sat in a horizontal
+          scroller — which put Status and the Edit / Deactivate buttons off the
+          right edge, and swallowed the inline edit form with them. A form you
+          can only reach by discovering a sideways scroll is a form nobody
+          edits. Below md the same rows are cards, and the edit form is a plain
+          full-width block underneath. */}
       {open && users.length > 0 && (
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm min-w-[560px]">
           <thead className="bg-gray-50 border-t border-b">
             <tr>
@@ -715,6 +761,20 @@ function RoleSection({ users, config, onEdit, onToggle, onRemove, defaultOpen, e
             ))}
           </tbody>
         </table>
+        </div>
+      )}
+      {open && users.length > 0 && (
+        <div className="md:hidden border-t divide-y divide-gray-100">
+          {users.map(u => (
+            <Fragment key={u.id}>
+              <UserCard u={u} onEdit={onEdit} onToggle={onToggle} onRemove={onRemove} isEditing={u.id === editingId} />
+              {u.id === editingId && (
+                <div className="p-3 bg-gray-50">
+                  <UserForm initial={u} onSave={onSave} onCancel={onCancel} canViewPin={canViewPin} />
+                </div>
+              )}
+            </Fragment>
+          ))}
         </div>
       )}
       {open && users.length === 0 && (
@@ -750,7 +810,10 @@ function BulkAddModal({ onClose, onDone }) {
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3">
+      {/* max-h + scroll: a fixed, centred flex box CLIPS content taller than the
+          viewport rather than scrolling it, so on a short phone the Add button
+          was simply gone. */}
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Bulk add users</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
@@ -973,8 +1036,10 @@ export default function UsersSection({ user: currentUser }) {
           className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
           <Users size={15} /> Bulk Add
         </button>
+        {/* `ml-auto` pushes this to the right on a wide header; on a phone the
+            row wraps and that left it stranded on a line of its own. */}
         <button onClick={() => { setShowForm(true); setEditing(null); }}
-          className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 ml-auto">
+          className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 sm:ml-auto">
           <Plus size={16} /> Add User
         </button>
       </div>

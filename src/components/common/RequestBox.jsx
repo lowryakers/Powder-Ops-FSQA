@@ -307,14 +307,16 @@ export default function RequestListPanel({ user }) {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-        <div>
+      {/* Wraps below sm: a shrink-0 button pair beside the heading squeezed the
+          title into a two-line column on a 360px phone. */}
+      <div className="flex items-start sm:items-center justify-between gap-2 flex-wrap px-4 py-3 border-b border-gray-200">
+        <div className="min-w-0">
           <h3 className="font-semibold text-gray-900">ReadyDoc Requests</h3>
           <p className="text-xs text-gray-500">
             {isAdmin ? 'What the team has asked for. Tick one off when it ships.' : 'What you have submitted.'}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 sm:shrink-0">
           {/* Copies exactly what's on screen — so "Show done" first if you want
               those too. Copying a filtered list you can't see would be worse. */}
           <CopyButton text={requestsAsText(showDone ? [...open, ...done] : open, 'ReadyDoc Requests')}
