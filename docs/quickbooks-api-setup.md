@@ -26,9 +26,13 @@ admin.
    - Production may ask you to fill in a short app profile first (name, contact,
      a description, a privacy-policy URL). It's a form, not a review — you're
      the only user of this app.
-   - If it stalls, use **Development** keys for now: they read the sandbox
-     company, which is enough for me to verify the integration works, just not
-     enough to pull your real numbers.
+   - **If the app assessment questionnaire rejects it on relevance**, see
+     `docs/quickbooks-app-assessment.md` — that's a description problem, not an
+     app problem, and it has the exact wording to resubmit with.
+   - Meanwhile use **Development** keys: they read the sandbox company, which
+     proves the integration works but cannot pull your real numbers. Set
+     `QBO_ENV=sandbox` and use the SANDBOX realm id from the OAuth Playground,
+     not the Company ID from your real QuickBooks settings.
 2. Copy **Client ID** and **Client Secret**. These are two of the four values.
 
 ## 3. Get the Realm ID (your company ID)
