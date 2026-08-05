@@ -25,12 +25,16 @@
  *    links to the module where the real thing is made, by a person who knows
  *    what belongs in it.
  *
- * `applies` keeps the list honest per machine: a hand scoop has no lockout
- * point and no calibration, and listing steps that will never be done teaches
- * people the checklist is noise. Which types those are comes from
- * shared/equipment-types.js — the same list the equipment form offers, because
- * a server-side copy is how this went wrong the first time (it guessed 'tool'
- * for what the app calls 'Hand Tool', and quietly skipped nothing at all).
+ * `applies` keeps the list honest per row: a hand scoop has no lockout point,
+ * a BPG inspection zone is not operated by anyone, and listing steps that will
+ * never be done teaches people the checklist is noise.
+ *
+ * IT DECIDES THAT FROM COLUMNS, NOT FROM THE `type` STRING. The first cut kept
+ * its own list of type names and so disagreed with `equipment.loto_required`,
+ * which the LOTO module and the compliance badge had been reading all along.
+ * `asset_kind` ('machine' | 'zone') and `loto_required` are the authorities;
+ * shared/equipment-types.js only supplies the DEFAULTS applied when a row is
+ * created, and the vocabulary the form offers.
  */
 import { needsLoto, needsTraining, needsCalibration, isZone } from '../shared/equipment-types.js';
 
@@ -85,9 +89,10 @@ const STEPS = [
     why: 'Anything with a stored energy source needs one before maintenance goes near it.',
     weight: 'required',
     link: { tab: 'loto' },
-    // A plastic scoop has nothing to lock out; almost everything else does, and
-    // an unknown type is asked rather than skipped. See NO_LOTO_TYPES.
-    applies: (eq) => needsLoto(eq.type),
+    // `equipment.loto_required` is the authority and defaults to 1 — the same
+    // column the LOTO module and the compliance badge read. A zone never has
+    // one; a machine is asked unless somebody has marked it not required.
+    applies: (eq) => !isZone(eq) && needsLoto(eq),
     check: (db, eq) => {
       const n = db.prepare('SELECT COUNT(*) c FROM loto_procedures WHERE equipment_id = ? AND is_active = 1').get(eq.id).c;
       return { done: n > 0, detail: n ? `${n} procedure${n === 1 ? '' : 's'}` : 'No LOTO procedure' };
@@ -100,7 +105,7 @@ const STEPS = [
     why: 'Food-contact equipment is verified as cleanable before it is put into service.',
     weight: 'required',
     link: { tab: 'hygienic' },
-    applies: (eq) => !!eq.is_food_contact && !isZone(eq.type),
+    applies: (eq) => !!eq.is_food_contact && !isZone(eq),
     check: (db, eq) => {
       const row = db.prepare(`
         SELECT overall_result, trigger_reason FROM design_verifications
@@ -120,7 +125,7 @@ const STEPS = [
     why: 'What operators are signed off on before they run it.',
     weight: 'required',
     link: { tab: 'training' },
-    applies: (eq) => needsTraining(eq.type),
+    applies: (eq) => needsTraining(eq),
     check: (db, eq) => {
       const n = db.prepare('SELECT COUNT(*) c FROM training_courses WHERE equipment_id = ? AND active = 1').get(eq.id).c;
       return { done: n > 0, detail: n ? `${n} course${n === 1 ? '' : 's'}` : 'No course linked' };
@@ -132,7 +137,7 @@ const STEPS = [
     why: 'The manual or video the course actually shows people.',
     weight: 'recommended',
     link: { tab: 'training' },
-    applies: (eq) => needsTraining(eq.type),
+    applies: (eq) => needsTraining(eq),
     check: (db, eq) => {
       const n = db.prepare(`
         SELECT COUNT(*) c FROM training_materials m
@@ -148,7 +153,7 @@ const STEPS = [
     why: 'The controlled document the training is given against.',
     weight: 'recommended',
     link: { tab: 'document-control' },
-    applies: (eq) => needsTraining(eq.type),
+    applies: (eq) => needsTraining(eq),
     check: (db, eq) => {
       const n = db.prepare("SELECT COUNT(*) c FROM sop_documents WHERE equipment_id = ? AND status != 'archived'").get(eq.id).c;
       return { done: n > 0, detail: n ? `${n} document${n === 1 ? '' : 's'}` : 'No document linked' };
@@ -162,7 +167,7 @@ const STEPS = [
     link: { tab: 'calibration' },
     // Only things that measure. A blender is not out of compliance for having
     // no calibration record. See CALIBRATED_TYPES.
-    applies: (eq) => needsCalibration(eq.type),
+    applies: (eq) => needsCalibration(eq),
     check: (db, eq) => {
       const n = db.prepare('SELECT COUNT(*) c FROM calibration_instruments WHERE equipment_id = ?').get(eq.id).c;
       return { done: n > 0, detail: n ? 'Linked to a calibration instrument' : 'Not set up for calibration' };
@@ -174,7 +179,7 @@ const STEPS = [
     why: 'If this equipment is a control point, the record should say which one.',
     weight: 'recommended',
     link: { tab: 'equipment' },
-    applies: (eq) => !!eq.is_food_contact && !isZone(eq.type),
+    applies: (eq) => !!eq.is_food_contact && !isZone(eq),
     check: (db, eq) => ({
       done: !!eq.haccp_ccp_id,
       detail: eq.haccp_ccp_id ? 'Linked to a CCP' : 'No CCP linked',

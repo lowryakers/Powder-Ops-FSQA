@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { equipmentReadiness, readinessSummary } from '../equipment-readiness.js';
+import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
 
 const router = Router();
 
@@ -77,10 +78,20 @@ router.post('/', (req, res) => {
   const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks, task_group } = req.body;
   if (!name || !type) return res.status(400).json({ error: 'name and type are required' });
 
+  // A zone is not a machine: it is scheduled and inspected, and nobody operates
+  // or locks it out. The caller may say so explicitly; otherwise the type
+  // supplies the default, which is the ONLY place the type decides this.
+  const assetKind = ASSET_KINDS.includes(req.body.asset_kind) ? req.body.asset_kind : defaultAssetKind(type);
+  // Zones never need a lockout procedure. Otherwise default to requiring one —
+  // the column has always defaulted to 1 and the safe error is asking.
+  // A zone cannot require lockout — see the same rule on PUT.
+  const lotoRequired = assetKind === 'zone' ? 0
+    : (req.body.loto_required !== undefined ? (req.body.loto_required ? 1 : 0) : 1);
+
   db.prepare(`
-    INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks, task_group)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, type, location || null, room || null, asset_id || null, manufacturer || null, model_number || null, serial_number || null, vendor || null, pm_frequency || null, is_food_contact ? 1 : 0, haccp_ccp_id || null, notes || null, maintenance_tasks ? JSON.stringify(maintenance_tasks) : '{}', task_group || null);
+    INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks, task_group, asset_kind, loto_required)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, type, location || null, room || null, asset_id || null, manufacturer || null, model_number || null, serial_number || null, vendor || null, pm_frequency || null, is_food_contact ? 1 : 0, haccp_ccp_id || null, notes || null, maintenance_tasks ? JSON.stringify(maintenance_tasks) : '{}', task_group || null, assetKind, lotoRequired);
   if (task_group) syncTaskGroupToPM(db, id, task_group);
 
   const created = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);
@@ -99,11 +110,18 @@ router.post('/bulk-update', (req, res) => {
 
   const fields = [];
   const vals = [];
-  const allowed = ['type', 'location', 'room', 'manufacturer', 'model_number', 'vendor', 'pm_frequency', 'is_food_contact', 'haccp_ccp_id', 'status', 'notes', 'maintenance_tasks', 'task_group'];
+  const allowed = ['type', 'location', 'room', 'manufacturer', 'model_number', 'vendor', 'pm_frequency', 'is_food_contact', 'haccp_ccp_id', 'status', 'notes', 'maintenance_tasks', 'task_group', 'asset_kind', 'loto_required'];
 
   for (const [key, value] of Object.entries(changes)) {
     if (!allowed.includes(key)) continue;
-    if (key === 'is_food_contact') {
+    if (key === 'asset_kind') {
+      // Reclassifying a batch of rows is exactly what bulk edit is for, but an
+      // unrecognised value would silently write nonsense into the column every
+      // readiness rule reads.
+      if (!ASSET_KINDS.includes(value)) return res.status(400).json({ error: `asset_kind must be one of ${ASSET_KINDS.join(', ')}` });
+      fields.push(`${key} = ?`);
+      vals.push(value);
+    } else if (key === 'is_food_contact' || key === 'loto_required') {
       fields.push(`${key} = ?`);
       vals.push(value ? 1 : 0);
     } else if (key === 'maintenance_tasks') {
@@ -127,6 +145,12 @@ router.post('/bulk-update', (req, res) => {
   if (changes.task_group !== undefined) {
     for (const id of ids) syncTaskGroupToPM(db, id, changes.task_group);
   }
+  // Hold the same invariant the single-record paths do: a zone has no energy
+  // source to lock out, so bulk-reclassifying to zone clears the flag rather
+  // than leaving rows the checklist and the LOTO badge disagree about.
+  if (changes.asset_kind === 'zone') {
+    db.prepare(`UPDATE equipment SET loto_required = 0 WHERE id IN (${placeholders})`).run(...ids);
+  }
 
   logAudit(req.user, 'bulk_update', 'equipment', null, { ids, fields: Object.keys(changes) }, null, null);
   res.json({ updated: ids.length });
@@ -138,10 +162,23 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Equipment not found' });
 
   const { name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, status, notes, maintenance_tasks, task_group } = req.body;
+  // Both are deliberate classifications, so an absent field means "leave it" —
+  // never "re-derive it from the type". Someone who marked a machine as not
+  // needing lockout must not have that undone by an unrelated edit.
+  const assetKind = ASSET_KINDS.includes(req.body.asset_kind) ? req.body.asset_kind : existing.asset_kind;
+  // A ZONE CANNOT REQUIRE LOCKOUT. That isn't a preference to be preserved —
+  // an area has no energy source — and leaving the flag set produced a row the
+  // checklist treated as a zone while the LOTO coverage badge still counted it
+  // as a machine missing its procedure. Reclassifying clears it.
+  const lotoRequired = assetKind === 'zone' ? 0
+    : req.body.loto_required !== undefined
+      ? (req.body.loto_required ? 1 : 0)
+      : existing.loto_required;
   db.prepare(`
     UPDATE equipment SET name = ?, type = ?, location = ?, room = ?, asset_id = ?, manufacturer = ?,
     model_number = ?, serial_number = ?, vendor = ?, pm_frequency = ?, is_food_contact = ?,
-    haccp_ccp_id = ?, status = ?, notes = ?, maintenance_tasks = ?, task_group = ?, updated_at = datetime('now') WHERE id = ?
+    haccp_ccp_id = ?, status = ?, notes = ?, maintenance_tasks = ?, task_group = ?,
+    asset_kind = ?, loto_required = ?, updated_at = datetime('now') WHERE id = ?
   `).run(
     name || existing.name, type || existing.type, location ?? existing.location,
     room ?? existing.room, asset_id ?? existing.asset_id, manufacturer ?? existing.manufacturer,
@@ -150,7 +187,8 @@ router.put('/:id', (req, res) => {
     is_food_contact !== undefined ? (is_food_contact ? 1 : 0) : existing.is_food_contact,
     haccp_ccp_id ?? existing.haccp_ccp_id, status || existing.status, notes ?? existing.notes,
     maintenance_tasks !== undefined ? JSON.stringify(maintenance_tasks) : (existing.maintenance_tasks || '{}'),
-    task_group !== undefined ? (task_group || null) : existing.task_group, req.params.id
+    task_group !== undefined ? (task_group || null) : existing.task_group,
+    assetKind, lotoRequired, req.params.id
   );
   if (task_group !== undefined && (task_group || null) !== existing.task_group) {
     syncTaskGroupToPM(db, req.params.id, task_group);

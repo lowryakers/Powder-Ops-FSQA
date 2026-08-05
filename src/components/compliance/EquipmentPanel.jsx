@@ -5,11 +5,13 @@ import { canEditModule } from '../../utils/permissions';
 import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square, ShieldCheck } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 import EquipmentSetupChecklist from './EquipmentSetupChecklist.jsx';
-import { EQUIPMENT_TYPES } from '../../../shared/equipment-types.js';
+import { MACHINE_TYPES, ZONE_TYPES, defaultAssetKind } from '../../../shared/equipment-types.js';
 
-// The type list is shared with the server's setup checklist, which has to decide
-// from it whether a machine has a lockout point — see shared/equipment-types.js.
-const TYPES = EQUIPMENT_TYPES;
+// Types come from shared/equipment-types.js so the form, the setup checklist
+// and the boot migrations all speak the same vocabulary. The type only sets the
+// DEFAULT classification; `asset_kind` and `loto_required` are the columns that
+// actually decide what a row is asked for.
+const TYPES = [...MACHINE_TYPES, ...ZONE_TYPES];
 
 const FREQ_ORDER = ['Daily', 'Bi-weekly', 'Weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Annual', 'As Needed'];
 const FREQ_COLORS = {
@@ -109,7 +111,7 @@ function MaintenanceTasksEditor({ tasks, onChange }) {
 
 function EquipmentForm({ initial, ccps, onSave, onCancel }) {
   const initTasks = initial ? parseTasks(initial) : {};
-  const [form, setForm] = useState(initial || { name: '', type: 'Conveyor', location: '', room: '', asset_id: '', manufacturer: '', model_number: '', serial_number: '', vendor: '', pm_frequency: '', is_food_contact: false, haccp_ccp_id: '', notes: '', maintenance_tasks: {}, task_group: '' });
+  const [form, setForm] = useState(initial || { name: '', type: 'Conveyor', location: '', room: '', asset_id: '', manufacturer: '', model_number: '', serial_number: '', vendor: '', pm_frequency: '', is_food_contact: false, haccp_ccp_id: '', notes: '', maintenance_tasks: {}, task_group: '', asset_kind: 'machine', loto_required: true });
   const [tasks, setTasks] = useState(initTasks);
   const [saving, setSaving] = useState(false);
 
@@ -135,9 +137,17 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
-          <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}
+          {/* Grouped so the area types are visibly a different sort of thing —
+              and PRESENT at all: they were missing from this list, so opening a
+              BPG zone here and saving silently retyped it as the first option. */}
+          <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value, asset_kind: defaultAssetKind(e.target.value) })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            {TYPES.map(t => <option key={t}>{t}</option>)}
+            <optgroup label="Equipment">
+              {MACHINE_TYPES.map(t => <option key={t}>{t}</option>)}
+            </optgroup>
+            <optgroup label="Areas & zones">
+              {ZONE_TYPES.map(t => <option key={t}>{t}</option>)}
+            </optgroup>
           </select>
         </div>
         <div>
@@ -206,6 +216,40 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
               className="rounded border-gray-300" />
             <span className="text-sm text-gray-700">Food-Contact Surface</span>
           </label>
+        </div>
+      </div>
+
+      {/* The two classifications that decide what this row is asked for.
+          They are columns, not guesses from the type — the type only sets the
+          default above, and either can be corrected here. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">This record is</label>
+          <select value={form.asset_kind || defaultAssetKind(form.type)}
+            onChange={e => setForm({ ...form, asset_kind: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+            <option value="machine">Equipment — operated, maintained, locked out</option>
+            <option value="zone">Area or zone — inspected and cleaned on a schedule</option>
+          </select>
+          <p className="text-[11px] text-gray-500 mt-1">
+            A zone is scheduled and inspected. It isn&apos;t asked for a lockout procedure, a training
+            course or a work instruction.
+          </p>
+        </div>
+        <div className="flex flex-col justify-start">
+          <label className="block text-xs font-medium text-gray-700 mb-1">Lockout / tagout</label>
+          <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+            <input type="checkbox"
+              checked={(form.asset_kind || defaultAssetKind(form.type)) === 'zone' ? false : form.loto_required !== 0 && form.loto_required !== false}
+              disabled={(form.asset_kind || defaultAssetKind(form.type)) === 'zone'}
+              onChange={e => setForm({ ...form, loto_required: e.target.checked })}
+              className="rounded border-gray-300" />
+            <span className="text-gray-700">Needs a LOTO procedure</span>
+          </label>
+          <p className="text-[11px] text-gray-500 mt-1">
+            On by default, because the safe mistake is asking. Drives the LOTO coverage badge and the
+            setup checklist.
+          </p>
         </div>
       </div>
 
@@ -331,6 +375,11 @@ const BULK_FIELDS = [
   { key: 'pm_frequency', label: 'PM Frequency', type: 'text' },
   { key: 'status', label: 'Status', type: 'select', options: ['active', 'partial', 'out_of_service'] },
   { key: 'is_food_contact', label: 'Food Contact', type: 'toggle' },
+  // Reclassifying a batch of rows in one go is exactly what this is for — the
+  // 39 zones were classified by a one-time backfill, and correcting a wrong one
+  // shouldn't mean opening 39 forms.
+  { key: 'asset_kind', label: 'Equipment or Area', type: 'select', options: ['machine', 'zone'] },
+  { key: 'loto_required', label: 'Needs LOTO', type: 'toggle' },
   { key: 'maintenance_tasks', label: 'Maintenance Tasks', type: 'tasks' },
   { key: 'notes', label: 'Notes', type: 'textarea' },
 ];
@@ -355,7 +404,7 @@ function BulkEditBar({ selected, equipment, onApply, onCancel }) {
     try {
       const changes = {};
       if (field === 'maintenance_tasks') changes[field] = tasks;
-      else if (field === 'is_food_contact') changes[field] = value === 'true';
+      else if (field === 'is_food_contact' || field === 'loto_required') changes[field] = value === 'true';
       else changes[field] = value;
       await onApply(changes);
     } finally { setSaving(false); }
@@ -576,6 +625,11 @@ export default function EquipmentPanel() {
   const [filterType, setFilterType] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  // 39 of the 183 rows are areas rather than machines, which is legitimate but
+  // makes "show me the equipment" a different question from "show me the
+  // registry". Nothing is hidden by default — a filter people can see is
+  // honest, a list quietly missing a fifth of its rows is not.
+  const [filterKind, setFilterKind] = useState('');
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
 
@@ -608,6 +662,7 @@ export default function EquipmentPanel() {
         (e.model_number || '').toLowerCase().includes(q)
       );
     }
+    if (filterKind) list = list.filter(e => (e.asset_kind || 'machine') === filterKind);
     if (filterType) list = list.filter(e => e.type === filterType);
     if (filterLocation) list = list.filter(e => e.location === filterLocation);
     if (filterStatus) list = list.filter(e => e.status === filterStatus);
@@ -620,7 +675,7 @@ export default function EquipmentPanel() {
     });
 
     return list;
-  }, [equipment, search, filterType, filterLocation, filterStatus, sortField, sortDir]);
+  }, [equipment, search, filterKind, filterType, filterLocation, filterStatus, sortField, sortDir]);
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -646,8 +701,8 @@ export default function EquipmentPanel() {
     }
   };
   const handleUpdate = async (form) => { await apiPut(`/equipment/${editing.id}`, form); setEditing(null); refresh(); };
-  const hasFilters = search || filterType || filterLocation || filterStatus;
-  const clearFilters = () => { setSearch(''); setFilterType(''); setFilterLocation(''); setFilterStatus(''); };
+  const hasFilters = search || filterKind || filterType || filterLocation || filterStatus;
+  const clearFilters = () => { setSearch(''); setFilterKind(''); setFilterType(''); setFilterLocation(''); setFilterStatus(''); };
 
   const toggleExpand = (id) => {
     if (selected.size > 0) return;
@@ -704,6 +759,8 @@ export default function EquipmentPanel() {
               { label: 'Vendor', value: r => r.vendor },
               { label: 'PM Frequency', value: r => r.pm_frequency },
               { label: 'Food Contact', value: r => r.is_food_contact ? 'Yes' : 'No' },
+              { label: 'Record Type', value: r => (r.asset_kind === 'zone' ? 'Area / zone' : 'Equipment') },
+              { label: 'Needs LOTO', value: r => (r.loto_required === 0 ? 'No' : 'Yes') },
               { label: 'Status', value: r => r.status },
               { label: 'Maintenance Tasks', value: taskStr },
               { label: 'Notes', value: r => r.notes },
@@ -735,6 +792,12 @@ export default function EquipmentPanel() {
           <input value={search} onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Search name, asset ID, manufacturer, serial..." />
         </div>
+        <select value={filterKind} onChange={e => setFilterKind(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm" title="Equipment or areas">
+          <option value="">Equipment &amp; areas</option>
+          <option value="machine">Equipment only</option>
+          <option value="zone">Areas &amp; zones only</option>
+        </select>
         <select value={filterType} onChange={e => setFilterType(e.target.value)}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
           <option value="">All Types</option>

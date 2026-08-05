@@ -245,9 +245,14 @@ export function seedCleaningPMSchedules(db) {
   const hasCleaningSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE task_group = 'cleaning'").get().c;
   if (hasCleaningSchedules > 0) return;
 
+  // Every row these seeds create is an AREA, not a machine — a cleaning zone, a
+  // BPG inspection zone, a light fixture zone, a monitoring point. Saying so at
+  // the point of creation is what stops the setup checklist asking a zone for a
+  // lockout procedure and a training course. `loto_required = 0` matches: it is
+  // the column the LOTO module and the compliance badge read.
   const insertEq = db.prepare(`
-    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
-    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status, asset_kind, loto_required)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active', 'zone', 0)
   `);
   const insertPM = db.prepare(`
     INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
@@ -462,9 +467,14 @@ export function seedTempHumidityPMSchedules(db) {
   const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Temp%Humidity%'").get().c;
   if (hasSchedules > 0) return;
 
+  // Every row these seeds create is an AREA, not a machine — a cleaning zone, a
+  // BPG inspection zone, a light fixture zone, a monitoring point. Saying so at
+  // the point of creation is what stops the setup checklist asking a zone for a
+  // lockout procedure and a training course. `loto_required = 0` matches: it is
+  // the column the LOTO module and the compliance badge read.
   const insertEq = db.prepare(`
-    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
-    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status, asset_kind, loto_required)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active', 'zone', 0)
   `);
   const insertPM = db.prepare(`
     INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
@@ -643,9 +653,14 @@ const BPG_ZONE_ITEMS = {
 };
 
 export function seedGlassPlasticPMSchedules(db) {
+  // Every row these seeds create is an AREA, not a machine — a cleaning zone, a
+  // BPG inspection zone, a light fixture zone, a monitoring point. Saying so at
+  // the point of creation is what stops the setup checklist asking a zone for a
+  // lockout procedure and a training course. `loto_required = 0` matches: it is
+  // the column the LOTO module and the compliance badge read.
   const insertEq = db.prepare(`
-    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
-    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status, asset_kind, loto_required)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active', 'zone', 0)
   `);
   const insertPM = db.prepare(`
     INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
@@ -802,9 +817,14 @@ export function seedLightInspectionPMSchedules(db) {
   const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Light Inspection%'").get().c;
   if (hasSchedules > 0) return;
 
+  // Every row these seeds create is an AREA, not a machine — a cleaning zone, a
+  // BPG inspection zone, a light fixture zone, a monitoring point. Saying so at
+  // the point of creation is what stops the setup checklist asking a zone for a
+  // lockout procedure and a training course. `loto_required = 0` matches: it is
+  // the column the LOTO module and the compliance badge read.
   const insertEq = db.prepare(`
-    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status)
-    VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+    INSERT INTO equipment (id, name, type, location, room, asset_id, is_food_contact, status, asset_kind, loto_required)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'active', 'zone', 0)
   `);
   const insertPM = db.prepare(`
     INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)

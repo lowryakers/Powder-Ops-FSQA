@@ -1416,17 +1416,10 @@ in and its PM schedule turned up months later when someone noticed the task list
   procedure — a record asserting maintenance exists, which is worse than the gap it papers over. Each step
   links to the module that owns it (`link.tab`, checked against App.jsx's real nav ids — `hygienic`, not
   `hygienic-design`; `document-control`, not `documents`; HACCP CCPs are managed inside Equipment).
-- **`applies` keeps it honest per machine**, and the type vocabulary moved to **`shared/equipment-types.js`**
-  for it — the first cut kept a server-side copy, guessed `'tool'` for what the app calls `'Hand Tool'`, and
-  so quietly excluded nothing at all. `NO_LOTO_TYPES` is deliberately almost empty: wrongly *asking* for a
-  lockout procedure costs a moment, wrongly *omitting* it means nothing ever says it's missing, so an
-  unknown type (including `Other`) is asked.
-- **39 of the 183 equipment rows are ZONES, not machines** (`ZONE_TYPES`: Inspection / Light Fixture /
-  Cleaning Zone, Monitoring). They're in the table so the PM generator has something to hang a recurring
-  schedule on. A zone gets the three PM steps and is asked for nothing else — a light fixture zone with a
-  red "needs a work instruction" mark is exactly what teaches people to ignore a checklist. They were also
-  **missing from the type dropdown**, which is the retired-rooms trap: a `<select>` whose value isn't in its
-  options falls back to the first, so editing a BPG zone would silently retype it `A/C`.
+- **`applies` decides from COLUMNS, never from the `type` string** — see the section below. The first cut
+  shipped its own list of type names, guessed `'tool'` for what the app calls `'Hand Tool'` (so excluded
+  nothing at all), and disagreed with `equipment.loto_required`, which the LOTO module and the compliance
+  badge had been reading all along.
 - **Two new nullable links make it answerable:** `training_courses.equipment_id` and
   `sop_documents.equipment_id` (a course can be *about* a machine — WI021 is literally "Hexagon Tumbler
   Mixer Operation"), with pickers in the course modal and the document editor.
@@ -1438,6 +1431,42 @@ in and its PM schedule turned up months later when someone noticed the task list
 - Verified end to end on a fresh DB: 33 assertions on the transitions (each step flipping only when its
   record appears, a course on one machine not counting for another, pending vs approved), the per-type
   `applies` rules including a real seeded zone, route ordering, and roll-up/detail agreement.
+
+## Equipment vs areas: `asset_kind` and `loto_required` are COLUMNS, not guesses
+**39 of the plant's 183 equipment rows are areas** — BPG inspection zones, light fixture zones, sanitation
+zones, environmental monitoring points. They belong in `equipment`: `pm_schedules.equipment_id` is NOT NULL
+and a zone genuinely needs a recurring schedule, so pulling them into their own table would mean a second
+copy of the PM machinery for something that already works. **The rows are fine; what was wrong was that the
+distinction was INFERRED FROM THE `type` STRING in several places at once.**
+- **`equipment.asset_kind`** (`machine` | `zone`, default `machine`) is the classification, and
+  **`equipment.loto_required`** (default 1) is the lockout answer. `loto_required` *already existed* and was
+  already read by `/loto/uncovered-equipment` and the compliance badge — the setup checklist inventing a
+  second rule from type names is exactly the drift this codebase keeps warning about. Read the columns.
+- **`shared/equipment-types.js` supplies DEFAULTS ONLY.** `defaultAssetKind(type)` sets the value when a row
+  is created and drives the one-time backfill; nothing consults the type at read time. A zone typed slightly
+  differently used to become a machine owing a lockout procedure, a course and a work instruction.
+- **The backfill is one-time, marked in `app_settings.equipment_asset_kind_backfilled`.** A count-based
+  guard ("no rows are zones yet") would re-tag on the next deploy if an admin deliberately reclassified them
+  all — the sort of quiet undo that makes people stop trusting a setting. Verified: hand-reclassify a zone,
+  redeploy, the decision survives.
+- **A ZONE CANNOT REQUIRE LOCKOUT** — an area has no energy source, so that's an invariant, not a preference
+  to preserve. Enforced on create, update *and* bulk-update; leaving the flag set produced a row the
+  checklist treated as an area while the LOTO badge counted it as a machine missing its procedure. The two
+  LOTO reads also filter `asset_kind != 'zone'` as defence; that changes no number today (0 contradictions)
+  and is there so the count can't be wrong if one ever appears.
+- **An absent field on PUT means "leave it", never "re-derive from the type"** — someone who marked a
+  machine as not needing lockout must not have it undone by an edit to its location.
+- The cleaning seeders set `asset_kind = 'zone', loto_required = 0` **at the point of creation**, so a fresh
+  DB is correct without relying on the backfill at all.
+- The type dropdown now offers the zone types in their own `<optgroup>`. They were missing entirely, which
+  is the retired-rooms trap: a `<select>` whose value isn't among its options falls back to the FIRST one,
+  so opening a BPG zone and saving silently retyped it `A/C`.
+- The registry has an **Equipment / Areas** filter (nothing hidden by default — a list quietly missing a
+  fifth of its rows is worse than a filter people can see), and both fields are in bulk edit and the CSV.
+- Verified: fresh boot (39 zones classified by the seeds, 0 contradictions), upgrade of a pre-migration DB
+  (40 classified by the backfill), redeploy preserving a hand-set value, and 24 API assertions covering the
+  defaults, both override directions, reclassification in and out, bulk edit rejecting an unknown kind, and
+  the LOTO/checklist agreement.
 
 ## Settings is a registry, not a page (`SettingsShell.jsx` + `SettingsPanel.jsx`)
 Settings was one render stacking seven blocks with their permission rules written inline between them, so

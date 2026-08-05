@@ -149,10 +149,11 @@ router.put('/executions/:id/release', (req, res) => {
 router.get('/uncovered-equipment', (_req, res) => {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT e.id, e.name, e.room, e.location, e.asset_id, e.type
+    SELECT e.id, e.name, e.room, e.location, e.asset_id, e.type, e.asset_kind, e.loto_required
     FROM equipment e
     WHERE e.status = 'active'
       AND e.loto_required = 1
+      AND e.asset_kind != 'zone'
       AND e.id NOT IN (SELECT equipment_id FROM loto_procedures)
     ORDER BY e.name
   `).all();

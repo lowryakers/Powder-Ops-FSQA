@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync } from 'fs';
 import { backfillUsernames } from './usernames.js';
+import { ZONE_TYPES } from '../shared/equipment-types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'compliance.db');
@@ -1841,11 +1842,16 @@ function runMigrations() {
   } catch (e) {
     console.error('[migrate] work_orders equipment_id nullable failed:', e.message);
   }
-  // Mark area/zone types as not requiring LOTO
-  const areaTypes = ['Inspection Zone', 'Light Fixture Zone', 'Cleaning Zone', 'Monitoring'];
+  // Mark area/zone types as not requiring LOTO.
+  //
+  // `equipment.loto_required` is the AUTHORITY on this — read the column, never
+  // re-derive it from the type string. The setup checklist got that wrong once
+  // and shipped its own list of type names, which then disagreed with the LOTO
+  // module and the compliance badge that were already reading this. The zone
+  // classification proper is `asset_kind`, backfilled further down.
   const alreadyTagged = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE loto_required = 0").get().c;
   if (alreadyTagged === 0) {
-    db.prepare(`UPDATE equipment SET loto_required = 0 WHERE type IN (${areaTypes.map(() => '?').join(',')})`).run(...areaTypes);
+    db.prepare(`UPDATE equipment SET loto_required = 0 WHERE type IN (${ZONE_TYPES.map(() => '?').join(',')})`).run(...ZONE_TYPES);
     const updated = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE loto_required = 0").get().c;
     if (updated > 0) console.log(`[migrate] Marked ${updated} area/zone items as not requiring LOTO`);
   }
@@ -2326,6 +2332,42 @@ function runMigrations() {
     `);
   } catch (e) {
     console.warn('[db] translation_cache unavailable:', e.message);
+  }
+
+  /**
+   * `equipment.asset_kind` — is this row a MACHINE or an AREA/ZONE?
+   *
+   * 39 of the plant's 183 equipment rows are inspection, light-fixture,
+   * cleaning and environmental-monitoring zones. They live in this table
+   * legitimately: `pm_schedules.equipment_id` is NOT NULL and a zone genuinely
+   * needs a recurring schedule, so the alternative is a second copy of the PM
+   * machinery for things that already work. What was wrong was that the
+   * distinction was INFERRED FROM THE `type` STRING in several places at once —
+   * the loto_required backfill below, the setup checklist, and implicitly the
+   * cleaning seeds — so a zone typed even slightly differently silently became
+   * a machine that owed a lockout procedure, a training course and a work
+   * instruction. A fundamental distinction has to be a column somebody can set,
+   * not a string list each caller re-derives.
+   *
+   * Backfilled ONCE, recorded in app_settings. A count-based guard ("no rows
+   * are zones yet") would re-tag on the next boot if an admin deliberately
+   * reclassified them all, which is the sort of quiet undo that makes people
+   * stop trusting a setting.
+   */
+  addColumnIfMissing('equipment', 'asset_kind', "TEXT NOT NULL DEFAULT 'machine'");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_equipment_asset_kind ON equipment(asset_kind)");
+  try {
+    const done = db.prepare("SELECT value FROM app_settings WHERE key = 'equipment_asset_kind_backfilled'").get();
+    if (!done) {
+      const n = db.prepare(
+        `UPDATE equipment SET asset_kind = 'zone' WHERE type IN (${ZONE_TYPES.map(() => '?').join(',')})`,
+      ).run(...ZONE_TYPES).changes;
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('equipment_asset_kind_backfilled', ?)")
+        .run(new Date().toISOString());
+      if (n) console.log(`[migrate] Classified ${n} equipment row(s) as zones (asset_kind)`);
+    }
+  } catch (e) {
+    console.warn('[migrate] asset_kind backfill skipped:', e.message);
   }
 
   // Editable dropdown list for the Maintenance Sign In/Out item field, managed
