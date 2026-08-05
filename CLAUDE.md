@@ -546,11 +546,35 @@ config; UI is one `LedgerPanel.jsx` with `ledger="ap"|"ar"`). KPI cards are plai
 → R2, contents OCR'd via the shared `server/invoice-text.js` (extracted from office.js; supply invoices use
 it too) so search hits text *inside* the PDF. Modules `accounts-payable` / `accounts-receivable` are granted
 separately in Settings.
-**QuickBooks** (`server/quickbooks.js`) degrades gracefully like storage/ai: pull-only sync of Bills→AP and
-Invoices→AR, upserted on `qb_id`; money fields come from QBO, everything else stays local. Refresh tokens
-rotate, so the current one is persisted in `app_settings.qbo_refresh_token`. **Env:** `QBO_CLIENT_ID`,
-`QBO_CLIENT_SECRET`, `QBO_REFRESH_TOKEN`, `QBO_REALM_ID` (optional `QBO_ENV=sandbox`). Written against QBO
-v3 but **not yet exercised against a real company** — verify the pull before building push-back.
+**QuickBooks** (`server/quickbooks.js`) degrades gracefully like storage/ai and is **read-only by
+construction** — there is no code that writes back, which is what makes it safe while QBO is still the
+system of record. Bills→AP and Invoices→AR upsert on `qb_id`; money fields come from QBO, everything else
+stays local. Refresh tokens rotate, so the current one is persisted in `app_settings.qbo_refresh_token`.
+**Env:** `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_REFRESH_TOKEN`, `QBO_REALM_ID` (optional
+`QBO_ENV=sandbox`; `QBO_API_BASE`/`QBO_TOKEN_URL` exist only to point the tests at a stand-in).
+UI is the admin-only **QuickBooks** tab of the Accounting hub (`QuickBooksPanel.jsx`).
+- **EVERY read pages through `queryAll()`.** QBO caps a query at 1,000 rows and pages with a **one-based**
+  `STARTPOSITION`; the original single `MAXRESULTS 500` query returned the first page and reported success,
+  which on a real company is a clean-looking sync that quietly lost most of the books. Worst possible
+  failure for a migration — never add a bare query.
+- **Discovery answers "what do we actually use", counted rather than recalled.** `discoverQuickBooks()`
+  walks `ENTITIES` (22 types), using `SELECT COUNT(*)` → `totalCount` so it counts **without downloading**,
+  plus two `ORDERBY TxnDate ASC/DESC MAXRESULTS 1` queries for the date range (QBO has no MIN/MAX). The
+  most valuable line is the **zero**: an entity with no records is a feature the replacement needn't carry.
+  One entity erroring is reported per-entity (`unreadable`) and never loses the other 21. Stored in
+  `app_settings.qbo_inventory` so the answer survives without re-hitting the API.
+- **Full pull vs incremental sync are different jobs.** `syncFromQuickBooks(db, {full:true})` drops the date
+  cutoff and also pulls the chart of accounts + vendors + customers — that is the migration, run once
+  (`qbo_full_pull_at` records that it happened). The default incremental mode takes what changed since
+  `qbo_last_sync` (12 months on a cold start), which would silently leave older history behind in a system
+  they're trying to leave.
+- `qbo_accounts` / `qbo_contacts` (one table, `kind` + unique on `(kind, qb_id)` — QBO namespaces ids per
+  entity) are **copies, not sources**: no local fields, overwritten each pull. An account editable in two
+  places is worse than one you have to go and read.
+- **Exercised end to end against a stand-in QuickBooks** (OAuth refresh incl. token rotation, the v3 query
+  endpoint, paging, COUNT, ORDERBY) holding 2,350 bills — deliberately more than one page. 41 assertions on
+  the module + 22 on the HTTP surface. Still **never run against their real company**; that's blocked on
+  the four env vars, and `docs/quickbooks-api-setup.md` is the step-by-step for them.
 
 ## Whole-page EN/ES
 `src/lib/usePageTranslation.js` + `src/components/LangToggle.jsx`: pass every string the page shows, get

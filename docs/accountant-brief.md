@@ -126,9 +126,23 @@ month and year end?
 |---|---|---|
 | 1 | AP, AR, reimbursements, partner netting | **Done and in use** |
 | 2 | Bank feed + reconciliation | **Done; needs a real statement to prove out** |
+| 2b | Read-only pull of the QuickBooks data | **Done; waiting on the API credentials** |
 | 3 | Chart of accounts + general ledger | **Not started — needs your input first** |
 | 4 | Financial statements + year-end package | **Not started — depends on 3** |
 | 5 | Turn off QuickBooks | Only after a parallel period you're satisfied with |
+
+Stage 2b is worth a note, because it changes the shape of this conversation. We
+can now connect to QuickBooks read-only and **count every kind of record in the
+company** — how many bills, invoices, journal entries, deposits, transfers and
+so on, and the date range each covers. So the question "how much accounting is
+actually happening in there" stops being a matter of opinion. If the journal
+entry count comes back near zero, stage 3 is mostly a reporting exercise; if
+it's large, that is exactly the judgement we'd want you to price. We'll send you
+that report before asking you for an estimate.
+
+The same connection pulls a full copy of the bills, invoices, chart of accounts,
+vendors and customers into ReadyDoc — so a parallel period (your point 4 above)
+doesn't require anyone to re-key anything.
 
 We're deliberately stopping at the boundary of stage 3 until we've heard from
 you. The bookkeeping we're comfortable owning. The accounting judgement we're

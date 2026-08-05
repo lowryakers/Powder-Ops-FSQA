@@ -69,11 +69,27 @@ Railway redeploys automatically. Nothing else in ReadyDoc changes — the whole
 integration degrades gracefully, so before this the Sync button simply isn't
 there.
 
-## 6. Tell me it's done
+## 6. Run it yourself — **Accounting → QuickBooks**
 
-I'll pull Bills, Invoices, the Chart of Accounts, vendors and customers, and
-report back what's actually in there. From that I can size stage 3 honestly
-instead of estimating.
+Once the four variables are in, an admin gets a **QuickBooks** tab in the
+Accounting module with three things on it:
+
+1. **Check** — "what is actually in these books". It counts every kind of record
+   QuickBooks holds for this company and dates the transactional ones. It counts
+   without downloading, so it's quick and safe to re-run. **The most useful line
+   in that report is the empty one**: an entity with zero records is a whole
+   feature a replacement doesn't have to carry. This is the answer to "get a
+   list of what we actually use", produced from the books rather than from
+   memory.
+2. **Pull everything** — the migration. Every bill and invoice with no date
+   cutoff, plus the chart of accounts, vendors and customers. Run it once.
+   Re-running is safe: rows are matched on their QuickBooks id and updated in
+   place, so nothing doubles.
+3. **Sync changes** — the day-to-day version, taking only what changed since the
+   last run.
+
+Send me a screenshot of the discovery report and I can size stage 3 against real
+numbers instead of an estimate.
 
 ---
 
@@ -89,6 +105,13 @@ rule, not ours.
 **This connection is read-only.** `server/quickbooks.js` only ever pulls; it has
 no code that writes back to QuickBooks. So there is no way for this to damage
 your books, which is deliberate while QuickBooks is still the system of record.
+
+**It has been tested, just not against your company.** The integration runs end
+to end against a stand-in QuickBooks that holds 2,350 bills — deliberately more
+than one API page — so paging, the rotating refresh token, the empty and
+unreadable entities, and re-running a pull without duplicating anything are all
+exercised. What that testing cannot tell us is how *your* books are shaped, which
+is what step 6 is for.
 
 ## If something goes wrong
 

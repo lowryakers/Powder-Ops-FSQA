@@ -2483,6 +2483,43 @@ function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_ar_status ON ar_invoices(status, due_date);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_ar_qb ON ar_invoices(qb_id) WHERE qb_id IS NOT NULL;
 
+      -- The Chart of Accounts as QuickBooks holds it. Copied out, not authored
+      -- here: while QBO is still the system of record, an account edited in two
+      -- places is worse than an account you have to go and read.
+      CREATE TABLE IF NOT EXISTS qbo_accounts (
+        id               TEXT PRIMARY KEY,
+        qb_id            TEXT NOT NULL,
+        acct_number      TEXT,
+        name             TEXT NOT NULL,
+        fully_qualified  TEXT,
+        account_type     TEXT,
+        account_sub_type TEXT,
+        classification   TEXT,
+        parent_qb_id     TEXT,
+        active           INTEGER NOT NULL DEFAULT 1,
+        current_balance  REAL,
+        synced_at        TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_qbo_accounts_qb ON qbo_accounts(qb_id);
+      CREATE INDEX IF NOT EXISTS idx_qbo_accounts_type ON qbo_accounts(classification, account_type);
+
+      -- Vendors and customers. One table with a kind, because they are the same
+      -- shape here; the QuickBooks ids are namespaced per entity, so the unique
+      -- key is (kind, qb_id) and never qb_id alone.
+      CREATE TABLE IF NOT EXISTS qbo_contacts (
+        id          TEXT PRIMARY KEY,
+        kind        TEXT NOT NULL CHECK (kind IN ('vendor','customer')),
+        qb_id       TEXT NOT NULL,
+        name        TEXT NOT NULL,
+        company     TEXT,
+        email       TEXT,
+        phone       TEXT,
+        active      INTEGER NOT NULL DEFAULT 1,
+        balance     REAL,
+        synced_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_qbo_contacts_qb ON qbo_contacts(kind, qb_id);
+
       CREATE TABLE IF NOT EXISTS finance_files (
         id             TEXT PRIMARY KEY,
         ledger         TEXT NOT NULL DEFAULT 'ap' CHECK (ledger IN ('ap','ar')),

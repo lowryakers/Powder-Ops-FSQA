@@ -10,6 +10,9 @@
 //   QBO_REFRESH_TOKEN                  — long-lived token from the OAuth grant
 //   QBO_REALM_ID                       — the company (realm) id
 //   QBO_ENV                            — 'production' (default) or 'sandbox'
+//   QBO_API_BASE, QBO_TOKEN_URL        — override the endpoints. Only for
+//                                        pointing the test suite at a local
+//                                        stand-in; leave unset in production.
 //
 // Intuit refresh tokens roll: every refresh may return a NEW refresh token and
 // the old one stops working after a short overlap. We persist the current one
@@ -17,8 +20,9 @@
 // the env var when nothing is stored yet.
 import { getDb } from './db.js';
 
-const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
-const API_BASE = () => (process.env.QBO_ENV === 'sandbox'
+const TOKEN_URL = () => process.env.QBO_TOKEN_URL
+  || 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
+const API_BASE = () => process.env.QBO_API_BASE || (process.env.QBO_ENV === 'sandbox'
   ? 'https://sandbox-quickbooks.api.intuit.com'
   : 'https://quickbooks.api.intuit.com');
 
@@ -30,15 +34,18 @@ export function quickbooksEnabled() {
 }
 
 export function quickbooksStatus() {
-  const db = safeDb();
-  let lastSync = null;
-  if (db) {
-    try { lastSync = db.prepare("SELECT value FROM app_settings WHERE key = 'qbo_last_sync'").get()?.value || null; } catch { /* optional */ }
-  }
+  const setting = (key) => {
+    const db = safeDb();
+    if (!db) return null;
+    try { return db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)?.value || null; } catch { return null; }
+  };
   return {
     enabled: quickbooksEnabled(),
     environment: process.env.QBO_ENV === 'sandbox' ? 'sandbox' : 'production',
-    last_sync: lastSync,
+    last_sync: setting('qbo_last_sync'),
+    // A full pull is the migration. Whether it has ever run is the difference
+    // between "we have a copy of the books" and "we have the last 12 months".
+    full_pull_at: setting('qbo_full_pull_at'),
   };
 }
 
@@ -72,7 +79,7 @@ async function getAccessToken() {
   if (!refresh) throw new Error('No QuickBooks refresh token available.');
   const basic = Buffer.from(`${process.env.QBO_CLIENT_ID}:${process.env.QBO_CLIENT_SECRET}`).toString('base64');
 
-  const res = await fetch(TOKEN_URL, {
+  const res = await fetch(TOKEN_URL(), {
     method: 'POST',
     headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh }).toString(),
@@ -102,7 +109,121 @@ async function query(sql) {
   return data.QueryResponse || {};
 }
 
+// QuickBooks caps a query at 1,000 rows and pages with STARTPOSITION, which is
+// ONE-based. A single MAXRESULTS query silently returns the first page and
+// reports success — on a company with more than a page of bills that reads as
+// a clean sync that quietly lost half the books, which is the worst possible
+// failure for a migration. So every read goes through here.
+const PAGE = 1000;
+
+async function queryAll(entity, where = '') {
+  const out = [];
+  for (let start = 1; ; start += PAGE) {
+    const sql = `SELECT * FROM ${entity}${where ? ` WHERE ${where}` : ''} STARTPOSITION ${start} MAXRESULTS ${PAGE}`;
+    const page = (await query(sql))[entity] || [];
+    out.push(...page);
+    // A short page is the last page. Guard the pathological case where a
+    // server keeps returning full pages rather than looping forever.
+    if (page.length < PAGE || out.length > 100000) break;
+  }
+  return out;
+}
+
+// COUNT is its own query shape in QBO and comes back as totalCount, so an
+// inventory doesn't have to download the rows it's counting.
+async function countOf(entity) {
+  const r = await query(`SELECT COUNT(*) FROM ${entity}`);
+  return Number(r.totalCount ?? 0);
+}
+
 const day = (v) => (v ? String(v).slice(0, 10) : null);
+
+/* ── Discovery: what is actually in these books ───────────────────────────── */
+//
+// The first question asked about replacing QuickBooks was "what do we actually
+// use?" — and the honest answer is not a list anyone can write from memory.
+// This counts every entity type the API exposes and dates the transactional
+// ones, so the replacement gets sized against the books rather than a guess.
+// An entity with a count of zero is a whole feature the replacement does not
+// have to carry, which is the most valuable line in the report.
+
+const ENTITIES = [
+  // Lists — the structure of the books.
+  { name: 'Account', label: 'Chart of accounts', group: 'lists' },
+  { name: 'Vendor', label: 'Vendors', group: 'lists' },
+  { name: 'Customer', label: 'Customers', group: 'lists' },
+  { name: 'Item', label: 'Products & services', group: 'lists' },
+  { name: 'Employee', label: 'Employees', group: 'lists' },
+  { name: 'Term', label: 'Payment terms', group: 'lists' },
+  { name: 'TaxCode', label: 'Tax codes', group: 'lists' },
+  // Money out.
+  { name: 'Bill', label: 'Bills (AP)', group: 'payable', dated: true },
+  { name: 'BillPayment', label: 'Bill payments', group: 'payable', dated: true },
+  { name: 'VendorCredit', label: 'Vendor credits', group: 'payable', dated: true },
+  { name: 'Purchase', label: 'Expenses / card charges', group: 'payable', dated: true },
+  { name: 'PurchaseOrder', label: 'Purchase orders', group: 'payable', dated: true },
+  // Money in.
+  { name: 'Invoice', label: 'Invoices (AR)', group: 'receivable', dated: true },
+  { name: 'Payment', label: 'Customer payments', group: 'receivable', dated: true },
+  { name: 'SalesReceipt', label: 'Sales receipts', group: 'receivable', dated: true },
+  { name: 'CreditMemo', label: 'Credit memos', group: 'receivable', dated: true },
+  { name: 'Estimate', label: 'Estimates', group: 'receivable', dated: true },
+  { name: 'RefundReceipt', label: 'Refunds', group: 'receivable', dated: true },
+  // The general-ledger end — this is the part that decides whether stage 3 is
+  // a real project or a formality.
+  { name: 'JournalEntry', label: 'Journal entries', group: 'ledger', dated: true },
+  { name: 'Deposit', label: 'Deposits', group: 'ledger', dated: true },
+  { name: 'Transfer', label: 'Transfers', group: 'ledger', dated: true },
+  { name: 'TimeActivity', label: 'Time activities', group: 'ledger', dated: true },
+];
+
+// Oldest and newest by transaction date. QBO has no MIN/MAX, but it does have
+// ORDERBY, so two one-row queries answer it without downloading the entity.
+async function dateRange(entity) {
+  const edge = async (dir) => {
+    const r = await query(`SELECT * FROM ${entity} ORDERBY TxnDate ${dir} MAXRESULTS 1`);
+    return day(r[entity]?.[0]?.TxnDate);
+  };
+  return { first: await edge('ASC'), last: await edge('DESC') };
+}
+
+export async function discoverQuickBooks(db) {
+  if (!quickbooksEnabled()) throw new Error('QuickBooks is not configured.');
+  const entities = [];
+  for (const e of ENTITIES) {
+    // One entity being unavailable (a permission, a feature that company never
+    // turned on) must not lose the other twenty-one. Report it and carry on.
+    try {
+      const count = await countOf(e.name);
+      const range = (count > 0 && e.dated) ? await dateRange(e.name) : { first: null, last: null };
+      entities.push({ ...e, count, ...range });
+    } catch (err) {
+      entities.push({ ...e, count: null, error: err.message.slice(0, 160) });
+    }
+  }
+  const report = {
+    checked_at: new Date().toISOString(),
+    realm_id: process.env.QBO_REALM_ID || null,
+    environment: process.env.QBO_ENV === 'sandbox' ? 'sandbox' : 'production',
+    entities,
+    // The headline: what is in use, and what the replacement can ignore.
+    in_use: entities.filter(e => e.count > 0).map(e => e.name),
+    unused: entities.filter(e => e.count === 0).map(e => e.name),
+    unreadable: entities.filter(e => e.count === null).map(e => e.name),
+  };
+  if (db) setSetting('qbo_inventory', JSON.stringify(report));
+  return report;
+}
+
+export function lastInventory() {
+  const raw = (() => {
+    const db = safeDb();
+    if (!db) return null;
+    try { return db.prepare("SELECT value FROM app_settings WHERE key = 'qbo_inventory'").get()?.value || null; } catch { return null; }
+  })();
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
 
 // Map a QBO Bill onto our AP row. Anything QBO doesn't carry (payment method,
 // our own notes) is left alone on update so local edits survive a re-sync.
@@ -162,29 +283,116 @@ function cryptoId() {
   return globalThis.crypto?.randomUUID?.() || `qb-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-// Pull everything changed since the last sync (or the last 12 months on a cold
-// start) and upsert it. Returns a per-ledger tally for the UI.
-export async function syncFromQuickBooks(db) {
+/* ── The lists: chart of accounts, vendors, customers ─────────────────────── */
+//
+// Copied out of QuickBooks, never authored here. While QBO is still the system
+// of record, an account that can be edited in two places is worse than one you
+// have to go and read — so these tables are overwritten by each pull and carry
+// no local fields to lose.
+
+function upsertAccounts(db, rows) {
+  const tally = { created: 0, updated: 0 };
+  const tx = db.transaction(() => {
+    for (const a of rows) {
+      const qbId = String(a.Id);
+      const vals = [
+        a.AcctNum || null, a.Name || '(unnamed)', a.FullyQualifiedName || a.Name || null,
+        a.AccountType || null, a.AccountSubType || null, a.Classification || null,
+        a.ParentRef?.value ? String(a.ParentRef.value) : null,
+        a.Active === false ? 0 : 1,
+        a.CurrentBalance === undefined ? null : Number(a.CurrentBalance),
+      ];
+      const existing = db.prepare('SELECT id FROM qbo_accounts WHERE qb_id = ?').get(qbId);
+      if (existing) {
+        db.prepare(`UPDATE qbo_accounts SET acct_number = ?, name = ?, fully_qualified = ?,
+          account_type = ?, account_sub_type = ?, classification = ?, parent_qb_id = ?,
+          active = ?, current_balance = ?, synced_at = datetime('now') WHERE id = ?`)
+          .run(...vals, existing.id);
+        tally.updated++;
+      } else {
+        db.prepare(`INSERT INTO qbo_accounts (id, qb_id, acct_number, name, fully_qualified,
+          account_type, account_sub_type, classification, parent_qb_id, active, current_balance)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(cryptoId(), qbId, ...vals);
+        tally.created++;
+      }
+    }
+  });
+  tx();
+  return tally;
+}
+
+function upsertContacts(db, kind, rows) {
+  const tally = { created: 0, updated: 0 };
+  const tx = db.transaction(() => {
+    for (const c of rows) {
+      const qbId = String(c.Id);
+      const vals = [
+        c.DisplayName || c.CompanyName || '(unnamed)', c.CompanyName || null,
+        c.PrimaryEmailAddr?.Address || null, c.PrimaryPhone?.FreeFormNumber || null,
+        c.Active === false ? 0 : 1,
+        c.Balance === undefined ? null : Number(c.Balance),
+      ];
+      const existing = db.prepare('SELECT id FROM qbo_contacts WHERE kind = ? AND qb_id = ?').get(kind, qbId);
+      if (existing) {
+        db.prepare(`UPDATE qbo_contacts SET name = ?, company = ?, email = ?, phone = ?,
+          active = ?, balance = ?, synced_at = datetime('now') WHERE id = ?`).run(...vals, existing.id);
+        tally.updated++;
+      } else {
+        db.prepare(`INSERT INTO qbo_contacts (id, kind, qb_id, name, company, email, phone, active, balance)
+          VALUES (?,?,?,?,?,?,?,?,?)`).run(cryptoId(), kind, qbId, ...vals);
+        tally.created++;
+      }
+    }
+  });
+  tx();
+  return tally;
+}
+
+/**
+ * Pull from QuickBooks and upsert.
+ *
+ * Two modes, and the difference matters. The **incremental** sync takes what
+ * changed since last time (12 months on a cold start) and is what the Sync
+ * button runs day to day. The **full** pull takes everything, ever, plus the
+ * lists — that is a migration, run once, and a 12-month default would quietly
+ * leave the older history behind in a system they are trying to leave.
+ */
+export async function syncFromQuickBooks(db, { full = false } = {}) {
   if (!quickbooksEnabled()) throw new Error('QuickBooks is not configured.');
   const since = (() => {
     try { return db.prepare("SELECT value FROM app_settings WHERE key = 'qbo_last_sync'").get()?.value || null; } catch { return null; }
   })();
   const cutoff = since ? since.slice(0, 10) : new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+  const where = full ? '' : `MetaData.LastUpdatedTime > '${cutoff}T00:00:00'`;
 
-  const tally = { bills: { created: 0, updated: 0 }, invoices: { created: 0, updated: 0 } };
+  const tally = {
+    mode: full ? 'full' : 'incremental',
+    since: full ? null : cutoff,
+    bills: { created: 0, updated: 0 },
+    invoices: { created: 0, updated: 0 },
+  };
 
-  const bills = (await query(`SELECT * FROM Bill WHERE MetaData.LastUpdatedTime > '${cutoff}T00:00:00' MAXRESULTS 500`)).Bill || [];
+  // The lists come first on a full pull: a bill names a vendor, and having the
+  // vendor already on file is what makes the pulled ledger readable.
+  if (full) {
+    tally.accounts = upsertAccounts(db, await queryAll('Account'));
+    tally.vendors = upsertContacts(db, 'vendor', await queryAll('Vendor'));
+    tally.customers = upsertContacts(db, 'customer', await queryAll('Customer'));
+  }
+
+  const bills = await queryAll('Bill', where);
   const apTx = db.transaction(() => {
     for (const b of bills) tally.bills[upsert(db, 'ap_invoices', apFromBill(b), 'amount_paid')]++;
   });
   apTx();
 
-  const invoices = (await query(`SELECT * FROM Invoice WHERE MetaData.LastUpdatedTime > '${cutoff}T00:00:00' MAXRESULTS 500`)).Invoice || [];
+  const invoices = await queryAll('Invoice', where);
   const arTx = db.transaction(() => {
     for (const i of invoices) tally.invoices[upsert(db, 'ar_invoices', arFromInvoice(i), 'amount_received')]++;
   });
   arTx();
 
   setSetting('qbo_last_sync', new Date().toISOString());
+  if (full) setSetting('qbo_full_pull_at', new Date().toISOString());
   return tally;
 }

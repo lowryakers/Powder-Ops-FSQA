@@ -77,6 +77,7 @@ const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
 const ReimbursementsPanel = lazy(() => import('./components/office/ReimbursementsPanel.jsx'));
 const BankingPanel = lazy(() => import('./components/office/BankingPanel.jsx'));
+const QuickBooksPanel = lazy(() => import('./components/office/QuickBooksPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
 
 const NAV_GROUPS = [
@@ -902,6 +903,12 @@ const HUB_TABS = {
     { id: 'partner-reconciliation', label: 'Partner Reconciliation', render: (u) => <PartnerReconPanel user={u} /> },
     { id: 'reimbursements', label: 'Reimbursements', render: (u) => <ReimbursementsPanel user={u} /> },
     { id: 'banking', label: 'Banking', render: (u) => <BankingPanel user={u} /> },
+    // Admin-only, and only worth a tab while QuickBooks is still the system of
+    // record — the whole point is to get the books out of it.
+    {
+      id: 'quickbooks', label: 'QuickBooks', visible: (u) => u?.role === 'admin',
+      render: (u) => <QuickBooksPanel user={u} />,
+    },
   ],
   'quality-events': [
     { id: 'deviations', label: 'Deviations', render: () => <QMSRecordsPanel recordType="deviation" moduleId="deviations" /> },

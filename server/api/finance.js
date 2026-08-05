@@ -4,7 +4,10 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
-import { quickbooksEnabled, quickbooksStatus, syncFromQuickBooks } from '../quickbooks.js';
+import {
+  quickbooksEnabled, quickbooksStatus, syncFromQuickBooks,
+  discoverQuickBooks, lastInventory,
+} from '../quickbooks.js';
 
 // Accounts Payable / Accounts Receivable for the office (Jake).
 //
@@ -296,16 +299,69 @@ router.get('/quickbooks/egress-ip', async (req, res) => {
   res.status(502).json({ error: `Could not determine the outbound IP (${errors.join('; ')})` });
 });
 
+// `full: true` is the one-time migration — everything ever, plus the chart of
+// accounts, vendors and customers. Without it this is the day-to-day sync of
+// what changed since last time.
 router.post('/quickbooks/sync', async (req, res) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
   if (!quickbooksEnabled()) return res.status(503).json({ error: 'QuickBooks is not configured on this server.' });
+  const full = req.body?.full === true;
   try {
-    const result = await syncFromQuickBooks(getDb());
-    logAudit(req.user, 'update', 'quickbooks_sync', null, result, null, null);
+    const result = await syncFromQuickBooks(getDb(), { full });
+    logAudit(req.user, 'update', 'quickbooks_sync', null, result, null, null,
+      full ? 'Full pull from QuickBooks' : 'QuickBooks sync');
     res.json(result);
   } catch (e) {
     res.status(502).json({ error: e.message || 'QuickBooks sync failed' });
   }
+});
+
+// "What do we actually use?" — counted from their books rather than recalled.
+// Reads only; it downloads no rows it does not need, so it is safe to re-run.
+router.post('/quickbooks/discover', async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
+  if (!quickbooksEnabled()) return res.status(503).json({ error: 'QuickBooks is not configured on this server.' });
+  try {
+    const report = await discoverQuickBooks(getDb());
+    logAudit(req.user, 'update', 'quickbooks_discovery', null,
+      { in_use: report.in_use.length, unused: report.unused.length }, null, null);
+    res.json(report);
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'QuickBooks discovery failed' });
+  }
+});
+
+// The last report, so the answer survives a page reload without re-hitting the
+// API — and is readable at all when QuickBooks is unreachable.
+router.get('/quickbooks/inventory', (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
+  res.json(lastInventory() || { entities: [], checked_at: null });
+});
+
+// What the pull has actually landed here so far.
+router.get('/quickbooks/pulled', (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
+  const db = getDb();
+  const one = (sql, fallback = 0) => { try { return db.prepare(sql).get()?.n ?? fallback; } catch { return fallback; } };
+  res.json({
+    accounts: one('SELECT COUNT(*) n FROM qbo_accounts'),
+    vendors: one("SELECT COUNT(*) n FROM qbo_contacts WHERE kind = 'vendor'"),
+    customers: one("SELECT COUNT(*) n FROM qbo_contacts WHERE kind = 'customer'"),
+    ap: one('SELECT COUNT(*) n FROM ap_invoices WHERE qb_id IS NOT NULL'),
+    ar: one('SELECT COUNT(*) n FROM ar_invoices WHERE qb_id IS NOT NULL'),
+  });
+});
+
+// The chart of accounts as pulled, grouped the way an accountant reads it.
+router.get('/quickbooks/accounts', (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
+  const db = getDb();
+  let rows = [];
+  try {
+    rows = db.prepare(`SELECT * FROM qbo_accounts ORDER BY classification, account_type,
+      CASE WHEN acct_number IS NULL OR acct_number = '' THEN 1 ELSE 0 END, acct_number, name`).all();
+  } catch { /* table may not exist on an old DB */ }
+  res.json(rows);
 });
 
 // Index files uploaded before content indexing, or whose extraction failed.
