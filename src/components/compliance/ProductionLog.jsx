@@ -3,7 +3,7 @@ import { useApiGet, apiFetch, apiPost, apiPut } from '../../hooks/useApi';
 import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2, Pencil, NotebookPen } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { hasExplicitGrant } from '../../utils/permissions';
-import { PRODUCTION_LINES, lineLabel, FILLING_TEAM, PRODUCTION_TEAMS as TEAMS, PRODUCTION_ROOMS, RETIRED_ROOMS } from '../../constants/productionLines';
+import { PRODUCTION_LINES, lineLabel, FILLING_TEAM, PRODUCTION_TEAMS as TEAMS, PRODUCTION_ROOMS, RETIRED_ROOMS, CLEAN_SCOPE } from '../../constants/productionLines';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
@@ -64,11 +64,6 @@ const blankMoLine = (room = '') => ({
   batches: '', batch_weights: '', quantity: '', start_time: '', end_time: '',
   is_adjustment: false, note: '',
 });
-// What a clean covers. The room and the equipment are separate ticks because
-// they are cleaned to different levels in the same shift — a partial wipe of
-// the room alongside a full strip of the blender is the ordinary case, and one
-// blanket answer forced the operator to misstate one of them.
-const CLEAN_SCOPE = ['Room', 'Blender', 'Sifter', 'Utensils', 'Scale', 'Floor / drains'];
 const blankClean = (room = '') => ({
   level: 'Full Clean', scope: [], sifter_no: '', room, atp_swab: false, allergen_swab: false,
   start_time: '', end_time: '', mo_number: '', note: '',

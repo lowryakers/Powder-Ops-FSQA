@@ -75,3 +75,22 @@ export const RETIRED_ROOMS = ['8'];
 export const LEGACY_TEAM_TO_LINE = Object.fromEntries(
   PRODUCTION_LINES.filter(l => l.legacyTeam).map(l => [l.legacyTeam, l.value]),
 );
+
+/**
+ * What a clean covers, on Bernardo's EOD report and in the day log.
+ *
+ * THE PLANT HAS TWO BLENDERS and calls them Blender 1 and Blender 2, so one
+ * "Blender" tick could never say which was cleaned — and on a shift where one
+ * is stripped down and the other only wiped, that is the whole fact.
+ *
+ * The room and the equipment are separate ticks because they are cleaned to
+ * different levels in the same shift; a blanket answer forced the operator to
+ * misstate one of them.
+ *
+ * Records already filed against the old plain "Blender" keep saying that. They
+ * are history, and the summary renders whatever scope a record carries rather
+ * than only the current list.
+ */
+export const CLEAN_SCOPE = [
+  'Room', 'Blender 1', 'Blender 2', 'Sifter', 'Utensils', 'Scale', 'Floor / drains',
+];

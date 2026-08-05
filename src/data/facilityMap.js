@@ -54,7 +54,10 @@ export const ROOMS = [
   { id: 'batching-1', label: 'Batching Rm 1', kind: 'batching', room: 'Batching 1', x: 2, y: 144, w: 86, h: 21 },
   { id: 'batching-2', label: 'Batching Rm 2', kind: 'batching', room: 'Batching 2', x: 2, y: 167, w: 86, h: 21 },
   { id: 'batching-3', label: 'Batching Rm 3', kind: 'batching', room: 'Batching 3', x: 2, y: 206, w: 86, h: 21 },
-  { id: 'blender-1', label: 'Lg Blender 1', kind: 'equipment', room: 'Lg Blender 1', x: 2, y: 309, w: 86, h: 20 },
+  // Labelled the way the plant talks about them (Blender 1 / Blender 2). The
+  // `room` key is what cleaning records were filed against and must not move,
+  // or every historical clean stops matching its own equipment.
+  { id: 'blender-1', label: 'Blender 1', kind: 'equipment', room: 'Lg Blender 1', x: 2, y: 309, w: 86, h: 20 },
   { id: 'qa-hold', label: 'QA Hold', kind: 'hold', room: 'QA Hold', x: 2, y: 331, w: 86, h: 19 },
   { id: 'receiving-hold', label: 'Receiving hold area', kind: 'hold', room: 'Receiving Hold', x: 2, y: 371, w: 86, h: 20 },
 
@@ -70,7 +73,7 @@ export const ROOMS = [
   { id: 'room-5', label: 'Room 5', kind: 'production', room: '5', x: 153, y: 205, w: 74, h: 19 },
   { id: 'room-6', label: 'Room 6', kind: 'production', room: '6', x: 153, y: 226, w: 74, h: 19 },
   { id: 'room-7', label: 'Room 7', kind: 'production', room: '7', x: 153, y: 246, w: 74, h: 20 },
-  { id: 'blender-2', label: 'Lg Blender 2', kind: 'equipment', room: 'Lg Blender 2', x: 151, y: 309, w: 76, h: 20 },
+  { id: 'blender-2', label: 'Blender 2', kind: 'equipment', room: 'Lg Blender 2', x: 151, y: 309, w: 76, h: 20 },
 
   // ── Centre ──────────────────────────────────────────────────────────────
   { id: 'packaging', label: 'Packaging area', kind: 'production', room: 'Packaging', x: 289, y: 79, w: 70, h: 245 },

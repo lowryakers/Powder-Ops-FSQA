@@ -1660,8 +1660,13 @@ fields on the entry.
 start_time, end_time, mo_number, note}`. **A clean is an EVENT, not a shift attribute.** The old single
 "Cleaning performed: Full / Partial" select forced a partial wipe of the room and a full strip of the
 blender into one answer, so the operator had to overstate one of them; and a second clean after a
-changeover had nowhere to go. `scope` is a tick list (Room / Blender / Sifter / Utensils / Scale / Floor &
-drains) so **the room and the equipment can be at different levels** — file two events. `mo_number` is
+changeover had nowhere to go. `scope` is a tick list (`CLEAN_SCOPE` in `constants/productionLines.js`) so **the room and the equipment can
+be at different levels** — file two events. **The plant has TWO blenders and calls them Blender 1 and
+Blender 2**, so the list names both: one "Blender" tick could never say which was cleaned, and on a shift
+where one is stripped down and the other wiped that is the whole fact. Records filed against the old plain
+"Blender" keep saying it — `CleaningSummary` renders whatever scope a record carries, not just the current
+list. The facility map labels them Blender 1/2 too, but its `room` KEY stays `Lg Blender 1/2` because that
+is what cleaning records were filed against. `mo_number` is
 optional and ties a clean to **one specific MO** rather than to the shift.
 
 **`mo_lines` gained `work_stages` / `portion` / `start_time` / `end_time` / `is_adjustment` / `note`.**

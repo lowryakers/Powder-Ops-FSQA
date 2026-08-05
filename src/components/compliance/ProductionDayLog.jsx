@@ -4,7 +4,7 @@ import {
   Plus, X, Sparkles, Package, RotateCcw, StickyNote, Trash2, Pencil,
   FileCheck2, Clock, AlertTriangle,
 } from 'lucide-react';
-import { PRODUCTION_TEAMS as TEAMS } from '../../constants/productionLines';
+import { PRODUCTION_TEAMS as TEAMS, CLEAN_SCOPE } from '../../constants/productionLines';
 
 // The running day — what Bernardo was keeping in his phone.
 //
@@ -29,7 +29,6 @@ const KINDS = [
   { kind: 'note', label: 'Note', icon: StickyNote, tone: 'text-gray-500 border-gray-200 bg-gray-50' },
 ];
 const WORK_STAGES = ['Weighed', 'Sifted', 'Blended'];
-const CLEAN_SCOPE = ['Room', 'Blender', 'Sifter', 'Utensils', 'Scale', 'Floor / drains'];
 
 // Logging happens as the work finishes, so "now" is nearly always the right
 // end time. Pre-filling it is the single biggest saving over typing in Notes.
