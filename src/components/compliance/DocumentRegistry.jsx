@@ -64,6 +64,7 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
     effective_date: initial?.effective_date || '',
     review_due: initial?.review_due || '',
     review_frequency: initial?.review_frequency || 'annual',
+    equipment_id: initial?.equipment_id || '',
     content: initial?.description || '',
     content_es: initial?.description_es || '',
     _change_summary: '',
@@ -76,6 +77,7 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
   const [proofNotes, setProofNotes] = useState(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const { data: trainingImpact } = useApiGet(`/training/by-document/${initial?.id || 'none'}`, [initial?.id]);
+  const { data: equipment } = useApiGet('/equipment');
   const { data: aiStatus } = useApiGet('/ai/status');
   const aiOn = !!aiStatus?.enabled;
 
@@ -169,6 +171,16 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
               <option value="biennial">Biennial (2 yr)</option>
             </select>
             <p className="mt-1 text-[11px] text-gray-500">A Document-Control review task is generated 30 days before the review due date. Completing it advances the next review by the frequency. Leave the review-due date blank to auto-set it from the effective date + frequency.</p>
+          </div>
+          <div>
+            {/* Naming the machine is what lets the equipment setup checklist
+                answer "is there a work instruction for this". Most documents
+                are not about one machine, so the default is none. */}
+            <label className="block text-xs font-medium text-gray-700 mb-1">Equipment this document covers</label>
+            <select value={form.equipment_id || ''} onChange={e => set('equipment_id', e.target.value)} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">— Not about one machine —</option>
+              {(equipment || []).map(eq => <option key={eq.id} value={eq.id}>{eq.name}{eq.asset_id ? ` (#${eq.asset_id})` : ''}</option>)}
+            </select>
           </div>
         </div>
 

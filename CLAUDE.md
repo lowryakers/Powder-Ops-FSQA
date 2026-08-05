@@ -1367,6 +1367,42 @@ module id `retention-samples`.
   leadership or an admin — the same ladder the Receiving Log uses. `retention_sample` is a custom-field
   scope, so extra questions are a Settings task.
 
+## New equipment: what the machine still owes (`server/equipment-readiness.js`)
+Adding equipment is the start of a chain — a PM schedule, a team to own it, LOTO, a hygienic design
+verification, a course, the work instruction it's taught against — and nothing said so, so a machine went
+in and its PM schedule turned up months later when someone noticed the task list was thin.
+- **A CHECKLIST DERIVED FROM RECORDS, not a wizard.** A wizard fires once, at the moment you least want it
+  (you're adding eleven machines off a spreadsheet), and can only ever help equipment added after it
+  shipped. Reading the real tables answers the same question for the **183 pieces already in the system**,
+  and keeps answering it after somebody retires the only LOTO procedure. Nothing is ticked by hand: a step
+  is done when its record exists, so the list can't claim work that was never done.
+- **NOTHING IS AUTO-CREATED.** A PM schedule written by a checklist has a guessed frequency and an empty
+  procedure — a record asserting maintenance exists, which is worse than the gap it papers over. Each step
+  links to the module that owns it (`link.tab`, checked against App.jsx's real nav ids — `hygienic`, not
+  `hygienic-design`; `document-control`, not `documents`; HACCP CCPs are managed inside Equipment).
+- **`applies` keeps it honest per machine**, and the type vocabulary moved to **`shared/equipment-types.js`**
+  for it — the first cut kept a server-side copy, guessed `'tool'` for what the app calls `'Hand Tool'`, and
+  so quietly excluded nothing at all. `NO_LOTO_TYPES` is deliberately almost empty: wrongly *asking* for a
+  lockout procedure costs a moment, wrongly *omitting* it means nothing ever says it's missing, so an
+  unknown type (including `Other`) is asked.
+- **39 of the 183 equipment rows are ZONES, not machines** (`ZONE_TYPES`: Inspection / Light Fixture /
+  Cleaning Zone, Monitoring). They're in the table so the PM generator has something to hang a recurring
+  schedule on. A zone gets the three PM steps and is asked for nothing else — a light fixture zone with a
+  red "needs a work instruction" mark is exactly what teaches people to ignore a checklist. They were also
+  **missing from the type dropdown**, which is the retired-rooms trap: a `<select>` whose value isn't in its
+  options falls back to the first, so editing a BPG zone would silently retype it `A/C`.
+- **Two new nullable links make it answerable:** `training_courses.equipment_id` and
+  `sop_documents.equipment_id` (a course can be *about* a machine — WI021 is literally "Hexagon Tumbler
+  Mixer Operation"), with pickers in the course modal and the document editor.
+- Pending ≠ done: a hygienic design verification awaiting approval is the record that somebody *started*.
+- `GET /equipment/:id/readiness` (one machine) and `GET /equipment/readiness` (bounded roll-up for the list
+  badges) — declared **before** `/:id` or Express reads "readiness" as an id. The roll-up runs the same
+  `check` functions, not a second faster copy, so a badge and the panel it opens can't disagree. The create
+  response carries the checklist inline so it's in front of whoever just saved.
+- Verified end to end on a fresh DB: 33 assertions on the transitions (each step flipping only when its
+  record appears, a course on one machine not counting for another, pending vs approved), the per-type
+  `applies` rules including a real seeded zone, route ordering, and roll-up/detail agreement.
+
 ## Settings is a registry, not a page (`SettingsShell.jsx` + `SettingsPanel.jsx`)
 Settings was one render stacking seven blocks with their permission rules written inline between them, so
 finding one thing meant reading past six, and adding an area meant appending JSX to a 1,145-line component.

@@ -4,15 +4,12 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square, ShieldCheck } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
+import EquipmentSetupChecklist from './EquipmentSetupChecklist.jsx';
+import { EQUIPMENT_TYPES } from '../../../shared/equipment-types.js';
 
-const TYPES = [
-  'A/C', 'Auger', 'Coder', 'Compressor', 'Conveyor', 'Cooler', 'Dehumidifier',
-  'Dust Collector', 'Fan', 'Feeder', 'Filler', 'Forklift', 'Forklift Charger',
-  'Hand Tool', 'Heat Tunnel', 'HEPA Filter', 'Hydraulic Lift', 'Metal Detector',
-  'Mixer', 'Oven', 'Pallet Jack', 'Pallet Wrapper', 'Pump', 'Scale',
-  'Scissor Lift', 'Sealer', 'Shop Vac', 'Sifter', 'Tank', 'Tape Machine',
-  'Turn Table', 'X-Ray', 'Other'
-];
+// The type list is shared with the server's setup checklist, which has to decide
+// from it whether a machine has a lockout point — see shared/equipment-types.js.
+const TYPES = EQUIPMENT_TYPES;
 
 const FREQ_ORDER = ['Daily', 'Bi-weekly', 'Weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Annual', 'As Needed'];
 const FREQ_COLORS = {
@@ -281,6 +278,11 @@ function EquipmentDetailRow({ eq, colSpan, onEdit }) {
             <MaintenanceTasksView tasks={tasks} />
           </div>
 
+          {/* What this machine still needs. Deliberately on EVERY row, not only
+              on newly-added equipment — the hundred pieces already in the system
+              are the ones most likely to be missing something. */}
+          <EquipmentSetupChecklist equipmentId={eq.id} />
+
           {/* Notes */}
           <div>
             <h4 className="text-sm font-semibold text-gray-800 mb-1">Notes</h4>
@@ -293,6 +295,23 @@ function EquipmentDetailRow({ eq, colSpan, onEdit }) {
         </div>
       </td>
     </tr>
+  );
+}
+
+// How many setup steps this machine still owes, from /equipment/readiness.
+// Only ever shown when something is missing — a chip on every row saying
+// "0 missing" is noise, and the absence of the chip is the good news.
+function SetupGapChip({ counts, onClick, className = '' }) {
+  if (!counts || !counts.blocking) return null;
+  const label = `${counts.blocking} setup step${counts.blocking === 1 ? '' : 's'} needed`;
+  if (!onClick) {
+    return <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 whitespace-nowrap ${className}`}>{label}</span>;
+  }
+  return (
+    <button type="button" onClick={onClick} title="What this equipment still needs"
+      className={`px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 whitespace-nowrap ${className}`}>
+      {label}
+    </button>
   );
 }
 
@@ -540,6 +559,9 @@ function CcpManager({ ccps, equipment, onClose, onChanged }) {
 export default function EquipmentPanel() {
   const { data: equipment, loading, refresh } = useApiGet('/equipment');
   const { data: ccps, refresh: refreshCcps } = useApiGet('/haccp');
+  // One request for the whole list, not one per row: "what is this machine
+  // missing" is worth seeing before you decide which row to open.
+  const { data: readiness } = useApiGet('/equipment/readiness');
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'equipment');
   const canCcp = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
@@ -547,6 +569,7 @@ export default function EquipmentPanel() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [justAdded, setJustAdded] = useState(null);
   const [selected, setSelected] = useState(new Set());
 
   const [search, setSearch] = useState('');
@@ -608,7 +631,20 @@ export default function EquipmentPanel() {
     }
   };
 
-  const handleCreate = async (form) => { await apiPost('/equipment', form); setShowForm(false); refresh(); };
+  // Adding equipment is the START of a chain — a PM schedule, a team to own it,
+  // LOTO, a course, the work instruction. None of that used to be mentioned
+  // anywhere, so a machine went in and the PM schedule turned up months later
+  // when somebody noticed the task list was thin. The create response carries
+  // the checklist, and we put it straight in front of whoever just saved.
+  const handleCreate = async (form) => {
+    const created = await apiPost('/equipment', form);
+    setShowForm(false);
+    refresh();
+    if (created?.id) {
+      setJustAdded(created);
+      setExpandedId(created.id);
+    }
+  };
   const handleUpdate = async (form) => { await apiPut(`/equipment/${editing.id}`, form); setEditing(null); refresh(); };
   const hasFilters = search || filterType || filterLocation || filterStatus;
   const clearFilters = () => { setSearch(''); setFilterType(''); setFilterLocation(''); setFilterStatus(''); };
@@ -724,6 +760,24 @@ export default function EquipmentPanel() {
       {(showForm && !editing) && <EquipmentForm ccps={ccps} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
       {editing && <EquipmentForm initial={editing} ccps={ccps} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
 
+      {justAdded && (
+        <div className="bg-powder-50 border border-powder-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="font-semibold text-gray-900">{justAdded.name} added</h3>
+              <p className="text-xs text-gray-600">
+                It won&apos;t generate any maintenance, training or documents on its own. Here&apos;s what it still needs —
+                you can do it now or come back to this list from the equipment row any time.
+              </p>
+            </div>
+            <button onClick={() => setJustAdded(null)} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-white shrink-0" title="Dismiss">
+              <X size={16} />
+            </button>
+          </div>
+          <EquipmentSetupChecklist equipmentId={justAdded.id} initial={justAdded.readiness} />
+        </div>
+      )}
+
       {/* Mobile: card list */}
       <div className="md:hidden space-y-2">
         {filtered.map(eq => {
@@ -746,12 +800,21 @@ export default function EquipmentPanel() {
                   </button>
                 </div>
               </div>
-              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
                 {eq.type && <span>{eq.type}</span>}
                 {eq.location && <span>{eq.location}</span>}
                 {eq.is_food_contact ? <span className="text-blue-700">Food-contact</span> : null}
                 {taskCount > 0 && <span className="inline-flex items-center gap-0.5"><ClipboardList size={11} />{taskCount} task{taskCount > 1 ? 's' : ''}</span>}
+                {/* The card itself opens the edit form, so the chip has to stop
+                    the click or you can never read the checklist on a phone. */}
+                <SetupGapChip counts={readiness?.[eq.id]}
+                  onClick={e => { e.stopPropagation(); setExpandedId(expandedId === eq.id ? null : eq.id); }} />
               </div>
+              {expandedId === eq.id && (
+                <div onClick={e => e.stopPropagation()} className="mt-2 pt-2 border-t border-gray-100">
+                  <EquipmentSetupChecklist equipmentId={eq.id} compact />
+                </div>
+              )}
             </div>
           );
         })}
@@ -805,6 +868,10 @@ export default function EquipmentPanel() {
                           <ClipboardList size={10} />{taskCount}
                         </span>
                       )}
+                      {/* Plain text, not a button — the row already expands to
+                          the checklist, and a button inside a clickable row is
+                          two targets doing one job. */}
+                      <SetupGapChip counts={readiness?.[eq.id]} className="ml-2" />
                     </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{eq.type}</td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{eq.location || '—'}</td>

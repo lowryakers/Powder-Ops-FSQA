@@ -2025,6 +2025,16 @@ function runMigrations() {
   addColumnIfMissing('sop_documents', 'training_revision', 'TEXT');
   addColumnIfMissing('sop_versions', 'minor', 'INTEGER NOT NULL DEFAULT 0');
 
+  // Equipment ↔ training / document linkage. A course and a work instruction can
+  // be ABOUT a machine (WI021 is literally "Hexagon Tumbler Mixer Operation"),
+  // and without the link nothing can answer "is this machine ready to run" —
+  // which is the whole point of the setup checklist. Nullable: most courses and
+  // most documents are not about one piece of equipment.
+  addColumnIfMissing('training_courses', 'equipment_id', 'TEXT');
+  addColumnIfMissing('sop_documents', 'equipment_id', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_training_courses_equipment ON training_courses(equipment_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sop_documents_equipment ON sop_documents(equipment_id)');
+
   // Spanish translations (AI-assisted, stored + editable) for documents + tests.
   addColumnIfMissing('sop_documents', 'description_es', 'TEXT');
   addColumnIfMissing('training_questions', 'prompt_es', 'TEXT');

@@ -534,11 +534,11 @@ router.post('/', (req, res) => {
   }
 
   db.prepare(`INSERT INTO sop_documents
-    (id, doc_type, doc_number, title, category, revision, effective_date, review_due, review_frequency, status, owner, description, source_file, approved_by, approved_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, doc_type, doc_number, title, category, revision, effective_date, review_due, review_frequency, status, owner, description, source_file, approved_by, approved_at, equipment_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, type, doc_number || '', title, category, revision || '1.0',
     effective_date || null, reviewDue, reviewFrequency, st, owner || null,
-    content || null, source_file || null, approvedBy, approvedAt
+    content || null, source_file || null, approvedBy, approvedAt, req.body.equipment_id || null
   );
 
   const created = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(id);
@@ -589,13 +589,15 @@ router.put('/:id', (req, res) => {
   // value (initialized to the current revision by migration).
   const trainingRevision = materialChange ? newRevision : (existing.training_revision || newRevision);
 
-  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, review_frequency=?, status=?, owner=?, description=?, description_es=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, updated_at=datetime('now') WHERE id=?`).run(
+  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, review_frequency=?, status=?, owner=?, description=?, description_es=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, equipment_id=?, updated_at=datetime('now') WHERE id=?`).run(
     doc_number ?? existing.doc_number, title || existing.title, category || existing.category,
     newRevision, effective_date ?? existing.effective_date,
     newReviewDue, newFrequency, newStatus, owner ?? existing.owner,
     content ?? existing.description, content_es !== undefined ? content_es : existing.description_es,
     source_file ?? existing.source_file,
-    approvedBy, approvedAt, trainingRevision, req.params.id
+    approvedBy, approvedAt, trainingRevision,
+    req.body.equipment_id !== undefined ? (req.body.equipment_id || null) : existing.equipment_id,
+    req.params.id
   );
 
   const updated = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);

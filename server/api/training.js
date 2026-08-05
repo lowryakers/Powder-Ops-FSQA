@@ -61,13 +61,13 @@ router.get('/courses', (req, res) => {
 
 router.post('/courses', (req, res) => {
   const db = getDb();
-  const { code, title, category, description, sop_id, retrain_months, required_roles, required_departments, has_test, passing_score, active, retrain_on_doc_change } = req.body;
+  const { code, title, category, description, sop_id, equipment_id, retrain_months, required_roles, required_departments, has_test, passing_score, active, retrain_on_doc_change } = req.body;
   if (!title) return res.status(400).json({ error: 'title is required' });
   const id = uuid();
   db.prepare(`INSERT INTO training_courses
-    (id, code, title, category, description, sop_id, retrain_months, required_roles, required_departments, has_test, passing_score, active, retrain_on_doc_change)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    id, code || null, title, category || 'GMP', description || null, sop_id || null,
+    (id, code, title, category, description, sop_id, equipment_id, retrain_months, required_roles, required_departments, has_test, passing_score, active, retrain_on_doc_change)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    id, code || null, title, category || 'GMP', description || null, sop_id || null, equipment_id || null,
     retrain_months || null, JSON.stringify(required_roles || []), JSON.stringify(required_departments || []),
     has_test ? 1 : 0, passing_score ?? 80, active === undefined ? 1 : (active ? 1 : 0),
     retrain_on_doc_change === undefined ? 1 : (retrain_on_doc_change ? 1 : 0));
@@ -80,10 +80,12 @@ router.put('/courses/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const b = req.body;
-  db.prepare(`UPDATE training_courses SET code=?, title=?, category=?, description=?, sop_id=?, retrain_months=?,
+  db.prepare(`UPDATE training_courses SET code=?, title=?, category=?, description=?, sop_id=?, equipment_id=?, retrain_months=?,
     required_roles=?, required_departments=?, has_test=?, passing_score=?, active=?, retrain_on_doc_change=?, updated_at=datetime('now') WHERE id=?`).run(
     b.code ?? existing.code, b.title || existing.title, b.category || existing.category, b.description ?? existing.description,
-    b.sop_id !== undefined ? (b.sop_id || null) : existing.sop_id, b.retrain_months !== undefined ? (b.retrain_months || null) : existing.retrain_months,
+    b.sop_id !== undefined ? (b.sop_id || null) : existing.sop_id,
+    b.equipment_id !== undefined ? (b.equipment_id || null) : existing.equipment_id,
+    b.retrain_months !== undefined ? (b.retrain_months || null) : existing.retrain_months,
     b.required_roles !== undefined ? JSON.stringify(b.required_roles) : existing.required_roles,
     b.required_departments !== undefined ? JSON.stringify(b.required_departments) : existing.required_departments,
     b.has_test !== undefined ? (b.has_test ? 1 : 0) : existing.has_test,

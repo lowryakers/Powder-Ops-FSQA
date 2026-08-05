@@ -565,11 +565,12 @@ function CourseMaterials({ courseId }) {
 // ── Course modal ──────────────────────────────────────────────────────────────
 function CourseModal({ initial, onClose, onSaved }) {
   const { data: allDocs } = useApiGet('/documents');
+  const { data: equipment } = useApiGet('/equipment');
   const docs = useMemo(() => (allDocs || []).filter(d => d.doc_type === 'sop' || d.doc_type === 'work_instruction'), [allDocs]);
   const [form, setForm] = useState(initial || {
     code: '', title: '', category: 'GMP', description: '', retrain_months: 12,
     required_roles: [], required_departments: [], passing_score: 80, active: true,
-    sop_id: '', retrain_on_doc_change: true,
+    sop_id: '', equipment_id: '', retrain_on_doc_change: true,
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -645,6 +646,16 @@ function CourseModal({ initial, onClose, onSaved }) {
               Flag completions for retraining when this document is materially updated
             </label>
           )}
+        </div>
+        <div>
+          {/* A course can be ABOUT a machine — WI021 is literally "Hexagon
+              Tumbler Mixer Operation". Naming it here is what lets the
+              equipment setup checklist answer "is anyone trained to run this". */}
+          <label className="block text-xs font-medium text-gray-700 mb-1">Equipment this course covers</label>
+          <select value={form.equipment_id || ''} onChange={e => set('equipment_id', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">— Not about one machine —</option>
+            {(equipment || []).map(eq => <option key={eq.id} value={eq.id}>{eq.name}{eq.asset_id ? ` (#${eq.asset_id})` : ''}</option>)}
+          </select>
         </div>
         <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!form.active} onChange={e => set('active', e.target.checked)} /> Active</label>
         {initial?.id

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { equipmentReadiness, readinessSummary } from '../equipment-readiness.js';
 
 const router = Router();
 
@@ -49,6 +50,20 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// BEFORE '/:id' — Express matches in order, and a route declared after it would
+// be swallowed with req.params.id = 'readiness'.
+router.get('/readiness', (req, res) => {
+  const db = getDb();
+  res.json(readinessSummary(db, { limit: Math.min(Number(req.query.limit) || 500, 1000) }));
+});
+
+router.get('/:id/readiness', (req, res) => {
+  const db = getDb();
+  const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
+  if (!eq) return res.status(404).json({ error: 'Equipment not found' });
+  res.json(equipmentReadiness(db, eq));
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT e.*, c.name as ccp_name FROM equipment e LEFT JOIN haccp_ccps c ON e.haccp_ccp_id = c.id WHERE e.id = ?').get(req.params.id);
@@ -70,7 +85,10 @@ router.post('/', (req, res) => {
 
   const created = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'equipment', id, { name, type }, null, created);
-  res.status(201).json(created);
+  // The setup checklist rides along on the create response so the panel can put
+  // "here is what this machine still needs" in front of whoever just added it,
+  // without a second round trip at the one moment they are looking.
+  res.status(201).json({ ...created, readiness: equipmentReadiness(db, created) });
 });
 
 // Bulk update - POST to avoid /:id conflict
