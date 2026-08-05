@@ -1284,3 +1284,34 @@ finding one thing meant reading past six, and adding an area meant appending JSX
   grant, but that branch cannot fire — Settings is admin-only at the *door* (both gear buttons test
   `user.role === 'admin'`, and `settings` is in `ADMIN_ALWAYS`). The rule is kept because it's the right rule
   for the section; making the grant usable is a decision about who gets into Settings at all.
+
+## One tab strip for every module (`ModuleTabs.jsx` + `lib/useModuleTabs.js`)
+Nine modules had grown their own internal tab strip in **four different visual styles** — filled pills
+(Calibration, LOTO), underlines (Training, Retention), and two flavours of segmented control (Production Log,
+Time Tracking, the ledgers, ModuleHub) — each re-solving the same four problems slightly differently.
+- **The segmented control is the house style**, because it was already the most-used shape and it's the
+  calmest: a tab strip is orientation, not a call to action, so it shouldn't shout louder than the buttons
+  that actually do something.
+- **`ModuleTabs` renders; `useModuleTabs` decides.** The component does NOT filter by permission. That split
+  is a bug fix, not tidiness: while the component also filtered on `visible(user)`, any caller that forgot to
+  pass `user` ran every predicate against `undefined` and **silently hid the whole strip** — which is exactly
+  what happened to all three hubs. One owner for the rule means it can't be evaluated with the wrong argument.
+- **`overflow-x-auto`, never wrap.** A wrapped segmented control breaks into two rows of half-pills; scrolling
+  is the right idiom and keeps the PAGE from panning — the 360px bug that hit the Training strip.
+- Counts go in `badge`, beside the label, not baked into the label string (`Boxes (3)` gets re-pluralised by
+  every author otherwise). `badgeTone: 'alert'` is the red pill the hubs use for outstanding work.
+- **`?tab=<module>&view=<tab>` deep-links a tab**, and the last tab you were on is remembered per module
+  (`localStorage.module_tab_<id>`).
+- `ModuleHub` uses the same component — a hub tab and a module tab were always the same idea drawn twice.
+- **NOT consolidated: Task Center's group/frequency chips.** Those are colour-coded FILTERS narrowing one
+  list, not navigation between views; flattening them would throw away the per-team colour that makes that
+  screen scannable. A filter and a tab are different things.
+
+### `src/lib/deepLink.js` — reading a query param a lazy module never sees
+App.jsx consumes `?tab=`/`?form=`/`?section=`/`?view=` in an effect and calls `history.replaceState` to clear
+them. A **lazily-loaded module mounts after that effect**, so anything reading `window.location.search` for
+itself always finds an empty string. `deepLink.js` captures the query string at import — before React renders
+— and hands it out afterwards.
+**`getParam` is pure; `consumeParam` runs in an effect.** React StrictMode deliberately double-invokes a
+`useState` initializer and keeps the SECOND result, so a destructive read during render gives the value to
+the throwaway call and `null` to the one that counts. That cost a working `?view=` link before it was caught.

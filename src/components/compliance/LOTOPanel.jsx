@@ -1,8 +1,10 @@
-import { useState, Fragment } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { Plus, Lock, Unlock, ShieldCheck, AlertTriangle, Zap, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { useRowExpand } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import ModuleTabs from '../common/ModuleTabs.jsx';
+import { useModuleTabs } from '../../lib/useModuleTabs.js';
 
 const ENERGY_TYPES = ['Electrical', 'Pneumatic', 'Hydraulic', 'Mechanical', 'Thermal', 'Chemical', 'Gravitational', 'Stored Energy'];
 const STATUS_COLORS = { locked: 'bg-red-100 text-red-800', verified: 'bg-yellow-100 text-yellow-800', released: 'bg-green-100 text-green-800' };
@@ -263,7 +265,11 @@ export default function LOTOPanel() {
   const { data: uncovered, refresh: refreshUncovered } = useApiGet('/loto/uncovered-equipment');
   const [showForm, setShowForm] = useState(false);
   const [executing, setExecuting] = useState(null);
-  const [tab, setTab] = useState('procedures');
+  const LOTO_TABS = useMemo(() => [
+    { id: 'procedures', label: 'Procedures', icon: Lock },
+    { id: 'history', label: 'Execution History' },
+  ], []);
+  const { tabs: lotoTabs, tab, setTab } = useModuleTabs({ id: 'loto', tabs: LOTO_TABS });
   const [search, setSearch] = useState('');
 
   const handleCreate = async (form) => {
@@ -378,16 +384,9 @@ export default function LOTOPanel() {
         </div>
       )}
 
-      <div className="flex gap-2">
-        <button onClick={() => setTab('procedures')}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${tab === 'procedures' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-          <Lock size={14} /> Procedures ({(procedures || []).length})
-        </button>
-        <button onClick={() => setTab('history')}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${tab === 'history' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-          Execution History
-        </button>
-      </div>
+      <ModuleTabs value={tab} onChange={setTab}
+        tabs={lotoTabs.map(t => (t.id === 'procedures'
+          ? { ...t, badge: (procedures || []).length } : t))} />
 
       {showForm && <ProcedureForm equipment={equipment} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
 

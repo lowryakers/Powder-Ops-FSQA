@@ -5,6 +5,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
+import ModuleTabs from '../common/ModuleTabs.jsx';
 import {
   Archive, Plus, Search, FlaskConical, Trash2, Pencil, X, AlertTriangle,
   Boxes, CalendarClock,
@@ -395,14 +396,10 @@ export default function RetentionSamplesPanel({ user }) {
         })}
       </div>
 
-      <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto">
-        {[['samples', 'Samples'], ['boxes', `Boxes${boxes?.length ? ` (${boxes.length})` : ''}`]].map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px shrink-0 whitespace-nowrap ${tab === id ? 'border-powder-600 text-powder-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <ModuleTabs value={tab} onChange={setTab} tabs={[
+        { id: 'samples', label: 'Samples' },
+        { id: 'boxes', label: 'Boxes', badge: boxes?.length },
+      ]} />
 
       {tab === 'boxes' ? (
         <BoxesTab boxes={boxes} refresh={() => { refreshBoxes(); refreshStats(); }}

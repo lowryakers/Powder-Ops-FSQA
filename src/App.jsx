@@ -3,6 +3,8 @@ import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Loc
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
+import ModuleTabs from './components/common/ModuleTabs.jsx';
+import { useModuleTabs } from './lib/useModuleTabs.js';
 import { setAppBadge } from './lib/appBadge';
 import { onDataChanged } from './lib/dataChanged';
 import { useEdgeSwipe } from './lib/useEdgeSwipe';
@@ -893,22 +895,24 @@ const HUB_TABS = {
 // Maps an old module id back to its hub (legacy quick-tab picks, deep links).
 const HUB_OF = Object.fromEntries(Object.entries(HUB_TABS).flatMap(([hub, tabs]) => tabs.map(t => [t.id, hub])));
 
+// A hub is several controlled records that are one place to GO. It now renders
+// its strip with the shared <ModuleTabs> like every other module — a hub tab
+// and a module tab were always the same idea, drawn twice.
+//
+// A hub tab with no `visible` of its own falls back to "can this person see the
+// module behind it", which is the rule hubs have always used.
 function ModuleHub({ hubId, user, initialTab, badges }) {
-  const tabs = HUB_TABS[hubId].filter(t => (t.visible ? t.visible(user) : canViewModule(user, t.id)));
-  const [tab, setTab] = useState(tabs.some(t => t.id === initialTab) ? initialTab : tabs[0]?.id);
+  const defs = useMemo(() => HUB_TABS[hubId].map(t => ({
+    ...t,
+    visible: t.visible || ((u) => canViewModule(u, t.id)),
+  })), [hubId]);
+  const { tabs, tab, setTab } = useModuleTabs({ id: `hub-${hubId}`, tabs: defs, user, initial: initialTab });
   if (!tabs.length) return null;
   const active = tabs.find(t => t.id === tab) || tabs[0];
+  const withBadges = tabs.map(t => ({ ...t, badge: badges?.[t.id], badgeTone: 'alert' }));
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit flex-wrap">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-            {t.label}
-            {badges?.[t.id] ? <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold align-middle">{badges[t.id]}</span> : null}
-          </button>
-        ))}
-      </div>
+      <ModuleTabs tabs={withBadges} value={active.id} onChange={setTab} hideWhenSingle={false} />
       {active.render()}
     </div>
   );

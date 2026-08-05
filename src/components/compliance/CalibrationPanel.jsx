@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, Fragment } from 'react';
+import { useState, useRef, useEffect, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -6,6 +6,8 @@ import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search, FileText, Uploa
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ScaleVerificationTab from './ScaleVerificationTab.jsx';
+import ModuleTabs from '../common/ModuleTabs.jsx';
+import { useModuleTabs } from '../../lib/useModuleTabs.js';
 
 const STATUS_COLORS = {
   active: 'bg-green-100 text-green-800',
@@ -215,7 +217,12 @@ export default function CalibrationPanel() {
   const [calibrating, setCalibrating] = useState(null);
   const expandInst = useRowExpand();
   const expandRec = useRowExpand();
-  const [tab, setTab] = useState('instruments');
+  const CAL_TABS = useMemo(() => [
+    { id: 'instruments', label: 'Instruments', icon: Scale },
+    { id: 'records', label: 'Calibration Records', icon: CheckCircle },
+    { id: 'scale-verification', label: 'Scale Verification', icon: Scale },
+  ], []);
+  const { tabs: calTabs, tab, setTab } = useModuleTabs({ id: 'calibration', tabs: CAL_TABS });
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
 
@@ -320,21 +327,9 @@ export default function CalibrationPanel() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-2">
-        <button onClick={() => setTab('instruments')}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${tab === 'instruments' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-          <Scale size={14} /> Instruments ({(instruments || []).length})
-        </button>
-        <button onClick={() => setTab('records')}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${tab === 'records' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-          <CheckCircle size={14} /> Calibration Records
-        </button>
-        <button onClick={() => setTab('scale-verification')}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${tab === 'scale-verification' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-          <Scale size={14} /> Scale Verification
-        </button>
-      </div>
+      <ModuleTabs value={tab} onChange={setTab}
+        tabs={calTabs.map(t => (t.id === 'instruments'
+          ? { ...t, badge: (instruments || []).length } : t))} />
 
       {tab === 'scale-verification' && <ScaleVerificationTab />}
 

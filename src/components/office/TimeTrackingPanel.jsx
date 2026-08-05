@@ -7,6 +7,7 @@ import LangToggle from '../LangToggle.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import HoursTab from './HoursTab.jsx';
+import ModuleTabs from '../common/ModuleTabs.jsx';
 
 const TYPES = [
   { value: 'absent', label: 'Absent', icon: UserX, tone: 'bg-red-100 text-red-700' },
@@ -516,23 +517,19 @@ export default function TimeTrackingPanel() {
   const { data: employees } = useApiGet('/users/technicians');
   const { lang, setLang, tr, translating } = usePageTranslation(PAGE_STRINGS);
 
-  const tabs = isAdmin
+  // Labels are translated at build time here rather than inside the strip —
+  // tr() is this page's own EN/ES helper and the shared component has no
+  // business knowing about it.
+  const tabs = (isAdmin
     ? [['log', 'Log'], ['form', 'New Report'], ['stats', 'Stats'], ['hours', 'Hours']]
-    : [['form', 'New Report']];
+    : [['form', 'New Report']]).map(([id, label]) => ({ id, label: tr(label) }));
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-gray-900">{tr('Time Tracking')}</h2>
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-          {tabs.length > 1 && (
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto max-w-full">
-              {tabs.map(([v, l]) => (
-                <button key={v} onClick={() => setTab(v)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tr(l)}</button>
-              ))}
-            </div>
-          )}
+          <ModuleTabs tabs={tabs} value={tab} onChange={setTab} />
           <LangToggle lang={lang} setLang={setLang} translating={translating} />
         </div>
       </div>

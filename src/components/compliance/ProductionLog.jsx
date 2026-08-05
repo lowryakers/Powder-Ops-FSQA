@@ -8,6 +8,7 @@ import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import ModuleTabs from '../common/ModuleTabs.jsx';
 
 const TEAMS = ['Batching', 'Filling', 'Kitting', 'Quality', 'Warehouse', 'Sanitation', 'Other'];
 const ROOMS = ['Batching 1', 'Batching 2', ...Array.from({ length: 16 }, (_, i) => String(i)), 'Other'];
@@ -1405,18 +1406,7 @@ export default function ProductionLog({ user, directEntry }) {
 
   return (
     <div className="space-y-4">
-      {/* Tab Bar */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-            }`}>
-            <t.icon size={15} />
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <ModuleTabs tabs={tabs} value={tab} onChange={setTab} />
 
       {/* Tab Content */}
       {tab === 'form' && (

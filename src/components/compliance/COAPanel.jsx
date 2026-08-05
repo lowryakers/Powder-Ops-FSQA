@@ -4,6 +4,7 @@ import DraftSpecsReview from './DraftSpecsReview.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square, PenLine } from 'lucide-react';
+import ModuleTabs from '../common/ModuleTabs.jsx';
 
 // Typed-confirmation dialog for permanent, irreversible bulk deletion.
 function ConfirmDeleteModal({ count, onConfirm, onClose }) {
@@ -1584,23 +1585,16 @@ export default function COAPanel() {
         </div>
       )}
 
-      {/* Sub-tabs */}
-      <div className="flex items-center gap-1 bg-white rounded-xl border border-gray-200 p-1 overflow-x-auto">
-        {[
+      {/* Switching sub-tab also closes any open form — a half-filled spec
+          editor left behind a Labs tab is not something anyone comes back to. */}
+      <ModuleTabs value={subTab}
+        onChange={(id) => { setSubTab(id); setShowForm(false); setEditItem(null); }}
+        tabs={[
           { id: 'requests', label: 'Lab Requests', icon: FlaskConical },
           { id: 'lot-lookup', label: 'Lot Lookup', icon: PackageSearch },
           { id: 'specs', label: 'Specifications', icon: ClipboardList },
           { id: 'labs', label: 'Labs', icon: Building2 },
-        ].map(t => (
-          <button key={t.id} onClick={() => { setSubTab(t.id); setShowForm(false); setEditItem(null); }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              subTab === t.id ? 'bg-powder-50 text-powder-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-            }`}>
-            <t.icon size={14} />
-            {t.label}
-          </button>
-        ))}
-      </div>
+        ]} />
 
       {/* ───── Requests Tab ───── */}
       {subTab === 'requests' && (

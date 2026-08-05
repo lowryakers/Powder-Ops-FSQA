@@ -7,6 +7,7 @@ import LangToggle from '../LangToggle.jsx';
 import { Plus, Search, Upload, Paperclip, Trash2, X, RefreshCw, FileText } from 'lucide-react';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import ModuleTabs from '../common/ModuleTabs.jsx';
 
 // Accounts Payable / Accounts Receivable, one component driven by a ledger
 // config — the two sides are the same job with the money pointing the other
@@ -264,12 +265,10 @@ export default function LedgerPanel({ ledger }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-gray-900">{tr(cfg.title)}</h2>
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto max-w-full">
-            {[['list', 'Invoices'], ['files', 'Files']].map(([v, l]) => (
-              <button key={v} onClick={() => setTab(v)}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tr(l)}</button>
-            ))}
-          </div>
+          <ModuleTabs value={tab} onChange={setTab} tabs={[
+            { id: 'list', label: tr('Invoices') },
+            { id: 'files', label: tr('Files') },
+          ]} />
           {summary?.quickbooks?.enabled && user?.role === 'admin' && (
             <button onClick={sync} disabled={syncing}
               className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50">
