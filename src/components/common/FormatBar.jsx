@@ -1,4 +1,5 @@
 import { Bold, Italic, Underline, Strikethrough, List, ListOrdered } from 'lucide-react';
+import { flushSync } from 'react-dom';
 import { wrapSelection, prefixLines } from '../../lib/textFormat';
 
 // The B / I / U / S + list toolbar that sits above a plain <textarea>.
@@ -12,11 +13,14 @@ import { wrapSelection, prefixLines } from '../../lib/textFormat';
 // the same syntax; people should learn `*bold*` once.
 
 export default function FormatBar({ getEl, value, onChange, disabled = false }) {
+  // Synchronous commit, then the caret — the same rule as the keyboard
+  // shortcuts in lib/useFormatKeys.js. Deferring the caret to a frame lets
+  // anything typed in the meantime land at the old position.
   const apply = (fn) => {
     const el = getEl?.();
     const r = fn(el, value ?? '');
-    onChange(r.next);
-    requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(r.selStart, r.selEnd); } });
+    flushSync(() => onChange(r.next));
+    if (el) { el.focus(); el.setSelectionRange(r.selStart, r.selEnd); }
   };
   const cls = 'w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded disabled:opacity-40 disabled:hover:bg-transparent';
   // Keep the textarea selection alive across the click.

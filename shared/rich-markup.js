@@ -49,8 +49,54 @@ export function parseRuns(line) {
   return out.length ? out : [{ text: '' }];
 }
 
+/**
+ * One line → spans that cover EVERY character, markers included.
+ *
+ * `parseRuns` throws the markers away, which is right for a renderer and wrong
+ * for the live overlay behind the composer textarea: that has to reproduce the
+ * typed text character for character or the highlight drifts off the words.
+ * Same grammar, same regex — a second parser is how the composer and the PDF
+ * would start disagreeing about what is bold.
+ *
+ * Marker spans carry `marker: true` alongside their kind, so the overlay can
+ * fade the punctuation while styling the content.
+ */
+export function parseSpans(line) {
+  const s = String(line ?? '');
+  const out = [];
+  let last = 0, m;
+  INLINE_RE.lastIndex = 0;
+  while ((m = INLINE_RE.exec(s)) !== null) {
+    if (m.index > last) out.push({ text: s.slice(last, m.index) });
+    const tok = m[0];
+    const hit = INLINE.find(([, re]) => new RegExp('^(?:' + re + ')$').test(tok));
+    if (hit) {
+      const [kind, , pad] = hit;
+      out.push({ text: tok.slice(0, pad), kind, marker: true });
+      out.push({ text: tok.slice(pad, -pad), kind });
+      out.push({ text: tok.slice(-pad), kind, marker: true });
+    } else {
+      out.push({ text: tok });
+    }
+    last = m.index + tok.length;
+  }
+  if (last < s.length) out.push({ text: s.slice(last) });
+  return out;
+}
+
 const BULLET = /^\s*[-*]\s+(.*)$/;
 const NUMBERED = /^\s*\d+[.)]\s+(.*)$/;
+
+/** The list marker at the start of a line, if any — used by the composer's
+ *  Enter-continues-the-list and Tab-indents behaviour. */
+export function listPrefix(line) {
+  const s = String(line ?? '');
+  const b = /^(\s*)([-*])(\s+)(.*)$/.exec(s);
+  if (b) return { kind: 'ul', indent: b[1], marker: b[2], space: b[3], content: b[4] };
+  const n = /^(\s*)(\d+)([.)])(\s+)(.*)$/.exec(s);
+  if (n) return { kind: 'ol', indent: n[1], n: Number(n[2]), dot: n[3], space: n[4], content: n[5] };
+  return null;
+}
 
 /**
  * Whole text → blocks.

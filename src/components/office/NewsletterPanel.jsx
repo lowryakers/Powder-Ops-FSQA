@@ -2,6 +2,7 @@ import { useState, useRef, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import NewsletterBanner from './NewsletterBanner.jsx';
 import FormatBar from '../common/FormatBar.jsx';
+import { useFormatKeys, formatKeyHandler } from '../../lib/useFormatKeys.js';
 import RichText from '../common/RichText.jsx';
 import { hasMarkup } from '../../../shared/rich-markup.js';
 import { useAuth } from '../../hooks/useAuth';
@@ -185,6 +186,24 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
   const setSection = (id, patch) =>
     setDraft(d => ({ ...d, sections: d.sections.map(s => (s.id === id ? { ...s, ...patch } : s)) }));
 
+  // Ctrl/Cmd+B/I/U and list continuation, the same keys as the comms composer —
+  // the whole point of one formatting grammar is that it behaves the same
+  // wherever it's typed. Disabled while the document is locked or being read in
+  // Spanish, where the textarea isn't the source of truth.
+  const introKeys = useFormatKeys({
+    getEl: () => introRef.current,
+    value: draft.intro || '',
+    onChange: (v) => setDraft(d => ({ ...d, intro: v })),
+    enabled: !locked && !reading,
+  });
+  // One handler per section can't be a hook — it's built inside a .map().
+  const sectionKeys = (e, s) => formatKeyHandler({
+    getEl: () => bodyRefs.current[s.id],
+    value: s.body || '',
+    onChange: (v) => setSection(s.id, { body: v }),
+    enabled: !locked && !reading,
+  })(e);
+
   const moveSection = (id, dir) => setDraft(d => {
     const list = [...d.sections];
     const i = list.findIndex(s => s.id === id);
@@ -324,7 +343,7 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
                 onChange={v => setDraft(d => ({ ...d, intro: v }))} />
             )}
             <textarea ref={introRef} value={reading ? tr(draft.intro || '') : (draft.intro || '')} onChange={e => setDraft({ ...draft, intro: e.target.value })} disabled={locked}
-              rows={2} placeholder={tr('A short intro (optional)')}
+              rows={2} placeholder={tr('A short intro (optional)')} onKeyDown={introKeys}
               className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
             <FormattedPreview text={reading ? tr(draft.intro || '') : draft.intro} tr={tr} />
           </div>
@@ -349,6 +368,7 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
               )}
               <textarea ref={el => { bodyRefs.current[s.id] = el; }}
                 value={reading ? tr(s.body || '') : (s.body || '')} onChange={e => setSection(s.id, { body: e.target.value })} disabled={locked} rows={3}
+                onKeyDown={e => sectionKeys(e, s)}
                 className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 disabled:bg-transparent disabled:border-transparent" />
               <FormattedPreview text={reading ? tr(s.body || '') : s.body} tr={tr} />
               {s.image_url && <img src={s.image_url} alt="" className="rounded-lg max-h-56 object-contain" />}

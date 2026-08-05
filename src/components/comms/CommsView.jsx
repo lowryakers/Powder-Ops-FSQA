@@ -12,6 +12,8 @@ import { useSwipeBack } from '../../lib/useSwipeBack';
 import { useCompactLayout } from '../../lib/useCompactLayout.js';
 import { useSeenAfterDwell } from '../../lib/useSeenAfterDwell.js';
 import FormatBar from '../common/FormatBar.jsx';
+import MarkupOverlay from '../common/MarkupOverlay.jsx';
+import { useFormatKeys } from '../../lib/useFormatKeys.js';
 import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 import { looksLikeTask, suggestTitle, mentionedUsers, teamForChannel } from '../../lib/taskIntent.js';
@@ -88,6 +90,20 @@ function openAppLink(link) {
 // in with. The full legal name stays on records and signatures; a conversation
 // doesn't need it. `username` comes from the server; falling back to the full
 // name keeps anyone imported without one from rendering blank.
+/**
+ * Every class that affects where a character lands, shared by the composer
+ * textarea and the MarkupOverlay behind it.
+ *
+ * They have to be identical or the highlight drifts off the words — so it is
+ * one constant rather than two copies that look the same today.
+ *
+ * `border` is in here for width only, with the colour set separately
+ * (gray-300 on the field, transparent on the overlay). The textarea's 1px
+ * border pushes its first character in by a pixel; an overlay without one
+ * would sit a pixel high and left of every word.
+ */
+const COMPOSER_METRICS = 'px-3 py-2 text-sm leading-normal font-sans border';
+
 const chatName = (u) => u?.username || u?.name || '';
 
 // Inline formatting inside one run of text: mentions, links, and the character
@@ -907,6 +923,12 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   const fileInputRef = useRef(null);
   const replyRef = useRef(null);
   const endRef = useRef(null);
+  // Same shortcuts as the main composer — people should learn them once.
+  const replyKeys = useFormatKeys({
+    getEl: () => replyRef.current,
+    value: body,
+    onChange: (v) => { setBody(v); writeDraft(`thread:${parent.id}`, v); },
+  });
   // Reply box grows with its content, like the main composer.
   useEffect(() => { sizeTextarea(replyRef.current); }, [body]);
   // Opening a thread lands the cursor in the reply box (desktop only), matching
@@ -1043,7 +1065,10 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
                   if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertReplyMention(chatName(mMatches[mHi] || mMatches[0])); return; }
                   if (e.key === 'Escape') { setMQuery(null); return; }
                 }
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+                // Ctrl/Cmd+Enter sends here, so it must be claimed before the
+                // formatting keys see a Ctrl+Enter and think about lists.
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); return; }
+                if (replyKeys(e)) return;
               }}
               placeholder="Reply…" className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-60 overflow-y-auto" />
             <button onClick={send} disabled={sending || (!body.trim() && !pending.length)} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
@@ -1058,6 +1083,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
 function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onMarkRead }) {
   const [body, setBody] = useState('');
   const cardReplyRef = useRef(null);
+  const cardKeys = useFormatKeys({ getEl: () => cardReplyRef.current, value: body, onChange: setBody });
   // @mention autocomplete — the inbox reply is a real reply into a real
   // channel, so it needs the same picker the channel composer and the thread
   // drawer have. Without it people typed a name by hand, the spelling didn't
@@ -1190,7 +1216,8 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
                 if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertCardMention(chatName(mMatches[mHi] || mMatches[0])); return; }
               }
               if (e.key === 'Escape' && mQuery !== null) { setMQuery(null); return; }
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); return; }
+              if (cardKeys(e)) return;
             }}
             placeholder="Reply…" className="flex-1 px-3 py-1.5 border border-gray-300 rounded-xl text-sm resize-none max-h-40 overflow-y-auto" />
           <button onClick={send} disabled={!body.trim()} className="p-2 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={15} /></button>
@@ -2127,6 +2154,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     }
   };
 
+  // Ctrl/Cmd+B/I/U, Enter continuing a list, Tab indenting one. Goes through
+  // the same setBody + writeDraft pair as typing, so a shortcut can't leave the
+  // saved draft behind the text on screen.
+  const composerKeys = useFormatKeys({
+    getEl: () => composerRef.current,
+    value: body,
+    onChange: (v) => { setBody(v); writeDraft(activeId, v); },
+  });
+
   const [mentionHi, setMentionHi] = useState(0);
   const mentionMatches = useMemo(() => {
     // Suggest channel members first (they can see the channel); fall back to all
@@ -2955,19 +2991,28 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                         onPick={(e) => { setBody(b => b + e); setShowComposerEmoji(false); composerRef.current?.focus(); }} />
                     )}
                   </div>
-                  <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1} onPaste={onComposerPaste}
-                    onKeyDown={e => {
-                      // While the @mention menu is open: arrows move, Enter/Tab picks.
-                      if (mentionMatches.length) {
-                        if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHi(h => Math.min(h + 1, mentionMatches.length - 1)); return; }
-                        if (e.key === 'ArrowUp') { e.preventDefault(); setMentionHi(h => Math.max(h - 1, 0)); return; }
-                        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(chatName(mentionMatches[mentionHi] || mentionMatches[0])); return; }
-                      }
-                      if (e.key === 'Escape' && mentionQuery !== null) { setMentionQuery(null); return; }
-                      // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).
-                    }}
-                    placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm resize-none max-h-60 overflow-y-auto" />
+                  {/* The overlay draws the formatting; the textarea's own text
+                      is transparent so the caret and selection still come from
+                      the real field. Both carry the SAME metric classes. */}
+                  <div className="flex-1 relative">
+                    <MarkupOverlay textareaRef={composerRef} value={body} className={`${COMPOSER_METRICS} border-transparent rounded-xl`} />
+                    <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1} onPaste={onComposerPaste}
+                      onKeyDown={e => {
+                        // While the @mention menu is open: arrows move, Enter/Tab picks.
+                        if (mentionMatches.length) {
+                          if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHi(h => Math.min(h + 1, mentionMatches.length - 1)); return; }
+                          if (e.key === 'ArrowUp') { e.preventDefault(); setMentionHi(h => Math.max(h - 1, 0)); return; }
+                          if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(chatName(mentionMatches[mentionHi] || mentionMatches[0])); return; }
+                        }
+                        if (e.key === 'Escape' && mentionQuery !== null) { setMentionQuery(null); return; }
+                        // The mention menu gets first refusal on every key above;
+                        // only then do the formatting shortcuts see it.
+                        if (composerKeys(e)) return;
+                        // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).
+                      }}
+                      placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
+                      className={`w-full relative bg-transparent text-transparent caret-gray-900 placeholder:text-gray-400 selection:bg-powder-200/50 selection:text-transparent border-gray-300 rounded-xl resize-none max-h-60 overflow-y-auto ${COMPOSER_METRICS}`} />
+                  </div>
                   <button onClick={send} disabled={!body.trim() && pending.length === 0} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
                 </div>
               </div>

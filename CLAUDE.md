@@ -1367,6 +1367,42 @@ module id `retention-samples`.
   leadership or an admin — the same ladder the Receiving Log uses. `retention_sample` is a custom-field
   scope, so extra questions are a Settings task.
 
+## Composer: shortcuts, live formatting, and lists that continue themselves
+The toolbar was the only way to mark text up, so everyone who types Ctrl+B by reflex got nothing and
+concluded the composer couldn't do it. Three additions, all on the existing grammar — no second parser.
+- **`src/lib/useFormatKeys.js`** — Ctrl/Cmd+B/I/U (same `wrapSelection` the toolbar uses), Enter continuing
+  a list, Tab indenting one. Exported twice: `useFormatKeys` (hook, one textarea) and `formatKeyHandler`
+  (plain factory, for the newsletter's N sections rendered from a `.map()` where a hook per item is illegal).
+  It **returns true when it consumed the event**, so a composer runs its own @mention / send logic first and
+  only then defers — the mention menu and Ctrl+Enter-to-send both get first refusal.
+- **TAB IS DELIBERATELY CONDITIONAL.** Swallowing Tab everywhere traps keyboard users in the textarea — it's
+  how you reach Send, and in comms how you pick an @mention. It only indents when the caret is on a list
+  line; anywhere else it does nothing and lets focus move.
+- **Enter on an EMPTY list item ends the list** rather than adding another bullet, which is what every editor
+  does and what stops a list running away.
+- **`flushSync`, not `requestAnimationFrame`, before restoring the caret.** The rAF version is wrong for a
+  keyboard shortcut: anything typed inside that frame lands at the OLD caret and is jumped over — typing
+  Ctrl+B then "Blender 1" without pausing reliably produced `*lender 1*B`, and only for people who type
+  quickly. `FormatBar` had the same race (less often, since a click means your hands are off the keys) and
+  is fixed the same way. **Commit synchronously, then set the range.**
+- **`MarkupOverlay.jsx`** draws the formatting behind the composer: the textarea's text is transparent (the
+  caret is not) and a layer underneath renders the same characters styled. The stored value stays plain
+  text, which is what the chat renderer, translation, search and the PDF all expect.
+  **NOTHING MAY CHANGE A GLYPH'S ADVANCE WIDTH** — the caret and selection are drawn by the textarea, which
+  knows nothing about the layer, so one pixel of drift reads as broken. That rules out `font-weight` and
+  `font-style`, the two obvious choices: bold is `text-shadow` (thickens without re-laying out), italic is
+  `skewX` (a transform never affects layout), underline/strike/code-tint are free. Markers are **faded, not
+  hidden** — hiding them would change the width. Verified in the browser: both styled spans measure
+  identical to plain, and the overlay box is 0px off the textarea.
+- **`COMPOSER_METRICS`** in CommsView is the one string of layout classes both elements use, `border` width
+  included (colour set separately, transparent on the overlay) — the textarea's 1px border pushes its first
+  character in, and an overlay without one sits a pixel high and left.
+- **`parseSpans()` + `listPrefix()`** were added to `shared/rich-markup.js` rather than to the overlay:
+  `parseRuns` discards the markers, which is right for a renderer and wrong for a layer that must reproduce
+  the typed text character for character. Same regex, same grammar.
+- Wired into the comms composer, both thread reply boxes, the newsletter intro + section bodies, and meeting
+  minutes. Verified in the browser — 21 assertions across the three modules.
+
 ## New equipment: what the machine still owes (`server/equipment-readiness.js`)
 Adding equipment is the start of a chain — a PM schedule, a team to own it, LOTO, a hygienic design
 verification, a course, the work instruction it's taught against — and nothing said so, so a machine went

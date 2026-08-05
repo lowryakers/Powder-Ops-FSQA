@@ -3,6 +3,7 @@ import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import FormatBar from '../common/FormatBar';
+import { useFormatKeys } from '../../lib/useFormatKeys.js';
 import RichText from '../common/RichText';
 import {
   Users, Plus, X, CalendarClock, MapPin, Download, CheckCircle2, RotateCcw,
@@ -276,6 +277,14 @@ function MeetingDetail({ id, onBack, onChanged }) {
   const val = (k) => (draft && k in draft ? draft[k] : meeting?.[k]);
   const set = (k, v) => setDraft(d => ({ ...(d || {}), [k]: v }));
 
+  // Same formatting keys as the comms composer and the newsletter.
+  const minutesKeys = useFormatKeys({
+    getEl: () => minutesRef.current,
+    value: val('minutes') || '',
+    onChange: (v) => set('minutes', v),
+    enabled: editable,
+  });
+
   const reload = async () => { setDraft(null); await refresh(); onChanged?.(); };
 
   const save = async () => {
@@ -393,7 +402,7 @@ function MeetingDetail({ id, onBack, onChanged }) {
         </div>
         {editable ? (
           <textarea ref={minutesRef} rows={10} value={val('minutes') || ''} onChange={e => set('minutes', e.target.value)}
-            placeholder="What was discussed and decided."
+            placeholder="What was discussed and decided." onKeyDown={minutesKeys}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-normal" />
         ) : (
           String(meeting.minutes || '').trim()
