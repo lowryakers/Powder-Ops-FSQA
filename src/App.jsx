@@ -76,6 +76,7 @@ const ControlledChangesPanel = lazy(() => import('./components/compliance/Contro
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
 const ReimbursementsPanel = lazy(() => import('./components/office/ReimbursementsPanel.jsx'));
+const BankingPanel = lazy(() => import('./components/office/BankingPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
 
 const NAV_GROUPS = [
@@ -191,7 +192,7 @@ const NAV_GROUPS = [
       // AP, AR and the trading-partner reconciliation are one place to go —
       // they are the same job (money in, money out, what's owed) split only by
       // which direction it points.
-      { id: 'accounting', label: 'Accounting', icon: Landmark, anyOf: ['accounts-payable', 'accounts-receivable', 'partner-reconciliation', 'reimbursements'], keywords: 'AP AR bills vendors customers invoices owed reconcile settlement M4 net expense reimbursement receipt personal card' },
+      { id: 'accounting', label: 'Accounting', icon: Landmark, anyOf: ['accounts-payable', 'accounts-receivable', 'partner-reconciliation', 'reimbursements', 'banking'], keywords: 'AP AR bills vendors customers invoices owed reconcile settlement M4 net expense reimbursement receipt personal card bank statement balance' },
       { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
       { id: 'pay-tracking', label: 'Pay Tracking', icon: BadgeDollarSign, keywords: 'raise increase evaluation rubric wage rate salary review compensation' },
@@ -900,6 +901,7 @@ const HUB_TABS = {
     { id: 'accounts-receivable', label: 'Accounts Receivable', render: () => <LedgerPanel ledger="ar" /> },
     { id: 'partner-reconciliation', label: 'Partner Reconciliation', render: (u) => <PartnerReconPanel user={u} /> },
     { id: 'reimbursements', label: 'Reimbursements', render: (u) => <ReimbursementsPanel user={u} /> },
+    { id: 'banking', label: 'Banking', render: (u) => <BankingPanel user={u} /> },
   ],
   'quality-events': [
     { id: 'deviations', label: 'Deviations', render: () => <QMSRecordsPanel recordType="deviation" moduleId="deviations" /> },

@@ -1319,6 +1319,128 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_reimb_receipts ON reimbursement_receipts(reimbursement_id);
 
+    -- Banking and reconciliation — the part of QuickBooks that actually costs
+    -- accountant hours: matching what the bank says happened against what the
+    -- ledgers say we did, and closing a month when the two agree.
+    --
+    -- FOUR RULES:
+    --
+    --  1. THE BANK IS THE FACT. A bank transaction is never edited and never
+    --     deleted. It says what left or entered the account. Everything else
+    --     here is an opinion ABOUT it, stored separately, so a wrong match can
+    --     be undone without touching the record it was made against.
+    --  2. A MATCH IS A LINK, NOT A MERGE. One payment can cover three
+    --     invoices and one invoice can be paid in two instalments, so matches
+    --     live in their own table with an amount each.
+    --  3. NOTHING IS AUTO-MATCHED ON A GUESS. Confidence is recorded on every
+    --     match and only an exact amount plus a corroborating identifier is
+    --     applied without a human. Everything else is a suggestion.
+    --  4. A CLOSED RECONCILIATION IS IMMUTABLE. It stamps the statement
+    --     balance, the cleared total and the exact transactions that made it
+    --     up. Without that, next month's opening figure cannot be trusted.
+    CREATE TABLE IF NOT EXISTS bank_accounts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      institution TEXT,
+      account_type TEXT,
+      mask TEXT,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      opening_balance REAL NOT NULL DEFAULT 0,
+      opening_date TEXT,
+      current_balance REAL,
+      balance_as_of TEXT,
+      provider TEXT NOT NULL DEFAULT 'manual',
+      provider_item_id TEXT,
+      provider_account_id TEXT,
+      last_synced_at TEXT,
+      last_sync_error TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS bank_transactions (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      posted_date TEXT NOT NULL,
+      description TEXT,
+      counterparty TEXT,
+      reference TEXT,
+      -- Signed the way a bank statement reads: negative is money out.
+      amount REAL NOT NULL,
+      pending INTEGER NOT NULL DEFAULT 0,
+      category TEXT,
+      -- Set once the transaction has been accounted for, whether by a match or
+      -- by someone saying it needs no document (bank fee, interest, transfer).
+      status TEXT NOT NULL DEFAULT 'unmatched'
+        CHECK (status IN ('unmatched', 'matched', 'no_document', 'ignored')),
+      resolution_note TEXT,
+      resolved_at TEXT, resolved_by TEXT,
+      reconciliation_id TEXT,
+      -- The provider's own id, so a re-sync or a re-imported statement updates
+      -- rather than duplicating. Unique per account.
+      external_id TEXT,
+      source TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (account_id) REFERENCES bank_accounts(id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_txn_external
+      ON bank_transactions(account_id, external_id) WHERE external_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_bank_txn_account ON bank_transactions(account_id, posted_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_bank_txn_status ON bank_transactions(status, posted_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_bank_txn_recon ON bank_transactions(reconciliation_id);
+
+    -- One payment can cover several invoices, so a match carries its own
+    -- amount. target_type names the ledger it points into.
+    CREATE TABLE IF NOT EXISTS bank_transaction_matches (
+      id TEXT PRIMARY KEY,
+      transaction_id TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      confidence REAL,
+      auto INTEGER NOT NULL DEFAULT 0,
+      matched_at TEXT NOT NULL DEFAULT (datetime('now')),
+      matched_by TEXT,
+      FOREIGN KEY (transaction_id) REFERENCES bank_transactions(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_bank_match_txn ON bank_transaction_matches(transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_bank_match_target ON bank_transaction_matches(target_type, target_id);
+
+    CREATE TABLE IF NOT EXISTS bank_reconciliations (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      statement_balance REAL NOT NULL,
+      opening_balance REAL NOT NULL,
+      cleared_total REAL NOT NULL,
+      difference REAL NOT NULL,
+      transaction_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'closed' CHECK (status IN ('closed', 'reopened')),
+      closed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      closed_by TEXT,
+      reopened_at TEXT, reopened_by TEXT, reopened_reason TEXT,
+      notes TEXT,
+      FOREIGN KEY (account_id) REFERENCES bank_accounts(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_bank_recon ON bank_reconciliations(account_id, period_end DESC);
+
+    -- Rules people teach it: "anything from AMEX EPAYMENT is a card payment,
+    -- category Credit card". Learned from what Jake actually does rather than
+    -- shipped as a guess about this plant's vendors.
+    CREATE TABLE IF NOT EXISTS bank_rules (
+      id TEXT PRIMARY KEY,
+      account_id TEXT,
+      match_text TEXT NOT NULL,
+      category TEXT,
+      counterparty TEXT,
+      action TEXT NOT NULL DEFAULT 'categorize'
+        CHECK (action IN ('categorize', 'no_document', 'ignore')),
+      hits INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS facility_room_overrides (
       room_id TEXT PRIMARY KEY,
       label TEXT,

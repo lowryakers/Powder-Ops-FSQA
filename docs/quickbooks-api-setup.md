@@ -1,0 +1,100 @@
+# Connecting ReadyDoc to QuickBooks Online — step by step
+
+The point of this is **not** to keep using QuickBooks. It's to pull your real
+data out of it so the replacement can be designed against what you actually
+have, rather than against a guess. Once the pull works we'll also know whether
+the existing integration in `server/quickbooks.js` is sound — it was written
+against the QBO v3 API but has never run against a real company.
+
+Time: about 15 minutes. You need to be signed in to QuickBooks as the company
+admin.
+
+---
+
+## 1. Create an Intuit developer app
+
+1. Go to **https://developer.intuit.com** and sign in with the same Intuit
+   account you use for QuickBooks.
+2. **Dashboard** → **Create an app** → choose **QuickBooks Online and Payments**.
+3. Name it `ReadyDoc` (the name is only visible to you).
+4. On the scopes screen tick **`com.intuit.quickbooks.accounting`**. Nothing else.
+
+## 2. Get the production keys
+
+1. In the app, open **Keys & credentials** and switch from **Development** to
+   **Production**.
+   - Production may ask you to fill in a short app profile first (name, contact,
+     a description, a privacy-policy URL). It's a form, not a review — you're
+     the only user of this app.
+   - If it stalls, use **Development** keys for now: they read the sandbox
+     company, which is enough for me to verify the integration works, just not
+     enough to pull your real numbers.
+2. Copy **Client ID** and **Client Secret**. These are two of the four values.
+
+## 3. Get the Realm ID (your company ID)
+
+Easiest route: **Settings (gear) → Account and settings → Billing & Subscription**
+in QuickBooks. The **Company ID** shown there is the realm ID. Strip any spaces.
+
+## 4. Get a refresh token
+
+This is the fiddly one, because it requires an OAuth round trip. Intuit gives
+you a tool for it:
+
+1. On developer.intuit.com go to your app → **Tools → OAuth 2.0 Playground**.
+2. Select your app, environment **Production**, scope
+   `com.intuit.quickbooks.accounting`.
+3. Click **Get authorization code** → sign in → pick the Powder Ops company →
+   **Connect**.
+4. Click **Get tokens**. You'll see an **access token** (1 hour, ignore it) and a
+   **refresh token** (100 days). Copy the **refresh token**.
+
+The playground also shows the **realm ID** on this screen, which double-checks
+step 3.
+
+## 5. Put the four values into Railway
+
+Railway → the ReadyDoc service → **Variables** → add:
+
+```
+QBO_CLIENT_ID       = <from step 2>
+QBO_CLIENT_SECRET   = <from step 2>
+QBO_REFRESH_TOKEN   = <from step 4>
+QBO_REALM_ID        = <from step 3>
+```
+
+Only if you used Development keys, also add `QBO_ENV = sandbox`.
+
+Railway redeploys automatically. Nothing else in ReadyDoc changes — the whole
+integration degrades gracefully, so before this the Sync button simply isn't
+there.
+
+## 6. Tell me it's done
+
+I'll pull Bills, Invoices, the Chart of Accounts, vendors and customers, and
+report back what's actually in there. From that I can size stage 3 honestly
+instead of estimating.
+
+---
+
+## Two things worth knowing
+
+**Refresh tokens rotate and expire.** Every refresh may hand back a *new*
+refresh token, and the old one dies shortly after. ReadyDoc persists the current
+one in `app_settings.qbo_refresh_token` so a restart doesn't lose the
+connection. But a refresh token that goes **100 days unused** expires for good —
+if the sync sits idle that long you'll have to redo step 4. That's an Intuit
+rule, not ours.
+
+**This connection is read-only.** `server/quickbooks.js` only ever pulls; it has
+no code that writes back to QuickBooks. So there is no way for this to damage
+your books, which is deliberate while QuickBooks is still the system of record.
+
+## If something goes wrong
+
+| What you see | What it means |
+|---|---|
+| `invalid_grant` | The refresh token is stale or was used by something else. Redo step 4. |
+| `AuthenticationFailed` | Client ID/secret don't match the environment (production keys with `QBO_ENV=sandbox`, or vice versa). |
+| `ApplicationAuthenticationFailed` | The realm ID doesn't belong to the account that authorised the app. |
+| Sync button doesn't appear | One of the four variables is missing or misspelled. All four have to be set. |

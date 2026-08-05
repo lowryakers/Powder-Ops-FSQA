@@ -1473,3 +1473,49 @@ writing space. So this is a section walker like `training-log.js`, not something
 - API: `POST /retention/import/preview|commit` (QA/admin). UI: **Import a box** in the panel header.
 - Verified on the real Box 15 sheet: 67 samples, 112 retains, 29 lab, 31 blend / 13 intermediate / 23
   finished good, 6 rows honestly reported as unclear, and a re-import producing 0 created / 67 updated.
+
+## Banking & Reconciliation — the part of QuickBooks that costs accountant hours
+`bank_accounts` / `bank_transactions` / `bank_transaction_matches` /
+`bank_reconciliations` / `bank_rules`, with `server/bank-formats.js` (statement parsing),
+`server/bank-match.js` (**pure** matching + reconcile arithmetic), `server/bank-feed.js` (Plaid, degrades
+gracefully), `server/api/banking.js` and `BankingPanel.jsx` — a fifth tab in the **Accounting** hub.
+Module grant `banking`.
+- **The bank is the fact.** A bank transaction is never edited and never deleted; everything else is an
+  opinion *about* it, stored separately, so a wrong match is undone without touching the record.
+- **A match is a link, not a merge** — one payment can cover three invoices, so matches carry their own
+  amount in their own table. A split must account for the whole payment or it 400s.
+- **Nothing auto-matches on a guess.** `scoreCandidate` returns **null** (not a low score) when the
+  direction is wrong, the amount differs by a cent, or the gap exceeds 120 days — a suggestion list
+  containing impossible rows is one people stop reading. Amount alone scores 0.6; `AUTO_THRESHOLD` is 0.9,
+  so a *second* identifier (the vendor name or the invoice number appearing in the bank description) must
+  agree before anything is applied without a human. Two equally good candidates report `ambiguous` and
+  refuse to auto-match — that is the case where a payment lands on the wrong invoice.
+- **`planMatches` withdraws a candidate once consumed**, so two identical bank lines can't both claim one
+  invoice.
+- **A period closes only when the difference is zero AND nothing is unexplained.** "No document — it was a
+  bank fee" is a real answer and is recorded with its reason; ignoring a line silently is not possible.
+  Closing stamps the transactions, which then refuse re-matching and refuse to be rewritten by a re-import.
+  Reopening needs an admin, a reason, and must be done **newest-first** (each period's opening is the prior
+  close). The opening balance is frozen once any period is closed.
+- **Signs are normalised at exactly one boundary each.** A statement reads negative = money out; banks
+  disagree (one signed column, separate debit/credit columns, or a positive amount plus a `DEBIT` type) and
+  `parseBankCsv` resolves all three — while never double-flipping an already-negative debit. **Plaid signs
+  the opposite way** (positive = money leaving), flipped once in `fromPlaid`.
+- **A CSV has no stable id**, so `csvFingerprint` derives one from date+amount+description+reference, with an
+  occurrence suffix so two identical coffees on one day stay two transactions. That is what makes
+  re-importing an overlapping date range safe — the most common way a reconciliation goes wrong.
+- **Rules are taught, never shipped.** Resolving a line offers to remember it; nothing is seeded as a guess
+  about this plant's vendors.
+- **The live feed is Plaid and is optional.** `bankFeedEnabled()` gates the Link button, the sync endpoint
+  503s without it, and **statement import always works** — the file path is not a fallback for a broken
+  feed, it is how a bank Plaid doesn't cover still reconciles. `/transactions/sync` is cursor-based, so a
+  repeat sync is idempotent; `removed` deletes retracted pending charges (never inside a closed period).
+  **Env:** `PLAID_CLIENT_ID`, `PLAID_SECRET` (optional `PLAID_ENV`). Access tokens live in `app_settings`
+  keyed by item id, so several accounts at one institution share one token.
+- Verified on a fresh DB: 23 assertions on the pure engine (sign handling in every CSV layout, OFX, the
+  auto-match threshold, ambiguity, candidate consumption, the reconcile arithmetic) and 34 end to end
+  (import, dedupe on re-import, right-vendor-over-same-amount-decoy, the two close refusals, frozen closed
+  periods, reopen ordering, opening-balance protection, and the feed-off paths).
+- **Docs for the humans:** `docs/quickbooks-api-setup.md` (getting the four QBO env vars) and
+  `docs/accountant-brief.md` (what stage 3 would mean and what we need from the accountant before building
+  a general ledger).

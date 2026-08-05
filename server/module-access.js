@@ -25,7 +25,7 @@ export const ALL_MODULE_IDS = [
   'capa', 'sops', 'work-instructions', 'job-descriptions', 'org-chart',
   'disposals', 'training', 'certifications', 'recall',
   'office-requests', 'supply-requests', 'time-requests',
-  'accounts-payable', 'accounts-receivable', 'partner-reconciliation', 'reimbursements',
+  'accounts-payable', 'accounts-receivable', 'partner-reconciliation', 'reimbursements', 'banking',
   'procurement', 'newsletter', 'pay-tracking',
   'dcr', 'deviations', 'non-conformance', 'on-hold',
   'component-signout', 'maintenance-signout', 'currently-out', 'organoleptic',

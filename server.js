@@ -47,6 +47,7 @@ import retentionRoutes from './server/api/retention.js';
 import partnerRoutes from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
+import bankingRoutes from './server/api/banking.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
@@ -1488,6 +1489,10 @@ app.use('/api/partner-portal', partnerPortalRoutes);
 // because deciding on someone else's money is not the same permission as
 // asking for your own.
 app.use('/api/reimbursements', requireModuleWrite('reimbursements'), reimbursementRoutes);
+// Reading the reconciliation is open to whoever has the module — "does the
+// account balance" is useful well beyond the person doing the ticking.
+// Closing a period and matching a line are checked inside the router.
+app.use('/api/banking', requireModuleWrite('banking'), bankingRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);
