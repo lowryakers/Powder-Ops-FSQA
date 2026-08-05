@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment } from 'react';
-import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { useCappedList } from '../../lib/useCappedList';
@@ -8,7 +8,7 @@ import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import {
   Archive, Plus, Search, FlaskConical, Trash2, Pencil, X, AlertTriangle,
-  Boxes, CalendarClock,
+  Boxes, CalendarClock, Upload, Check,
 } from 'lucide-react';
 
 // The Retention Sample log — the plant's physical library of what it made.
@@ -319,12 +319,188 @@ function BoxesTab({ boxes, refresh, canEdit, canDestroy, onOpenBox }) {
 
 /* ── Panel ────────────────────────────────────────────────────────────────── */
 
+/* ── Importing a box from the paper log ───────────────────────────────────── */
+
+// One sheet per box, and the preview is the point: it reads the file, says what
+// it would create and what it could not read, and writes nothing until someone
+// presses the button. Filing a retention log from a spreadsheet nobody checked
+// is how the log stops being worth having.
+function BoxImportModal({ onClose, onDone }) {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [result, setResult] = useState(null);
+
+  const send = async (step) => {
+    if (!file) return;
+    setBusy(true); setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await apiUpload(`/retention/import/${step}`, fd);
+      if (step === 'preview') setPreview(r); else { setResult(r); onDone(); }
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-start sm:items-center justify-center p-3 overflow-y-auto" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-4">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Upload size={17} className="text-powder-600" /> Import a box from the log
+          </h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          {result ? (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-4">
+              <p className="font-semibold text-green-900 flex items-center gap-1.5">
+                <Check size={16} /> Box {result.box_no} imported
+              </p>
+              <p className="text-sm text-green-800 mt-1">
+                {result.created} filed{result.updated ? `, ${result.updated} updated` : ''} ·{' '}
+                {result.counts.retains} retains and {result.counts.lab} lab samples.
+              </p>
+              {result.problems > 0 && (
+                <p className="text-xs text-green-800 mt-1">
+                  {result.problems} row{result.problems === 1 ? '' : 's'} had something that couldn&apos;t be
+                  read cleanly — they were filed with what was legible and are listed in the audit log.
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              <div>
+                <span className="block text-xs font-medium text-gray-700 mb-1">The box&apos;s sheet</span>
+                <input type="file" accept=".csv,text/csv" className="w-full text-sm"
+                  onChange={e => { setFile(e.target.files?.[0] || null); setPreview(null); setErr(null); }} />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  One file per box, exactly as the log is kept — the BOX # banner, the destruction date, and
+                  the BLEND / IM / FINISH GOOD sections.
+                </p>
+              </div>
+
+              {preview && (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-gray-200 p-3">
+                    <p className="font-semibold text-gray-900">
+                      Box {preview.box.box_no}
+                      {preview.box.destruction_date && (
+                        <span className="ml-2 font-normal text-sm text-gray-500">
+                          destroy by {preview.box.destruction_date}
+                        </span>
+                      )}
+                      {preview.box_exists && <span className="ml-2 text-xs text-amber-700">already in ReadyDoc</span>}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      <span className="font-medium text-gray-900">{preview.summary.create}</span> to file
+                      {preview.summary.update > 0 && <>, <span className="font-medium text-gray-900">{preview.summary.update}</span> to update</>}
+                      {' '}· {preview.counts.retains} retains, {preview.counts.lab} lab
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {Object.entries(preview.counts.by_stage || {}).map(([k, v]) => `${v} ${k.replace('_', ' ')}`).join(' · ')}
+                    </p>
+                  </div>
+
+                  {preview.box_destroyed && (
+                    <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-3">
+                      This box has already been destroyed. Its contents are the record of what was held and
+                      won&apos;t be rewritten.
+                    </p>
+                  )}
+
+                  {preview.problems?.length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-sm font-semibold text-amber-900">
+                        {preview.problems.length} thing{preview.problems.length === 1 ? '' : 's'} to look at
+                      </p>
+                      <p className="text-[11px] text-amber-800 mb-1">
+                        These rows still import — this is what the sheet itself is unclear about.
+                      </p>
+                      <ul className="text-xs text-amber-900 space-y-0.5 max-h-40 overflow-y-auto">
+                        {preview.problems.map((p, i) => (
+                          <li key={i}>
+                            <span className="font-medium">Row {p.row}</span>
+                            {p.item ? ` · ${p.item}` : ''} — {p.value}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <div className="max-h-64 overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="text-left px-2 py-1.5 font-medium text-gray-600">Item</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-gray-600">Lot</th>
+                            <th className="text-right px-2 py-1.5 font-medium text-gray-600">Retain</th>
+                            <th className="text-right px-2 py-1.5 font-medium text-gray-600">Lab</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-gray-600">Collected</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(preview.samples || []).map((s, i) => (
+                            <tr key={i} className="border-t border-gray-100">
+                              <td className="px-2 py-1 text-gray-800">
+                                {s.item_name}
+                                <span className="block text-[10px] text-gray-400">
+                                  {s.stage.replace('_', ' ')}{s.action === 'update' ? ' · updates an existing row' : ''}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1 text-gray-600">{s.lot_number || '—'}</td>
+                              <td className="px-2 py-1 text-right font-medium">{s.retain_count}</td>
+                              <td className="px-2 py-1 text-right text-gray-600">{s.lab_count || ''}</td>
+                              <td className="px-2 py-1 text-gray-600 whitespace-nowrap">
+                                {s.collected_date || <span className="text-amber-600">no date</span>}
+                                {s.collected_by ? ` ${s.collected_by}` : ''}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {err && <p className="text-sm text-red-600">{err}</p>}
+            </>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200">
+          <button onClick={onClose} className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">
+            {result ? 'Done' : 'Cancel'}
+          </button>
+          {!result && !preview && (
+            <button onClick={() => send('preview')} disabled={!file || busy}
+              className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-black disabled:opacity-50">
+              {busy ? 'Reading…' : 'Read it'}
+            </button>
+          )}
+          {!result && preview && !preview.box_destroyed && (
+            <button onClick={() => send('commit')} disabled={busy}
+              className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
+              {busy ? 'Filing…' : `File ${preview.summary.create + preview.summary.update} record${preview.summary.create + preview.summary.update === 1 ? '' : 's'}`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RetentionSamplesPanel({ user }) {
   const [tab, setTab] = useState('samples');
   const [stage, setStage] = useState('');
   const [boxFilter, setBoxFilter] = useState('');
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState(null);
+  const [importing, setImporting] = useState(false);
   const expand = useRowExpand();
 
   const params = new URLSearchParams();
@@ -364,11 +540,21 @@ export default function RetentionSamplesPanel({ user }) {
             material through to finished good, with the box each one lives in.
           </p>
         </div>
-        <button onClick={() => setEditing({})}
-          className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 shrink-0">
-          <Plus size={15} /> Log a pull
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {canEdit && (
+            <button onClick={() => setImporting(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
+              <Upload size={15} /> Import a box
+            </button>
+          )}
+          <button onClick={() => setEditing({})}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+            <Plus size={15} /> Log a pull
+          </button>
+        </div>
       </div>
+
+      {importing && <BoxImportModal onClose={() => setImporting(false)} onDone={reloadAll} />}
 
       {due > 0 && (
         <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">

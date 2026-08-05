@@ -1446,3 +1446,30 @@ Shape confirmed from the pages that did survive: one section per box (`BOX # 15`
 groups within it (**BLEND / IM / FINISH GOOD**, plus raw materials at `90g` in the later boxes), and per row
 item number, item name, lot #, EXP date, the retention count (`5 (2 LAB, 3 RETAIN)`), batches (free text —
 `1 and 2`, `1 BEG, 1 MIDDLE, 1 END`) and a collected-date + initials cell.
+
+## Retention Samples: importing a box from the paper log (`server/retention-log.js`)
+The plant's Retention Sample log is **one sheet per box**, and it is a paper form rather than a table: a
+`BOX # 15` banner carrying the destruction date, then sections announced by a bare word in the item column
+(**BLEND / IM / FINISH GOOD**, plus raw materials in the later boxes), with runs of blank rows left as
+writing space. So this is a section walker like `training-log.js`, not something `readTable` can hand back.
+- **Lab and retain are split out of one cell and never recombined.** `parseRetention` reads
+  `5 (2 LAB, 3 RETAIN)`, `2 (Retains)`, `1 RETAIN`, `90g`, `1 SAMPLES`, `(1 RETAIN)`. **The explicit
+  LAB/RETAIN breakdown wins over the leading total**, because the log's own arithmetic is wrong in places
+  (`3(2 LAB, 3 RETAIN)`) and the breakdown is what was physically pulled — the total is a sum someone did in
+  their head. The disagreement is reported as `total_mismatch` rather than silently resolved.
+- **A weight is a raw-material retain**: `90g` → one sample, `sample_size` kept as written.
+- **A month is the LAST day of it.** `Destruction Date: 02/2028` → `2028-02-29`, an expiry of `01/28` →
+  `2028-01-31`. A box due "02/2028" is not overdue on the 1st, and `retention.js` reads that date to refuse
+  an early destruction.
+- **A row with no item name is writing space, not a record.** The log is full of half-filled rows and a
+  retention record invented from one is worse than the gap.
+- **Preview writes nothing** and lists every row it will file plus everything it could not read. A retention
+  log bulk-written from a spreadsheet nobody checked stops being the thing that answers "do we still hold a
+  jar of that lot".
+- **Idempotent on box + item + lot + collected date** (`sampleKey`, stored as `external_id`). The same item
+  legitimately appears twice in a box — a second lot, or a later collection — so item alone would collapse
+  real jars; re-importing a corrected sheet updates in place instead of doubling the box.
+- **A destroyed box refuses re-import.** Its contents are the record of what was held.
+- API: `POST /retention/import/preview|commit` (QA/admin). UI: **Import a box** in the panel header.
+- Verified on the real Box 15 sheet: 67 samples, 112 retains, 29 lab, 31 blend / 13 intermediate / 23
+  finished good, 6 rows honestly reported as unclear, and a re-import producing 0 created / 67 updated.

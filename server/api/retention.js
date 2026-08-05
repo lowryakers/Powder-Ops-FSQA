@@ -27,9 +27,11 @@
 // MO number.
 
 import { Router } from 'express';
+import multer from 'multer';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { coerceCustomData, mergeCustomData } from '../custom-fields.js';
+import { parseRetentionLog, sampleKey } from '../retention-log.js';
 
 const router = Router();
 
@@ -295,6 +297,146 @@ router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM retention_samples WHERE id = ?').run(before.id);
   logAudit(req.user, 'delete', 'retention_sample', before.id, null, before, null, before.item_name);
   res.json({ ok: true });
+});
+
+/* ── Importing a box from the paper log ───────────────────────────────────── */
+
+// The plant's Retention Sample log is one sheet per box. This is the four-step
+// shape every importer here uses — read, plan, show, write — with the crucial
+// property that PREVIEW WRITES NOTHING. A retention log is the record of what
+// physically exists in a box; bulk-writing one from a spreadsheet nobody
+// checked is how it stops being trustworthy.
+//
+// Idempotent on box + item + lot + collected date, so re-importing a corrected
+// sheet updates in place instead of doubling the box.
+
+const boxUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Decide what each parsed row becomes. Shared by preview and commit so a dry
+// run and the real thing can never tell different stories.
+function planImport(db, buffer, filename) {
+  const parsed = parseRetentionLog(buffer, filename);
+  if (parsed.error) return parsed;
+
+  const box = db.prepare('SELECT * FROM retention_boxes WHERE box_no = ?').get(parsed.box.box_no);
+  // Existing rows in THIS box only — the same lot legitimately appears in two
+  // boxes (a later collection), and those are different jars.
+  const existing = new Map();
+  if (box) {
+    for (const r of db.prepare('SELECT * FROM retention_samples WHERE box_id = ?').all(box.id)) {
+      existing.set(sampleKey(parsed.box.box_no, r), r);
+    }
+  }
+
+  const seen = new Set();
+  const plan = { create: [], update: [], duplicate_in_file: [] };
+  for (const s of parsed.samples) {
+    const key = sampleKey(parsed.box.box_no, s);
+    if (seen.has(key)) { plan.duplicate_in_file.push(s); continue; }
+    seen.add(key);
+    const prior = existing.get(key);
+    if (prior) plan.update.push({ ...s, id: prior.id });
+    else plan.create.push(s);
+  }
+
+  return {
+    box: parsed.box,
+    box_exists: !!box,
+    // A destroyed box is history. Re-importing into one would rewrite what was
+    // held after the fact, which is the one thing this log must never do.
+    box_destroyed: box?.status === 'destroyed',
+    counts: parsed.counts,
+    problems: parsed.problems,
+    plan,
+  };
+}
+
+router.post('/import/preview', boxUpload.single('file'), (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Importing a box is a QA or admin job.' });
+  if (!req.file) return res.status(400).json({ error: 'Attach the box\'s sheet (.csv).' });
+  let out;
+  try { out = planImport(getDb(), req.file.buffer, req.file.originalname); }
+  catch (e) { return res.status(400).json({ error: `Could not read that sheet: ${e.message}` }); }
+  if (out.error) return res.status(400).json({ error: out.error });
+  res.json({
+    ...out,
+    // The rows themselves, so the preview can be read rather than trusted.
+    samples: [...out.plan.create.map(s => ({ ...s, action: 'create' })),
+              ...out.plan.update.map(s => ({ ...s, action: 'update' }))],
+    summary: {
+      create: out.plan.create.length,
+      update: out.plan.update.length,
+      duplicate_in_file: out.plan.duplicate_in_file.length,
+    },
+  });
+});
+
+router.post('/import/commit', boxUpload.single('file'), (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Importing a box is a QA or admin job.' });
+  if (!req.file) return res.status(400).json({ error: 'Attach the box\'s sheet (.csv).' });
+  const db = getDb();
+  let out;
+  try { out = planImport(db, req.file.buffer, req.file.originalname); }
+  catch (e) { return res.status(400).json({ error: `Could not read that sheet: ${e.message}` }); }
+  if (out.error) return res.status(400).json({ error: out.error });
+  if (out.box_destroyed) {
+    return res.status(400).json({ error: 'That box has already been destroyed. Its contents are the record of what was held and are not rewritten.' });
+  }
+
+  const source = `retention-log:${req.file.originalname}`.slice(0, 200);
+  let boxId;
+  const tx = db.transaction(() => {
+    const existing = db.prepare('SELECT * FROM retention_boxes WHERE box_no = ?').get(out.box.box_no);
+    if (existing) {
+      boxId = existing.id;
+      // A destruction date already set by hand is a decision; only fill a blank.
+      if (!existing.destruction_date && out.box.destruction_date) {
+        db.prepare("UPDATE retention_boxes SET destruction_date = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(out.box.destruction_date, boxId);
+      }
+    } else {
+      boxId = uuid();
+      db.prepare('INSERT INTO retention_boxes (id, box_no, destruction_date, notes) VALUES (?,?,?,?)')
+        .run(boxId, out.box.box_no, out.box.destruction_date, `Imported from ${req.file.originalname}`);
+    }
+
+    const ins = db.prepare(`INSERT INTO retention_samples
+      (id, box_id, stage, item_number, item_name, lot_number, mo_number, expiration_date,
+       retain_count, lab_count, sample_size, batches, collected_date, collected_by, comments,
+       external_id, source, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const upd = db.prepare(`UPDATE retention_samples SET stage = ?, item_number = ?, item_name = ?,
+      lot_number = ?, mo_number = ?, expiration_date = ?, retain_count = ?, lab_count = ?,
+      sample_size = ?, batches = ?, collected_date = ?, collected_by = ?, comments = ?,
+      source = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?`);
+
+    for (const s of out.plan.create) {
+      ins.run(uuid(), boxId, s.stage, s.item_number, s.item_name, s.lot_number, s.mo_number,
+        s.expiration_date, s.retain_count, s.lab_count, s.sample_size, s.batches,
+        s.collected_date, s.collected_by, s.comments,
+        sampleKey(out.box.box_no, s), source, req.user?.name || null);
+    }
+    for (const s of out.plan.update) {
+      upd.run(s.stage, s.item_number, s.item_name, s.lot_number, s.mo_number, s.expiration_date,
+        s.retain_count, s.lab_count, s.sample_size, s.batches, s.collected_date, s.collected_by,
+        s.comments, source, req.user?.name || null, s.id);
+    }
+  });
+  tx();
+
+  logAudit(req.user, 'create', 'retention_box', boxId, {
+    box_no: out.box.box_no, created: out.plan.create.length, updated: out.plan.update.length,
+    file: req.file.originalname, unreadable_rows: out.problems.length,
+  }, null, null, `Box ${out.box.box_no} import`);
+
+  res.status(201).json({
+    box_no: out.box.box_no,
+    created: out.plan.create.length,
+    updated: out.plan.update.length,
+    duplicate_in_file: out.plan.duplicate_in_file.length,
+    problems: out.problems.length,
+    counts: out.counts,
+  });
 });
 
 export default router;
