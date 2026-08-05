@@ -89,6 +89,15 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## Not every task has equipment (the "shows in Operator View but not Task Center" bug)
+`/pm/by-frequency`, `/pm/search`, `/pm/completed-history` and `/pm/clearance-pending` all did
+`JOIN equipment e ON wo.equipment_id = e.id` — an **inner** join. A task raised from a chat message has
+`equipment_id NULL`, and so does any New Task created for a team rather than a machine, so every one of them
+was silently dropped from the Task Center. The Operator View left-joins, which is why the same task existed
+on one screen and not the other. All four are LEFT JOIN now; they group under `unscheduled`, since a task
+with no PM schedule has no frequency. **`/pm/metrics`'s `byEquipment` roll-up keeps its inner join on
+purpose** — "by equipment" means by equipment, and a task without any has nothing to group under.
+
 ## Chat message → Task Center task
 `src/lib/taskIntent.js` decides if a message reads like an assignment: it needs **both** an @mention and
 directive phrasing (EN + ES), and is suppressed for questions/thanks/acknowledgements — false prompts train

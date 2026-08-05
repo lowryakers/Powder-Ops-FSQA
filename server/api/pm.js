@@ -672,7 +672,7 @@ router.get('/clearance-pending', (req, res) => {
   const rows = db.prepare(`
     SELECT wo.*, e.name as equipment_name, e.location, e.asset_id, e.room
     FROM work_orders wo
-    JOIN equipment e ON wo.equipment_id = e.id
+    LEFT JOIN equipment e ON wo.equipment_id = e.id
     WHERE wo.clearance_required = 1 AND wo.clearance_status = 'pending'
     ORDER BY wo.completed_at DESC
   `).all();
@@ -697,7 +697,9 @@ router.get('/search', (req, res) => {
     SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
       e.asset_id, ps.title as pm_title, ps.frequency_type, ps.procedure_steps as pm_steps
     FROM work_orders wo
-    JOIN equipment e ON wo.equipment_id = e.id
+    -- LEFT: "a task you can name is a task you should be able to find" was not
+    -- true of a task with no equipment.
+    LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
     WHERE (wo.status != 'completed' OR wo.completed_at >= date('now', '-90 days'))
       AND (LOWER(wo.title) LIKE LOWER(?) OR LOWER(ps.title) LIKE LOWER(?)
@@ -718,7 +720,12 @@ router.get('/by-frequency', (req, res) => {
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
     e.asset_id, ps.title as pm_title, ps.frequency_type, ps.procedure_steps as pm_steps
     FROM work_orders wo
-    JOIN equipment e ON wo.equipment_id = e.id
+    -- LEFT, because NOT EVERY TASK HAS EQUIPMENT. New Task creates team tasks
+    -- with no equipment, and a task raised from a chat message always has
+    -- equipment_id NULL. An inner join silently dropped every one of them from
+    -- the Task Center while the Operator View — which left-joins — showed them,
+    -- so the same task existed on one screen and not the other.
+    LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
     WHERE wo.status IN ('open', 'in_progress', 'overdue')`;
   const params = [];
@@ -755,7 +762,7 @@ router.get('/completed-history', (req, res) => {
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
     e.asset_id, ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
-    JOIN equipment e ON wo.equipment_id = e.id
+    LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
     WHERE ${statusFilter}`;
   const params = [];
