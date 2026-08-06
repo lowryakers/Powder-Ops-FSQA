@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useApiGet, apiPost } from '../../hooks/useApi';
-import { Check, AlertTriangle, Circle, ArrowRight, RefreshCw, HelpCircle } from 'lucide-react';
+import { useApiGet, apiPost, apiFetch } from '../../hooks/useApi';
+import { Check, AlertTriangle, Circle, ArrowRight, RefreshCw, HelpCircle, MinusCircle, Undo2 } from 'lucide-react';
 
 /**
  * "What does this machine still need?" — rendered from the server's readiness
@@ -21,9 +21,13 @@ const TONE = {
   optional: { ring: 'border-gray-200 bg-white', icon: Circle, iconClass: 'text-gray-300' },
   done: { ring: 'border-green-200 bg-green-50/60', icon: Check, iconClass: 'text-green-600' },
   unknown: { ring: 'border-gray-200 bg-gray-50', icon: HelpCircle, iconClass: 'text-gray-400' },
+  // A waived step stays on the list, greyed rather than gone — the decision is
+  // the record, and one that vanished could never be questioned or undone.
+  waived: { ring: 'border-gray-200 bg-gray-50', icon: MinusCircle, iconClass: 'text-gray-400' },
 };
 
 function toneFor(step) {
+  if (step.waived) return 'waived';
   if (step.unknown) return 'unknown';
   if (step.done) return 'done';
   return step.weight === 'required' ? 'blocking' : 'optional';
@@ -57,8 +61,23 @@ export default function EquipmentSetupChecklist({ equipmentId, initial, compact 
   if (error && !data) return <p className="text-xs text-red-600 py-2">Could not load the setup checklist: {error}</p>;
   if (!data) return null;
 
-  const outstanding = data.steps.filter(s => !s.done);
+  // Same rule as the server: a waived step is neither done nor outstanding, so
+  // a machine whose only gaps were marked N/A does read as fully set up.
+  const outstanding = data.steps.filter(s => !s.done && !s.waived);
   const ready = outstanding.length === 0;
+  const skip = async (step) => {
+    // A reason is required by the server; asking here rather than after a 400
+    // means the person is told what's wanted before they type.
+    const reason = window.prompt(`Why doesn't "${step.label}" apply to this machine?`, '');
+    if (reason === null) return;
+    try { await apiPost(`/equipment/${equipmentId}/steps/${step.id}/skip`, { reason }); refresh(); }
+    catch (e) { window.alert(e.message); }
+  };
+  const unskip = async (step) => {
+    try { await apiFetch(`/equipment/${equipmentId}/steps/${step.id}/skip`, { method: 'DELETE' }); refresh(); }
+    catch (e) { window.alert(e.message); }
+  };
+
   const pmStep = data.steps.find(s => s.id === 'pm_schedule');
   const tasksWithoutSchedule = !!pmStep && !pmStep.done && /written, but nothing generates/.test(pmStep.detail || '');
 
@@ -70,7 +89,10 @@ export default function EquipmentSetupChecklist({ equipmentId, initial, compact 
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-800">FULLY SET UP</span>
         ) : (
           <>
-            <span className="text-xs text-gray-500">{data.done} of {data.total} done</span>
+            <span className="text-xs text-gray-500">
+              {data.done} of {data.applicable ?? data.total} done
+              {data.waived > 0 ? ` · ${data.waived} not applicable` : ''}
+            </span>
             {data.blocking > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
                 {data.blocking} still needed
@@ -138,16 +160,35 @@ export default function EquipmentSetupChecklist({ equipmentId, initial, compact 
                   )}
                 </div>
                 <p className="text-[11px] text-gray-500">{step.detail}</p>
+                {step.waived && step.waived_by && (
+                  <p className="text-[11px] text-gray-400">Marked by {step.waived_by}</p>
+                )}
                 {/* The "why" only shows on the steps still owed — on a finished
                     one it is just noise between the reader and the next gap. */}
-                {!step.done && <p className="text-[11px] text-gray-400 mt-0.5">{step.why}</p>}
+                {!step.done && !step.waived && <p className="text-[11px] text-gray-400 mt-0.5">{step.why}</p>}
               </div>
-              {!step.done && step.link?.tab && (
-                <button type="button" onClick={() => go(step.link.tab)}
-                  className="shrink-0 inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-[11px] font-medium border border-gray-200 text-gray-600 bg-white hover:bg-gray-50">
-                  Set up <ArrowRight size={11} />
-                </button>
-              )}
+              <div className="shrink-0 flex items-center gap-1">
+                {!step.done && !step.waived && step.link?.tab && (
+                  <button type="button" onClick={() => go(step.link.tab)}
+                    className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-[11px] font-medium border border-gray-200 text-gray-600 bg-white hover:bg-gray-50">
+                    Set up <ArrowRight size={11} />
+                  </button>
+                )}
+                {!step.done && !step.waived && (
+                  <button type="button" title="This step doesn't apply to this machine"
+                    onClick={() => skip(step)}
+                    className="px-2 py-1 rounded-lg text-[11px] font-medium border border-gray-200 text-gray-500 bg-white hover:bg-gray-50">
+                    N/A
+                  </button>
+                )}
+                {step.waived && (
+                  <button type="button" title="Put this step back on the list"
+                    onClick={() => unskip(step)}
+                    className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-[11px] font-medium border border-gray-200 text-gray-500 bg-white hover:bg-gray-50">
+                    <Undo2 size={11} /> Undo
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

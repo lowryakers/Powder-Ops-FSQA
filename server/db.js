@@ -2439,6 +2439,36 @@ function runMigrations() {
     console.warn('[db] equipment_files unavailable:', e.message);
   }
 
+  /**
+   * Setup steps marked NOT APPLICABLE for one machine.
+   *
+   * Not every step applies to every machine — nobody writes a work instruction
+   * for switching on an A/C — and a checklist that can't be told so is one
+   * people learn to ignore, which costs far more than the step it was nagging
+   * about.
+   *
+   * A ROW, WITH A REASON AND A NAME, rather than a hidden flag: skipping a
+   * setup step is a decision, and a decision with nobody's name on it is
+   * indistinguishable from an oversight. The step stays visible on the
+   * checklist reading "not applicable — <reason>", so it can be read and
+   * reversed rather than vanishing.
+   */
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS equipment_step_waivers (
+        equipment_id TEXT NOT NULL,
+        step_id TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        waived_by TEXT,
+        waived_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (equipment_id, step_id),
+        FOREIGN KEY (equipment_id) REFERENCES equipment(id)
+      )
+    `);
+  } catch (e) {
+    console.warn('[db] equipment_step_waivers unavailable:', e.message);
+  }
+
   addColumnIfMissing('equipment', 'asset_kind', "TEXT NOT NULL DEFAULT 'machine'");
   db.exec("CREATE INDEX IF NOT EXISTS idx_equipment_asset_kind ON equipment(asset_kind)");
   try {

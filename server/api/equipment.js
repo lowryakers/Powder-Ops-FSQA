@@ -6,7 +6,7 @@ import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '..
 import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { aiEnabled, compareManualToTasks } from '../ai.js';
-import { equipmentReadiness, readinessSummary } from '../equipment-readiness.js';
+import { equipmentReadiness, readinessSummary, READINESS_STEPS } from '../equipment-readiness.js';
 import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
 
 // The status vocabulary the table's CHECK-free column actually uses.
@@ -243,6 +243,63 @@ router.post('/:id/schedules-from-tasks', (req, res) => {
   }
   const fresh = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eq.id);
   res.json({ created, skipped: plan.skip, readiness: equipmentReadiness(db, fresh) });
+});
+
+/**
+ * Mark a setup step NOT APPLICABLE for this machine.
+ *
+ * Nobody writes a work instruction for switching on an A/C, and a checklist
+ * that can't be told so is one people stop reading. But a skip is a decision,
+ * so it takes a REASON and records who made it, and the step stays on the list
+ * reading "not applicable — <reason>" rather than disappearing.
+ *
+ * LOTO IS DELIBERATELY NOT WAIVABLE HERE. `equipment.loto_required` is the
+ * authority on that, and it is read by the LOTO module and the compliance badge
+ * as well — waiving the checklist step alone would leave those two still
+ * counting the machine, which is exactly the two-mechanisms-disagreeing problem
+ * this module has already been bitten by. The caller is sent to the column.
+ */
+const UNWAIVABLE = {
+  loto: 'Use the "Needs a LOTO procedure" checkbox on the equipment record — that column is what the LOTO module and the compliance badge read.',
+};
+
+router.post('/:id/steps/:stepId/skip', (req, res) => {
+  const db = getDb();
+  const eq = db.prepare('SELECT id, name FROM equipment WHERE id = ?').get(req.params.id);
+  if (!eq) return res.status(404).json({ error: 'Equipment not found' });
+
+  const stepId = req.params.stepId;
+  if (UNWAIVABLE[stepId]) return res.status(400).json({ error: UNWAIVABLE[stepId] });
+  if (!READINESS_STEPS.some(s => s.id === stepId)) return res.status(400).json({ error: 'Unknown setup step' });
+
+  const reason = String(req.body?.reason || '').trim();
+  // A skip with no reason is indistinguishable from an oversight six months
+  // later, which is the whole thing this is trying to avoid.
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why this step does not apply — it is recorded on the machine.' });
+
+  db.prepare(`INSERT INTO equipment_step_waivers (equipment_id, step_id, reason, waived_by)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(equipment_id, step_id) DO UPDATE SET reason = excluded.reason, waived_by = excluded.waived_by, waived_at = datetime('now')`)
+    .run(eq.id, stepId, reason.slice(0, 300), req.user?.name || null);
+
+  logAudit(req.user, 'update', 'equipment', eq.id,
+    { action: 'setup_step_waived', step: stepId, reason }, null, null, eq.name);
+  const fresh = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eq.id);
+  res.json(equipmentReadiness(db, fresh));
+});
+
+router.delete('/:id/steps/:stepId/skip', (req, res) => {
+  const db = getDb();
+  const eq = db.prepare('SELECT id, name FROM equipment WHERE id = ?').get(req.params.id);
+  if (!eq) return res.status(404).json({ error: 'Equipment not found' });
+  const prev = db.prepare('SELECT * FROM equipment_step_waivers WHERE equipment_id = ? AND step_id = ?').get(eq.id, req.params.stepId);
+  db.prepare('DELETE FROM equipment_step_waivers WHERE equipment_id = ? AND step_id = ?').run(eq.id, req.params.stepId);
+  if (prev) {
+    logAudit(req.user, 'update', 'equipment', eq.id,
+      { action: 'setup_step_waiver_removed', step: req.params.stepId }, prev, null, eq.name);
+  }
+  const fresh = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eq.id);
+  res.json(equipmentReadiness(db, fresh));
 });
 
 /* ── Equipment documents (manuals, spec sheets, parts lists) ─────────────── */

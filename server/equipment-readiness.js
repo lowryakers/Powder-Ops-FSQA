@@ -212,22 +212,52 @@ const STEPS = [
  * than one that admits it could not tell.
  */
 export function equipmentReadiness(db, equipment) {
+  // Steps this machine has been told don't apply. Read once rather than per
+  // step — the roll-up runs this over every row.
+  let waivers = {};
+  try {
+    for (const w of db.prepare('SELECT step_id, reason, waived_by, waived_at FROM equipment_step_waivers WHERE equipment_id = ?').all(equipment.id)) {
+      waivers[w.step_id] = w;
+    }
+  } catch { waivers = {}; }
+
   const steps = STEPS.filter(s => s.applies(equipment)).map(s => {
+    const waiver = waivers[s.id];
+    // A waived step is NOT removed from the list. It stays, reading "not
+    // applicable" with the reason and who decided — the record of the decision
+    // is the point, and a step that silently disappeared could never be
+    // questioned or undone.
+    if (waiver) {
+      return {
+        id: s.id, label: s.label, why: s.why, weight: s.weight, link: s.link,
+        done: false, unknown: false, waived: true,
+        waiver_reason: waiver.reason, waived_by: waiver.waived_by, waived_at: waiver.waived_at,
+        detail: `Not applicable — ${waiver.reason}`,
+      };
+    }
     let result;
     try { result = s.check(db, equipment); }
     catch (e) { result = { done: false, unknown: true, detail: `Could not check (${e.message})` }; }
     return {
       id: s.id, label: s.label, why: s.why, weight: s.weight, link: s.link,
-      done: !!result.done, unknown: !!result.unknown, detail: result.detail || '',
+      done: !!result.done, unknown: !!result.unknown, waived: false, detail: result.detail || '',
     };
   });
-  const outstanding = steps.filter(s => !s.done);
+  // Waived steps are not outstanding — that is the whole point of waiving one —
+  // but they are not "done" either, so the counts say `total` minus waived
+  // rather than pretending the work happened.
+  const outstanding = steps.filter(s => !s.done && !s.waived);
+  const waived = steps.filter(s => s.waived).length;
   return {
     equipment_id: equipment.id,
     equipment_name: equipment.name,
     steps,
     total: steps.length,
-    done: steps.length - outstanding.length,
+    waived,
+    // "done" counts only work that actually happened; a waived step is neither
+    // done nor owed, so it comes out of the denominator instead.
+    done: steps.filter(s => s.done).length,
+    applicable: steps.length - waived,
     outstanding: outstanding.length,
     // What "ready" means. A machine missing only recommended steps is running
     // legitimately; one missing a required step is not.

@@ -1403,6 +1403,20 @@ concluded the composer couldn't do it. Three additions, all on the existing gram
 - Wired into the comms composer, both thread reply boxes, the newsletter intro + section bodies, and meeting
   minutes. Verified in the browser — 21 assertions across the three modules.
 
+### Marking a setup step "not applicable"
+Nobody writes a work instruction for switching on an A/C, and a checklist that can't be told so is one people
+learn to ignore — which costs more than the step it was nagging about. `equipment_step_waivers`.
+- **A row with a REASON and a NAME, not a hidden flag.** Skipping is a decision, and a decision with nobody's
+  name on it is indistinguishable from an oversight six months later. A reason under 3 characters is refused.
+- **The step stays on the list**, greyed, reading "Not applicable — <reason>" with who marked it. One that
+  vanished could never be questioned or undone. Undo puts it straight back.
+- **Waived is neither done nor outstanding.** It comes out of the denominator (`applicable`), so the counts
+  never claim work that didn't happen — and the routed notifications stop nagging about it.
+- **LOTO is deliberately NOT waivable here.** `equipment.loto_required` is the authority and is read by the
+  LOTO module and the compliance badge too; waiving only the checklist step would leave those two still
+  counting the machine — the same two-mechanisms-disagreeing bug this module already got bitten by. The
+  endpoint 400s and names the checkbox to use instead.
+
 ## Equipment manuals, searchable inside (`equipment_files`)
 The manual, the spec sheet, the parts list — attached to the machine, stored in **R2** like course materials
 and comms attachments, with the text pulled out on upload via the shared `invoice-text.js` so a search finds
