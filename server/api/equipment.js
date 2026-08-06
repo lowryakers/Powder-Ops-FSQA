@@ -5,6 +5,7 @@ import { getDb, logAudit } from '../db.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
+import { repairTasks, repairConfidence } from '../task-text-repair.js';
 import { aiEnabled, compareManualToTasks } from '../ai.js';
 import { equipmentReadiness, readinessSummary, READINESS_STEPS } from '../equipment-readiness.js';
 import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
@@ -300,6 +301,94 @@ router.delete('/:id/steps/:stepId/skip', (req, res) => {
   }
   const fresh = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eq.id);
   res.json(equipmentReadiness(db, fresh));
+});
+
+/**
+ * Repair maintenance task text that an import split on its commas.
+ *
+ * Preview first, commit second, exactly like the file importers — this rewrites
+ * the maintenance procedure on a compliance record, so nothing moves until
+ * somebody has read the before and after.
+ *
+ * BEFORE '/:id'.
+ */
+router.get('/maintenance-tasks/repair/preview', (_req, res) => {
+  const db = getDb();
+  const rows = db.prepare("SELECT id, name, type, asset_id, maintenance_tasks FROM equipment WHERE COALESCE(maintenance_tasks,'{}') NOT IN ('{}','') ORDER BY name").all();
+  const machines = [];
+  for (const eq of rows) {
+    let tasks;
+    try { tasks = JSON.parse(eq.maintenance_tasks) || {}; } catch { continue; }
+    const out = repairTasks(tasks);
+    if (!out.changed) continue;
+    const conf = repairConfidence(tasks);
+    machines.push({
+      id: eq.id, name: eq.name, type: eq.type, asset_id: eq.asset_id,
+      before_count: out.before, after_count: out.after, joined: out.joined,
+      // Machines whose fragments are all multi-word might have been typed that
+      // way on purpose, so they are listed but not pre-selected.
+      confident: conf.confident,
+      single_word_fragments: conf.single_word_fragments,
+      before: tasks, after: out.tasks,
+    });
+  }
+  res.json({
+    machines,
+    total_machines: machines.length,
+    confident_machines: machines.filter(m => m.confident).length,
+    total_joined: machines.reduce((t, m) => t + m.joined, 0),
+  });
+});
+
+router.post('/maintenance-tasks/repair', (req, res) => {
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+  if (!ids?.length) return res.status(400).json({ error: 'ids are required — nothing is rewritten for machines you did not pick.' });
+
+  const results = [];
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);
+      if (!eq) { results.push({ id, error: 'not found' }); continue; }
+      let tasks;
+      try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { results.push({ id, error: 'unreadable tasks' }); continue; }
+      const out = repairTasks(tasks);
+      if (!out.changed) { results.push({ id, name: eq.name, joined: 0 }); continue; }
+
+      db.prepare("UPDATE equipment SET maintenance_tasks = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(JSON.stringify(out.tasks), eq.id);
+
+      // Any schedule built FROM these tasks is carrying the fragments as its
+      // procedure steps, so it has to be refreshed too — otherwise the
+      // technician's work order still shows "leaks" as a step.
+      let refreshed = 0;
+      for (const [freq, list] of Object.entries(out.tasks)) {
+        const freqType = FREQ_TO_SCHEDULE[freq];
+        if (!freqType) continue;
+        const steps = JSON.stringify(list);
+        refreshed += db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE equipment_id = ? AND frequency_type = ? AND is_active = 1")
+          .run(steps, eq.id, freqType).changes;
+        db.prepare(`UPDATE work_orders SET procedure_steps = ?
+          WHERE status IN ('open','in_progress') AND pm_schedule_id IN
+            (SELECT id FROM pm_schedules WHERE equipment_id = ? AND frequency_type = ? AND is_active = 1)`)
+          .run(steps, eq.id, freqType);
+      }
+
+      // The whole before/after is in the audit trail, so the change is
+      // reversible by reading the log rather than by guesswork.
+      logAudit(req.user, 'update', 'equipment', eq.id,
+        { action: 'maintenance_task_text_repair', joined: out.joined, before_count: out.before, after_count: out.after },
+        { maintenance_tasks: eq.maintenance_tasks },
+        { maintenance_tasks: JSON.stringify(out.tasks) }, eq.name);
+      results.push({ id, name: eq.name, joined: out.joined, before: out.before, after: out.after, schedules_refreshed: refreshed });
+    }
+  });
+  tx();
+
+  const joined = results.reduce((t, r) => t + (r.joined || 0), 0);
+  logAudit(req.user, 'bulk_update', 'equipment', null,
+    { action: 'maintenance_task_text_repair', machines: results.length, fragments_rejoined: joined }, null, null);
+  res.json({ results, machines: results.length, fragments_rejoined: joined });
 });
 
 /* ── Equipment documents (manuals, spec sheets, parts lists) ─────────────── */

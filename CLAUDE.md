@@ -1417,6 +1417,25 @@ learn to ignore — which costs more than the step it was nagging about. `equipm
   counting the machine — the same two-mechanisms-disagreeing bug this module already got bitten by. The
   endpoint 400s and names the checkbox to use instead.
 
+## Maintenance task text split at its commas (`server/task-text-repair.js`)
+The equipment import broke every sentence at its commas, so one task became eight — six of them single
+words. `"Examine equipment for signs of damage"` / `"leaks"` / `"loose parts"` … `"and cleanliness."` is one
+sentence, and to an auditor it reads as eight maintenance activities. 3,966 entries across 136 machines
+collapse back to 1,069 real tasks.
+- **The rule is mechanical, not interpretive.** A fragment continues the previous one when it cannot begin a
+  sentence — it starts lowercase, or with "and"/"or". That is the exact inverse of splitting on `", "`, so it
+  restores the author's words; nothing is rephrased, corrected or dropped. Their typo
+  *"Maonthly-Inspect drive motor"* survives intact, the same rule the internal-audit checklist follows.
+- **`repairConfidence` decides what is PRE-TICKED, and the threshold is exactly one word.** A one-word
+  fragment ("leaks") cannot be a task somebody wrote on purpose. Two words ("check filters") plausibly can,
+  so a machine whose fragments are all multi-word is listed but left unticked — pre-ticking those would
+  rewrite tasks nobody split, which is the opposite of the point.
+- **Preview then commit, with before/after side by side**, because this rewrites the maintenance procedure on
+  a compliance record. The whole before and after goes into the audit log, so the change is reversible by
+  reading the trail rather than by guesswork.
+- **Schedules and open work orders built from those tasks are refreshed too** — otherwise the technician's
+  work order still lists "leaks" as a step.
+
 ## Equipment manuals, searchable inside (`equipment_files`)
 The manual, the spec sheet, the parts list — attached to the machine, stored in **R2** like course materials
 and comms attachments, with the text pulled out on upload via the shared `invoice-text.js` so a search finds

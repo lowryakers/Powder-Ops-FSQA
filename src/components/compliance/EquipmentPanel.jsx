@@ -2,10 +2,10 @@ import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square, ShieldCheck } from 'lucide-react';
+import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 import EquipmentSetupChecklist from './EquipmentSetupChecklist.jsx';
-import SchedulesFromTasksModal from './SchedulesFromTasksModal.jsx';
+import SchedulesFromTasksModal, { RepairTaskTextModal } from './SchedulesFromTasksModal.jsx';
 import EquipmentFiles, { ManualSearch } from './EquipmentFiles.jsx';
 import { MACHINE_TYPES, ZONE_TYPES, defaultAssetKind } from '../../../shared/equipment-types.js';
 
@@ -633,6 +633,7 @@ export default function EquipmentPanel() {
   // missing" is worth seeing before you decide which row to open.
   const { data: readiness } = useApiGet('/equipment/readiness');
   const { data: fromTasks, refresh: refreshFromTasks } = useApiGet('/equipment/schedules-from-tasks/preview');
+  const { data: textRepair, refresh: refreshTextRepair } = useApiGet('/equipment/maintenance-tasks/repair/preview');
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'equipment');
   const canCcp = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
@@ -643,6 +644,7 @@ export default function EquipmentPanel() {
   const [justAdded, setJustAdded] = useState(null);
   const [buildSchedules, setBuildSchedules] = useState(false);
   const [manualSearch, setManualSearch] = useState(false);
+  const [repairText, setRepairText] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
   const [search, setSearch] = useState('');
@@ -856,6 +858,32 @@ export default function EquipmentPanel() {
         </button>
         {manualSearch && <div className="mt-2"><ManualSearch /></div>}
       </div>
+
+      {/* An import split these sentences at their commas, so a single task
+          reads as several — many of them single words. Offered as a reviewed
+          repair because it rewrites a maintenance procedure. */}
+      {!!textRepair?.total_machines && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 flex-wrap">
+          <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-red-900">
+              {textRepair.total_machines} machine{textRepair.total_machines === 1 ? '' : 's'} have maintenance tasks split mid-sentence
+            </h3>
+            <p className="text-xs text-red-800">
+              An import broke these at their commas, so one task reads as several — many of them single
+              words like &ldquo;leaks&rdquo;. {textRepair.total_joined} fragments can be put back into the original wording.
+            </p>
+          </div>
+          <button onClick={() => setRepairText(true)}
+            className="shrink-0 px-3 py-2 bg-white border border-red-300 text-red-900 rounded-lg text-sm font-medium hover:bg-red-100">
+            Review and repair
+          </button>
+        </div>
+      )}
+
+      {repairText && (
+        <RepairTaskTextModal onClose={() => setRepairText(false)} onDone={() => { refresh(); refreshTextRepair(); refreshFromTasks(); }} />
+      )}
 
       {/* The plant wrote maintenance tasks expecting them to BE the PM schedule.
           They never were, so this offers the one-pass fix — reviewed, never
