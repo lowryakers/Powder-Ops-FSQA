@@ -4,6 +4,9 @@ import { getDb, logAudit } from '../db.js';
 import { equipmentReadiness, readinessSummary } from '../equipment-readiness.js';
 import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
 
+// The status vocabulary the table's CHECK-free column actually uses.
+const STATUSES = ['active', 'partial', 'out_of_service'];
+
 const router = Router();
 
 function syncMaintenanceTasksToPM(db, equipmentId) {
@@ -89,9 +92,12 @@ router.post('/', (req, res) => {
     : (req.body.loto_required !== undefined ? (req.body.loto_required ? 1 : 0) : 1);
 
   db.prepare(`
-    INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks, task_group, asset_kind, loto_required)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, type, location || null, room || null, asset_id || null, manufacturer || null, model_number || null, serial_number || null, vendor || null, pm_frequency || null, is_food_contact ? 1 : 0, haccp_ccp_id || null, notes || null, maintenance_tasks ? JSON.stringify(maintenance_tasks) : '{}', task_group || null, assetKind, lotoRequired);
+    INSERT INTO equipment (id, name, type, location, room, asset_id, manufacturer, model_number, serial_number, vendor, pm_frequency, is_food_contact, haccp_ccp_id, notes, maintenance_tasks, task_group, asset_kind, loto_required, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, type, location || null, room || null, asset_id || null, manufacturer || null, model_number || null, serial_number || null, vendor || null, pm_frequency || null, is_food_contact ? 1 : 0, haccp_ccp_id || null, notes || null, maintenance_tasks ? JSON.stringify(maintenance_tasks) : '{}', task_group || null, assetKind, lotoRequired,
+    // Create never accepted a status, so equipment imported or added as
+    // already-retired came in active and started generating PM tasks.
+    STATUSES.includes(req.body.status) ? req.body.status : 'active');
   if (task_group) syncTaskGroupToPM(db, id, task_group);
 
   const created = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);

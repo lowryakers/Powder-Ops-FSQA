@@ -45,14 +45,31 @@ import { needsLoto, needsTraining, needsCalibration, isZone } from '../shared/eq
 const STEPS = [
   {
     id: 'pm_schedule',
-    label: 'Preventive maintenance schedule',
-    why: 'Without one, this machine generates no maintenance tasks at all.',
+    // TWO DIFFERENT THINGS SHARE THE WORDS "PM SCHEDULE" and it reads as a bug
+    // when they disagree: `equipment.maintenance_tasks` is the task LIST the
+    // detail panel prints under "Preventive Maintenance Schedule", while a
+    // `pm_schedules` row is the RECURRING SCHEDULE that actually generates work
+    // orders. A machine can have thirteen tasks written and generate nothing,
+    // which is exactly what the A/C looked like — a screen showing four
+    // frequency cards above a step insisting there was no schedule. The label
+    // and the detail now name the difference instead of restating it.
+    label: 'Recurring PM schedule (generates the tasks)',
+    why: 'Writing the tasks out is not the same as scheduling them — without a recurring schedule nothing is ever generated.',
     weight: 'required',
     link: { tab: 'pm' },
     applies: () => true,
     check: (db, eq) => {
       const n = db.prepare('SELECT COUNT(*) c FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').get(eq.id).c;
-      return { done: n > 0, detail: n ? `${n} active schedule${n === 1 ? '' : 's'}` : 'No PM schedule' };
+      if (n) return { done: true, detail: `${n} recurring schedule${n === 1 ? '' : 's'}` };
+      let tasks;
+      try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
+      const written = Object.values(tasks).reduce((t, arr) => t + (Array.isArray(arr) ? arr.length : 0), 0);
+      return {
+        done: false,
+        detail: written
+          ? `${written} task${written === 1 ? '' : 's'} written, but nothing generates them`
+          : 'No recurring schedule',
+      };
     },
   },
   {
@@ -72,7 +89,7 @@ const STEPS = [
   {
     id: 'maintenance_tasks',
     label: 'Maintenance tasks written out',
-    why: 'The steps the PM work order tells the technician to actually do.',
+    why: 'The steps a generated work order tells the technician to actually do.',
     weight: 'recommended',
     link: { tab: 'equipment' },
     applies: () => true,

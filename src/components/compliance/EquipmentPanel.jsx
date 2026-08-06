@@ -111,7 +111,7 @@ function MaintenanceTasksEditor({ tasks, onChange }) {
 
 function EquipmentForm({ initial, ccps, onSave, onCancel }) {
   const initTasks = initial ? parseTasks(initial) : {};
-  const [form, setForm] = useState(initial || { name: '', type: 'Conveyor', location: '', room: '', asset_id: '', manufacturer: '', model_number: '', serial_number: '', vendor: '', pm_frequency: '', is_food_contact: false, haccp_ccp_id: '', notes: '', maintenance_tasks: {}, task_group: '', asset_kind: 'machine', loto_required: true });
+  const [form, setForm] = useState(initial || { name: '', type: 'Conveyor', location: '', room: '', asset_id: '', manufacturer: '', model_number: '', serial_number: '', vendor: '', pm_frequency: '', is_food_contact: false, haccp_ccp_id: '', notes: '', maintenance_tasks: {}, task_group: '', asset_kind: 'machine', loto_required: true, status: 'active' });
   const [tasks, setTasks] = useState(initTasks);
   const [saving, setSaving] = useState(false);
 
@@ -209,6 +209,23 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
             <option value="">None</option>
             {(ccps || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+        </div>
+        <div>
+          {/* Status was on the list but not in this form, so the only way to
+              retire a machine was bulk edit. Out of service also stops it
+              generating new PM tasks, which is the point of retiring it. */}
+          <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+          <select value={form.status || 'active'} onChange={e => setForm({ ...form, status: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="active">Active</option>
+            <option value="partial">Partially operational</option>
+            <option value="out_of_service">Out of service</option>
+          </select>
+          {form.status && form.status !== 'active' && (
+            <p className="text-[11px] text-gray-500 mt-1">
+              No new PM tasks are generated while this is not active. Open tasks stay open.
+            </p>
+          )}
         </div>
         <div className="flex items-end">
           <label className="flex items-center gap-2 cursor-pointer">

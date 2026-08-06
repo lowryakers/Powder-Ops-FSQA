@@ -82,10 +82,18 @@ function markMissedWorkOrders(db) {
     WHERE status IN ('open', 'overdue') AND due_date < ?
   `).run(today);
 
-  // Ensure every active PM schedule has at least one open WO
+  // Ensure every active PM schedule has at least one open WO.
+  //
+  // THIS IS THE PATH THAT ACTUALLY KEEPS THE TASK LIST FULL — it runs from
+  // housekeeping on ordinary page loads, where POST /generate is a manual
+  // action almost nobody triggers. Filtering only the manual one left retiring
+  // a machine doing nothing at all: its tasks reappeared on the next GET.
+  // Equipment that is out of service is excluded here for the same reason.
   const orphaned = db.prepare(`
     SELECT ps.* FROM pm_schedules ps
+    JOIN equipment e ON ps.equipment_id = e.id
     WHERE ps.is_active = 1
+    AND e.status = 'active'
     AND NOT EXISTS (
       SELECT 1 FROM work_orders wo
       WHERE wo.pm_schedule_id = ps.id AND wo.status IN ('open', 'in_progress')
@@ -120,6 +128,10 @@ router.get('/schedules', (req, res) => {
 
   if (equipment_id) { sql += ' AND ps.equipment_id = ?'; params.push(equipment_id); }
   if (active !== undefined) { sql += ' AND ps.is_active = ?'; params.push(active === 'true' ? 1 : 0); }
+  // Schedules belonging to out-of-service equipment are hidden unless asked
+  // for, so retiring a machine actually shrinks the PM list. Explicitly asking
+  // for one piece of equipment always shows its own schedules.
+  if (!equipment_id && req.query.include_inactive_equipment !== 'true') sql += " AND e.status = 'active'";
 
   sql += ' ORDER BY e.name, ps.title';
   res.json(db.prepare(sql).all(...params));
@@ -788,7 +800,15 @@ router.get('/completed-history', (req, res) => {
 
 router.post('/generate', (_req, res) => {
   const db = getDb();
-  const schedules = db.prepare('SELECT * FROM pm_schedules WHERE is_active = 1').all();
+  // Equipment that is out of service generates NOTHING new. Its schedule is
+  // left alone rather than deactivated — the machine may come back, and
+  // deleting the schedule would lose the procedure with it. Tasks already open
+  // are also left alone: somebody may still need to close them out honestly.
+  const schedules = db.prepare(`
+    SELECT ps.* FROM pm_schedules ps
+    JOIN equipment e ON ps.equipment_id = e.id
+    WHERE ps.is_active = 1 AND e.status = 'active'
+  `).all();
   const generated = [];
 
   const checkOpen = db.prepare("SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open','in_progress') LIMIT 1");

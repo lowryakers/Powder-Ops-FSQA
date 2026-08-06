@@ -35,10 +35,28 @@ const SECTIONS = [
   { match: /^i\.?m\.?$/i, stage: 'intermediate' },
   { match: /^intermediates?$/i, stage: 'intermediate' },
   { match: /^finish(ed)?\s*goods?$/i, stage: 'finished_good' },
-  { match: /^(raw\s*materials?|rm|ingredients?)$/i, stage: 'raw_material' },
+  // RAW MATERIALS, RAW MATERIAL, RAW INGREDIENTS, INGREDIENTS, MATERIALS, RM.
+  //
+  // The first cut spelled this `(raw\s*materials?|rm|ingredients?)`, which
+  // looks like it covers the ground and does not: "RAW INGREDIENTS" — the
+  // plant's own wording — matches none of those three alternatives, because
+  // `raw` was welded to `materials` and `ingredients` had no `raw` in front of
+  // it. Every raw-material row in boxes 16-19 therefore inherited whatever
+  // section came before it, silently. `raw` is an optional prefix now.
+  { match: /^(raw\s*)?(materials?|ingredients?)$/i, stage: 'raw_material' },
+  { match: /^r\.?m\.?$/i, stage: 'raw_material' },
 ];
 
 const stageFor = (cell) => SECTIONS.find(s => s.match.test(String(cell || '').trim()))?.stage || null;
+
+// A row that reads like a section banner but matches nothing above. Reported
+// rather than ignored: a heading this parser doesn't know silently reassigns
+// every row beneath it, which is exactly how the raw materials went missing
+// without the preview saying a word.
+const looksLikeHeading = (text) => {
+  const s = clean(text);
+  return !!s && s.length <= 40 && /^[A-Za-z][A-Za-z .&/-]*$/.test(s) && s.split(' ').length <= 4;
+};
 
 /* ── Cells ────────────────────────────────────────────────────────────────── */
 
@@ -229,16 +247,40 @@ export function parseRetentionLog(buffer, filename = '') {
     const r = rows[i];
     if (!r || !r.some(c => clean(c))) continue; // writing space
 
-    // A section header is a bare word in the item-number or item-name column
-    // with nothing else on the row.
+    // A section header is a bare word on an otherwise empty row. "Otherwise
+    // empty" is judged on the columns that make a row a RECORD — a lot number,
+    // a retention count, a collected date — rather than on the raw filled-cell
+    // count, because the exported sheets carry stray marks beside a banner and
+    // one of those used to stop the banner being recognised at all.
     const filled = r.map(clean).filter(Boolean);
-    const asSection = filled.length === 1 ? stageFor(filled[0]) : null;
+    const isRecordRow = !!(col(r, 'lot_number') || col(r, 'retention') || col(r, 'collected'));
+    const banner = !isRecordRow && filled.length <= 2 ? (col(r, 'item_name') || filled[0]) : null;
+    const asSection = banner ? stageFor(banner) : null;
     if (asSection) { stage = asSection; continue; }
 
     const itemName = col(r, 'item_name');
     // No name means no jar. The log has plenty of half-filled rows and a
     // retention record invented from one would be worse than the gap.
-    if (!itemName) continue;
+    if (!itemName) {
+      // ...unless it reads like a heading this parser doesn't know. Silently
+      // skipping one reassigns every row below it to the wrong stage.
+      if (banner && looksLikeHeading(banner)) {
+        problems.push({
+          row: i + 1, kind: 'unknown_section',
+          value: `"${clean(banner)}" looks like a section heading but isn't one this importer knows — rows below it stay in the previous section`,
+        });
+      }
+      continue;
+    }
+    // Same check for a banner that DOES sit in the item-name column: it would
+    // otherwise be filed as a jar called "RAW INGREDIENTS".
+    if (banner && !asSection && looksLikeHeading(itemName) && !isRecordRow) {
+      problems.push({
+        row: i + 1, kind: 'unknown_section',
+        value: `"${clean(itemName)}" looks like a section heading but isn't one this importer knows — rows below it stay in the previous section`,
+      });
+      continue;
+    }
 
     if (!stage) sectionless++;
     const ret = parseRetention(col(r, 'retention'));

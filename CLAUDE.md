@@ -1403,6 +1403,28 @@ concluded the composer couldn't do it. Three additions, all on the existing gram
 - Wired into the comms composer, both thread reply boxes, the newsletter intro + section bodies, and meeting
   minutes. Verified in the browser — 21 assertions across the three modules.
 
+## Retiring a machine, and the two PM generators
+`equipment.status` was on the list screen but **not in the edit form**, so the only way to retire a machine
+was bulk edit — and `POST /equipment` didn't accept a status at all, so anything added or imported as
+already-retired came in `active` and started generating tasks. Both fixed.
+- **Out of service generates NOTHING new, from either path.** There are two, and filtering only the obvious
+  one does nothing: `POST /pm/generate` is a manual action almost nobody triggers, while
+  `markMissedWorkOrders` (inside `runPmHousekeeping`, on ordinary page loads) is what actually keeps the
+  list full. Retiring a machine looked like it worked until the next GET put the tasks back.
+- **The schedule is left alone, not deactivated** — the machine may come back, and deleting it would take
+  the procedure with it. **Open tasks stay open**: somebody may still need to close them out honestly.
+- `/pm/schedules` hides schedules for out-of-service equipment (`include_inactive_equipment=true` to see
+  them), but asking for one `equipment_id` always shows its own.
+
+### "No PM schedule" on a machine showing thirteen tasks
+Two different things share the words *PM schedule*: `equipment.maintenance_tasks` is the task LIST the
+detail panel prints under "Preventive Maintenance Schedule", while a `pm_schedules` row is the RECURRING
+SCHEDULE that generates work orders. The A/C had 13 tasks written and no schedule, so the screen showed four
+frequency cards above a step insisting there was no schedule. The step is now
+**"Recurring PM schedule (generates the tasks)"** and reads *"3 tasks written, but nothing generates them"*
+— naming the difference instead of restating it. Worth remembering when adding anything else that touches
+either field.
+
 ## The schedule message people actually read (`shared/rooms.js`)
 Publishing the schedule posts a per-team message into that team's channel, and for most of the plant that
 message *is* the schedule — they never open the grid. It printed the room as the bare grid key (`• 6 · MO
@@ -1746,6 +1768,15 @@ writing space. So this is a section walker like `training-log.js`, not something
 - **Preview writes nothing** and lists every row it will file plus everything it could not read. A retention
   log bulk-written from a spreadsheet nobody checked stops being the thing that answers "do we still hold a
   jar of that lot".
+- **The raw-material section heading is `RAW INGREDIENTS`, and the first regex missed it.**
+  `(raw\s*materials?|rm|ingredients?)` looks like it covers the ground and doesn't: `raw` was welded to
+  `materials`, and `ingredients` had no `raw` in front of it, so the plant's own wording matched nothing and
+  every raw-material row in boxes 16-19 silently inherited the section above it. It is
+  `(raw\s*)?(materials?|ingredients?)` now, and **a row that reads like a heading but matches nothing is
+  reported as `unknown_section`** rather than skipped — a heading the parser doesn't know reassigns every
+  row beneath it, which is exactly how this stayed invisible. A banner is also recognised now when the row
+  carries a stray mark beside it (judged on the absence of lot / retention / collected, not on a raw
+  filled-cell count).
 - **Idempotent on box + item + lot + collected date** (`sampleKey`, stored as `external_id`). The same item
   legitimately appears twice in a box — a second lot, or a later collection — so item alone would collapse
   real jars; re-importing a corrected sheet updates in place instead of doubling the box.
