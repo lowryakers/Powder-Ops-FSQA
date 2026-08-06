@@ -7,6 +7,7 @@ import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import { formatDateTime } from '../../lib/datetime.js';
 
 // QA-owned facility inspections: Light Inspection (Form 110-01/02), Brittle
 // Plastic & Glass (Form 431-02) and Temperature & Humidity Control (Form
@@ -26,7 +27,9 @@ const KINDS = [
   { value: 'temp', label: 'Temperature & Humidity', icon: Thermometer, match: /^temp(erature)?\s*[/&]?\s*(and\s*)?humidity/i },
 ];
 
-const fmt = (ts) => (ts ? String(ts).replace('T', ' ').slice(0, 16) : '—');
+// The stored value is UTC (SQLite datetime('now')); printing it raw showed
+// the UTC clock as if it were local. formatDateTime does the conversion.
+const fmt = (ts) => formatDateTime(ts);
 
 export default function QAInspectionsPanel() {
   const { user } = useAuth();

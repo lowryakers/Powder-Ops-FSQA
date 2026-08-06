@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useApiGet, apiFetch, apiUpload, apiPost } from '../../hooks/useApi';
 import { FileText, Upload, Trash2, Search, Sparkles, ExternalLink, AlertTriangle } from 'lucide-react';
+import { formatDate } from '../../lib/datetime.js';
 
 /**
  * Manuals, spec sheets and parts lists attached to one machine.
@@ -115,7 +116,7 @@ export default function EquipmentFiles({ equipmentId, equipmentName, canEdit }) 
               )}
             </div>
             <p className="text-[11px] text-gray-400">
-              {f.uploaded_by ? `${f.uploaded_by} · ` : ''}{(f.created_at || '').slice(0, 10)}
+              {f.uploaded_by ? `${f.uploaded_by} · ` : ''}{formatDate(f.created_at)}
             </p>
           </div>
           <a href={f.url} target="_blank" rel="noopener noreferrer"

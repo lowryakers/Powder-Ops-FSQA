@@ -38,7 +38,10 @@ export const SCALE_FORMS = [
     title: 'Scale Verification — Batching (Platform Scale)',
     short: 'Batching · Platform',
     area: 'Batching',
-    unit: 'kg',
+    // The platform scale's diagram weights are POUNDS. This read kg, which made
+    // every point on the form — and the tolerance beside it — describe a
+    // different mass than the one being weighed.
+    unit: 'lb',
     points: [
       { nominal: 25, tolerance: 0.003 },
       { nominal: 50, tolerance: 0.005 },

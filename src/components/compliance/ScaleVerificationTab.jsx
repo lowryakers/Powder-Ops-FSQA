@@ -7,13 +7,16 @@ import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import KioskQrModal from '../kiosk/KioskQrModal.jsx';
 import { daysAgoStr, localDateStr } from '../../utils/dates';
+import { formatDateTime } from '../../lib/datetime.js';
 
 // Scale Verification — the daily three-point checks (Forms 417-01 … 417-05)
 // filed from the floor kiosk. It sits inside Calibration because that's where
 // someone goes to ask "is this scale trustworthy today", and it opens on the
 // answer: one card per form showing whether today's check has been run.
 
-const fmt = (ts) => (ts ? String(ts).replace('T', ' ').slice(0, 16) : '—');
+// The stored value is UTC (SQLite datetime('now')); printing it raw showed
+// the UTC clock as if it were local. formatDateTime does the conversion.
+const fmt = (ts) => formatDateTime(ts);
 
 function StatusCards({ status }) {
   if (!status?.forms) return null;

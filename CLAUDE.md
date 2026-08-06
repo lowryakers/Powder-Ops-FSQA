@@ -1417,6 +1417,21 @@ learn to ignore — which costs more than the step it was nagging about. `equipm
   counting the machine — the same two-mechanisms-disagreeing bug this module already got bitten by. The
   endpoint 400s and names the checkbox to use instead.
 
+## Scale form units, and snapshot fields that grow (`controlled.js` `upgrade`)
+Form 417-01 (Batching Platform) read **kg**; the paper form's diagram weights are **lb**. Two things fell
+out of fixing one character:
+- **The unit is part of the acceptance criterion** — "25 ± 0.003" means nothing without it — but the
+  controlled-change snapshot only tracked `points`, so a unit change would have bypassed Document Control
+  entirely while a tolerance tweak waited for approval. `current()` now records `{points, unit}`.
+- **A field coming under control for the first time is a BASELINE, not a change.** Old approved snapshots
+  lack `unit`, and comparing shapes naively parked all five scale forms as pending — four of them over a
+  change nobody made. `entry.upgrade(oldSnap)` lets a definition adopt the missing field into the stored
+  snapshot silently (the same doctrine as the first-sight branch). The kg→lb itself went through un-gated
+  **deliberately**: the controlled paper document already says lb, so the app was mis-transcribing the
+  approved form — there was nothing for Document Control to decide.
+- The scale/QA fmt helpers printed the raw stored string (`2026-08-06 12:47`), sidestepping the timezone
+  fix — raw slices of `datetime('now')` columns are the same six-hour bug wearing different clothes.
+
 ## Timestamps read six hours late (`src/lib/datetime.js`)
 SQLite's `datetime('now')` — what most of the schema defaults to — returns UTC as
 `2026-08-06 19:27:43`: a space instead of a T, and **no timezone marker**. JavaScript doesn't recognise that

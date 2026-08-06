@@ -76,9 +76,23 @@ function scaleEntries() {
   return SCALE_FORMS.map(form => ({
     scope: 'acceptance',
     key: `scale:${form.code}`,
-    label: `${form.title || form.code} tolerances`,
-    current: () => ({ points: form.points }),
-    apply: (snap) => { if (Array.isArray(snap.points)) form.points = snap.points; },
+    label: `${form.title || form.code} — weights and tolerances`,
+    // THE UNIT IS PART OF THE ACCEPTANCE CRITERION, not decoration. "25 ± 0.003"
+    // means nothing without it, and changing kg to lb redefines every point on
+    // the form — a bigger change than a tolerance tweak, not a smaller one. It
+    // was outside the gate, so a unit change would have taken effect the moment
+    // it deployed while a tolerance change waited for Document Control.
+    current: () => ({ points: form.points, unit: form.unit }),
+    apply: (snap) => {
+      if (Array.isArray(snap.points)) form.points = snap.points;
+      if (snap.unit) form.unit = snap.unit;
+    },
+    // Approved snapshots written before the unit was under control carry only
+    // `points`. A field seen for the FIRST time is a baseline, not a change —
+    // the same rule the first-sight branch below applies to whole definitions —
+    // so the deployed unit is adopted into the stored snapshot silently rather
+    // than parking all five forms over a shape change nobody made.
+    upgrade: (snap) => (snap && Array.isArray(snap.points) && !snap.unit ? { ...snap, unit: form.unit } : null),
   }));
 }
 
@@ -122,6 +136,21 @@ export function syncDefinitions(db) {
       // with every form waiting on an approval nobody knew to give.
       ins.run(uuid(), entry.scope, entry.key, entry.label, hash, JSON.stringify(snapshot));
       continue;
+    }
+
+    // Let the entry reconcile a snapshot stored before a field came under
+    // control. The upgraded snapshot replaces the stored one silently — its new
+    // field is a baseline being recorded, not a change being made.
+    if (typeof entry.upgrade === 'function') {
+      let upgraded;
+      try { upgraded = entry.upgrade(JSON.parse(row.approved_snapshot)); } catch { upgraded = null; }
+      if (upgraded) {
+        const upHash = hashOf(upgraded);
+        db.prepare('UPDATE controlled_definitions SET approved_snapshot = ?, approved_hash = ? WHERE id = ?')
+          .run(JSON.stringify(upgraded), upHash, row.id);
+        row.approved_snapshot = JSON.stringify(upgraded);
+        row.approved_hash = upHash;
+      }
     }
 
     if (row.approved_hash === hash) {
