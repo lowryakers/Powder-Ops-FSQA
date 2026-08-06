@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList, Settings2 } from 'lucide-react';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
+import { formatDateTime } from '../../lib/datetime.js';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
 const RECLEAN_ACTION_META = {
@@ -203,7 +204,7 @@ function SanitationDetail({ record, onClose }) {
             </div>
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Date / Time</p>
-              <p className="text-sm font-semibold text-gray-900">{new Date(record.performed_at).toLocaleString()}</p>
+              <p className="text-sm font-semibold text-gray-900">{formatDateTime(record.performed_at)}</p>
             </div>
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chemical Used</p>
@@ -248,7 +249,7 @@ function SanitationDetail({ record, onClose }) {
             {record.verified_at && (
               <div>
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Verified At</p>
-                <p className="text-sm font-semibold text-gray-900">{new Date(record.verified_at).toLocaleString()}</p>
+                <p className="text-sm font-semibold text-gray-900">{formatDateTime(record.verified_at)}</p>
               </div>
             )}
           </div>
@@ -475,7 +476,7 @@ export default function SanitationPanel() {
                   <span className={`px-2 py-0.5 rounded-full ${TYPE_COLORS[r.type]}`}>{TYPE_LABELS[r.type]}</span>
                   {r.equipment_name && <span className="break-words">{r.equipment_name}</span>}
                   <span>{r.performed_by}</span>
-                  <span className="text-gray-400">{new Date(r.performed_at).toLocaleString()}</span>
+                  <span className="text-gray-400">{formatDateTime(r.performed_at)}</span>
                   <LateChip record={r} />
                   {r.atp_reading != null && <span>ATP: {r.atp_reading}</span>}
                 </div>
@@ -534,7 +535,7 @@ export default function SanitationPanel() {
                       <td className="px-4 py-3 text-gray-600">{r.equipment_name || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.performed_by}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                        {new Date(r.performed_at).toLocaleString()} <LateChip record={r} />
+                        {formatDateTime(r.performed_at)} <LateChip record={r} />
                       </td>
                       <td className="px-4 py-3 text-gray-600">{r.chemicals_used || '—'}{r.concentration ? ` (${r.concentration})` : ''}</td>
                       <td className="px-4 py-3 text-gray-600">{r.atp_reading ?? '—'}</td>

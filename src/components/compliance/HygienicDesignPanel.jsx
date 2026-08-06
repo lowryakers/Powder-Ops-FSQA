@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Clock, XCircle, AlertTriangle } from 'lucide-react';
+import { formatDate } from '../../lib/datetime.js';
 
 const TRIGGER_REASONS = [
   { value: 'new_install', label: 'New Installation' },
@@ -247,7 +248,7 @@ export default function HygienicDesignPanel() {
                   <p className="text-sm text-gray-500">{v.location}{v.description ? ` — ${v.description}` : ''}</p>
                   <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
                     <span>By: {v.performed_by}</span>
-                    <span>{new Date(v.performed_at).toLocaleDateString()}</span>
+                    <span>{formatDate(v.performed_at)}</span>
                     <span className="text-green-600">{passCount} pass</span>
                     {failCount > 0 && <span className="text-red-600">{failCount} fail</span>}
                     {v.approved_by && <span>Approved by: {v.approved_by}</span>}

@@ -9,6 +9,7 @@ import {
   BookOpen, GraduationCap, Scissors, FileWarning, TestTubes, PackageSearch, Printer, X, ExternalLink, Workflow,
 } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
+import { formatDateTime, formatDate } from '../../lib/datetime.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auditor portal, structured like an audit binder: a Table-of-Contents cover
@@ -531,7 +532,7 @@ function PMSection({ dateRange }) {
                   <Td wide>{wo.title || wo.pm_title}</Td>
                   <Td dim>{wo.equipment_name}</Td>
                   <Td dim>{wo.due_date}</Td>
-                  <Td dim>{wo.completed_at ? new Date(wo.completed_at).toLocaleDateString() : '—'}</Td>
+                  <Td dim>{wo.completed_at ? formatDate(wo.completed_at) : '—'}</Td>
                   <Td dim>{wo.completed_by || '—'}</Td>
                 </tr>
               ))}
@@ -639,7 +640,7 @@ function SanitationSection({ dateRange }) {
             <tbody>
               {items.slice(0, 100).map(r => (
                 <tr key={r.id} className="border-b border-gray-100">
-                  <Td dim>{r.performed_at ? new Date(r.performed_at).toLocaleDateString() : '—'}</Td>
+                  <Td dim>{r.performed_at ? formatDate(r.performed_at) : '—'}</Td>
                   <Td wide>{r.area || r.equipment_name || '—'}</Td>
                   <Td dim>{r.chemicals_used || '—'}</Td>
                   <Td dim>{r.atp_reading ?? '—'}</Td>
@@ -725,7 +726,7 @@ function AuditLogSection({ dateRange }) {
             <tbody>
               {items.slice(0, 100).map((log, i) => (
                 <tr key={log.id || i} className="border-b border-gray-100">
-                  <Td dim>{log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}</Td>
+                  <Td dim>{log.timestamp ? formatDateTime(log.timestamp) : '—'}</Td>
                   <Td>{log.actor}</Td>
                   <Td><span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">{log.action}</span></Td>
                   <Td wide dim>{log.entity_type} {log.entity_id ? `(${String(log.entity_id).slice(0, 8)}…)` : ''}</Td>

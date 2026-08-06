@@ -5,6 +5,7 @@ import {
   Plus, ArrowLeft, Package, Clock, Check, X, AlertTriangle, HelpCircle,
   ShieldCheck, RotateCcw, FileCheck2, Phone,
 } from 'lucide-react';
+import { formatDateTime } from '../../lib/datetime.js';
 
 /**
  * Mock Recall — Form 415-1, driven by the plant's own SOP 415 V3.
@@ -158,7 +159,7 @@ function RecallDetail({ id, form, onBack, onChanged }) {
       {locked && (
         <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-800 flex items-center gap-2 flex-wrap">
           <ShieldCheck size={14} />
-          Authorized by {recall.approved_by} on {new Date(recall.approved_at).toLocaleString()}.
+          Authorized by {recall.approved_by} on {formatDateTime(recall.approved_at)}.
           {recall.filed_with_dc_at
             ? <> Filed with Document Control by {recall.filed_with_dc_by}.</>
             : <> Not yet filed with Document Control.</>}

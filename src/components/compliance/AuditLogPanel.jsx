@@ -3,6 +3,7 @@ import { useApiGet } from '../../hooks/useApi';
 import { Shield, Download } from 'lucide-react';
 import { useRowExpand } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import { formatDateTime } from '../../lib/datetime.js';
 
 const ROLE_TONE = {
   admin: 'bg-purple-100 text-purple-700',
@@ -206,7 +207,7 @@ export default function AuditLogPanel() {
                   </div>
                   {entry.details && <div className="mt-0.5 text-xs text-gray-500 line-clamp-2">{entry.details}</div>}
                   <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
-                    <span>{new Date(entry.timestamp).toLocaleString()}</span>
+                    <span>{formatDateTime(entry.timestamp)}</span>
                     {entry.actor_role && <span className={`px-1.5 py-0.5 rounded capitalize ${ROLE_TONE[entry.actor_role] || 'bg-gray-100 text-gray-600'}`}>{entry.actor_role}</span>}
                   </div>
                 </div>
@@ -234,7 +235,7 @@ export default function AuditLogPanel() {
                     <Fragment key={entry.id}>
                     <tr {...expand.rowProps(entry.id, 'border-b border-gray-100')}>
                       <td className="px-2 py-3"><ExpandCell open={expand.isExpanded(entry.id)} /></td>
-                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{new Date(entry.timestamp).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{formatDateTime(entry.timestamp)}</td>
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{entry.actor}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {entry.actor_role
@@ -254,7 +255,7 @@ export default function AuditLogPanel() {
                     {expand.isExpanded(entry.id) && (
                       <DetailRow colSpan={7}>
                         <DetailFields fields={[
-                          { label: 'When', value: new Date(entry.timestamp).toLocaleString() },
+                          { label: 'When', value: formatDateTime(entry.timestamp) },
                           { label: 'Actor', value: entry.actor },
                           { label: 'Role', value: entry.actor_role },
                           { label: 'Department', value: entry.actor_department },

@@ -8,6 +8,7 @@ import FileUpload from '../FileUpload';
 import { deptLabel } from '../../constants/departments';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
+import { formatDateTime } from '../../lib/datetime.js';
 
 const FREQ_TABS = [
   { value: 'all', label: 'All' },
@@ -350,7 +351,7 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
         {wo.completed_at && (
           <div>
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Completed</p>
-            <p className="text-sm font-medium text-green-700">{new Date(wo.completed_at).toLocaleString()}</p>
+            <p className="text-sm font-medium text-green-700">{formatDateTime(wo.completed_at)}</p>
           </div>
         )}
         {wo.completed_by && (
@@ -368,7 +369,7 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
         {wo.created_at && (
           <div>
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Created</p>
-            <p className="text-sm text-gray-600">{new Date(wo.created_at).toLocaleString()}</p>
+            <p className="text-sm text-gray-600">{formatDateTime(wo.created_at)}</p>
           </div>
         )}
         {wo.started_at && (
@@ -713,7 +714,7 @@ function ClearanceCard({ wo, onClear, user }) {
           <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
           <p className="text-xs text-gray-400 mt-0.5">
-            Due: {wo.due_date} · Completed {wo.completed_at ? new Date(wo.completed_at).toLocaleString() : '—'} by {wo.completed_by || '—'}
+            Due: {wo.due_date} · Completed {wo.completed_at ? formatDateTime(wo.completed_at) : '—'} by {wo.completed_by || '—'}
           </p>
         </div>
       </div>
@@ -1249,7 +1250,7 @@ export default function PMPanel() {
                           <p className="text-xs text-gray-500 mt-1">Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}</p>
                         ) : (
                           <p className="text-xs text-green-600 mt-1">
-                            Completed {new Date(wo.completed_at).toLocaleString()} by {wo.completed_by}
+                            Completed {formatDateTime(wo.completed_at)} by {wo.completed_by}
                           </p>
                         )}
                         {wo.notes && <p className="text-xs text-gray-500 mt-1 truncate max-w-md">Notes: {wo.notes}</p>}

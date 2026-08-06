@@ -5,6 +5,7 @@ import { canEditModule } from '../../utils/permissions';
 import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square, Sparkles, Paperclip } from 'lucide-react';
 import MarkdownView from '../common/MarkdownView.jsx';
 import RevisionUploadModal from '../settings/RevisionUploadModal.jsx';
+import { formatDate } from '../../lib/datetime.js';
 
 const DOC_TYPE_OPTIONS = [
   { value: 'sop', label: 'SOP' },
@@ -310,7 +311,7 @@ function DocumentAttachments({ docId, canEdit }) {
       </a>
       {f.revision && <span className="text-[10px] text-gray-400 shrink-0">Rev {f.revision}</span>}
       <span className="text-[10px] text-gray-400 shrink-0 hidden sm:inline">
-        {f.uploaded_by} · {new Date(f.created_at).toLocaleDateString()}
+        {f.uploaded_by} · {formatDate(f.created_at)}
       </span>
       {canEdit && (
         <button onClick={() => remove(f)} className="p-1 text-gray-300 hover:text-red-600 shrink-0" data-tip="Remove"><Trash2 size={12} /></button>
@@ -424,7 +425,7 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose })
             {(versions || []).map(v => (
               <div key={v.id} className="flex items-center justify-between text-xs py-1.5 border-b border-gray-50 last:border-0">
                 <span className="text-gray-700">Rev {v.revision} · {v.change_summary}</span>
-                <span className="text-gray-400">{v.changed_by} · {new Date(v.created_at).toLocaleDateString()}</span>
+                <span className="text-gray-400">{v.changed_by} · {formatDate(v.created_at)}</span>
               </div>
             ))}
             {(!versions || versions.length === 0) && <p className="text-xs text-gray-400">No version history.</p>}

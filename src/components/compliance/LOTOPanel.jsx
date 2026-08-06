@@ -5,6 +5,7 @@ import { useRowExpand } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
+import { formatDateTime } from '../../lib/datetime.js';
 
 const ENERGY_TYPES = ['Electrical', 'Pneumatic', 'Hydraulic', 'Mechanical', 'Thermal', 'Chemical', 'Gravitational', 'Stored Energy'];
 const STATUS_COLORS = { locked: 'bg-red-100 text-red-800', verified: 'bg-yellow-100 text-yellow-800', released: 'bg-green-100 text-green-800' };
@@ -421,7 +422,7 @@ export default function LOTOPanel() {
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${STATUS_COLORS[ex.status]}`}>{ex.status}</span>
               </div>
               {ex.reason && <div className="mt-1 text-xs text-gray-500 line-clamp-2">{ex.reason}</div>}
-              <div className="mt-0.5 text-[11px] text-gray-400">Locked by {ex.locked_by} · {new Date(ex.locked_at).toLocaleString()}</div>
+              <div className="mt-0.5 text-[11px] text-gray-400">Locked by {ex.locked_by} · {formatDateTime(ex.locked_at)}</div>
               {ex.released_by && <div className="text-[11px] text-gray-400">Released by {ex.released_by} · {new Date(ex.released_at).toLocaleString()}</div>}
             </div>
           ))}
@@ -448,7 +449,7 @@ export default function LOTOPanel() {
                   <td className="px-2 py-3"><ExpandCell open={expand.isExpanded(ex.id)} /></td>
                   <td className="px-4 py-3 font-medium">{ex.equipment_name}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{ex.locked_by}</td>
-                  <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{new Date(ex.locked_at).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{formatDateTime(ex.locked_at)}</td>
                   <td className="px-4 py-3 text-gray-600 w-full">{ex.reason}</td>
                   <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[ex.status]}`}>{ex.status}</span></td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{ex.released_by ? `${ex.released_by} @ ${new Date(ex.released_at).toLocaleString()}` : '—'}</td>
@@ -459,7 +460,7 @@ export default function LOTOPanel() {
                       { label: 'Equipment', value: ex.equipment_name },
                       { label: 'Procedure', value: ex.procedure_title },
                       { label: 'Locked by', value: ex.locked_by },
-                      { label: 'Locked at', value: new Date(ex.locked_at).toLocaleString() },
+                      { label: 'Locked at', value: formatDateTime(ex.locked_at) },
                       { label: 'Status', value: ex.status },
                       { label: 'Released by', value: ex.released_by },
                       { label: 'Released at', value: ex.released_at ? new Date(ex.released_at).toLocaleString() : '' },

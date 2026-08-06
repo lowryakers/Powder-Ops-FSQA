@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { Shield, Wrench, Thermometer, Droplets, AlertTriangle, CheckCircle, Clock, FlaskConical, Flag, FileText, ScrollText, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, LineChart, Line } from 'recharts';
+import { formatDateTime } from '../../lib/datetime.js';
 
 const goTo = (tab) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab } }));
 
@@ -329,7 +330,7 @@ export default function ComplianceDashboard() {
                       <span className="font-medium">{entry.actor}</span> {entry.action}{' '}
                       <span className="text-gray-500">{entry.entity_type}</span>
                     </p>
-                    <span className="text-xs text-gray-400">{new Date(entry.timestamp).toLocaleString()}</span>
+                    <span className="text-xs text-gray-400">{formatDateTime(entry.timestamp)}</span>
                   </div>
                 </div>
               ))}

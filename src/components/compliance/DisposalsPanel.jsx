@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import FileUpload from '../FileUpload';
 import { Plus, Search, Edit2, Trash2, Download, Upload, X, Trash, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square } from 'lucide-react';
+import { formatDate } from '../../lib/datetime.js';
 
 const CATEGORIES = [
   { value: '', label: '—' },
@@ -301,7 +302,7 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
                   <span className="text-xs text-gray-500 w-44 shrink-0">{label}</span>
                   {sig ? (
                     <div className="flex items-center gap-2 flex-1">
-                      <span className="text-xs text-green-700 flex items-center gap-1"><Check size={12} /> {sig.name} · {new Date(sig.signed_at).toLocaleDateString()}</span>
+                      <span className="text-xs text-green-700 flex items-center gap-1"><Check size={12} /> {sig.name} · {formatDate(sig.signed_at)}</span>
                       {(user?.role === 'admin' || mine) && <button onClick={() => onRevoke(d.id, key)} className="text-[11px] text-gray-400 hover:text-red-500">revoke</button>}
                     </div>
                   ) : canSignRole(user, key) ? (

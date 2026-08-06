@@ -1417,6 +1417,21 @@ learn to ignore — which costs more than the step it was nagging about. `equipm
   counting the machine — the same two-mechanisms-disagreeing bug this module already got bitten by. The
   endpoint 400s and names the checkbox to use instead.
 
+## Timestamps read six hours late (`src/lib/datetime.js`)
+SQLite's `datetime('now')` — what most of the schema defaults to — returns UTC as
+`2026-08-06 19:27:43`: a space instead of a T, and **no timezone marker**. JavaScript doesn't recognise that
+as ISO, so `new Date('2026-08-06 19:27:43')` parses it as LOCAL time. In Utah (UTC−6 in summer) a record
+written at 1:27pm displayed as 7:27pm — on audit entries, scale verifications and 26 other render sites.
+**The stored values were always correct; only the reading was wrong**, so this is a display fix and no data
+needed migrating.
+- **`parseServerTime()` handles all three shapes that actually arrive**: SQLite's space-separated UTC (needs
+  the `Z`), `toISOString()` output (already unambiguous, and must not move), and a bare `YYYY-MM-DD`.
+- **A date-only value is deliberately read as LOCAL midnight.** `new Date('2026-08-06')` is UTC midnight,
+  which west of Greenwich renders as the previous evening — the classic "everything is a day early" bug. A
+  due date on the wrong *day* is worse than a time in the wrong hour.
+- Use `formatDateTime` / `formatDate` / `formatTime` for any column written by `datetime('now')`. A bare
+  `new Date(row.created_at)` is the bug coming back.
+
 ## Maintenance task text split at its commas (`server/task-text-repair.js`)
 The equipment import broke every sentence at its commas, so one task became eight — six of them single
 words. `"Examine equipment for signs of damage"` / `"leaks"` / `"loose parts"` … `"and cleanliness."` is one

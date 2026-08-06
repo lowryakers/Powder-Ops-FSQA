@@ -6,6 +6,7 @@ import { deptLabel } from '../../constants/departments';
 import FileUpload from '../FileUpload';
 import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square, Eye, QrCode, ListChecks } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
+import { formatDateTime } from '../../lib/datetime.js';
 
 // Mirror of server canSignApproval — admin always; else role/department match.
 //
@@ -446,7 +447,7 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
                   {sig ? (
                     <div className="flex flex-col gap-0.5 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-green-700 flex items-center gap-1"><Check size={12} /> {sig.name}{sig.role ? ` (${sig.role})` : ''} · {new Date(sig.signed_at).toLocaleString()}</span>
+                        <span className="text-xs text-green-700 flex items-center gap-1"><Check size={12} /> {sig.name}{sig.role ? ` (${sig.role})` : ''} · {formatDateTime(sig.signed_at)}</span>
                         {(user?.role === 'admin' || mine) && <button onClick={() => onRevoke(rec.id, a.key)} className="text-[11px] text-gray-400 hover:text-red-500">revoke</button>}
                       </div>
                       {sig.attestation && <span className="text-[10px] text-gray-400 italic">“{sig.attestation}”</span>}

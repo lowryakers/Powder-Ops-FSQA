@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
 import { Hash, Lock, X, Trash2, Archive, ArchiveRestore, Pencil, Check, Users, Upload, Loader2, UserPlus, UserMinus, Megaphone, GitMerge, ArrowUp, ArrowDown, Bell } from 'lucide-react';
 import { DEPARTMENT_VALUES, deptLabel } from '../../constants/departments';
+import { formatDateTime } from '../../lib/datetime.js';
 
 const DEPARTMENTS = DEPARTMENT_VALUES;
 const ROLES = ['operator', 'supervisor', 'auditor', 'admin'];
@@ -441,7 +442,7 @@ function NotificationsTab() {
         {d.device}
         {d.stale_key ? ' — registered under older server keys; can never be delivered to'
           : d.last_error ? ` — last attempt failed (${d.last_error})`
-          : d.last_success_at ? ` — delivering, last ${new Date(d.last_success_at).toLocaleString()}`
+          : d.last_success_at ? ` — delivering, last ${formatDateTime(d.last_success_at)}`
           : d.unknown_key ? ' — registered before delivery tracking; status unknown until the next send'
           : ' — registered, nothing sent yet'}
       </li>

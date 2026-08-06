@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiFetch, apiPost } from '../../hooks/useApi';
 import { X, Bell, CheckCircle2, AlertTriangle, XCircle, Smartphone } from 'lucide-react';
+import { formatDateTime } from '../../lib/datetime.js';
 
 // Why am I not getting notifications on my phone? Every layer that has to be
 // working is listed with its real state, so the answer is visible instead of
@@ -91,7 +92,7 @@ export default function NotificationStatus({ subscribed, onClose, onToggle }) {
                   : d.last_error
                     ? `Last attempt failed (${d.last_error}).`
                     : d.last_success_at
-                      ? `Last delivered ${new Date(d.last_success_at).toLocaleString()}.`
+                      ? `Last delivered ${formatDateTime(d.last_success_at)}.`
                       : 'Registered, but no notification has been sent to it yet — try the test below.'} />
             );
           })}
