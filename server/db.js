@@ -2469,6 +2469,30 @@ function runMigrations() {
     console.warn('[db] equipment_step_waivers unavailable:', e.message);
   }
 
+  // Log Builder drafts — a supervised copy/edit/approve path in front of the
+  // structure engine. The draft is the record of who proposed what and who
+  // decided; applying happens through the same helpers the live editor uses.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS log_builder_drafts (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('list','fields')),
+        title TEXT,
+        payload TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','approved','rejected')),
+        created_by TEXT,
+        submitted_at TEXT,
+        reviewed_by TEXT,
+        reviewed_at TEXT,
+        review_note TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+  } catch (e) {
+    console.warn('[db] log_builder_drafts unavailable:', e.message);
+  }
+
   addColumnIfMissing('equipment', 'asset_kind', "TEXT NOT NULL DEFAULT 'machine'");
   db.exec("CREATE INDEX IF NOT EXISTS idx_equipment_asset_kind ON equipment(asset_kind)");
   try {

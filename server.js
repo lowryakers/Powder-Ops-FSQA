@@ -70,6 +70,7 @@ import { pushEnabled } from './server/push.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes from './server/api/production.js';
 import structureRoutes from './server/api/structure.js';
+import logBuilderRoutes from './server/api/log-builder.js';
 import { seedStructureLists } from './server/structure-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
@@ -1500,6 +1501,7 @@ app.use('/api/qms', qmsRoutes);
 // Structure is readable by anyone (forms need their own field/option lists to
 // render); every write inside is gated on admin / Log Builder edit.
 app.use('/api/structure', structureRoutes);
+app.use('/api/log-builder', logBuilderRoutes);
 app.use('/api/receiving', requireModuleWrite('receiving-log'), receivingRoutes);
 // Per-target permission is enforced inside the router (each target names the
 // module its importer requires).

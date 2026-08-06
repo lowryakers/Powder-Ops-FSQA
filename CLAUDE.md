@@ -1417,6 +1417,24 @@ learn to ignore — which costs more than the step it was nagging about. `equipm
   counting the machine — the same two-mechanisms-disagreeing bug this module already got bitten by. The
   endpoint 400s and names the checkbox to use instead.
 
+## Log Builder (`server/api/log-builder.js` + `LogBuilderStudio.jsx`)
+The supervised copy/edit/approve path in front of the structure engine — the procurement copy/edit shape
+applied to log structure. Nav entry in **Document Control** (visible to admins, the DC department, and the
+`log-builder` grant — the grant finally means something); the direct editor in Settings stays for admins.
+- **Draft = a COPY of the live list or scope**, so the editor starts from reality. Editing and submitting
+  touch nothing live; **approval is admin-only** and applies through the SAME engine the direct editor uses
+  (`ensureList`, `normalizeFieldDef`), so an approved draft can't do anything the structure rules forbid —
+  nothing deleted, keys/values immutable, retired options not revived.
+- **Approve is additive only**: options/fields created or relabelled, never removed. Retiring stays in the
+  live editor, where the usage counts are.
+- **An option's VALUE defaults to its label at apply time** — `ensureList` keys options on the value, and
+  two new options with blank values collide on `''` with the second silently vanishing (found by test).
+- A duplicate drafted option is deduplicated by the engine rather than erroring — drafting "Break Room"
+  when it already exists applies cleanly as a no-op for that row.
+- Approved/rejected drafts are closed records of a decision; rejection requires a reason (≥3 chars).
+- Verified end to end: 10 assertions with a real non-admin DC user — copy, edit-changes-nothing-live,
+  drafter-cannot-approve, both kinds applying on admin approval, closed-draft refusal, reject-needs-reason.
+
 ## Scale form units, and snapshot fields that grow (`controlled.js` `upgrade`)
 Form 417-01 (Batching Platform) read **kg**; the paper form's diagram weights are **lb**. Two things fell
 out of fixing one character:

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Archive} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, MessageSquarePlus, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Archive, Sliders } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -73,6 +73,7 @@ const ProcurementPanel = lazy(() => import('./components/office/ProcurementPanel
 const NewsletterPanel = lazy(() => import('./components/office/NewsletterPanel.jsx'));
 const NewsletterReader = lazy(() => import('./components/office/NewsletterReader.jsx'));
 const ControlledChangesPanel = lazy(() => import('./components/compliance/ControlledChangesPanel.jsx'));
+const LogBuilderStudio = lazy(() => import('./components/compliance/LogBuilderStudio.jsx'));
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
 const ReimbursementsPanel = lazy(() => import('./components/office/ReimbursementsPanel.jsx'));
@@ -179,6 +180,12 @@ const NAV_GROUPS = [
       // not in Settings — Settings is admin-only, and this is Document
       // Control's own queue, not an admin toggle.
       { id: 'controlled-changes', label: 'Controlled Changes', icon: ShieldCheck, visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control' },
+      // Access by department or explicit grant, not admin-only — the whole
+      // point of moving this out of Settings is that Document Control can
+      // reach it. Approval stays admin-only inside the module.
+      { id: 'log-builder', label: 'Log Builder', icon: Sliders, keywords: 'dropdown lists custom fields draft copy edit approve structure',
+        visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control'
+          || (u?.module_access && !Array.isArray(u.module_access) && u.module_access['log-builder'] === 'edit') },
       { id: 'org-chart', label: 'Org Chart', icon: Network },
     ],
   },
@@ -1760,6 +1767,7 @@ function App() {
           {resolvedTab === 'pay-tracking' && <PayTrackingPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'controlled-changes' && <ControlledChangesPanel />}
+          {resolvedTab === 'log-builder' && <LogBuilderStudio />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}
           {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}
