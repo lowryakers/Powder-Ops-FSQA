@@ -2354,6 +2354,59 @@ function runMigrations() {
    * reclassified them all, which is the sort of quiet undo that makes people
    * stop trusting a setting.
    */
+  /**
+   * Mock recall — the fields FORM 415-1 / SOP 415 V3 actually asks for.
+   *
+   * The original table was a reasonable guess at a mock recall; the SOP names
+   * seventeen specific things the exercise "will document" and three
+   * effectiveness criteria, and most of them had nowhere to go. A record that
+   * can't hold what the controlled procedure requires is not evidence the
+   * procedure was followed — which is the entire point of running the drill.
+   *
+   * Deliberately additive: every existing column keeps its meaning and every
+   * filed record still reads. Nothing here is required at creation, because a
+   * mock recall is filled in AS IT RUNS — the reconciliation isn't knowable at
+   * the start. The completeness rule lives at sign-off instead.
+   */
+  addColumnIfMissing('mock_recalls', 'item_number', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'date_produced', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'date_distributed', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'started_at', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'ended_at', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'quantity_quarantined', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'quantity_in_market', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'notification_method', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'customer_disposition', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'batch_records', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'labeling_records', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'retention_samples', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'reconciliation', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'product_disposition', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'closeout_minutes', 'TEXT');
+  // The three effectiveness criteria, stored as the numbers they are derived
+  // from rather than as a tick — a mass balance recorded as "pass" cannot be
+  // re-checked, and an auditor asks for the percentage.
+  addColumnIfMissing('mock_recalls', 'mass_balance_pct', 'REAL');
+  addColumnIfMissing('mock_recalls', 'summary_report_complete', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('mock_recalls', 'form_415_1_checked', 'INTEGER NOT NULL DEFAULT 0');
+  // Not successful → an investigation with root cause and actions taken.
+  addColumnIfMissing('mock_recalls', 'root_cause', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'investigation_required', 'INTEGER NOT NULL DEFAULT 0');
+  // "All documentation generated from the Mock Recall will be filed with the
+  // Document Control department."
+  addColumnIfMissing('mock_recalls', 'filed_with_dc_at', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'filed_with_dc_by', 'TEXT');
+  // Authorization — the SOP's signature line, same shape as every other
+  // signed record here.
+  addColumnIfMissing('mock_recalls', 'approved_by', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'approved_at', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'checklist_revision', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'custom_data', 'TEXT');
+  // Which of the SOP's four tracking procedures this exercise walked. Recorded
+  // rather than assumed — an ingredient trace and a finished-good trace are
+  // different exercises and prove different things.
+  addColumnIfMissing('mock_recalls', 'tracking_procedure', 'TEXT');
+
   addColumnIfMissing('equipment', 'asset_kind', "TEXT NOT NULL DEFAULT 'machine'");
   db.exec("CREATE INDEX IF NOT EXISTS idx_equipment_asset_kind ON equipment(asset_kind)");
   try {

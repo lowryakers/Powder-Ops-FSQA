@@ -2993,9 +2993,26 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   </div>
                   {/* The overlay draws the formatting; the textarea's own text
                       is transparent so the caret and selection still come from
-                      the real field. Both carry the SAME metric classes. */}
+                      the real field. Both carry the SAME metric classes.
+
+                      DESKTOP ONLY, and that is not caution for its own sake.
+                      The whole technique rests on the overlay and the textarea
+                      laying every character out identically, and mobile
+                      browsers break exactly that: Android Chrome and iOS Safari
+                      inflate text in BLOCK elements ("font boosting") while
+                      leaving form controls alone, so the layer drifts a
+                      fraction of a pixel per character and the caret walks away
+                      from the text as you type. `text-size-adjust: none` on the
+                      layer is the documented fix and is applied, but it can't
+                      be verified from here on a real device — and a caret that
+                      wanders on the phone everyone types on all day is a far
+                      worse trade than not seeing bold while you write it.
+                      Re-enable when someone has tested it on an actual
+                      handset. */}
                   <div className="flex-1 relative">
-                    <MarkupOverlay textareaRef={composerRef} value={body} className={`${COMPOSER_METRICS} border-transparent rounded-xl`} />
+                    {!isCompactLayout && (
+                      <MarkupOverlay textareaRef={composerRef} value={body} className={`${COMPOSER_METRICS} border-transparent rounded-xl`} />
+                    )}
                     <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1} onPaste={onComposerPaste}
                       onKeyDown={e => {
                         // While the @mention menu is open: arrows move, Enter/Tab picks.
@@ -3011,7 +3028,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                         // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).
                       }}
                       placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
-                      className={`w-full relative bg-transparent text-transparent caret-gray-900 placeholder:text-gray-400 selection:bg-powder-200/50 selection:text-transparent border-gray-300 rounded-xl resize-none max-h-60 overflow-y-auto ${COMPOSER_METRICS}`} />
+                      className={`w-full relative bg-transparent placeholder:text-gray-400 border-gray-300 rounded-xl resize-none max-h-60 overflow-y-auto ${COMPOSER_METRICS} ${
+                        // Its own text is hidden ONLY when the layer behind is
+                        // drawing it. With no overlay the field must render
+                        // normally, or the composer is invisible.
+                        isCompactLayout
+                          ? 'text-gray-900'
+                          : 'text-transparent caret-gray-900 selection:bg-powder-200/50 selection:text-transparent'
+                      }`} />
                   </div>
                   <button onClick={send} disabled={!body.trim() && pending.length === 0} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
                 </div>

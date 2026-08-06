@@ -1403,6 +1403,34 @@ concluded the composer couldn't do it. Three additions, all on the existing gram
 - Wired into the comms composer, both thread reply boxes, the newsletter intro + section bodies, and meeting
   minutes. Verified in the browser — 21 assertions across the three modules.
 
+## Mock Recall — Form 415-1, from SOP 415 V3 (`server/mock-recall-form.js`)
+The table was a reasonable guess at a mock recall; the SOP names **seventeen things the exercise "will
+document"** and **three effectiveness criteria**, and most had nowhere to go. A record that can't hold what
+the controlled procedure requires is not evidence the procedure was followed — which is the point of the drill.
+- **The acceptance criteria are NOT user-editable**, same reasoning as `scale-forms.js` tolerances: the
+  99.5–100.5% mass balance and the four-hour limit come from a controlled document, so changing one is a
+  Document Change Request. `SOP_REVISION` is stamped on every record (`checklist_revision`), so a filed
+  exercise always says which revision it was run against.
+- **The effectiveness verdict is DERIVED on every read, never stored as an opinion.** Correct the mass
+  balance afterwards and the verdict moves with it; a stored "pass" would go stale. `met` is **null** when
+  something hasn't been measured — deliberately distinct from false, since "not measured" and "92%" are
+  different states and collapsing them makes a half-run drill read as a failed one.
+- **Sign-off is refused while any documented item is blank**, the same rule as an internal audit: an exercise
+  filed with empty questions reads later as if those areas were covered. And **a failed exercise needs its
+  root cause before it can close** — the SOP requires an investigation, and a failed drill with no
+  investigation is exactly the gap the drill exists to find.
+- The four **tracking procedures** (distributed / undistributed / ingredient / packaging) are recorded, not
+  assumed — an ingredient trace and a finished-good trace prove different things.
+- **`RECALL_CONTACTS` is the SOP's list, not the user roster** — it includes the FDA line, which is not a
+  ReadyDoc account, and V3's only change from V2 was the QA Manager entry.
+- Annual cadence is **reported, not enforced** (`GET /status`): the app can say the plant is overdue, it
+  can't run the drill. No signed exercise at all reads as overdue, which is the honest state of a new deploy.
+  `recent_products` feeds the SOP's "rotate different types of products at each exercise".
+- Filing with Document Control is a fact with a name and a time, not a tick, and is refused before sign-off.
+- Verified end to end: 36 assertions including the derived verdict moving when the number changes, both
+  halves of the four-hour criterion, sign-off refused three different ways, and the revoke → correct → sign
+  path.
+
 ## New equipment: what the machine still owes (`server/equipment-readiness.js`)
 Adding equipment is the start of a chain — a PM schedule, a team to own it, LOTO, a hygienic design
 verification, a course, the work instruction it's taught against — and nothing said so, so a machine went

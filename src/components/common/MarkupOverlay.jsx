@@ -71,6 +71,11 @@ export default function MarkupOverlay({ textareaRef, value, className = '' }) {
 
   return (
     <div ref={ref} aria-hidden="true"
+      // Mobile browsers inflate text in block elements but not in form
+      // controls, which would make this layer wider than the textarea by a
+      // fraction per character — the caret then walks away from the words as
+      // you type. Opting out keeps the two in step.
+      style={{ textSizeAdjust: 'none', WebkitTextSizeAdjust: 'none' }}
       // Inherits every metric that matters from the textarea's own classes; the
       // caller passes the same padding/border/font classes it gave the field.
       className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-gray-900 ${className}`}>
