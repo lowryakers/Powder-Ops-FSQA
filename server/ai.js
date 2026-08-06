@@ -339,3 +339,71 @@ export async function summarizeChat({ question, contextMessages }) {
   });
   return (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim() || 'I could not find an answer in the messages.';
 }
+
+/**
+ * Read an equipment manual against the maintenance tasks written for it, and
+ * say what the manual mentions that the tasks don't.
+ *
+ * SUGGESTIONS ONLY. The output is a list somebody reads and decides on — it is
+ * never applied. A machine's maintenance procedure rewritten by a model that
+ * read a PDF is precisely the kind of compliance record that must not change
+ * without a person, and a wrong suggestion is cheap while a wrong task is not.
+ *
+ * The model is told to quote the manual for each suggestion, so the reader can
+ * check the claim rather than take it on trust — an unsourced "the manual says
+ * you should grease this monthly" is unverifiable and therefore useless.
+ */
+export async function compareManualToTasks({ equipmentName, manualText, tasks }) {
+  const c = getClient();
+  if (!c) throw new Error('AI is not configured');
+  const written = Object.entries(tasks || {})
+    .filter(([, v]) => Array.isArray(v) && v.length)
+    .map(([freq, list]) => `${freq}:\n${list.map(t => `  - ${t}`).join('\n')}`)
+    .join('\n') || '(no maintenance tasks written yet)';
+
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 1500,
+    system: [
+      'You compare an equipment manual against the preventive-maintenance tasks a food-manufacturing plant has written for that machine.',
+      'Report ONLY maintenance or inspection activity the manual calls for that is not already covered by the written tasks.',
+      'Ignore installation, warranty, troubleshooting and operating instructions — this is about recurring maintenance.',
+      'For every suggestion, quote the manual in `evidence` so the reader can verify it. If you cannot quote it, do not suggest it.',
+      'Suggest a frequency only when the manual states one; otherwise use "unspecified" — do not invent a cadence.',
+      'If the written tasks already cover the manual, return an empty list. Saying "nothing missing" is a useful answer.',
+    ].join(' '),
+    messages: [{
+      role: 'user',
+      content: `Machine: ${equipmentName}\n\nMaintenance tasks currently written:\n${written}\n\nManual text:\n${manualText}`,
+    }],
+    tools: [{
+      name: 'report_gaps',
+      description: 'Report maintenance the manual calls for that the written tasks do not cover.',
+      input_schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['suggestions', 'summary'],
+        properties: {
+          summary: { type: 'string', description: 'One or two sentences on how well the tasks match the manual.' },
+          suggestions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['task', 'frequency', 'evidence'],
+              properties: {
+                task: { type: 'string', description: 'The maintenance activity, phrased as a task.' },
+                frequency: { type: 'string', enum: ['Daily', 'Weekly', 'Bi-weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Annual', 'As Needed', 'unspecified'] },
+                evidence: { type: 'string', description: 'A short quote from the manual supporting this.' },
+              },
+            },
+          },
+        },
+      },
+    }],
+    tool_choice: { type: 'tool', name: 'report_gaps' },
+  });
+  const use = (res.content || []).find(b => b.type === 'tool_use');
+  if (!use) return { summary: 'The manual could not be compared.', suggestions: [] };
+  return { summary: use.input.summary || '', suggestions: use.input.suggestions || [] };
+}

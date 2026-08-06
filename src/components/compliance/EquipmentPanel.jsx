@@ -6,6 +6,7 @@ import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, Clipboard
 import { exportToCsv } from '../../utils/exportCsv';
 import EquipmentSetupChecklist from './EquipmentSetupChecklist.jsx';
 import SchedulesFromTasksModal from './SchedulesFromTasksModal.jsx';
+import EquipmentFiles, { ManualSearch } from './EquipmentFiles.jsx';
 import { MACHINE_TYPES, ZONE_TYPES, defaultAssetKind } from '../../../shared/equipment-types.js';
 
 // Types come from shared/equipment-types.js so the form, the setup checklist
@@ -304,7 +305,7 @@ function SortHeader({ label, field, sortField, sortDir, onSort, className }) {
   );
 }
 
-function EquipmentDetailRow({ eq, colSpan, onEdit }) {
+function EquipmentDetailRow({ eq, colSpan, onEdit, canEditFiles }) {
   const tasks = parseTasks(eq);
   const taskCount = Object.values(tasks).reduce((s, arr) => s + arr.length, 0);
 
@@ -344,6 +345,8 @@ function EquipmentDetailRow({ eq, colSpan, onEdit }) {
               on newly-added equipment — the hundred pieces already in the system
               are the ones most likely to be missing something. */}
           <EquipmentSetupChecklist equipmentId={eq.id} />
+
+          <EquipmentFiles equipmentId={eq.id} equipmentName={eq.name} canEdit={canEditFiles} />
 
           {/* Notes */}
           <div>
@@ -639,6 +642,7 @@ export default function EquipmentPanel() {
   const [expandedId, setExpandedId] = useState(null);
   const [justAdded, setJustAdded] = useState(null);
   const [buildSchedules, setBuildSchedules] = useState(false);
+  const [manualSearch, setManualSearch] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
   const [search, setSearch] = useState('');
@@ -843,6 +847,16 @@ export default function EquipmentPanel() {
       {(showForm && !editing) && <EquipmentForm ccps={ccps} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
       {editing && <EquipmentForm initial={editing} ccps={ccps} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
 
+      {/* Searching inside the manuals is a cross-machine question ("which
+          filter does the auger take?"), so it lives on the list, not on a row. */}
+      <div>
+        <button onClick={() => setManualSearch(v => !v)}
+          className="inline-flex items-center gap-1 text-xs font-medium text-powder-700 hover:underline">
+          <Search size={12} /> {manualSearch ? 'Hide manual search' : 'Search inside the manuals'}
+        </button>
+        {manualSearch && <div className="mt-2"><ManualSearch /></div>}
+      </div>
+
       {/* The plant wrote maintenance tasks expecting them to BE the PM schedule.
           They never were, so this offers the one-pass fix — reviewed, never
           automatic. Only shown while there is actually something to create. */}
@@ -1000,7 +1014,7 @@ export default function EquipmentPanel() {
                     </td>
                   </tr>
                   {isExpanded && (
-                    <EquipmentDetailRow eq={eq} colSpan={COL_COUNT}
+                    <EquipmentDetailRow eq={eq} colSpan={COL_COUNT} canEditFiles={canEdit}
                       onEdit={() => { setEditing(eq); setShowForm(false); }} />
                   )}
                 </tbody>

@@ -2407,6 +2407,38 @@ function runMigrations() {
   // different exercises and prove different things.
   addColumnIfMissing('mock_recalls', 'tracking_procedure', 'TEXT');
 
+  /**
+   * Equipment documents — the manual, the spec sheet, the parts list.
+   *
+   * Stored in R2 like course materials and comms attachments (a manual PDF is
+   * far too big for the data volume), with the text pulled out on upload so a
+   * search can find a part number printed INSIDE the file. `extracted_text` is
+   * searched, never shipped to the client — it is megabytes of OCR and nobody
+   * reads it directly.
+   */
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS equipment_files (
+        id TEXT PRIMARY KEY,
+        equipment_id TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'manual',
+        title TEXT,
+        filename TEXT NOT NULL,
+        content_type TEXT,
+        size INTEGER,
+        storage_key TEXT NOT NULL,
+        extracted_text TEXT,
+        text_status TEXT NOT NULL DEFAULT 'pending',
+        uploaded_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (equipment_id) REFERENCES equipment(id)
+      )
+    `);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_equipment_files_equipment ON equipment_files(equipment_id)');
+  } catch (e) {
+    console.warn('[db] equipment_files unavailable:', e.message);
+  }
+
   addColumnIfMissing('equipment', 'asset_kind', "TEXT NOT NULL DEFAULT 'machine'");
   db.exec("CREATE INDEX IF NOT EXISTS idx_equipment_asset_kind ON equipment(asset_kind)");
   try {

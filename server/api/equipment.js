@@ -1,6 +1,11 @@
 import { Router } from 'express';
+import { createReadStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
+import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
+import { extractInvoiceText } from '../invoice-text.js';
+import { aiEnabled, compareManualToTasks } from '../ai.js';
 import { equipmentReadiness, readinessSummary } from '../equipment-readiness.js';
 import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
 
@@ -238,6 +243,156 @@ router.post('/:id/schedules-from-tasks', (req, res) => {
   }
   const fresh = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eq.id);
   res.json({ created, skipped: plan.skip, readiness: equipmentReadiness(db, fresh) });
+});
+
+/* ── Equipment documents (manuals, spec sheets, parts lists) ─────────────── */
+
+// The multer instance has to be turned into middleware and its LIMIT_* errors
+// answered as a 413 — same wrapper as the training materials upload.
+const manualUpload = mediaUpload({ files: 5 }).array('files', 5);
+const uploadManuals = (req, res, next) => manualUpload(req, res, (err) => {
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  next();
+});
+const FILE_KINDS = ['manual', 'spec_sheet', 'parts_list', 'other'];
+
+router.get('/:id/files', async (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM equipment_files WHERE equipment_id = ? ORDER BY created_at DESC').all(req.params.id);
+  res.json(await Promise.all(rows.map(async f => ({
+    id: f.id, kind: f.kind, title: f.title, filename: f.filename,
+    content_type: f.content_type, size: f.size, uploaded_by: f.uploaded_by,
+    created_at: f.created_at,
+    // The extracted text is megabytes of OCR — the client gets whether it
+    // worked, never the text itself.
+    searchable: f.text_status === 'ok' && !!f.extracted_text,
+    text_status: f.text_status,
+    url: await presignGet(f.storage_key, f.filename),
+  }))));
+});
+
+router.post('/:id/files', uploadManuals, async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+    const db = getDb();
+    const eq = db.prepare('SELECT id, name FROM equipment WHERE id = ?').get(req.params.id);
+    if (!eq) return res.status(404).json({ error: 'Equipment not found' });
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+    const tooBig = rejectOversize(files);
+    if (tooBig) return res.status(413).json({ error: tooBig });
+
+    const kind = FILE_KINDS.includes(req.body?.kind) ? req.body.kind : 'manual';
+    const out = [];
+    for (const f of files) {
+      const id = uuid();
+      const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+      const key = `equipment/${eq.id}/${id}-${safe}`;
+      await putStream(key, createReadStream(f.path), f.mimetype);
+
+      // Pull the text out so a search can find a part number printed inside the
+      // PDF. Best-effort: a manual that won't OCR is still a manual, and the
+      // row records that the text is missing rather than pretending.
+      let text = null, status = 'none';
+      try {
+        const buf = await getObjectBuffer(key);
+        text = await extractInvoiceText(buf, f.mimetype, f.originalname);
+        status = text && text.trim() ? 'ok' : 'empty';
+      } catch (e) {
+        status = 'failed';
+        console.warn('[equipment] manual text extraction failed:', e.message);
+      }
+
+      db.prepare(`INSERT INTO equipment_files (id, equipment_id, kind, title, filename, content_type, size, storage_key, extracted_text, text_status, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, eq.id, kind, (req.body?.title || '').slice(0, 200) || null,
+        (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null,
+        key, text || null, status, req.user?.name || null);
+      out.push({ id, filename: f.originalname, kind, searchable: status === 'ok' });
+    }
+    logAudit(req.user, 'create', 'equipment_file', eq.id, { files: out.map(o => o.filename), kind }, null, null, eq.name);
+    res.status(201).json(out);
+  } catch (err) {
+    res.status(400).json({ error: uploadErrorMessage(err) });
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+router.delete('/files/:fileId', (req, res) => {
+  const db = getDb();
+  const f = db.prepare('SELECT * FROM equipment_files WHERE id = ?').get(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM equipment_files WHERE id = ?').run(f.id);
+  deleteObject(f.storage_key);
+  logAudit(req.user, 'delete', 'equipment_file', f.equipment_id, { filename: f.filename }, f, null, f.filename);
+  res.json({ ok: true });
+});
+
+/**
+ * Search inside the manuals. "Which filter does the auger take?" is the whole
+ * point of extracting the text, and it is answered across every machine at
+ * once rather than one document at a time.
+ */
+router.get('/files/search', (req, res) => {
+  const db = getDb();
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ query: q, results: [] });
+  const rows = db.prepare(`
+    SELECT f.id, f.equipment_id, f.filename, f.kind, f.extracted_text, e.name AS equipment_name
+    FROM equipment_files f JOIN equipment e ON f.equipment_id = e.id
+    WHERE f.text_status = 'ok' AND f.extracted_text LIKE ?
+    LIMIT 50
+  `).all(`%${q}%`);
+  // A snippet around the hit, so the answer is on the results page rather than
+  // three clicks into a 200-page PDF.
+  const results = rows.map(r => {
+    const text = r.extracted_text || '';
+    const at = text.toLowerCase().indexOf(q.toLowerCase());
+    const from = Math.max(0, at - 90);
+    return {
+      id: r.id, equipment_id: r.equipment_id, equipment_name: r.equipment_name,
+      filename: r.filename, kind: r.kind,
+      snippet: (from > 0 ? '…' : '') + text.slice(from, at + q.length + 110).replace(/\s+/g, ' ') + '…',
+      hits: text.toLowerCase().split(q.toLowerCase()).length - 1,
+    };
+  });
+  res.json({ query: q, results });
+});
+
+/**
+ * Read the manual's maintenance section and say what it mentions that the PM
+ * tasks don't.
+ *
+ * SUGGESTIONS ONLY — it never edits the tasks. A machine's maintenance
+ * procedure quietly rewritten by an AI reading a PDF is exactly the kind of
+ * record that must not change without a person deciding, and the output here
+ * is a list to read, not a diff to apply.
+ */
+router.post('/:id/files/compare-pm', async (req, res) => {
+  const db = getDb();
+  const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
+  if (!eq) return res.status(404).json({ error: 'Equipment not found' });
+  if (!aiEnabled()) return res.status(503).json({ error: 'AI is not configured on this server, so manuals cannot be compared to the PM tasks.' });
+
+  const files = db.prepare("SELECT filename, extracted_text FROM equipment_files WHERE equipment_id = ? AND text_status = 'ok'").all(eq.id);
+  if (!files.length) return res.status(400).json({ error: 'No searchable manual on this machine yet. Upload one whose text could be read.' });
+
+  let tasks;
+  try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
+
+  try {
+    const out = await compareManualToTasks({
+      equipmentName: eq.name,
+      manualText: files.map(f => f.extracted_text).join('\n\n').slice(0, 120000),
+      tasks,
+    });
+    logAudit(req.user, 'update', 'equipment', eq.id,
+      { action: 'manual_pm_comparison', suggestions: out.suggestions?.length || 0 }, null, null, eq.name);
+    res.json({ ...out, compared_files: files.map(f => f.filename) });
+  } catch (e) {
+    res.status(502).json({ error: `Could not compare the manual: ${e.message}` });
+  }
 });
 
 // Bulk update - POST to avoid /:id conflict

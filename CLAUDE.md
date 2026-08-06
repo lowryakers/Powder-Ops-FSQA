@@ -1403,6 +1403,24 @@ concluded the composer couldn't do it. Three additions, all on the existing gram
 - Wired into the comms composer, both thread reply boxes, the newsletter intro + section bodies, and meeting
   minutes. Verified in the browser — 21 assertions across the three modules.
 
+## Equipment manuals, searchable inside (`equipment_files`)
+The manual, the spec sheet, the parts list — attached to the machine, stored in **R2** like course materials
+and comms attachments, with the text pulled out on upload via the shared `invoice-text.js` so a search finds
+a part number printed **inside** the PDF. That is the question people actually have.
+- **`extracted_text` is searched, never shipped.** It's megabytes of OCR; the client gets `searchable`,
+  `text_status` and a snippet around the hit.
+- **A file whose text won't read is still a file.** `text_status` records `ok` / `empty` / `failed` and the
+  row says so, rather than letting someone assume a search covered it.
+- **Manual search lives on the LIST, not on a row** — "which filter does the auger take?" is a
+  cross-machine question. `GET /equipment/files/search` is declared before `/:id` (route ordering).
+- **`compareManualToTasks` in ai.js SUGGESTS and never applies.** A machine's maintenance procedure quietly
+  rewritten by a model that read a PDF is exactly the compliance record that must not change without a
+  person. Every suggestion must **quote the manual** in `evidence` — an unsourced "the manual says grease
+  this monthly" can't be checked and therefore can't be acted on — and a frequency is only given when the
+  manual states one, otherwise `unspecified` rather than an invented cadence.
+- Degrades like every other storage/AI feature: uploads 503 without R2, the comparison 503s without an
+  Anthropic key, and the rest of the module is unaffected.
+
 ## Equipment setup gaps reach the people who own them
 The setup checklist could only be seen by someone who thought to open the Equipment list and expand a row —
 the same failure as the 72-hour re-clean badge the cleaner couldn't see. `/compliance/notifications` now
