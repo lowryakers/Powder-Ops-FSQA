@@ -5,6 +5,7 @@ import DiscussLink from '../DiscussLink.jsx';
 import { useDragPager } from '../../lib/useDragPager';
 import ScheduleProgressPanel from './ScheduleProgressPanel.jsx';
 import { PRODUCTION_TEAMS as TEAMS, ROOM_GROUPS } from '../../constants/productionLines';
+import { roomLabel } from '../../../shared/rooms.js';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -30,9 +31,6 @@ function fmtTime(t) {
   return `${hh}:${String(m ?? 0).padStart(2, '0')} ${ap}`;
 }
 
-function roomLabel(room) {
-  return /batching/i.test(room) ? room : `Room ${room}`;
-}
 
 function truncate(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;

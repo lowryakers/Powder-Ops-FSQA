@@ -4,6 +4,7 @@ import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { hasExplicitEdit } from '../module-access.js';
 import { getChannelByName, postMessageAs, getModuleLinks } from './comms.js';
+import { roomLabel } from '../../shared/rooms.js';
 
 // Production teams whose schedule gets published to a matching comms channel.
 // Team name (as stored on assignments) → the channel it maps to.
@@ -34,28 +35,69 @@ function fmtSchedTime(t) {
   h = h % 12 || 12;
   return `${h}:${mm} ${ap}`;
 }
+// The date of a given weekday, for the day headings.
+function schedDayLabel(weekStart, d) {
+  try {
+    const dd = new Date(weekStart + 'T00:00:00');
+    dd.setDate(dd.getDate() + d);
+    return `${SCHED_DAY_NAMES[d]} ${dd.getMonth() + 1}/${dd.getDate()}`;
+  } catch { return SCHED_DAY_NAMES[d]; }
+}
+
+/**
+ * What lands in a team's channel when the schedule is published.
+ *
+ * This is the message most of the plant actually reads — most people never open
+ * the grid — so it is written to be scanned on a phone:
+ *   - the room is NAMED ("Room 6", not "6"), via the shared roomLabel. The
+ *     client's Share text and PNG had labelled rooms for a while; this path,
+ *     the one that lands in people's channels, still printed the raw token.
+ *   - one line per run, room first, because that is what people look for
+ *   - the day heading carries its date, so "Thursday" is never ambiguous
+ *   - a run with no MO or product still prints its room rather than a bare dot
+ * Bot bold is `*text*` — the chat renderer is not markdown.
+ */
 function teamScheduleMessage(team, rows, weekStart, kind) {
-  const head = `📋 ${team} — production schedule${kind === 'new' ? '' : ' (updated)'} · week of ${fmtWeekLabel(weekStart)}`;
+  const head = `\uD83D\uDCCB *${team} \u2014 week of ${fmtWeekLabel(weekStart)}*${kind === 'new' ? '' : ' (updated)'}`;
   if (!rows.length) return `${head}\nNothing scheduled this week.`;
   const byDay = {};
   for (const a of rows) (byDay[a.day_of_week] ||= []).push(a);
-  const lines = [head];
+  const lines = [head, ''];
   for (let d = 0; d < 5; d++) {
     if (!byDay[d]) continue;
-    lines.push(`${SCHED_DAY_NAMES[d]}:`);
+    lines.push(`*${schedDayLabel(weekStart, d)}*`);
     for (const a of byDay[d]) {
-      const parts = [a.room, a.mo_number ? `MO ${a.mo_number}` : null, a.product_name, fmtSchedTime(a.start_time)].filter(Boolean);
-      lines.push(`  • ${parts.join(' · ')}`);
-      if (a.notes) lines.push(`    ↳ ${a.notes}`);
+      // Room first and always; the rest is whatever the row actually carries.
+      const detail = [
+        a.mo_number ? `MO ${a.mo_number}` : null,
+        a.product_name || null,
+        fmtSchedTime(a.start_time) || null,
+      ].filter(Boolean).join(' \u00b7 ');
+      lines.push(`  \u2022 ${roomLabel(a.room)}${detail ? ` \u2014 ${detail}` : ''}`);
+      if (a.notes) lines.push(`      \u21b3 ${a.notes}`);
     }
+    lines.push('');
   }
-  return lines.join('\n');
+  lines.push(`${rows.length} run${rows.length === 1 ? '' : 's'} this week. Open ReadyDoc \u2192 Schedule for the full grid.`);
+  return lines.join('\n').trimEnd();
 }
+
 function combinedScheduleMessage(assignments, weekStart, kind, changedTeams) {
-  const counts = SCHEDULE_TEAM_CHANNELS.map(({ team }) => `${team}: ${schedRowsForTeam(assignments, team).length}`).join(' · ');
-  const head = `📋 Production schedule ${kind === 'new' ? 'published' : 'updated'} · week of ${fmtWeekLabel(weekStart)}`;
-  const changed = changedTeams.length ? `Team updates: ${changedTeams.join(', ')}.` : 'No team-level changes this time.';
-  return `${head}\n${counts}\n${changed}\nOpen ReadyDoc → Schedule for the full grid.`;
+  const head = `\uD83D\uDCCB *Production schedule ${kind === 'new' ? 'published' : 'updated'} \u2014 week of ${fmtWeekLabel(weekStart)}*`;
+  const lines = [head, ''];
+  // One line per team rather than a run-on "Batching: 4 - Kitting: 0 - ...",
+  // and a team with nothing scheduled says so in words rather than as a 0.
+  for (const { team } of SCHEDULE_TEAM_CHANNELS) {
+    const n = schedRowsForTeam(assignments, team).length;
+    const moved = changedTeams.includes(team) ? '   \u2190 updated' : '';
+    lines.push(`  ${team}: ${n === 0 ? 'nothing scheduled' : `${n} run${n === 1 ? '' : 's'}`}${moved}`);
+  }
+  lines.push('');
+  lines.push(changedTeams.length
+    ? "Each team's channel has their own breakdown."
+    : 'No team-level changes this time.');
+  lines.push('Open ReadyDoc \u2192 Schedule for the full grid.');
+  return lines.join('\n');
 }
 
 const router = Router();

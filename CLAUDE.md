@@ -1403,6 +1403,19 @@ concluded the composer couldn't do it. Three additions, all on the existing gram
 - Wired into the comms composer, both thread reply boxes, the newsletter intro + section bodies, and meeting
   minutes. Verified in the browser — 21 assertions across the three modules.
 
+## The schedule message people actually read (`shared/rooms.js`)
+Publishing the schedule posts a per-team message into that team's channel, and for most of the plant that
+message *is* the schedule — they never open the grid. It printed the room as the bare grid key (`• 6 · MO
+4471`), which makes the reader work out that 6 is a room at all.
+- **`roomLabel()` moved to `shared/`** and is imported by both sides. The client's Share text and PNG had
+  labelled rooms for a while; the server's Notify message — the one that lands in channels — still printed
+  the raw token. Two copies of a display rule is exactly how that drifts. Batching rooms carry their own
+  word, so they are never prefixed ("Batching 1", not "Room Batching 1").
+- The team message now leads with the room, gives each day heading its **date** ("Thursday 8/6", so a
+  weekday name is never ambiguous), keeps notes indented under their run, and ends with a run count. The
+  combined summary lists one team per line and says "nothing scheduled" in words rather than printing a 0.
+- Bot bold is `*text*`, not `**text**` — the chat renderer isn't markdown.
+
 ## Mock Recall — Form 415-1, from SOP 415 V3 (`server/mock-recall-form.js`)
 The table was a reasonable guess at a mock recall; the SOP names **seventeen things the exercise "will
 document"** and **three effectiveness criteria**, and most had nowhere to go. A record that can't hold what
