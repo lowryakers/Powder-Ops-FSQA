@@ -1414,7 +1414,7 @@ else sees none of it; a warehouse operator can't act on a missing LOTO procedure
 - **`pm_assignee` is suppressed when the machine has no schedule either** — a machine with nothing
   generating doesn't yet need a team, and counting both turns one problem into two numbers (163 → 83).
 
-### "Create schedules from these tasks"
+### "Create schedules from these tasks" (single + bulk)
 `POST /equipment/:id/schedules-from-tasks` — the practical fix for the 80 active machines that had
 maintenance tasks written and nothing generating them. **This is not auto-creation and the distinction
 matters:** it is offered only because the frequency is not a guess — the operator already wrote each task
@@ -1422,6 +1422,14 @@ under a Daily / Weekly / Monthly / Quarterly heading, so the schedule carries th
 cadence. One schedule per frequency, inheriting the equipment's team, skipping any frequency that already
 has one (so a second click creates nothing), and **"As Needed" is skipped with a reason** because it has no
 interval and inventing one would put a cadence on the record that nobody chose.
+**`GET /equipment/schedules-from-tasks/preview` + `POST .../bulk`** are the "review and create for all"
+pair — the plant wrote those tasks *expecting* them to be the PM schedule, and ~110 machines were in that
+state, so one at a time was never going to happen. `planSchedulesFromTasks()` is the SINGLE planner used by
+the preview, the bulk write and the per-machine route: a preview computed differently from the commit is a
+preview that lies, and this one is shown before a write across a hundred machines. The preview writes
+nothing, an empty `ids` is **refused** rather than treated as "all", each machine is audited individually
+plus one summary row, and a machine about to get schedules with **no team assigned** is flagged in the list
+(those work orders would reach nobody).
 
 ## Retiring a machine, and the two PM generators
 `equipment.status` was on the list screen but **not in the edit form**, so the only way to retire a machine

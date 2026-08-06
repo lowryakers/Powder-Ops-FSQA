@@ -5,6 +5,7 @@ import { canEditModule } from '../../utils/permissions';
 import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square, ShieldCheck } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 import EquipmentSetupChecklist from './EquipmentSetupChecklist.jsx';
+import SchedulesFromTasksModal from './SchedulesFromTasksModal.jsx';
 import { MACHINE_TYPES, ZONE_TYPES, defaultAssetKind } from '../../../shared/equipment-types.js';
 
 // Types come from shared/equipment-types.js so the form, the setup checklist
@@ -628,6 +629,7 @@ export default function EquipmentPanel() {
   // One request for the whole list, not one per row: "what is this machine
   // missing" is worth seeing before you decide which row to open.
   const { data: readiness } = useApiGet('/equipment/readiness');
+  const { data: fromTasks, refresh: refreshFromTasks } = useApiGet('/equipment/schedules-from-tasks/preview');
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'equipment');
   const canCcp = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
@@ -636,6 +638,7 @@ export default function EquipmentPanel() {
   const [editing, setEditing] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [justAdded, setJustAdded] = useState(null);
+  const [buildSchedules, setBuildSchedules] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
   const [search, setSearch] = useState('');
@@ -839,6 +842,32 @@ export default function EquipmentPanel() {
 
       {(showForm && !editing) && <EquipmentForm ccps={ccps} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
       {editing && <EquipmentForm initial={editing} ccps={ccps} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
+
+      {/* The plant wrote maintenance tasks expecting them to BE the PM schedule.
+          They never were, so this offers the one-pass fix — reviewed, never
+          automatic. Only shown while there is actually something to create. */}
+      {!!fromTasks?.total_machines && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 flex-wrap">
+          <ClipboardList size={18} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-amber-900">
+              {fromTasks.total_machines} machine{fromTasks.total_machines === 1 ? '' : 's'} have maintenance tasks that generate nothing
+            </h3>
+            <p className="text-xs text-amber-800">
+              The tasks are written on the equipment record, but no recurring schedule turns them into work.
+              Creating {fromTasks.total_schedules} schedule{fromTasks.total_schedules === 1 ? '' : 's'} would put them in Task Center, using the tasks exactly as written.
+            </p>
+          </div>
+          <button onClick={() => setBuildSchedules(true)}
+            className="shrink-0 px-3 py-2 bg-white border border-amber-300 text-amber-900 rounded-lg text-sm font-medium hover:bg-amber-100">
+            Review and create
+          </button>
+        </div>
+      )}
+
+      {buildSchedules && (
+        <SchedulesFromTasksModal onClose={() => setBuildSchedules(false)} onDone={() => { refresh(); refreshFromTasks(); }} />
+      )}
 
       {justAdded && (
         <div className="bg-powder-50 border border-powder-200 rounded-xl p-4 space-y-3">

@@ -129,41 +129,115 @@ const FREQ_TO_SCHEDULE = {
   Quarterly: 'quarterly', 'Semi-Annual': 'semi_annual', Annual: 'annual',
 };
 
+/**
+ * What WOULD be created for one machine. One planner, used by the preview and
+ * by the write — a preview computed differently from the commit is a preview
+ * that lies, and this one is shown before a bulk write across 80 machines.
+ */
+function planSchedulesFromTasks(db, eq) {
+  let tasks;
+  try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
+  const existing = db.prepare('SELECT frequency_type FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(eq.id);
+  const create = [];
+  const skip = [];
+  for (const [freq, list] of Object.entries(tasks)) {
+    if (!Array.isArray(list) || !list.filter(Boolean).length) continue;
+    const freqType = FREQ_TO_SCHEDULE[freq];
+    if (!freqType) { skip.push({ frequency: freq, reason: 'not a recurring frequency' }); continue; }
+    if (existing.some(x => x.frequency_type === freqType)) { skip.push({ frequency: freq, reason: 'already has a schedule' }); continue; }
+    create.push({ frequency: freq, frequency_type: freqType, steps: list.filter(Boolean) });
+  }
+  return { create, skip };
+}
+
+function writeSchedulesFromTasks(db, eq, plan) {
+  const created = [];
+  for (const c of plan.create) {
+    const id = uuid();
+    db.prepare(`
+      INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, task_group)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `).run(id, eq.id, `${eq.name} — ${c.frequency} PM`,
+      `Created from the maintenance tasks written on ${eq.name}.`,
+      c.frequency_type, JSON.stringify(c.steps), eq.task_group || 'maintenance');
+    created.push({ id, frequency: c.frequency, frequency_type: c.frequency_type, steps: c.steps.length });
+  }
+  return created;
+}
+
+/**
+ * Every active machine whose written tasks generate nothing, and exactly what
+ * would be created for each. Read-only — nothing is written until the caller
+ * picks ids and posts them.
+ *
+ * BEFORE '/:id', or Express reads "schedules-from-tasks" as an equipment id.
+ */
+router.get('/schedules-from-tasks/preview', (_req, res) => {
+  const db = getDb();
+  const rows = db.prepare("SELECT * FROM equipment WHERE status = 'active' ORDER BY name").all();
+  const machines = [];
+  for (const eq of rows) {
+    const plan = planSchedulesFromTasks(db, eq);
+    if (!plan.create.length) continue;
+    machines.push({
+      id: eq.id, name: eq.name, type: eq.type, asset_id: eq.asset_id,
+      task_group: eq.task_group, location: eq.location,
+      // Named so the reviewer can see a machine is about to be given
+      // schedules with no team to send them to.
+      no_team: !eq.task_group,
+      create: plan.create.map(c => ({ frequency: c.frequency, step_count: c.steps.length, steps: c.steps })),
+      skip: plan.skip,
+    });
+  }
+  res.json({
+    machines,
+    total_machines: machines.length,
+    total_schedules: machines.reduce((t, m) => t + m.create.length, 0),
+  });
+});
+
+router.post('/schedules-from-tasks/bulk', (req, res) => {
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+  if (!ids?.length) return res.status(400).json({ error: 'ids are required — nothing is created for machines you did not pick.' });
+
+  const results = [];
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);
+      if (!eq) { results.push({ id, error: 'not found' }); continue; }
+      const plan = planSchedulesFromTasks(db, eq);
+      const created = writeSchedulesFromTasks(db, eq, plan);
+      // Audited per machine as well as in summary: a bulk action has to leave
+      // the trail a manual one would.
+      if (created.length) {
+        logAudit(req.user, 'create', 'pm_schedule', eq.id,
+          { from: 'maintenance_tasks', bulk: true, created: created.map(c => c.frequency) }, null, null, eq.name);
+      }
+      results.push({ id, name: eq.name, created: created.length, frequencies: created.map(c => c.frequency), skipped: plan.skip });
+    }
+  });
+  tx();
+
+  const total = results.reduce((t, r) => t + (r.created || 0), 0);
+  logAudit(req.user, 'bulk_update', 'pm_schedule', null,
+    { from: 'maintenance_tasks', machines: results.length, schedules_created: total }, null, null);
+  res.json({ results, machines: results.length, schedules_created: total });
+});
+
 router.post('/:id/schedules-from-tasks', (req, res) => {
   const db = getDb();
   const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
   if (!eq) return res.status(404).json({ error: 'Equipment not found' });
 
-  let tasks;
-  try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
-  const existing = db.prepare('SELECT title, frequency_type FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(eq.id);
-
-  const created = [];
-  const skipped = [];
-  for (const [freq, list] of Object.entries(tasks)) {
-    if (!Array.isArray(list) || !list.length) continue;
-    const freqType = FREQ_TO_SCHEDULE[freq];
-    // "As Needed" has no interval, so it cannot generate a recurring task —
-    // saying so is better than inventing a cadence nobody chose.
-    if (!freqType) { skipped.push({ frequency: freq, reason: 'not a recurring frequency' }); continue; }
-    if (existing.some(x => x.frequency_type === freqType)) { skipped.push({ frequency: freq, reason: 'already has a schedule' }); continue; }
-
-    const id = uuid();
-    db.prepare(`
-      INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, task_group)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, eq.id, `${eq.name} — ${freq} PM`,
-      `Created from the maintenance tasks written on ${eq.name}.`,
-      freqType, JSON.stringify(list.filter(Boolean)), eq.task_group || 'maintenance');
-    created.push({ id, frequency: freq, frequency_type: freqType, steps: list.length });
-  }
-
+  const plan = planSchedulesFromTasks(db, eq);
+  const created = writeSchedulesFromTasks(db, eq, plan);
   if (created.length) {
     logAudit(req.user, 'create', 'pm_schedule', eq.id,
       { from: 'maintenance_tasks', equipment: eq.name, created: created.map(c => c.frequency) }, null, null, eq.name);
   }
   const fresh = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eq.id);
-  res.json({ created, skipped, readiness: equipmentReadiness(db, fresh) });
+  res.json({ created, skipped: plan.skip, readiness: equipmentReadiness(db, fresh) });
 });
 
 // Bulk update - POST to avoid /:id conflict
