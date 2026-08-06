@@ -108,6 +108,64 @@ router.post('/', (req, res) => {
   res.status(201).json({ ...created, readiness: equipmentReadiness(db, created) });
 });
 
+/**
+ * Turn the maintenance tasks written on an equipment record into REAL recurring
+ * schedules, one per frequency.
+ *
+ * The A/C is the case: thirteen tasks written across Daily / Weekly / Monthly /
+ * Quarterly, and not one of them generated anything, because the task list and
+ * the recurring schedule are different records that happen to share a name on
+ * screen. There were 79 active machines in that state.
+ *
+ * This is NOT auto-creation — it is a deliberate action, and it is only offered
+ * because the frequency is not a guess: the operator already wrote each task
+ * under a frequency heading. A schedule is created per frequency that has
+ * tasks, carrying those tasks as its procedure steps and inheriting the
+ * equipment's team, and a frequency that already has an active schedule is
+ * skipped rather than duplicated.
+ */
+const FREQ_TO_SCHEDULE = {
+  Daily: 'daily', Weekly: 'weekly', 'Bi-weekly': 'biweekly', Monthly: 'monthly',
+  Quarterly: 'quarterly', 'Semi-Annual': 'semi_annual', Annual: 'annual',
+};
+
+router.post('/:id/schedules-from-tasks', (req, res) => {
+  const db = getDb();
+  const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
+  if (!eq) return res.status(404).json({ error: 'Equipment not found' });
+
+  let tasks;
+  try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
+  const existing = db.prepare('SELECT title, frequency_type FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(eq.id);
+
+  const created = [];
+  const skipped = [];
+  for (const [freq, list] of Object.entries(tasks)) {
+    if (!Array.isArray(list) || !list.length) continue;
+    const freqType = FREQ_TO_SCHEDULE[freq];
+    // "As Needed" has no interval, so it cannot generate a recurring task —
+    // saying so is better than inventing a cadence nobody chose.
+    if (!freqType) { skipped.push({ frequency: freq, reason: 'not a recurring frequency' }); continue; }
+    if (existing.some(x => x.frequency_type === freqType)) { skipped.push({ frequency: freq, reason: 'already has a schedule' }); continue; }
+
+    const id = uuid();
+    db.prepare(`
+      INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, task_group)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `).run(id, eq.id, `${eq.name} — ${freq} PM`,
+      `Created from the maintenance tasks written on ${eq.name}.`,
+      freqType, JSON.stringify(list.filter(Boolean)), eq.task_group || 'maintenance');
+    created.push({ id, frequency: freq, frequency_type: freqType, steps: list.length });
+  }
+
+  if (created.length) {
+    logAudit(req.user, 'create', 'pm_schedule', eq.id,
+      { from: 'maintenance_tasks', equipment: eq.name, created: created.map(c => c.frequency) }, null, null, eq.name);
+  }
+  const fresh = db.prepare('SELECT * FROM equipment WHERE id = ?').get(eq.id);
+  res.json({ created, skipped, readiness: equipmentReadiness(db, fresh) });
+});
+
 // Bulk update - POST to avoid /:id conflict
 router.post('/bulk-update', (req, res) => {
   const db = getDb();

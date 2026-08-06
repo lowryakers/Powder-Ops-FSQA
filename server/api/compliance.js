@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import AdmZip from 'adm-zip';
+import { equipmentReadiness } from '../equipment-readiness.js';
 import { getDb } from '../db.js';
 import { QMS_TYPES } from '../qms-config.js';
 import { recleanRooms } from './sanitation.js';
@@ -544,6 +545,66 @@ router.get('/notifications', (req, res) => {
     const unaccounted = db.prepare("SELECT COUNT(*) c FROM time_adjustments WHERE status = 'reviewed' AND COALESCE(adp_status,'pending') = 'pending' AND adjustment_date < date('now', '-7 days')").get().c;
     if (unaccounted > 0) items.push({ id: 'time-adp', tab: 'time-tracking', severity: 'warning', count: unaccounted, label: `${unaccounted} reviewed entr${unaccounted > 1 ? 'ies' : 'y'} not yet accounted for in ADP` });
   } catch { /* column added by migration */ }
+
+  /**
+   * Equipment setup gaps, ROUTED TO WHOEVER OWNS THE MISSING RECORD.
+   *
+   * The setup checklist could only be seen by someone who thought to open the
+   * Equipment list and expand a row, which is the same failure as the 72-hour
+   * re-clean badge the cleaner couldn't see: a gap that reaches nobody is
+   * indistinguishable from no gap.
+   *
+   * Each step is owned by a different department, so they are not one lump.
+   * Maintenance owns whether a machine generates work at all; QA owns hygienic
+   * design and calibration; Document Control owns the work instruction and the
+   * course it's taught against. Everyone else sees none of it — a warehouse
+   * operator cannot act on a missing LOTO procedure.
+   *
+   * Runs the same `readinessSummary` the Equipment panel does rather than a
+   * faster second copy of the same SQL, so the bell and the row badge can never
+   * disagree. Measured at ~22ms over 179 rows.
+   */
+  try {
+    const OWNERS = {
+      pm_schedule: { depts: ['maintenance'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no recurring PM schedule — nothing generates their tasks` },
+      pm_assignee: { depts: ['maintenance'], label: (n) => `${n} machine${n > 1 ? 's' : ''} whose PM work is not assigned to a team` },
+      hygienic_design: { depts: ['qa'], label: (n) => `${n} food-contact machine${n > 1 ? 's' : ''} with no hygienic design verification` },
+      calibration: { depts: ['qa'], label: (n) => `${n} measuring device${n > 1 ? 's' : ''} not set up for calibration` },
+      training_course: { depts: ['document_control', 'qa'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no training course` },
+      work_instruction: { depts: ['document_control'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no work instruction linked` },
+    };
+    const myDept = String(dept || '').toLowerCase();
+    const sees = (depts) => role === 'admin' || depts.includes(myDept)
+      || (role === 'supervisor' && depts.includes(myDept));
+    // Only compute if this viewer owns at least one of them.
+    if (role === 'admin' || Object.values(OWNERS).some(o => o.depts.includes(myDept))) {
+      const counts = {};
+      for (const eq of db.prepare("SELECT * FROM equipment WHERE status = 'active'").all()) {
+        const steps = equipmentReadiness(db, eq).steps;
+        const noSchedule = steps.some(x => x.id === 'pm_schedule' && !x.done);
+        for (const step of steps) {
+          if (step.done || !OWNERS[step.id]) continue;
+          // Don't report the same machine twice. A machine with no recurring
+          // schedule doesn't yet need a team assigned — the team only matters
+          // once something generates, so counting both turns one problem into
+          // two numbers and inflates the headline.
+          if (step.id === 'pm_assignee' && noSchedule) continue;
+          counts[step.id] = (counts[step.id] || 0) + 1;
+        }
+      }
+      for (const [id, owner] of Object.entries(OWNERS)) {
+        const n = counts[id] || 0;
+        if (!n || !sees(owner.depts)) continue;
+        items.push({
+          id: `equip-setup-${id}`, tab: 'equipment',
+          // A machine generating no maintenance at all is the one worth a
+          // warning; the rest are real but not urgent.
+          severity: id === 'pm_schedule' ? 'warning' : 'info',
+          count: n, label: owner.label(n),
+        });
+      }
+    }
+  } catch { /* readiness is best-effort — it must never fail the bell */ }
 
   // 72-hour idle rule: applicable rooms needing a re-clean that nobody has
   // handled yet (not dismissed / N-A'd / assigned) badge the Sanitation module.

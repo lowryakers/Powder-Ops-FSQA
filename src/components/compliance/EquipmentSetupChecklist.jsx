@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useApiGet } from '../../hooks/useApi';
+import { useEffect, useState } from 'react';
+import { useApiGet, apiPost } from '../../hooks/useApi';
 import { Check, AlertTriangle, Circle, ArrowRight, RefreshCw, HelpCircle } from 'lucide-react';
 
 /**
@@ -34,6 +34,8 @@ function go(tab) {
 }
 
 export default function EquipmentSetupChecklist({ equipmentId, initial, compact = false }) {
+  const [building, setBuilding] = useState(false);
+  const [buildNote, setBuildNote] = useState('');
   const { data: fetched, loading, error, refresh } = useApiGet(
     equipmentId ? `/equipment/${equipmentId}/readiness` : null, [equipmentId],
   );
@@ -57,6 +59,8 @@ export default function EquipmentSetupChecklist({ equipmentId, initial, compact 
 
   const outstanding = data.steps.filter(s => !s.done);
   const ready = outstanding.length === 0;
+  const pmStep = data.steps.find(s => s.id === 'pm_schedule');
+  const tasksWithoutSchedule = !!pmStep && !pmStep.done && /written, but nothing generates/.test(pmStep.detail || '');
 
   return (
     <div className="space-y-2">
@@ -84,6 +88,39 @@ export default function EquipmentSetupChecklist({ equipmentId, initial, compact 
         <p className="text-xs text-gray-500">
           PM, training and the documents for this equipment are all in place.
         </p>
+      )}
+
+      {/* The tasks are already written under Daily / Weekly / Monthly headings,
+          so turning them into recurring schedules is not a guess about
+          frequency — it is the frequency the operator chose. Offered as a
+          deliberate click rather than done automatically. */}
+      {tasksWithoutSchedule && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex items-start gap-2 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-amber-900">
+              This machine has maintenance tasks written, but nothing generates them.
+            </p>
+            <p className="text-[11px] text-amber-800">
+              Create a recurring schedule for each frequency, using the tasks exactly as written.
+            </p>
+            {buildNote && <p className="text-[11px] text-amber-900 mt-1">{buildNote}</p>}
+          </div>
+          <button type="button" disabled={building}
+            onClick={async () => {
+              setBuilding(true); setBuildNote('');
+              try {
+                const r = await apiPost(`/equipment/${equipmentId}/schedules-from-tasks`, {});
+                setBuildNote(r.created.length
+                  ? `Created ${r.created.map(c => c.frequency).join(', ')}.`
+                  : 'Nothing to create — no recurring frequencies with tasks.');
+                refresh();
+              } catch (e) { setBuildNote(e.message); }
+              finally { setBuilding(false); }
+            }}
+            className="shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 disabled:opacity-50">
+            {building ? 'Creating…' : 'Create schedules from these tasks'}
+          </button>
+        </div>
       )}
 
       <div className={compact ? 'space-y-1.5' : 'grid grid-cols-1 lg:grid-cols-2 gap-1.5'}>

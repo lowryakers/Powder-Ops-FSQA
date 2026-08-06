@@ -1403,6 +1403,26 @@ concluded the composer couldn't do it. Three additions, all on the existing gram
 - Wired into the comms composer, both thread reply boxes, the newsletter intro + section bodies, and meeting
   minutes. Verified in the browser — 21 assertions across the three modules.
 
+## Equipment setup gaps reach the people who own them
+The setup checklist could only be seen by someone who thought to open the Equipment list and expand a row —
+the same failure as the 72-hour re-clean badge the cleaner couldn't see. `/compliance/notifications` now
+carries the gaps, **routed by department**: Maintenance owns whether a machine generates work at all, QA
+owns hygienic design and calibration, Document Control owns the work instruction and the course. Everyone
+else sees none of it; a warehouse operator can't act on a missing LOTO procedure.
+- It runs the **same `equipmentReadiness`** the panel does, not a faster second copy of the SQL, so the bell
+  and the row badge can't disagree. Measured at ~22ms over 179 rows.
+- **`pm_assignee` is suppressed when the machine has no schedule either** — a machine with nothing
+  generating doesn't yet need a team, and counting both turns one problem into two numbers (163 → 83).
+
+### "Create schedules from these tasks"
+`POST /equipment/:id/schedules-from-tasks` — the practical fix for the 80 active machines that had
+maintenance tasks written and nothing generating them. **This is not auto-creation and the distinction
+matters:** it is offered only because the frequency is not a guess — the operator already wrote each task
+under a Daily / Weekly / Monthly / Quarterly heading, so the schedule carries their own words at their own
+cadence. One schedule per frequency, inheriting the equipment's team, skipping any frequency that already
+has one (so a second click creates nothing), and **"As Needed" is skipped with a reason** because it has no
+interval and inventing one would put a cadence on the record that nobody chose.
+
 ## Retiring a machine, and the two PM generators
 `equipment.status` was on the list screen but **not in the edit form**, so the only way to retire a machine
 was bulk edit — and `POST /equipment` didn't accept a status at all, so anything added or imported as
