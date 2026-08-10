@@ -22,6 +22,9 @@ export const ALL_MODULE_IDS = [
   'production-log', 'production-eod', 'production-schedule', 'production-dashboard',
   'pm', 'equipment', 'calibration', 'loto',
   'sanitation', 'qa-inspections', 'chemicals', 'hygienic', 'coa',
+  // The counter-signature queue. Automatic for QA/quality and admins; listed
+  // here so it can also be granted deliberately to someone outside QA.
+  'qa-review',
   'capa', 'sops', 'work-instructions', 'job-descriptions', 'org-chart',
   'disposals', 'training', 'certifications', 'recall',
   'office-requests', 'supply-requests', 'time-requests',

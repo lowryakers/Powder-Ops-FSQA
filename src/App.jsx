@@ -1596,8 +1596,8 @@ function App() {
   effectiveModules = canSeeOfficeRequests(user)
     ? (effectiveModules.includes('office-requests') ? effectiveModules : [...effectiveModules, 'office-requests'])
     : effectiveModules.filter(id => id !== 'office-requests');
-  // QA Review is QA/supervisor/admin by role, or an explicit grant — the same
-  // rule the sidebar applies, so a deep link can't reach it either.
+  // QA Review is QA/quality by department, admins, or an explicit grant — the
+  // same rule the sidebar applies, so a deep link can't reach it either.
   effectiveModules = canSeeQaReview(user)
     ? (effectiveModules.includes('qa-review') ? effectiveModules : [...effectiveModules, 'qa-review'])
     : effectiveModules.filter(id => id !== 'qa-review');

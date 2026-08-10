@@ -73,6 +73,11 @@ const MODULE_GROUPS = [
   {
     label: 'Quality',
     modules: [
+      // Automatic for the QA/quality department and admins. Granting it here
+      // is how someone outside QA — a supervisor who genuinely counter-signs —
+      // gets the queue. Without this entry the rule had no checkbox at all,
+      // which is why every supervisor had it by role and Settings looked wrong.
+      { id: 'qa-review', label: 'QA Review Center (auto for QA / quality)', note: 'The counter-signature queue: production entries, QA inspections, cleaning records, scale checks and sign-out returns. Signing a single module’s records is separately allowed by Edit on that module.' },
       { id: 'coa', label: 'COA / Lab Testing' },
       { id: 'hygienic', label: 'Hygienic Design' },
       { id: 'qa-inspections', label: 'QA Inspections (light, brittle plastic & glass)' },

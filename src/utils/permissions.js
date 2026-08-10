@@ -58,6 +58,17 @@ export function visibleModuleIds(user, allIds) {
 // admins by role, or an explicit grant. Lives here rather than in App.jsx
 // because OperatorView links to QA Review and a second copy of an access rule
 // is how two screens start disagreeing about who can reach a module.
-export const canSeeQaReview = (u) => u?.role === 'admin' || u?.role === 'supervisor'
+// QA Review is a QA queue, not a supervisor perk.
+//
+// This used to include `role === 'supervisor'`, which handed the whole queue to
+// every production supervisor — Filling, Batching, Warehouse — regardless of
+// what Settings said, because the module is force-added by this rule rather
+// than read from the grant list. A Filling supervisor counter-signing cleaning
+// and scale records is not who that queue is for, and it made the Settings
+// checkbox look broken.
+//
+// Keep this in step with `isQaReviewer` in server/qa-review.js — the two decide
+// the same thing on either side of the wire.
+export const canSeeQaReview = (u) => u?.role === 'admin'
   || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase())
   || hasExplicitGrant(u, 'qa-review');

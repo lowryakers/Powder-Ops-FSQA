@@ -547,6 +547,35 @@ router.get('/notifications', (req, res) => {
     const unaccounted = db.prepare("SELECT COUNT(*) c FROM time_adjustments WHERE status = 'reviewed' AND COALESCE(adp_status,'pending') = 'pending' AND adjustment_date < date('now', '-7 days')").get().c;
     if (unaccounted > 0) items.push({ id: 'time-adp', tab: 'time-tracking', severity: 'warning', count: unaccounted, label: `${unaccounted} reviewed entr${unaccounted > 1 ? 'ies' : 'y'} not yet accounted for in ADP` });
   } catch { /* column added by migration */ }
+  /**
+   * Pay evaluations assigned to THIS PERSON.
+   *
+   * Every other item here is a fact about the plant that several people can
+   * act on; this one is addressed to one reviewer, so it is scoped to
+   * `req.user.id` and nobody else ever sees it. ReadyBot already DMs and
+   * pushes the ask every three days, but a supervisor who reads the DM and
+   * comes back to it later had nothing on screen telling them it was still
+   * open — the module tab looked exactly like a day with nothing due.
+   *
+   * BOTH severities are `warning`, so both put a number on the tab. `info`
+   * would have been the tidier-looking choice and it is the wrong one here:
+   * info lines never reach `badges[tab]`, so an assignment that wasn't late
+   * yet would have shown nothing at all — which is the bug being fixed. The
+   * overdue/open split lives in the label, which is what the tooltip reads.
+   * An assignment with no due date counts as open: a real ask, just not a
+   * late one. Assignments are a handful per cycle and the number clears the
+   * moment the review is submitted, so this can't become wallpaper.
+   */
+  try {
+    if (req.user?.id) {
+      const overdue = db.prepare(
+        "SELECT COUNT(*) c FROM pay_review_assignments WHERE reviewer_id = ? AND status = 'open' AND due_date IS NOT NULL AND due_date < ?").get(req.user.id, today).c;
+      const upcoming = db.prepare(
+        "SELECT COUNT(*) c FROM pay_review_assignments WHERE reviewer_id = ? AND status = 'open' AND (due_date IS NULL OR due_date >= ?)").get(req.user.id, today).c;
+      if (overdue > 0) items.push({ id: 'pay-review-overdue', tab: 'pay-tracking', severity: 'warning', count: overdue, label: `${overdue} employee evaluation${overdue > 1 ? 's' : ''} past due` });
+      if (upcoming > 0) items.push({ id: 'pay-review-open', tab: 'pay-tracking', severity: 'warning', count: upcoming, label: `${upcoming} employee evaluation${upcoming > 1 ? 's' : ''} assigned to you` });
+    }
+  } catch { /* table optional */ }
 
   /**
    * Equipment setup gaps, ROUTED TO WHOEVER OWNS THE MISSING RECORD.

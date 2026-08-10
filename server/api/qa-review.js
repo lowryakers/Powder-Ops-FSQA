@@ -7,21 +7,25 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
 import { SOURCES, getSource, safeCount, safePending, isQaReviewer } from '../qa-review.js';
-import { hasExplicitEdit } from '../module-access.js';
 
 const router = Router();
 
-// Seeing the queue is broader than signing it: a supervisor who can sign
-// nothing still benefits from knowing what QA is holding, and each row's own
-// button is gated separately by the source's canSign().
-const canSeeReview = (u) => isQaReviewer(u)
-  || SOURCES.some(s => hasExplicitEdit(u, s.module));
+// Reaching the queue is exactly `isQaReviewer` — the same rule the sidebar
+// applies, so the door and the nav entry can't disagree.
+//
+// This used to be broader ("anyone with edit on a source module may READ the
+// queue"), which was breadth nothing could use: the module only appears for a
+// QA reviewer, so the extra permission covered a screen those people never
+// see, while giving the API and the sidebar two different answers to one
+// question. Signing a single module's records is still separately allowed by
+// edit on that module — from that module's own screen, where the record is.
+const canSeeReview = isQaReviewer;
 
 // GET / — counts for every source, plus the pending rows for the ones the
 // caller asked for. Counts are cheap and always returned so the tab bar can
 // show what's behind the tab you're not on.
 router.get('/', (req, res) => {
-  if (!canSeeReview(req.user)) return res.status(403).json({ error: 'QA review is for QA, supervisors and admins.' });
+  if (!canSeeReview(req.user)) return res.status(403).json({ error: 'QA Review is for QA, admins, and anyone granted it in Settings.' });
   const db = getDb();
   const only = req.query.source ? String(req.query.source) : null;
   // Bounded like every other list endpoint — the badge carries the true total.

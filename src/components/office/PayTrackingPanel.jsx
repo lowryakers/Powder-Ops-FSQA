@@ -38,8 +38,13 @@ const REVIEW_LABEL = { due: 'Due', soon: 'Soon', ok: 'OK', unknown: '—' };
 
 /* ── Evaluation ─────────────────────────────────────────── */
 
-function Evaluation({ people, canApply, onClose, onRecorded, tr, lang, assignments = [] }) {
+function Evaluation({ people, canApply, isAdmin = false, onClose, onRecorded, tr, lang, assignments = [] }) {
   const [personId, setPersonId] = useState('');
+  // Which assigned evaluation is being worked, if any. Picking one FIXES the
+  // employee: an assignment is an ask about one named person, and leaving a
+  // free dropdown open beside it invited filing the review against somebody
+  // else entirely — with the assignment still showing as outstanding.
+  const [assignmentId, setAssignmentId] = useState('');
   const [scores, setScores] = useState({});
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -47,6 +52,14 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr, lang, assignmen
   const [error, setError] = useState('');
 
   const person = people.find(p => p.id === personId) || null;
+  const activeAssignment = assignments.find(a => a.id === assignmentId) || null;
+  // A reviewer who was ASKED to evaluate specific people picks from that list,
+  // not from the whole roster. `/pay/evaluatees` returns every active
+  // non-supervisor so an admin can review anyone, which for a production
+  // supervisor read as "you may evaluate all 80 of these people" — the
+  // confusion the assignment strip was supposed to remove. Admins keep the
+  // free picker: they run the cycle and correct it.
+  const assignmentOnly = !isAdmin && assignments.length > 0;
   const answered = CHARACTERISTICS.filter(c => scores[c.key]).length;
   const complete = answered === CHARACTERISTICS.length;
   const total = CHARACTERISTICS.reduce((s, c) => s + (scores[c.key] || 0), 0);
@@ -126,9 +139,9 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr, lang, assignmen
           </p>
           {assignments.map(a => (
             <button key={a.id} type="button"
-              onClick={() => { setPersonId(a.employee_id); reset(); }}
+              onClick={() => { setPersonId(a.employee_id); setAssignmentId(a.id); reset(); }}
               className={`w-full text-left flex items-center gap-2 flex-wrap rounded-lg border px-2.5 py-1.5 transition-colors ${
-                personId === a.employee_id ? 'border-amber-500 bg-white ring-1 ring-amber-300' : 'border-amber-200 bg-white hover:border-amber-400'}`}>
+                assignmentId === a.id ? 'border-amber-500 bg-white ring-1 ring-amber-300' : 'border-amber-200 bg-white hover:border-amber-400'}`}>
               <span className="text-sm font-medium text-gray-900">{a.employee_name}</span>
               {a.team && <span className="text-[11px] text-gray-500">{a.team}</span>}
               <span className={`ml-auto text-[11px] ${a.overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
@@ -142,15 +155,34 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr, lang, assignmen
 
       <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
         <label className="block text-xs font-medium text-gray-700">{tr('Employee')}</label>
-        <select value={personId} onChange={e => { setPersonId(e.target.value); reset(); }}
-          className="w-full sm:max-w-sm px-3 py-2 border border-gray-300 rounded-lg text-sm">
-          <option value="">{tr('Select an employee…')}</option>
-          {people.map(p => (
-            <option key={p.id} value={p.id}>
-              {p.name}{p.team ? ` — ${p.team}` : ''}{p.review?.status === 'due' ? ' (due)' : ''}
-            </option>
-          ))}
-        </select>
+        {activeAssignment ? (
+          /* Working an assignment: the employee is the ask, shown rather than
+             chosen. "Change" drops back to the strip above instead of quietly
+             re-enabling a dropdown that would leave the assignment open. */
+          <div className="flex items-center gap-2 flex-wrap rounded-lg border border-gray-300 bg-gray-50 px-3 py-2">
+            <span className="text-sm font-medium text-gray-900">{activeAssignment.employee_name}</span>
+            {activeAssignment.team && <span className="text-[11px] text-gray-500">{activeAssignment.team}</span>}
+            <span className="text-[11px] text-gray-500">· {tr('assigned to you')}</span>
+            <button type="button" onClick={() => { setPersonId(''); setAssignmentId(''); reset(); }}
+              className="ml-auto text-[11px] font-medium text-powder-700 hover:text-powder-800 underline">
+              {tr('Change')}
+            </button>
+          </div>
+        ) : assignmentOnly ? (
+          <p className="text-sm text-gray-500">
+            {tr('Choose one of the evaluations assigned to you above.')}
+          </p>
+        ) : (
+          <select value={personId} onChange={e => { setPersonId(e.target.value); setAssignmentId(''); reset(); }}
+            className="w-full sm:max-w-sm px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">{tr('Select an employee…')}</option>
+            {people.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name}{p.team ? ` — ${p.team}` : ''}{p.review?.status === 'due' ? ' (due)' : ''}
+              </option>
+            ))}
+          </select>
+        )}
         {person?.review?.days != null && (
           <p className="text-[11px] text-gray-500">
             {tr('Last raise or review')}: {fmtDate(person.review.since)} · {person.review.days} {tr('days ago')}
@@ -852,6 +884,7 @@ const PAGE_STRINGS = [
   'Remove this person from the Pay Tracking roster? Only rows added by mistake can be removed.',
   'Add someone to the roster', 'Name', 'Name is required', 'Adding…', 'Add to roster', 'Cancel',
   'Evaluations assigned to you', 'due', 'overdue', 'no due date',
+  'assigned to you', 'Change', 'Choose one of the evaluations assigned to you above.',
   'Assignments', 'Assign an evaluation', 'Reviewer', 'Select a reviewer…', 'Due date',
   'Anything they should know', 'Assign', 'Assigning…', 'Pick the employee and the reviewer.',
   'The reviewer gets a ReadyDoc message and a phone notification, and the evaluation shows in their own Evaluation tab.',
@@ -1006,7 +1039,7 @@ export default function PayTrackingPanel() {
       )}
 
       {tab === 'evaluate' && (
-        <Evaluation people={evaluatees || []} canApply={isAdmin} tr={tr} lang={lang}
+        <Evaluation people={evaluatees || []} canApply={isAdmin} isAdmin={isAdmin} tr={tr} lang={lang}
           assignments={openAssigned}
           onRecorded={() => { refreshEval(); refreshRoster?.(); refreshAssign(); }} />
       )}

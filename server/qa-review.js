@@ -40,13 +40,21 @@ import { signOffProductionEntry } from './api/production.js';
 import { verifyScaleCheck } from './api/scale-verification.js';
 import { signQmsApproval, BULK_APPROVE } from './api/qms.js';
 import { getType } from './qms-config.js';
-import { hasExplicitEdit } from './module-access.js';
+import { hasExplicitEdit, hasExplicitGrant } from './module-access.js';
 
-// Who counts as QA for the purposes of a counter-signature. Matches the rule
-// each module already applies, kept in one place so the review screen can't
-// offer someone a button their module would refuse.
-export const isQaReviewer = (u) => u?.role === 'admin' || u?.role === 'supervisor'
-  || ['qa', 'quality'].includes((u?.department || '').toLowerCase());
+// Who QA Review is for. NOT every supervisor: that handed the queue to Filling,
+// Batching and Warehouse supervisors by role alone, over the top of whatever
+// Settings said, and let them counter-sign QA records. Admins, the QA/quality
+// department, or an explicit grant.
+//
+// Signing a specific module's records survives this independently — each
+// canSign* below also accepts that module's own edit grant, so a production
+// supervisor with Production Log edit can still sign production entries.
+//
+// Keep in step with `canSeeQaReview` in src/utils/permissions.js.
+export const isQaReviewer = (u) => u?.role === 'admin'
+  || ['qa', 'quality'].includes((u?.department || '').toLowerCase())
+  || hasExplicitGrant(u, 'qa-review');
 
 const canSignProduction = (u) => isQaReviewer(u) || hasExplicitEdit(u, 'production-log');
 const canSignSanitation = (u) => isQaReviewer(u) || hasExplicitEdit(u, 'sanitation');
