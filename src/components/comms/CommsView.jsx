@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
+import { createPortal } from 'react-dom';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
@@ -866,6 +867,17 @@ function rememberChannel(id) { try { localStorage.setItem(LAST_CH_LS, id || '');
 function forgetChannel() { try { localStorage.removeItem(LAST_CH_LS); } catch { /* ignore */ } }
 function lastChannel() { try { return localStorage.getItem(LAST_CH_LS) || null; } catch { return null; } }
 
+// WHICH VIEW, not just which channel. Threads and Activity are their own
+// screens with no channel of their own, so remembering the channel alone meant
+// a refresh while working the Threads inbox always dropped you into a channel
+// — and if you hadn't opened one at all that session there was nothing saved,
+// so you landed on #general. The view is remembered beside the channel.
+const LAST_VIEW_LS = 'comms_last_view';
+function rememberView(v) {
+  try { if (v) localStorage.setItem(LAST_VIEW_LS, v); else localStorage.removeItem(LAST_VIEW_LS); } catch { /* full */ }
+}
+function lastView() { try { return localStorage.getItem(LAST_VIEW_LS) || null; } catch { return null; } }
+
 function readDrafts() { try { return JSON.parse(localStorage.getItem(DRAFTS_LS) || '{}'); } catch { return {}; } }
 function writeDraft(key, text) {
   if (!key) return;
@@ -882,12 +894,53 @@ function writeDraft(key, text) {
 // it lands below the fold and the options can't be read without scrolling,
 // which is exactly where messages are read most (the newest ones).
 const MENU_EST_HEIGHT = 260;
-function shouldDropUp(btn) {
-  if (!btn) return false;
+const MENU_WIDTH = 208; // w-52
+
+// Where to draw a message menu, in VIEWPORT coordinates.
+//
+// The menu used to be an absolutely-positioned child of the message row, so
+// ANY ancestor with overflow clipped it — and in the Threads inbox there are
+// two: the card (overflow-hidden, for its rounded corners) and the list's own
+// scroller. The old check measured the window, so it could see neither and
+// happily dropped a full-height menu into a container that cut it in half,
+// with no way to scroll to the rest.
+//
+// So the menu is drawn on <body> through a portal at FIXED coordinates taken
+// from the button: no ancestor can clip it, and no transformed ancestor (the
+// swipe-back pane) can shift it. It flips above the button when there's more
+// room there, is clamped to the viewport horizontally, and carries a maxHeight
+// so a menu that still doesn't fit scrolls itself instead of being unreachable.
+function menuPosition(btn) {
   const r = btn.getBoundingClientRect();
-  const below = window.innerHeight - r.bottom;
-  // Only flip when there genuinely isn't room below AND there is room above.
-  return below < MENU_EST_HEIGHT && r.top > below;
+  const gap = 4, margin = 8;
+  const below = window.innerHeight - r.bottom - gap;
+  const above = r.top - gap;
+  const up = below < MENU_EST_HEIGHT && above > below;
+  return {
+    left: Math.max(margin, Math.min(r.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - margin)),
+    ...(up ? { bottom: window.innerHeight - r.top + gap } : { top: r.bottom + gap }),
+    maxHeight: Math.max(140, (up ? above : below) - margin),
+  };
+}
+
+function MenuPortal({ style, onClose, children }) {
+  // A fixed menu can't follow the button it belongs to, so any scroll closes it
+  // rather than letting it float away. Capture phase, because the scroller is
+  // an ancestor and its scroll event doesn't bubble to window.
+  useEffect(() => {
+    window.addEventListener('scroll', onClose, true);
+    window.addEventListener('resize', onClose);
+    return () => { window.removeEventListener('scroll', onClose, true); window.removeEventListener('resize', onClose); };
+  }, [onClose]);
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[60]" onClick={onClose} />
+      <div style={style} className="fixed w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-[61] py-1 overflow-y-auto">
+        {children}
+      </div>
+    </>,
+    document.body,
+  );
 }
 
 // Slack-style "Remind me about this": pick a delay and ReadyBot DMs you at
@@ -1212,7 +1265,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
 }
 
 // One thread in the Threads inbox: channel label, parent, replies, reply box.
-function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onMarkRead }) {
+function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onMarkRead, onMarkUnread }) {
   const [body, setBody] = useState('');
   const cardReplyRef = useRef(null);
   const cardKeys = useFormatKeys({ getEl: () => cardReplyRef.current, value: body, onChange: setBody });
@@ -1276,10 +1329,15 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
   });
 
   return (
-    <div ref={cardRef} className={`border rounded-xl m-3 overflow-hidden transition-opacity ${
+    // NO overflow-hidden: it was there to clip the header's fill to the rounded
+    // corner, and it also clipped every floating thing a message renders — the
+    // hover pill, the emoji picker, the 3-dot menu. The corners are rounded on
+    // the first and last children instead, which costs nothing and lets those
+    // escape the card.
+    <div ref={cardRef} className={`border rounded-xl m-3 transition-opacity ${
       unread > 0 ? 'border-powder-300 ring-1 ring-powder-100 bg-white'
                  : 'border-gray-200 bg-gray-50/60 opacity-75 hover:opacity-100'}`}>
-      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-gray-100 bg-gray-50">
+      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-gray-100 bg-gray-50 rounded-t-xl">
         <button onClick={() => onOpenChannel(thread.channel_id)}
           className={`flex items-center gap-1.5 text-sm hover:underline min-w-0 ${unread > 0 ? 'font-semibold text-gray-800' : 'font-medium text-gray-500'}`}>
           <Icon size={14} className="text-gray-400 shrink-0" /> <span className="truncate">{thread.channel_name}</span>
@@ -1306,7 +1364,7 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
       </div>
       {!expanded ? (
         // Collapsed read thread: just enough to recognize it and reopen it.
-        <button onClick={() => setExpanded(true)} className="w-full text-left px-4 py-2 hover:bg-white">
+        <button onClick={() => setExpanded(true)} className="w-full text-left px-4 py-2 hover:bg-white rounded-b-xl">
           <p className="text-xs text-gray-500 line-clamp-1">{thread.parent.body || '(attachment)'}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
             {thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}
@@ -1316,6 +1374,7 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
       ) : (
       <div className="py-1">
         <Message m={thread.parent} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+          onMarkUnread={onMarkUnread}
           canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />
         <div className="px-4 py-0.5 text-[11px] font-medium text-gray-400">{thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}</div>
         {thread.replies.map((r, i) => (
@@ -1328,13 +1387,14 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
               </div>
             )}
             <Message m={r} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+              onMarkUnread={onMarkUnread}
               canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />
           </Fragment>
         ))}
       </div>
       )}
       {expanded && (
-      <div className="relative p-2 border-t border-gray-100">
+      <div className="relative p-2 border-t border-gray-100 rounded-b-xl">
         <MentionDropdown matches={mMatches} hi={mHi} onHover={setMHi} onPick={insertCardMention} />
         <div className="mb-1"><FormatBar getEl={() => cardReplyRef.current} value={body} onChange={setBody} /></div>
         <div className="flex items-end gap-2">
@@ -1375,6 +1435,14 @@ function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, 
     try { await apiPost(`/comms/threads/${parentId}/read`, {}); onRead?.(); } catch { /* ignore */ }
   }, [onRead]);
 
+  // "I'll come back to this" from inside the inbox. Marking any message in a
+  // thread rewinds that THREAD's marker (the server decides that from the
+  // message), so the card comes back with its "N new" badge on the next load.
+  const markUnread = useCallback(async (m) => {
+    try { await apiPost(`/comms/messages/${m.id}/unread`, { thread: true }); onRead?.(); } catch { /* ignore */ }
+    refresh();
+  }, [onRead, refresh]);
+
   return (
     <>
       <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
@@ -1396,7 +1464,7 @@ function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, 
           : list.length === 0 ? <p className="text-center text-sm text-gray-400 py-8">No threads yet. Reply to a message to start one.</p>
           : list.map(t => <ThreadInboxCard key={t.parent.id} thread={t} me={me} refresh={refresh} mentionUsers={mentionUsers}
               canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} onOpenChannel={onOpenChannel}
-              onMarkRead={markRead} />)}
+              onMarkRead={markRead} onMarkUnread={markUnread} />)}
       </div>
     </>
   );
@@ -1660,8 +1728,9 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   const [translating, setTranslating] = useState(false);
   const [sheet, setSheet] = useState(false); // mobile long-press action sheet
   const [menuOpen, setMenuOpen] = useState(false); // desktop 3-dot menu
-  const [menuUp, setMenuUp] = useState(false);     // flip above when short on room below
+  const [menuStyle, setMenuStyle] = useState(null); // viewport coords, measured on open
   const menuBtnRef = useRef(null);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const [lightbox, setLightbox] = useState(null); // index into m.attachments
   const [convert, setConvert] = useState(false); // message → compliance record
   const [remind, setRemind] = useState(false);   // Slack-style "remind me"
@@ -1834,22 +1903,23 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
             {/* Open upward when the message is near the bottom of the channel,
                 which is where most messages are read. Dropping down there put
                 the menu below the fold and forced a scroll to see the options. */}
-            <button ref={menuBtnRef} onClick={() => { setMenuUp(shouldDropUp(menuBtnRef.current)); setMenuOpen(o => !o); }}
+            <button ref={menuBtnRef}
+              onClick={() => {
+                if (menuBtnRef.current) setMenuStyle(menuPosition(menuBtnRef.current));
+                setMenuOpen(o => !o);
+              }}
               className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" data-tip="More actions" data-tip-left><MoreVertical size={14} /></button>
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
-                <div className={`absolute right-0 ${menuUp ? 'bottom-full mb-1' : 'top-full mt-1'} w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1`}>
-                  <MenuRow icon={Copy} label="Copy text" act="copy" onAction={handleSheetAction} />
-                  <MenuRow icon={Forward} label="Forward to channel…" act="forward" onAction={handleSheetAction} />
-                  <MenuRow icon={Clock} label="Remind me about this…" act="remind" onAction={handleSheetAction} />
-                  {canTranslate && m.body && !translated && <MenuRow icon={Languages} label="Translate" act="translate" onAction={handleSheetAction} />}
-                  {onMarkUnread && <MenuRow icon={null} label="Mark unread from here" act="unread" onAction={handleSheetAction} />}
-                  {m.body && <MenuRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={handleSheetAction} />}
-                  {mine && <MenuRow icon={Edit2} label="Edit message" act="edit" onAction={handleSheetAction} />}
-                  {mine && <MenuRow icon={Trash2} label="Delete message" danger act="delete" onAction={handleSheetAction} />}
-                </div>
-              </>
+            {menuOpen && menuStyle && (
+              <MenuPortal style={menuStyle} onClose={closeMenu}>
+                <MenuRow icon={Copy} label="Copy text" act="copy" onAction={handleSheetAction} />
+                <MenuRow icon={Forward} label="Forward to channel…" act="forward" onAction={handleSheetAction} />
+                <MenuRow icon={Clock} label="Remind me about this…" act="remind" onAction={handleSheetAction} />
+                {canTranslate && m.body && !translated && <MenuRow icon={Languages} label="Translate" act="translate" onAction={handleSheetAction} />}
+                {onMarkUnread && <MenuRow icon={null} label="Mark unread from here" act="unread" onAction={handleSheetAction} />}
+                {m.body && <MenuRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={handleSheetAction} />}
+                {mine && <MenuRow icon={Edit2} label="Edit message" act="edit" onAction={handleSheetAction} />}
+                {mine && <MenuRow icon={Trash2} label="Delete message" danger act="delete" onAction={handleSheetAction} />}
+              </MenuPortal>
             )}
           </div>
           {showEmoji && <EmojiPicker onPick={(e) => { onReact(m, e); setShowEmoji(false); }} onClose={() => setShowEmoji(false)} />}
@@ -1903,14 +1973,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     setNewMarkerTs(ch && ch.unread > 0 ? (ch.last_read_at || '0') : null);
     setDateView(null);
     setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false); setActivityOpen(false);
-    rememberChannel(id);
+    rememberChannel(id); rememberView('channel');
   };
   // Going back to the list is a decision: come back to the list next time.
   // The compact, one-pane-at-a-time layout — the same `md` breakpoint the
   // markup switches on, tracked live so a rotate or a resize is picked up.
   const isCompactLayout = useCompactLayout();
 
-  const backToList = () => { setMobileThread(false); forgetChannel(); };
+  const backToList = () => { setMobileThread(false); forgetChannel(); rememberView(null); };
   // Drag the conversation right to go back, iMessage-style. Only on the compact
   // layout — on desktop the list is always beside you, so there's nothing to go
   // back to and a stray horizontal drag should do nothing.
@@ -1954,6 +2024,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const justOpenedRef = useRef(true); // force scroll-to-bottom on channel open
   const [showJump, setShowJump] = useState(false); // "Jump to latest" affordance
   const linkedOpenedRef = useRef(null); // guards the module→channel deep-link
+  const bootRestoredRef = useRef(false); // the launch view has been decided
   const composerRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -2030,7 +2101,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // Pick the initial channel once the list loads: a module deep-link (e.g.
   // Schedule's "Discuss" → #production) wins, else #general, else the first.
   useEffect(() => {
-    if (activeId || !list.length) return;
+    // bootRestored guards the Threads/Activity restore specifically: those
+    // views set no activeId, so without it the effect would re-run on the next
+    // channel-list refresh and fall through to #general underneath them.
+    if (activeId || !list.length || bootRestoredRef.current) return;
     // From a push notification: open the exact channel by id. Use openChannel()
     // (not bare setActiveId) so phones land in the conversation, not the list.
     if (openChannelId && linkedOpenedRef.current !== openChannelId && list.some(c => c.id === openChannelId)) {
@@ -2044,9 +2118,25 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       const target = list.find(c => norm(c.name) === t) || list.find(c => norm(c.name).includes(t));
       if (target) { linkedOpenedRef.current = openChannelName; openChannel(target.id); return; }
     }
-    // Restore the conversation you were last reading, on any device.
+    // Restore where you were — the VIEW as well as the conversation. The
+    // channel is restored first in both cases so that closing Threads leaves
+    // you in the channel you had open rather than an empty pane.
+    // BOTH values are read before anything is opened: openChannel() records
+    // 'channel' as the view, so reading lastView() after it would always come
+    // back 'channel' and the Threads restore could never fire.
     const saved = lastChannel();
-    if (saved && list.some(c => c.id === saved)) { openChannel(saved); return; }
+    const view = lastView();
+    const savedIsReal = saved && list.some(c => c.id === saved);
+    if (savedIsReal) openChannel(saved);
+    if (view === 'threads' || view === 'activity') {
+      bootRestoredRef.current = true;
+      setThreadsOpen(view === 'threads');
+      setActivityOpen(view === 'activity');
+      setMobileThread(false);
+      rememberView(view); // openChannel() above just overwrote it — put it back
+      return;
+    }
+    if (savedIsReal) return;
 
     // Nothing to restore. On a phone that means the channel LIST — picking a
     // channel for someone is what made the landing feel arbitrary, and it used
@@ -2780,7 +2870,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         <div className={`w-full md:w-60 border-r border-gray-200 flex-col shrink-0 overflow-y-auto p-2 space-y-3 ${showMainMobile ? 'hidden md:flex' : 'flex'}`}>
           {/* Activity — everything that involved you, in one feed. Sits above
               Threads because Threads is a subset of it. */}
-          <button onClick={() => { setActivityOpen(true); setThreadsOpen(false); setMobileThread(false); clearSearch(); }}
+          <button onClick={() => { setActivityOpen(true); setThreadsOpen(false); setMobileThread(false); clearSearch(); rememberView('activity'); }}
             className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activityOpen ? 'bg-powder-600 text-white font-medium' : `hover:bg-gray-100 ${activityUnread?.all ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium'}`}`}>
             <Bell size={15} className="opacity-80" /> Activity
             {!!activityUnread?.all && !activityOpen && (
@@ -2788,7 +2878,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
             )}
           </button>
           {/* Threads inbox shortcut (like Slack) */}
-          <button onClick={() => { setThreadsOpen(true); setActivityOpen(false); setMobileThread(false); clearSearch(); }}
+          <button onClick={() => { setThreadsOpen(true); setActivityOpen(false); setMobileThread(false); clearSearch(); rememberView('threads'); }}
             className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${threadsOpen ? 'bg-powder-600 text-white font-medium' : `hover:bg-gray-100 ${threadUnread?.total ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium'}`}`}>
             <MessageSquare size={15} className="opacity-80" /> Threads
             {/* Replies no longer inflate the channel's count, so this badge is

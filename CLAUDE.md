@@ -2156,3 +2156,30 @@ form (with 'overdue' kept in the options while it's the current value — the se
 status accepted at create, and every due/overdue count excludes out_of_service. **The HACCP CCP evidence
 check still counts an out-of-service instrument on an active CCP on purpose** — that's a genuine gap,
 not noise. Recording a calibration flips the instrument back to active (existing behavior).
+
+## A dropdown inside a card or a scroller must not be a child of it (`MenuPortal`)
+The message 3-dot menu was an absolutely-positioned child of the message row, so **any** ancestor with
+overflow clipped it. In the Threads inbox there are two — the card (`overflow-hidden`, for its rounded
+corners) and the list's own `overflow-y-auto` — and the old `shouldDropUp()` measured the WINDOW, so it
+could see neither and dropped a full-height menu into a box that cut it in half with nothing to scroll.
+- `MenuPortal` draws the menu on `<body>` via `createPortal` at **fixed** coordinates measured from the
+  button (`menuPosition()`): no ancestor can clip it, and no transformed ancestor (the swipe-back pane)
+  can shift it. It flips above the button when there's more room there, is clamped horizontally, and
+  carries a `maxHeight` so a menu that still doesn't fit **scrolls itself** rather than being unreachable.
+- A fixed menu can't follow its button, so **any scroll closes it** (capture phase — the scroller is an
+  ancestor and its scroll doesn't bubble).
+- `ThreadInboxCard` lost its `overflow-hidden`; the corners are rounded on the first/last children
+  instead, which also frees the hover pill and the emoji picker.
+- **`onMarkUnread` has to be passed at every `<Message>` call site** — it gates the menu row, so the
+  entry was simply missing in the thread drawer AND the inbox cards. Verified in a real browser
+  (Playwright, 17 assertions) at 1280×800 and a 420px-tall viewport that forces the flip.
+
+## Comms remembers the VIEW, not just the channel
+`comms_last_channel` restored the last channel, but Threads and Activity are their own screens with no
+channel of their own — so a refresh while working the Threads inbox always dropped you into a channel,
+and with nothing saved at all you landed on #general. `comms_last_view` (`channel|threads|activity`)
+is written by `openChannel()` and the Threads/Activity buttons and cleared by `backToList()`.
+**Read `lastView()` BEFORE calling `openChannel()`** in the restore effect — openChannel records
+'channel', so reading it afterwards always came back 'channel' and the Threads restore could never fire
+(and re-write the view after, since openChannel just overwrote it). `bootRestoredRef` stops the effect
+re-running into the #general fallback underneath a restored Threads view, which sets no `activeId`.
