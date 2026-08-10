@@ -7,6 +7,11 @@ import { smsEnabled, sendSms, approverPhone } from '../sms.js';
 import { readyDocOrigin } from '../links.js';
 import { nextDisposalNumber } from './disposals.js';
 import { QMS_TYPES, getType, canSignApproval } from '../qms-config.js';
+import { syncKnifeStatus, syncAllKnifeStatuses } from '../knife-state.js';
+import { createReadStream } from 'fs';
+import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
+import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
+import { extractInvoiceText } from '../invoice-text.js';
 
 const router = Router();
 
@@ -345,6 +350,119 @@ router.get('/:type/:id', (req, res) => {
   res.json(withPermissions(flatten(row), row, req.user));
 });
 
+// ── evidence files on a record ───────────────────────────────────────────────
+//
+// A quality event is half photographs — the damaged pallet, the wrong label,
+// the lab slip, the supplier's email. They used to live in somebody's phone and
+// the record only described them, which is the gap an auditor asking "show me"
+// finds. Same storage path as equipment manuals and course materials (R2 via
+// putStream), and the same rule: `extracted_text` is SEARCHED, never shipped.
+const attachUpload = mediaUpload({ files: 10 }).array('files', 10);
+const uploadAttachments = (req, res, next) => attachUpload(req, res, (err) => {
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  next();
+});
+
+router.get('/:type/:id/attachments', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  let rows = [];
+  try {
+    rows = db.prepare('SELECT * FROM qms_attachments WHERE record_id = ? ORDER BY created_at DESC').all(req.params.id);
+  } catch { /* table optional */ }
+  Promise.all(rows.map(async f => ({
+    id: f.id, title: f.title, filename: f.filename, content_type: f.content_type,
+    size: f.size, uploaded_by: f.uploaded_by, created_at: f.created_at,
+    searchable: f.text_status === 'ok' && !!f.extracted_text,
+    text_status: f.text_status,
+    url: await presignGet(f.storage_key, f.filename),
+  }))).then(out => res.json(out)).catch(e => res.status(500).json({ error: e.message }));
+});
+
+router.post('/:type/:id/attachments', uploadAttachments, async (req, res) => {
+  const files = req.files || [];
+  try {
+    const cfg = requireType(req, res); if (!cfg) return;
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    // Attaching evidence follows the same rule as amending the record: the
+    // filer while it is unsigned, plus QA/supervisors/Document Control, and
+    // admins always. Adding evidence to a signed record would change what the
+    // signature covered.
+    if (!mayEdit(req.user, row)) {
+      return res.status(403).json({
+        error: hasAnySignature(row)
+          ? `${row.record_number} carries an approval signature — revoke it, attach the file, then sign again.`
+          : 'You can only attach files to records you filed. Ask QA, a supervisor or Document Control.',
+      });
+    }
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+    const tooBig = rejectOversize(files);
+    if (tooBig) return res.status(413).json({ error: tooBig });
+
+    const out = [];
+    for (const f of files) {
+      const id = uuid();
+      const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+      const key = `qms/${cfg.key}/${row.id}/${id}-${safe}`;
+      await putStream(key, createReadStream(f.path), f.mimetype);
+
+      // Best-effort: a photo has no text and that is fine. The row records
+      // that rather than implying the file was read.
+      let text = null, status = 'none';
+      try {
+        const buf = await getObjectBuffer(key);
+        text = await extractInvoiceText(buf, f.mimetype, f.originalname);
+        status = text && text.trim() ? 'ok' : 'empty';
+      } catch (e) {
+        status = 'failed';
+        console.warn('[qms] attachment text extraction failed:', e.message);
+      }
+
+      db.prepare(`INSERT INTO qms_attachments (id, record_id, record_type, title, filename, content_type, size, storage_key, extracted_text, text_status, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, row.id, cfg.key, (req.body?.title || '').slice(0, 200) || null,
+        (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null,
+        key, text || null, status, req.user?.name || null);
+      out.push({ id, filename: f.originalname, searchable: status === 'ok' });
+    }
+    logAudit(req.user, 'create', 'qms_attachment', row.id,
+      { record_number: row.record_number, files: out.map(o => o.filename) }, null, null, row.record_number);
+    res.status(201).json(out);
+  } catch (err) {
+    res.status(400).json({ error: uploadErrorMessage(err) });
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+router.delete('/:type/:id/attachments/:fileId', async (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!mayEdit(req.user, row)) {
+    return res.status(403).json({
+      error: hasAnySignature(row)
+        ? `${row.record_number} carries an approval signature — removing its evidence needs the signature revoked first.`
+        : 'You can only change records you filed.',
+    });
+  }
+  const f = db.prepare('SELECT * FROM qms_attachments WHERE id = ? AND record_id = ?').get(req.params.fileId, row.id);
+  if (!f) return res.status(404).json({ error: 'File not found' });
+
+  db.prepare('DELETE FROM qms_attachments WHERE id = ?').run(f.id);
+  logAudit(req.user, 'delete', 'qms_attachment', row.id,
+    { record_number: row.record_number, filename: f.filename }, f, null, row.record_number);
+  // Only purge the object once nothing references it — the same refcount rule
+  // forwarded comms attachments and shared equipment manuals follow.
+  const stillRef = db.prepare('SELECT 1 FROM qms_attachments WHERE storage_key = ? LIMIT 1').get(f.storage_key);
+  if (!stillRef) { try { await deleteObject(f.storage_key); } catch { /* object already gone */ } }
+  res.json({ success: true });
+});
+
 // Cross-module automation: a failed organoleptic sensory test means the product
 // must be dispositioned, so open a DRAFT disposal pre-filled from the test and
 // back-linked to it (source_type/source_id). Idempotent — one draft per source
@@ -388,6 +506,20 @@ function syncOrganolepticDisposal(db, cfg, rec, user) {
 // `organoleptic_record_id`, the organoleptic record holds
 // `source_flavor_approval_id`, and a re-save UPDATES that record instead of
 // filing a second one.
+// A knife sign-out written HERE must move the master list too.
+//
+// The kiosk used to be the only thing that touched `knife_accountability`
+// status, so recording a return in the log left the master row saying `issued`
+// and the scanner refused to sign the knife out again. The log is the
+// authority; this keeps the mirror honest whichever door the record came
+// through. Best-effort — a mirror failing must never fail the record.
+function syncKnifeMaster(db, cfg, rec) {
+  if (cfg.key !== 'knife_sign_out') return null;
+  const toolId = String(rec?.tool_id || '').trim();
+  if (!toolId) return null;
+  return syncKnifeStatus(db, toolId);
+}
+
 const SENSORY_KEYS = ['appearance', 'texture', 'aroma', 'flavor', 'overall'];
 
 function syncFlavorOrganoleptic(db, cfg, rec, user) {
@@ -472,6 +604,7 @@ router.post('/:type', (req, res) => {
   const created = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id));
   try { syncOrganolepticDisposal(db, cfg, created, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
   try { syncFlavorOrganoleptic(db, cfg, created, req.user); } catch (e) { console.error('[flavor→organoleptic]', e.message); }
+  try { syncKnifeMaster(db, cfg, created); } catch (e) { console.error('[knife→master]', e.message); }
   // Re-read: the sync hooks can write back to this record (the flavor approval
   // gets its organoleptic_record_id), and the caller should get the row as it
   // now stands rather than as it was a moment before.
@@ -541,14 +674,21 @@ function mayDelete(user, row) {
 // rule, which is how the two drift apart.
 function withPermissions(flat, row, user) {
   const canEdit = mayEdit(user, row);
+  const canDelete = mayDelete(user, row);
   return {
     ...flat,
     can_edit: canEdit,
-    can_delete: mayDelete(user, row),
+    can_delete: canDelete,
     edit_block_reason: canEdit ? null
       : hasAnySignature(row)
         ? 'This record carries an approval signature. Only an admin can amend it — or the signature can be revoked first.'
         : 'You can only correct records you filed. Ask QA, a supervisor or Document Control to amend it.',
+    // A missing Delete button with no explanation reads as a broken screen, and
+    // people ask whether it's a bug — it isn't, it's the rule. Say which rule.
+    delete_block_reason: canDelete ? null
+      : hasAnySignature(row)
+        ? 'This record has been signed, so it is history and cannot be deleted. Change its status instead — or revoke the signature, correct it, and sign again.'
+        : 'Deleting a filed record is admin-only, because a deleted record is indistinguishable from one that never existed. If it was filed in error, change its status or ask an admin.',
   };
 }
 
@@ -581,6 +721,10 @@ router.put('/:type/:id', (req, res) => {
   const updated = withPermissions(flatten(updatedRow), updatedRow, req.user);
   try { syncOrganolepticDisposal(db, cfg, updated, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
   try { syncFlavorOrganoleptic(db, cfg, updated, req.user); } catch (e) { console.error('[flavor→organoleptic]', e.message); }
+  // Both the old and the new tool id: retyping a sign-out onto a different
+  // knife leaves the first one showing as still out otherwise.
+  try { syncKnifeMaster(db, cfg, flatten(existing)); } catch (e) { console.error('[knife→master]', e.message); }
+  try { syncKnifeMaster(db, cfg, updated); } catch (e) { console.error('[knife→master]', e.message); }
   const freshRow = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
   res.json(withPermissions(flatten(freshRow), freshRow, req.user));
 });
@@ -628,6 +772,11 @@ router.post('/:type/bulk-update', (req, res) => {
   if (!sets.length) return res.status(400).json({ error: 'No editable fields in patch' });
   const info = db.prepare(`UPDATE qms_records SET ${sets.join(', ')}, updated_at=datetime('now') WHERE record_type = ? AND id IN (${ph})`).run(...vals, cfg.key, ...ids);
   logAudit(req.user, 'qms_bulk_updated', cfg.key, null, { count: info.changes, patch });
+  // Bulk-marking sign-outs returned is a real workflow, and it moves the master
+  // list exactly as a single edit does.
+  if (cfg.key === 'knife_sign_out') {
+    try { syncAllKnifeStatuses(db); } catch (e) { console.error('[knife→master]', e.message); }
+  }
   res.json({ updated: info.changes });
 });
 
@@ -756,6 +905,9 @@ router.delete('/:type/:id', (req, res) => {
   }
   db.prepare('DELETE FROM qms_records WHERE id = ?').run(req.params.id);
   logAudit(req.user, 'qms_deleted', cfg.key, req.params.id, { record_number: existing.record_number }, existing, null);
+  // Deleting the open sign-out is what frees the knife — without this the
+  // master list keeps it issued to somebody with no record saying so.
+  try { syncKnifeMaster(db, cfg, flatten(existing)); } catch (e) { console.error('[knife→master]', e.message); }
   res.json({ success: true });
 });
 

@@ -2465,6 +2465,47 @@ function runMigrations() {
   }
 
   /**
+   * Evidence attached to a quality event.
+   *
+   * A deviation, a non-conformance, an on-hold record — the investigation is
+   * usually half photographs: the damaged pallet, the label that was wrong, the
+   * lab slip, the supplier's email. Before this, the record described them and
+   * the evidence lived in somebody's phone, which is exactly the gap an auditor
+   * asking "show me" finds.
+   *
+   * Same shape and the same storage path as `equipment_files` and course
+   * materials: R2 via `putStream`, text pulled out on upload so a search finds
+   * a lot number printed INSIDE the PDF, and `extracted_text` is searched but
+   * never shipped to the client.
+   *
+   * Deliberately its own table rather than a JSON column on `qms_records`: a
+   * file has a storage key that must be purged on delete, and a blob inside a
+   * record is not something a `DELETE` can clean up.
+   */
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS qms_attachments (
+        id TEXT PRIMARY KEY,
+        record_id TEXT NOT NULL,
+        record_type TEXT NOT NULL,
+        title TEXT,
+        filename TEXT NOT NULL,
+        content_type TEXT,
+        size INTEGER,
+        storage_key TEXT NOT NULL,
+        extracted_text TEXT,
+        text_status TEXT NOT NULL DEFAULT 'pending',
+        uploaded_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (record_id) REFERENCES qms_records(id)
+      )
+    `);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_qms_attachments_record ON qms_attachments(record_id)');
+  } catch (e) {
+    console.warn('[db] qms_attachments unavailable:', e.message);
+  }
+
+  /**
    * Setup steps marked NOT APPLICABLE for one machine.
    *
    * Not every step applies to every machine — nobody writes a work instruction

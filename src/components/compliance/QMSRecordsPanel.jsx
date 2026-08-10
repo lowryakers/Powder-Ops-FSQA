@@ -6,6 +6,7 @@ import { deptLabel } from '../../constants/departments';
 import FileUpload from '../FileUpload';
 import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square, Eye, QrCode, ListChecks } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
+import RecordAttachments from './RecordAttachments';
 import { formatDateTime } from '../../lib/datetime.js';
 
 // Mirror of server canSignApproval — admin always; else role/department match.
@@ -472,6 +473,12 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
 
           {rec.document_url && <a href={rec.document_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-powder-600 hover:underline"><Paperclip size={14} /> View attached form</a>}
           {rec.notes && <p className="text-xs text-gray-500">{rec.notes}</p>}
+
+          {/* The photographs and paperwork behind the event. Gated on the same
+              server-stamped permission as amending — a signed record is closed,
+              because evidence added afterwards changes what was signed for. */}
+          <RecordAttachments recordType={cfg.key} recordId={rec.id}
+            canEdit={rec.can_edit !== false} blockReason={rec.edit_block_reason} />
         </div>
 
         <div className="flex items-center gap-2 px-5 py-3 border-t border-gray-200">
@@ -488,6 +495,15 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
             </span>
           )}
           <div className="flex-1" />
+          {/* A Delete button that simply isn't there reads as a broken screen —
+              people ask whether it's a bug. It's the rule (admin only, never
+              once signed), so the rule is what shows in its place. */}
+          {canEdit && rec.can_delete === false && rec.delete_block_reason && rec.can_edit !== false && (
+            <span className="text-[11px] text-gray-500 flex items-start gap-1.5 max-w-md" title={rec.delete_block_reason}>
+              <AlertTriangle size={12} className="mt-0.5 shrink-0 text-gray-400" />
+              <span className="line-clamp-2">{rec.delete_block_reason}</span>
+            </span>
+          )}
           {canEdit && rec.can_delete !== false && <button onClick={() => onDelete(rec)} className="px-3 py-1.5 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 flex items-center gap-1.5"><Trash2 size={14} /> Delete</button>}
           {canEdit && rec.can_edit !== false && <button onClick={() => onEdit(rec)} className="px-3 py-1.5 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 flex items-center gap-1.5"><Edit2 size={14} /> Edit</button>}
         </div>

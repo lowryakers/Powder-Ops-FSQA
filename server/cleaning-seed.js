@@ -463,10 +463,20 @@ export function seedTempHumidityRecords(db) {
   if (count > 0) console.log(`[seed] Imported ${count} temp/humidity records (${uniqueDates.length} days × 3 locations)`);
 }
 
+// Form 110-04 runs at THREE monitoring points, and the guard used to be one
+// global count: "any Temp/Humidity schedule exists → do nothing". That is the
+// all-or-nothing trap `seedTrainingCourses` is warned about in CLAUDE.md, and
+// it bit here — with the Warehouse schedule present and Production 1 and
+// Production 2 missing, every boot looked at the Warehouse row and stopped, so
+// the two production points never came back and the QA task list showed only
+// the warehouse check.
+//
+// The guard is per point now: a monitoring point with no schedule of its own
+// gets one, and a point that already has one is left completely alone (so an
+// edited frequency or a paused schedule survives, and this can never duplicate).
+// A schedule someone DEACTIVATED still counts as present — `is_active = 0` is a
+// decision and a redeploy must not undo it, the same rule the courses follow.
 export function seedTempHumidityPMSchedules(db) {
-  const hasSchedules = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Temp%Humidity%'").get().c;
-  if (hasSchedules > 0) return;
-
   // Every row these seeds create is an AREA, not a machine — a cleaning zone, a
   // BPG inspection zone, a light fixture zone, a monitoring point. Saying so at
   // the point of creation is what stops the setup checklist asking a zone for a
@@ -516,13 +526,26 @@ export function seedTempHumidityPMSchedules(db) {
         eqCount++;
       }
 
-      const pmId = uuid();
       const title = `Temp & Humidity Check — ${mp.location}`;
+      // Active OR paused — either way this point already has its schedule and
+      // a second one would put two identical tasks on the floor.
+      const hasSchedule = db.prepare(
+        'SELECT 1 FROM pm_schedules WHERE equipment_id = ? AND title = ? LIMIT 1').get(eqId, title);
+      if (hasSchedule) continue;
+
+      const pmId = uuid();
       insertPM.run(pmId, eqId, title, 'Form 110-04 — Daily temperature and humidity controls', stepsJson);
       pmCount++;
 
-      insertWO.run(uuid(), pmId, eqId, title, today, stepsJson);
-      woCount++;
+      // Housekeeping generates the recurring task; only seed the first one when
+      // nothing is already open for this job, or a re-seed adds a duplicate card.
+      const hasOpen = db.prepare(
+        "SELECT 1 FROM work_orders WHERE equipment_id = ? AND title = ? AND status IN ('open','in_progress') LIMIT 1")
+        .get(eqId, title);
+      if (!hasOpen) {
+        insertWO.run(uuid(), pmId, eqId, title, today, stepsJson);
+        woCount++;
+      }
     }
   });
   tx();

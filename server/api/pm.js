@@ -73,6 +73,66 @@ export function runPmHousekeeping(db, { force = false } = {}) {
   periodically('reclean-tasks', generateRecleanTasks, db);
 }
 
+/**
+ * Collapse identical scheduled tasks that are already on the floor.
+ *
+ * The guard in markMissedWorkOrders stops NEW duplicates; this clears the ones
+ * generated before it existed — six identical "Temp & Humidity Check —
+ * Warehouse" cards, same equipment, same due date, all overdue, with no way for
+ * an operator to tell which one to complete.
+ *
+ * Deliberately narrow, because a task list is a compliance record:
+ *   · Only tasks raised BY A PM SCHEDULE. Two hand-written tasks that happen to
+ *     share a title may well be two real jobs; a generator producing the same
+ *     row twice is not.
+ *   · Only ones matching on equipment AND title AND due date. Same job, same
+ *     machine, same day.
+ *   · The OLDEST is kept — it carries whatever history the duplicates don't.
+ *   · The rest are CANCELLED with a reason, never deleted. A deleted task is
+ *     indistinguishable from one that never existed, which is exactly the gap
+ *     an auditor asks about (the same rule server/cleanup.js follows).
+ *   · A task somebody has started or completed is never touched.
+ */
+export function collapseDuplicateWorkOrders(db) {
+  let rows;
+  try {
+    rows = db.prepare(
+      `SELECT id, pm_schedule_id, equipment_id, title, due_date, created_at
+       FROM work_orders
+       WHERE status IN ('open', 'overdue') AND pm_schedule_id IS NOT NULL
+         AND started_at IS NULL AND completed_at IS NULL
+       ORDER BY COALESCE(created_at, due_date), id`).all();
+  } catch { return []; }
+
+  const groups = new Map();
+  for (const r of rows) {
+    const key = `${r.equipment_id || ''}|${r.title || ''}|${r.due_date || ''}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+
+  const cancelled = [];
+  const cancel = db.prepare(
+    `UPDATE work_orders SET status = 'cancelled', completed_at = datetime('now'), completed_by = 'system',
+     notes = COALESCE(notes || char(10), '') || ?, updated_at = datetime('now') WHERE id = ?`);
+  const tx = db.transaction(() => {
+    for (const [, list] of groups) {
+      if (list.length < 2) continue;
+      const keep = list[0];
+      for (const dup of list.slice(1)) {
+        const reason = `Cancelled automatically: duplicate of ${keep.id} — the same scheduled task was generated more than once for this equipment and due date. The remaining task is the one to complete.`;
+        cancel.run(reason, dup.id);
+        cancelled.push({ id: dup.id, title: dup.title, due_date: dup.due_date, kept: keep.id });
+        logAudit('system', 'cancel', 'work_order', dup.id,
+          { reason: 'duplicate_scheduled_task', kept_work_order: keep.id, title: dup.title, due_date: dup.due_date },
+          null, null, dup.title);
+      }
+    }
+  });
+  tx();
+  return cancelled;
+}
+
 function markMissedWorkOrders(db) {
   const today = new Date().toISOString().split('T')[0];
 
@@ -103,9 +163,27 @@ function markMissedWorkOrders(db) {
   if (orphaned.length > 0) {
     const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')`);
     const checkExisting = db.prepare(`SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open', 'in_progress') LIMIT 1`);
+    // The SAME JOB must not appear twice on the floor.
+    //
+    // The guard above is per SCHEDULE, which is right until two schedules
+    // describe the same work — and duplicate schedules do happen (a seeder that
+    // ran twice, "create schedules from tasks" run beside a hand-made one, an
+    // import). Then each one dutifully generated its own task and the Task
+    // Center showed six identical "Temp & Humidity Check — Warehouse" cards,
+    // same equipment, same due date, all overdue. Nobody can tell those apart
+    // or knows which to complete.
+    //
+    // Two schedules on the SAME equipment with the SAME title are the same job
+    // by definition, so one open task covers both. The duplicate schedule is
+    // still there and still visible in the PM list — this only stops it
+    // multiplying the work; cleaning it up is a decision for whoever owns it.
+    const checkSameJob = db.prepare(
+      `SELECT 1 FROM work_orders WHERE title = ? AND status IN ('open', 'in_progress')
+       AND (equipment_id = ? OR (equipment_id IS NULL AND ? IS NULL)) LIMIT 1`);
     const tx = db.transaction(() => {
       for (const sched of orphaned) {
         if (checkExisting.get(sched.id)) continue;
+        if (checkSameJob.get(sched.title, sched.equipment_id, sched.equipment_id)) continue;
         const interval = (FREQ_DAYS[sched.frequency_type] || 30) * (sched.frequency_value ?? 1);
         const dueDate = nextWeekday(interval <= 1 ? new Date() : new Date(Date.now() + interval * 86400000));
         insertWO.run(uuid(), sched.id, sched.equipment_id, sched.title, dueDate.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');

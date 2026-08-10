@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import path from 'path';
-import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync } from 'fs';
+import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -32,6 +32,18 @@ const upload = multer({
     const allowed = ['.pdf', '.jpg', '.jpeg', '.png', '.xlsx', '.xls', '.csv', '.doc', '.docx'];
     const ext = path.extname(file.originalname).toLowerCase();
     cb(null, allowed.includes(ext));
+  },
+});
+
+// PDF-only, held in memory: these uploads are READ (text extracted) rather than
+// filed, so they never need to touch disk. Declared beside `upload` because a
+// route registered above its multer instance throws at module load — `const` is
+// not hoisted, and the router.post() call runs during evaluation.
+const coaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, path.extname(file.originalname).toLowerCase() === '.pdf');
   },
 });
 
@@ -631,6 +643,160 @@ router.delete('/requests/:requestId/results/:id', (req, res) => {
 
 // ──────────────── File Upload/Download ────────────────
 
+/**
+ * Read a lab report against an EXISTING request, and propose what it says.
+ *
+ * This is the gap behind "we uploaded the CTLA result and nothing populated":
+ * `POST /requests/:id/files` stored the PDF and read nothing at all. The parser
+ * existed, but only on `/parse-coa`, which is the flow that CREATES a request
+ * from a PDF — it was never wired to the far more common act of attaching the
+ * report to the request you already raised.
+ *
+ * WRITES NOTHING. It returns a proposal: the header fields it read beside what
+ * the request currently says, and each test matched to the item's ACTIVE
+ * specification with the pass/fail that spec would give it. Applying is a
+ * second, deliberate act, because this is a compliance record and a parser
+ * confidently overwriting one is the failure the whole review step exists to
+ * prevent. Same shape as the controlled-document revision importer.
+ *
+ * The two honest failure reports matter as much as the happy path:
+ *   · A PDF with no text layer is a PHOTOGRAPH of a report. Nothing can be read
+ *     from it, and saying "0 fields found" would read as "the parser ran and
+ *     your report is empty". It says the file is an image scan instead.
+ *   · A test with no active specification is recorded WITHOUT a pass/fail and
+ *     says so. A spec still sitting in drafts cannot grade anything (that is
+ *     deliberate — see the drafts review), and silently returning no verdict is
+ *     how a result nobody graded looks like a result that passed.
+ */
+router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => {
+  const db = getDb();
+  const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
+  if (!request) return res.status(404).json({ error: 'COA request not found' });
+
+  let buffer = req.file?.buffer || null;
+  let sourceName = req.file?.originalname || null;
+  // Or re-read a report already attached to this request, so a file uploaded
+  // before this existed doesn't have to be uploaded again.
+  if (!buffer && req.body?.file_id) {
+    const f = db.prepare('SELECT * FROM coa_files WHERE id = ? AND request_id = ?').get(req.body.file_id, req.params.id);
+    if (!f) return res.status(404).json({ error: 'That file is not attached to this request.' });
+    const p = path.join(UPLOAD_DIR, f.filename);
+    if (!existsSync(p)) return res.status(404).json({ error: 'The attached file is no longer on disk.' });
+    buffer = readFileSync(p);
+    sourceName = f.original_name;
+  }
+  if (!buffer) return res.status(400).json({ error: 'Upload a PDF, or name a file already attached to this request.' });
+
+  let parsed;
+  try {
+    parsed = await pdfLines(buffer);
+  } catch (err) {
+    return res.status(400).json({ error: `Could not open that PDF: ${err.message}` });
+  }
+
+  const text = parsed.text || '';
+  // A handful of stray characters is not a text layer. Below this the file is a
+  // scanned image and there is nothing to extract, however good the parser is.
+  const TEXT_LAYER_MIN = 40;
+  if (text.replace(/\s/g, '').length < TEXT_LAYER_MIN) {
+    return res.json({
+      readable: false,
+      reason: 'no_text_layer',
+      message: 'This PDF has no text in it — it is a scanned image of the report, so nothing can be read out of it automatically. Ask the lab for the original PDF, or type the results in by hand.',
+      source_name: sourceName,
+      page_count: parsed.numpages,
+      header: [], results: [], unmatched_specs: [],
+    });
+  }
+
+  const extracted = parseCTLACoa(text);
+
+  // Header fields, each shown against what the request already holds. A field
+  // the request already answers is offered but never pre-ticked — an upload is
+  // not a reason to rewrite what somebody keyed in.
+  const HEADER_FIELDS = [
+    ['item_number', 'Item #'], ['item_description', 'Item description'], ['lot_number', 'Lot #'],
+    ['manufacturer_lot', 'Manufacturer lot'], ['vendor_lot', 'Vendor lot'], ['supplier', 'Supplier'],
+    ['origin', 'Origin'], ['product_expiration', 'Expiration'], ['received_date', 'Received'],
+    ['date_of_results', 'Date of results'], ['tests_requested', 'Tests requested'],
+  ];
+  const header = HEADER_FIELDS
+    .filter(([key]) => extracted[key] != null && String(extracted[key]).trim() !== '')
+    .map(([key, label]) => {
+      const current = request[key] == null ? null : String(request[key]);
+      const found = String(extracted[key]).trim();
+      return {
+        key, label, found, current,
+        changes: (current || '') !== found,
+        // Filling a blank is the safe case and is the only one pre-ticked.
+        suggested: !current,
+      };
+    });
+
+  // Grade each extracted test against the item's ACTIVE specs — the same lookup
+  // and the same comparison POST /results uses, so the preview cannot promise a
+  // verdict the write would not give.
+  const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
+  const byTest = new Map(specs.map(s => [String(s.test_type || '').toLowerCase(), s]));
+  const draftSpecs = db.prepare(
+    "SELECT test_type FROM coa_specifications WHERE item_number = ? AND is_active = 0 AND COALESCE(approval_status,'approved') = 'draft'").all(request.item_number);
+  const draftFor = new Set(draftSpecs.map(s => String(s.test_type || '').toLowerCase()));
+
+  const results = (extracted.test_results || []).map(t => {
+    const key = String(t.test_type || '').toLowerCase();
+    const spec = byTest.get(key) || null;
+    let pass_fail = t.pass_fail || null;
+    let graded_by = t.pass_fail ? 'report' : null;
+    if (spec && t.result_value != null && !pass_fail) {
+      const val = parseFloat(t.result_value);
+      if (!Number.isNaN(val)) {
+        if (spec.min_value != null && spec.max_value != null) pass_fail = val >= spec.min_value && val <= spec.max_value ? 'pass' : 'fail';
+        else if (spec.max_value != null) pass_fail = val <= spec.max_value ? 'pass' : 'fail';
+        else if (spec.min_value != null) pass_fail = val >= spec.min_value ? 'pass' : 'fail';
+        if (pass_fail) graded_by = 'specification';
+      }
+    }
+    return {
+      test_type: t.test_type,
+      result_value: t.result_value,
+      unit: t.unit || spec?.unit || null,
+      specification_id: spec?.id || null,
+      specification: spec ? (spec.specification || null) : null,
+      pass_fail,
+      graded_by,
+      // The two reasons a result would land with no verdict, named rather than
+      // left as a blank cell.
+      no_spec_reason: spec ? null
+        : draftFor.has(key)
+          ? 'A specification for this test exists but is still a DRAFT. Approve it in the Specifications tab and this result will grade itself.'
+          : 'No specification on file for this test, so it will be recorded without a pass/fail.',
+      suggested: true,
+    };
+  });
+
+  // Specs the item HAS that this report says nothing about — the tests someone
+  // expected to see. Worth naming: a missing test reads as a passed one.
+  const reported = new Set(results.map(r => String(r.test_type || '').toLowerCase()));
+  const unmatched_specs = specs
+    .filter(s => !reported.has(String(s.test_type || '').toLowerCase()))
+    .map(s => ({ test_type: s.test_type, specification: s.specification || null }));
+
+  res.json({
+    readable: true,
+    source_name: sourceName,
+    page_count: parsed.numpages,
+    header,
+    results,
+    unmatched_specs,
+    // So a report the parser could not make sense of is diagnosable rather than
+    // just disappointing. Bounded — the client only shows it on request.
+    raw_text: text.slice(0, 20000),
+    message: results.length === 0
+      ? 'The PDF has readable text, but no test results matched the patterns this reader knows. The extracted text is included so it can be checked — results can still be entered by hand.'
+      : null,
+  });
+});
+
 router.post('/requests/:id/files', upload.single('file'), (req, res) => {
   const db = getDb();
   const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
@@ -1006,14 +1172,6 @@ router.post('/import', requireRole('admin', 'supervisor'), (req, res) => {
 
 // ──────────────── CTLA COA PDF Parser ────────────────
 
-const coaUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    cb(null, path.extname(file.originalname).toLowerCase() === '.pdf');
-  },
-});
-
 function parseCTLACoa(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const result = {
@@ -1115,28 +1273,37 @@ function parseCTLACoa(text) {
   return result;
 }
 
+/**
+ * Read a PDF's text layer, keeping line breaks.
+ *
+ * Factored out of /parse-coa so scanning a report INTO an existing request uses
+ * exactly the same reader — a second copy would drift, and the drift would show
+ * up as the same file extracting differently depending on which screen you used.
+ */
+async function pdfLines(buffer) {
+  const pdfDoc = await getDocument({ data: new Uint8Array(buffer) }).promise;
+  const textParts = [];
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const content = await page.getTextContent();
+    let lastY = null;
+    const lineTexts = [];
+    for (const item of content.items) {
+      const y = item.transform?.[5];
+      if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) lineTexts.push('\n');
+      lineTexts.push(item.str);
+      if (y !== undefined) lastY = y;
+    }
+    textParts.push(lineTexts.join(''));
+  }
+  return { text: textParts.join('\n'), numpages: pdfDoc.numPages };
+}
+
 router.post('/parse-coa', coaUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'PDF file required' });
 
   try {
-    const pdfDoc = await getDocument({ data: new Uint8Array(req.file.buffer) }).promise;
-    const textParts = [];
-    for (let i = 1; i <= pdfDoc.numPages; i++) {
-      const page = await pdfDoc.getPage(i);
-      const content = await page.getTextContent();
-      let lastY = null;
-      const lineTexts = [];
-      for (const item of content.items) {
-        const y = item.transform?.[5];
-        if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) {
-          lineTexts.push('\n');
-        }
-        lineTexts.push(item.str);
-        if (y !== undefined) lastY = y;
-      }
-      textParts.push(lineTexts.join(''));
-    }
-    const parsed = { text: textParts.join('\n'), numpages: pdfDoc.numPages };
+    const parsed = await pdfLines(req.file.buffer);
     const extracted = parseCTLACoa(parsed.text);
 
     // Save uploaded PDF to disk for attachment

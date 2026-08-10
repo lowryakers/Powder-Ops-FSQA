@@ -6,6 +6,7 @@ import { getChannelByName, postMessageAs } from './comms.js';
 import { SCALE_FORMS, SCALE_PROCEDURE } from '../scale-forms.js';
 import { recordScaleVerification } from './scale-verification.js';
 import { activeChemicalNames } from './qms.js';
+import { openSignOuts, syncKnifeStatus, toolIdOf } from '../knife-state.js';
 
 const router = Router();
 
@@ -55,17 +56,28 @@ const today = () => new Date().toISOString().slice(0, 10);
 // ── Knife / Blade kiosk ───────────────────────────────────────────────────────
 // Public roster of registered knives so a floor user can pick theirs. Excludes
 // decommissioned tools. Returns just enough to render + toggle each one.
+// The kiosk catalogue. Whether a knife is OUT is read from the sign-out LOG,
+// never from the master row's stored status — that column is a mirror, and it
+// was the only thing the kiosk consulted, so a return recorded in the app left
+// the scanner insisting the knife was still out and refusing to sign it out
+// again. See server/knife-state.js for the rule.
 router.get('/knife-list', (_req, res) => {
   const db = getDb();
   const rows = db.prepare("SELECT * FROM qms_records WHERE record_type = 'knife_accountability' AND (status IS NULL OR status != 'decommissioned') ORDER BY record_number").all();
+  const held = openSignOuts(db);
   const list = rows.map(r => {
     const data = parseJson(r.data, {});
+    const toolId = toolIdOf(r, data);
+    const holder = held.get(toolId) || null;
     return {
       id: r.id,
       record_number: r.record_number,
-      tool_id: data.tool_id || r.record_number,
-      status: r.status || 'available',
-      issued_to: data.issued_to || null,
+      tool_id: toolId,
+      status: holder ? 'issued' : 'available',
+      issued_to: holder ? (holder.employee_name || null) : null,
+      // What the operator needs when the answer surprises them: the log record
+      // that says it is out, so they can go and look at it.
+      sign_out_record: holder?.record_number || null,
     };
   });
   res.json(list);
@@ -87,10 +99,13 @@ router.post('/knife', (req, res) => {
   if (row.status === 'decommissioned') return res.status(400).json({ error: 'This knife has been decommissioned.' });
 
   const data = parseJson(row.data, {});
-  const wasIssued = row.status === 'issued';
+  const toolId = toolIdOf(row, data);
+  // Out or in is decided by the LOG, not by the master row's stored status.
+  // Those two disagreed whenever a return was recorded in the app, and the
+  // kiosk believed the stale one.
+  const wasIssued = !!openSignOuts(db).get(toolId);
   const action = wasIssued ? 'in' : 'out';
   const cond = condition === 'Bad' ? 'Bad' : 'Good';
-  const toolId = data.tool_id || row.record_number;
   const logCfg = getType('knife_sign_out');
   const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -141,6 +156,10 @@ router.post('/knife', (req, res) => {
         VALUES (?, 'knife_sign_out', ?, ?, 'out', ?, 0, ?)`).run(id, logNumber, today(), JSON.stringify(logData), name);
     }
   })();
+
+  // Re-derive the mirror from what the log now says, rather than trusting the
+  // status this handler just wrote — one function owns that column.
+  syncKnifeStatus(db, toolId);
 
   logAudit(name, action === 'out' ? 'knife_check_out' : 'knife_check_in', 'knife_accountability', record_id,
     { tool_id: toolId, condition: cond, sign_out_record: logNumber, via: 'kiosk' }, null, null, toolId);

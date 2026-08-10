@@ -9,7 +9,7 @@ import { gunzipSync } from 'zlib';
 import { execSync } from 'child_process';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
-import { getDb, dataDir } from './server/db.js';
+import { getDb, dataDir, logAudit } from './server/db.js';
 import { readyDocOrigin } from './server/links.js';
 import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import procurementRoutes from './server/api/procurement.js';
@@ -22,7 +22,7 @@ import { seedPayTracking } from './server/pay-seed.js';
 import { mergeFillingTeam } from './server/filling-merge.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
-import pmRoutes from './server/api/pm.js';
+import pmRoutes, { collapseDuplicateWorkOrders } from './server/api/pm.js';
 import checklistRoutes from './server/api/checklists.js';
 import calibrationRoutes from './server/api/calibration.js';
 import scaleVerificationRoutes from './server/api/scale-verification.js';
@@ -76,6 +76,7 @@ import { seedStructureLists } from './server/structure-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
 import { tagQaInspectionRecords } from './server/qa-records.js';
+import { syncAllKnifeStatuses } from './server/knife-state.js';
 import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
 import receivingRoutes from './server/api/receiving.js';
 import importRoutes from './server/api/imports.js';
@@ -647,6 +648,50 @@ try {
   console.warn('[migrate] PM consolidation skipped:', e.message);
 }
 
+// ── A controlled form runs at EVERY point it names ──────────────────────────
+//
+// PM consolidation v1 (b) folds per-machine daily PMs into one checklist per
+// (team, room). That is right for maintenance — six machines in Room 4 wiped
+// down every morning is one round, not six tasks. It is wrong for a CONTROLLED
+// FORM run at named monitoring points.
+//
+// Form 110-04 is run at three: Warehouse, Production 1, Production 2. The two
+// production monitors share a room, so consolidation folded them into a single
+// room checklist and left Warehouse (alone in its room) untouched — which is
+// why the Task Center and the Operator View showed the warehouse check and
+// nothing else, while Quality Schedules still listed all three. Each point
+// needs its OWN record: "the warehouse was 38%" and "Production 2 was 41%" are
+// different facts, and one combined tick cannot carry both.
+//
+// Narrow and one-time: reactivate the per-point schedules that were folded
+// away, and leave everything else consolidation did alone. Housekeeping raises
+// the tasks (its same-job guard stops a duplicate landing beside one that is
+// already open). A schedule someone deliberately paused AFTER this repair stays
+// paused — the flag means this runs once.
+try {
+  const flag = db.prepare("SELECT value FROM app_settings WHERE key = 'temp_humidity_points_v1'").get();
+  if (!flag) {
+    const folded = db.prepare(
+      "SELECT id, title FROM pm_schedules WHERE is_active = 0 AND title LIKE 'Temp %Humidity Check%'").all();
+    const restore = db.prepare("UPDATE pm_schedules SET is_active = 1, updated_at = datetime('now') WHERE id = ?");
+    db.transaction(() => {
+      for (const s of folded) {
+        restore.run(s.id);
+        logAudit('system', 'update', 'pm_schedule', s.id,
+          { reason: 'form_110_04_runs_per_monitoring_point', reactivated: true }, null, null, s.title);
+      }
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('temp_humidity_points_v1', ?, datetime('now'))")
+        .run(JSON.stringify({ at: new Date().toISOString(), restored: folded.map(s => s.title) }));
+    })();
+    if (folded.length) {
+      console.log(`[migrate] Temp & Humidity: reactivated ${folded.length} per-point schedule(s) — ` +
+        folded.map(s => s.title).join(', '));
+    }
+  }
+} catch (e) {
+  console.warn('[migrate] Temp & Humidity point restore skipped:', e.message);
+}
+
 // ── PM cleanup v2 ──
 // (a) Restore the titles of the consolidated daily checklists: the unconditional
 //     title normalizer above used to rename them after their anchor equipment
@@ -901,6 +946,26 @@ try {
   // the tagger has to run again here — the migration pass in db.js saw an empty
   // table on a fresh database. Idempotent.
   tagQaInspectionRecords(db);
+  // The knife master list is a MIRROR of the sign-out log (see
+  // server/knife-state.js). It drifted for as long as the kiosk was the only
+  // thing writing it — a return recorded in the app left the tool showing as
+  // issued and the scanner refused to sign it out again. Re-derive on every
+  // boot: idempotent, only touches rows that actually disagree, and names what
+  // it corrected rather than fixing things silently.
+  // Duplicate scheduled tasks already on the floor. Runs after the seeds, since
+  // a seeder is one of the things that can produce them.
+  const dupTasks = collapseDuplicateWorkOrders(db);
+  if (dupTasks.length) {
+    console.log(`[pm] Cancelled ${dupTasks.length} duplicate scheduled task(s): ` +
+      [...new Set(dupTasks.map(d => d.title))].slice(0, 5).join(', '));
+  }
+
+  const knifeFixed = syncAllKnifeStatuses(db);
+  if (knifeFixed.length) {
+    console.log(`[knife] Re-synced ${knifeFixed.length} master record(s) from the sign-out log: ` +
+      knifeFixed.slice(0, 10).map(c => `${c.tool_id} ${c.from}→${c.to}`).join(', ') +
+      (knifeFixed.length > 10 ? ` (+${knifeFixed.length - 10} more)` : ''));
+  }
 } catch (err) {
   console.error('[seed] Error seeding data (non-fatal):', err.message);
 }

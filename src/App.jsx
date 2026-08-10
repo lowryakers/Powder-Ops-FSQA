@@ -765,7 +765,16 @@ function accessibleNavItems(user, aiOn) {
 // Global "jump to a module" command palette. With ~30 modules, hunting through
 // the sidebar is the main navigation friction; this lets anyone type a name (or
 // press ⌘K / Ctrl-K) and jump straight there. Only shows modules the user can open.
-function ModuleSearch({ user, onNavigate }) {
+// `compact` is the phone shape: a search ICON in the mobile top bar, opening a
+// panel pinned across the width of the screen.
+//
+// The desktop trigger is a 12rem-wide box that cannot fit in a bar already
+// holding the menu button, the page title, the bell, settings and sign-out — so
+// the whole component was `hidden lg:block` and there was simply no way to
+// search from a phone, or from a laptop under 1024px. Same component, same
+// results list, same keyboard handling; only the trigger and the panel's
+// geometry change.
+function ModuleSearch({ user, onNavigate, compact = false }) {
   const { data: aiStatus } = useApiGet('/ai/status');
   const aiOn = !!aiStatus?.enabled;
   const [open, setOpen] = useState(false);
@@ -800,15 +809,23 @@ function ModuleSearch({ user, onNavigate }) {
   const choose = (item) => { if (!item) return; onNavigate(item.id); setOpen(false); };
 
   return (
-    <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(true)} title="Search modules (⌘K)"
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:bg-gray-50 text-sm w-48 lg:w-56">
-        <Search size={15} />
-        <span className="flex-1 text-left">Search…</span>
-        <kbd className="hidden lg:inline text-[10px] text-gray-300 border border-gray-200 rounded px-1">⌘K</kbd>
-      </button>
+    <div className={compact ? '' : 'relative'} ref={ref}>
+      {compact ? (
+        <button onClick={() => setOpen(true)} aria-label="Search modules"
+          className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+          <Search size={18} />
+        </button>
+      ) : (
+        <button onClick={() => setOpen(true)} title="Search modules (⌘K)"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:bg-gray-50 text-sm w-48 lg:w-56">
+          <Search size={15} />
+          <span className="flex-1 text-left">Search…</span>
+          <kbd className="hidden lg:inline text-[10px] text-gray-300 border border-gray-200 rounded px-1">⌘K</kbd>
+        </button>
+      )}
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden">
+        <div className={`bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden ${
+          compact ? 'fixed left-3 right-3 top-16' : 'absolute right-0 top-full mt-2 w-80'}`}>
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
             <Search size={15} className="text-gray-400" />
             <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
@@ -1685,7 +1702,10 @@ function App() {
               <PageInfo moduleId={resolvedTab} title={activeItem?.label || 'Dashboard'} />
             </div>
             <div className="flex items-center gap-3">
+              {/* Full box on a wide screen; the icon form below lg, where the
+                  box no longer fits but search is still wanted. */}
               <div className="hidden lg:block"><ModuleSearch user={user} onNavigate={setActiveTab} /></div>
+              <div className="lg:hidden"><ModuleSearch user={user} onNavigate={setActiveTab} compact /></div>
               <button onClick={toggleDockChat} data-tip={dockChat ? 'Close the docked Messages panel' : 'Dock Messages beside this module'}
                 className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${dockChat ? 'text-powder-700 bg-powder-50' : 'text-gray-500 hover:bg-gray-100'}`}>
                 <PanelRight size={16} /> Split Screen
@@ -1720,6 +1740,7 @@ function App() {
                 <PageInfo moduleId={resolvedTab} title={activeItem?.label || 'Dashboard'} />
               </div>
             </div>
+            <ModuleSearch user={user} onNavigate={setActiveTab} compact />
             <NotificationBell notifications={notifications} onNavigate={setActiveTab} />
             {user.role === 'admin' && (
               <button onClick={() => setActiveTab('settings')} title="Settings"

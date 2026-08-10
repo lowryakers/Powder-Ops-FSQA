@@ -792,6 +792,8 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   const [uploading, setUploading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [resultForm, setResultForm] = useState([{ test_type: '', result_value: '', pass_fail: '', notes: '' }]);
+  // A File (just uploaded) or a coa_files id (already attached) to read.
+  const [scanFile, setScanFile] = useState(null);
 
   const downloadPdf = async () => {
     const token = localStorage.getItem('auth_token');
@@ -1050,15 +1052,211 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
                 <div key={f.id} className="flex items-center gap-2 text-xs mb-1">
                   <FileText size={12} className="text-gray-400" />
                   <a href={`/api/coa/files/${f.id}/download`} className="text-powder-600 hover:underline flex-1 truncate">{f.original_name}</a>
+                  {/* Reading an already-attached report, so a file uploaded
+                      before this existed doesn't have to be uploaded again. */}
+                  {/\.pdf$/i.test(f.original_name || '') && (
+                    <button onClick={() => setScanFile(f.id)} className="text-powder-600 hover:underline">Read</button>
+                  )}
                   <button onClick={() => handleDeleteFile(f.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button>
                 </div>
               ))}
-              <label className={`mt-2 inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                <Upload size={12} /> Upload Lab Results
-                <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'lab_results')} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" />
-              </label>
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                <label className={`inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <Upload size={12} /> Upload Lab Results
+                  <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'lab_results')} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" />
+                </label>
+                {/* Upload and read in one step — the common case. The file is
+                    attached first, so the report is on the record whether or
+                    not anything could be extracted from it. */}
+                <label className={`inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <FlaskConical size={12} /> Upload &amp; read results
+                  <input type="file" className="hidden" accept=".pdf"
+                    onChange={async e => {
+                      const f = e.target.files?.[0];
+                      e.target.value = '';
+                      if (!f) return;
+                      await handleFileUpload({ target: { files: [f], value: '' } }, 'lab_results');
+                      setScanFile(f);
+                    }} />
+                </label>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1.5">
+                Reading proposes what the PDF says — nothing is written to the record until you tick it.
+              </p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {scanFile && (
+        <ScanReportPanel requestId={requestId} file={scanFile}
+          onClose={() => setScanFile(null)}
+          onApplied={() => { refreshDetail(); onRefresh(); }} />
+      )}
+    </div>
+  );
+}
+
+// ──────── Read a lab report into an existing request ────────
+//
+// Uploading the CTLA PDF used to store the file and read nothing — the parser
+// only ever ran on the "create a request from a PDF" flow. This is the review
+// step in between: the server proposes what it read, a person ticks what is
+// right, and only then is the compliance record written. Nothing here applies
+// on its own.
+function ScanReportPanel({ requestId, file, onClose, onApplied }) {
+  const [scan, setScan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [pickHeader, setPickHeader] = useState({});
+  const [pickResult, setPickResult] = useState({});
+  const [showText, setShowText] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setBusy(true); setError('');
+      try {
+        const fd = new FormData();
+        if (file instanceof File) fd.append('file', file);
+        else fd.append('file_id', String(file));
+        const data = await apiUpload(`/coa/requests/${requestId}/scan`, fd);
+        if (cancelled) return;
+        setScan(data);
+        setPickHeader(Object.fromEntries((data.header || []).map(h => [h.key, h.suggested])));
+        setPickResult(Object.fromEntries((data.results || []).map((r, i) => [i, r.suggested])));
+      } catch (e) { if (!cancelled) setError(e.message); }
+      finally { if (!cancelled) setBusy(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [requestId, file]);
+
+  const apply = async () => {
+    setBusy(true); setError('');
+    try {
+      const patch = {};
+      for (const h of scan.header || []) if (pickHeader[h.key]) patch[h.key] = h.found;
+      if (Object.keys(patch).length) await apiPut(`/coa/requests/${requestId}`, patch);
+      const results = (scan.results || []).filter((_, i) => pickResult[i])
+        .map(r => ({ test_type: r.test_type, result_value: r.result_value, unit: r.unit, pass_fail: r.pass_fail || undefined }));
+      if (results.length) await apiPost(`/coa/requests/${requestId}/results`, { results });
+      onApplied?.();
+      onClose();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const chosen = Object.values(pickHeader).filter(Boolean).length + Object.values(pickResult).filter(Boolean).length;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white">
+          <h3 className="text-sm font-semibold text-gray-900">Read the lab report</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {busy && !scan && <p className="text-sm text-gray-500">Reading the PDF…</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          {/* A photograph of a report has nothing in it to read. Saying so beats
+              reporting "0 fields found", which reads as an empty report. */}
+          {scan && !scan.readable && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <p className="text-sm font-semibold text-amber-900">Nothing could be read from this file</p>
+              <p className="text-xs text-amber-800 mt-1">{scan.message}</p>
+            </div>
+          )}
+
+          {scan?.readable && (
+            <>
+              {scan.message && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">{scan.message}</div>
+              )}
+
+              {scan.header?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 mb-1.5">Details read from the report</p>
+                  <div className="space-y-1">
+                    {scan.header.map(h => (
+                      <label key={h.key} className="flex items-start gap-2 rounded-lg border border-gray-200 px-2.5 py-1.5 cursor-pointer hover:border-gray-300">
+                        <input type="checkbox" className="mt-0.5" checked={!!pickHeader[h.key]}
+                          onChange={e => setPickHeader(p => ({ ...p, [h.key]: e.target.checked }))} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-medium text-gray-900">{h.label}</span>
+                          <span className="block text-xs text-gray-600 break-words">{h.found}</span>
+                          {h.changes && h.current && (
+                            <span className="block text-[11px] text-amber-700 mt-0.5">
+                              Replaces what is on the request now: “{h.current}”
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {scan.results?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 mb-1.5">Test results</p>
+                  <div className="space-y-1">
+                    {scan.results.map((r, i) => (
+                      <label key={`${r.test_type}-${i}`} className="flex items-start gap-2 rounded-lg border border-gray-200 px-2.5 py-1.5 cursor-pointer hover:border-gray-300">
+                        <input type="checkbox" className="mt-0.5" checked={!!pickResult[i]}
+                          onChange={e => setPickResult(p => ({ ...p, [i]: e.target.checked }))} />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-medium text-gray-900">{r.test_type}</span>
+                            <span className="text-xs text-gray-600">{r.result_value ?? '—'}{r.unit ? ` ${r.unit}` : ''}</span>
+                            {r.pass_fail && (
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                r.pass_fail === 'pass' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {r.pass_fail.toUpperCase()}
+                              </span>
+                            )}
+                          </span>
+                          {r.specification && <span className="block text-[11px] text-gray-500 mt-0.5">Spec: {r.specification}</span>}
+                          {r.no_spec_reason && <span className="block text-[11px] text-amber-700 mt-0.5">{r.no_spec_reason}</span>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* A test the item has a spec for that this report says nothing
+                  about. A missing test reads later as a passed one. */}
+              {scan.unmatched_specs?.length > 0 && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <p className="text-xs font-medium text-gray-700">This item has specifications for tests the report does not mention:</p>
+                  <p className="text-[11px] text-gray-600 mt-0.5">{scan.unmatched_specs.map(s => s.test_type).join(', ')}</p>
+                </div>
+              )}
+
+              {scan.raw_text && (
+                <div>
+                  <button type="button" onClick={() => setShowText(v => !v)} className="text-xs text-powder-600 hover:underline">
+                    {showText ? 'Hide' : 'Show'} the text read from the PDF
+                  </button>
+                  {showText && (
+                    <pre className="mt-1 max-h-64 overflow-auto text-[11px] bg-gray-50 border border-gray-200 rounded-lg p-2 whitespace-pre-wrap">{scan.raw_text}</pre>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-gray-200 sticky bottom-0 bg-white">
+          <span className="text-xs text-gray-500">{chosen} selected</span>
+          <div className="flex-1" />
+          <button onClick={onClose} className="px-3 py-1.5 text-xs text-gray-600">Cancel</button>
+          <button onClick={apply} disabled={busy || !chosen}
+            className="px-3 py-1.5 bg-powder-600 text-white text-xs rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            {busy ? 'Applying…' : 'Apply selected'}
+          </button>
         </div>
       </div>
     </div>
