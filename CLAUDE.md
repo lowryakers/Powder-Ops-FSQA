@@ -2196,3 +2196,33 @@ as an amber strip at the top of their own Evaluation tab (tap it to load that pe
 - A **completed** assignment refuses deletion: it is the record that the review was asked for and done.
   Open ones can be cancelled. One open assignment per reviewer+employee (409 on a duplicate).
 - Admin tab **Assignments** creates and tracks them; the Evaluation tab label carries the open count.
+
+## Importing the scanned tests from Drive (`server/scanned-tests.js`)
+The plant scans each completed test one file per person, and the FILENAME is the record:
+`Copy of 06-01-2026 (LIGHT METER TEST) Bernardo Encisos.pdf`. So this is a **filename parser, not a
+document parser** — the scan is a photograph of handwriting and nothing reliable can be read out of it.
+`POST /training/import/scans/analyze|commit` (admin, multipart .zip; the client re-sends the zip on
+commit, so there's no stash table).
+- **Both orders occur** — `DATE (TOPIC) NAME` and `NAME (TOPIC) DATE` — so the topic is taken from the
+  parentheses, the date by regex, and whatever is left is the person. Drive's `Copy of ` prefix (sometimes
+  doubled), trailing spaces before the extension and `__MACOSX/` noise are all stripped.
+- **MM-DD-YYYY, because `11-13-2025` proves it.** Day-first is read only when the first number cannot be
+  a month — an observation, not a preference.
+- **Nothing is invented.** No topic / no person / no date / one-word name → the file is REPORTED with the
+  reason and skipped. The group sign-in forms (`August 20, 2025 Crisis Managment,SOP401.pdf`) have no
+  `(topic)` and land here on purpose: they are not one person's test.
+- **The mapping step is the point.** The scans misspell names the roster spells right ("Encisos"/"Enciso",
+  "Inciso"), so an exact `personKey` match is used outright and everything else is a **suggestion** ranked
+  by Dice bigram similarity (≥0.55, top 4) with the whole roster available for hand-mapping. Unmapped
+  people/topics are skipped and counted, mappable on a later run — same rule as the Training Log importer.
+- **The ACCOUNT's spelling goes on the record**, not the scan's, so it reads like every other record; the
+  original filename is kept in the notes as provenance.
+- Idempotent on `personKey|course title|date`, with `already_in_readydoc` counted separately from
+  `repeated_in_file`.
+- **The scan is stored as the record's EVIDENCE** (`training_records.evidence_key/_filename/_text/_status`,
+  R2). Rows are written in one transaction first and the files attached after, so a storage hiccup can
+  never half-import the log — the count of what was and wasn't stored is reported. **OCR is PDF-only**
+  (local text layer); running vision OCR over hundreds of scans at import time would turn one click into
+  a long, expensive job, and `evidence_status = 'skipped_image'` says so rather than implying it was read.
+- Verified on the real filenames: 25 assertions incl. both orders, the group-form rejection, the
+  misspelling suggested-not-matched, re-import creating 0, and admin-only.

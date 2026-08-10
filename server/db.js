@@ -2032,6 +2032,14 @@ function runMigrations() {
   // marks a revision as a typo/formatting fix that should NOT trigger retraining.
   addColumnIfMissing('training_courses', 'retrain_on_doc_change', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('training_records', 'sop_revision', 'TEXT');
+  // The scanned test itself, kept as the EVIDENCE behind the completion — an
+  // auditor asking "show me he passed it" wants the paper, not a row.
+  // evidence_text is the PDF's own text layer where it has one; a photographed
+  // scan has none, and the row says so rather than implying it was searched.
+  addColumnIfMissing('training_records', 'evidence_key', 'TEXT');
+  addColumnIfMissing('training_records', 'evidence_filename', 'TEXT');
+  addColumnIfMissing('training_records', 'evidence_text', 'TEXT');
+  addColumnIfMissing('training_records', 'evidence_status', 'TEXT');
   addColumnIfMissing('training_tests', 'sop_revision', 'TEXT');
   addColumnIfMissing('sop_documents', 'training_revision', 'TEXT');
   addColumnIfMissing('sop_versions', 'minor', 'INTEGER NOT NULL DEFAULT 0');

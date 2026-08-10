@@ -95,6 +95,197 @@ function ImportModal({ onClose, onDone }) {
 // (WI)", "Food Defense SOP" are one training) and only someone who was there
 // can say so. That's ~30 decisions instead of 3,600. Nothing is written until
 // the preview has been seen.
+// A zip of the plant's scanned tests. Everything the log needs is in the
+// FILENAME — "06-01-2026 (LIGHT METER TEST) Bernardo Encisos" — so this reads
+// names, not documents, and the scan itself is kept as the record's evidence.
+//
+// The mapping step is the point: the scans spell names the roster doesn't
+// ("Encisos" / "Enciso"), and only a person can say those are the same man.
+// Nothing is written until every person and topic has been confirmed, and
+// anything left blank is skipped and can be mapped on a later run.
+function ScannedTestsImportModal({ onClose, onDone }) {
+  const [file, setFile] = useState(null);
+  const [step, setStep] = useState('pick'); // pick | map | done
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [analysis, setAnalysis] = useState(null);
+  const [people, setPeople] = useState({});   // personKey → user id ('' = skip)
+  const [topics, setTopics] = useState({});   // normalized topic → course id
+  const [result, setResult] = useState(null);
+  const [showProblems, setShowProblems] = useState(false);
+
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const analyze = async (f) => {
+    setBusy(true); setError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const a = await apiUpload('/training/import/scans/analyze', fd);
+      setAnalysis(a);
+      setPeople(Object.fromEntries(a.people.map(p => [p.key, p.suggested_user_id || ''])));
+      setTopics(Object.fromEntries(a.topics.map(t => [norm(t.topic), t.suggested_course_id || ''])));
+      setStep('map');
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const commit = async () => {
+    setBusy(true); setError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('people', JSON.stringify(people));
+      fd.append('topics', JSON.stringify(topics));
+      setResult(await apiUpload('/training/import/scans/commit', fd));
+      setStep('done');
+      onDone?.();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const mappedPeople = Object.values(people).filter(Boolean).length;
+  const mappedTopics = Object.values(topics).filter(Boolean).length;
+  const willImport = (analysis?.people || []).reduce((n, p) => n + (people[p.key] ? p.count : 0), 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[70] flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-6 p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-gray-900">Import scanned tests</h3>
+            <p className="text-xs text-gray-500">
+              A .zip of the scanned test PDFs. The person, topic and date are read from each filename.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        {step === 'pick' && (
+          <div className="space-y-2">
+            <input type="file" accept=".zip,application/zip" onChange={e => setFile(e.target.files?.[0] || null)}
+              className="block w-full text-sm border border-gray-300 rounded-lg p-2" />
+            <p className="text-[11px] text-gray-500">
+              In Drive: select the folder → Download, which gives you a .zip. Filenames like
+              &ldquo;06-01-2026 (LIGHT METER TEST) Bernardo Enciso.pdf&rdquo; are what this reads.
+            </p>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <button onClick={() => file && analyze(file)} disabled={!file || busy}
+              className="px-4 py-2 bg-powder-600 text-white text-sm font-semibold rounded-lg hover:bg-powder-700 disabled:opacity-50">
+              {busy ? 'Reading…' : 'Read the zip'}
+            </button>
+          </div>
+        )}
+
+        {step === 'map' && analysis && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 flex-wrap text-xs">
+              <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-700">{analysis.file_count} files</span>
+              <span className="px-2 py-1 rounded-lg bg-green-100 text-green-800">{analysis.readable} readable</span>
+              {analysis.problem_count > 0 && (
+                <button onClick={() => setShowProblems(s => !s)} className="px-2 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200">
+                  {analysis.problem_count} couldn&apos;t be read — {showProblems ? 'hide' : 'show'}
+                </button>
+              )}
+              {!analysis.storage_ready && (
+                <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-900">
+                  File storage is off — records will import without the scan attached.
+                </span>
+              )}
+            </div>
+
+            {showProblems && (
+              <div className="border border-amber-200 rounded-lg bg-amber-50 p-2 max-h-40 overflow-y-auto">
+                {analysis.problems.map((p, i) => (
+                  <p key={i} className="text-[11px] text-amber-900">
+                    <span className="font-medium">{p.filename}</span> — {{
+                      no_topic: 'no (topic) in the filename — probably a group form, not one person\'s test',
+                      no_person: 'no name left after the date and topic',
+                      no_date: 'no date in the filename',
+                      partial_name: 'only one word of a name',
+                    }[p.reason] || p.reason}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            <div>
+              <p className="text-sm font-semibold text-gray-900 mb-1">People ({mappedPeople}/{analysis.people.length} matched)</p>
+              <div className="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+                {analysis.people.map(p => (
+                  <div key={p.key} className="flex items-center gap-2 px-2 py-1.5">
+                    <span className="text-sm text-gray-800 w-44 shrink-0 truncate" title={p.name}>{p.name}</span>
+                    <span className="text-[11px] text-gray-400 w-12 shrink-0">{p.count}×</span>
+                    <select value={people[p.key] ?? ''} onChange={e => setPeople(m => ({ ...m, [p.key]: e.target.value }))}
+                      className={`flex-1 px-2 py-1 border rounded text-sm ${people[p.key] ? 'border-gray-300' : 'border-amber-300 bg-amber-50'}`}>
+                      <option value="">Skip — don&apos;t import these</option>
+                      {p.matched_user_id && <option value={p.matched_user_id}>{p.matched_user_name} (exact match)</option>}
+                      {p.candidates.filter(c => c.id !== p.matched_user_id).map(c => (
+                        <option key={c.id} value={c.id}>{c.name} — {c.score}% similar</option>
+                      ))}
+                      {/* The rest of the roster, so a name with no close match
+                          can still be mapped rather than only skipped. */}
+                      {(analysis.all_users || [])
+                        .filter(u => u.id !== p.matched_user_id && !p.candidates.some(c => c.id === u.id))
+                        .map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1">
+                The scans spell some names differently from the roster. Anything left on &ldquo;Skip&rdquo; is
+                not imported and can be mapped on a later run.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm font-semibold text-gray-900 mb-1">Topics → courses ({mappedTopics}/{analysis.topics.length})</p>
+              <div className="border border-gray-200 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-100">
+                {analysis.topics.map(t => (
+                  <div key={t.topic} className="flex items-center gap-2 px-2 py-1.5">
+                    <span className="text-sm text-gray-800 w-44 shrink-0 truncate" title={t.topic}>{t.topic}</span>
+                    <span className="text-[11px] text-gray-400 w-12 shrink-0">{t.count}×</span>
+                    <select value={topics[norm(t.topic)] ?? ''} onChange={e => setTopics(m => ({ ...m, [norm(t.topic)]: e.target.value }))}
+                      className={`flex-1 px-2 py-1 border rounded text-sm ${topics[norm(t.topic)] ? 'border-gray-300' : 'border-amber-300 bg-amber-50'}`}>
+                      <option value="">Skip this topic</option>
+                      {analysis.courses.map(c => <option key={c.id} value={c.id}>{c.code ? `${c.code} — ` : ''}{c.title}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="flex items-center gap-2">
+              <button onClick={commit} disabled={busy || willImport === 0}
+                className="px-4 py-2 bg-powder-600 text-white text-sm font-semibold rounded-lg hover:bg-powder-700 disabled:opacity-50">
+                {busy ? 'Importing…' : `Import ${willImport} test${willImport === 1 ? '' : 's'}`}
+              </button>
+              <button onClick={() => setStep('pick')} className="px-3 py-2 text-sm text-gray-600 rounded-lg hover:bg-gray-100">Back</button>
+              <span className="text-[11px] text-gray-500">Re-running this is safe — anything already on file is recognised, not doubled.</span>
+            </div>
+          </div>
+        )}
+
+        {step === 'done' && result && (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-green-700">{result.created} training records created.</p>
+            <ul className="text-xs text-gray-600 space-y-0.5">
+              {result.already_in_readydoc > 0 && <li>{result.already_in_readydoc} were already in ReadyDoc.</li>}
+              {result.repeated_in_file > 0 && <li>{result.repeated_in_file} were the same test scanned twice in the zip.</li>}
+              {result.skipped_unmapped_person > 0 && <li>{result.skipped_unmapped_person} skipped — person left unmapped.</li>}
+              {result.skipped_unmapped_course > 0 && <li>{result.skipped_unmapped_course} skipped — topic left unmapped.</li>}
+              {result.unreadable > 0 && <li>{result.unreadable} filenames couldn&apos;t be read.</li>}
+              <li>{result.evidence_stored} scans attached as evidence{result.evidence_failed ? `, ${result.evidence_failed} failed to store` : ''}.</li>
+            </ul>
+            <button onClick={onClose} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">Done</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TrainingLogImportModal({ onClose, onDone }) {
   const [file, setFile] = useState(null);
   const [step, setStep] = useState('file'); // file → map → preview → done
@@ -904,6 +1095,7 @@ export default function TrainingPanel() {
   const [view, setView] = useState('matrix');
   const [importing, setImporting] = useState(false);
   const [importingLog, setImportingLog] = useState(false);
+  const [importingScans, setImportingScans] = useState(false);
   const [completion, setCompletion] = useState(null); // {} = new
   const [groupTraining, setGroupTraining] = useState(false);
   const [course, setCourse] = useState(null);
@@ -939,6 +1131,10 @@ export default function TrainingPanel() {
             {user?.role === 'admin' && (
               <button onClick={() => setImportingLog(true)} title="Import the historical Training Log spreadsheet"
                 className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><FileText size={15} /> Training Log</button>
+            )}
+            {user?.role === 'admin' && (
+              <button onClick={() => setImportingScans(true)} title="Import a zip of scanned tests from Drive"
+                className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Upload size={15} /> Scanned Tests</button>
             )}
             <button onClick={() => setCourse({})} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Plus size={15} /> Course</button>
             <button onClick={() => setGroupTraining(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Users size={15} /> Group Training</button>
@@ -1115,6 +1311,7 @@ export default function TrainingPanel() {
 
       {importing && <ImportModal onClose={() => setImporting(false)} onDone={refreshAll} />}
       {importingLog && <TrainingLogImportModal onClose={() => setImportingLog(false)} onDone={refreshAll} />}
+      {importingScans && <ScannedTestsImportModal onClose={() => setImportingScans(false)} onDone={refreshAll} />}
       {completion && <CompletionModal initial={completion.id ? completion : null} courses={courses} users={users} onClose={() => setCompletion(null)} onSaved={() => { setCompletion(null); refreshAll(); }} />}
       {course && <CourseModal initial={course.id ? course : null} onClose={() => setCourse(null)} onSaved={() => { setCourse(null); refreshCourses(); refreshMatrix(); }} />}
       {testCourse && <TestEditor course={testCourse} aiEnabled={aiOn} onClose={() => setTestCourse(null)} onSaved={() => { setTestCourse(null); refreshCourses(); }} />}

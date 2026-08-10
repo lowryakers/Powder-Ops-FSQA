@@ -3,10 +3,14 @@ import { createReadStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { aiEnabled, generateTestQuestions } from '../ai.js';
-import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+import { storageEnabled, putStream, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo } from '../media.js';
 import multer from 'multer';
+import AdmZip from 'adm-zip';
 import { parseTrainingLog } from '../training-log.js';
+import { parseScanName, similarity, isScanEntry } from '../scanned-tests.js';
+import { extractInvoiceText } from '../invoice-text.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -851,6 +855,200 @@ router.delete('/materials/:id', (req, res) => {
   logAudit(req.user, 'training_material_deleted', 'training_course', m.course_id,
     { filename: m.filename }, null, null, m.filename);
   res.json({ ok: true });
+});
+
+// ── Import a ZIP of scanned tests ─────────────────────────────────────────────
+//
+// The plant scans each completed test to Drive, one file per person, and the
+// FILENAME carries the record: "06-01-2026 (LIGHT METER TEST) Bernardo Encisos".
+// The existing importer reads the matrix spreadsheet; this reads the folder.
+//
+// Two steps on purpose, the same shape as the Training Log importer: analyze
+// shows every person and topic it found with a SUGGESTED match, and nothing is
+// written until those are confirmed. The suggestions exist because the scans
+// spell names the roster doesn't ("Bernardo Encisos", "Bernardo Inciso") — only
+// a person can say those are the same man, and filing a completion against the
+// wrong one is exactly what this step prevents.
+const zipScanUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 400 * 1024 * 1024 } });
+
+function readScanZip(buffer) {
+  const zip = new AdmZip(buffer);
+  const out = [];
+  for (const e of zip.getEntries()) {
+    if (e.isDirectory || !isScanEntry(e.entryName)) continue;
+    out.push({ entry: e, ...parseScanName(e.entryName) });
+  }
+  return out;
+}
+
+function scanContext(db) {
+  const courses = db.prepare('SELECT id, title, code FROM training_courses WHERE active = 1 ORDER BY code, title').all();
+  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
+  return { courses, users, userByKey: new Map(users.map(u => [personKey(u.name), u])) };
+}
+
+// Everything already on file, so the preview can tell "already imported" from
+// "the same test scanned twice" — calling the second one 'already imported' on
+// an empty database is how an importer loses trust.
+function existingCompletionKeys(db) {
+  const rows = db.prepare(`SELECT tr.employee_name, tr.training_topic, tr.training_date, c.title AS course_title
+    FROM training_records tr LEFT JOIN training_courses c ON c.id = tr.course_id`).all();
+  return new Set(rows.map(r => `${personKey(r.employee_name)}|${normName(r.course_title || r.training_topic)}|${r.training_date}`));
+}
+
+router.post('/import/scans/analyze', requireRole('admin'), zipScanUpload.single('file'), (req, res) => {
+  if (!req.file?.buffer) return res.status(400).json({ error: 'A .zip of the scanned tests is required' });
+  let files;
+  try { files = readScanZip(req.file.buffer); }
+  catch (e) { return res.status(422).json({ error: `Could not read this file. Is it a valid .zip? (${e.message})` }); }
+  if (!files.length) return res.status(422).json({ error: 'No PDF or image files found in that zip.' });
+
+  const db = getDb();
+  const { courses, users, userByKey } = scanContext(db);
+
+  const people = new Map();   // personKey → { name, count, suggestion }
+  const topics = new Map();   // normalized topic → { topic, count, suggested_course_id }
+  const problems = [];
+
+  for (const f of files) {
+    if (f.problem) { problems.push({ filename: f.filename, reason: f.problem, read: { name: f.name, topic: f.topic, date: f.date } }); continue; }
+    const key = personKey(f.name);
+    if (!people.has(key)) {
+      const exact = userByKey.get(key) || null;
+      // Suggestions only — the scans misspell names the roster spells right.
+      const ranked = exact ? [] : users
+        .map(u => ({ id: u.id, name: u.name, score: similarity(f.name, u.name) }))
+        .filter(c => c.score >= 0.55)
+        .sort((a, b) => b.score - a.score).slice(0, 4);
+      people.set(key, {
+        key, name: f.name, count: 0,
+        matched_user_id: exact?.id || null, matched_user_name: exact?.name || null,
+        suggested_user_id: exact?.id || ranked[0]?.id || null,
+        candidates: ranked.map(c => ({ id: c.id, name: c.name, score: Math.round(c.score * 100) })),
+      });
+    }
+    people.get(key).count++;
+
+    const tk = normName(f.topic);
+    if (!topics.has(tk)) topics.set(tk, { topic: f.topic, count: 0, suggested_course_id: suggestCourse(f.topic, courses) });
+    topics.get(tk).count++;
+  }
+
+  res.json({
+    file_count: files.length,
+    readable: files.length - problems.length,
+    people: [...people.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    topics: [...topics.values()].sort((a, b) => b.count - a.count),
+    problems: problems.slice(0, 200),
+    problem_count: problems.length,
+    courses: courses.map(c => ({ id: c.id, title: c.title, code: c.code })),
+    // The whole roster, so a name with no close match can still be mapped by
+    // hand — otherwise the only option offered would be "skip".
+    all_users: users.map(u => ({ id: u.id, name: u.name })).sort((a, b) => a.name.localeCompare(b.name)),
+    storage_ready: storageEnabled(),
+  });
+});
+
+// Apply it. `people` maps personKey → user id ('' = skip this person) and
+// `topics` maps the normalized topic → course id ('' = skip). Anything left
+// unmapped is SKIPPED and counted, never guessed — it can be mapped on a later
+// run, exactly like the Training Log importer's unmapped columns.
+router.post('/import/scans/commit', requireRole('admin'), zipScanUpload.single('file'), async (req, res) => {
+  if (!req.file?.buffer) return res.status(400).json({ error: 'A .zip of the scanned tests is required' });
+  let files;
+  try { files = readScanZip(req.file.buffer); }
+  catch (e) { return res.status(422).json({ error: `Could not read this file. (${e.message})` }); }
+
+  const db = getDb();
+  const { courses } = scanContext(db);
+  const courseById = new Map(courses.map(c => [c.id, c]));
+  const peopleMap = parseJson(req.body?.people, {}) || {};
+  const topicMap = parseJson(req.body?.topics, {}) || {};
+
+  const seen = existingCompletionKeys(db);
+  const inFile = new Set();
+  const summary = {
+    created: 0, already_in_readydoc: 0, repeated_in_file: 0,
+    skipped_unmapped_person: 0, skipped_unmapped_course: 0, unreadable: 0,
+    evidence_stored: 0, evidence_failed: 0, created_rows: [],
+  };
+
+  const insert = db.prepare(`INSERT INTO training_records
+    (id, employee_name, employee_user_id, training_topic, course_id, training_date, completion_date, status, passed, method, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', 1, 'scanned test', ?)`);
+  const getUser = db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1');
+
+  // The rows are written first, in one transaction, so a storage hiccup can
+  // never leave a half-imported log; the scans are attached afterwards.
+  const pending = [];
+  db.transaction(() => {
+    for (const f of files) {
+      if (f.problem) { summary.unreadable++; continue; }
+      const pk = personKey(f.name);
+      const userId = peopleMap[pk];
+      if (!userId) { summary.skipped_unmapped_person++; continue; }
+      const courseId = topicMap[normName(f.topic)];
+      if (!courseId || !courseById.has(courseId)) { summary.skipped_unmapped_course++; continue; }
+
+      const course = courseById.get(courseId);
+      // The ACCOUNT's spelling goes on the record, not the scan's — the file
+      // says "Bernardo Encisos" and the roster says "Bernardo Enciso", and the
+      // record should read like every other record in ReadyDoc.
+      const account = getUser.get(userId);
+      if (!account) { summary.skipped_unmapped_person++; continue; }
+      const personName = account.name;
+      const key = `${personKey(personName)}|${normName(course.title)}|${f.date}`;
+      if (inFile.has(key)) { summary.repeated_in_file++; continue; }
+      if (seen.has(key)) { summary.already_in_readydoc++; inFile.add(key); continue; }
+      inFile.add(key);
+
+      const id = uuid();
+      insert.run(id, personName, userId, course.title, course.id, f.date, f.date,
+        `Imported from the scanned test "${f.filename}".`);
+      summary.created++;
+      summary.created_rows.push({ id, name: personName, course: course.title, date: f.date, filename: f.filename });
+      pending.push({ id, f });
+    }
+  })();
+
+  // Attach each scan as the record's evidence. Best-effort and reported: the
+  // completion is the compliance fact and must not be lost because storage
+  // hiccuped, but an import that silently filed 600 records with no paper
+  // behind them would be worse than one that says so.
+  if (storageEnabled()) {
+    const setEv = db.prepare("UPDATE training_records SET evidence_key=?, evidence_filename=?, evidence_text=?, evidence_status=?, updated_at=datetime('now') WHERE id=?");
+    for (const { id, f } of pending) {
+      try {
+        const buf = f.entry.getData();
+        const safe = f.filename.replace(/[^\w.-]+/g, '_').slice(0, 120);
+        const key = `training/scans/${id}-${safe}`;
+        const isPdf = /\.pdf$/i.test(f.filename);
+        await putObject(key, buf, isPdf ? 'application/pdf' : 'application/octet-stream');
+        // PDFs have a text layer to read locally; a photographed scan does not,
+        // and running vision OCR over hundreds of files at import time would
+        // turn one click into a long, expensive job. Say which it was.
+        let text = null, status = 'skipped_image';
+        if (isPdf) {
+          try {
+            text = await extractInvoiceText(buf, 'application/pdf', f.filename);
+            status = text && text.trim() ? 'ok' : 'empty';
+          } catch { status = 'failed'; }
+        }
+        setEv.run(key, f.filename, text || null, status, id);
+        summary.evidence_stored++;
+      } catch (e) {
+        summary.evidence_failed++;
+        console.warn('[training] scan evidence failed:', f.filename, e.message);
+      }
+    }
+  }
+
+  summary.created_rows = summary.created_rows.slice(0, 50);
+  logAudit(req.user, 'import', 'training', 'scanned-tests', {
+    created: summary.created, already: summary.already_in_readydoc,
+    unreadable: summary.unreadable, evidence_stored: summary.evidence_stored,
+  }, null, null, 'Scanned tests import');
+  res.json({ ...summary, storage_ready: storageEnabled() });
 });
 
 // ── ATTACH scanned forms ──────────────────────────────────────────────────────
