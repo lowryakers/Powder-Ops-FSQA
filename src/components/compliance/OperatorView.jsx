@@ -6,6 +6,7 @@ import { localDateStr } from '../../utils/dates';
 import FileUpload from '../FileUpload';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 import { canSeeQaReview } from '../../utils/permissions';
+import { formatDateTime } from '../../lib/datetime.js';
 
 function detectTaskType(task) {
   const t = (task.title || '').toLowerCase();
@@ -264,7 +265,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
             <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> {t('issue_reported')}</p>
             <p className="text-sm text-red-900">{task.issue_notes}</p>
             <p className="text-xs text-red-600 mt-1">
-              {t('flagged_by')} {task.issue_flagged_by} &middot; {task.issue_flagged_at ? new Date(task.issue_flagged_at).toLocaleString() : ''}
+              {t('flagged_by')} {task.issue_flagged_by} &middot; {formatDateTime(task.issue_flagged_at, '')}
             </p>
             {issuePhotos.length > 0 && (
               <div className="mt-2 flex gap-2 flex-wrap">
@@ -409,7 +410,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('ppm_reading')}</label>
-                    <input type="number" value={readings.ppm_reading || ''} onChange={e => updateReading('ppm_reading', e.target.value)}
+                    <input type="number" step="any" value={readings.ppm_reading || ''} onChange={e => updateReading('ppm_reading', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 225" />
                   </div>
                 </div>
@@ -621,7 +622,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('foot_candles')}</label>
-                    <input type="number" value={readings.foot_candles || ''} onChange={e => updateReading('foot_candles', e.target.value)}
+                    <input type="number" step="any" value={readings.foot_candles || ''} onChange={e => updateReading('foot_candles', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 220" autoFocus />
                   </div>
                   <div>
@@ -659,12 +660,12 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('atp_reading')}</label>
-                    <input type="number" value={readings.atp_reading || ''} onChange={e => updateReading('atp_reading', e.target.value)}
+                    <input type="number" step="any" value={readings.atp_reading || ''} onChange={e => updateReading('atp_reading', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 10" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('sanitizer_contact')}</label>
-                    <input type="number" value={readings.contact_time || ''} onChange={e => updateReading('contact_time', e.target.value)}
+                    <input type="number" step="any" value={readings.contact_time || ''} onChange={e => updateReading('contact_time', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Minutes" />
                   </div>
                 </div>

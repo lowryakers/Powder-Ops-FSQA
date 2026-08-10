@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
 import { useApiGet, apiFetch, apiUpload, apiPost } from '../../hooks/useApi';
-import { FileText, Upload, Trash2, Search, Sparkles, ExternalLink, AlertTriangle } from 'lucide-react';
+import { FileText, Upload, Trash2, Search, Sparkles, ExternalLink, AlertTriangle, Share2 } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
+import { shareFile, canNativeShare } from '../../lib/shareFile.js';
 
 /**
  * Manuals, spec sheets and parts lists attached to one machine.
@@ -119,6 +120,11 @@ export default function EquipmentFiles({ equipmentId, equipmentName, canEdit }) 
               {f.uploaded_by ? `${f.uploaded_by} · ` : ''}{formatDate(f.created_at)}
             </p>
           </div>
+          {canNativeShare && (
+            <button onClick={() => shareFile(f)} className="shrink-0 p-1 text-gray-400 hover:text-powder-600" title="Share">
+              <Share2 size={13} />
+            </button>
+          )}
           <a href={f.url} target="_blank" rel="noopener noreferrer"
             className="shrink-0 p-1 text-gray-400 hover:text-powder-600" title="Open"><ExternalLink size={13} /></a>
           {canEdit && (

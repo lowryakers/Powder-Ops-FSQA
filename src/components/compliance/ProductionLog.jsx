@@ -10,6 +10,7 @@ import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductionDayLog from './ProductionDayLog.jsx';
+import { formatDateTime, formatTime as fmtClock } from '../../lib/datetime.js';
 
 // The same rooms the schedule offers, so a shift can be reported in the room it
 // was scheduled in. This list used to be built by hand here and had drifted:
@@ -30,7 +31,8 @@ function formatTime(t) {
   if (!t) return '';
   // Handle both "HH:mm" and full ISO strings
   if (t.length <= 5) return t;
-  return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Full timestamps come from datetime('now') — UTC with no marker.
+  return fmtClock(t);
 }
 
 function todayStr() {
@@ -857,7 +859,7 @@ const AMEND_FIELDS = [
 ];
 const MIN_REASON = 10;
 
-const fmtStamp = (ts) => (ts ? new Date(ts).toLocaleString() : '');
+const fmtStamp = (ts) => formatDateTime(ts, '');
 const showVal = (v) => (v === null || v === undefined || v === '' ? '(blank)' : String(v));
 
 // The correction trail, shown on the record itself. An auditor should be able

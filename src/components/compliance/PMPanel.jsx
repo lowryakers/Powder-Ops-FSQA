@@ -284,12 +284,12 @@ function ReviewTrail({ wo }) {
       <ol className="space-y-1.5">
         {history.map((h, i) => (
           <li key={i} className="text-xs text-gray-700">
-            <span className="font-medium">{h.reviewed_by}</span> · {new Date(h.reviewed_at).toLocaleString()}
+            <span className="font-medium">{h.reviewed_by}</span> · {formatDateTime(h.reviewed_at)}
             {h.rework_required && <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">rework</span>}
             <div className="ml-1">{h.note}</div>
             {h.prior_completion && (
               <div className="ml-1 italic text-gray-500">
-                Reopened — had been completed by {h.prior_completion.by} on {new Date(h.prior_completion.at).toLocaleString()}.
+                Reopened — had been completed by {h.prior_completion.by} on {formatDateTime(h.prior_completion.at)}.
               </div>
             )}
           </li>
@@ -375,7 +375,7 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
         {wo.started_at && (
           <div>
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Started</p>
-            <p className="text-sm text-gray-600">{new Date(wo.started_at).toLocaleString()}</p>
+            <p className="text-sm text-gray-600">{formatDateTime(wo.started_at)}</p>
           </div>
         )}
       </div>
@@ -450,7 +450,7 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
             <div><span className="text-xs text-gray-500">Status:</span> <span className="font-medium capitalize">{wo.clearance_status || 'pending'}</span></div>
             {wo.clearance_method && <div><span className="text-xs text-gray-500">Method:</span> <span className="font-medium">{wo.clearance_method}</span></div>}
             {wo.clearance_by && <div><span className="text-xs text-gray-500">By:</span> <span className="font-medium">{wo.clearance_by}</span></div>}
-            {wo.clearance_at && <div><span className="text-xs text-gray-500">At:</span> <span className="font-medium">{new Date(wo.clearance_at).toLocaleString()}</span></div>}
+            {wo.clearance_at && <div><span className="text-xs text-gray-500">At:</span> <span className="font-medium">{formatDateTime(wo.clearance_at)}</span></div>}
             {wo.clearance_notes && <div className="col-span-2"><span className="text-xs text-gray-500">Notes:</span> <span>{wo.clearance_notes}</span></div>}
           </div>
         </div>

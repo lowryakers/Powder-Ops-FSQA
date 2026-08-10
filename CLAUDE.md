@@ -2063,3 +2063,14 @@ downtime) because the structured fields took the rest — `clean_type`, `cleaned
 Verified end to end by filing Bernardo's real Mon–Thu: 26 assertions, including the adjustment not
 inflating output, two different-level cleans in one shift, a clean tied to one MO, an MO continuing at a
 later stage the next day, and rejection of invented stages/levels/times.
+
+## Sharing a file from the phone (`src/lib/shareFile.js`)
+"Copy an image or document from mobile so I can text it" is the Web Share API **with the file attached**,
+not a link: `shareFile(attachment)` fetches the bytes through our own origin (bearer token when it's a
+`download_url`), builds a `File`, and calls `navigator.share({files})` when `canShare` says the OS sheet
+accepts it — that's what puts the actual image into Messages/WhatsApp instead of a URL. Fallbacks in order:
+share the link, copy it to the clipboard, open it. **An `AbortError` is the user closing the sheet, not a
+failure** — return silently, no error toast. `canNativeShare` gates the button so desktop browsers without
+the API aren't offered one that fails. Wired: comms image overlay + file cards, equipment manuals. Presigned
+R2 URLs can't be fetched cross-origin (no CORS on the bucket) — always go through the app-origin download
+route, same reason the Download button does.

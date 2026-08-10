@@ -4,8 +4,9 @@ import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
 import { notifyDataChanged } from '../../lib/dataChanged';
-import { Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp } from 'lucide-react';
+import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
+import { shareFile as shareAttachment, canNativeShare } from '../../lib/shareFile.js';
 import NotificationStatus from './NotificationStatus.jsx';
 import ZoomableImage from './ZoomableImage.jsx';
 import { useSwipeBack } from '../../lib/useSwipeBack';
@@ -348,6 +349,7 @@ async function downloadAttachment(a) {
   }
 }
 
+
 function Attachment({ a, onOpen }) {
   const [broken, setBroken] = useState(false);
   if (videoPlayable(a) && a.url && !broken) {
@@ -374,23 +376,44 @@ function Attachment({ a, onOpen }) {
           <img src={a.url} alt={a.filename} onError={() => setBroken(true)}
             className="rounded-lg border border-gray-200 max-h-64 object-contain" />
         </button>
-        <button type="button"
-          onClick={e => { e.stopPropagation(); downloadAttachment(a); }}
-          data-tip="Download image"
-          className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-black/55 text-white opacity-100 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity hover:bg-black/75">
-          <Download size={14} />
-        </button>
+        <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity">
+          {/* Share opens the phone's own sheet with the image attached, so it
+              can go straight into a text. Hidden where the API doesn't exist
+              (desktop Firefox) rather than offered to fail. */}
+          {canNativeShare && (
+            <button type="button"
+              onClick={e => { e.stopPropagation(); shareAttachment(a); }}
+              data-tip="Share image"
+              className="p-1.5 rounded-lg bg-black/55 text-white hover:bg-black/75">
+              <Share2 size={14} />
+            </button>
+          )}
+          <button type="button"
+            onClick={e => { e.stopPropagation(); downloadAttachment(a); }}
+            data-tip="Download image"
+            className="p-1.5 rounded-lg bg-black/55 text-white hover:bg-black/75">
+            <Download size={14} />
+          </button>
+        </div>
       </div>
     );
   }
   return (
-    <button type="button" onClick={onOpen}
-      className="mt-1 inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 max-w-xs text-left">
-      <FileText size={16} className="text-powder-600 shrink-0" />
-      <span className="text-sm text-gray-800 truncate">{a.filename}</span>
-      <span className="text-[10px] text-gray-400 shrink-0">{fmtSize(a.size)}</span>
-      <Download size={13} className="text-gray-400 shrink-0" />
-    </button>
+    <span className="mt-1 inline-flex items-center gap-1">
+      <button type="button" onClick={onOpen}
+        className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 max-w-xs text-left">
+        <FileText size={16} className="text-powder-600 shrink-0" />
+        <span className="text-sm text-gray-800 truncate">{a.filename}</span>
+        <span className="text-[10px] text-gray-400 shrink-0">{fmtSize(a.size)}</span>
+        <Download size={13} className="text-gray-400 shrink-0" />
+      </button>
+      {canNativeShare && (
+        <button type="button" onClick={() => shareAttachment(a)} data-tip="Share file"
+          className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50">
+          <Share2 size={13} />
+        </button>
+      )}
+    </span>
   );
 }
 

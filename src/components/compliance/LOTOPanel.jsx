@@ -423,7 +423,7 @@ export default function LOTOPanel() {
               </div>
               {ex.reason && <div className="mt-1 text-xs text-gray-500 line-clamp-2">{ex.reason}</div>}
               <div className="mt-0.5 text-[11px] text-gray-400">Locked by {ex.locked_by} · {formatDateTime(ex.locked_at)}</div>
-              {ex.released_by && <div className="text-[11px] text-gray-400">Released by {ex.released_by} · {new Date(ex.released_at).toLocaleString()}</div>}
+              {ex.released_by && <div className="text-[11px] text-gray-400">Released by {ex.released_by} · {formatDateTime(ex.released_at)}</div>}
             </div>
           ))}
           {(!executions || executions.length === 0) && <div className="text-center py-8 text-gray-400 text-sm">No LOTO executions recorded</div>}
@@ -452,7 +452,7 @@ export default function LOTOPanel() {
                   <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{formatDateTime(ex.locked_at)}</td>
                   <td className="px-4 py-3 text-gray-600 w-full">{ex.reason}</td>
                   <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[ex.status]}`}>{ex.status}</span></td>
-                  <td className="px-4 py-3 text-gray-600 text-xs">{ex.released_by ? `${ex.released_by} @ ${new Date(ex.released_at).toLocaleString()}` : '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 text-xs">{ex.released_by ? `${ex.released_by} @ ${formatDateTime(ex.released_at)}` : '—'}</td>
                 </tr>
                 {expand.isExpanded(ex.id) && (
                   <DetailRow colSpan={7}>
@@ -463,7 +463,7 @@ export default function LOTOPanel() {
                       { label: 'Locked at', value: formatDateTime(ex.locked_at) },
                       { label: 'Status', value: ex.status },
                       { label: 'Released by', value: ex.released_by },
-                      { label: 'Released at', value: ex.released_at ? new Date(ex.released_at).toLocaleString() : '' },
+                      { label: 'Released at', value: ex.released_at ? formatDateTime(ex.released_at) : '' },
                       { label: 'Verified by', value: ex.verified_by },
                       { label: 'Reason', value: ex.reason, wide: true },
                       { label: 'Notes', value: ex.notes, wide: true },
