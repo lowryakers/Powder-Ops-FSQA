@@ -386,6 +386,100 @@ export async function summarizeChat({ question, contextMessages }) {
  * check the claim rather than take it on trust — an unsourced "the manual says
  * you should grease this monthly" is unverifiable and therefore useless.
  */
+/**
+ * Read a lab certificate of analysis that the pattern reader could not.
+ *
+ * `parseCTLACoa` is a set of line regexes: it wants "Label: value" on one line
+ * and a test name with its result beside it. A real CoA is a TABLE, and pdfjs
+ * hands a table back as cells in reading order — so the label and its value
+ * land on different lines, and a result sits three lines below its test name.
+ * No amount of extra regex generalises across labs; this is exactly the job a
+ * model does well and a pattern does badly.
+ *
+ * IT PROPOSES AND NEVER APPLIES. The caller shows every field and every result
+ * for a person to tick, the same contract as `compareManualToTasks` and
+ * `draftPolicy`. That is what makes reading a compliance record with a model
+ * safe: nothing reaches the record without someone agreeing to it.
+ *
+ * Three rules in the prompt do the real work:
+ *   · Copy values EXACTLY as printed. "<10", "Not Detected", "ND", "Absent/25g"
+ *     are results, not numbers to tidy up — normalising them is how a limit
+ *     turns into a different limit.
+ *   · Never infer a result that is not printed. A missing test is a missing
+ *     test; inventing "pass" for it is the worst thing this could do.
+ *   · The lab's own pass/fail only, when the report states one. Grading against
+ *     the plant's specification happens on the server afterwards, against the
+ *     approved spec — not here.
+ */
+export async function readLabReport({ text, itemHint, expectedTests }) {
+  const c = getClient();
+  if (!c) throw new Error('AI is not configured');
+
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 4000,
+    system: [
+      'You read laboratory Certificates of Analysis for a food-manufacturing plant and extract what they say.',
+      'The text comes from a PDF table, so columns may be split across lines and a value may appear several lines after its label. Use the layout to pair them up.',
+      'Copy every value EXACTLY as printed, including qualifiers: "<10", "<10 cfu/g", "Not Detected", "ND", "Absent in 25g", "Negative". Do not convert, round or normalise them.',
+      'NEVER infer or invent a result. If a test is named but has no printed result, leave it out entirely. A missing test must not appear as a passing one.',
+      'Record a pass/fail ONLY if the report itself states one (a Pass/Fail column, "Complies", "Conforms"). Otherwise leave it null — the plant grades against its own specification separately.',
+      'If a field is not on the report, omit it rather than guessing.',
+    ].join(' '),
+    messages: [{
+      role: 'user',
+      content: [
+        itemHint ? `The plant believes this report is for: ${itemHint}` : '',
+        expectedTests?.length ? `Tests the plant requested: ${expectedTests.join(', ')}` : '',
+        '',
+        'Certificate of Analysis text:',
+        text,
+      ].filter(Boolean).join('\n'),
+    }],
+    tools: [{
+      name: 'report_coa',
+      description: 'Report exactly what this certificate of analysis states.',
+      input_schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['test_results'],
+        properties: {
+          item_description: { type: 'string' },
+          item_number: { type: 'string' },
+          lot_number: { type: 'string' },
+          manufacturer_lot: { type: 'string' },
+          vendor_lot: { type: 'string' },
+          supplier: { type: 'string' },
+          origin: { type: 'string' },
+          product_expiration: { type: 'string', description: 'As printed.' },
+          received_date: { type: 'string', description: 'As printed.' },
+          date_of_results: { type: 'string', description: 'As printed.' },
+          test_results: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['test_type', 'result_value'],
+              properties: {
+                test_type: { type: 'string', description: 'The test name as printed on the report.' },
+                result_value: { type: 'string', description: 'The result EXACTLY as printed, qualifiers included.' },
+                unit: { type: 'string', description: 'Only if printed separately from the value.' },
+                method: { type: 'string', description: 'The method, if the report names one.' },
+                spec_on_report: { type: 'string', description: "The lab's own stated limit for this test, if printed." },
+                pass_fail: { type: 'string', enum: ['pass', 'fail'], description: 'Only if the report states it.' },
+              },
+            },
+          },
+        },
+      },
+    }],
+    tool_choice: { type: 'tool', name: 'report_coa' },
+  });
+  const use = (res.content || []).find(b => b.type === 'tool_use');
+  if (!use) return { test_results: [] };
+  return use.input || { test_results: [] };
+}
+
 export async function compareManualToTasks({ equipmentName, manualText, tasks }) {
   const c = getClient();
   if (!c) throw new Error('AI is not configured');

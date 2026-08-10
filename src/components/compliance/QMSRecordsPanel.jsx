@@ -512,6 +512,117 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
   );
 }
 
+/**
+ * Change any field across a selection of records.
+ *
+ * The bulk bar could only mark records on paper or delete them, so correcting a
+ * supplier name or a lot number across forty records was forty trips through
+ * the form.
+ *
+ * THE RULE THAT MAKES IT SAFE: a field is changed only when it is TICKED. An
+ * empty box on a form like this is ambiguous — "leave it" or "clear it"? — and
+ * guessing wrong on a compliance record blanks forty fields nobody asked to
+ * blank. Ticking makes the intent explicit, and ticking with an empty value is
+ * how you deliberately clear a field.
+ *
+ * The server enforces the rest: a signed record is skipped rather than
+ * rewritten, and every record changed is audited individually with before and
+ * after.
+ */
+function BulkEditModal({ cfg, count, onClose, onApply }) {
+  const [on, setOn] = useState({});
+  const [vals, setVals] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const fields = [
+    { key: 'record_date', label: cfg.dateLabel || 'Date', type: 'date' },
+    { key: 'status', label: 'Status', type: 'select', options: (cfg.statuses || []).map(s => s.value) },
+    ...cfg.fields,
+    { key: 'notes', label: 'Notes', type: 'textarea' },
+  ].filter(f => !(f.key === 'status' && !(cfg.statuses || []).length));
+
+  const toggle = (k) => setOn(o => ({ ...o, [k]: !o[k] }));
+  const chosen = fields.filter(f => on[f.key]);
+
+  const apply = async () => {
+    if (!chosen.length) return;
+    setBusy(true); setError('');
+    try {
+      const patch = {};
+      for (const f of chosen) {
+        const v = vals[f.key];
+        patch[f.key] = f.type === 'checkbox' ? !!v : (v ?? '');
+      }
+      await onApply(patch);
+    } catch (e) { setError(e.message); setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white">
+          <h3 className="text-sm font-semibold text-gray-900">Edit {count} {cfg.singular?.toLowerCase() || 'record'}{count === 1 ? '' : 's'}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="p-4 space-y-2">
+          <p className="text-xs text-gray-500">
+            Tick a field to change it on every selected record. Unticked fields are left exactly as they are —
+            ticking one and leaving it empty is how you clear it deliberately.
+          </p>
+
+          {fields.map(f => (
+            <div key={f.key} className={`rounded-lg border px-2.5 py-2 ${on[f.key] ? 'border-powder-300 bg-powder-50/50' : 'border-gray-200'}`}>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!on[f.key]} onChange={() => toggle(f.key)} />
+                <span className="text-xs font-medium text-gray-800">{f.label}</span>
+              </label>
+              {on[f.key] && (
+                <div className="mt-1.5">
+                  {f.type === 'select' || f.type === 'multiselect' ? (
+                    <select value={vals[f.key] ?? ''} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm">
+                      <option value="">(clear this field)</option>
+                      {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : f.type === 'checkbox' ? (
+                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <input type="checkbox" checked={!!vals[f.key]} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.checked }))} />
+                      Yes
+                    </label>
+                  ) : f.type === 'textarea' ? (
+                    <textarea value={vals[f.key] ?? ''} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
+                      rows={2} className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm" />
+                  ) : (
+                    <input type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
+                      {...(f.type === 'number' ? { step: 'any' } : {})}
+                      value={vals[f.key] ?? ''} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm" />
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-gray-200 sticky bottom-0 bg-white">
+          <span className="text-xs text-gray-500">
+            {chosen.length ? `${chosen.length} field${chosen.length > 1 ? 's' : ''} will change` : 'Tick at least one field'}
+          </span>
+          <div className="flex-1" />
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600">Cancel</button>
+          <button onClick={apply} disabled={busy || !chosen.length}
+            className="px-3 py-1.5 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            {busy ? 'Applying…' : `Apply to ${count}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Match on the LAST numeric group so year-prefixed and D-prefixed numbers line
 // up: record "25-001" and file "NC_001" → 1; record "D05" and file "05" → 5.
 function lastNum(s) { const m = String(s || '').match(/\d+/g); return m ? String(parseInt(m[m.length - 1], 10)) : ''; }
@@ -792,6 +903,7 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
   const [attaching, setAttaching] = useState(false);
   const [managingItems, setManagingItems] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
+  const [bulkEdit, setBulkEdit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -899,6 +1011,15 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
   const handleSetStatus = async (id, status) => { const res = await apiPut(`/qms/${recordType}/${id}`, { status }); setViewing(res); refresh(); };
   const handleRevoke = async (id, role) => { const res = await apiFetch(`/qms/${recordType}/${id}/approve/${role}`, { method: 'DELETE' }); setViewing(res); refresh(); };
   const handleBulkPaper = async (paper) => { const res = await apiPost(`/qms/${recordType}/bulk-update`, { ids: [...selected], patch: { paper_record: paper } }); clearSelection(); flash(`Marked ${res.updated} as ${paper ? 'logged on paper' : 'requiring approval'}.`); refresh(); };
+  const handleBulkEdit = async (patch) => {
+    const res = await apiPost(`/qms/${recordType}/bulk-update`, { ids: [...selected], patch });
+    setBulkEdit(false);
+    clearSelection();
+    // Say what was skipped and why. A batch that silently leaves signed records
+    // alone looks from the screen exactly like one that failed.
+    flash(`Updated ${res.updated}.${res.message ? ` ${res.message}` : ''}`);
+    refresh();
+  };
   const handleBulkDelete = async () => { const res = await apiPost(`/qms/${recordType}/bulk-delete`, { ids: [...selected] }); setConfirmDelete(false); clearSelection(); flash(`Permanently deleted ${res.deleted}.`); refresh(); };
 
   if (!cfg) return <div className="text-center py-12 text-gray-500">Loading…</div>;
@@ -933,6 +1054,7 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
         <div className="flex items-center gap-2 flex-wrap bg-powder-50 border border-powder-200 rounded-lg px-3 py-2">
           <span className="text-sm font-medium text-powder-800">{selected.size} selected</span>
           <div className="flex-1" />
+          <button onClick={() => setBulkEdit(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700"><Edit2 size={14} /> Edit fields</button>
           <button onClick={() => handleBulkPaper(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"><FileText size={14} /> Mark on paper</button>
           <button onClick={() => handleBulkPaper(false)} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Unmark paper</button>
           {isAdmin && <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"><Trash2 size={14} /> Delete permanently</button>}
@@ -1102,6 +1224,10 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
       {attaching && <AttachFormsModal cfg={cfg} records={records} onClose={() => setAttaching(false)} onDone={refresh} />}
       {managingItems && <ManageItemsModal onClose={() => setManagingItems(false)} onDone={() => { refreshConfig(); flash('Item list updated.'); }} />}
       {confirmDelete && <ConfirmDeleteModal count={selected.size} noun="record" onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />}
+      {bulkEdit && (
+        <BulkEditModal cfg={cfg} count={selected.size} onClose={() => setBulkEdit(false)}
+          onApply={handleBulkEdit} />
+      )}
       {showQr && cfg.kioskPath && <KioskQrModal cfg={cfg} onClose={() => setShowQr(false)} />}
     </div>
   );

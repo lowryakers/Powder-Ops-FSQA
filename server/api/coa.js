@@ -8,6 +8,9 @@ import PDFDocument from 'pdfkit';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { getDb, logAudit, dataDir } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
+import { gradeResult, specIndex } from '../coa-grade.js';
+import { parseColumnarCoa, foundSomething } from '../coa-parse.js';
+import { aiEnabled, readLabReport } from '../ai.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Beside the DB (the persistent volume in production) — NOT the app dir,
@@ -584,32 +587,23 @@ router.post('/requests/:id/results', (req, res) => {
 
   const insert = db.prepare(`INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, specification_id, pass_fail, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
 
+  // One grader, one spec lookup, shared with the scan preview and the edit
+  // path — a preview computed differently from the commit is a preview that
+  // lies. `specIndex` matches "Total Aerobic Microbial Count (USP)" against a
+  // spec written "Total Aerobic Plate Count"; exact string equality (what this
+  // used to do) matched almost nothing on a real report.
   const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
-  const specMap = {};
-  for (const s of specs) {
-    specMap[s.test_type] = s;
-  }
+  const index = specIndex(specs);
 
   const tx = db.transaction((rows) => {
     const created = [];
     for (const r of rows) {
       const id = uuid();
-      const spec = specMap[r.test_type];
-      let pass_fail = r.pass_fail || null;
-
-      if (spec && r.result_value != null && !pass_fail) {
-        const val = parseFloat(r.result_value);
-        if (!isNaN(val)) {
-          if (spec.min_value != null && spec.max_value != null) {
-            pass_fail = val >= spec.min_value && val <= spec.max_value ? 'pass' : 'fail';
-          } else if (spec.max_value != null) {
-            pass_fail = val <= spec.max_value ? 'pass' : 'fail';
-          } else if (spec.min_value != null) {
-            pass_fail = val >= spec.min_value ? 'pass' : 'fail';
-          }
-        }
-      }
-
+      const spec = index.find(r.test_type);
+      // gradeResult handles "<10", "Not Detected", "Absent in 25g" and the rest
+      // of a real micro panel, which parseFloat could not — every one of those
+      // used to land with no verdict at all.
+      const { pass_fail } = gradeResult(r.result_value, spec, r.pass_fail || null);
       insert.run(id, req.params.id, r.test_type, r.result_value ?? null, r.unit || spec?.unit || null, spec?.id || null, pass_fail, r.notes || null);
       created.push(db.prepare('SELECT * FROM coa_test_results WHERE id = ?').get(id));
     }
@@ -617,18 +611,89 @@ router.post('/requests/:id/results', (req, res) => {
   });
 
   const created = tx(results);
-
-  const allResults = db.prepare('SELECT pass_fail FROM coa_test_results WHERE request_id = ?').all(req.params.id);
-  const hasFail = allResults.some(r => r.pass_fail === 'fail');
-  const allPass = allResults.length > 0 && allResults.every(r => r.pass_fail === 'pass' || r.pass_fail === 'na');
-  if (hasFail) {
-    db.prepare("UPDATE coa_requests SET status = 'fail', date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?").run(req.params.id);
-  } else if (allPass) {
-    db.prepare("UPDATE coa_requests SET status = 'pass', date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?").run(req.params.id);
-  }
+  rollUpRequestStatus(db, req.params.id);
 
   logAudit(req.user, 'create', 'coa_test_results', req.params.id, { results }, null, created);
   res.status(201).json(created);
+});
+
+/**
+ * The request's own pass/fail, derived from its results.
+ *
+ * Called after every write to a result — create, edit, delete. It used to run
+ * only on create, so correcting a result left the request stuck on the verdict
+ * the first entry produced.
+ *
+ * A result with NO verdict holds the request at pending rather than letting the
+ * others carry it to a pass. An ungraded test is an open question, and a COA
+ * that reads "pass" while one of its tests was never decided is exactly the
+ * document that must not exist.
+ */
+function rollUpRequestStatus(db, requestId) {
+  const all = db.prepare('SELECT pass_fail FROM coa_test_results WHERE request_id = ?').all(requestId);
+  if (!all.length) return;
+  const hasFail = all.some(r => r.pass_fail === 'fail');
+  const allDecided = all.every(r => r.pass_fail === 'pass' || r.pass_fail === 'na');
+  if (hasFail) {
+    db.prepare("UPDATE coa_requests SET status = 'fail', date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?").run(requestId);
+  } else if (allDecided) {
+    db.prepare("UPDATE coa_requests SET status = 'pass', date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?").run(requestId);
+  } else {
+    // Back to pending: something is still undecided. Only ever moves a verdict
+    // BACK, never invents one.
+    db.prepare("UPDATE coa_requests SET status = CASE WHEN status IN ('pass','fail') THEN 'sent' ELSE status END, updated_at = datetime('now') WHERE id = ?").run(requestId);
+  }
+}
+
+/**
+ * Correct a logged result.
+ *
+ * This simply did not exist: a result could be created and deleted, never
+ * edited. So a test that landed with no pass/fail — which, before the grader
+ * above, was every micro test — could not be given one, and a mistyped value
+ * meant deleting the row and losing that it had ever been entered.
+ *
+ * Re-grades from the value unless a verdict is set BY HAND, in which case the
+ * hand-set one wins and is recorded as such: a person overruling the automatic
+ * grade is a decision, and the reason it was made belongs in `notes`.
+ */
+router.put('/requests/:requestId/results/:id', (req, res) => {
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM coa_test_results WHERE id = ? AND request_id = ?').get(req.params.id, req.params.requestId);
+  if (!existing) return res.status(404).json({ error: 'Test result not found' });
+  const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.requestId);
+  if (!request) return res.status(404).json({ error: 'COA request not found' });
+
+  const test_type = req.body.test_type !== undefined ? String(req.body.test_type || '').trim() : existing.test_type;
+  if (!test_type) return res.status(400).json({ error: 'A test name is required.' });
+  const result_value = req.body.result_value !== undefined ? req.body.result_value : existing.result_value;
+  const notes = req.body.notes !== undefined ? (req.body.notes || null) : existing.notes;
+
+  const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
+  const spec = specIndex(specs).find(test_type);
+
+  // '' means "clear it and let the specification decide again"; a value means
+  // the person is overruling. Anything else keeps what is already there.
+  let pass_fail;
+  if (req.body.pass_fail !== undefined) {
+    const wanted = req.body.pass_fail === '' ? null : String(req.body.pass_fail);
+    if (wanted && !['pass', 'fail', 'na'].includes(wanted)) {
+      return res.status(400).json({ error: 'Pass/fail must be pass, fail or na.' });
+    }
+    pass_fail = wanted || gradeResult(result_value, spec, null).pass_fail;
+  } else {
+    pass_fail = gradeResult(result_value, spec, existing.pass_fail || null).pass_fail;
+  }
+
+  const unit = req.body.unit !== undefined ? (req.body.unit || null) : (existing.unit || spec?.unit || null);
+  db.prepare(`UPDATE coa_test_results SET test_type = ?, result_value = ?, unit = ?, specification_id = ?, pass_fail = ?, notes = ? WHERE id = ?`)
+    .run(test_type, result_value ?? null, unit, spec?.id || null, pass_fail, notes, req.params.id);
+
+  rollUpRequestStatus(db, req.params.requestId);
+  const updated = db.prepare('SELECT * FROM coa_test_results WHERE id = ?').get(req.params.id);
+  logAudit(req.user, 'update', 'coa_test_result', req.params.id,
+    { test_type, changed_pass_fail: existing.pass_fail !== pass_fail }, existing, updated);
+  res.json(updated);
 });
 
 router.delete('/requests/:requestId/results/:id', (req, res) => {
@@ -637,6 +702,9 @@ router.delete('/requests/:requestId/results/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Test result not found' });
 
   db.prepare('DELETE FROM coa_test_results WHERE id = ?').run(req.params.id);
+  // The request's verdict is derived from its results, so removing one has to
+  // re-derive it — otherwise a request keeps a 'fail' from a row that is gone.
+  rollUpRequestStatus(db, req.params.requestId);
   logAudit(req.user, 'delete', 'coa_test_result', req.params.id, null, existing, null);
   res.json({ success: true });
 });
@@ -709,7 +777,77 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
     });
   }
 
-  const extracted = parseCTLACoa(text);
+  let extracted = parseCTLACoa(text);
+  let read_by = 'patterns';
+  let ai_error = null;
+
+  /**
+   * The columnar reader, for reports laid out as a table — which is all of them.
+   *
+   * `parseCTLACoa` wants "Label: value" on one line and a test name at the start
+   * of a line. In a real CoA the label column and the value column arrive as
+   * separate blocks, and the Result cell is glued to the front of the Analysis
+   * cell with no separator ("<100Total Aerobic Microbial Count (USP)"). So it
+   * matched nothing at all on CTLA's report — readable text, zero fields.
+   *
+   * Tried BEFORE the AI fallback because it is deterministic: the same file
+   * gives the same answer every time, which is what you want reading something
+   * that ends up on a compliance record.
+   */
+  if (!extracted.test_results?.length) {
+    try {
+      const columnar = parseColumnarCoa(text);
+      if (foundSomething(columnar)) {
+        extracted = { ...extracted, ...Object.fromEntries(Object.entries(columnar).filter(([k, v]) => k !== 'test_results' && v)) };
+        extracted.test_results = columnar.test_results;
+        read_by = 'columns';
+      }
+    } catch (e) {
+      console.warn('[coa] columnar read failed:', e.message);
+    }
+  }
+
+  /**
+   * When the patterns find nothing, let a model read it.
+   *
+   * `parseCTLACoa` wants "Label: value" on one line and a test name with its
+   * result beside it. A real CoA is a TABLE, and pdfjs returns a table as cells
+   * in reading order — so a label and its value land on different lines and a
+   * result sits several lines below its test name. That is why this report came
+   * back with readable text and zero fields. No amount of extra regex
+   * generalises across labs.
+   *
+   * Safe because of the step it feeds, not because the model is trusted: the
+   * result is a PROPOSAL that a person ticks, exactly like the pattern reader's.
+   * It is also only a FALLBACK — when the patterns do find the fields, they win,
+   * because a deterministic reader gives the same answer every time.
+   */
+  if (aiEnabled() && !extracted.test_results?.length) {
+    try {
+      const ai = await readLabReport({
+        text: text.slice(0, 60000),
+        itemHint: [request.item_number, request.item_description].filter(Boolean).join(' — '),
+        expectedTests: splitRequestedTests(request.tests_requested),
+      });
+      // Keep anything the patterns did get; the model fills the gaps.
+      extracted = {
+        ...extracted,
+        ...Object.fromEntries(Object.entries(ai).filter(([k, v]) => k !== 'test_results' && v && !extracted[k])),
+        test_results: (ai.test_results || []).map(t => ({
+          test_type: t.test_type,
+          result_value: t.result_value,
+          unit: t.unit || null,
+          pass_fail: t.pass_fail || null,
+          method: t.method || null,
+          spec_on_report: t.spec_on_report || null,
+        })),
+      };
+      read_by = 'ai';
+    } catch (e) {
+      // Never fails the scan — the pattern result and the raw text still stand.
+      ai_error = e.message;
+    }
+  }
 
   // Header fields, each shown against what the request already holds. A field
   // the request already answers is offered but never pre-ticked — an upload is
@@ -737,37 +875,29 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
   // and the same comparison POST /results uses, so the preview cannot promise a
   // verdict the write would not give.
   const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
-  const byTest = new Map(specs.map(s => [String(s.test_type || '').toLowerCase(), s]));
+  const index = specIndex(specs);
   const draftSpecs = db.prepare(
     "SELECT test_type FROM coa_specifications WHERE item_number = ? AND is_active = 0 AND COALESCE(approval_status,'approved') = 'draft'").all(request.item_number);
-  const draftFor = new Set(draftSpecs.map(s => String(s.test_type || '').toLowerCase()));
+  const draftIndex = specIndex(draftSpecs);
 
   const results = (extracted.test_results || []).map(t => {
-    const key = String(t.test_type || '').toLowerCase();
-    const spec = byTest.get(key) || null;
-    let pass_fail = t.pass_fail || null;
-    let graded_by = t.pass_fail ? 'report' : null;
-    if (spec && t.result_value != null && !pass_fail) {
-      const val = parseFloat(t.result_value);
-      if (!Number.isNaN(val)) {
-        if (spec.min_value != null && spec.max_value != null) pass_fail = val >= spec.min_value && val <= spec.max_value ? 'pass' : 'fail';
-        else if (spec.max_value != null) pass_fail = val <= spec.max_value ? 'pass' : 'fail';
-        else if (spec.min_value != null) pass_fail = val >= spec.min_value ? 'pass' : 'fail';
-        if (pass_fail) graded_by = 'specification';
-      }
-    }
+    const spec = index.find(t.test_type);
+    const graded = gradeResult(t.result_value, spec, t.pass_fail || null);
     return {
       test_type: t.test_type,
       result_value: t.result_value,
       unit: t.unit || spec?.unit || null,
+      method: t.method || null,
+      spec_on_report: t.spec_on_report || null,
       specification_id: spec?.id || null,
       specification: spec ? (spec.specification || null) : null,
-      pass_fail,
-      graded_by,
-      // The two reasons a result would land with no verdict, named rather than
-      // left as a blank cell.
+      pass_fail: graded.pass_fail,
+      graded_by: graded.graded_by,
+      // Why a result carries no verdict, always named — an empty cell reads as
+      // a pass to anyone skimming.
+      grade_reason: graded.reason,
       no_spec_reason: spec ? null
-        : draftFor.has(key)
+        : draftIndex.find(t.test_type)
           ? 'A specification for this test exists but is still a DRAFT. Approve it in the Specifications tab and this result will grade itself.'
           : 'No specification on file for this test, so it will be recorded without a pass/fail.',
       suggested: true,
@@ -776,26 +906,36 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
 
   // Specs the item HAS that this report says nothing about — the tests someone
   // expected to see. Worth naming: a missing test reads as a passed one.
-  const reported = new Set(results.map(r => String(r.test_type || '').toLowerCase()));
+  const reportedIndex = specIndex((extracted.test_results || []).map(t => ({ test_type: t.test_type })));
   const unmatched_specs = specs
-    .filter(s => !reported.has(String(s.test_type || '').toLowerCase()))
+    .filter(s => !reportedIndex.find(s.test_type))
     .map(s => ({ test_type: s.test_type, specification: s.specification || null }));
 
   res.json({
     readable: true,
     source_name: sourceName,
     page_count: parsed.numpages,
+    read_by,
+    ai_available: aiEnabled(),
+    ai_error,
     header,
     results,
     unmatched_specs,
-    // So a report the parser could not make sense of is diagnosable rather than
+    // So a report the reader could not make sense of is diagnosable rather than
     // just disappointing. Bounded — the client only shows it on request.
     raw_text: text.slice(0, 20000),
     message: results.length === 0
-      ? 'The PDF has readable text, but no test results matched the patterns this reader knows. The extracted text is included so it can be checked — results can still be entered by hand.'
+      ? (aiEnabled()
+        ? 'The PDF has readable text, but neither the pattern reader nor the AI reader found test results in it. The extracted text is below so it can be checked — results can still be entered by hand.'
+        : 'The PDF has readable text, but no test results matched the patterns this reader knows, and AI reading is not configured on this server. The extracted text is below — results can still be entered by hand.')
       : null,
   });
 });
+
+/** The requested-tests string as a list, for the reader's benefit only. */
+function splitRequestedTests(s) {
+  return String(s || '').split(/[,;\n]+/).map(t => t.trim()).filter(Boolean).slice(0, 40);
+}
 
 router.post('/requests/:id/files', upload.single('file'), (req, res) => {
   const db = getDb();

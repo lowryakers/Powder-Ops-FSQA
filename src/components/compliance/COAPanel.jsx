@@ -975,21 +975,24 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {detail.test_results.map(r => (
-                    <tr key={r.id}>
-                      <td className="px-3 py-2 font-medium whitespace-nowrap">{r.test_type}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{r.result_value ?? '-'}{r.unit ? ` ${r.unit}` : ''}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {r.pass_fail === 'pass' && <span className="text-green-600 font-medium">Pass</span>}
-                        {r.pass_fail === 'fail' && <span className="text-red-600 font-medium">Fail</span>}
-                        {r.pass_fail === 'na' && <span className="text-gray-400">N/A</span>}
-                        {!r.pass_fail && <span className="text-gray-400">-</span>}
-                      </td>
-                      <td className="px-3 py-2 text-gray-500 w-full">{r.notes || '-'}</td>
-                    </tr>
+                    <ResultRow key={r.id} r={r} requestId={requestId}
+                      onChanged={() => { refreshDetail(); onRefresh(); }} />
                   ))}
                 </tbody>
               </table>
             </div>
+          )}
+          {/* An undecided result is not a passing one. Say so above the table
+              rather than letting a row of dashes read as "all fine". */}
+          {detail.test_results?.some(r => !r.pass_fail) && (
+            <p className="text-[11px] text-amber-700 flex items-start gap-1.5 mb-2">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <span>
+                {detail.test_results.filter(r => !r.pass_fail).length} result(s) have no pass/fail — usually because
+                there is no approved specification for that test. Click a row to set one by hand, or add the
+                specification on the Specifications tab.
+              </span>
+            </p>
           )}
 
           {detail.specifications?.length > 0 && (
@@ -1097,6 +1100,99 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   );
 }
 
+/**
+ * One logged test result, editable in place.
+ *
+ * There was no edit path at all — a result could be created and deleted, never
+ * corrected. So a test that landed without a pass/fail (which, before the
+ * grader, was every micro test, since `parseFloat("<10")` is NaN) could not be
+ * given one, and fixing a typo meant deleting the row and losing that it had
+ * ever been entered.
+ *
+ * Leaving Pass/Fail on "auto" re-grades from the value against the approved
+ * specification; choosing one overrules it. The overrule is a decision, so the
+ * row asks for it deliberately rather than defaulting to it.
+ */
+function ResultRow({ r, requestId, onChanged }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(r);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const open = () => { setForm({ ...r, pass_fail: r.pass_fail || '' }); setError(''); setEditing(true); };
+
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiPut(`/coa/requests/${requestId}/results/${r.id}`, {
+        test_type: form.test_type, result_value: form.result_value, unit: form.unit,
+        pass_fail: form.pass_fail ?? '', notes: form.notes,
+      });
+      setEditing(false);
+      onChanged();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const remove = async () => {
+    if (!window.confirm(`Remove the ${r.test_type} result?`)) return;
+    setBusy(true);
+    try { await apiDelete(`/coa/requests/${requestId}/results/${r.id}`); onChanged(); }
+    catch (e) { setError(e.message); setBusy(false); }
+  };
+
+  if (!editing) {
+    return (
+      <tr className="hover:bg-gray-50 cursor-pointer" onClick={open} title="Click to correct this result">
+        <td className="px-3 py-2 font-medium whitespace-nowrap">{r.test_type}</td>
+        <td className="px-3 py-2 whitespace-nowrap">{r.result_value ?? '-'}{r.unit ? ` ${r.unit}` : ''}</td>
+        <td className="px-3 py-2 whitespace-nowrap">
+          {r.pass_fail === 'pass' && <span className="text-green-600 font-medium">Pass</span>}
+          {r.pass_fail === 'fail' && <span className="text-red-600 font-medium">Fail</span>}
+          {r.pass_fail === 'na' && <span className="text-gray-400">N/A</span>}
+          {!r.pass_fail && <span className="text-amber-600 font-medium">Not decided</span>}
+        </td>
+        <td className="px-3 py-2 text-gray-500 w-full">{r.notes || '-'}</td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr className="bg-powder-50/40">
+      <td colSpan={4} className="px-3 py-2">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+          <input value={form.test_type || ''} onChange={e => setForm(f => ({ ...f, test_type: e.target.value }))}
+            placeholder="Test" className="px-2 py-1 border border-gray-300 rounded text-xs" />
+          <input value={form.result_value ?? ''} onChange={e => setForm(f => ({ ...f, result_value: e.target.value }))}
+            placeholder="Result (e.g. <10, Not Detected, 35)" className="px-2 py-1 border border-gray-300 rounded text-xs" />
+          <select value={form.pass_fail ?? ''} onChange={e => setForm(f => ({ ...f, pass_fail: e.target.value }))}
+            className="px-2 py-1 border border-gray-300 rounded text-xs">
+            <option value="">Auto — grade against the spec</option>
+            <option value="pass">Pass</option>
+            <option value="fail">Fail</option>
+            <option value="na">N/A</option>
+          </select>
+          <input value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+            placeholder="Notes" className="px-2 py-1 border border-gray-300 rounded text-xs" />
+        </div>
+        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+        <div className="flex items-center gap-2 mt-2">
+          <p className="text-[11px] text-gray-500 flex-1">
+            “Auto” re-grades from the result against the approved specification. Picking Pass or Fail overrules
+            it — say why in the notes.
+          </p>
+          <button onClick={remove} disabled={busy} className="text-xs text-red-600 hover:underline">Remove</button>
+          <button onClick={() => setEditing(false)} className="text-xs text-gray-500">Cancel</button>
+          <button onClick={save} disabled={busy}
+            className="px-2.5 py-1 bg-powder-600 text-white text-xs rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 // ──────── Read a lab report into an existing request ────────
 //
 // Uploading the CTLA PDF used to store the file and read nothing — the parser
@@ -1174,6 +1270,23 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
               {scan.message && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">{scan.message}</div>
               )}
+              {/* Which reader produced this. A real CoA is a table, and the
+                  pattern reader wants "Label: value" on one line — so the AI
+                  reader is what usually gets there. Either way a person ticks. */}
+              {scan.read_by === 'columns' && (
+                <p className="text-[11px] text-gray-500">
+                  Read from the report’s table layout. Check each line against the PDF before applying.
+                </p>
+              )}
+              {scan.read_by === 'ai' && (
+                <p className="text-[11px] text-gray-500">
+                  Read by AI, because the pattern reader found nothing in this layout. Check each line against the
+                  PDF before applying — nothing is written until you tick it.
+                </p>
+              )}
+              {scan.ai_error && (
+                <p className="text-[11px] text-amber-700">AI reading failed ({scan.ai_error}); showing what the patterns found.</p>
+              )}
 
               {scan.header?.length > 0 && (
                 <div>
@@ -1218,6 +1331,11 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
                             )}
                           </span>
                           {r.specification && <span className="block text-[11px] text-gray-500 mt-0.5">Spec: {r.specification}</span>}
+                          {/* Why it graded the way it did — including the cases
+                              where it deliberately would not decide. "<10"
+                              against a limit of 5 proves nothing, and calling
+                              that a fail would reject good product. */}
+                          {r.grade_reason && <span className="block text-[11px] text-gray-500 mt-0.5">{r.grade_reason}</span>}
                           {r.no_spec_reason && <span className="block text-[11px] text-amber-700 mt-0.5">{r.no_spec_reason}</span>}
                         </span>
                       </label>

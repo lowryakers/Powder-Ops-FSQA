@@ -765,19 +765,83 @@ router.post('/:type/bulk-update', (req, res) => {
   const { ids, patch } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
   if (!patch || typeof patch !== 'object') return res.status(400).json({ error: 'patch object is required' });
-  const ph = ids.map(() => '?').join(',');
-  const sets = [], vals = [];
-  if (patch.paper_record !== undefined) { sets.push('paper_record=?'); vals.push(patch.paper_record ? 1 : 0); }
-  if (patch.status !== undefined) { sets.push('status=?'); vals.push(patch.status || null); }
-  if (!sets.length) return res.status(400).json({ error: 'No editable fields in patch' });
-  const info = db.prepare(`UPDATE qms_records SET ${sets.join(', ')}, updated_at=datetime('now') WHERE record_type = ? AND id IN (${ph})`).run(...vals, cfg.key, ...ids);
-  logAudit(req.user, 'qms_bulk_updated', cfg.key, null, { count: info.changes, patch });
+
+  // ANY field of the record type, not just status and the paper flag.
+  //
+  // Correcting a supplier name or a lot number across forty records was
+  // forty trips through the form. The keys allowed are exactly the type's own
+  // `fields` plus the scalars, so a patch can never write a key the form does
+  // not define.
+  const FIELD_KEYS = new Set(cfg.fields.map(f => f.key));
+  const dataPatch = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (!FIELD_KEYS.has(k)) continue;
+    const f = cfg.fields.find(x => x.key === k);
+    let val = v;
+    if (f.type === 'multiselect') val = Array.isArray(val) ? val : (val ? [val] : []);
+    if (f.type === 'checkbox') val = !!val;
+    dataPatch[k] = val;
+  }
+  const scalars = {};
+  if (patch.paper_record !== undefined) scalars.paper_record = patch.paper_record ? 1 : 0;
+  if (patch.status !== undefined) scalars.status = patch.status || null;
+  if (patch.record_date !== undefined) scalars.record_date = patch.record_date || null;
+  if (patch.notes !== undefined) scalars.notes = patch.notes || null;
+  if (!Object.keys(dataPatch).length && !Object.keys(scalars).length) {
+    return res.status(400).json({ error: 'Nothing in this change applies to these records.' });
+  }
+
+  const rows = db.prepare(
+    `SELECT * FROM qms_records WHERE record_type = ? AND id IN (${ids.map(() => '?').join(',')})`).all(cfg.key, ...ids);
+
+  const updated = [], skipped = [];
+  const stmt = db.prepare(`UPDATE qms_records SET data = ?, paper_record = ?, status = ?, record_date = ?, notes = ?, updated_at = datetime('now') WHERE id = ?`);
+
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      // A SIGNED RECORD IS NOT PART OF A BATCH. The same rule as editing one:
+      // any approval signature closes it to everyone but an admin. Skipping and
+      // reporting beats failing the whole selection — the other thirty-nine
+      // corrections are real work.
+      if (!mayEdit(req.user, row)) {
+        skipped.push({
+          record_number: row.record_number,
+          reason: hasAnySignature(row) ? 'signed' : 'not yours to correct',
+        });
+        continue;
+      }
+      const data = { ...parseJson(row.data, {}), ...dataPatch };
+      stmt.run(
+        JSON.stringify(data),
+        scalars.paper_record !== undefined ? scalars.paper_record : row.paper_record,
+        scalars.status !== undefined ? scalars.status : row.status,
+        scalars.record_date !== undefined ? scalars.record_date : row.record_date,
+        scalars.notes !== undefined ? scalars.notes : row.notes,
+        row.id);
+      // Audited INDIVIDUALLY, with before and after — a bulk edit has to leave
+      // the trail a manual one would, or the log cannot answer "who changed
+      // this record". Plus one summary row for the action itself.
+      const after = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(row.id);
+      logAudit(req.user, 'qms_updated', cfg.key, row.id,
+        { record_number: row.record_number, bulk: true, patch: { ...dataPatch, ...scalars } },
+        row, after, row.record_number);
+      updated.push(row.record_number);
+    }
+  });
+  tx();
+
+  logAudit(req.user, 'qms_bulk_updated', cfg.key, null,
+    { count: updated.length, skipped: skipped.length, patch: { ...dataPatch, ...scalars } });
   // Bulk-marking sign-outs returned is a real workflow, and it moves the master
   // list exactly as a single edit does.
   if (cfg.key === 'knife_sign_out') {
     try { syncAllKnifeStatuses(db); } catch (e) { console.error('[knife→master]', e.message); }
   }
-  res.json({ updated: info.changes });
+  res.json({
+    updated: updated.length,
+    skipped,
+    ...(skipped.length ? { message: `${skipped.length} record${skipped.length > 1 ? 's were' : ' was'} left unchanged — a signed record is changed by status, not edited.` } : {}),
+  });
 });
 
 // ── approvals ─────────────────────────────────────────────────────────────────
