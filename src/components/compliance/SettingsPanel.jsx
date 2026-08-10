@@ -1,12 +1,11 @@
 import { useAuth } from '../../hooks/useAuth';
-import { Users, Sliders, MessageSquarePlus, Database, Sparkles, Link2, Plug } from 'lucide-react';
+import { Users, Sliders, Database, Sparkles, Link2, Plug } from 'lucide-react';
 import SettingsShell from '../settings/SettingsShell.jsx';
 import UsersSection from '../settings/UsersSection.jsx';
 import DataBackupSection from '../settings/DataBackupSection.jsx';
 import ShareableLinksSection from '../settings/ShareableLinksSection.jsx';
 import LogBuilderPanel from '../settings/LogBuilderPanel.jsx';
 import CleanupReviewPanel from '../settings/CleanupReviewPanel.jsx';
-import RequestListPanel from '../common/RequestBox.jsx';
 import QuickBooksSetupCard from './QuickBooksSetupCard.jsx';
 
 // Settings is a REGISTRY, not a page.
@@ -67,15 +66,6 @@ const SECTIONS = [
         icon: Sliders,
         visible: canBuildLogs,
         Component: LogBuilderPanel,
-      },
-      {
-        id: 'requests',
-        label: 'ReadyDoc requests',
-        description: 'What the team has asked for, as a checklist',
-        keywords: 'feedback suggestions ideas bugs requests',
-        icon: MessageSquarePlus,
-        visible: isAdmin,
-        Component: ({ user }) => <RequestListPanel user={user} />,
       },
     ],
   },

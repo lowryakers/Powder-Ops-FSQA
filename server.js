@@ -78,7 +78,6 @@ import { tagQaInspectionRecords } from './server/qa-records.js';
 import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
 import receivingRoutes from './server/api/receiving.js';
 import importRoutes from './server/api/imports.js';
-import appRequestRoutes from './server/api/requests.js';
 import coaRoutes from './server/api/coa.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
@@ -1507,7 +1506,6 @@ app.use('/api/receiving', requireModuleWrite('receiving-log'), receivingRoutes);
 // module its importer requires).
 app.use('/api/imports', importRoutes);
 // ReadyDoc feedback: anyone can file, admins triage (enforced in the router).
-app.use('/api/app-requests', appRequestRoutes);
 app.use('/api/training', requireModuleWrite('training'), trainingRoutes);
 app.use('/api/certifications', requireModuleWrite('certifications'), certificationRoutes);
 app.use('/api/ai', aiRoutes);

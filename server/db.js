@@ -1038,12 +1038,11 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_import_batches_created ON import_batches(created_at DESC);
 
-    -- ── ReadyDoc feedback ────────────────────────────────────────────────
-    -- "This is broken" / "can we add X" from the people using the app. The
-    -- submit side is deliberately one box and a button: anything heavier and
-    -- nobody files anything, and the report never gets made. The triage side is
-    -- a checklist. It stays out of Task Center on purpose — app feedback isn't
-    -- plant work and shouldn't dilute the operational task list.
+    -- ── ReadyDoc feedback (RETIRED) ──────────────────────────────────────
+    -- The Request button / Settings triage pane were removed 2026-08 — the
+    -- plant runs app feedback through a comms channel instead. The table
+    -- stays so any rows filed before the removal survive in the database;
+    -- there is no UI or API over it any more.
     CREATE TABLE IF NOT EXISTS app_requests (
       id TEXT PRIMARY KEY,
       body TEXT NOT NULL,

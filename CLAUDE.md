@@ -1175,16 +1175,11 @@ and kitchen samples to the outside lab) and **Air Testing (Settle Plate)** (annu
 air quality). The sampling points are left to the schedule's own steps rather than assumed, and the annual
 cadence is the one the plant asked for. Everything else stays user-created in Quality Schedules.
 
-## ReadyDoc feedback ("Request" button)
-`app_requests` table + `server/api/requests.js` + `src/components/common/RequestBox.jsx`.
-**Submitting is deliberately one box and a button** — no title, team, assignee or due date. Every required
-field is a reason not to bother, and the request nobody files is the expensive one. `RequestModal` opens from
-a **Request** button in the top bar (admins + supervisors), available from any screen.
-**Triage is where the structure lives:** `RequestListPanel` in Settings (admin) is an open checklist — tick
-to mark done, "Show done" to review, delete to discard. Non-admins only ever see their own submissions.
-Deliberately **not** Task Center: app feedback isn't plant work, and mixing it in dilutes the operational
-task list. Adding an area is optional and free-text-free (a fixed short list) so triage can group without
-making the submitter think.
+## ReadyDoc feedback ("Request" button) — REMOVED 2026-08
+The Request button, the Settings triage pane, `server/api/requests.js`, `RequestBox.jsx` and the ReadyBot
+stale-request nudge were all removed at the user's request — the plant runs app feedback through a comms
+channel instead. The `app_requests` table stays in db.js (rows filed before the removal survive), but
+nothing reads or writes it. Don't rebuild this without being asked.
 
 ## Three counts that must agree (and one that never fired)
 - **A sign-out log's badge counts what QA can ACT on.** The generic QMS badge is "any required approval
@@ -1819,19 +1814,6 @@ three months later.
 - `can_edit` is stamped server-side and the client renders what it's told (same rule as qms.js). A **paid**
   claim is closed to everyone but an admin.
 - `reimbursement` is a custom-field scope, so extra questions are a Settings task.
-
-## ReadyBot chases untriaged ReadyDoc requests
-`nudgeStaleRequests` in `server/scheduled-jobs.js` DMs every active admin when an `app_requests` row has been
-open too long. Triage lives in an admin-only Settings pane nobody opens without a reason — which is exactly
-how somebody's suggestion quietly dies and they stop filing them.
-- **`STALE_DAYS = 3` grace.** Being pinged the same afternoon you filed something trains people to ignore
-  the ping.
-- **`NUDGE_EVERY_DAYS = 3` floor**, however many are waiting. A daily reminder about the same three rows is
-  a thing people mute, and a muted reminder is worse than none. It *does* re-send while they stay open —
-  "I've been meaning to get to that" is the state this exists to interrupt.
-- **An empty queue clears `last_request_nudge_at`**, so the next request to go stale is reported promptly
-  instead of sitting out the remainder of a window.
-- Links to `?tab=settings&section=requests`. Bot bold is `*text*`.
 
 ## Threads clear themselves when you actually read them (`src/lib/useSeenAfterDwell.js`)
 "Mark read" used to be the only way to clear a thread, so the honest case — you scrolled to it, read the

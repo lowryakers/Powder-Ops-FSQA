@@ -9,10 +9,6 @@
 //  - Daily: Critical Tracking red alert → #quality when the set of RED
 //    program areas changes (new red, or back to clear). Same computation as
 //    the dashboard; no repeat pings while the same areas stay red.
-//  - Every third day: ReadyBot DMs the admins when a ReadyDoc request has been
-//    sitting untriaged. Requests live in an admin-only Settings pane nobody
-//    has a reason to open, which is exactly how somebody's suggestion quietly
-//    dies and they stop filing them.
 
 import { readyDocOrigin } from './links.js';
 
@@ -136,7 +132,6 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] PM digest failed:', e.message); }
   }
 
-  await nudgeStaleRequests(db, deps, now);
 }
 
 /* ── Weekly PM digest per team ────────────────────────────────────────────── */
@@ -212,72 +207,3 @@ export async function postPmWeekDigest(db, deps, now) {
   }
 }
 
-/* ── Untriaged ReadyDoc requests ──────────────────────────────────────────── */
-
-// A request nobody looks at is worse than no request box: the person who filed
-// it concludes it goes nowhere and stops telling you things. Triage lives in an
-// admin-only Settings pane, which is not a screen anyone opens without a
-// reason — so the reason comes and finds them.
-//
-// Two deliberate limits, both about not becoming noise:
-//
-//  · GRACE. Nothing is stale for STALE_DAYS. Filing a request and being
-//    pinged about it the same afternoon trains people to ignore the ping.
-//  · A FLOOR ON THE CADENCE. At most one DM every NUDGE_EVERY_DAYS, however
-//    many requests are waiting. A daily reminder about the same three rows is
-//    a thing people mute, and a muted reminder is worse than none.
-//
-// It re-sends while they are still open, on purpose: "I've been meaning to get
-// to that" is the state this exists to interrupt.
-const STALE_DAYS = 3;
-const NUDGE_EVERY_DAYS = 3;
-
-async function nudgeStaleRequests(db, deps, now) {
-  const { getBotUser, postMessageAs, botDm, pushToUser } = deps;
-  if (!botDm || !postMessageAs || !getBotUser) return;
-  try {
-    // The queue is read BEFORE the cadence floor is applied, not after. The
-    // floor exists to stop repeat nagging about the same rows; it must not
-    // also stop an emptied queue from resetting the clock, or the next request
-    // to go stale sits out the remainder of a window it had nothing to do with.
-    const cutoff = new Date(now.getTime() - STALE_DAYS * 86400000).toISOString().slice(0, 19).replace('T', ' ');
-    const stale = db.prepare(`SELECT id, body, area, submitted_by, created_at FROM app_requests
-      WHERE status = 'open' AND created_at <= ? ORDER BY created_at ASC LIMIT 50`).all(cutoff);
-    if (!stale.length) {
-      setFlag(db, 'last_request_nudge_at', '');
-      return;
-    }
-
-    const last = getFlag(db, 'last_request_nudge_at');
-    if (last && (now - new Date(last)) < NUDGE_EVERY_DAYS * 86400000) return;
-
-    // Triage is admin-only, so the admins are who this is for. ReadyBot itself
-    // is a user row and must never be DM'd by ReadyBot.
-    const admins = db.prepare(`SELECT id, name FROM users
-      WHERE role = 'admin' AND is_active = 1 AND name != 'ReadyBot'`).all();
-    if (!admins.length) return;
-
-    const oldestDays = Math.floor((now - new Date(stale[0].created_at.replace(' ', 'T') + 'Z')) / 86400000);
-    const lines = stale.slice(0, 5).map(r => {
-      const body = String(r.body || '').replace(/\s+/g, ' ').slice(0, 110);
-      return `• ${body}${body.length >= 110 ? '…' : ''} — ${r.submitted_by || 'someone'}${r.area ? ` (${r.area})` : ''}`;
-    });
-    const more = stale.length > 5 ? `\n…and ${stale.length - 5} more.` : '';
-    // Bot message bold is *text*, not **text** — the chat renderer isn't markdown.
-    const msg = `📥 *${stale.length} ReadyDoc request${stale.length === 1 ? '' : 's'} waiting* — the oldest has been open ${oldestDays} day${oldestDays === 1 ? '' : 's'}.\n${lines.join('\n')}${more}\nTriage them: ${readyDocOrigin()}/?tab=settings&section=requests`;
-
-    for (const admin of admins) {
-      try {
-        const { bot, dm } = botDm(db, admin.id);
-        await postMessageAs(db, dm, bot, msg);
-        // A DM isn't covered by the grouped channel push, so it is sent directly.
-        pushToUser?.(admin.id, {
-          title: '📥 ReadyDoc requests waiting',
-          body: `${stale.length} open, oldest ${oldestDays} day${oldestDays === 1 ? '' : 's'}`,
-          tag: `channel-${dm.id}`, renotify: true, url: '/?tab=settings&section=requests',
-        })?.catch?.(() => {});
-      } catch (e) { console.warn(`[jobs] request nudge to ${admin.name} failed:`, e.message); }
-    }
-    setFlag(db, 'last_request_nudge_at', now.toISOString());
-  } catch (e) { console.warn('[jobs] request nudge failed:', e.message); }
-}
