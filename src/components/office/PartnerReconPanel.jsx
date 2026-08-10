@@ -5,7 +5,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import {
   Scale, Search, Check, FileText, Pencil, Plus, X, Link2,
-  ArrowUpRight, ArrowDownLeft, Ban, Trash2, Copy, ExternalLink, History,
+  ArrowUpRight, ArrowDownLeft, Ban, Trash2, Copy, ExternalLink, History, Upload,
 } from 'lucide-react';
 
 // X − Y = Z.
@@ -261,6 +261,7 @@ export default function PartnerReconPanel({ user }) {
   const [dirFilter, setDirFilter] = useState('');
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [newLink, setNewLink] = useState(null);
   const expand = useRowExpand();
@@ -315,10 +316,16 @@ export default function PartnerReconPanel({ user }) {
             the documents behind it and Net {partner.terms_days} applied so nothing is claimed early.
           </p>
         </div>
-        <button onClick={() => setAdding(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 shrink-0">
-          <Plus size={15} /> Add document
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => setImporting(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
+            <Upload size={15} /> Import invoices
+          </button>
+          <button onClick={() => setAdding(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+            <Plus size={15} /> Add document
+          </button>
+        </div>
       </div>
 
       <ModuleTabs value={view} onChange={setView} tabs={[
@@ -559,6 +566,240 @@ export default function PartnerReconPanel({ user }) {
       {(adding || editing) && (
         <DocumentForm partner={partner} initial={editing} onClose={() => { setAdding(false); setEditing(null); }} onSaved={reloadAll} />
       )}
+      {importing && (
+        <ImportInvoices partner={partner} onClose={() => setImporting(false)} onImported={reloadAll} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Import a folder of invoices in one go.
+ *
+ * Scan → review → commit. The scan writes NOTHING; it reads each file and
+ * proposes a row. What makes the review step necessary rather than decorative
+ * is the direction column: `receivable` and `payable` are the difference
+ * between being paid and paying, and an import that guesses wrong moves five
+ * figures the wrong way with a confident number to match. So a file whose
+ * direction could not be read from the document arrives unset and cannot be
+ * imported until someone says which way it points.
+ *
+ * The files are re-sent on commit rather than stashed server-side, so a
+ * half-finished import leaves nothing behind.
+ */
+function ImportInvoices({ partner, onClose, onImported }) {
+  const [files, setFiles] = useState([]);
+  const [scan, setScan] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(null);
+
+  const pick = async (e) => {
+    const list = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!list.length) return;
+    setFiles(list); setBusy(true); setError(''); setScan(null);
+    try {
+      const fd = new FormData();
+      for (const f of list) fd.append('files', f);
+      const data = await apiUpload(`/partners/${partner.id}/documents/scan`, fd);
+      setScan(data);
+      setRows(data.files.map(f => {
+        const p = f.proposal || {};
+        return {
+          skip: !!f.duplicate_of,
+          allow_duplicate: false,
+          direction: p.direction || '',
+          doc_type: p.doc_type || 'invoice',
+          doc_number: p.doc_number || '',
+          reference: p.reference || '',
+          issued_date: p.issued_date || '',
+          terms_days: p.terms_days ?? partner.terms_days,
+          amount: p.amount ?? '',
+          description: '',
+        };
+      }));
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
+  const set = (i, k, v) => setRows(rs => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+
+  const ready = rows.filter((r, i) => !r.skip && r.direction && r.amount !== '' && scan?.files[i]);
+  const blocked = rows.filter(r => !r.skip && (!r.direction || r.amount === ''));
+
+  const commit = async () => {
+    setBusy(true); setError('');
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      fd.append('rows', JSON.stringify(rows.map(r => ({
+        ...r, amount: r.amount === '' ? null : Number(r.amount),
+        terms_days: r.terms_days === '' ? null : Number(r.terms_days),
+      }))));
+      const res = await apiUpload(`/partners/${partner.id}/documents/import`, fd);
+      setDone(res);
+      onImported();
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-5xl max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
+          <h3 className="text-sm font-semibold text-gray-900">Import invoices — Powder Ops ⇄ {partner.name}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          {done ? (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-gray-900">
+                {done.created.length} document{done.created.length === 1 ? '' : 's'} added as drafts.
+              </p>
+              <p className="text-xs text-gray-500">
+                Drafts do not count toward the balance. Approve each one as final when the work behind it
+                has happened.
+              </p>
+              {done.skipped?.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-900">{done.skipped.length} not imported:</p>
+                  <ul className="text-[11px] text-amber-800 mt-1 space-y-0.5">
+                    {done.skipped.map((s, i) => <li key={i}>{s.filename} — {s.reason}</li>)}
+                  </ul>
+                </div>
+              )}
+              <button onClick={onClose} className="px-3 py-1.5 bg-powder-600 text-white text-sm rounded-lg hover:bg-powder-700">Done</button>
+            </div>
+          ) : !scan ? (
+            <>
+              <p className="text-sm text-gray-600">
+                Pick the invoices, POs and credit notes for this partner. Each file is read on its own —
+                nothing is written until you have checked the rows.
+              </p>
+              <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 cursor-pointer">
+                <Upload size={15} /> {busy ? 'Reading…' : 'Choose files'}
+                <input type="file" multiple className="hidden" onChange={pick} disabled={busy} />
+              </label>
+              <p className="text-[11px] text-gray-400">Up to 10 files at a time. PDFs read best; a photo of an invoice has to be typed in.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500">
+                Check each row. <span className="font-medium text-gray-700">Direction is never guessed from a
+                document that does not say who issued it</span> — getting it backwards moves the money the
+                wrong way, so those rows have to be set by hand.
+              </p>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs min-w-[900px]">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500 w-8"></th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">File</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">Direction</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">Type</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">Doc #</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">Date</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">Net</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {scan.files.map((f, i) => {
+                      const r = rows[i] || {};
+                      const p = f.proposal || {};
+                      return (
+                        <tr key={i} className={r.skip ? 'opacity-50' : ''}>
+                          <td className="px-2 py-1.5 align-top">
+                            <input type="checkbox" checked={!r.skip} onChange={e => set(i, 'skip', !e.target.checked)} />
+                          </td>
+                          <td className="px-2 py-1.5 align-top max-w-[200px]">
+                            <span className="block font-medium text-gray-800 truncate" title={f.filename}>{f.filename}</span>
+                            {f.duplicate_of && (
+                              <span className="block text-[10px] text-amber-700 mt-0.5">{f.message}</span>
+                            )}
+                            {f.readable === false && <span className="block text-[10px] text-amber-700 mt-0.5">{f.message || f.error}</span>}
+                            {p.missing?.length > 0 && f.readable !== false && (
+                              <span className="block text-[10px] text-gray-500 mt-0.5">Could not read: {p.missing.join(', ')}</span>
+                            )}
+                            {p.direction_weak && (
+                              <span className="block text-[10px] text-amber-700 mt-0.5">{p.direction_reason} — check this one.</span>
+                            )}
+                            {p.terms_from_partner && (
+                              <span className="block text-[10px] text-gray-400 mt-0.5">Net taken from the partner's terms, not the invoice.</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 align-top">
+                            <select value={r.direction || ''} onChange={e => set(i, 'direction', e.target.value)}
+                              className={`px-1.5 py-1 border rounded text-xs ${r.direction ? 'border-gray-300' : 'border-amber-400 bg-amber-50'}`}>
+                              <option value="">Set this…</option>
+                              <option value="receivable">They owe us</option>
+                              <option value="payable">We owe them</option>
+                            </select>
+                          </td>
+                          <td className="px-2 py-1.5 align-top">
+                            <select value={r.doc_type || 'invoice'} onChange={e => set(i, 'doc_type', e.target.value)}
+                              className="px-1.5 py-1 border border-gray-300 rounded text-xs">
+                              <option value="invoice">Invoice</option>
+                              <option value="po">PO</option>
+                              <option value="credit">Credit</option>
+                            </select>
+                          </td>
+                          <td className="px-2 py-1.5 align-top">
+                            <input value={r.doc_number || ''} onChange={e => set(i, 'doc_number', e.target.value)}
+                              className="w-24 px-1.5 py-1 border border-gray-300 rounded text-xs" />
+                          </td>
+                          <td className="px-2 py-1.5 align-top">
+                            <input type="date" value={r.issued_date || ''} onChange={e => set(i, 'issued_date', e.target.value)}
+                              className="px-1.5 py-1 border border-gray-300 rounded text-xs" />
+                          </td>
+                          <td className="px-2 py-1.5 align-top">
+                            <input type="number" min="0" value={r.terms_days ?? ''} onChange={e => set(i, 'terms_days', e.target.value)}
+                              className="w-14 px-1.5 py-1 border border-gray-300 rounded text-xs" />
+                          </td>
+                          <td className="px-2 py-1.5 align-top">
+                            <input type="number" step="any" value={r.amount ?? ''} onChange={e => set(i, 'amount', e.target.value)}
+                              className={`w-24 px-1.5 py-1 border rounded text-xs ${r.amount !== '' ? 'border-gray-300' : 'border-amber-400 bg-amber-50'}`} />
+                            {p.amount_label && <span className="block text-[10px] text-gray-400 mt-0.5">from “{p.amount_label}”</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {scan.files.some(f => f.duplicate_of) && (
+                <p className="text-[11px] text-amber-700">
+                  Rows already on the ledger are unticked. Importing one again would double what is owed —
+                  tick it only if it really is a second document.
+                </p>
+              )}
+              {blocked.length > 0 && (
+                <p className="text-[11px] text-amber-700">
+                  {blocked.length} row{blocked.length === 1 ? '' : 's'} still need a direction or an amount.
+                </p>
+              )}
+              {error && <p className="text-sm text-red-600">{error}</p>}
+            </>
+          )}
+        </div>
+
+        {scan && !done && (
+          <div className="flex items-center gap-2 px-4 py-3 border-t border-gray-200 sticky bottom-0 bg-white">
+            <span className="text-xs text-gray-500">{ready.length} of {scan.files.length} ready — all imported as drafts</span>
+            <div className="flex-1" />
+            <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600">Cancel</button>
+            <button onClick={commit} disabled={busy || !ready.length}
+              className="px-3 py-1.5 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+              {busy ? 'Importing…' : `Import ${ready.length}`}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

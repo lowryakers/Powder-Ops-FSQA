@@ -17,6 +17,7 @@ import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { reconcile, dueDateFor, endOfMonth, round2 } from '../partner-recon.js';
+import { parseInvoice } from '../invoice-parse.js';
 
 const router = Router();
 
@@ -143,6 +144,180 @@ async function createDocument(db, { partnerId, body, files, user, source }) {
   }
   return { documents: out, partner };
 }
+
+/* ── Importing a stack of invoices ────────────────────────────────────────── */
+//
+// `POST /:id/documents` takes several files but applies ONE set of metadata to
+// all of them, so a dozen invoices became a dozen documents with the same
+// number and the same amount. That is fine for "here are three pages of one
+// invoice" and useless for the actual job: a folder of invoices from the month.
+//
+// So: scan → review → commit, the same three steps as every other bulk path
+// here. SCAN WRITES NOTHING. It reads each file, proposes a row, and says per
+// file what it could not find. The person fixes those rows and commits, and the
+// commit goes through `createDocument` — the same function the single-document
+// form uses, so an imported row cannot exist in a state a typed one could not.
+//
+// Everything lands as DRAFT, because draft is what "the work behind it
+// happened" has not been asserted for yet, and nothing draft touches the
+// settlement number.
+
+const NAME_NOISE = /\b(inc|llc|l\.l\.c|ltd|co|corp|company|dynamics)\b\.?/gi;
+/** Name fragments a document might print for a company, longest first. */
+function nameVariants(name) {
+  const full = String(name || '').trim();
+  if (!full) return [];
+  const short = full.replace(NAME_NOISE, '').replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
+  return [...new Set([full, short].filter(s => s.length >= 3))];
+}
+const OUR_NAMES = ['Powder Ops', 'PowderOps', 'Powder-Ops'];
+
+/**
+ * Is this document already on the ledger?
+ *
+ * The single most damaging thing a re-import can do is add what is already
+ * there — the amount owed simply doubles, and it is a plausible number so
+ * nobody catches it. Matched on document number + amount within the partner,
+ * which is what identifies an invoice; the date is checked too but a document
+ * re-issued on a different date with the same number and amount is the same
+ * document, not a second one.
+ */
+function findExistingDoc(db, partnerId, { doc_number, amount }) {
+  if (!doc_number || amount == null) return null;
+  return db.prepare(
+    `SELECT id, doc_number, amount, direction, status, issued_date FROM partner_documents
+     WHERE partner_id = ? AND doc_number = ? AND ABS(amount - ?) < 0.005
+       AND status != 'void' LIMIT 1`).get(partnerId, String(doc_number), Number(amount)) || null;
+}
+
+router.post('/:id/documents/scan', uploadDocs, async (req, res) => {
+  const files = req.files || [];
+  try {
+    const db = getDb();
+    const partner = db.prepare('SELECT * FROM partner_accounts WHERE id = ?').get(req.params.id);
+    if (!partner) return res.status(404).json({ error: 'Partner not found' });
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+
+    const partnerNames = nameVariants(partner.name);
+    const out = [];
+    for (const f of files) {
+      const row = { filename: f.originalname || 'file', size: f.size || null };
+      let text = '';
+      try {
+        text = await extractInvoiceText(readFileSync(f.path), f.mimetype, f.originalname) || '';
+      } catch (e) {
+        row.error = `Could not read this file: ${e.message}`;
+      }
+      // A scan with no text layer is a photograph. Say that, rather than
+      // returning empty fields that read as "this invoice is blank".
+      if (!row.error && text.replace(/\s/g, '').length < 30) {
+        row.readable = false;
+        row.message = 'No text could be read from this file — it is an image scan. Its details have to be typed in.';
+        row.proposal = { doc_type: 'invoice', direction: null, missing: ['document number', 'date', 'amount', 'direction'] };
+        out.push(row);
+        continue;
+      }
+      if (row.error) { row.readable = false; out.push(row); continue; }
+
+      row.readable = true;
+      const parsed = parseInvoice(text, { usNames: OUR_NAMES, partnerNames, filename: row.filename });
+      // Fall back to the partner's own terms, the same default a typed document
+      // gets — but say so, so nobody reads it as something the invoice stated.
+      if (parsed.terms_days == null) { parsed.terms_days = partner.terms_days; parsed.terms_from_partner = true; }
+      row.proposal = parsed;
+
+      const dup = findExistingDoc(db, partner.id, parsed);
+      if (dup) {
+        row.duplicate_of = {
+          id: dup.id, doc_number: dup.doc_number, amount: dup.amount,
+          direction: dup.direction, status: dup.status, issued_date: dup.issued_date,
+        };
+        row.message = `${dup.doc_number} for ${dup.amount} is already on this ledger (${dup.status}). Importing it again would double what is owed.`;
+      }
+      out.push(row);
+    }
+
+    res.json({
+      partner: { id: partner.id, name: partner.name, terms_days: partner.terms_days },
+      files: out,
+      // Nothing was written. Said explicitly because this endpoint takes an
+      // upload, and an upload that changes nothing is worth being clear about.
+      written: false,
+    });
+  } catch (err) {
+    res.status(400).json({ error: uploadErrorMessage(err) });
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+/**
+ * Commit the reviewed rows.
+ *
+ * The client re-sends the files alongside a `rows` array — one entry per file,
+ * in order — so there is no stash table holding half-imported documents (the
+ * same shape as the policy and scanned-test importers).
+ *
+ * A row may be skipped outright, and a duplicate is skipped unless the person
+ * explicitly says otherwise. Each document is created through `createDocument`
+ * and audited individually, plus one summary row.
+ */
+router.post('/:id/documents/import', uploadDocs, async (req, res) => {
+  const files = req.files || [];
+  try {
+    const db = getDb();
+    const partner = db.prepare('SELECT * FROM partner_accounts WHERE id = ?').get(req.params.id);
+    if (!partner) return res.status(404).json({ error: 'Partner not found' });
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+
+    let rows;
+    try { rows = JSON.parse(req.body?.rows || '[]'); } catch { rows = []; }
+    if (!Array.isArray(rows) || rows.length !== files.length) {
+      return res.status(400).json({ error: 'The reviewed rows do not line up with the files uploaded. Start the import again.' });
+    }
+
+    const created = [], skipped = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const row = rows[i] || {};
+      const name = f.originalname || 'file';
+
+      if (row.skip) { skipped.push({ filename: name, reason: 'not selected' }); continue; }
+      // A direction is the one field with no safe default: getting it backwards
+      // moves the money the wrong way, with a confident number to match.
+      if (!['receivable', 'payable'].includes(row.direction)) {
+        skipped.push({ filename: name, reason: 'no direction set — say whether they owe us or we owe them' });
+        continue;
+      }
+      if (row.amount == null || !Number.isFinite(Number(row.amount))) {
+        skipped.push({ filename: name, reason: 'no amount' });
+        continue;
+      }
+      if (!row.allow_duplicate) {
+        const dup = findExistingDoc(db, partner.id, { doc_number: row.doc_number, amount: Number(row.amount) });
+        if (dup) { skipped.push({ filename: name, reason: `already on the ledger as ${dup.doc_number}` }); continue; }
+      }
+
+      const r = await createDocument(db, {
+        partnerId: partner.id, body: row, files: [f], user: req.user, source: 'import',
+      });
+      if (r.error) { skipped.push({ filename: name, reason: r.error }); continue; }
+      const doc = r.documents[0];
+      logAudit(req.user, 'create', 'partner_document', doc.id,
+        { imported: true, filename: name, direction: row.direction, amount: Number(row.amount), doc_number: row.doc_number },
+        null, null, partner.name);
+      created.push({ ...doc, filename: name });
+    }
+
+    logAudit(req.user, 'import', 'partner_document', null,
+      { partner: partner.name, created: created.length, skipped: skipped.length }, null, null, partner.name);
+    res.status(201).json({ created, skipped });
+  } catch (err) {
+    res.status(400).json({ error: uploadErrorMessage(err) });
+  } finally {
+    cleanupTemp(files);
+  }
+});
 
 router.post('/:id/documents', uploadDocs, async (req, res) => {
   const files = req.files || [];
