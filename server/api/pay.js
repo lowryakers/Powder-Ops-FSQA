@@ -8,6 +8,7 @@ import { getDb, logAudit } from '../db.js';
 import { normalizeName } from '../pay-seed.js';
 import { postMessageAs, botDm } from './comms.js';
 import { pushToUser } from '../push.js';
+import { readyDocOrigin } from '../links.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.join(__dirname, '..', 'assets', 'powder-ops-logo.jpg');
@@ -95,7 +96,7 @@ function withLinkedNames(db, rows) {
   if (!ids.length) return rows;
   const users = new Map();
   try {
-    const q = db.prepare(`SELECT id, name, department FROM users WHERE id IN (${ids.map(() => '?').join(',')})`);
+    const q = db.prepare(`SELECT id, name, department, role FROM users WHERE id IN (${ids.map(() => '?').join(',')})`);
     for (const u of q.all(...ids)) users.set(u.id, u);
   } catch { return rows; }
   return rows.map(r => {
@@ -107,8 +108,28 @@ function withLinkedNames(db, rows) {
       linked: true,
       renamed_from: u.name !== r.name ? r.name : null,
       user_department: u.department,
+      // Same reasoning as the name: SETTINGS is where a promotion or a step
+      // down is recorded, so a linked row's supervisor flag follows the
+      // account's role. The imported column was left saying "supervisor" for
+      // someone who had since been changed in Settings, and the review rules
+      // read that flag — so the roster and the app disagreed about who needs
+      // Adam to review them.
+      is_supervisor: SUPERVISOR_ROLES.includes(u.role) ? 1 : 0,
     };
   });
+}
+
+// Who counts as a supervisor for the review rules. An admin is included: you
+// would not ask an operator to evaluate one either.
+const SUPERVISOR_ROLES = ['supervisor', 'admin'];
+
+/** The authority on "is this person a supervisor" — the account, then the row. */
+function isSupervisorRow(db, row) {
+  if (row?.user_id) {
+    const u = db.prepare('SELECT role FROM users WHERE id = ?').get(row.user_id);
+    if (u) return SUPERVISOR_ROLES.includes(u.role);
+  }
+  return !!row?.is_supervisor;
 }
 
 // ── Roster (admin only) ──────────────────────────────────────────────────────
@@ -230,6 +251,17 @@ function canReviewSupervisors(user) {
 // A review cycle used to depend on somebody remembering to ask a supervisor in
 // person. An assignment is the ask, on the record: it shows in that reviewer's
 // own Pay Tracking view, and completing the evaluation closes it.
+// Who may be asked to review. Only supervisors and admins ever evaluate
+// anyone — an operator never reviews a colleague — and ReadyBot is not a
+// person. Offering the whole roster made both mistakes possible in one click.
+router.get('/reviewers', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  res.json(db.prepare(`SELECT id, name, role, department FROM users
+    WHERE is_active = 1 AND role IN ('supervisor', 'admin') AND name != 'ReadyBot'
+    ORDER BY name`).all());
+});
+
 router.get('/assignments', (req, res) => {
   if (!requireEvaluator(req, res)) return;
   const db = getDb();
@@ -255,12 +287,17 @@ router.post('/assignments', async (req, res) => {
   const db = getDb();
   const emp = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.body?.employee_id);
   if (!emp) return res.status(404).json({ error: 'Not on the roster' });
-  const reviewer = db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1').get(req.body?.reviewer_id);
+  const reviewer = db.prepare('SELECT id, name, role FROM users WHERE id = ? AND is_active = 1').get(req.body?.reviewer_id);
   if (!reviewer) return res.status(400).json({ error: 'Pick a reviewer.' });
+  // Enforced here too, not just in the picker: an operator never evaluates a
+  // colleague, and ReadyBot is not a person.
+  if (!['supervisor', 'admin'].includes(reviewer.role) || reviewer.name === 'ReadyBot') {
+    return res.status(400).json({ error: 'Only supervisors and admins can be asked to review someone.' });
+  }
   if (emp.user_id && emp.user_id === reviewer.id) {
     return res.status(400).json({ error: 'Someone cannot evaluate themselves.' });
   }
-  if (emp.is_supervisor && !canReviewSupervisors(reviewer)) {
+  if (isSupervisorRow(db, emp) && !canReviewSupervisors(reviewer)) {
     return res.status(400).json({ error: `${emp.name} is a supervisor — supervisor reviews are done by Adam or an admin.` });
   }
   const open = db.prepare("SELECT 1 FROM pay_review_assignments WHERE employee_id = ? AND reviewer_id = ? AND status = 'open'").get(emp.id, reviewer.id);
@@ -308,7 +345,7 @@ router.post('/employees/:id/reviews', (req, res) => {
   const db = getDb();
   const emp = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not on the roster' });
-  if (emp.is_supervisor && !canReviewSupervisors(req.user)) {
+  if (isSupervisorRow(db, emp) && !canReviewSupervisors(req.user)) {
     return res.status(403).json({ error: 'Supervisor reviews are done by Adam (or an admin).' });
   }
 
@@ -623,7 +660,9 @@ router.post('/evaluation-pdf', async (req, res) => {
 router.get('/evaluatees', (req, res) => {
   if (!requireEvaluator(req, res)) return;
   const db = getDb();
-  let rows = db.prepare('SELECT id, name, team, is_supervisor, last_reviewed_at, last_increase_at, hire_date FROM pay_employees WHERE active = 1 ORDER BY team, name').all();
+  // Through withLinkedNames so the supervisor flag (and the name) come from the
+  // linked account rather than whatever the import wrote months ago.
+  let rows = withLinkedNames(db, db.prepare('SELECT * FROM pay_employees WHERE active = 1 ORDER BY team, name').all());
   // Supervisors are reviewed only by Adam (or an admin) — everyone else's
   // picker simply doesn't offer them, and the submit endpoint enforces the
   // same rule so the filter can't be worked around.
@@ -633,5 +672,101 @@ router.get('/evaluatees', (req, res) => {
     review: reviewState(r),
   })));
 });
+
+// ── Who's due, told to someone ───────────────────────────────────────────────
+//
+// Two different facts, and they go to different people:
+//
+//  · A REVIEWER is nudged about the evaluation they were asked to do, once it
+//    is close or past its date. That's their own work.
+//  · The OFFICE (admins + the office department — Marnee and the owner) gets
+//    the picture: reviews nobody has done yet, and people whose review clock
+//    has run out and who have no evaluation assigned at all. The second half
+//    is the one that actually starts a cycle — an overdue clock with nobody
+//    asked to review is invisible until somebody thinks to look.
+//
+// Best-effort throughout: a comms failure must never throw out of the job.
+const DUE_SOON_DAYS = 3;
+
+async function dm(db, userId, body, push) {
+  try {
+    const { bot, dm: channel } = botDm(db, userId);
+    if (channel) await postMessageAs(db, channel, bot, body);
+  } catch (e) { console.warn('[pay] nudge DM failed:', e.message); }
+  if (push) pushToUser(userId, push).catch(() => {});
+}
+
+export async function payReviewNudges(db) {
+  const sent = { reviewers: 0, office: 0 };
+  const now = today();
+  const soon = new Date(Date.now() + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
+
+  // 1) Each reviewer's own outstanding asks.
+  let open;
+  try {
+    open = db.prepare(`SELECT a.id, a.due_date, a.reviewer_id, e.name AS employee_name
+      FROM pay_review_assignments a JOIN pay_employees e ON e.id = a.employee_id
+      WHERE a.status = 'open' AND a.due_date IS NOT NULL AND a.due_date <= ?
+      ORDER BY a.due_date`).all(soon);
+  } catch { open = []; }
+
+  const byReviewer = new Map();
+  for (const a of open) {
+    if (!byReviewer.has(a.reviewer_id)) byReviewer.set(a.reviewer_id, []);
+    byReviewer.get(a.reviewer_id).push(a);
+  }
+  for (const [reviewerId, list] of byReviewer) {
+    const lines = list.map(a => `• *${a.employee_name}* — ${a.due_date < now ? `overdue since ${a.due_date}` : `due ${a.due_date}`}`);
+    await dm(db, reviewerId,
+      `📋 *Pay evaluation${list.length === 1 ? '' : 's'} waiting on you*\n${lines.join('\n')}\nOpen ReadyDoc → Pay Tracking → Evaluation.`,
+      { title: `${list.length} pay evaluation${list.length === 1 ? '' : 's'} waiting`, body: list.map(a => a.employee_name).join(', '), tag: 'pay-reviews-due', renotify: true });
+    sent.reviewers++;
+  }
+
+  // 2) The office picture.
+  const overdueAsks = open.filter(a => a.due_date < now);
+  let roster = [];
+  try { roster = db.prepare('SELECT * FROM pay_employees WHERE active = 1').all(); } catch { roster = []; }
+  let assigned = new Set();
+  try {
+    assigned = new Set(db.prepare("SELECT employee_id FROM pay_review_assignments WHERE status = 'open'").all().map(r => r.employee_id));
+  } catch { /* table optional */ }
+  // Due for a review and nobody has been asked — the gap that stalls a cycle.
+  const unassigned = roster
+    .map(r => ({ name: r.name, ...reviewState(r) }))
+    .filter(r => r.status === 'due' && !assigned.has(roster.find(x => x.name === r.name)?.id))
+    .sort((a, b) => (b.days || 0) - (a.days || 0));
+
+  if (!overdueAsks.length && !unassigned.length) return sent;
+
+  const parts = ['💵 *Pay reviews — where things stand*'];
+  if (overdueAsks.length) {
+    parts.push(`*${overdueAsks.length} evaluation${overdueAsks.length === 1 ? '' : 's'} past the date:*`);
+    parts.push(...overdueAsks.slice(0, 8).map(a => `• ${a.employee_name} — due ${a.due_date}`));
+    if (overdueAsks.length > 8) parts.push(`  …and ${overdueAsks.length - 8} more`);
+  }
+  if (unassigned.length) {
+    parts.push(`*${unassigned.length} due for review with nobody assigned:*`);
+    parts.push(...unassigned.slice(0, 8).map(r => `• ${r.name} — ${r.days} days since the last raise or review`));
+    if (unassigned.length > 8) parts.push(`  …and ${unassigned.length - 8} more`);
+  }
+  parts.push(`Assign them: ${readyDocOrigin()}/?tab=pay-tracking`);
+  const body = parts.join('\n');
+
+  let office;
+  try {
+    office = db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'
+      AND (role = 'admin' OR LOWER(department) IN ('office', 'hr'))`).all();
+  } catch { office = []; }
+  for (const u of office) {
+    await dm(db, u.id, body, {
+      title: 'Pay reviews need attention',
+      body: `${overdueAsks.length} overdue · ${unassigned.length} unassigned`,
+      tag: 'pay-reviews-office', renotify: true, url: '/?tab=pay-tracking',
+    });
+    sent.office++;
+  }
+  return sent;
+}
 
 export default router;

@@ -246,8 +246,20 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
           )}
           {/* A column FLOW rather than a grid: each group keeps its heading with
               its own modules and the columns fill unevenly, which is right when
-              the groups are different lengths. */}
-          <div className="columns-1 md:columns-2 2xl:columns-3 gap-4 space-y-3">
+              the groups are different lengths.
+
+              COLUMN WIDTH, NOT A COLUMN COUNT. This used to be
+              `columns-1 md:columns-2 2xl:columns-3`, which picks the count from
+              the VIEWPORT — but the editor is also mounted inside the Bulk
+              Permissions modal, in a pane about half the width. On a desktop
+              the viewport said "two columns" while the pane could only give
+              each one ~150px, and a row (label + the Keep/None/View/Edit
+              control) needs ~280px. CSS columns don't shrink their contents:
+              the rows overflowed into each other and the panel rendered as
+              overlapping text. `columns-[17rem]` states the width a row needs
+              and lets the browser fit as many as the CONTAINER actually has,
+              so it's correct in both places with no breakpoint guessing. */}
+          <div className="columns-[17rem] gap-4 space-y-3">
           {visibleGroups.map(group => (
             <div key={group.label} className="space-y-1 break-inside-avoid mb-3">
               <div className="flex items-baseline justify-between gap-2 flex-wrap">
@@ -929,12 +941,17 @@ function BulkAccessModal({ users, onClose, onDone }) {
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[92vh] flex flex-col">
+      {/* Wider than a normal modal: the right pane holds the full module
+          editor, and squeezing 50-odd modules into half of max-w-2xl is what
+          made this unreadable. */}
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[92vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="font-semibold text-gray-900">Bulk module permissions</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
-        <div className="p-4 grid md:grid-cols-2 gap-4 overflow-y-auto">
+        {/* The people list is a fixed, narrow column; the module editor takes
+            the rest, which is what it needs to lay out without overlapping. */}
+        <div className="p-4 grid lg:grid-cols-[18rem_1fr] gap-4 overflow-y-auto">
           <div>
             <p className="text-xs font-medium text-gray-700 mb-1">Apply to ({chosen.length} selected)</p>
             <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">

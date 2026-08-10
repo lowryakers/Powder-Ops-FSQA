@@ -2250,3 +2250,33 @@ it by role).
   emitting `[PLACEHOLDERS]` instead. Publishing stays the human act that makes it the company's word.
 - Verified: 20 assertions covering both visibility gates, the 404-not-403 rule, search scoping, the
   empty-publish and delete-published refusals, and extracted text never leaving the server.
+
+## Pay: who can review, and the roster's supervisor flag
+- **`GET /pay/reviewers`** is the picker: active `supervisor`/`admin` only, ReadyBot excluded. It used to
+  be `/users/technicians` — the whole roster — which offered operators (who never evaluate anyone) and
+  **ReadyBot**. The same rule is enforced on `POST /assignments`, so the picker isn't the only guard.
+- **`pay_employees.is_supervisor` is NOT the authority once a row is LINKED** — `users.role` is. The flag
+  came from the org-chart import and went stale the moment someone was promoted or stepped down in
+  Settings, and the review rules read it, so the roster and the app disagreed about who needs Adam. Same
+  doctrine as the name: the link is the identity, the stored column is a label. `withLinkedNames()`
+  derives it and `isSupervisorRow()` is the single check used by `/evaluatees`, `POST /reviews` and
+  `POST /assignments`. The column stays editable for rows with **no** account; the Details checkbox is
+  disabled for linked rows and says it follows Settings.
+
+## ReadyBot chases pay reviews (`payReviewNudges` in api/pay.js)
+Every third day (flag `last_pay_review_nudge_at`, called from scheduled-jobs.js):
+- **each reviewer** is DM'd + pushed about their own assignments due within 3 days or already past;
+- **the office** (admins + `office`/`hr` departments — Marnee and the owner) gets one summary: assignments
+  past their date, AND **people whose review clock has run out with nobody assigned**. The second half is
+  the one that actually starts a cycle; an overdue clock with no reviewer asked is otherwise invisible.
+Three days, not daily — a reminder people mute is worse than none — and it re-sends while things stay
+open, which is the state it exists to interrupt. Best-effort: a comms failure never throws out of the job.
+
+## A column FLOW must size by the CONTAINER, not the viewport
+`ModuleAccessEditor` used `columns-1 md:columns-2 2xl:columns-3`. That's fine in the Settings pane, but
+the same editor is mounted inside the **Bulk Permissions** modal in a pane about half as wide — so on a
+desktop the viewport said "two columns" while the container could only give each ~150px, and a row
+(label + the Keep/None/View/Edit control) needs ~280px. **CSS columns don't shrink their contents**: the
+rows overflowed into each other and the panel rendered as overlapping text. It is `columns-[17rem]` now —
+a column WIDTH, so the browser fits as many as the container actually has and it's correct in both
+places. The bulk modal also went `max-w-2xl` → `max-w-5xl` with a fixed `18rem` people column.

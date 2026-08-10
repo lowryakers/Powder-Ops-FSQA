@@ -342,9 +342,11 @@ function DetailsEditor({ data, onSaved, tr }) {
         {field(tr('Last review'), 'last_reviewed_at', 'date')}
         {field(tr('Last raise'), 'last_increase_at', 'date')}
         <div className="flex items-end gap-4 pb-1">
-          <label className="flex items-center gap-1.5 text-sm text-gray-700">
-            <input type="checkbox" checked={form.is_supervisor} onChange={e => set('is_supervisor', e.target.checked)} className="rounded border-gray-300" />
+          <label className={`flex items-center gap-1.5 text-sm ${data.linked ? 'text-gray-400' : 'text-gray-700'}`}>
+            <input type="checkbox" checked={form.is_supervisor} disabled={!!data.linked}
+              onChange={e => set('is_supervisor', e.target.checked)} className="rounded border-gray-300" />
             {tr('Supervisor')}
+            {data.linked && <span className="text-[11px]">({tr('follows their role in Settings')})</span>}
           </label>
           <label className="flex items-center gap-1.5 text-sm text-gray-700">
             <input type="checkbox" checked={form.active} onChange={e => set('active', e.target.checked)} className="rounded border-gray-300" />
@@ -574,7 +576,9 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
 // and pushes to their phone, so the ask exists somewhere other than a memory.
 function AssignmentsTab({ people, tr, onChanged }) {
   const { data: rows, refresh } = useApiGet('/pay/assignments?status=all');
-  const { data: users } = useApiGet('/users/technicians');
+  // Supervisors and admins only — an operator never evaluates a colleague, and
+  // the whole-roster list also offered ReadyBot.
+  const { data: users } = useApiGet('/pay/reviewers');
   const [form, setForm] = useState({ employee_id: '', reviewer_id: '', due_date: '', note: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -852,6 +856,7 @@ const PAGE_STRINGS = [
   'Anything they should know', 'Assign', 'Assigning…', 'Pick the employee and the reviewer.',
   'The reviewer gets a ReadyDoc message and a phone notification, and the evaluation shows in their own Evaluation tab.',
   'Waiting on a reviewer', 'Nothing outstanding.', 'Completed', 'unknown', 'Cancel this assignment?',
+  'follows their role in Settings',
   'Tap a name to read their reviews, see rate history, correct details, or apply an increase.',
   'Apply a pay increase', 'New rate', 'Effective date', 'Note (optional)', 'Apply increase', 'Applying…',
   'Rate history', 'No changes recorded in ReadyDoc yet.', 'new', 'Days since',

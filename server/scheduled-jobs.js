@@ -123,6 +123,20 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] critical alert failed:', e.message); }
   }
 
+  // Pay reviews: nudge each reviewer about their own outstanding evaluation,
+  // and give the office the picture (overdue asks + people whose review clock
+  // has run out with nobody assigned). Every third day rather than daily —
+  // a reminder people mute is worse than none — and it re-sends while things
+  // stay open, which is the state it exists to interrupt.
+  const lastPayNudge = getFlag(db, 'last_pay_review_nudge_at');
+  if (deps.payReviewNudges && (!lastPayNudge || (now - new Date(lastPayNudge)) >= 3 * 86400000)) {
+    try {
+      const sent = await deps.payReviewNudges(db);
+      setFlag(db, 'last_pay_review_nudge_at', now.toISOString());
+      if (sent.reviewers || sent.office) console.log(`[jobs] pay review nudges: ${sent.reviewers} reviewer(s), ${sent.office} office`);
+    } catch (e) { console.warn('[jobs] pay review nudges failed:', e.message); }
+  }
+
   // Monday PM digest: each team's recurring work for the week, posted into the
   // team's own channel — where people already look — like the schedule publish.
   if (day === 1 && getFlag(db, 'last_pm_digest_week') !== week) {
