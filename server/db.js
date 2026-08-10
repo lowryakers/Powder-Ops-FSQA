@@ -2943,6 +2943,32 @@ function runMigrations() {
         created_at   TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE INDEX IF NOT EXISTS idx_pay_rate_history_emp ON pay_rate_history(employee_id, effective_at);
+
+      -- Submitted pay evaluations. The plant's real flow is two reviews per
+      -- operator (supervisor + Adam) combined, and Adam alone for supervisors,
+      -- with the admin reading scores and notes BEFORE deciding an increase —
+      -- which requires the review to exist somewhere the admin can read it.
+      -- Scores/notes are visible only to admins and the reviewer themselves;
+      -- no pay data is ever stored here.
+      CREATE TABLE IF NOT EXISTS pay_reviews (
+        id             TEXT PRIMARY KEY,
+        employee_id    TEXT NOT NULL,
+        reviewer_id    TEXT,
+        reviewer_name  TEXT NOT NULL,
+        review_date    TEXT NOT NULL,
+        scores         TEXT NOT NULL DEFAULT '{}',
+        total          INTEGER,
+        recommendation TEXT,
+        notes          TEXT,
+        attendance_flag INTEGER NOT NULL DEFAULT 0,
+        status         TEXT NOT NULL DEFAULT 'open',
+        resolved_by    TEXT,
+        resolved_at    TEXT,
+        resolution     TEXT,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_pay_reviews_emp ON pay_reviews(employee_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_pay_reviews_status ON pay_reviews(status);
     `);
   } catch (e) {
     console.warn('[db] pay tracking tables unavailable:', e.message);

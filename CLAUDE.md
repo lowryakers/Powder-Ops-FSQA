@@ -2110,3 +2110,34 @@ route, same reason the Download button does.
 The standalone `/operator` route and the operator-only account layout — the floor phones, exactly where
 the Wi-Fi drops — never rendered `OfflineBar`, so "no connection" and "N entries waiting to send" were
 invisible to the people the offline machinery was built for. Both render it under the header now.
+
+## Pay Tracking: stored reviews, corrections, PTO
+- **Evaluations are now STORED** (`pay_reviews`) — a deliberate reversal of the ephemeral first design:
+  the plant's real flow is supervisor + Adam both reviewing an operator (combined score), Adam alone
+  reviewing supervisors, and the admin reading scores and notes BEFORE deciding an increase — which
+  requires the review to exist somewhere the admin can read it. A reviewer sees only their own
+  submissions (`GET /pay/reviews`); admins see all; no review ever carries pay data.
+- **Supervisors are reviewed only by Adam or an admin** — `canReviewSupervisors` matches Adam by name
+  (`/^adam\b/i`, the env-limits precedent) with admins as the fallback so an absence never blocks a
+  cycle. The evaluatee picker doesn't offer supervisor targets to anyone else AND the submit endpoint
+  enforces the same rule, so the filter can't be worked around.
+- **Applying a rate auto-resolves that employee's open reviews**, stamping the decision in `resolution`
+  ("Increase applied: $X effective DATE"). "Held flat" is `POST /employees/:id/reviews/resolve` with a
+  required reason. The admin drawer shows open reviews (scores expandable, notes, attendance flag) plus
+  the combined average and the band it lands in, directly above Apply.
+- **A mistaken review is corrected in place**: `last_reviewed_at` / `last_increase_at` are in the PUT's
+  EDITABLE list (admin-only, audited with before/after) — the drawer's Details editor exposes them,
+  alongside team / hire date / PTO plan / active.
+- **DELETE refuses once rate history exists** — those rows are deactivated, never removed, so the
+  history survives; removing is only for rows added by mistake (the sync-under-a-second-spelling case),
+  which the drawer's "Remove from roster" covers. "Add someone" (manual POST) is on the roster tab.
+- **`pto_plan` was always in the schema and the org-chart import** ("3 hr"/"4 hr") — it just had no UI.
+  Now a roster column (filterable), a drawer stat, and on the Details/Add forms.
+
+## One manual, many machines (`POST /equipment/files/:id/attach`)
+One vacuum manual covers eleven identical vacuums. Attaching re-references the SAME stored object and
+its extracted text into new `equipment_files` rows — no second upload, and search covers every copy; a
+machine that already has that `storage_key` is skipped rather than doubled. **DELETE purges the R2
+object only when the last reference is gone** — the same refcount rule as forwarded comms attachments.
+UI: the copy icon on a file row → multi-select with a filter and select-all-filtered (the "select all
+equipment items" bulk case).

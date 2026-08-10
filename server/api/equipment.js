@@ -465,13 +465,50 @@ router.post('/:id/files', uploadManuals, async (req, res) => {
   }
 });
 
+// Attach an already-uploaded manual to more machines. One vacuum manual covers
+// eleven identical vacuums — re-uploading it eleven times is what people were
+// doing. This re-references the SAME stored object (and its extracted text, so
+// search covers every copy) into new rows; nothing is uploaded twice. A machine
+// that already has this document is skipped rather than doubled.
+router.post('/files/:fileId/attach', (req, res) => {
+  const db = getDb();
+  const f = db.prepare('SELECT * FROM equipment_files WHERE id = ?').get(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  const ids = Array.isArray(req.body?.equipment_ids) ? req.body.equipment_ids.filter(Boolean) : [];
+  if (!ids.length) return res.status(400).json({ error: 'Pick at least one machine.' });
+
+  const getEq = db.prepare('SELECT id, name FROM equipment WHERE id = ?');
+  const already = db.prepare('SELECT 1 FROM equipment_files WHERE equipment_id = ? AND storage_key = ?');
+  const ins = db.prepare(`INSERT INTO equipment_files (id, equipment_id, kind, title, filename, content_type, size, storage_key, extracted_text, text_status, uploaded_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const attached = [];
+  const skipped = [];
+  db.transaction(() => {
+    for (const eid of ids) {
+      const eq = getEq.get(eid);
+      if (!eq || eq.id === f.equipment_id) continue;
+      if (already.get(eq.id, f.storage_key)) { skipped.push(eq.name); continue; }
+      ins.run(uuid(), eq.id, f.kind, f.title, f.filename, f.content_type, f.size,
+        f.storage_key, f.extracted_text, f.text_status, req.user?.name || null);
+      attached.push(eq.name);
+    }
+  })();
+  logAudit(req.user, 'create', 'equipment_file', f.id,
+    { filename: f.filename, attached_to: attached, skipped_already_attached: skipped }, null, null, f.filename);
+  res.json({ attached: attached.length, skipped: skipped.length, machines: attached });
+});
+
 router.delete('/files/:fileId', (req, res) => {
   const db = getDb();
   const f = db.prepare('SELECT * FROM equipment_files WHERE id = ?').get(req.params.fileId);
   if (!f) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM equipment_files WHERE id = ?').run(f.id);
-  deleteObject(f.storage_key);
-  logAudit(req.user, 'delete', 'equipment_file', f.equipment_id, { filename: f.filename }, f, null, f.filename);
+  // A manual attached to several machines shares one stored object — removing
+  // it from this machine must not take it off the others, so the object is
+  // purged only when the last reference is gone.
+  const stillRef = db.prepare('SELECT 1 FROM equipment_files WHERE storage_key = ? LIMIT 1').get(f.storage_key);
+  if (!stillRef) deleteObject(f.storage_key);
+  logAudit(req.user, 'delete', 'equipment_file', f.equipment_id, { filename: f.filename, object_purged: !stillRef }, f, null, f.filename);
   res.json({ ok: true });
 });
 

@@ -21,10 +21,13 @@ const LOGO_PATH = path.join(__dirname, '..', 'assets', 'powder-ops-logo.jpg');
 //    asks for, anyone's actual rate — so a supervisor can run an evaluation
 //    without company pay data being on their screen.
 //
-// The evaluation itself is never stored. Scores and notes live in the browser
-// for the length of the conversation and are gone when the form closes. The
-// only thing that persists is `last_reviewed_at`, so "who is due" keeps
-// working without leaving a rating on anybody's file.
+// Evaluations are STORED as pay_reviews (a deliberate change from the first
+// design, which kept them ephemeral): the plant's real flow is two reviews per
+// operator — the supervisor's and Adam's — combined, and Adam alone for
+// supervisors, with the admin reading the scores and notes BEFORE deciding an
+// increase. That requires the review to exist somewhere the admin can read it.
+// A reviewer sees only their own submitted reviews; admins see all of them;
+// no review ever carries pay data.
 
 const router = Router();
 const MODULE_ID = 'pay-tracking';
@@ -122,10 +125,16 @@ router.get('/employees/:id', (req, res) => {
   if (!raw) return res.status(404).json({ error: 'Not on the roster' });
   const [row] = withLinkedNames(db, [raw]);
   const history = db.prepare('SELECT * FROM pay_rate_history WHERE employee_id = ? ORDER BY effective_at DESC, created_at DESC').all(row.id);
-  res.json({ ...decorate(row), history });
+  const reviews = db.prepare('SELECT * FROM pay_reviews WHERE employee_id = ? ORDER BY created_at DESC LIMIT 50').all(row.id)
+    .map(r => ({ ...r, scores: JSON.parse(r.scores || '{}') }));
+  res.json({ ...decorate(row), history, reviews });
 });
 
-const EDITABLE = ['name', 'team', 'is_supervisor', 'hire_date', 'pto_plan', 'active', 'notes', 'user_id'];
+// last_reviewed_at / last_increase_at are here so a mistaken review (a test
+// entry, the wrong person) can be CORRECTED by an admin — the PUT is audited
+// with before/after, so the fix leaves a trail rather than rewriting history
+// silently.
+const EDITABLE = ['name', 'team', 'is_supervisor', 'hire_date', 'pto_plan', 'active', 'notes', 'user_id', 'last_reviewed_at', 'last_increase_at'];
 
 router.post('/employees', (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -191,6 +200,11 @@ router.post('/employees/:id/rate', (req, res) => {
       String(req.body?.note || '').trim() || null);
     db.prepare(`UPDATE pay_employees SET pay_rate = ?, last_increase_at = ?, last_reviewed_at = ?,
       updated_at = datetime('now') WHERE id = ?`).run(newRate, effective, effective, existing.id);
+    // Applying the increase is the decision the open reviews were waiting on —
+    // they close automatically, stamped with what was decided.
+    db.prepare(`UPDATE pay_reviews SET status = 'resolved', resolved_by = ?, resolved_at = datetime('now'),
+      resolution = ? WHERE employee_id = ? AND status = 'open'`)
+      .run(req.user.name, `Increase applied: $${newRate.toFixed(2)} effective ${effective}`, existing.id);
   })();
 
   const updated = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(existing.id);
@@ -200,8 +214,88 @@ router.post('/employees/:id/rate', (req, res) => {
   res.json(decorate(updated));
 });
 
-// The only trace an evaluation leaves. Deliberately carries no score and no
-// notes — just that a review happened, so the clock resets.
+// ── Stored reviews ───────────────────────────────────────────────────────────
+//
+// Who may review a SUPERVISOR: only Adam, plus admins. Matching Adam by name
+// follows the env-limits precedent (the named escalation there), and admins
+// are the fallback so a rename or absence never blocks a review cycle.
+function canReviewSupervisors(user) {
+  return isAdmin(user) || /^adam\b/i.test(String(user?.name || ''));
+}
+
+// Submit an evaluation. Stores the scores, notes and the band the score landed
+// in, and stamps last_reviewed_at — one act, so the clock and the record can't
+// disagree. The reviewer's identity comes from the session, never the body.
+router.post('/employees/:id/reviews', (req, res) => {
+  if (!requireEvaluator(req, res)) return;
+  const db = getDb();
+  const emp = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.params.id);
+  if (!emp) return res.status(404).json({ error: 'Not on the roster' });
+  if (emp.is_supervisor && !canReviewSupervisors(req.user)) {
+    return res.status(403).json({ error: 'Supervisor reviews are done by Adam (or an admin).' });
+  }
+
+  const rawScores = req.body?.scores;
+  if (!rawScores || typeof rawScores !== 'object') return res.status(400).json({ error: 'Scores are required.' });
+  const scores = {};
+  let total = 0;
+  for (const [k, v] of Object.entries(rawScores)) {
+    const n = Number(v);
+    if (![1, 2, 3].includes(n)) return res.status(400).json({ error: `Invalid score for ${k}.` });
+    scores[String(k).slice(0, 40)] = n;
+    total += n;
+  }
+  if (!Object.keys(scores).length) return res.status(400).json({ error: 'Scores are required.' });
+
+  const when = String(req.body?.review_date || today()).slice(0, 10);
+  const id = uuid();
+  db.transaction(() => {
+    db.prepare(`INSERT INTO pay_reviews (id, employee_id, reviewer_id, reviewer_name, review_date, scores, total, recommendation, notes, attendance_flag)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      id, emp.id, req.user.id || null, req.user.name, when,
+      JSON.stringify(scores), total,
+      String(req.body?.recommendation || '').slice(0, 120) || null,
+      String(req.body?.notes || '').trim().slice(0, 4000) || null,
+      req.body?.attendance_flag ? 1 : 0);
+    db.prepare("UPDATE pay_employees SET last_reviewed_at = ?, updated_at = datetime('now') WHERE id = ?").run(when, emp.id);
+  })();
+  logAudit(req.user, 'create', 'pay_review', id, { employee: emp.name, total }, null, null, emp.name);
+  res.status(201).json({ id, total, review_date: when });
+});
+
+// Admins read every review; an evaluator reads only their own. Neither list
+// carries pay data — a review is scores and words, and the rate lives on the
+// roster the reviewer can't see.
+router.get('/reviews', (req, res) => {
+  if (!requireEvaluator(req, res)) return;
+  const db = getDb();
+  const status = ['open', 'resolved', 'dismissed', 'all'].includes(req.query.status) ? req.query.status : 'open';
+  let sql = `SELECT r.*, e.name AS employee_name, e.team, e.is_supervisor
+    FROM pay_reviews r JOIN pay_employees e ON e.id = r.employee_id WHERE 1=1`;
+  const params = [];
+  if (status !== 'all') { sql += ' AND r.status = ?'; params.push(status); }
+  if (!isAdmin(req.user)) { sql += ' AND (r.reviewer_id = ? OR r.reviewer_name = ?)'; params.push(req.user.id, req.user.name); }
+  sql += ' ORDER BY r.created_at DESC LIMIT 200';
+  res.json(db.prepare(sql).all(...params).map(r => ({ ...r, scores: JSON.parse(r.scores || '{}') })));
+});
+
+// Close reviews without an increase — "held flat, talked it through" is a real
+// outcome and needs a reason so the record says why nothing moved.
+router.post('/employees/:id/reviews/resolve', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const emp = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.params.id);
+  if (!emp) return res.status(404).json({ error: 'Not on the roster' });
+  const resolution = String(req.body?.resolution || '').trim();
+  if (resolution.length < 3) return res.status(400).json({ error: 'Say why — the reviews close with this as the outcome.' });
+  const n = db.prepare(`UPDATE pay_reviews SET status = 'resolved', resolved_by = ?, resolved_at = datetime('now'), resolution = ?
+    WHERE employee_id = ? AND status = 'open'`).run(req.user.name, resolution, emp.id).changes;
+  logAudit(req.user, 'update', 'pay_review', emp.id, { resolved: n, resolution }, null, null, emp.name);
+  res.json({ resolved: n });
+});
+
+// The old date-only stamp, kept for compatibility. Deliberately carries no
+// score and no notes — just that a review happened, so the clock resets.
 router.post('/employees/:id/reviewed', (req, res) => {
   if (!requireEvaluator(req, res)) return;
   const db = getDb();
@@ -218,7 +312,14 @@ router.delete('/employees/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not on the roster' });
-  db.prepare('DELETE FROM pay_rate_history WHERE employee_id = ?').run(existing.id);
+  // Removing is for rows added by mistake (a sync add under a second spelling).
+  // A row with rate history is a pay record — deleting it would take the
+  // history with it, so those are deactivated instead, never removed.
+  const hasHistory = db.prepare('SELECT 1 FROM pay_rate_history WHERE employee_id = ? LIMIT 1').get(existing.id);
+  if (hasHistory) {
+    return res.status(400).json({ error: `${existing.name} has rate history — mark them inactive instead of removing them, so the history survives.` });
+  }
+  db.prepare('DELETE FROM pay_reviews WHERE employee_id = ?').run(existing.id);
   db.prepare('DELETE FROM pay_employees WHERE id = ?').run(existing.id);
   logAudit(req.user, 'delete', 'pay_employee', existing.id, null, existing, null, existing.name);
   res.json({ deleted: existing.id });
@@ -441,9 +542,13 @@ router.post('/evaluation-pdf', async (req, res) => {
 router.get('/evaluatees', (req, res) => {
   if (!requireEvaluator(req, res)) return;
   const db = getDb();
-  const rows = db.prepare('SELECT id, name, team, last_reviewed_at, last_increase_at, hire_date FROM pay_employees WHERE active = 1 ORDER BY team, name').all();
+  let rows = db.prepare('SELECT id, name, team, is_supervisor, last_reviewed_at, last_increase_at, hire_date FROM pay_employees WHERE active = 1 ORDER BY team, name').all();
+  // Supervisors are reviewed only by Adam (or an admin) — everyone else's
+  // picker simply doesn't offer them, and the submit endpoint enforces the
+  // same rule so the filter can't be worked around.
+  if (!canReviewSupervisors(req.user)) rows = rows.filter(r => !r.is_supervisor);
   res.json(rows.map(r => ({
-    id: r.id, name: r.name, team: r.team,
+    id: r.id, name: r.name, team: r.team, is_supervisor: !!r.is_supervisor,
     review: reviewState(r),
   })));
 });

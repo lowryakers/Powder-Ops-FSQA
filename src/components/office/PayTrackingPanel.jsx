@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useApiGet, apiPost } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
@@ -7,6 +7,7 @@ import DataGrid from './DataGrid.jsx';
 import { CHARACTERISTICS, MAX_SCORE, BANDS, bandFor, VISION, CORE_VALUES } from './payRubric.js';
 import {
   AlertTriangle, Check, X, TrendingUp, Users, Clock, DollarSign, RefreshCw, FileText,
+  Plus, Trash2, Pencil, ClipboardCheck,
 } from 'lucide-react';
 
 // Pay Tracking.
@@ -16,10 +17,11 @@ import {
 // data at all — only the rubric and the increase band a score lands in — so a
 // supervisor can run an evaluation without company pay on their screen.
 //
-// Evaluations are never saved. Scores and notes live in this component's state
-// for the length of the conversation and are gone when it closes. Closing one
-// out can stamp a review date on the roster so the "who is due" clock resets
-// without leaving a rating on anybody's file.
+// Submitting an evaluation SAVES it (scores, notes, the band it landed in) so
+// the admin can read every review — supervisor's and Adam's — before deciding
+// an increase. A reviewer sees only their own submissions; supervisors are
+// reviewed only by Adam or an admin (the picker doesn't offer them to anyone
+// else, and the server enforces the same rule). No review carries pay data.
 
 const money = (n) => (n == null ? '—' : `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const money0 = (n) => (n == null ? '—' : `$${Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`);
@@ -90,22 +92,28 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr, lang }) {
     } finally { setBusy(false); }
   };
 
-  const recordReviewDate = async () => {
-    if (!person) return;
-    setBusy(true);
+  const submitReview = async () => {
+    if (!person || !complete) return;
+    setBusy(true); setError('');
     try {
-      await apiPost(`/pay/employees/${person.id}/reviewed`, { reviewed_at: todayStr() });
-      setDone('Review date recorded. The scores and notes were not saved.');
+      // The recommendation is stored in English regardless of the page
+      // language — it's the band label the admin reads against the rubric.
+      await apiPost(`/pay/employees/${person.id}/reviews`, {
+        scores, notes, review_date: todayStr(),
+        recommendation: band?.label || '', attendance_flag: hardFlag,
+      });
+      setDone('Review submitted. The scores and notes are now visible to the admin, who decides any increase.');
       onRecorded?.();
-    } finally { setBusy(false); }
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
   };
 
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5">
-        <p className="text-sm font-semibold text-blue-900">{tr('This evaluation is not saved.')}</p>
+        <p className="text-sm font-semibold text-blue-900">{tr('Submitting saves this review for the admin.')}</p>
         <p className="text-xs text-blue-800 mt-0.5">
-          {tr('Scores and notes stay on this screen for the conversation and disappear when you leave. Only the review date can be recorded, so the review clock resets without keeping a rating on file.')}
+          {tr('Your scores and notes go to the admin, who reads every review — including a second reviewer’s — before deciding any increase. Nothing here shows or asks for anyone’s pay.')}
         </p>
       </div>
 
@@ -169,7 +177,7 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr, lang }) {
           <div className="bg-white rounded-xl border border-gray-200 p-3">
             <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Notes / Feedback')}</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-              placeholder={tr('For the conversation — not saved.')}
+              placeholder={tr('Goes to the admin with your scores.')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
 
@@ -207,9 +215,9 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr, lang }) {
             <span className="text-[11px] text-gray-500 self-center">
               {tr('The sheet carries the feedback and the recommendation — no score.')}
             </span>
-            <button onClick={recordReviewDate} disabled={busy || !complete}
+            <button onClick={submitReview} disabled={busy || !complete}
               className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-50">
-              <Check size={14} /> {busy ? tr('Recording…') : tr('Record review date only')}
+              <Check size={14} /> {busy ? tr('Submitting…') : tr('Submit review')}
             </button>
             <button onClick={reset} className="px-3 py-2 text-sm text-gray-600 rounded-lg hover:bg-gray-100">
               {tr('Clear')}
@@ -233,6 +241,108 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr, lang }) {
 
 /* ── Roster drawer (admin) ──────────────────────────────── */
 
+// One submitted review, rendered for the admin: who, when, the score, the band
+// it landed in, and the notes — the thing to read before deciding an increase.
+function ReviewCard({ r, tr }) {
+  const [showScores, setShowScores] = useState(false);
+  const byKey = Object.fromEntries(CHARACTERISTICS.map(c => [c.key, c]));
+  return (
+    <div className={`rounded-lg border p-2.5 ${r.status === 'open' ? 'border-powder-200 bg-powder-50/40' : 'border-gray-200 bg-gray-50 opacity-80'}`}>
+      <div className="flex items-baseline gap-2 flex-wrap text-xs">
+        <span className="font-semibold text-gray-900">{r.reviewer_name}</span>
+        <span className="text-gray-400">{fmtDate(r.review_date)}</span>
+        <span className="font-bold text-gray-900">{r.total} / {MAX_SCORE}</span>
+        {r.recommendation && <span className="px-1.5 py-0.5 rounded bg-white border border-gray-200 font-medium text-gray-700">{r.recommendation}</span>}
+        {!!r.attendance_flag && (
+          <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold">{tr('attendance flag')}</span>
+        )}
+        {r.status !== 'open' && <span className="text-gray-400">· {r.resolution || r.status}</span>}
+      </div>
+      {r.notes && <p className="text-xs text-gray-700 mt-1 whitespace-pre-wrap">{r.notes}</p>}
+      <button onClick={() => setShowScores(s => !s)} className="text-[11px] text-powder-600 hover:underline mt-1">
+        {showScores ? tr('Hide scores') : tr('Show scores')}
+      </button>
+      {showScores && (
+        <ul className="mt-1 space-y-0.5">
+          {Object.entries(r.scores || {}).map(([k, v]) => (
+            <li key={k} className="text-[11px] text-gray-600">
+              <span className="font-medium">{byKey[k] ? tr(byKey[k].title) : k}</span>: {v} — {byKey[k] ? tr(byKey[k].levels[v]) : ''}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Details an admin can correct: the review clock (a test review logged by
+// mistake), hire date, PTO plan, team. Every save is the audited PUT.
+function DetailsEditor({ data, onSaved, tr }) {
+  const [form, setForm] = useState({
+    team: data.team || '', hire_date: data.hire_date || '',
+    pto_plan: data.pto_plan || '', is_supervisor: !!data.is_supervisor,
+    active: !!data.active, last_reviewed_at: data.last_reviewed_at || '',
+    last_increase_at: data.last_increase_at || '', notes: data.notes || '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiPut(`/pay/employees/${data.id}`, {
+        team: form.team || null, hire_date: form.hire_date || null,
+        pto_plan: form.pto_plan || null, is_supervisor: form.is_supervisor,
+        active: form.active, last_reviewed_at: form.last_reviewed_at || null,
+        last_increase_at: form.last_increase_at || null, notes: form.notes || null,
+      });
+      onSaved?.();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const field = (label, key, type = 'text', placeholder = '') => (
+    <div>
+      <label className="block text-xs font-medium text-gray-700 mb-1">{label}</label>
+      <input type={type} value={form[key]} onChange={e => set(key, e.target.value)} placeholder={placeholder}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {field(tr('Team'), 'team')}
+        {field(tr('Hire date'), 'hire_date', 'date')}
+        {field(tr('PTO plan'), 'pto_plan', 'text', tr('e.g. 3 hr / 4 hr'))}
+        {field(tr('Last review'), 'last_reviewed_at', 'date')}
+        {field(tr('Last raise'), 'last_increase_at', 'date')}
+        <div className="flex items-end gap-4 pb-1">
+          <label className="flex items-center gap-1.5 text-sm text-gray-700">
+            <input type="checkbox" checked={form.is_supervisor} onChange={e => set('is_supervisor', e.target.checked)} className="rounded border-gray-300" />
+            {tr('Supervisor')}
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-gray-700">
+            <input type="checkbox" checked={form.active} onChange={e => set('active', e.target.checked)} className="rounded border-gray-300" />
+            {tr('Active')}
+          </label>
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-500">
+        {tr('Correcting the review or raise date here fixes a mistaken entry — the change is audited with the old and new values.')}
+      </p>
+      <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder={tr('Notes')}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <button onClick={save} disabled={busy}
+        className="px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-50">
+        {busy ? tr('Saving…') : tr('Save details')}
+      </button>
+    </div>
+  );
+}
+
 function PersonDrawer({ id, onClose, onChanged, tr }) {
   const { data, refresh } = useApiGet(`/pay/employees/${id}`, [id]);
   const [newRate, setNewRate] = useState('');
@@ -240,9 +350,16 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [editDetails, setEditDetails] = useState(false);
+  const [showEarlier, setShowEarlier] = useState(false);
 
   if (!data) return null;
   const rate = data.pay_rate;
+  const openReviews = (data.reviews || []).filter(r => r.status === 'open');
+  const earlierReviews = (data.reviews || []).filter(r => r.status !== 'open');
+  const combined = openReviews.length
+    ? openReviews.reduce((s, r) => s + (r.total || 0), 0) / openReviews.length : null;
+  const combinedBand = combined != null ? bandFor(Math.round(combined)) : null;
 
   const apply = async () => {
     setBusy(true); setError('');
@@ -251,6 +368,25 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
       setNewRate(''); setNote('');
       refresh(); onChanged?.();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const closeFlat = async () => {
+    const reason = window.prompt(tr('Close these reviews without an increase — why? (recorded as the outcome)'));
+    if (!reason || reason.trim().length < 3) return;
+    setBusy(true); setError('');
+    try {
+      await apiPost(`/pay/employees/${id}/reviews/resolve`, { resolution: reason.trim() });
+      refresh(); onChanged?.();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const removeRow = async () => {
+    if (!window.confirm(tr('Remove this person from the Pay Tracking roster? Only rows added by mistake can be removed.'))) return;
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/pay/employees/${id}`, { method: 'DELETE' });
+      onChanged?.(); onClose();
+    } catch (e) { setError(e.message); setBusy(false); }
   };
 
   const quick = BANDS.filter(b => b.increase > 0);
@@ -274,7 +410,7 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
             {[
               { label: tr('Rate'), value: rate != null ? money(rate) : tr('Salaried') },
               { label: tr('Annual'), value: data.annual != null ? money0(data.annual) : '—' },
-              { label: tr('Days since'), value: data.review?.days ?? '—' },
+              { label: tr('PTO plan'), value: data.pto_plan || '—' },
             ].map(c => (
               <div key={c.label} className="bg-white rounded-xl border border-gray-200 px-3 py-2">
                 <p className="text-[10px] uppercase tracking-wide text-gray-500">{c.label}</p>
@@ -282,6 +418,46 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
               </div>
             ))}
           </div>
+
+          {/* Submitted reviews — what to read BEFORE deciding an increase. Two
+              open reviews (supervisor + Adam) show their combined average. */}
+          {(openReviews.length > 0 || earlierReviews.length > 0) && (
+            <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <p className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                  <ClipboardCheck size={14} className="text-powder-600" /> {tr('Reviews')}
+                </p>
+                {combined != null && (
+                  <span className="text-xs text-gray-600">
+                    {tr('Combined')}: <span className="font-bold text-gray-900">{combined.toFixed(1)} / {MAX_SCORE}</span>
+                    {openReviews.length > 1 ? ` (${openReviews.length} ${tr('reviews')})` : ''}
+                    {combinedBand ? <span className="ml-1.5 font-semibold">{tr(combinedBand.label)}</span> : null}
+                  </span>
+                )}
+              </div>
+              {openReviews.length === 0 && (
+                <p className="text-xs text-gray-400">{tr('No open reviews — earlier ones are below.')}</p>
+              )}
+              {openReviews.map(r => <ReviewCard key={r.id} r={r} tr={tr} />)}
+              {openReviews.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[11px] text-gray-500 flex-1">
+                    {tr('Applying an increase below closes these reviews with the decision on them.')}
+                  </p>
+                  <button onClick={closeFlat} disabled={busy}
+                    className="px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                    {tr('Close without increase…')}
+                  </button>
+                </div>
+              )}
+              {earlierReviews.length > 0 && (
+                <button onClick={() => setShowEarlier(s => !s)} className="text-[11px] text-powder-600 hover:underline">
+                  {showEarlier ? tr('Hide earlier reviews') : `${tr('Show earlier reviews')} (${earlierReviews.length})`}
+                </button>
+              )}
+              {showEarlier && earlierReviews.map(r => <ReviewCard key={r.id} r={r} tr={tr} />)}
+            </div>
+          )}
 
           <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
             <p className="text-sm font-semibold text-gray-900">{tr('Apply a pay increase')}</p>
@@ -316,6 +492,26 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
             </button>
           </div>
 
+          {/* Details — team, hire date, PTO plan, and the review-clock dates,
+              so a test review or a wrong entry is correctable in place. */}
+          <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-900">{tr('Details')}</p>
+              <button onClick={() => setEditDetails(e => !e)}
+                className="inline-flex items-center gap-1 text-xs font-medium text-powder-600 hover:text-powder-700">
+                <Pencil size={12} /> {editDetails ? tr('Close') : tr('Edit')}
+              </button>
+            </div>
+            {editDetails ? (
+              <DetailsEditor data={data} tr={tr} onSaved={() => { setEditDetails(false); refresh(); onChanged?.(); }} />
+            ) : (
+              <p className="text-xs text-gray-600">
+                {tr('Team')}: {data.team || '—'} · {tr('Hired')}: {fmtDate(data.hire_date)} · {tr('PTO plan')}: {data.pto_plan || '—'} ·{' '}
+                {tr('Last review')}: {fmtDate(data.last_reviewed_at)} · {tr('Last raise')}: {fmtDate(data.last_increase_at)}
+              </p>
+            )}
+          </div>
+
           <div className="bg-white rounded-xl border border-gray-200 p-3">
             <p className="text-sm font-semibold text-gray-900 mb-1">{tr('Rate history')}</p>
             {(data.history || []).length === 0 ? (
@@ -333,6 +529,86 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
               </ol>
             )}
           </div>
+
+          {/* Removing is for rows added by mistake (a sync add under a second
+              spelling). The server refuses once rate history exists — those
+              rows are deactivated in Details instead, so the history survives. */}
+          <div className="flex justify-end">
+            <button onClick={removeRow} disabled={busy}
+              className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-red-600">
+              <Trash2 size={12} /> {tr('Remove from roster')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Add someone by hand ────────────────────────────────── */
+
+function AddPersonModal({ onClose, onAdded, tr }) {
+  const [form, setForm] = useState({ name: '', team: '', hire_date: '', pay_rate: '', pto_plan: '', is_supervisor: false });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const save = async () => {
+    if (!form.name.trim()) { setError(tr('Name is required')); return; }
+    setBusy(true); setError('');
+    try {
+      await apiPost('/pay/employees', {
+        name: form.name.trim(), team: form.team.trim() || null,
+        hire_date: form.hire_date || null,
+        pay_rate: form.pay_rate !== '' ? Number(form.pay_rate) : null,
+        pto_plan: form.pto_plan.trim() || null, is_supervisor: form.is_supervisor,
+      });
+      onAdded?.(); onClose();
+    } catch (e) { setError(e.message); setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3 max-h-[92vh] overflow-y-auto">
+        <h3 className="font-semibold text-gray-900 text-sm">{tr('Add someone to the roster')}</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Name')} *</label>
+            <input value={form.name} onChange={e => set('name', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Team')}</label>
+            <input value={form.team} onChange={e => set('team', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Hire date')}</label>
+            <input type="date" value={form.hire_date} onChange={e => set('hire_date', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Rate')}</label>
+            <input type="number" step="0.01" min="0" value={form.pay_rate} onChange={e => set('pay_rate', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={tr('blank = salaried')} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('PTO plan')}</label>
+            <input value={form.pto_plan} onChange={e => set('pto_plan', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={tr('e.g. 3 hr / 4 hr')} />
+          </div>
+        </div>
+        <label className="flex items-center gap-1.5 text-sm text-gray-700">
+          <input type="checkbox" checked={form.is_supervisor} onChange={e => set('is_supervisor', e.target.checked)} className="rounded border-gray-300" />
+          {tr('Supervisor')}
+        </label>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={save} disabled={busy}
+            className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-semibold rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            {busy ? tr('Adding…') : tr('Add to roster')}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">{tr('Cancel')}</button>
         </div>
       </div>
     </div>
@@ -417,17 +693,29 @@ const PAGE_STRINGS = [
   'Pay Tracking', 'Roster', 'Evaluation', 'Vision & Values', 'Sync with Settings',
   'Employee', 'Team', 'Rate', 'Annual', 'Hired', 'Last raise', 'Last review', 'Days', 'Review',
   'Due', 'Soon', 'OK', 'Supervisor', 'Salaried', 'No team',
-  'This evaluation is not saved.',
-  'Scores and notes stay on this screen for the conversation and disappear when you leave. Only the review date can be recorded, so the review clock resets without keeping a rating on file.',
+  'Submitting saves this review for the admin.',
+  'Your scores and notes go to the admin, who reads every review — including a second reviewer’s — before deciding any increase. Nothing here shows or asks for anyone’s pay.',
   'Select an employee…', 'Last raise or review', 'days ago',
   'Below Expectation', 'Meets Expectation', 'Exceeds Expectation',
   'Review conversation required',
   'A score of 1 in Time & Attendance triggers a review conversation regardless of the total score.',
-  'Notes / Feedback', 'For the conversation — not saved.', 'Total score', 'scored',
+  'Notes / Feedback', 'Goes to the admin with your scores.', 'Total score', 'scored',
   'Score every characteristic to see the recommended increase.',
-  'PDF for the conversation', 'Building…', 'Record review date only', 'Recording…', 'Clear', 'Close',
+  'PDF for the conversation', 'Building…', 'Submit review', 'Submitting…', 'Clear', 'Close',
   'To apply the increase, open this person on the Roster tab.',
-  'Review date recorded. The scores and notes were not saved.',
+  'Review submitted. The scores and notes are now visible to the admin, who decides any increase.',
+  'Reviews', 'Combined', 'reviews', 'attendance flag', 'Show scores', 'Hide scores',
+  'No open reviews — earlier ones are below.',
+  'Applying an increase below closes these reviews with the decision on them.',
+  'Close without increase…', 'Show earlier reviews', 'Hide earlier reviews',
+  'Close these reviews without an increase — why? (recorded as the outcome)',
+  'Details', 'Edit', 'Save details', 'Saving…', 'PTO', 'PTO plan', 'Hire date', 'Active', 'Notes',
+  'e.g. 3 hr / 4 hr', 'blank = salaried',
+  'Correcting the review or raise date here fixes a mistaken entry — the change is audited with the old and new values.',
+  'Remove from roster',
+  'Remove this person from the Pay Tracking roster? Only rows added by mistake can be removed.',
+  'Add someone to the roster', 'Name', 'Name is required', 'Adding…', 'Add to roster', 'Cancel',
+  'Tap a name to read their reviews, see rate history, correct details, or apply an increase.',
   'Apply a pay increase', 'New rate', 'Effective date', 'Note (optional)', 'Apply increase', 'Applying…',
   'Rate history', 'No changes recorded in ReadyDoc yet.', 'new', 'Days since',
   'Headcount', 'Due for review', 'Annual payroll', 'Average rate',
@@ -450,6 +738,7 @@ export default function PayTrackingPanel() {
   const isAdmin = user?.role === 'admin';
   const [tab, setTab] = useState(isAdmin ? 'roster' : 'evaluate');
   const [openId, setOpenId] = useState(null);
+  const [adding, setAdding] = useState(false);
 
   const { data: roster, refresh: refreshRoster } = useApiGet(isAdmin ? '/pay/employees' : null);
   const { data: evaluatees, refresh: refreshEval } = useApiGet('/pay/evaluatees');
@@ -494,6 +783,7 @@ export default function PayTrackingPanel() {
     { key: 'annual', label: tr('Annual'), type: 'money', align: 'right',
       render: r => (r.annual == null ? <span className="text-gray-300">—</span> : money0(r.annual)) },
     { key: 'hire_date', label: tr('Hired'), render: r => fmtDate(r.hire_date) },
+    { key: 'pto_plan', label: tr('PTO'), filter: true, render: r => r.pto_plan || <span className="text-gray-300">—</span> },
     { key: 'last_increase_at', label: tr('Last raise'), render: r => fmtDate(r.last_increase_at) },
     { key: 'last_reviewed_at', label: tr('Last review'), render: r => fmtDate(r.last_reviewed_at) },
     { key: 'review_days', label: tr('Days'), type: 'number', align: 'right', render: r => r.review?.days ?? '—' },
@@ -549,6 +839,12 @@ export default function PayTrackingPanel() {
               </div>
             ))}
           </div>
+          <div className="flex justify-end">
+            <button onClick={() => setAdding(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50">
+              <Plus size={13} /> {tr('Add someone')}
+            </button>
+          </div>
           <DataGrid
             columns={columns}
             rows={rows.map(r => ({ ...r, review_days: r.review?.days ?? null, review_status: r.review?.status }))}
@@ -558,7 +854,7 @@ export default function PayTrackingPanel() {
             rowClass={r => (r.active ? '' : 'opacity-50')}
           />
           <p className="text-[11px] text-gray-400">
-            {tr('Tap a name to see their rate history or apply an increase.')}
+            {tr('Tap a name to read their reviews, see rate history, correct details, or apply an increase.')}
           </p>
         </>
       )}
@@ -622,6 +918,9 @@ export default function PayTrackingPanel() {
 
       {openId && (
         <PersonDrawer id={openId} tr={tr} onClose={() => setOpenId(null)} onChanged={refreshRoster} />
+      )}
+      {adding && (
+        <AddPersonModal tr={tr} onClose={() => setAdding(false)} onAdded={() => { refreshRoster(); refreshEval(); }} />
       )}
     </div>
   );
