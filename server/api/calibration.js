@@ -70,18 +70,23 @@ router.get('/instruments/:id', (req, res) => {
 router.post('/instruments', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { name, type, serial_number, manufacturer, model, location, room, asset_number, max_capacity, equipment_id, calibration_frequency, tolerance, unit_of_measure, is_critical_control, haccp_ccp_id, department, notes } = req.body;
+  const { name, type, serial_number, manufacturer, model, location, room, asset_number, max_capacity, equipment_id, calibration_frequency, tolerance, unit_of_measure, is_critical_control, haccp_ccp_id, department, notes, status } = req.body;
 
   if (!name || !type) return res.status(400).json({ error: 'name and type are required' });
 
+  // Accept a status at creation so an instrument added as already out of
+  // service doesn't come in "active" and start counting as calibration due —
+  // the same trap the equipment registry had.
+  const st = ['active', 'out_of_service', 'retired'].includes(status) ? status : 'active';
+
   db.prepare(`
-    INSERT INTO calibration_instruments (id, name, type, serial_number, manufacturer, model, location, room, asset_number, max_capacity, equipment_id, calibration_frequency, tolerance, unit_of_measure, is_critical_control, haccp_ccp_id, department, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO calibration_instruments (id, name, type, serial_number, manufacturer, model, location, room, asset_number, max_capacity, equipment_id, calibration_frequency, tolerance, unit_of_measure, is_critical_control, haccp_ccp_id, department, notes, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, name, type, serial_number || null, manufacturer || null, model || null,
     location || null, room || null, asset_number || null, max_capacity || null,
     equipment_id || null, calibration_frequency || 'annual',
     tolerance || null, unit_of_measure || null, is_critical_control ? 1 : 0, haccp_ccp_id || null,
-    department || null, notes || null);
+    department || null, notes || null, st);
 
   const created = db.prepare('SELECT * FROM calibration_instruments WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'calibration_instrument', id, { name, type }, null, created);

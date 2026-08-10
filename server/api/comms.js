@@ -311,11 +311,15 @@ const pendingTrailing = new Map();    // `${userId}:${channelId}` -> timeout han
 // look like a fresh channel message and drop the reader at the bottom of the
 // channel instead of in the thread. Replies are counted by threadUnread().
 function channelUnread(db, channelId, userId) {
-  const lr = db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId)?.last_read_at || null;
+  const m = db.prepare('SELECT last_read_at, deliberate_unread FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId);
+  const lr = m?.last_read_at || null;
+  // Own messages never count as unread — EXCEPT past a deliberate mark, or a
+  // message you authored yourself (a forwarded request) could never be marked.
+  const own = m?.deliberate_unread ? 1 : 0;
   return db.prepare(
-    `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND user_id != ?
+    `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND (user_id != ? OR ? = 1)
      AND parent_id IS NULL AND (? IS NULL OR created_at > ?)`
-  ).get(channelId, userId, lr, lr).n;
+  ).get(channelId, userId, own, lr, lr).n;
 }
 
 // Threads behave like their own channel: each one is read or unread on its own,
@@ -341,15 +345,16 @@ const MENTIONS_ME = (alias) =>
  * history as unread.
  */
 function threadMarkers(db, parentId, userId) {
-  const thread = db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?')
-    .get(parentId, userId)?.last_read_at || null;
+  const row = db.prepare('SELECT last_read_at, deliberate_unread FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?')
+    .get(parentId, userId);
+  const thread = row?.last_read_at || null;
   let channel = null;
   const parent = db.prepare('SELECT channel_id FROM chat_messages WHERE id = ?').get(parentId);
   if (parent) {
     channel = db.prepare('SELECT last_read_at FROM chat_channel_members WHERE channel_id = ? AND user_id = ?')
       .get(parent.channel_id, userId)?.last_read_at || null;
   }
-  return { thread, effective: thread || channel };
+  return { thread, effective: thread || channel, deliberate: row?.deliberate_unread ? 1 : 0 };
 }
 
 /**
@@ -385,14 +390,16 @@ function activityMarker(db, { parentId, channelId, isMention }, userId) {
  *    Activity, without you ever seeing it.
  */
 function threadUnread(db, parentId, userId) {
-  const { thread, effective } = threadMarkers(db, parentId, userId);
+  const { thread, effective, deliberate } = threadMarkers(db, parentId, userId);
+  // Own replies never count — except past a deliberate mark, same carve-out as
+  // channelUnread, or a reply you wrote yourself could never be marked.
   return db.prepare(
     `SELECT COUNT(*) n FROM chat_messages m
-     WHERE m.parent_id = $parent AND m.deleted_at IS NULL AND m.user_id != $me
+     WHERE m.parent_id = $parent AND m.deleted_at IS NULL AND (m.user_id != $me OR $own = 1)
        AND CASE WHEN ${MENTIONS_ME('m')}
                 THEN ($thread IS NULL OR m.created_at > $thread)
                 ELSE ($effective IS NULL OR m.created_at > $effective) END`
-  ).get({ parent: parentId, me: userId, thread, effective }).n;
+  ).get({ parent: parentId, me: userId, thread, effective, own: deliberate }).n;
 }
 
 // Push a normal channel message to every member (except the author and anyone
@@ -524,7 +531,7 @@ router.get('/channels', (req, res) => {
   // aren't buried under every channel. Channel administration (all channels)
   // happens through GET /admin/channels + the Comms settings panel instead.
   let rows = db.prepare(`
-    SELECT c.*, m.last_read_at, m.id AS membership_id
+    SELECT c.*, m.last_read_at, m.deliberate_unread, m.id AS membership_id
     FROM chat_channels c
     LEFT JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
     WHERE c.archived = 0 AND m.user_id IS NOT NULL
@@ -538,11 +545,12 @@ router.get('/channels', (req, res) => {
     // every channel, but a channel they never joined shouldn't dump its whole
     // (imported) history on them as unread.
     // parent_id IS NULL: thread replies belong to Threads, not to the channel.
-    // Keep this in step with channelUnread().
+    // Keep this in step with channelUnread() — including the deliberate_unread
+    // carve-out that lets a mark-unread count the caller's own messages.
     const unread = !c.membership_id ? 0 : db.prepare(
-      `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND user_id != ?
+      `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND (user_id != ? OR ? = 1)
        AND parent_id IS NULL AND (? IS NULL OR created_at > ?)`
-    ).get(c.id, me, c.last_read_at, c.last_read_at).n;
+    ).get(c.id, me, c.deliberate_unread ? 1 : 0, c.last_read_at, c.last_read_at).n;
     // Unread @mentions of me in this channel (drives a distinct badge).
     //
     // A mention on a thread reply is measured against that THREAD's read row,
@@ -720,8 +728,9 @@ router.post('/read-all', (req, res) => {
   // last_read_at), and an ISO 'T'/'Z' value sorts wrong against the space format,
   // which is why marking read didn't clear/hold. Millisecond precision for exact ordering.
   const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
-  // Update existing memberships…
-  db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE user_id = ?').run(now, me);
+  // Update existing memberships… (read-all also clears deliberate marks —
+  // "mark everything read" means the bookmarks too).
+  db.prepare('UPDATE chat_channel_members SET last_read_at = ?, deliberate_unread = 0 WHERE user_id = ?').run(now, me);
   // …and create read-markers for public channels the user hasn't joined yet.
   const missing = db.prepare(`SELECT c.id FROM chat_channels c
     WHERE c.kind = 'public' AND c.archived = 0
@@ -735,8 +744,8 @@ router.post('/read-all', (req, res) => {
   const mentionThreads = db.prepare(`SELECT DISTINCT msg.parent_id AS parent_id
     FROM chat_mentions mn JOIN chat_messages msg ON msg.id = mn.message_id
     WHERE mn.user_id = ? AND msg.parent_id IS NOT NULL AND msg.deleted_at IS NULL`).all(me);
-  const markThread = db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at) VALUES (?, ?, ?)
-    ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at`);
+  const markThread = db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at, deliberate_unread) VALUES (?, ?, ?, 0)
+    ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at, deliberate_unread = 0`);
   db.transaction(() => { for (const t of mentionThreads) markThread.run(me, t.parent_id, now); })();
   res.json({ ok: true });
 });
@@ -748,8 +757,9 @@ router.post('/admin/reset-unread', requireRole('admin'), (req, res) => {
   // Millisecond precision to match chat_messages.created_at so the unread
   // comparison is exact (see the read endpoints).
   const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
-  // Everyone's existing memberships → read as of now.
-  const info = db.prepare('UPDATE chat_channel_members SET last_read_at = ?').run(now);
+  // Everyone's existing memberships → read as of now (deliberate marks included
+  // — this is the blunt one-shot cleanup, and it says so).
+  const info = db.prepare('UPDATE chat_channel_members SET last_read_at = ?, deliberate_unread = 0').run(now);
   // Also give the calling admin read-markers for public channels they haven't
   // joined, so their own sidebar clears completely (admins see every channel).
   const me = req.user.id;
@@ -852,7 +862,8 @@ router.post('/channels/:id/read', (req, res) => {
   // SQLite datetime format (not ISO) so it compares correctly against
   // chat_messages.created_at in the unread query. See /read-all.
   const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
-  const info = db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?").run(now, channel.id, req.user.id);
+  // Reading the channel is what stands a deliberate mark-unread down.
+  const info = db.prepare("UPDATE chat_channel_members SET last_read_at = ?, deliberate_unread = 0 WHERE channel_id = ? AND user_id = ?").run(now, channel.id, req.user.id);
   // Public channels the user hasn't joined have no membership row — create one lazily so reads track.
   if (info.changes === 0 && channel.kind === 'public') {
     db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)')
@@ -866,19 +877,40 @@ router.post('/channels/:id/read', (req, res) => {
 });
 
 // Mark a specific message (and everything after it) as unread again. Sets the
-// caller's last_read to just before this message.
+// caller's last_read to just before this message, and raises deliberate_unread:
+// a mark someone CHOSE has to survive two things the plain marker can't —
+// the unread counts excluding your own messages (a request YOU forwarded into
+// the channel would otherwise be a silent no-op to mark), and your own next
+// reply advancing last_read_at past the mark. Reading the channel clears it.
 router.post('/messages/:id/unread', (req, res) => {
   const db = getDb();
   const msg = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(req.params.id);
   if (!msg) return res.status(404).json({ error: 'Message not found' });
   const channel = getChannel(db, msg.channel_id);
   if (!channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')) return res.status(404).json({ error: 'Not found' });
+  // A thread reply (or a parent marked from inside its thread drawer, which
+  // the client says with {thread: true}) rewinds the THREAD's marker, not the
+  // channel's — threads carry their own read state, and the channel marker
+  // can't say "this thread needs me again".
+  const threadParent = msg.parent_id || (req.body?.thread ? msg.id : null);
+  if (threadParent) {
+    const tprev = msg.parent_id
+      ? db.prepare('SELECT MAX(created_at) t FROM chat_messages WHERE parent_id = ? AND deleted_at IS NULL AND created_at < ?')
+          .get(threadParent, msg.created_at).t || '1970-01-01 00:00:00.000'
+      : '1970-01-01 00:00:00.000'; // marked at the parent → the whole thread is new again
+    db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at, deliberate_unread) VALUES (?, ?, ?, 1)
+                ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at, deliberate_unread = 1`)
+      .run(req.user.id, threadParent, tprev);
+    emitChannelsChanged(db, channel);
+    return res.json({ ok: true, thread: threadParent });
+  }
+
   // Newest message strictly before the target; a floor if it's the first.
   const prev = db.prepare('SELECT MAX(created_at) t FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND created_at < ?')
     .get(channel.id, msg.created_at).t || '1970-01-01 00:00:00.000';
-  const info = db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?').run(prev, channel.id, req.user.id);
+  const info = db.prepare('UPDATE chat_channel_members SET last_read_at = ?, deliberate_unread = 1 WHERE channel_id = ? AND user_id = ?').run(prev, channel.id, req.user.id);
   if (info.changes === 0 && channel.kind === 'public') {
-    db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)')
+    db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at, deliberate_unread) VALUES (?, ?, ?, ?, ?, 1)')
       .run(uuid(), channel.id, req.user.id, 'member', prev);
   }
   emitChannelsChanged(db, channel);
@@ -1241,8 +1273,8 @@ router.post('/activity/read', (req, res) => {
           OR EXISTS (SELECT 1 FROM chat_mentions m2 WHERE m2.message_id = p.id AND m2.user_id = $me))
   `).all({ me });
 
-  const markThread = db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at) VALUES (?, ?, ?)
-    ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at`);
+  const markThread = db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at, deliberate_unread) VALUES (?, ?, ?, 0)
+    ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at, deliberate_unread = 0`);
   const markChannel = db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?');
   const joinChannel = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)');
 
@@ -1322,9 +1354,13 @@ router.post('/threads/:parentId/read', (req, res) => {
   if (!channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')) {
     return res.status(404).json({ error: 'Thread not found' });
   }
-  db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at) VALUES (?, ?, datetime('now'))
-              ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = datetime('now')`)
-    .run(req.user.id, parent.id);
+  // Millisecond precision, same as the channel read endpoint — datetime('now')
+  // is second-precision, and a reply landing in the same second as the read
+  // compares GREATER than the marker, so the thread never fully cleared.
+  const tnow = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+  db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at, deliberate_unread) VALUES (?, ?, ?, 0)
+              ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at, deliberate_unread = 0`)
+    .run(req.user.id, parent.id, tnow);
   res.json({ ok: true });
 });
 
@@ -1365,7 +1401,9 @@ router.post('/channels/:id/messages', async (req, res) => {
   const link = db.prepare('UPDATE chat_attachments SET message_id = ? WHERE id = ? AND channel_id = ? AND user_id = ? AND message_id IS NULL');
   for (const aid of attachmentIds) link.run(id, aid, channel.id, req.user.id);
   db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(channel.id);
-  db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?").run(now, channel.id, req.user.id);
+  // deliberate_unread = 0 guard: replying must not silently wipe a mark-unread
+  // the sender set — the bookmark survives until they actually read the channel.
+  db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ? AND deliberate_unread = 0").run(now, channel.id, req.user.id);
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
@@ -1534,7 +1572,7 @@ router.post('/messages/:id/forward', async (req, res) => {
   for (const a of atts) insertAtt.run(uuid(), id, target.id, req.user.id, a.filename, a.content_type, a.size, a.storage_key);
 
   db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(target.id);
-  db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?').run(now, target.id, req.user.id);
+  db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ? AND deliberate_unread = 0').run(now, target.id, req.user.id);
 
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
   emitToChannel(target.id, 'message:new', message);

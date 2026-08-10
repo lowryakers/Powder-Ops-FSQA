@@ -99,7 +99,9 @@ export function computeCritical(db) {
 
   // Calibration due/overdue
   let instruments = [];
-  try { instruments = db.prepare("SELECT name, asset_number, next_due FROM calibration_instruments WHERE next_due IS NOT NULL AND status != 'retired'").all(); } catch { /* optional */ }
+  // out_of_service excluded like retired: an instrument marked not in use has
+  // no calibration owing — counting it is how "2 due" sits on the bell forever.
+  try { instruments = db.prepare("SELECT name, asset_number, next_due FROM calibration_instruments WHERE next_due IS NOT NULL AND status NOT IN ('retired','out_of_service')").all(); } catch { /* optional */ }
   const calAlerts = instruments.map(i => ({ ...i, days: -daysBetween(today, i.next_due) }))
     .filter(i => i.days <= 30).sort((a, b) => a.days - b.days);
   cats.calibration = {
@@ -266,8 +268,8 @@ router.get('/dashboard', (_req, res) => {
   const sopReviewDue = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE status != 'archived' AND review_due <= ?").get(to).c;
 
   const calTotal = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE status != 'retired'").get().c;
-  const calOverdue = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due < ? AND status != 'retired'").get(to).c;
-  const calDueSoon = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due BETWEEN ? AND ? AND status != 'retired'").get(to, sevenDaysOut.toISOString().split('T')[0]).c;
+  const calOverdue = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due < ? AND status NOT IN ('retired','out_of_service')").get(to).c;
+  const calDueSoon = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due BETWEEN ? AND ? AND status NOT IN ('retired','out_of_service')").get(to, sevenDaysOut.toISOString().split('T')[0]).c;
 
   const checklistSubmissions = db.prepare('SELECT COUNT(*) as c FROM checklist_submissions WHERE submitted_at >= ?').get(from).c;
   const checklistFails = db.prepare("SELECT COUNT(*) as c FROM checklist_submissions WHERE submitted_at >= ? AND overall_status = 'fail'").get(from).c;
@@ -434,8 +436,8 @@ router.get('/notifications', (req, res) => {
   const overdueWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')").get(today).c;
   const dueSoonWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('open','in_progress')").get(today, sevenOut).c;
   const clearancePending = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE clearance_required = 1 AND clearance_status = 'pending'").get().c;
-  const calOverdue = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due < ? AND status != 'retired'").get(today).c;
-  const calDueSoon = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due BETWEEN ? AND ? AND status != 'retired'").get(today, sevenOut).c;
+  const calOverdue = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due < ? AND status NOT IN ('retired','out_of_service')").get(today).c;
+  const calDueSoon = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due BETWEEN ? AND ? AND status NOT IN ('retired','out_of_service')").get(today, sevenOut).c;
   const lotoUncovered = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE status = 'active' AND loto_required = 1 AND asset_kind != 'zone' AND id NOT IN (SELECT equipment_id FROM loto_procedures)").get().c;
   const chemMissingSDS = db.prepare("SELECT COUNT(*) as c FROM approved_chemicals WHERE is_active = 1 AND sds_url IS NULL AND sds_number IS NULL").get().c;
   const flaggedIssues = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE issue_flagged = 1 AND status IN ('open','in_progress','overdue')").get().c;

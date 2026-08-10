@@ -78,7 +78,7 @@ async function runDue(db, deps) {
         if (d != null && d <= 30) lines.push(`• ${c.person_name} — ${c.cert_type}: ${d < 0 ? `EXPIRED ${-d}d ago` : `expires in ${d}d`} (${c.expiry_date})`);
       }
       let instruments = [];
-      try { instruments = db.prepare("SELECT name, asset_number, next_due FROM calibration_instruments WHERE next_due IS NOT NULL AND status != 'retired'").all(); } catch { instruments = []; }
+      try { instruments = db.prepare("SELECT name, asset_number, next_due FROM calibration_instruments WHERE next_due IS NOT NULL AND status NOT IN ('retired','out_of_service')").all(); } catch { instruments = []; }
       for (const i of instruments) {
         const d = soon(i.next_due);
         if (d != null && d <= 30) lines.push(`• Calibration — ${i.name}${i.asset_number ? ` #${i.asset_number}` : ''}: ${d < 0 ? `OVERDUE ${-d}d` : `due in ${d}d`} (${i.next_due})`);

@@ -2134,3 +2134,25 @@ visible in the member list. The self-selecting bulk reads (threads inbox, activi
 fine as-is: their SQL only selects rows involving the caller, so canAccess there is a second gate, not
 the first. Verified: admin gets 0 hits on others' DMs/private channels, participants still find theirs,
 admin still searches channels they belong to.
+
+## Mark unread is a DELIBERATE act (`deliberate_unread` on both read tables)
+"Mark unread from here" was a silent no-op on a message you authored (the unread counts exclude own
+messages — which is right for bot-path posts made as you) and was silently wiped by your own next reply
+(sending advances last_read_at). A mark someone CHOSE must survive both, so the unread endpoint raises
+`deliberate_unread` on `chat_channel_members` / `chat_thread_reads`: while set, own messages count and
+the send-path marker bump is skipped. Reading the channel/thread (or read-all / admin reset) clears it.
+**A thread reply (or a parent marked from the thread drawer, `{thread: true}`) rewinds the THREAD's
+marker, not the channel's** — and the ThreadPanel messages now carry the Mark-unread menu entry at all.
+`POST /threads/:parentId/read` also stamps **millisecond** precision now — its `datetime('now')` was
+second-precision, so a reply landing in the same second as the read compared GREATER than the marker and
+the thread never fully cleared (same class as the /read-all format note).
+
+## Calibration instruments: "not in use" (`out_of_service`)
+The server always supported `status = 'out_of_service'` and the module's own KPIs excluded it — but the
+instrument form had NO status field (so it couldn't be set; same trap as equipment.status), POST didn't
+accept one, and the bell/Critical-Tracking/dashboard counts + the Monday expiry digest only excluded
+`retired`, so a not-in-use instrument sat in "calibration due" forever. All fixed: Status select in the
+form (with 'overdue' kept in the options while it's the current value — the select-fallback trap),
+status accepted at create, and every due/overdue count excludes out_of_service. **The HACCP CCP evidence
+check still counts an out-of-service instrument on an active CCP on purpose** — that's a genuine gap,
+not noise. Recording a calibration flips the instrument back to active (existing behavior).

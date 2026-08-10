@@ -2174,6 +2174,18 @@ function runMigrations() {
   // subscription was made under (plus the last send result) makes that state
   // visible and repairable instead of silent. (Runs here, after the chat schema
   // block above creates chat_push_subscriptions — not with the other migrations.)
+  // "Mark unread from here" as a deliberate act. last_read_at alone can't
+  // represent it: the unread counts exclude your OWN messages (so bot-path
+  // posts made as you don't self-badge), which made mark-unread a silent
+  // no-op on a message you authored — e.g. a request you forwarded into a
+  // channel. The flag makes a deliberate mark count own messages too, and
+  // stops your own replies from silently advancing the marker past it.
+  // Cleared by reading the channel (or read-all).
+  addColumnIfMissing('chat_channel_members', 'deliberate_unread', 'INTEGER NOT NULL DEFAULT 0');
+  // Same flag for threads — they carry their own read state, and a deliberate
+  // mark on a thread reply has the same two problems to survive.
+  addColumnIfMissing('chat_thread_reads', 'deliberate_unread', 'INTEGER NOT NULL DEFAULT 0');
+
   addColumnIfMissing('chat_push_subscriptions', 'vapid_key', 'TEXT');
   addColumnIfMissing('chat_push_subscriptions', 'user_agent', 'TEXT');
   addColumnIfMissing('chat_push_subscriptions', 'last_success_at', 'TEXT');

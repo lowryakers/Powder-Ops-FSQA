@@ -1116,6 +1116,14 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   const unreact = async (m, emoji) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); load(); };
   const del = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); load(); onChanged?.(); };
   const edit = async (m, text) => { await apiPut(`/comms/messages/${m.id}`, { body: text }); load(); };
+  // Marking unread in a thread rewinds the THREAD's own marker ({thread: true}
+  // covers the parent message, whose intent here is "the whole thread again").
+  // Then leave — staying in the drawer is what re-reads it.
+  const markThreadUnread = async (m) => {
+    try { await apiPost(`/comms/messages/${m.id}/unread`, { thread: true }); } catch { /* ignore */ }
+    onThreadRead?.();
+    onClose();
+  };
 
   const send = async () => {
     const text = body.trim();
@@ -1141,6 +1149,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
         </div>
         <div className="flex-1 overflow-y-auto py-2">
           {thread && <Message m={thread.parent} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+            onMarkUnread={markThreadUnread}
             canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />}
           {replies.length > 0 && (
             <div className="flex items-center gap-3 px-4 py-1">
@@ -1149,6 +1158,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
             </div>
           )}
           {replies.map(r => <Message key={r.id} m={r} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+            onMarkUnread={markThreadUnread}
             canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />)}
           <div ref={endRef} />
         </div>

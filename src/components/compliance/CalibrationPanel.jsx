@@ -23,7 +23,7 @@ function InstrumentForm({ initial, ccps, onSave, onCancel }) {
   const [form, setForm] = useState(initial || {
     name: '', type: 'scale', serial_number: '', manufacturer: '', model: '',
     room: '', asset_number: '', max_capacity: '', calibration_frequency: 'annual',
-    department: '', notes: '', haccp_ccp_id: null,
+    department: '', notes: '', haccp_ccp_id: null, status: 'active',
   });
   const [saving, setSaving] = useState(false);
 
@@ -103,6 +103,20 @@ function InstrumentForm({ initial, ccps, onSave, onCancel }) {
             <option value="">None</option>
             {(ccps || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+          {/* 'overdue' is auto-set by the server, so it must stay in the list
+              while it's the current value — a select whose value isn't among
+              its options silently falls back to the first one on save. */}
+          <select value={form.status || 'active'} onChange={e => setForm({ ...form, status: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="active">Active</option>
+            {form.status === 'overdue' && <option value="overdue">Active — calibration overdue</option>}
+            <option value="out_of_service">Out of service / not in use</option>
+            <option value="retired">Retired</option>
+          </select>
+          <p className="text-[10px] text-gray-400 mt-0.5">Out of service stops the "calibration due" counts until it's back in use.</p>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
@@ -357,7 +371,7 @@ export default function CalibrationPanel() {
           {/* Mobile: card list */}
           <div className="md:hidden space-y-2">
             {filtered.map(inst => {
-              const isOverdue = inst.next_due && inst.next_due < today;
+              const isOverdue = inst.next_due && inst.next_due < today && !['retired', 'out_of_service'].includes(inst.status);
               const stripe = isOverdue ? 'border-l-red-500' : inst.status === 'retired' ? 'border-l-gray-300' : 'border-l-green-500';
               return (
                 <div key={inst.id} onClick={() => { setEditing(inst); setShowForm(false); }}
@@ -408,7 +422,7 @@ export default function CalibrationPanel() {
               </thead>
               <tbody>
                 {filtered.map(inst => {
-                  const isOverdue = inst.next_due && inst.next_due < today;
+                  const isOverdue = inst.next_due && inst.next_due < today && !['retired', 'out_of_service'].includes(inst.status);
                   return (
                     <Fragment key={inst.id}>
                     <tr {...expandInst.rowProps(inst.id, `border-b border-gray-100 ${isOverdue ? 'bg-red-50/50' : ''}`)}>
