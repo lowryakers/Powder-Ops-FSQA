@@ -2123,3 +2123,14 @@ machine that already has that `storage_key` is skipped rather than doubled. **DE
 object only when the last reference is gone** — the same refcount rule as forwarded comms attachments.
 UI: the copy icon on a file row → multi-select with a filter and select-all-filtered (the "select all
 equipment items" bulk case).
+
+## Comms search is membership-scoped — for admins too (the DM exposure fix)
+`resultsFor()` filtered hits with `canAccess(..., isAdmin)` and `semanticHits()` short-circuited the
+membership join to `1=1` for admins — so an admin's search (keyword AND semantic, and `/ask`) returned
+the whole plant's DMs and private channels. Same class as the Activity-feed DM leak: **`canAccess()`'s
+admin bypass exists for channel ADMINISTRATION; any bulk read that selects by CONTENT (search, ask) must
+gate on `isMember()` instead.** An admin who needs to search a channel joins it — a deliberate act,
+visible in the member list. The self-selecting bulk reads (threads inbox, activity, unread counts) are
+fine as-is: their SQL only selects rows involving the caller, so canAccess there is a second gate, not
+the first. Verified: admin gets 0 hits on others' DMs/private channels, participants still find theirs,
+admin still searches channels they belong to.

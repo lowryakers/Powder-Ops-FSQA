@@ -1832,15 +1832,22 @@ function channelLabel(db, channel, me) {
 // Turn ranked message ids into access-checked result rows (order preserved).
 // noDms: "View as" previews exclude direct-message content entirely.
 //
+// MEMBERSHIP-SCOPED FOR EVERYONE, INCLUDING ADMINS. canAccess() grants admins
+// every channel — that is for channel ADMINISTRATION, and using it here put
+// the whole plant's DMs into an admin's search results (the same class of
+// leak as the Activity feed's DM branch). A search result is READING, and
+// membership is the read gate; an admin who needs to search a channel joins
+// it, which is a deliberate act visible in the member list.
+//
 // `rank` is the position the retriever put it in — sorting by date has to be
 // able to get back to "most relevant" without a second query.
-function resultsFor(db, me, messageIds, limit = 40, isAdmin = false, noDms = false) {
+function resultsFor(db, me, messageIds, limit = 40, noDms = false) {
   const out = [];
   for (const id of messageIds) {
     const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND deleted_at IS NULL').get(id);
     if (!m) continue;
     const channel = getChannel(db, m.channel_id);
-    if (!canAccess(db, channel, me, isAdmin)) continue;
+    if (!channel || !isMember(db, channel.id, me)) continue;
     if (noDms && channel.kind === 'dm') continue;
     out.push({
       id: m.id, channel_id: m.channel_id, channel_kind: channel.kind, channel_name: channelLabel(db, channel, me),
@@ -1879,13 +1886,14 @@ function keywordHits(db, q) {
   } catch { return []; }
 }
 
-// Semantic retrieval: embed the query, cosine-rank message embeddings within the
-// caller's accessible channels. Bounded to accessible channels up front so
-// private/DM content never enters the ranking for a non-member.
-async function semanticHits(db, me, q, limit = 40, isAdmin = false) {
+// Semantic retrieval: embed the query, cosine-rank message embeddings within
+// the caller's MEMBER channels. Bounded up front so private/DM content never
+// enters the ranking — for admins too; the old admin bypass here is what let
+// an admin's search read other people's DMs (see resultsFor).
+async function semanticHits(db, me, q, limit = 40) {
   const channels = db.prepare(`SELECT c.id FROM chat_channels c
-    LEFT JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
-    WHERE c.archived = 0 AND (${isAdmin ? '1=1' : 'm.user_id IS NOT NULL'})`).all(me).map(c => c.id);
+    JOIN chat_channel_members m ON m.channel_id = c.id AND m.user_id = ?
+    WHERE c.archived = 0`).all(me).map(c => c.id);
   if (!channels.length) return [];
   const [qvec] = await embed(q, 'query');
   if (!qvec) return [];
@@ -1915,10 +1923,9 @@ router.get('/search', async (req, res) => {
   const empty = { results: [], facets: { channels: [], people: [] }, total: 0, truncated: false };
   if (q.length < 2) return res.json(empty);
   try {
-    const isAdmin = req.user.role === 'admin';
     const semantic = req.query.mode === 'semantic' && voyageEnabled();
-    const ids = semantic ? await semanticHits(db, me, q, SEARCH_POOL, isAdmin) : keywordHits(db, q);
-    const all = resultsFor(db, me, ids, SEARCH_POOL, isAdmin, !!req.impersonated);
+    const ids = semantic ? await semanticHits(db, me, q, SEARCH_POOL) : keywordHits(db, q);
+    const all = resultsFor(db, me, ids, SEARCH_POOL, !!req.impersonated);
 
     const facets = facetsFor(all);
 
@@ -1959,9 +1966,8 @@ router.post('/ask', async (req, res) => {
   const question = (req.body?.question || '').trim();
   if (question.length < 3) return res.status(400).json({ error: 'A question is required.' });
   try {
-    const isAdmin = req.user.role === 'admin';
-    const ids = await semanticHits(db, me, question, 16, isAdmin);
-    const sources = resultsFor(db, me, ids, 16, isAdmin);
+    const ids = await semanticHits(db, me, question, 16);
+    const sources = resultsFor(db, me, ids, 16);
     const answer = await summarizeChat({ question, contextMessages: sources });
     res.json({ answer, sources });
   } catch (e) {
