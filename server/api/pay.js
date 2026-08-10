@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDb, logAudit } from '../db.js';
 import { normalizeName } from '../pay-seed.js';
+import { postMessageAs, botDm } from './comms.js';
+import { pushToUser } from '../push.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.join(__dirname, '..', 'assets', 'powder-ops-logo.jpg');
@@ -223,6 +225,81 @@ function canReviewSupervisors(user) {
   return isAdmin(user) || /^adam\b/i.test(String(user?.name || ''));
 }
 
+// ── Assignments: who owes a review, and by when ──────────────────────────────
+//
+// A review cycle used to depend on somebody remembering to ask a supervisor in
+// person. An assignment is the ask, on the record: it shows in that reviewer's
+// own Pay Tracking view, and completing the evaluation closes it.
+router.get('/assignments', (req, res) => {
+  if (!requireEvaluator(req, res)) return;
+  const db = getDb();
+  const mine = !isAdmin(req.user) || req.query.mine === 'true';
+  const status = ['open', 'completed', 'all'].includes(req.query.status) ? req.query.status : 'open';
+  let sql = `SELECT a.*, e.name AS employee_name, e.team, e.is_supervisor, u.name AS reviewer_name
+    FROM pay_review_assignments a
+    JOIN pay_employees e ON e.id = a.employee_id
+    LEFT JOIN users u ON u.id = a.reviewer_id WHERE 1=1`;
+  const params = [];
+  if (status !== 'all') { sql += ' AND a.status = ?'; params.push(status); }
+  if (mine) { sql += ' AND a.reviewer_id = ?'; params.push(req.user.id); }
+  sql += ' ORDER BY (a.due_date IS NULL), a.due_date, a.created_at DESC LIMIT 200';
+  const rows = db.prepare(sql).all(...params).map(r => ({ ...r, overdue: !!(r.status === 'open' && r.due_date && r.due_date < today()) }));
+  res.json(rows);
+});
+
+// Assigning is an admin act — it's a decision about who evaluates whom, and it
+// carries the supervisor-review rule with it: only Adam (or an admin) can be
+// asked to review a supervisor, the same rule the submit endpoint enforces.
+router.post('/assignments', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const emp = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.body?.employee_id);
+  if (!emp) return res.status(404).json({ error: 'Not on the roster' });
+  const reviewer = db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1').get(req.body?.reviewer_id);
+  if (!reviewer) return res.status(400).json({ error: 'Pick a reviewer.' });
+  if (emp.user_id && emp.user_id === reviewer.id) {
+    return res.status(400).json({ error: 'Someone cannot evaluate themselves.' });
+  }
+  if (emp.is_supervisor && !canReviewSupervisors(reviewer)) {
+    return res.status(400).json({ error: `${emp.name} is a supervisor — supervisor reviews are done by Adam or an admin.` });
+  }
+  const open = db.prepare("SELECT 1 FROM pay_review_assignments WHERE employee_id = ? AND reviewer_id = ? AND status = 'open'").get(emp.id, reviewer.id);
+  if (open) return res.status(409).json({ error: `${reviewer.name} already has an open review for ${emp.name}.` });
+
+  const id = uuid();
+  db.prepare(`INSERT INTO pay_review_assignments (id, employee_id, reviewer_id, due_date, note, assigned_by)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(id, emp.id, reviewer.id,
+    String(req.body?.due_date || '').slice(0, 10) || null,
+    String(req.body?.note || '').trim().slice(0, 500) || null, req.user.name);
+  logAudit(req.user, 'create', 'pay_review_assignment', id, { employee: emp.name, reviewer: reviewer.name }, null, null, emp.name);
+
+  // Tell them. An assignment nobody is told about is the same as not asking.
+  // Best-effort — a comms failure must never fail the assignment itself.
+  const due = req.body?.due_date ? ` It's due ${String(req.body.due_date).slice(0, 10)}.` : '';
+  const body = `📋 *Pay evaluation assigned* — please complete a review for *${emp.name}*.${due}\nOpen ReadyDoc → Pay Tracking → Evaluation. Your scores and notes go to the admin, who decides any increase.`;
+  try {
+    const { bot, dm } = botDm(db, reviewer.id);
+    if (dm) await postMessageAs(db, dm, bot, body);
+  } catch (e) { console.warn('[pay] assignment DM failed:', e.message); }
+  pushToUser(reviewer.id, {
+    title: 'Pay evaluation assigned', body: `Review ${emp.name}${due}`,
+    tag: `pay-review-${id}`, renotify: true,
+  }).catch(() => {});
+
+  res.status(201).json(db.prepare('SELECT * FROM pay_review_assignments WHERE id = ?').get(id));
+});
+
+router.delete('/assignments/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM pay_review_assignments WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (row.status === 'completed') return res.status(400).json({ error: 'That review was completed — it stays as the record that it was done.' });
+  db.prepare('DELETE FROM pay_review_assignments WHERE id = ?').run(row.id);
+  logAudit(req.user, 'delete', 'pay_review_assignment', row.id, null, row, null, null);
+  res.json({ deleted: row.id });
+});
+
 // Submit an evaluation. Stores the scores, notes and the band the score landed
 // in, and stamps last_reviewed_at — one act, so the clock and the record can't
 // disagree. The reviewer's identity comes from the session, never the body.
@@ -258,6 +335,10 @@ router.post('/employees/:id/reviews', (req, res) => {
       String(req.body?.notes || '').trim().slice(0, 4000) || null,
       req.body?.attendance_flag ? 1 : 0);
     db.prepare("UPDATE pay_employees SET last_reviewed_at = ?, updated_at = datetime('now') WHERE id = ?").run(when, emp.id);
+    // Doing the evaluation is what closes the ask — the assignment is not a
+    // separate thing to remember to tick off.
+    db.prepare(`UPDATE pay_review_assignments SET status = 'completed', review_id = ?, completed_at = datetime('now')
+      WHERE employee_id = ? AND reviewer_id = ? AND status = 'open'`).run(id, emp.id, req.user.id);
   })();
   logAudit(req.user, 'create', 'pay_review', id, { employee: emp.name, total }, null, null, emp.name);
   res.status(201).json({ id, total, review_date: when });

@@ -38,7 +38,7 @@ const REVIEW_LABEL = { due: 'Due', soon: 'Soon', ok: 'OK', unknown: '—' };
 
 /* ── Evaluation ─────────────────────────────────────────── */
 
-function Evaluation({ people, canApply, onClose, onRecorded, tr, lang }) {
+function Evaluation({ people, canApply, onClose, onRecorded, tr, lang, assignments = [] }) {
   const [personId, setPersonId] = useState('');
   const [scores, setScores] = useState({});
   const [notes, setNotes] = useState('');
@@ -116,6 +116,29 @@ function Evaluation({ people, canApply, onClose, onRecorded, tr, lang }) {
           {tr('Your scores and notes go to the admin, who reads every review — including a second reviewer’s — before deciding any increase. Nothing here shows or asks for anyone’s pay.')}
         </p>
       </div>
+
+      {/* What has actually been asked of you. Without this the review cycle
+          ran on somebody remembering to ask a supervisor in person. */}
+      {assignments.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-1.5">
+          <p className="text-sm font-semibold text-amber-900">
+            {tr('Evaluations assigned to you')} ({assignments.length})
+          </p>
+          {assignments.map(a => (
+            <button key={a.id} type="button"
+              onClick={() => { setPersonId(a.employee_id); reset(); }}
+              className={`w-full text-left flex items-center gap-2 flex-wrap rounded-lg border px-2.5 py-1.5 transition-colors ${
+                personId === a.employee_id ? 'border-amber-500 bg-white ring-1 ring-amber-300' : 'border-amber-200 bg-white hover:border-amber-400'}`}>
+              <span className="text-sm font-medium text-gray-900">{a.employee_name}</span>
+              {a.team && <span className="text-[11px] text-gray-500">{a.team}</span>}
+              <span className={`ml-auto text-[11px] ${a.overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                {a.due_date ? `${a.overdue ? tr('overdue') : tr('due')} ${fmtDate(a.due_date)}` : tr('no due date')}
+              </span>
+              {a.note && <span className="w-full text-[11px] text-gray-600">{a.note}</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
         <label className="block text-xs font-medium text-gray-700">{tr('Employee')}</label>
@@ -545,6 +568,115 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
   );
 }
 
+/* ── Assignments (admin) ────────────────────────────────── */
+
+// Who owes a review, and by when. Assigning DMs the reviewer through ReadyBot
+// and pushes to their phone, so the ask exists somewhere other than a memory.
+function AssignmentsTab({ people, tr, onChanged }) {
+  const { data: rows, refresh } = useApiGet('/pay/assignments?status=all');
+  const { data: users } = useApiGet('/users/technicians');
+  const [form, setForm] = useState({ employee_id: '', reviewer_id: '', due_date: '', note: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const create = async () => {
+    if (!form.employee_id || !form.reviewer_id) { setError(tr('Pick the employee and the reviewer.')); return; }
+    setBusy(true); setError('');
+    try {
+      await apiPost('/pay/assignments', form);
+      setForm({ employee_id: '', reviewer_id: '', due_date: '', note: '' });
+      refresh(); onChanged?.();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const cancel = async (a) => {
+    if (!window.confirm(tr('Cancel this assignment?'))) return;
+    try { await apiFetch(`/pay/assignments/${a.id}`, { method: 'DELETE' }); refresh(); }
+    catch (e) { setError(e.message); }
+  };
+
+  const open = (rows || []).filter(r => r.status === 'open');
+  const done = (rows || []).filter(r => r.status !== 'open');
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
+        <p className="text-sm font-semibold text-gray-900">{tr('Assign an evaluation')}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Employee')} *</label>
+            <select value={form.employee_id} onChange={e => set('employee_id', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">{tr('Select an employee…')}</option>
+              {people.map(p => <option key={p.id} value={p.id}>{p.name}{p.team ? ` — ${p.team}` : ''}{p.is_supervisor ? ` (${tr('Supervisor')})` : ''}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Reviewer')} *</label>
+            <select value={form.reviewer_id} onChange={e => set('reviewer_id', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">{tr('Select a reviewer…')}</option>
+              {(users || []).map(u => <option key={u.id} value={u.id}>{u.name}{u.role ? ` (${u.role})` : ''}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Due date')}</label>
+            <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Note (optional)')}</label>
+            <input value={form.note} onChange={e => set('note', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={tr('Anything they should know')} />
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-500">
+          {tr('The reviewer gets a ReadyDoc message and a phone notification, and the evaluation shows in their own Evaluation tab.')}
+        </p>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button onClick={create} disabled={busy}
+          className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-50">
+          {busy ? tr('Assigning…') : tr('Assign')}
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-3">
+        <p className="text-sm font-semibold text-gray-900 mb-1">{tr('Waiting on a reviewer')} ({open.length})</p>
+        {open.length === 0 ? <p className="text-xs text-gray-400">{tr('Nothing outstanding.')}</p> : (
+          <ul className="space-y-1.5">
+            {open.map(a => (
+              <li key={a.id} className="flex items-center gap-2 flex-wrap text-sm border-l-2 border-amber-300 pl-2">
+                <span className="font-medium text-gray-900">{a.employee_name}</span>
+                <span className="text-xs text-gray-500">← {a.reviewer_name || tr('unknown')}</span>
+                <span className={`text-[11px] ${a.overdue ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
+                  {a.due_date ? `${a.overdue ? tr('overdue') : tr('due')} ${fmtDate(a.due_date)}` : tr('no due date')}
+                </span>
+                <button onClick={() => cancel(a)} className="ml-auto text-[11px] text-gray-400 hover:text-red-600">{tr('Cancel')}</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {done.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-3">
+          <p className="text-sm font-semibold text-gray-900 mb-1">{tr('Completed')} ({done.length})</p>
+          <ul className="space-y-1">
+            {done.slice(0, 25).map(a => (
+              <li key={a.id} className="text-xs text-gray-600">
+                <span className="font-medium text-gray-800">{a.employee_name}</span> — {a.reviewer_name}
+                {a.completed_at ? ` · ${fmtDate(a.completed_at)}` : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Add someone by hand ────────────────────────────────── */
 
 function AddPersonModal({ onClose, onAdded, tr }) {
@@ -715,6 +847,11 @@ const PAGE_STRINGS = [
   'Remove from roster',
   'Remove this person from the Pay Tracking roster? Only rows added by mistake can be removed.',
   'Add someone to the roster', 'Name', 'Name is required', 'Adding…', 'Add to roster', 'Cancel',
+  'Evaluations assigned to you', 'due', 'overdue', 'no due date',
+  'Assignments', 'Assign an evaluation', 'Reviewer', 'Select a reviewer…', 'Due date',
+  'Anything they should know', 'Assign', 'Assigning…', 'Pick the employee and the reviewer.',
+  'The reviewer gets a ReadyDoc message and a phone notification, and the evaluation shows in their own Evaluation tab.',
+  'Waiting on a reviewer', 'Nothing outstanding.', 'Completed', 'unknown', 'Cancel this assignment?',
   'Tap a name to read their reviews, see rate history, correct details, or apply an increase.',
   'Apply a pay increase', 'New rate', 'Effective date', 'Note (optional)', 'Apply increase', 'Applying…',
   'Rate history', 'No changes recorded in ReadyDoc yet.', 'new', 'Days since',
@@ -742,6 +879,8 @@ export default function PayTrackingPanel() {
 
   const { data: roster, refresh: refreshRoster } = useApiGet(isAdmin ? '/pay/employees' : null);
   const { data: evaluatees, refresh: refreshEval } = useApiGet('/pay/evaluatees');
+  // What has been asked of THIS person (admins see their own asks too).
+  const { data: myAssignments, refresh: refreshAssign } = useApiGet('/pay/assignments?mine=true');
 
   const contentStrings = useMemo(() => {
     const out = [...PAGE_STRINGS];
@@ -795,9 +934,11 @@ export default function PayTrackingPanel() {
       ) },
   ];
 
+  const openAssigned = (myAssignments || []).filter(a => a.status === 'open');
+  const evalLabel = openAssigned.length ? `Evaluation (${openAssigned.length})` : 'Evaluation';
   const tabs = isAdmin
-    ? [['roster', 'Roster'], ['evaluate', 'Evaluation'], ['sync', 'Sync with Settings'], ['values', 'Vision & Values']]
-    : [['evaluate', 'Evaluation'], ['values', 'Vision & Values']];
+    ? [['roster', 'Roster'], ['evaluate', evalLabel], ['assign', 'Assignments'], ['sync', 'Sync with Settings'], ['values', 'Vision & Values']]
+    : [['evaluate', evalLabel], ['values', 'Vision & Values']];
 
   return (
     <div className="space-y-4">
@@ -861,7 +1002,12 @@ export default function PayTrackingPanel() {
 
       {tab === 'evaluate' && (
         <Evaluation people={evaluatees || []} canApply={isAdmin} tr={tr} lang={lang}
-          onRecorded={() => { refreshEval(); refreshRoster?.(); }} />
+          assignments={openAssigned}
+          onRecorded={() => { refreshEval(); refreshRoster?.(); refreshAssign(); }} />
+      )}
+
+      {tab === 'assign' && isAdmin && (
+        <AssignmentsTab people={evaluatees || []} tr={tr} onChanged={refreshAssign} />
       )}
 
       {tab === 'sync' && isAdmin && (

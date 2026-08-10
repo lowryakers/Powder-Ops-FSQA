@@ -2980,6 +2980,24 @@ function runMigrations() {
       );
       CREATE INDEX IF NOT EXISTS idx_pay_reviews_emp ON pay_reviews(employee_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_pay_reviews_status ON pay_reviews(status);
+
+      -- Who owes a review, and by when. Without this a supervisor has no way
+      -- to know an evaluation is expected of them — the review cycle ran on
+      -- somebody remembering to ask in person.
+      CREATE TABLE IF NOT EXISTS pay_review_assignments (
+        id          TEXT PRIMARY KEY,
+        employee_id TEXT NOT NULL,
+        reviewer_id TEXT NOT NULL,
+        due_date    TEXT,
+        note        TEXT,
+        status      TEXT NOT NULL DEFAULT 'open',
+        assigned_by TEXT,
+        review_id   TEXT,
+        completed_at TEXT,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_pay_assign_reviewer ON pay_review_assignments(reviewer_id, status);
+      CREATE INDEX IF NOT EXISTS idx_pay_assign_emp ON pay_review_assignments(employee_id, status);
     `);
   } catch (e) {
     console.warn('[db] pay tracking tables unavailable:', e.message);

@@ -2183,3 +2183,16 @@ is written by `openChannel()` and the Threads/Activity buttons and cleared by `b
 'channel', so reading it afterwards always came back 'channel' and the Threads restore could never fire
 (and re-write the view after, since openChannel just overwrote it). `bootRestoredRef` stops the effect
 re-running into the #general fallback underneath a restored Threads view, which sets no `activeId`.
+
+## Pay evaluations are ASSIGNED, not remembered (`pay_review_assignments`)
+The review cycle depended on somebody asking a supervisor in person. An admin now assigns
+reviewer → employee with a due date; the reviewer gets a ReadyBot DM + a phone push, and the ask shows
+as an amber strip at the top of their own Evaluation tab (tap it to load that person into the form).
+- **The supervisor-review rule travels with the assignment** — assigning a supervisor's review to anyone
+  but Adam/an admin is refused at assign time, not just at submit time, so the ask can't be created in a
+  state that would later bounce. Self-review is refused via the roster row's `user_id`.
+- **Submitting the evaluation closes the assignment** (same transaction, `review_id` recorded) — an
+  assignment is never a second thing to remember to tick off.
+- A **completed** assignment refuses deletion: it is the record that the review was asked for and done.
+  Open ones can be cancelled. One open assignment per reviewer+employee (409 on a duplicate).
+- Admin tab **Assignments** creates and tracks them; the Evaluation tab label carries the open count.
