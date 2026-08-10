@@ -1481,6 +1481,10 @@ function App() {
             </div>
           </div>
         </header>
+        {/* The standalone operator layout runs on the floor phones — the exact
+            place the Wi-Fi drops — and was the one layout without the
+            offline / queued-writes bar. */}
+        <OfflineBar />
         <main className="max-w-3xl mx-auto px-4 py-6">
           <OperatorView />
         </main>
@@ -1631,6 +1635,10 @@ function App() {
             </div>
           </div>
         </header>
+        {/* The standalone operator layout runs on the floor phones — the exact
+            place the Wi-Fi drops — and was the one layout without the
+            offline / queued-writes bar. */}
+        <OfflineBar />
         <main className="max-w-3xl mx-auto px-4 py-6">
           <OperatorView />
         </main>

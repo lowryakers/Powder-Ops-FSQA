@@ -247,6 +247,12 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
               {task.assigned_to && (
                 <span className="text-xs text-gray-400">&middot; {task.assigned_to}</span>
               )}
+
+              {/* Where a recurring task comes from — only when the schedule's
+                  name adds something the title doesn't already say. */}
+              {task.pm_schedule_id && task.schedule_title && task.schedule_title !== task.title && (
+                <span className="text-xs text-gray-400">&middot; from: {tc(task.schedule_title)}</span>
+              )}
             </div>
           </div>
 
@@ -723,13 +729,17 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 </select>
               </div>
             )}
-            <div className="flex gap-2">
+            {/* Sticky on phones (above the bottom tab bar) so Mark Complete
+                never scrolls away mid-form — a long checklist otherwise pushes
+                the one button that finishes the job off screen. Static on
+                desktop, where the whole form fits. */}
+            <div className="flex gap-2 sticky bottom-14 md:static z-10 bg-green-50 py-2 -my-2 rounded-lg">
               <button onClick={handleSubmit} disabled={saving || !canSubmit()}
-                className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
+                className="flex-1 py-3 md:py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
                 {saving ? t('saving') : t('mark_complete')}
               </button>
               <button onClick={() => { setCompleting(false); setNotes(''); setReadings({}); setStepChecks([]); }}
-                className="px-4 py-2.5 bg-white text-gray-600 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
+                className="px-4 py-3 md:py-2.5 bg-white text-gray-600 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
                 {t('cancel')}
               </button>
             </div>

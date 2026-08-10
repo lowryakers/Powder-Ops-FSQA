@@ -35,32 +35,36 @@ Every bug caught to date was treated as a *class* and swept for other instances.
   attached (text, WhatsApp, AirDrop, email). Falls back to sharing the link, then
   copying it. Hidden on browsers without the API rather than offered to fail.
 
-### Recommendations — mobile (in priority order)
-1. **Camera-first capture everywhere a record wants evidence.** Reimbursements has
-   `capture="environment"`; comms attachments and equipment files don't. One
-   attribute per input — cheap, and it makes "photograph the label" one tap.
-2. **Operator View task list: bigger touch targets on the complete flow.** The
-   readings forms are dense at 360px; group each reading with its unit on one row
-   and make Complete sticky at the bottom so it never scrolls away mid-task.
-3. **Offline banner visibility**: OfflineBar exists; consider a persistent small
-   dot in the header when queued writes > 0, since the bar scrolls away.
+### Mobile — all built
+1. **Camera-first capture** — the comms composer has a camera button on phones
+   (one tap opens the camera); the paperclip stays general so existing files
+   are still pickable.
+2. **Operator View complete flow** — Mark Complete is sticky at the bottom on
+   phones (above the tab bar), so a long checklist can't scroll it away; the
+   buttons are bigger on touch.
+3. **Offline visibility** — the real gap wasn't the bar scrolling (it's sticky):
+   the two *standalone operator layouts* — the floor phones, exactly where the
+   Wi-Fi drops — never rendered OfflineBar at all. Both do now.
 
-### Recommendations — comms
-1. **Read/unread is in good shape** (dwell-marking, thread fallbacks). The one gap:
-   no way to *forward* a message to another channel — people screenshot instead.
-   A "Forward to channel…" item in the message menu would close that loop.
-2. **Voice notes** — the floor is gloved half the day. Web MediaRecorder → upload as
-   an attachment is a modest build and heavily used in plants.
+### Comms — all built
+1. **Forward to channel** — in the message menu and the mobile long-press sheet.
+   Attribution line, optional note, attachments carried across without a
+   re-upload, access-checked on both ends. Mentions are not re-pinged.
+2. **Voice notes** — mic button in the composer (channel + thread reply): tap,
+   talk, ✓, review as a pending attachment, Send. Plays inline.
 
-### Recommendations — recurring tasks
-1. **The Task Center chips work.** The gap is *why is this task here* — each work
-   order should name its schedule ("from: A/C — Weekly PM") as a tappable link.
-   Partially true today; make it universal.
-2. **Snooze is missing.** Operators complete or ignore; supervisors want "push to
-   tomorrow with a reason". That's an audited defer, not a silent one — same shape
-   as the waiver pattern.
-3. **A weekly PM digest to each team channel** (like the schedule publish) would put
-   recurring work where people already look. The notify machinery exists.
+### Recurring tasks — all built
+1. **Provenance** — Task Center cards show "From schedule: X · weekly" and
+   tapping it shows the schedule's recent completions ("when was this last
+   done"). Operator View names the schedule when it adds information.
+2. **Snooze** — "Later" on Task Center cards (supervisor/QA/admin): Tomorrow /
+   +2 days / Next week plus a required reason. Audited; the original due date
+   and every push are kept in the task's history; a missed task refuses — a
+   defer must never erase a miss.
+3. **Weekly PM digest** — Monday mornings, each team's open and overdue work
+   for the week posts into that team's channel, overdue first, day by day,
+   with a link to the task list. Teams without a channel are skipped rather
+   than dumped into #general.
 
 ### GMP / SQF / auditor posture — where you're strong
 Signature discipline (revoke-not-edit), per-record audit on bulk actions, controlled

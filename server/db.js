@@ -1620,6 +1620,12 @@ function runMigrations() {
   addColumnIfMissing('work_orders', 'rework_required', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('work_orders', 'review_history', "TEXT NOT NULL DEFAULT '[]'");
 
+  // Deferring a task ("push it to tomorrow") is an audited decision, not a
+  // silent due-date edit: snooze_history records who moved it, why, and from
+  // where; original_due_date keeps the first due date the schedule generated.
+  addColumnIfMissing('work_orders', 'snooze_history', "TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing('work_orders', 'original_due_date', 'TEXT');
+
   // (chat_push_subscriptions diagnostic columns are added further down, right
   // after the chat schema block that creates the table — a column migration
   // can't run before its table exists, which on a fresh DB is fatal.)

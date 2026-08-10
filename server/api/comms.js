@@ -810,7 +810,6 @@ router.delete('/channels/:id', requireRole('admin'), (req, res) => {
   // Hard delete: purge attachment objects, then all child rows, then the channel.
   const atts = db.prepare(`SELECT a.storage_key FROM chat_attachments a
     JOIN chat_messages m ON m.id = a.message_id WHERE m.channel_id = ?`).all(channel.id);
-  for (const a of atts) deleteObject(a.storage_key);
   const purgeTx = db.transaction(() => {
     db.prepare(`DELETE FROM chat_attachments WHERE message_id IN (SELECT id FROM chat_messages WHERE channel_id = ?)`).run(channel.id);
     db.prepare(`DELETE FROM chat_message_embeddings WHERE message_id IN (SELECT id FROM chat_messages WHERE channel_id = ?)`).run(channel.id);
@@ -822,6 +821,11 @@ router.delete('/channels/:id', requireRole('admin'), (req, res) => {
     db.prepare('DELETE FROM chat_channels WHERE id = ?').run(channel.id);
   });
   purgeTx();
+  // A forwarded copy in another channel references the same stored object —
+  // only delete objects nothing references any more (rows are already gone,
+  // so a remaining row means a live copy elsewhere).
+  const stillRef = db.prepare('SELECT 1 FROM chat_attachments WHERE storage_key = ? LIMIT 1');
+  for (const a of atts) { if (!stillRef.get(a.storage_key)) deleteObject(a.storage_key); }
   emitChannelsRefresh();
   res.json({ deleted: channel.id });
 });
@@ -1471,15 +1475,78 @@ router.delete('/messages/:id', async (req, res) => {
   const db = getDb();
   if (ctx.m.user_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'You can only delete your own messages' });
   db.prepare("UPDATE chat_messages SET deleted_at = datetime('now'), body = NULL WHERE id = ?").run(ctx.m.id);
-  // Purge any attached objects from storage; drop their rows.
+  // Drop the attachment rows, then purge only objects with no remaining
+  // reference — a forwarded copy of this message shares the same storage_key,
+  // and deleting the original must not break the copy (or vice versa).
   const atts = db.prepare('SELECT storage_key FROM chat_attachments WHERE message_id = ?').all(ctx.m.id);
-  for (const a of atts) deleteObject(a.storage_key);
   db.prepare('DELETE FROM chat_attachments WHERE message_id = ?').run(ctx.m.id);
+  const stillRef = db.prepare('SELECT 1 FROM chat_attachments WHERE storage_key = ? LIMIT 1');
+  for (const a of atts) { if (!stillRef.get(a.storage_key)) deleteObject(a.storage_key); }
   db.prepare('DELETE FROM chat_message_embeddings WHERE message_id = ?').run(ctx.m.id);
   db.prepare('DELETE FROM chat_message_translations WHERE message_id = ?').run(ctx.m.id);
   db.prepare('DELETE FROM chat_mentions WHERE message_id = ?').run(ctx.m.id);
   emitToChannel(ctx.channel.id, 'message:update', await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id)));
   res.json({ ok: true });
+});
+
+// ── Forward a message to another channel ────────────────────────────────────
+// The alternative people actually use is a screenshot, which loses the text,
+// the file and the author. Forwarding posts a copy into the target channel
+// (access-checked on BOTH ends) with an attribution line, and re-references
+// the same stored attachment objects — the delete paths above only purge an
+// object once nothing references it.
+//
+// Mentions in the forwarded text are deliberately NOT re-recorded: an @name in
+// the original was aimed at the original conversation, and re-pinging that
+// person every time the message travels turns forwards into spam.
+router.post('/messages/:id/forward', async (req, res) => {
+  const ctx = ownedMessage(req, res); if (!ctx) return; // access-checks the source
+  const db = getDb();
+  if (ctx.m.deleted_at) return res.status(400).json({ error: 'That message was deleted.' });
+
+  const target = getChannel(db, req.body?.channel_id);
+  if (!target || !canAccess(db, target, req.user.id, req.user.role === 'admin')) {
+    return res.status(404).json({ error: 'Channel not found' });
+  }
+  if (target.id === ctx.channel.id) return res.status(400).json({ error: 'That message is already in this channel.' });
+  if (target.post_policy === 'admins' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can post in that channel' });
+  }
+
+  const authorName = userName(db, ctx.m.user_id);
+  const fromLabel = ctx.channel.kind === 'dm' ? 'a direct message' : `#${ctx.channel.name}`;
+  const note = String(req.body?.note || '').trim();
+  const bodyParts = [];
+  if (note) bodyParts.push(note);
+  bodyParts.push(`↪ *Forwarded from ${fromLabel}* — originally by ${authorName}:`);
+  if (ctx.m.body) bodyParts.push(ctx.m.body);
+  const body = bodyParts.join('\n');
+
+  const id = uuid();
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(id, target.id, req.user.id, body, now);
+
+  // Re-reference the source attachments: new rows in the target channel
+  // pointing at the SAME storage objects — no copy in R2, no second upload.
+  const atts = db.prepare('SELECT * FROM chat_attachments WHERE message_id = ?').all(ctx.m.id);
+  const insertAtt = db.prepare('INSERT INTO chat_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  for (const a of atts) insertAtt.run(uuid(), id, target.id, req.user.id, a.filename, a.content_type, a.size, a.storage_key);
+
+  db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(target.id);
+  db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ?').run(now, target.id, req.user.id);
+
+  const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
+  emitToChannel(target.id, 'message:new', message);
+  emitChannelsChanged(db, target);
+  if (target.kind === 'dm') {
+    const recips = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(target.id, req.user.id);
+    for (const r of recips) pushToUser(r.user_id, { title: `Message from ${shortNameOf(req.user)}`, body: body.slice(0, 140), tag: `dm-${target.id}`, renotify: true, url: `/?c=${target.id}&m=${id}` }).catch(() => {});
+  } else {
+    notifyChannelMessage(db, target, body, req.user, [], id);
+  }
+  embedMessage(db, id, target.id, body); // fire-and-forget
+  res.status(201).json(message);
 });
 
 // ── Message → compliance record ──────────────────────────────────────────────

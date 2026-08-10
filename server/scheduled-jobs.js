@@ -127,7 +127,89 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] critical alert failed:', e.message); }
   }
 
+  // Monday PM digest: each team's recurring work for the week, posted into the
+  // team's own channel — where people already look — like the schedule publish.
+  if (day === 1 && getFlag(db, 'last_pm_digest_week') !== week) {
+    try {
+      await postPmWeekDigest(db, deps, now);
+      setFlag(db, 'last_pm_digest_week', week);
+    } catch (e) { console.warn('[jobs] PM digest failed:', e.message); }
+  }
+
   await nudgeStaleRequests(db, deps, now);
+}
+
+/* ── Weekly PM digest per team ────────────────────────────────────────────── */
+
+// The Task Center answers "what's open" for whoever opens it; this puts the
+// week's recurring work where the team already reads — their channel. A team
+// with no channel is skipped silently rather than dumped into #general, where
+// another team's maintenance list is noise. Overdue leads, then day by day.
+const ymdLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+export async function postPmWeekDigest(db, deps, now) {
+  const { getChannelByName, postMessageAs, getBotUser } = deps;
+  if (!getChannelByName || !postMessageAs || !getBotUser) return;
+
+  const todayStr = ymdLocal(now);
+  const weekEnd = new Date(now);
+  weekEnd.setDate(weekEnd.getDate() + (7 - now.getDay())); // through Sunday
+  const weekEndStr = ymdLocal(weekEnd);
+
+  const rows = db.prepare(`
+    SELECT wo.title, wo.due_date, wo.task_group, wo.assigned_to, e.name AS equipment_name
+    FROM work_orders wo
+    LEFT JOIN equipment e ON wo.equipment_id = e.id
+    WHERE wo.status IN ('open', 'in_progress') AND wo.due_date <= ?
+    ORDER BY wo.due_date ASC, wo.title
+  `).all(weekEndStr);
+  if (!rows.length) return;
+
+  const byTeam = new Map();
+  for (const r of rows) {
+    const team = r.task_group || 'warehouse';
+    if (!byTeam.has(team)) byTeam.set(team, []);
+    byTeam.get(team).push(r);
+  }
+
+  const base = readyDocOrigin();
+  const bot = getBotUser(db);
+  const fmtDay = (dateStr) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    return `${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dt.getDay()]} ${m}/${d}`;
+  };
+  const itemLine = (t) => `  • ${t.title}${t.equipment_name && t.equipment_name !== t.title ? ` — ${t.equipment_name}` : ''}${t.assigned_to ? ` (${t.assigned_to})` : ''}`;
+
+  for (const [team, tasks] of byTeam) {
+    const channel = getChannelByName(db, team);
+    if (!channel) continue;
+
+    const overdue = tasks.filter(t => t.due_date < todayStr);
+    const thisWeek = tasks.filter(t => t.due_date >= todayStr);
+    const lines = [`🔧 *This week's tasks — ${team.replace(/_/g, ' ')}* (${tasks.length} open)`];
+    if (overdue.length) {
+      lines.push(`*Overdue (${overdue.length}):*`);
+      lines.push(...overdue.slice(0, 5).map(itemLine));
+      if (overdue.length > 5) lines.push(`  …and ${overdue.length - 5} more`);
+    }
+    let currentDay = '';
+    let dayCount = 0;
+    for (const t of thisWeek) {
+      if (t.due_date !== currentDay) {
+        currentDay = t.due_date;
+        dayCount = 0;
+        lines.push(`*${fmtDay(t.due_date)}:*`);
+      }
+      dayCount++;
+      if (dayCount <= 5) lines.push(itemLine(t));
+      else if (dayCount === 6) lines.push('  …and more — see your task list');
+    }
+    lines.push(`Open your list: ${base}/?tab=operator`);
+    try {
+      await postMessageAs(db, channel, bot, lines.join('\n'));
+    } catch (e) { console.warn(`[jobs] PM digest to #${team} failed:`, e.message); }
+  }
 }
 
 /* ── Untriaged ReadyDoc requests ──────────────────────────────────────────── */

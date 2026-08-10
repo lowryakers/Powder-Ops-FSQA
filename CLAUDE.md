@@ -2074,3 +2074,39 @@ failure** — return silently, no error toast. `canNativeShare` gates the button
 the API aren't offered one that fails. Wired: comms image overlay + file cards, equipment manuals. Presigned
 R2 URLs can't be fetched cross-origin (no CORS on the bucket) — always go through the app-origin download
 route, same reason the Download button does.
+
+## Task snooze, schedule provenance, and the weekly PM digest
+- **`POST /pm/work-orders/:id/snooze`** `{days 1–14, reason ≥3 chars}` — supervisor/QA/admin. An audited
+  defer, same shape as the setup-step waiver: due_date moves forward (weekends skipped via `nextWeekday`),
+  `original_due_date` is set once, every push appends `{at, by, reason, from, to}` to `snooze_history`,
+  audited as `snoozed`. **A missed task refuses** — snoozing must never erase a miss. UI: "Later" on Task
+  Center cards (`SnoozeForm` in PMPanel); the card shows the last defer's name and reason.
+- **Provenance:** Task Center cards show "From schedule: X · freq" — tapping it mounts `ScheduleInfo`,
+  which fetches `/pm/schedules/:id` and lists the recent completions ("when was this last done"). The
+  Operator View appends the schedule title only when it differs from the task title (usually it doesn't).
+- **Weekly PM digest** (`postPmWeekDigest`, scheduled-jobs.js; Mondays, flag `last_pm_digest_week`): each
+  team's open work through Sunday posts into the channel **named like its `task_group`** — the same
+  convention `notifyTaskIssue` uses. A team with no channel is skipped silently; another team's PM list in
+  #general is noise. Overdue leads, then day by day, capped at 5 lines per bucket.
+
+## Comms: forward, voice notes, camera
+- **`POST /comms/messages/:id/forward`** `{channel_id, note?}` — access-checked on BOTH ends; refuses the
+  same channel, a deleted message, and admin-post channels for non-admins. Posts an attribution line
+  ("↪ Forwarded from #x — originally by NAME") + the original body; the optional note leads. Attachments
+  are **re-referenced, not re-uploaded**: new `chat_attachments` rows pointing at the same `storage_key`.
+  **Both delete paths therefore purge a storage object only when no row references it any more** — rows
+  are deleted first, then each key is checked. Mentions in a forwarded body are deliberately NOT
+  re-recorded — an @name was aimed at the original conversation, and re-pinging on every hop is spam.
+- **Voice notes:** `VoiceNoteButton` (CommsView; channel composer + thread reply, storage-gated like the
+  paperclip). MediaRecorder → webm (mp4 fallback) → the composer's normal upload path → pending
+  attachment → Send, so it's reviewable before it posts. Unmount stops the recorder — a hot mic surviving
+  navigation is a privacy bug. Audio attachments render an inline `<audio>`; **the isAudio branch sits
+  BEFORE the video branch** or audio/webm draws as a black `<video>` box.
+- **Camera:** the compact layout gets a separate camera button (`capture="environment"`) beside the
+  paperclip. Never put `capture` on the paperclip's own input — on iOS it forces the camera and blocks
+  picking an existing file.
+
+## Two operator layouts had no OfflineBar
+The standalone `/operator` route and the operator-only account layout — the floor phones, exactly where
+the Wi-Fi drops — never rendered `OfflineBar`, so "no connection" and "N entries waiting to send" were
+invisible to the people the offline machinery was built for. Both render it under the header now.

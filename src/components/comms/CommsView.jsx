@@ -4,7 +4,7 @@ import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
 import { notifyDataChanged } from '../../lib/dataChanged';
-import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp } from 'lucide-react';
+import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { shareFile as shareAttachment, canNativeShare } from '../../lib/shareFile.js';
 import NotificationStatus from './NotificationStatus.jsx';
@@ -350,8 +350,26 @@ async function downloadAttachment(a) {
 }
 
 
+const isAudio = (a) => (a.content_type || '').startsWith('audio/');
+
 function Attachment({ a, onOpen }) {
   const [broken, setBroken] = useState(false);
+  // Audio (voice notes) checked BEFORE video: audio/webm would otherwise
+  // render as a black <video> box.
+  if (isAudio(a) && a.url && !broken) {
+    return (
+      <div className="mt-1 flex items-center gap-1.5">
+        <audio src={a.url} controls preload="metadata" onError={() => setBroken(true)} className="h-10 max-w-[250px]" />
+        <span className="text-[10px] text-gray-400 shrink-0">{fmtSize(a.size)}</span>
+        {canNativeShare && (
+          <button type="button" onClick={() => shareAttachment(a)} data-tip="Share"
+            className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50">
+            <Share2 size={13} />
+          </button>
+        )}
+      </div>
+    );
+  }
   if (videoPlayable(a) && a.url && !broken) {
     return (
       <div className="mt-1 max-w-sm">
@@ -936,6 +954,86 @@ function clearChannelNotifications(channelId) {
   }).catch(() => { /* no SW / not supported */ });
 }
 
+// Voice note — tap the mic, talk, tap ✓. The floor is gloved half the day, so
+// talking beats typing. Records via MediaRecorder and hands the finished file
+// to the composer's normal upload path, where it becomes a pending attachment
+// like any other file (review it, then Send). Hidden where the API doesn't
+// exist rather than offered to fail; storage-gated by the caller like the
+// paperclip.
+function VoiceNoteButton({ disabled, onReady }) {
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const recRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+  const discardRef = useRef(false);
+
+  const supported = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined';
+
+  // Recording must not outlive the composer it belongs to (navigating away
+  // with a hot mic is a privacy bug, not a quirk).
+  useEffect(() => () => {
+    discardRef.current = true;
+    try { recRef.current?.stop(); } catch { /* not recording */ }
+    clearInterval(timerRef.current);
+  }, []);
+
+  if (!supported) return null;
+
+  const stop = (discard) => {
+    discardRef.current = discard;
+    try { recRef.current?.stop(); } catch { /* already stopped */ }
+  };
+
+  const start = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported?.('audio/webm') ? 'audio/webm'
+        : MediaRecorder.isTypeSupported?.('audio/mp4') ? 'audio/mp4' : '';
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
+      discardRef.current = false;
+      rec.ondataavailable = (e) => { if (e.data?.size) chunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        clearInterval(timerRef.current);
+        setRecording(false); setElapsed(0);
+        if (!discardRef.current && chunksRef.current.length) {
+          const type = rec.mimeType || mime || 'audio/webm';
+          const ext = type.includes('mp4') ? 'm4a' : 'webm';
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          onReady(new File(chunksRef.current, `voice-note-${stamp}.${ext}`, { type }));
+        }
+      };
+      recRef.current = rec;
+      rec.start(250);
+      setRecording(true); setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000);
+    } catch {
+      alert('Microphone access was blocked — allow it in your browser settings to record a voice note.');
+    }
+  };
+
+  if (recording) {
+    const mm = String(Math.floor(elapsed / 60));
+    const ss = String(elapsed % 60).padStart(2, '0');
+    return (
+      <div className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-red-50 border border-red-200 shrink-0">
+        <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+        <span className="text-xs font-semibold text-red-700 tabular-nums">{mm}:{ss}</span>
+        <button onClick={() => stop(true)} className="p-1 text-gray-400 hover:text-gray-600" title="Cancel recording"><X size={15} /></button>
+        <button onClick={() => stop(false)} className="p-1 text-red-600 hover:text-red-700" title="Finish — attach to message"><Check size={16} /></button>
+      </div>
+    );
+  }
+  return (
+    <button onClick={start} disabled={disabled}
+      className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Record a voice note">
+      <Mic size={18} />
+    </button>
+  );
+}
+
 function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef, storageOn, onThreadRead }) {
   const [thread, setThread] = useState(null);
   const [body, setBody] = useState(() => readDrafts()[`thread:${parent.id}`]?.text || '');
@@ -1060,7 +1158,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
             <div className="flex flex-wrap gap-2 mb-2">
               {pending.map(p => (
                 <div key={p.id} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg border border-gray-200 bg-gray-50 text-xs">
-                  {p.is_video ? <Film size={12} className="text-powder-600" /> : p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
+                  {isAudio(p) ? <Mic size={12} className="text-powder-600" /> : p.is_video ? <Film size={12} className="text-powder-600" /> : p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
                   <span className="max-w-[140px] truncate text-gray-700">{p.filename}</span>
                   <button onClick={() => removePending(p.id)} className="text-gray-400 hover:text-red-500"><X size={13} /></button>
                 </div>
@@ -1076,6 +1174,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onPickFiles} />
                 <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
                   className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Attach files"><Paperclip size={16} /></button>
+                <VoiceNoteButton disabled={uploading} onReady={(f) => uploadFiles([f])} />
               </>
             )}
             <textarea ref={replyRef} value={body}
@@ -1406,6 +1505,7 @@ function MessageActionSheet({ preview, mine, canReply, canTranslate, canMarkUnre
         <div className="border-t border-gray-100 pt-1">
           {canReply && <SheetRow icon={MessageSquare} label="Reply in thread" act="reply" onAction={onAction} />}
           <SheetRow icon={Copy} label="Copy text" act="copy" onAction={onAction} />
+          <SheetRow icon={Forward} label="Forward to channel…" act="forward" onAction={onAction} />
           <SheetRow icon={Clock} label="Remind me about this…" act="remind" onAction={onAction} />
           {canTranslate && <SheetRow icon={Languages} label="Translate" act="translate" onAction={onAction} />}
           {canMarkUnread && <SheetRow icon={null} label="Mark unread from here" act="unread" onAction={onAction} />}
@@ -1479,6 +1579,69 @@ function ConvertRecordModal({ m, onClose }) {
   );
 }
 
+// Forward a message into another channel — the alternative people actually
+// use is a screenshot, which loses the text, the file and the author. The
+// picker is the caller's own channel list; the server re-checks access on
+// both ends and carries the attachments across without a re-upload.
+function ForwardModal({ m, onClose }) {
+  const { data: channels } = useApiGet('/comms/channels');
+  const [target, setTarget] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(null);
+  const list = (channels || []).filter(c => c.id !== m.channel_id);
+  const label = (c) => (c.kind === 'dm' ? c.name : `#${c.name}`);
+
+  const forward = async () => {
+    if (!target) { setError('Pick a channel first.'); return; }
+    setBusy(true); setError('');
+    try {
+      await apiPost(`/comms/messages/${m.id}/forward`, { channel_id: target, note: note.trim() });
+      setDone(list.find(c => c.id === target) || null);
+    } catch (e) { setError(e.message); setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3">
+        {done ? (
+          <div className="text-center py-2 space-y-2">
+            <Forward size={36} className="mx-auto text-green-600" />
+            <p className="text-sm font-semibold text-gray-900">Forwarded to {label(done)}</p>
+            <button onClick={onClose} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">Done</button>
+          </div>
+        ) : (
+          <>
+            <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2"><Forward size={16} className="text-powder-600" /> Forward message</h3>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+              <p className="text-[11px] text-gray-400 mb-0.5">{m.user_name}</p>
+              <p className="text-xs text-gray-700 line-clamp-3 whitespace-pre-wrap">{m.body || `(${m.attachments?.length || 0} attachment${m.attachments?.length === 1 ? '' : 's'})`}</p>
+              {m.body && m.attachments?.length > 0 && <p className="text-[11px] text-gray-400 mt-0.5">+ {m.attachments.length} attachment{m.attachments.length === 1 ? '' : 's'}</p>}
+            </div>
+            <select value={target} onChange={e => setTarget(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">Forward to…</option>
+              {list.map(c => <option key={c.id} value={c.id}>{label(c)}</option>)}
+            </select>
+            <input value={note} onChange={e => setNote(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              placeholder="Add a note (optional)" />
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="flex gap-2">
+              <button onClick={forward} disabled={busy || !target}
+                className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+                {busy ? 'Forwarding…' : 'Forward'}
+              </button>
+              <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, canTranslate, viewerLang, onTranslate, autoText, highlighted, mentionUsers }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -1492,6 +1655,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
   const [lightbox, setLightbox] = useState(null); // index into m.attachments
   const [convert, setConvert] = useState(false); // message → compliance record
   const [remind, setRemind] = useState(false);   // Slack-style "remind me"
+  const [fwd, setFwd] = useState(false);         // forward to another channel
   const mine = m.user_id === me.id;
 
   const doTranslate = useCallback(async () => {
@@ -1557,6 +1721,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
     else if (act === 'unread' && onMarkUnread) onMarkUnread(m);
     else if (act === 'record') setConvert(true);
     else if (act === 'remind') setRemind(true);
+    else if (act === 'forward') setFwd(true);
     else if (act === 'edit') { setDraft(m.body || ''); setEditing(true); }
     else if (act === 'delete') onDelete(m);
   };
@@ -1666,6 +1831,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
                 <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
                 <div className={`absolute right-0 ${menuUp ? 'bottom-full mb-1' : 'top-full mt-1'} w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1`}>
                   <MenuRow icon={Copy} label="Copy text" act="copy" onAction={handleSheetAction} />
+                  <MenuRow icon={Forward} label="Forward to channel…" act="forward" onAction={handleSheetAction} />
                   <MenuRow icon={Clock} label="Remind me about this…" act="remind" onAction={handleSheetAction} />
                   {canTranslate && m.body && !translated && <MenuRow icon={Languages} label="Translate" act="translate" onAction={handleSheetAction} />}
                   {onMarkUnread && <MenuRow icon={null} label="Mark unread from here" act="unread" onAction={handleSheetAction} />}
@@ -1681,6 +1847,7 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
       )}
       {convert && <ConvertRecordModal m={m} onClose={() => setConvert(false)} />}
       {remind && <RemindPicker m={m} onClose={() => setRemind(false)} />}
+      {fwd && <ForwardModal m={m} onClose={() => setFwd(false)} />}
       {sheet && !m.deleted && (
         <MessageActionSheet
           preview={`${m.user_name}: ${(displayBody || '').slice(0, 80)}`}
@@ -1773,6 +1940,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const socketRef = useRef(null);
   const lastTypeSent = useRef(0);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null); // camera-first capture on phones
   const justOpenedRef = useRef(true); // force scroll-to-bottom on channel open
   const [showJump, setShowJump] = useState(false); // "Jump to latest" affordance
   const linkedOpenedRef = useRef(null); // guards the module→channel deep-link
@@ -2975,7 +3143,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   <div className="flex flex-wrap gap-2 mb-2">
                     {pending.map(p => (
                       <div key={p.id} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg border border-gray-200 bg-gray-50 text-xs">
-                        {p.is_video ? <Film size={12} className="text-powder-600" /> : p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
+                        {isAudio(p) ? <Mic size={12} className="text-powder-600" /> : p.is_video ? <Film size={12} className="text-powder-600" /> : p.is_image ? <Paperclip size={12} className="text-powder-600" /> : <FileText size={12} className="text-powder-600" />}
                         <span className="max-w-[140px] truncate text-gray-700">{p.filename}</span>
                         <button onClick={() => removePending(p.id)} className="text-gray-400 hover:text-red-500"><X size={13} /></button>
                       </div>
@@ -3004,6 +3172,20 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                         className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Attach files">
                         <Paperclip size={18} />
                       </button>
+                      {/* Camera-first capture on phones: one tap opens the camera
+                          (capture="environment"), so "photograph the label" is a
+                          single gesture. The paperclip stays general on purpose —
+                          forcing capture on it would block picking existing files. */}
+                      {isCompactLayout && (
+                        <>
+                          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickFiles} />
+                          <button onClick={() => cameraInputRef.current?.click()} disabled={uploading}
+                            className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Take a photo">
+                            <Camera size={18} />
+                          </button>
+                        </>
+                      )}
+                      <VoiceNoteButton disabled={uploading} onReady={(f) => uploadFiles([f])} />
                     </>
                   )}
                   <div className="relative">

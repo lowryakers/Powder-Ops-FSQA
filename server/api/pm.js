@@ -653,6 +653,52 @@ router.post('/work-orders/:id/review/clear', (req, res) => {
   res.json(db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id));
 });
 
+// --- Snooze: push a task to a later day, with a name and a reason ---
+//
+// Operators complete or ignore; supervisors legitimately need "not today —
+// tomorrow, because X". This is an audited defer, the same shape as the setup-
+// step waiver: the decision carries a reason and a name, the original due date
+// is preserved, and the history shows every push. It is NOT a way to erase a
+// miss — a task already marked missed is a record and stays one.
+router.post('/work-orders/:id/snooze', (req, res) => {
+  const db = getDb();
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+
+  const canSnooze = req.user?.role === 'admin' || req.user?.role === 'supervisor' || req.user?.department === 'qa';
+  if (!canSnooze) return res.status(403).json({ error: 'Deferring a task is a supervisor/QA/admin action.' });
+  if (!['open', 'in_progress', 'overdue'].includes(wo.status)) {
+    return res.status(400).json({ error: 'Only an open task can be deferred. A missed task is already a record — it stays missed.' });
+  }
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why — a defer without a reason is indistinguishable from a task quietly ignored.' });
+  const days = Math.min(14, Math.max(1, parseInt(req.body?.days, 10) || 1));
+
+  // Count from the later of today and the current due date, in LOCAL parts —
+  // new Date('YYYY-MM-DD') is UTC midnight and shifts a day west of Greenwich.
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const baseStr = wo.due_date > todayStr ? wo.due_date : todayStr;
+  const [y, m, d] = baseStr.split('-').map(Number);
+  const target = nextWeekday(new Date(y, m - 1, d + days));
+  const newDue = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
+
+  const history = safeParse(wo.snooze_history, []);
+  history.push({ at: new Date().toISOString(), by: req.user.name, reason, from: wo.due_date, to: newDue });
+
+  db.prepare(`
+    UPDATE work_orders SET due_date=?, snooze_history=?,
+      original_due_date=COALESCE(original_due_date, ?),
+      status = CASE WHEN status='overdue' THEN 'open' ELSE status END,
+      updated_at=datetime('now') WHERE id=?
+  `).run(newDue, JSON.stringify(history), wo.due_date, req.params.id);
+
+  const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  logAudit(req.user, 'snoozed', 'work_order', req.params.id,
+    { reason, days, from: wo.due_date, to: newDue }, wo, updated, wo.title);
+  res.json(updated);
+});
+
 // --- Hygiene Clearance ---
 
 router.put('/work-orders/:id/clearance', requireDepartment('qa'), (req, res) => {

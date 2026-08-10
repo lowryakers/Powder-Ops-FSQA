@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X, ListChecks, QrCode } from 'lucide-react';
+import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X, ListChecks, QrCode, CalendarClock, Repeat } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
 import FileUpload from '../FileUpload';
 import { deptLabel } from '../../constants/departments';
@@ -129,6 +129,92 @@ function IssueForm({ wo, onFlag, onCancel }) {
         <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs hover:bg-gray-200">Cancel</button>
       </div>
     </form>
+  );
+}
+
+// An audited defer — "not today, tomorrow, because X". The reason is required
+// (the server refuses without one) and every push is kept in snooze_history
+// with the original due date, so a deferred task can never read as one that
+// was simply due later.
+function SnoozeForm({ wo, onSnooze, onCancel }) {
+  const [days, setDays] = useState(1);
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (reason.trim().length < 3) { setError('A reason is required.'); return; }
+    setSaving(true); setError('');
+    try { await onSnooze(wo.id, { days, reason: reason.trim() }); }
+    catch (err) { setError(err.message || 'Defer failed.'); setSaving(false); }
+  };
+
+  return (
+    <form onSubmit={submit} className="bg-sky-50 rounded-lg border border-sky-200 p-3 mt-2 space-y-2">
+      <h5 className="text-xs font-semibold text-sky-800 uppercase tracking-wide flex items-center gap-1">
+        <CalendarClock size={12} /> Push to later
+      </h5>
+      <div className="flex gap-2">
+        {[{ d: 1, label: 'Tomorrow' }, { d: 2, label: '+2 days' }, { d: 7, label: 'Next week' }].map(o => (
+          <button key={o.d} type="button" onClick={() => setDays(o.d)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium border ${days === o.d ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-sky-50'}`}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Why? *</label>
+        <input required value={reason} onChange={e => setReason(e.target.value)}
+          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
+          placeholder="e.g. Line running — no access until tomorrow" />
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex gap-2">
+        <button type="submit" disabled={saving} className="px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-medium hover:bg-sky-700 disabled:opacity-50">
+          {saving ? 'Saving…' : 'Defer task'}
+        </button>
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs hover:bg-gray-200">Cancel</button>
+      </div>
+      <p className="text-[10px] text-sky-700">Recorded with your name and reason; the original due date stays on the task's history.</p>
+    </form>
+  );
+}
+
+// "Why is this task here" — the recurring schedule that generated it, and when
+// it last ran. Fetched on demand so the task list itself stays light.
+function ScheduleInfo({ scheduleId }) {
+  const [info, setInfo] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/pm/schedules/${scheduleId}`)
+      .then(s => { if (!cancelled) setInfo(s); })
+      .catch(e => { if (!cancelled) setError(e.message || 'Could not load the schedule.'); });
+    return () => { cancelled = true; };
+  }, [scheduleId]);
+  if (error) return <p className="text-xs text-red-600 mt-2">{error}</p>;
+  if (!info) return <p className="text-xs text-gray-400 mt-2">Loading schedule…</p>;
+  const recent = (info.recent_work_orders || []).filter(w => w.completed_at).slice(0, 3);
+  return (
+    <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 space-y-1.5">
+      <p>
+        <span className="font-semibold">{info.title}</span>
+        {' — '}{info.frequency_type}{info.frequency_value > 1 ? ` ×${info.frequency_value}` : ''}
+        {info.equipment_name ? ` on ${info.equipment_name}` : ''}
+        {info.is_active ? '' : ' · schedule paused'}
+      </p>
+      {recent.length > 0 ? (
+        <div className="space-y-0.5">
+          <p className="font-medium text-gray-500">Recent completions</p>
+          {recent.map(w => (
+            <p key={w.id}>• {formatDateTime(w.completed_at)} by {w.completed_by || '—'}</p>
+          ))}
+        </div>
+      ) : (
+        <p className="text-gray-500">No completions yet — this occurrence is the first.</p>
+      )}
+    </div>
   );
 }
 
@@ -470,7 +556,7 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
           <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> Issue Reported</p>
           <p className="text-sm text-red-900">{wo.issue_notes}</p>
           <p className="text-xs text-red-600 mt-1">
-            Flagged by {wo.issue_flagged_by} · {wo.issue_flagged_at ? new Date(wo.issue_flagged_at).toLocaleString() : ''}
+            Flagged by {wo.issue_flagged_by} · {formatDateTime(wo.issue_flagged_at, '')}
           </p>
           {issueAttachments.length > 0 && (
             <div className="mt-2 flex gap-2 flex-wrap">
@@ -531,11 +617,13 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
   );
 }
 
-function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete, chemicals, flagging, onStartFlag, onFlag, onCancelFlag }) {
+function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete, chemicals, flagging, onStartFlag, onFlag, onCancelFlag, canSnooze, snoozing, onStartSnooze, onSnooze, onCancelSnooze }) {
   const steps = wo.procedure_steps || [];
   const attachments = (() => { try { return JSON.parse(wo.attachments || '[]'); } catch { return []; } })();
   const issueAttachments = (() => { try { return JSON.parse(wo.issue_attachments || '[]'); } catch { return []; } })();
+  const snoozes = (() => { try { return JSON.parse(wo.snooze_history || '[]'); } catch { return []; } })();
   const [expanded, setExpanded] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
 
   return (
     <div className={`bg-white rounded-xl border p-4 ${wo.issue_flagged ? 'border-red-300 ring-1 ring-red-100' : wo.rework_required ? 'border-amber-300 ring-1 ring-amber-100' : 'border-gray-200'}`}>
@@ -556,6 +644,18 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
           <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
           <p className="text-xs text-gray-400 mt-0.5">Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}</p>
+          {snoozes.length > 0 && (
+            <p className="text-xs text-sky-700 mt-0.5">
+              Deferred{snoozes.length > 1 ? ` ×${snoozes.length}` : ''} by {snoozes[snoozes.length - 1].by}: {snoozes[snoozes.length - 1].reason}
+            </p>
+          )}
+          {wo.pm_schedule_id && (
+            <button onClick={() => setShowSchedule(s => !s)}
+              className="text-xs text-powder-600 hover:text-powder-700 mt-0.5 flex items-center gap-1">
+              <Repeat size={11} /> From schedule: {wo.pm_title || wo.title}{wo.frequency_type ? ` · ${wo.frequency_type}` : ''}
+            </button>
+          )}
+          {showSchedule && wo.pm_schedule_id && <ScheduleInfo scheduleId={wo.pm_schedule_id} />}
         </div>
         <div className="flex gap-1 ml-2 shrink-0">
           {wo.status === 'open' && (
@@ -566,6 +666,12 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             className="px-2 py-1 bg-red-50 text-red-700 rounded text-xs hover:bg-red-100 flex items-center gap-1">
             <Flag size={12} /> Issue
           </button>
+          {canSnooze && ['open', 'in_progress', 'overdue'].includes(wo.status) && (
+            <button onClick={() => onStartSnooze(wo.id)}
+              className="px-2 py-1 bg-sky-50 text-sky-700 rounded text-xs hover:bg-sky-100 flex items-center gap-1">
+              <CalendarClock size={12} /> Later
+            </button>
+          )}
           <button onClick={() => onStartComplete(wo.id, 'complete')}
             className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs hover:bg-green-100 flex items-center gap-1">
             <CheckCircle size={12} /> Done
@@ -578,7 +684,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
           <p className="text-xs font-semibold text-amber-900 flex items-center gap-1 mb-1"><Flag size={11} /> Sent back for rework</p>
           <p className="text-sm text-amber-900">{wo.review_note}</p>
           <p className="text-xs text-amber-700 mt-1">
-            {wo.review_by} · {wo.review_at ? new Date(wo.review_at).toLocaleString() : ''}
+            {wo.review_by} · {formatDateTime(wo.review_at, '')}
           </p>
         </div>
       )}
@@ -588,7 +694,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
           <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> Issue Reported</p>
           <p className="text-sm text-red-900">{wo.issue_notes}</p>
           <p className="text-xs text-red-600 mt-1">
-            Flagged by {wo.issue_flagged_by} · {wo.issue_flagged_at ? new Date(wo.issue_flagged_at).toLocaleString() : ''}
+            Flagged by {wo.issue_flagged_by} · {formatDateTime(wo.issue_flagged_at, '')}
           </p>
           {issueAttachments.length > 0 && (
             <div className="mt-2 flex gap-2 flex-wrap">
@@ -642,6 +748,10 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
 
       {flagging === wo.id && (
         <IssueForm wo={wo} onFlag={onFlag} onCancel={onCancelFlag} />
+      )}
+
+      {snoozing === wo.id && (
+        <SnoozeForm wo={wo} onSnooze={onSnooze} onCancel={onCancelSnooze} />
       )}
 
       {completing === wo.id && (
@@ -805,6 +915,10 @@ export default function PMPanel() {
   // Reviewing someone else's finished work is a QA/supervisor act, not an
   // operator one — the same people who sign off elsewhere in the app.
   const canReviewTasks = user?.role === 'admin' || user?.role === 'supervisor' || user?.department === 'qa';
+  // Deferring shares the review ladder: the people who may kick work back may
+  // also push it to tomorrow — with a reason, audited (server enforces both).
+  const canSnooze = canReviewTasks;
+  const [snoozingId, setSnoozingId] = useState(null);
   const [statusFilter, setStatusFilter] = useState(null);
   const [showQr, setShowQr] = useState(false);
 
@@ -833,6 +947,12 @@ export default function PMPanel() {
   const handleFlagIssue = async (woId, form) => {
     await apiPost(`/pm/work-orders/${woId}/flag-issue`, form);
     setFlagging(null);
+    refreshTasks();
+  };
+
+  const handleSnooze = async (woId, form) => {
+    await apiPost(`/pm/work-orders/${woId}/snooze`, form);
+    setSnoozingId(null);
     refreshTasks();
   };
 
@@ -1086,7 +1206,10 @@ export default function PMPanel() {
                     onStartComplete={handleStartWO} onComplete={handleComplete}
                     onCancelComplete={() => setCompleting(null)} chemicals={chemicals}
                     flagging={flagging} onStartFlag={(id) => { setFlagging(flagging === id ? null : id); setCompleting(null); }}
-                    onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)} />
+                    onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)}
+                    canSnooze={canSnooze} snoozing={snoozingId}
+                    onStartSnooze={(id) => { setSnoozingId(snoozingId === id ? null : id); setCompleting(null); setFlagging(null); }}
+                    onSnooze={handleSnooze} onCancelSnooze={() => setSnoozingId(null)} />
                 </div>
               ))}
             </div>
@@ -1117,7 +1240,10 @@ export default function PMPanel() {
                       onStartComplete={handleStartWO} onComplete={handleComplete}
                       onCancelComplete={() => setCompleting(null)} chemicals={chemicals}
                       flagging={flagging} onStartFlag={(id) => { setFlagging(flagging === id ? null : id); setCompleting(null); }}
-                      onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)} />
+                      onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)}
+                      canSnooze={canSnooze} snoozing={snoozingId}
+                      onStartSnooze={(id) => { setSnoozingId(snoozingId === id ? null : id); setCompleting(null); setFlagging(null); }}
+                      onSnooze={handleSnooze} onCancelSnooze={() => setSnoozingId(null)} />
                   ))}
                 </div>
               </div>
@@ -1147,7 +1273,10 @@ export default function PMPanel() {
                     onStartComplete={handleStartWO} onComplete={handleComplete}
                     onCancelComplete={() => setCompleting(null)} chemicals={chemicals}
                     flagging={flagging} onStartFlag={(id) => { setFlagging(flagging === id ? null : id); setCompleting(null); }}
-                    onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)} />
+                    onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)}
+                    canSnooze={canSnooze} snoozing={snoozingId}
+                    onStartSnooze={(id) => { setSnoozingId(snoozingId === id ? null : id); setCompleting(null); setFlagging(null); }}
+                    onSnooze={handleSnooze} onCancelSnooze={() => setSnoozingId(null)} />
                 ))}
               </div>
             </div>
