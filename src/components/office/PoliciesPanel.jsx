@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import RichText from '../common/RichText.jsx';
 import FormatBar from '../common/FormatBar.jsx';
 import {
-  BookText, Plus, Search, Eye, EyeOff, X, Sparkles, FileText,
+  BookText, Plus, Search, Upload, Eye, EyeOff, X, Sparkles, FileText,
   Trash2, Archive, CheckCircle, AlertTriangle, Pencil,
 } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
@@ -187,6 +187,127 @@ function PolicyEditor({ policy, onClose, onSaved, aiOn }) {
   );
 }
 
+// Import the policies you already have as files. Titles come from filenames,
+// which is a guess — so the first step writes nothing and you confirm the
+// titles. Everything lands as a draft that staff cannot see.
+function PolicyImportModal({ onClose, onDone }) {
+  const [files, setFiles] = useState([]);
+  const [step, setStep] = useState('pick');
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const [progress, setProgress] = useState(0);
+
+  const analyze = async () => {
+    setBusy(true); setError('');
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      const a = await apiUpload('/policies/import/analyze', fd);
+      setRows(a.files.map(f => ({ ...f, include: !f.exists, category: '' })));
+      setStep('confirm');
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const commit = async () => {
+    setBusy(true); setError('');
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      fd.append('meta', JSON.stringify(Object.fromEntries(
+        rows.map(r => [r.filename, { title: r.title, category: r.category, version: r.version, include: r.include }]))));
+      setResult(await apiUpload('/policies/import', fd, 'POST', setProgress));
+      setStep('done');
+      onDone?.();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const chosen = rows.filter(r => r.include).length;
+  const setRow = (i, patch) => setRows(rs => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[70] flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-6 p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-gray-900">Import policies you already have</h3>
+            <p className="text-xs text-gray-500">Pick the files; each becomes a policy with the document attached and its text searchable.</p>
+          </div>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        {step === 'pick' && (
+          <div className="space-y-2">
+            <input type="file" multiple accept=".pdf,.doc,.docx,.txt,.md,image/*"
+              onChange={e => setFiles([...(e.target.files || [])])}
+              className="block w-full text-sm border border-gray-300 rounded-lg p-2" />
+            <p className="text-[11px] text-gray-500">
+              From Google Drive you can select several files and download them, or export each doc as PDF.
+              Up to 40 at a time. Nothing is created until you confirm the titles on the next screen.
+            </p>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <button onClick={analyze} disabled={!files.length || busy}
+              className="px-4 py-2 bg-powder-600 text-white text-sm font-semibold rounded-lg hover:bg-powder-700 disabled:opacity-50">
+              {busy ? 'Reading…' : `Read ${files.length || ''} file${files.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        )}
+
+        {step === 'confirm' && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-600">
+              Titles are taken from the filenames — correct any that read badly. They import as
+              <strong> drafts</strong>, invisible to staff until you publish them.
+            </p>
+            <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-80 overflow-y-auto">
+              {rows.map((r, i) => (
+                <div key={r.filename} className="p-2 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" checked={r.include} onChange={e => setRow(i, { include: e.target.checked })}
+                      className="rounded border-gray-300 shrink-0" />
+                    <input value={r.title} onChange={e => setRow(i, { title: e.target.value })}
+                      className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+                    <input value={r.category} onChange={e => setRow(i, { category: e.target.value })}
+                      placeholder="Category" className="w-28 px-2 py-1 border border-gray-300 rounded text-sm shrink-0" />
+                  </div>
+                  <p className="text-[11px] text-gray-400 pl-6 truncate">
+                    {r.filename}{r.version ? ` · v${r.version}` : ''}
+                    {r.exists && <span className="text-amber-700"> · a policy with this title already exists</span>}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            {progress > 0 && progress < 100 && <p className="text-[11px] text-gray-500">Uploading {progress}%…</p>}
+            <div className="flex items-center gap-2">
+              <button onClick={commit} disabled={busy || !chosen}
+                className="px-4 py-2 bg-powder-600 text-white text-sm font-semibold rounded-lg hover:bg-powder-700 disabled:opacity-50">
+                {busy ? 'Importing…' : `Import ${chosen} polic${chosen === 1 ? 'y' : 'ies'}`}
+              </button>
+              <button onClick={() => setStep('pick')} className="px-3 py-2 text-sm text-gray-600 rounded-lg hover:bg-gray-100">Back</button>
+            </div>
+          </div>
+        )}
+
+        {step === 'done' && result && (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-green-700">{result.created} polic{result.created === 1 ? 'y' : 'ies'} created as drafts.</p>
+            <ul className="text-xs text-gray-600 space-y-0.5">
+              {result.skipped > 0 && <li>{result.skipped} left out.</li>}
+              {result.failed > 0 && <li>{result.failed} failed: {result.problems.map(p => `${p.filename} (${p.reason})`).join('; ')}</li>}
+              <li>Open each one to review it, tick &ldquo;employees can read this&rdquo; where it applies, and publish.</li>
+            </ul>
+            <button onClick={onClose} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">Done</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PolicyView({ id, onClose, canManage, onChanged, onEdit }) {
   const { data: p, refresh } = useApiGet(`/policies/${id}`, [id]);
   const [busy, setBusy] = useState(false);
@@ -298,6 +419,7 @@ export default function PoliciesPanel() {
 
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   const rows = list || [];
 
@@ -309,10 +431,16 @@ export default function PoliciesPanel() {
           <h2 className="text-xl font-bold text-gray-900">Policies</h2>
         </div>
         {canManage && (
-          <button onClick={() => setEditing({})}
-            className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
-            <Plus size={16} /> New policy
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setImporting(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+              <Upload size={15} /> Import files
+            </button>
+            <button onClick={() => setEditing({})}
+              className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
+              <Plus size={16} /> New policy
+            </button>
+          </div>
         )}
       </div>
 
@@ -395,6 +523,9 @@ export default function PoliciesPanel() {
       {editing && (
         <PolicyEditor policy={editing} aiOn={aiOn}
           onClose={() => setEditing(null)} onSaved={refresh} />
+      )}
+      {importing && (
+        <PolicyImportModal onClose={() => setImporting(false)} onDone={refresh} />
       )}
     </div>
   );

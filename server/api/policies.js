@@ -7,6 +7,7 @@ import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } 
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { hasExplicitEdit } from '../module-access.js';
+import { titleFromFilename, revisionFromFilename } from '../filename-meta.js';
 
 /**
  * Company policies — the handbook side of the plant (PTO, grievance, conduct).
@@ -270,6 +271,112 @@ router.delete('/:id/file', (req, res) => {
   deleteObject(p.storage_key);
   logAudit(req.user, 'delete', 'policy', p.id, { removed_file: p.filename }, null, null, p.title);
   res.json({ ok: true });
+});
+
+// ── Importing policies you already have ──────────────────────────────────────
+//
+// Most of the handbook exists already as files. Re-typing a title for each one
+// to create an empty policy and then attaching the document is pure
+// redundancy, so this does what the controlled-document importer does: read
+// the files, propose a title per file, and create them once you've confirmed.
+//
+// Two steps, and the first WRITES NOTHING. The titles come from filenames, and
+// a filename is a guess — thirty policies imported under wrong titles is worse
+// than thirty minutes of typing. The client re-sends the files on commit, so
+// there's no half-finished import sitting in a stash table.
+//
+// Everything lands as a DRAFT that staff cannot see. Publishing stays the
+// deliberate act it is everywhere else in this module.
+const policyImport = mediaUpload({ files: 40 }).array('files', 40);
+const uploadPolicyBatch = (req, res, next) => policyImport(req, res, (err) => {
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  next();
+});
+
+router.post('/import/analyze', uploadPolicyBatch, (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!requireManage(req, res)) return;
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+    const db = getDb();
+    const existing = db.prepare('SELECT title FROM policies').all()
+      .map(r => String(r.title || '').trim().toLowerCase());
+    res.json({
+      files: files.map(f => {
+        const title = titleFromFilename(f.originalname);
+        const version = revisionFromFilename(f.originalname);
+        return {
+          filename: f.originalname,
+          title,
+          version,
+          size: f.size,
+          // Already on file: offered unticked rather than silently skipped, so
+          // re-importing a corrected copy is still possible on purpose.
+          exists: existing.includes(title.toLowerCase()),
+        };
+      }),
+      storage_ready: storageEnabled(),
+    });
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+router.post('/import', uploadPolicyBatch, async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!requireManage(req, res)) return;
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+    const tooBig = rejectOversize(files);
+    if (tooBig) return res.status(413).json({ error: tooBig });
+
+    const db = getDb();
+    // { "<filename>": { title, category, include } } — a file the client didn't
+    // tick is not imported. Absent metadata means "use what analyze proposed".
+    let meta = {};
+    try { meta = JSON.parse(req.body?.meta || '{}') || {}; } catch { meta = {}; }
+
+    const summary = { created: 0, skipped: 0, failed: 0, policies: [], problems: [] };
+    for (const f of files) {
+      const m = meta[f.originalname] || {};
+      if (m.include === false) { summary.skipped++; continue; }
+      const title = String(m.title || titleFromFilename(f.originalname)).trim().slice(0, 200);
+      if (!title) { summary.problems.push({ filename: f.originalname, reason: 'no title could be derived' }); summary.failed++; continue; }
+
+      try {
+        const id = uuid();
+        const safe = (f.originalname || 'policy').replace(/[^\w.-]+/g, '_').slice(0, 120);
+        const key = `policies/${id}/${uuid()}-${safe}`;
+        await putStream(key, createReadStream(f.path), f.mimetype);
+
+        let text = null, status = 'none';
+        try {
+          const buf = await getObjectBuffer(key);
+          text = await extractInvoiceText(buf, f.mimetype, f.originalname);
+          status = text && text.trim() ? 'ok' : 'empty';
+        } catch { status = 'failed'; }
+
+        db.prepare(`INSERT INTO policies (id, title, category, version, storage_key, filename, content_type, size,
+          extracted_text, text_status, visible_to_staff, created_by, updated_by)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`).run(
+          id, title, m.category || null, m.version || revisionFromFilename(f.originalname) || null,
+          key, (f.originalname || 'policy').slice(0, 255), f.mimetype || null, f.size || null,
+          text || null, status, req.user?.name || null, req.user?.name || null);
+        summary.created++;
+        summary.policies.push({ id, title, searchable: status === 'ok' });
+      } catch (e) {
+        summary.failed++;
+        summary.problems.push({ filename: f.originalname, reason: e.message });
+      }
+    }
+    logAudit(req.user, 'import', 'policy', 'batch', { created: summary.created, skipped: summary.skipped, failed: summary.failed }, null, null, 'Policy import');
+    res.json(summary);
+  } catch (err) {
+    res.status(400).json({ error: uploadErrorMessage(err) });
+  } finally {
+    cleanupTemp(files);
+  }
 });
 
 // ── AI draft ─────────────────────────────────────────────────────────────────

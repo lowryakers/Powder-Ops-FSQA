@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { cleanFilename, stripRevisionSuffix } from '../filename-meta.js';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import PDFDocument from 'pdfkit';
@@ -243,16 +244,6 @@ async function extractDocText(file) {
 }
 
 // Strip common cloud/OS duplication noise from a filename before parsing
-function cleanFilename(filename) {
-  let s = filename.replace(/\.(pdf|docx?|txt|md|markdown)$/i, '');
-  s = s.replace(/[_]+/g, ' ');
-  // Leading "Copy of " (possibly repeated, e.g. "Copy of Copy of ...")
-  s = s.replace(/^(?:\s*copy\s+of\s+)+/i, '');
-  // Trailing duplicate markers: " - Copy", " copy", " (1)", " - Copy (2)"
-  s = s.replace(/[\s-]*copy(?:\s*\(\d+\))?\s*$/i, '');
-  s = s.replace(/\s*\(\d+\)\s*$/, '');
-  return s.replace(/\s{2,}/g, ' ').trim();
-}
 
 // Best-effort guess of a document number and title from filename + first lines
 function guessMeta(filename, text) {
@@ -278,7 +269,7 @@ function guessMeta(filename, text) {
   // the title — left in, uploading V4 of a document renames it to "… V4" and
   // the next revision renames it again. Only a trailing v/rev token goes; a
   // title that genuinely ends in a number ("Allergen Control Program 2") stays.
-  title = title.replace(/[\s_-]*\b(?:rev(?:ision)?|ver(?:sion)?|v)\.?\s*\d+(?:\.\d+)?$/i, '').trim() || title;
+  title = stripRevisionSuffix(title);
   return { doc_number, title: title.slice(0, 120) };
 }
 

@@ -2280,3 +2280,18 @@ desktop the viewport said "two columns" while the container could only give each
 rows overflowed into each other and the panel rendered as overlapping text. It is `columns-[17rem]` now —
 a column WIDTH, so the browser fits as many as the container actually has and it's correct in both
 places. The bulk modal also went `max-w-2xl` → `max-w-5xl` with a fixed `18rem` people column.
+
+## Importing policies you already have (`POST /policies/import/analyze|import`)
+Most of the handbook exists as files; re-typing a title to create an empty policy and then attaching the
+document is pure redundancy. Same shape as the controlled-document importer and the scanned-tests one:
+**analyze writes NOTHING** (it proposes a title per file and flags ones already on file), the client
+re-sends the files on commit (no stash table), and everything lands as a **draft that staff cannot see** —
+publishing stays the deliberate act. Titles come from filenames and a filename is a guess, which is why
+the confirm step exists: thirty policies imported under wrong titles is worse than thirty minutes typing.
+**`server/filename-meta.js` is the one definition** of `cleanFilename` / `stripRevisionSuffix` /
+`revisionFromFilename` / `titleFromFilename` — extracted from documents.js rather than copied, or the two
+importers would drift and the same file would title differently depending on which screen you used. A
+trailing `_V4` is the version, not part of the title; a leading date is provenance; "Allergen Control
+Program 2" keeps its number.
+**Testing storage-backed paths:** a ~25-line S3 stand-in (PUT/GET/DELETE, signatures ignored) pointed at
+by `R2_ENDPOINT` with any `R2_*` values runs the real upload path locally.
