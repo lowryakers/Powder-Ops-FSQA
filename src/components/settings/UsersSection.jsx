@@ -124,6 +124,7 @@ const MODULE_GROUPS = [
       { id: 'procurement', label: 'Procurement & Demand Planning' },
       { id: 'newsletter', label: 'Newsletter' },
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
+      { id: 'policies', label: 'Policies (handbook; edit = upload and publish)' },
     ],
   },
   {

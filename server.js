@@ -14,6 +14,7 @@ import { readyDocOrigin } from './server/links.js';
 import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import procurementRoutes from './server/api/procurement.js';
 import payRoutes from './server/api/pay.js';
+import policyRoutes from './server/api/policies.js';
 import newsletterRoutes from './server/api/newsletter.js';
 import { seedProcurement } from './server/procurement-seed.js';
 import { seedFinanceFromMonday } from './server/finance-seed.js';
@@ -1517,6 +1518,7 @@ app.use('/api/office', officeRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/procurement', procurementRoutes);
 app.use('/api/pay', payRoutes);
+app.use('/api/policies', policyRoutes);
 app.use('/api/newsletter', newsletterRoutes);
 app.use('/api/controlled', controlledRoutes);
 

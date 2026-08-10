@@ -27,6 +27,8 @@ export const ALL_MODULE_IDS = [
   'office-requests', 'supply-requests', 'time-requests',
   'accounts-payable', 'accounts-receivable', 'partner-reconciliation', 'reimbursements', 'banking',
   'procurement', 'newsletter', 'pay-tracking',
+  // Company policies (the handbook), separate from the controlled-document registry.
+  'policies',
   'dcr', 'deviations', 'non-conformance', 'on-hold',
   'component-signout', 'maintenance-signout', 'currently-out', 'organoleptic',
   'knife-accountability', 'flavor-approvals',

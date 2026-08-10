@@ -2226,3 +2226,27 @@ commit, so there's no stash table).
   a long, expensive job, and `evidence_status = 'skipped_image'` says so rather than implying it was read.
 - Verified on the real filenames: 25 assertions incl. both orders, the group-form rejection, the
   misspelling suggested-not-matched, re-import creating 0, and admin-only.
+
+## Policies module (the handbook) — `server/api/policies.js` + `PoliciesPanel.jsx`
+PTO, grievance, conduct: how the company operates. **Deliberately NOT the controlled-document registry** —
+an SOP is a controlled record with a revision and Document Control approval, and merging them would hand
+an auditor asking for SOP 401 the PTO policy while dragging every handbook edit through a DCR. Office nav
+group, module id `policies` (edit grant = upload and publish; admins + the `office`/`hr` departments have
+it by role).
+- **Two gates, and staff need BOTH: `status = 'published'` AND `visible_to_staff`.** Visibility is per
+  POLICY, not per person — most of the handbook is for everyone and a few (the pay-review rubric) are
+  management-only, so making it a module permission would force the whole handbook to one audience. A
+  draft is never visible to staff even when ticked: an employee reading a half-written rule as if it were
+  the rule is worse than not having it in the app.
+- A policy a reader may not see **404s rather than 403s**, and the search never reaches it either.
+- **Publishing is refused when there's nothing to publish** (no body and no file), and stamps the
+  effective date. **Retire, don't delete** — people were told this applied, and only a draft can be
+  removed outright.
+- **The uploaded document's text is extracted on upload and searched, never shipped** (`extracted_text` →
+  `searchable` + a snippet around the hit), same rule as equipment manuals. Google Docs come in as
+  File → Download → PDF; DOCX/images work too.
+- **AI drafting writes NOTHING** (`draftPolicy` in ai.js) — it returns text for a person to edit, and the
+  system prompt forbids inventing this plant's specifics (accrual rates, notice periods, citations),
+  emitting `[PLACEHOLDERS]` instead. Publishing stays the human act that makes it the company's word.
+- Verified: 20 assertions covering both visibility gates, the 404-not-403 rule, search scoping, the
+  empty-publish and delete-published refusals, and extracted text never leaving the server.

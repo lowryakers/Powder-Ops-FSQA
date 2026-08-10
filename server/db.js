@@ -2932,6 +2932,41 @@ function runMigrations() {
   //    it deliberately isn't.
   try {
     db.exec(`
+      -- ── Company policies ──────────────────────────────────────────────
+      -- The handbook side of the plant: PTO, grievance, conduct. Deliberately
+      -- NOT the controlled-document registry — an SOP is a controlled record
+      -- with a revision and Document Control approval, and mixing the two
+      -- would put a policy PDF in front of an auditor asking for SOP 401.
+      --
+      -- visible_to_staff is the whole point of the module: most policies are
+      -- for everyone, some are management-only, and that is a per-policy
+      -- decision rather than a permission on the module.
+      CREATE TABLE IF NOT EXISTS policies (
+        id             TEXT PRIMARY KEY,
+        code           TEXT,
+        title          TEXT NOT NULL,
+        category       TEXT,
+        summary        TEXT,
+        body           TEXT,
+        storage_key    TEXT,
+        filename       TEXT,
+        content_type   TEXT,
+        size           INTEGER,
+        extracted_text TEXT,
+        text_status    TEXT,
+        status         TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','retired')),
+        visible_to_staff INTEGER NOT NULL DEFAULT 0,
+        version        TEXT,
+        effective_date TEXT,
+        review_date    TEXT,
+        owner          TEXT,
+        created_by     TEXT,
+        updated_by     TEXT,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_policies_status ON policies(status, visible_to_staff);
+
       CREATE TABLE IF NOT EXISTS pay_employees (
         id               TEXT PRIMARY KEY,
         user_id          TEXT,

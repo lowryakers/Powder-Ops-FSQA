@@ -239,6 +239,39 @@ export async function proofreadText(text) {
   return { corrected: String(out.corrected ?? src), notes: Array.isArray(out.notes) ? out.notes.map(String).slice(0, 6) : [] };
 }
 
+// ── Policy drafting ───────────────────────────────────────────────────────────
+// A STARTING POINT for a human to edit, never a finished policy. The model is
+// told in as many words not to invent this plant's specifics — an AI-written
+// number (an accrual rate, a notice period) that nobody chose is exactly the
+// kind of thing that ends up quoted back at the company, so unknowns come out
+// as visible [SQUARE BRACKET] placeholders instead.
+const POLICY_SYSTEM = `You draft internal company policies for a small US food-manufacturing business (a powder blending and packaging plant, roughly 30 employees, hourly production staff plus a small office team).
+
+Rules:
+- Write the policy in plain, direct language an hourly employee can read. Short sentences. No legalese where a plain word works.
+- Structure it with a Purpose, Scope, the policy itself, and Responsibilities. Use headings and short lists.
+- NEVER invent facts specific to this company: dollar amounts, accrual rates, notice periods, phone numbers, names, or legal citations. Where a specific is needed, write a placeholder in square brackets like [ACCRUAL RATE] or [HR CONTACT] so a person fills it in.
+- Do not claim legal compliance or cite statutes unless the user supplied them.
+- Formatting: plain text with *bold*, _italic_, "- " bullets and "1. " numbered lists. No Markdown headings with #; write a heading as a bold line.
+- End with a line: "This policy is a draft for review." `;
+
+export async function draftPolicy({ title, category, notes }) {
+  const c = getClient();
+  if (!c) throw new Error('AI is not configured on this server.');
+  const ask = [
+    `Policy title: ${String(title || '').slice(0, 200)}`,
+    category ? `Category: ${String(category).slice(0, 80)}` : '',
+    notes ? `What it needs to cover:\n${String(notes).slice(0, 4000)}` : '',
+  ].filter(Boolean).join('\n');
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 2500,
+    system: POLICY_SYSTEM,
+    messages: [{ role: 'user', content: ask }],
+  });
+  return (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+}
+
 // ── Read-only query assistant ─────────────────────────────────────────────────
 const ASK_SYSTEM = `You are a read-only analytics assistant for the "Powder Ops" food-safety and production management system (a SQLite database). Answer questions about production, KPIs, compliance, training, and overall system usage by querying the database — this is for an operator or executive who may be reading on a phone.
 
