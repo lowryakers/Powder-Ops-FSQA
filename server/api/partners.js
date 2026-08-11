@@ -17,7 +17,7 @@ import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { reconcile, dueDateFor, endOfMonth, round2 } from '../partner-recon.js';
-import { parseInvoice } from '../invoice-parse.js';
+import { parseInvoice, parseLineItems, summarizeLineItems } from '../invoice-parse.js';
 
 const router = Router();
 
@@ -85,18 +85,55 @@ function listDocuments(db, partnerId, q = {}) {
     // The uploaded PDF's text is searched too, so a lot number printed inside
     // an invoice finds it — not only what somebody keyed into the form.
     sql += ` AND (doc_number LIKE ? OR reference LIKE ? OR description LIKE ?
-             OR filename LIKE ? OR extracted_text LIKE ?)`;
+             OR filename LIKE ? OR line_items LIKE ? OR extracted_text LIKE ?)`;
     const like = `%${q.q}%`;
-    params.push(like, like, like, like, like);
+    params.push(like, like, like, like, like, like);
   }
   sql += ' ORDER BY COALESCE(issued_date, created_at) DESC, created_at DESC LIMIT ?';
   params.push(Math.min(Number(q.limit) || 500, 2000));
   // extracted_text can be tens of kB per row; it is searched, never shipped.
-  return db.prepare(sql).all(...params).map(({ extracted_text, ...d }) => ({
-    ...d,
-    has_text: !!extracted_text,
-  }));
+  return db.prepare(sql).all(...params).map(({ extracted_text, ...d }) => {
+    const items = safeLines(d.line_items);
+    return {
+      ...d,
+      has_text: !!extracted_text,
+      line_items: items,
+      // The one-line "what was on it" the table row shows. Built here rather
+      // than in the browser so the row and any export say the same thing.
+      line_summary: summarizeLineItems(items),
+      // Whether the lines add up to the document's amount. Reported, never
+      // used to correct either number: a summary that silently disagrees with
+      // the total is worse than one that says it is incomplete.
+      lines_reconcile: items.length && d.amount != null
+        ? Math.abs((d.lines_total ?? 0) - d.amount) < 0.02
+        : null,
+    };
+  });
 }
+
+function safeLines(json) {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter(i => i && i.description) : [];
+  } catch { return []; }
+}
+
+/** Normalize whatever the client sends for line items into storable rows. */
+function normalizeLines(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const out = [];
+  for (const i of list) {
+    const description = clean(i?.description, 300);
+    if (!description) continue;
+    const num = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : round2(Number(v)));
+    out.push({ description, quantity: num(i?.quantity), unit_price: num(i?.unit_price), amount: num(i?.amount) });
+    if (out.length >= 100) break;
+  }
+  return out;
+}
+const linesTotalOf = (items) =>
+  (items.length ? round2(items.reduce((t, i) => t + (i.amount || 0), 0)) : null);
 
 router.get('/:id/documents', (req, res) => {
   const db = getDb();
@@ -131,16 +168,25 @@ async function createDocument(db, { partnerId, body, files, user, source }) {
       // Best effort: a scan that can't be read is still a document worth having.
       try { text = await extractInvoiceText(buf, f.mimetype, f.originalname); } catch { text = null; }
     }
+    // What was ON the document. Whatever the caller reviewed wins; failing
+    // that, read it from the file here, so a document added through the plain
+    // form still gets its summary.
+    let lines = normalizeLines(body?.line_items);
+    if (!lines.length && text) {
+      try { lines = normalizeLines(parseLineItems(text)); } catch { lines = []; }
+    }
     db.prepare(`INSERT INTO partner_documents
       (id, partner_id, direction, doc_type, doc_number, reference, description,
        issued_date, terms_days, due_date, amount, status,
-       storage_key, filename, content_type, size, extracted_text, source, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,'draft',?,?,?,?,?,?,?)`)
+       storage_key, filename, content_type, size, extracted_text, line_items, lines_total, source, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,'draft',?,?,?,?,?,?,?,?,?)`)
       .run(id, partnerId, direction, docType, clean(body?.doc_number, 80), clean(body?.reference, 120),
         clean(body?.description, 1000), issued, terms, due, amount,
         key, f ? (f.originalname || 'file').slice(0, 255) : null, f?.mimetype || null, f?.size || null,
-        text ? String(text).slice(0, 400000) : null, source, user?.name || null);
-    out.push(db.prepare('SELECT id, doc_number, direction, amount, due_date, filename FROM partner_documents WHERE id = ?').get(id));
+        text ? String(text).slice(0, 400000) : null,
+        lines.length ? JSON.stringify(lines) : null, linesTotalOf(lines),
+        source, user?.name || null);
+    out.push(db.prepare('SELECT id, doc_number, direction, amount, due_date, filename, lines_total FROM partner_documents WHERE id = ?').get(id));
   }
   return { documents: out, partner };
 }
@@ -335,6 +381,47 @@ router.post('/:id/documents', uploadDocs, async (req, res) => {
   }
 });
 
+/**
+ * Read the line items out of a document already on the ledger.
+ *
+ * Everything filed before line items existed has a stored PDF and no summary,
+ * and re-uploading those invoices to get one would be absurd. This re-reads
+ * the text that was already extracted at upload and fills the summary in.
+ *
+ * It touches ONLY `line_items` — never the amount, the direction, the dates or
+ * the status. Those were reviewed by a person when the document was filed, and
+ * a re-read months later is not a reason to overwrite them. Allowed on final
+ * documents for the same reason: adding a description of what was on an
+ * invoice does not change the invoice.
+ */
+router.post('/documents/:docId/read-lines', (req, res) => {
+  const db = getDb();
+  const doc = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!doc.extracted_text) {
+    return res.status(400).json({
+      error: doc.storage_key
+        ? 'No text was readable from this file — it is an image scan, so its lines have to be typed in.'
+        : 'There is no file on this document to read.',
+    });
+  }
+  let lines;
+  try { lines = normalizeLines(parseLineItems(doc.extracted_text)); } catch { lines = []; }
+  if (!lines.length) {
+    return res.status(400).json({ error: 'No line items could be found in this document. They can be typed in instead.' });
+  }
+  const total = linesTotalOf(lines);
+  db.prepare("UPDATE partner_documents SET line_items = ?, lines_total = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?")
+    .run(JSON.stringify(lines), total, req.user?.name || null, doc.id);
+  logAudit(req.user, 'update', 'partner_document', doc.id,
+    { read_lines: lines.length, lines_total: total }, null, null, doc.doc_number);
+  res.json({
+    line_items: lines,
+    lines_total: total,
+    lines_reconcile: doc.amount != null ? Math.abs(total - doc.amount) < 0.02 : null,
+  });
+});
+
 // Editing is allowed while a document is still draft. Once it is final it is
 // part of a number someone may already have looked at, so it changes by dispute
 // or by a credit note — not by quietly editing the amount.
@@ -350,15 +437,21 @@ router.put('/documents/:docId', (req, res) => {
   const issued = isoDay(req.body?.issued_date) || before.issued_date;
   const termsRaw = Number(req.body?.terms_days);
   const terms = Number.isFinite(termsRaw) && termsRaw >= 0 ? Math.floor(termsRaw) : before.terms_days;
+  // Absent means "leave the lines alone" — an edit to the due date must not
+  // wipe the summary of what was on the invoice.
+  const lines = req.body?.line_items !== undefined ? normalizeLines(req.body.line_items) : null;
   db.prepare(`UPDATE partner_documents SET doc_number = ?, reference = ?, description = ?,
       issued_date = ?, terms_days = ?, due_date = ?, amount = ?,
-      direction = ?, doc_type = ?, updated_at = datetime('now'), updated_by = ?
+      direction = ?, doc_type = ?, line_items = ?, lines_total = ?,
+      updated_at = datetime('now'), updated_by = ?
     WHERE id = ?`)
     .run(clean(req.body?.doc_number, 80), clean(req.body?.reference, 120), clean(req.body?.description, 1000),
       issued, terms, isoDay(req.body?.due_date) || dueDateFor(issued, terms),
       req.body?.amount !== undefined ? money(req.body.amount) : before.amount,
       ['receivable', 'payable'].includes(req.body?.direction) ? req.body.direction : before.direction,
       ['invoice', 'po', 'credit'].includes(req.body?.doc_type) ? req.body.doc_type : before.doc_type,
+      lines === null ? before.line_items : (lines.length ? JSON.stringify(lines) : null),
+      lines === null ? before.lines_total : linesTotalOf(lines),
       req.user?.name || null, before.id);
   const after = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(before.id);
   logAudit(req.user, 'update', 'partner_document', before.id, null, before, after, after.doc_number || after.id);

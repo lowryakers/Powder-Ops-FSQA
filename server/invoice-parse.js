@@ -103,7 +103,27 @@ const readableLabel = (pattern) => String(pattern)
 
 function findLabelled(lines, labels, valueRe) {
   const re = LABEL_VALUE(labels, valueRe);
+  const labelOnly = new RegExp(`^\\s*(?:${labels})\\s*[:#]?\\s*$`, 'i');
+  const valueOnly = new RegExp(`^(${valueRe})`, 'i');
   for (let i = 0; i < lines.length; i++) {
+    // A TABLE ROW puts the label and its value in different CELLS
+    // (`| Total | | | $12,400.00 |`), so the label is never followed directly
+    // by the value and the pattern below cannot see it. That is the shape
+    // `invoice-text.js` produces for a real invoice, and missing it meant the
+    // total — the number the whole ledger is built on — went unread.
+    const cells = pipeCells(lines[i]);
+    if (cells) {
+      const at = cells.findIndex(c => c && (labelOnly.test(c) || re.test(c)));
+      if (at >= 0) {
+        const inline = cells[at].match(re);
+        if (inline && inline[1]?.trim()) return inline[1].trim();
+        for (const c of cells.slice(at + 1)) {
+          const v = c && c.trim().match(valueOnly);
+          if (v && v[1]?.trim()) return v[1].trim();
+        }
+      }
+      continue;
+    }
     const m = lines[i].match(re);
     if (m && m[1]?.trim()) return m[1].trim();
     // Table layouts put the label on one line and the value on the next — the
@@ -172,6 +192,140 @@ function firstIndex(hay, names) {
   return best;
 }
 
+// Lines that are arithmetic ABOUT the invoice rather than things bought.
+// Reading "Subtotal" or "Tax" as a line item turns the summary into nonsense
+// and makes the lines fail to reconcile against the total for no real reason.
+const NOT_A_LINE = /^\s*(sub\s*total|subtotal|total|tax|vat|gst|hst|sales\s*tax|balance(\s*due)?|amount\s*(due|paid|payable)|payments?|deposit|credits?|discount\s*total|grand\s*total|remit|please\s*(pay|remit)|thank\s*you|terms?|net\s*\d+|page\s*\d+)\b/i;
+
+// The column headings above the lines, which look exactly like a line item
+// with no numbers.
+const LINE_HEADER = /^\s*(item|description|qty|quantity|unit|price|rate|amount|line|sku|part|product|no\.?|#)\b/i;
+
+/**
+ * What was actually on the invoice.
+ *
+ * A row is "some text, then one to four numbers, then the line total" — which
+ * is every invoice table ever printed, whether the middle columns are qty and
+ * unit price or nothing at all. The LAST number on the line is taken as the
+ * amount because that is the column invoices put on the right.
+ *
+ * This is a SUMMARY, never an authority. The document's amount stays the
+ * amount that was read from its total, and the caller reports when the lines
+ * do not add up to it rather than quietly preferring one over the other — a
+ * short read is exactly the case where a summary would otherwise imply the
+ * invoice contained less than it did.
+ */
+const MONEY_TOKEN = /^\(?\$?-?[\d,]+(?:\.\d+)?\)?%?$/;
+
+/**
+ * A row's cells, when the extractor gave us a table.
+ *
+ * `invoice-text.js` renders a PDF table as a MARKDOWN PIPE ROW
+ * (`| Freight | | | 800.00 |`), which is the shape a real invoice actually
+ * arrives in — the column-spacing version below only ever sees text that was
+ * laid out with spaces. Reading the pipes is both easier and more reliable
+ * than re-deriving columns from whitespace that the extractor already worked
+ * out, so it is tried first.
+ *
+ * A cell can still hold more than one number when the extractor merged two
+ * columns, so each is split on whitespace rather than trusted as one value.
+ */
+function pipeCells(line) {
+  if (!/^\|.*\|$/.test(line)) return null;
+  const cells = line.slice(1, -1).split('|').map(c => c.trim());
+  // The `| --- | --- |` separator under a header.
+  if (cells.every(c => c === '' || /^:?-{2,}:?$/.test(c))) return null;
+  return cells;
+}
+
+export function parseLineItems(text) {
+  const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const items = [];
+
+  for (const line of lines) {
+    const cells = pipeCells(line);
+    if (cells) {
+      const description = (cells.find(c => c && !MONEY_TOKEN.test(c)) || '').replace(/\s{2,}/g, ' ').trim();
+      if (!description || NOT_A_LINE.test(description) || LINE_HEADER.test(description)) continue;
+      if ((description.match(/[A-Za-z]/g) || []).length < 3 || /[:#]$/.test(description)) continue;
+      const nums = cells
+        .slice(cells.indexOf(cells.find(c => c && !MONEY_TOKEN.test(c))) + 1)
+        .flatMap(c => c.split(/\s+/))
+        .filter(t => t && MONEY_TOKEN.test(t));
+      if (!nums.length) continue;
+      const amount = parseMoney(nums[nums.length - 1]);
+      if (amount == null) continue;
+      let quantity = null, unit_price = null;
+      if (nums.length >= 3) {
+        quantity = parseMoney(nums[0]);
+        unit_price = parseMoney(nums[nums.length - 2]);
+      } else if (nums.length === 2) {
+        const first = parseMoney(nums[0]);
+        if (/^\d+$/.test(nums[0].replace(/[$,]/g, ''))) quantity = first; else unit_price = first;
+      }
+      items.push({ description: description.slice(0, 300), quantity, unit_price, amount });
+      if (items.length >= 100) break;
+      continue;
+    }
+
+    if (NOT_A_LINE.test(line) || LINE_HEADER.test(line)) continue;
+    // Anything, then a run of NUMERIC COLUMNS at the end of the row.
+    //
+    // The split is made on the trailing numbers, not on the shape of the
+    // description — a description is routinely full of digits ("Packaging film
+    // 120mm", "Part 4471-A"), and an earlier version that required the text to
+    // end before the first digit silently dropped every such line. On an
+    // invoice summary a dropped line is worse than a messy one: it reads as
+    // something that was not on the invoice.
+    //
+    // The prefix is lazy and the numeric run greedy, so the engine settles on
+    // the SHORTEST description that leaves a valid column run — which is the
+    // one that captures qty and unit price as columns rather than as words.
+    const m = line.match(/^(.+?)((?:\s+\(?\$?-?[\d,]+(?:\.\d+)?\)?%?){1,4})\s*$/);
+    if (!m) continue;
+
+    const description = m[1].replace(/\s{2,}/g, ' ').trim();
+    // A description needs real words. "1 2 3" with a price is a stray table row.
+    if (description.length < 3 || (description.match(/[A-Za-z]/g) || []).length < 3) continue;
+    // A LABEL IS NOT A LINE ITEM. "Invoice #: 1" has exactly the shape of a
+    // one-column row — text then a number — and read as one it invented a $1
+    // line and broke the reconciliation on every invoice. Anything ending in a
+    // colon or a hash is a field name; the value after it is its value.
+    if (/[:#]$/.test(description)) continue;
+
+    const nums = m[2].trim().split(/\s+/);
+    const amount = parseMoney(nums[nums.length - 1]);
+    if (amount == null) continue;
+
+    // Only claim a quantity when there is genuinely a column before the money.
+    // Inventing "qty 1" on a line that never printed one puts a fact on the
+    // record that the invoice does not contain.
+    let quantity = null, unit_price = null;
+    if (nums.length >= 3) {
+      quantity = parseMoney(nums[0]);
+      unit_price = parseMoney(nums[nums.length - 2]);
+    } else if (nums.length === 2) {
+      const first = parseMoney(nums[0]);
+      // Two columns are usually qty + amount; a value with cents in the first
+      // column is a unit price, not a count.
+      if (/^\d+$/.test(nums[0].replace(/[$,]/g, ''))) quantity = first;
+      else unit_price = first;
+    }
+
+    items.push({ description: description.slice(0, 300), quantity, unit_price, amount });
+    if (items.length >= 100) break;
+  }
+  return items;
+}
+
+/** A one-line "what was on it", for a table row. */
+export function summarizeLineItems(items, max = 2) {
+  const list = Array.isArray(items) ? items.filter(i => i?.description) : [];
+  if (!list.length) return null;
+  const head = list.slice(0, max).map(i => i.description).join(', ');
+  return list.length > max ? `${head} +${list.length - max} more` : head;
+}
+
 /**
  * Everything readable from one invoice or PO.
  *
@@ -208,9 +362,20 @@ export function parseInvoice(text, { usNames = [], partnerNames = [], filename =
   const terms_days = termsMatch ? Number(termsMatch[1]) : null;
 
   const dir = detectDirection(text, { usNames, partnerNames });
+  const line_items = parseLineItems(text);
+  // Whether the lines add up to the total. NOT used to correct either one —
+  // it is reported so a short read shows as a short read instead of a summary
+  // that quietly implies the invoice contained less than it did.
+  const linesTotal = line_items.reduce((t, i) => t + (i.amount || 0), 0);
+  const lines_reconcile = amount != null && line_items.length
+    ? Math.abs(linesTotal - amount) < 0.02
+    : null;
 
   return {
     doc_type,
+    line_items,
+    lines_total: line_items.length ? Math.round(linesTotal * 100) / 100 : null,
+    lines_reconcile,
     doc_number: (looksPo ? poNumber : invNumber) || invNumber || poNumber || null,
     reference: looksPo ? null : (poNumber && poNumber !== invNumber ? poNumber : null),
     issued_date,

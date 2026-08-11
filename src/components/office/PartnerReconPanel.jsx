@@ -392,12 +392,31 @@ export default function PartnerReconPanel({ user }) {
                     <Fragment key={d.id}>
                       <tr {...expand.rowProps(d.id)} className="border-b border-gray-100">
                         <td className="px-2 py-2.5"><ExpandCell open={expand.isExpanded(d.id)} /></td>
-                        <td className="px-3 py-2.5">
+                        <td className="px-3 py-2.5 max-w-[22rem]">
                           <span className="font-medium text-gray-900">{d.doc_number || '—'}</span>
                           <span className="block text-xs text-gray-500 capitalize">
                             {d.doc_type === 'po' ? 'Purchase order' : d.doc_type}
                             {d.source === 'partner-portal' && <span className="ml-1 text-powder-600">· from {partner.name}</span>}
                           </span>
+                          {/* WHAT WAS ON IT. The whole point of the row is that
+                              you can tell one invoice from another without
+                              opening the PDF — a number and an amount cannot do
+                              that. Falls back to the typed description when
+                              nothing could be read off the file, and says so
+                              when there is neither, rather than leaving a blank
+                              that reads as "nothing was on it". */}
+                          {d.line_summary ? (
+                            <span className="block text-xs text-gray-700 mt-0.5 truncate" title={d.line_items.map(i => i.description).join(', ')}>
+                              {d.line_summary}
+                              {d.lines_reconcile === false && (
+                                <span className="ml-1 text-amber-600" title="The lines read off this file do not add up to its total — some may not have been read.">·&nbsp;partial</span>
+                              )}
+                            </span>
+                          ) : d.description ? (
+                            <span className="block text-xs text-gray-700 mt-0.5 truncate" title={d.description}>{d.description}</span>
+                          ) : (
+                            <span className="block text-xs text-gray-400 mt-0.5 italic">no detail on file</span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-600">
                           {d.direction === 'receivable' ? 'They owe us' : 'We owe them'}
@@ -452,6 +471,7 @@ export default function PartnerReconPanel({ user }) {
                             { label: 'Approved final by', value: d.finalized_by },
                             { label: 'Dispute', value: d.disputed_reason ? `${d.disputed_reason} — ${d.disputed_by}` : null },
                           ]} />
+                          <LineItems doc={d} money={money} onRead={reloadAll} />
                           {d.filename && (
                             <button onClick={async () => {
                               try {
@@ -574,6 +594,85 @@ export default function PartnerReconPanel({ user }) {
 }
 
 /**
+ * What was on the invoice or PO, in full.
+ *
+ * The row above carries a one-line summary; this is the detail behind it.
+ *
+ * The line total is shown BESIDE the document's amount rather than instead of
+ * it. They come from different places — the lines are read off the body of the
+ * document, the amount off its total — and when they disagree that is a fact
+ * worth seeing, not something to resolve by preferring one. The document's
+ * amount stays the money; the lines stay a description of it.
+ */
+function LineItems({ doc, money, onRead }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const items = doc.line_items || [];
+
+  const read = async () => {
+    setBusy(true); setError('');
+    try { await apiPost(`/partners/documents/${doc.id}/read-lines`, {}); onRead?.(); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  if (!items.length) {
+    return (
+      <div className="mt-2">
+        <p className="text-xs text-gray-500">
+          No line detail on this document.
+          {doc.description ? ' The description above is what was recorded.' : ''}
+        </p>
+        {doc.has_text && (
+          <button onClick={read} disabled={busy}
+            className="mt-1 text-xs text-powder-600 hover:underline disabled:opacity-50">
+            {busy ? 'Reading…' : 'Read the lines from the file'}
+          </button>
+        )}
+        {error && <p className="text-xs text-amber-700 mt-1">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2">
+      <p className="text-xs font-medium text-gray-700 mb-1">What was on it ({items.length})</p>
+      <div className="overflow-x-auto">
+        <table className="text-xs min-w-[380px]">
+          <tbody className="divide-y divide-gray-100">
+            {items.map((i, k) => (
+              <tr key={k}>
+                <td className="py-1 pr-3 text-gray-800">{i.description}</td>
+                <td className="py-1 pr-3 text-right text-gray-500 whitespace-nowrap">
+                  {i.quantity != null ? `${i.quantity} ×` : ''}
+                </td>
+                <td className="py-1 pr-3 text-right text-gray-500 whitespace-nowrap">
+                  {i.unit_price != null ? money(i.unit_price) : ''}
+                </td>
+                <td className="py-1 text-right text-gray-900 font-medium whitespace-nowrap">
+                  {i.amount != null ? money(i.amount) : '—'}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t border-gray-200">
+              <td className="py-1 pr-3 text-gray-500" colSpan={3}>Lines add up to</td>
+              <td className="py-1 text-right font-semibold whitespace-nowrap">{money(doc.lines_total || 0)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {doc.lines_reconcile === false && (
+        <p className="text-[11px] text-amber-700 mt-1">
+          These lines come to {money(doc.lines_total || 0)}, and the document is {money(doc.amount)}. The
+          difference is usually tax, freight, or a line the reader could not pick up — the document&rsquo;s
+          amount is what counts toward the balance.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * Import a folder of invoices in one go.
  *
  * Scan → review → commit. The scan writes NOTHING; it reads each file and
@@ -618,6 +717,9 @@ function ImportInvoices({ partner, onClose, onImported }) {
           terms_days: p.terms_days ?? partner.terms_days,
           amount: p.amount ?? '',
           description: '',
+          // Carried straight through to the commit, so the summary on the row
+          // is what was read off THAT file rather than being re-derived later.
+          line_items: p.line_items || [],
         };
       }));
     } catch (err) { setError(err.message); }
@@ -730,6 +832,16 @@ function ImportInvoices({ partner, onClose, onImported }) {
                             )}
                             {p.terms_from_partner && (
                               <span className="block text-[10px] text-gray-400 mt-0.5">Net taken from the partner's terms, not the invoice.</span>
+                            )}
+                            {/* What the file says was on it — the thing that
+                                tells two invoices apart at a glance. */}
+                            {p.line_items?.length > 0 && (
+                              <span className="block text-[10px] text-gray-600 mt-0.5"
+                                title={p.line_items.map(li => li.description).join('\n')}>
+                                {p.line_items.length} line{p.line_items.length === 1 ? '' : 's'}: {p.line_items.slice(0, 2).map(li => li.description).join(', ')}
+                                {p.line_items.length > 2 ? ` +${p.line_items.length - 2}` : ''}
+                                {p.lines_reconcile === false && <span className="text-amber-700"> · lines don’t match the total</span>}
+                              </span>
                             )}
                           </td>
                           <td className="px-2 py-1.5 align-top">

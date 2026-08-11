@@ -3314,6 +3314,20 @@ function runMigrations() {
   addColumnIfMissing('ar_invoices', 'invoice_link', 'TEXT');
   addColumnIfMissing('ar_invoices', 'pay_confirmation', 'TEXT');
 
+  // What was ON the invoice or PO, as a JSON array of
+  // {description, quantity, unit_price, amount}.
+  //
+  // A JSON column rather than a `partner_document_lines` table because these
+  // are only ever read WITH their document — never queried, summed or filtered
+  // on their own. Same call as `production_entries.mo_lines`.
+  //
+  // The lines are a SUMMARY of what the document contained. `amount` on the
+  // document stays the authority for the money; `lines_total` records what the
+  // lines add up to so a short read is visible as a short read rather than a
+  // summary that implies the invoice held less than it did.
+  addColumnIfMissing('partner_documents', 'line_items', 'TEXT');
+  addColumnIfMissing('partner_documents', 'lines_total', 'REAL');
+
   // Slack import: original message ts for idempotent re-imports.
   addColumnIfMissing('chat_messages', 'external_id', 'TEXT');
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_external ON chat_messages(channel_id, external_id)'); } catch { /* ignore */ }
