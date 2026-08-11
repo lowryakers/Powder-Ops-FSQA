@@ -42,6 +42,10 @@ const PUBLIC_ROUTES = [
   // The other half of the same integration: the proofing service files its
   // finished jobs here. Same token, checked in the handler.
   { prefix: '/artwork/ingest' },
+  // The NFP approval link, texted to whoever signs off a nutrition panel. The
+  // token is compared as a SHA-256 hash in the handler and cleared by the
+  // decision, so the link is single-use. Read the panel, decide, done.
+  { prefix: '/nfp-link/' },
   { path: '/version' },
   { path: '/health' },
 ];

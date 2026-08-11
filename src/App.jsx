@@ -49,6 +49,7 @@ const FlavorPanel = lazy(() => import('./components/compliance/FlavorPanel.jsx')
 const CertificationsPanel = lazy(() => import('./components/compliance/CertificationsPanel.jsx'));
 const CriticalPanel = lazy(() => import('./components/compliance/CriticalPanel.jsx'));
 import ApprovePage from './components/ApprovePage.jsx';
+import NfpApprovePage from './components/NfpApprovePage.jsx';
 const TrainingPanel = lazy(() => import('./components/compliance/TrainingPanel.jsx'));
 const MockRecallPanel = lazy(() => import('./components/compliance/MockRecallPanel.jsx'));
 const MeetingsPanel = lazy(() => import('./components/compliance/MeetingsPanel.jsx'));
@@ -1374,6 +1375,13 @@ function App() {
   // Flavor-approval magic link (texted to the approver) — public, token-gated.
   if (path.startsWith('/approve/')) {
     return <ApprovePage token={path.split('/')[2] || ''} />;
+  }
+
+  // Nutrition-panel approval link. Its own path rather than a second shape of
+  // /approve/ so the flavor link's resolution stays a single lookup, and so a
+  // token can never be tried against the wrong record type.
+  if (path.startsWith('/nfp/')) {
+    return <NfpApprovePage token={path.split('/')[2] || ''} />;
   }
 
   // A trading partner's own view of the shared ledger. Public and token-gated

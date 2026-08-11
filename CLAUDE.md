@@ -133,6 +133,45 @@ Drive and changes nothing; the record accumulates because the check was already 
 exists only for files that never went through proofing. `pdftoppm` already rasterises page 1, so the
 preview PNG that makes the board a grid of packs rather than a list of filenames is free.
 
+### The NFP is approved on a signed link, and the file is the evidence
+`nfp_versions` + `nfp_files` (db.js), `server/api/nfp.js`, `src/components/NfpApprovePage.jsx` (public
+`/nfp/<token>`), `src/components/compliance/NfpPanel.jsx` (a **Nutrition panels** tab on Products plus the
+section in the product drawer). Module grant is `products` — the panel is a product fact, not a new module.
+- **`products.nfp_version` / `nfp_approved_at` are a MIRROR now, not inputs.** Those two columns ARE the
+  artwork print gate, and while they were text boxes the gate opened by typing a date into one. They are
+  written by `applyApproval()` in the same transaction as the decision and **nowhere else**;
+  `products.js` PUT **400s** on either field (`NFP_OWNED`) rather than dropping them silently, or a client
+  that used to send them looks like it saved and quietly didn't. Same doctrine as
+  `knife_accountability.status` mirroring the sign-out log.
+- **Answering "should the files live here too": yes, and it is the point.** Without the file, "NFP V3
+  approved" is an assertion with nothing behind it — an auditor asking to see the panel that was approved
+  and the artwork printed from it got a version number. It is **its own table, not an artwork version**: a
+  panel is approved *before* artwork and referenced *by* it (`artwork_versions.nfp_version`), and one panel
+  outlives several artwork revisions. R2 via the shared `media.js` + `putStream` path, same as manuals and
+  comms attachments.
+- **A link is refused when there is nothing to look at** — no file and no `drive_url` → 409. An approval
+  given against a panel the approver could not see is a rubber stamp and the record would not say so.
+- **The token is stored as SHA-256 and returned in clear exactly once** (partner-portal precedent), looked
+  up by a single indexed hash query rather than the cleartext scan the flavor link does. Lost link ⇒ issue
+  a new one, which invalidates the old. Cleared by the decision, so it is single-use. Revoke drops it and
+  returns the panel to `draft` rather than leaving it reading "sent".
+- **The approver types their own name and it is required.** The link cannot know who is holding it, the
+  panel may have been handed to a colleague, and a regulatory approval with nobody's name on it is not an
+  approval. `decided_via` records `link` / `in_app` / `paper`.
+- **`decide()` is shared by the link and the in-app button**, so a decision is byte-for-byte the same record
+  whichever door it came through — the same rule QA Review follows for signatures.
+- **An approved panel is never rewritten**: no edit, no delete, no swapping its file, no new link. A
+  correction is the next version, which supersedes the previous one and moves the product mirror.
+- **Approving REPORTS print-ready artwork drawn against the older panel and changes nothing**
+  (`strandedArtwork`). The film already printed is still what is on the shelf; silently superseding it
+  would make the record wrong. But nobody should have to work out for themselves that approving V4 just
+  stranded three packs on V3.
+- **`source: 'paper'` is the door for the pre-ReadyDoc approvals** — it files as approved and takes the
+  historical date, and it demands the two facts a typed date never carried: who approved it, and when.
+- Verified end to end on a fresh DB: 63 API assertions, 22 more against a local S3 stand-in (the bytes an
+  unauthenticated approver gets are the panel that was uploaded), and 28 in a real browser incl. the public
+  page at 390px.
+
 ### Rules that are load-bearing
 - **The seed is insert-only and skips once `products` has rows.** A redeploy must never overwrite a GTIN
   someone corrected by hand — that is worse than no seed at all.

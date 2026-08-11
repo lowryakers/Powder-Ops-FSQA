@@ -5,8 +5,10 @@ import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductDataHealth from './ProductDataHealth.jsx';
+import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope,
+  FileText,
 } from 'lucide-react';
 
 /**
@@ -76,7 +78,9 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
       gtin: p.gtin || '', flavor: p.flavor || '', base_flavor: p.base_flavor || '',
       status: p.status || 'active', eyemark_color: p.eyemark_color || '',
       shopify_sku: p.shopify_sku || '', mrp_formula_id: p.mrp_formula_id || '',
-      nfp_version: p.nfp_version || '', nfp_approved_at: p.nfp_approved_at || '',
+      // nfp_version / nfp_approved_at are deliberately absent. They are the
+      // artwork print gate, and they are written by approving a panel — see the
+      // Nutrition panel section below. The server refuses them on PUT.
       artwork_status: p.artwork_status || '', drive_url: p.drive_url || '', notes: p.notes || '',
     });
     setEditing(true);
@@ -139,8 +143,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                 {[
                   ['flavor', 'Product name'], ['base_flavor', 'Base flavour'], ['gtin', 'GTIN'],
                   ['eyemark_color', 'Eyemark colour'], ['shopify_sku', 'Shopify SKU'],
-                  ['mrp_formula_id', 'MRP formula'], ['nfp_version', 'NFP version'],
-                  ['nfp_approved_at', 'NFP approved (YYYY-MM-DD)'], ['drive_url', 'Drive link'],
+                  ['mrp_formula_id', 'MRP formula'], ['drive_url', 'Drive link'],
                 ].map(([k, label]) => (
                   <label key={k} className="block">
                     <span className="text-xs font-medium text-gray-600">{label}</span>
@@ -188,7 +191,8 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     ['Zipper', p.zipper], ['Print', p.print_process],
                     ['Trim', p.trim_length_mm ? `${p.trim_length_mm} × ${p.trim_width_mm} mm` : null],
                     ['Eyemark', p.eyemark_color], ['Shopify SKU', p.shopify_sku],
-                    ['MRP formula', p.mrp_formula_id], ['NFP version', p.nfp_version],
+                    ['MRP formula', p.mrp_formula_id],
+                    ['NFP version', p.nfp_version && `${p.nfp_version}${p.nfp_approved_at ? ` — approved ${p.nfp_approved_at}` : ' — not approved'}`],
                     ['Artwork', pretty(p.artwork_status)],
                   ].filter(([, v]) => v !== null && v !== undefined && v !== '').map(([label, v]) => (
                     <div key={label}>
@@ -213,6 +217,15 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     </div>
                   </div>
                 )}
+
+                {/* The panel workflow lives here, beside the product, because
+                    that is where someone already is when they need it. The
+                    refresh carries back up so the readiness bar moves the
+                    moment a panel is approved. */}
+                <div className="pt-2 border-t border-gray-100">
+                  <NfpForSku sku={sku} formulaRev={p.formula_rev} canEdit={canEdit}
+                    onChanged={() => { refresh(); onSaved?.(); }} />
+                </div>
 
                 {p.siblings?.length > 0 && (
                   <div>
@@ -251,6 +264,9 @@ export default function ProductsPanel() {
   // count — the number shrinking is the point of the punch list, and a number
   // you have to open a tab to see does not do that job.
   const { data: health } = useApiGet('/products/data-health');
+  // Same reason as `health`: fetched here so the tab badge and the board it
+  // opens are the same number, not two queries that can drift.
+  const { data: nfp, refresh: refreshNfp } = useApiGet('/nfp');
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const [pack, setPack] = useState('');
@@ -282,6 +298,10 @@ export default function ProductsPanel() {
 
   const { sorted, sortCol, sortDir, toggleSort } = useTableSort(filtered, COLUMNS, 'sku', 'asc');
 
+  // Panels somebody still has to act on — drafts, links out, and ones sent back.
+  const awaitingNfp = (nfp?.versions || [])
+    .filter((v) => ['draft', 'sent', 'rejected'].includes(v.status)).length;
+
   const badGtin = products.filter((p) => p.gtin && !p.gtin_valid).length;
   const incomplete = products.filter((p) => p.readiness?.missing?.length > 0).length;
 
@@ -299,12 +319,18 @@ export default function ProductsPanel() {
 
       <ModuleTabs value={view} onChange={setView} tabs={[
         { id: 'list', label: 'Catalogue', icon: Package, badge: products.length },
+        // Panels waiting on somebody. Counted here rather than left to be found
+        // in a product drawer, because "who still owes us an approval" is the
+        // question that holds artwork up.
+        { id: 'nfp', label: 'Nutrition panels', icon: FileText,
+          badge: awaitingNfp || undefined, badgeTone: awaitingNfp ? 'alert' : undefined },
         // The punch list lives beside the catalogue rather than in a document,
         // so it is counted live and shrinks as the data is fixed.
         { id: 'health', label: 'Data health', icon: Stethoscope,
           badge: health?.affected || undefined, badgeTone: health?.affected ? 'alert' : undefined },
       ]} />
 
+      {view === 'nfp' && <NfpBoard data={nfp} onOpenSku={(s) => { setView('list'); setOpen(s); }} />}
       {view === 'health' && <ProductDataHealth data={health} />}
 
       {view === 'list' && (<>
@@ -386,7 +412,8 @@ export default function ProductsPanel() {
 
       </>)}
 
-      {open && <Detail sku={open} canEdit={canEdit} onClose={() => setOpen(null)} onSaved={refresh} />}
+      {open && <Detail sku={open} canEdit={canEdit} onClose={() => setOpen(null)}
+        onSaved={() => { refresh(); refreshNfp(); }} />}
     </div>
   );
 }

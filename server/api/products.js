@@ -263,8 +263,25 @@ const WRITABLE = [
   'legacy_sku', 'gtin', 'category', 'protein_type', 'pack', 'pack_count', 'flavor',
   'base_flavor', 'flavor_code', 'status', 'spec_id', 'eyemark_color', 'dieline_required',
   'shopify_sku', 'shopify_variant_id', 'shiphero_synced_at', 'mrp_formula_id', 'formula_rev',
-  'nfp_version', 'nfp_approved_at', 'artwork_version', 'artwork_status', 'drive_url', 'notes',
+  'artwork_version', 'artwork_status', 'drive_url', 'notes',
 ];
+
+/**
+ * `nfp_version` and `nfp_approved_at` deliberately left WRITABLE.
+ *
+ * Those two columns are the artwork print gate — nothing reaches print_ready
+ * without an approved NFP, or against a panel that is not the product's current
+ * one. While they were text boxes, that gate opened by typing a date into one.
+ *
+ * They are now a mirror written by api/nfp.js in the same transaction as the
+ * approval, and by nothing else. A panel approved before ReadyDoc existed is
+ * recorded by filing it with `source: 'paper'`, which asks for the two facts a
+ * typed date never carried: who approved it, and against what.
+ *
+ * Refused loudly rather than dropped silently, because a client that used to be
+ * able to send these would otherwise look like it saved and quietly not have.
+ */
+const NFP_OWNED = ['nfp_version', 'nfp_approved_at'];
 
 router.post('/', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
@@ -304,6 +321,12 @@ router.put('/:sku', (req, res) => {
   const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!existing) return res.status(404).json({ error: 'No such SKU' });
   const b = req.body || {};
+
+  if (NFP_OWNED.some((c) => b[c] !== undefined)) {
+    return res.status(400).json({
+      error: 'The NFP version and its approval date are set by approving a panel, not by typing them. Open the product\'s NFP panels.',
+    });
+  }
 
   // A GTIN that fails its check digit is never stored, from any door.
   if (b.gtin !== undefined) {

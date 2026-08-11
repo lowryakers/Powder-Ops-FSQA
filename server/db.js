@@ -1859,6 +1859,87 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_artwork_checks_version ON artwork_checks(version_id);
   `);
 
+  // ── Nutrition Facts Panels ────────────────────────────────────────────────
+  // The panel that is printed on the pack, as an approvable record rather than
+  // a version string somebody typed.
+  //
+  // `products.nfp_version` / `nfp_approved_at` already existed and are what the
+  // artwork print gate reads — nothing may reach print_ready against an
+  // unapproved panel, or against a panel that is not the product's current one.
+  // But those were two free-text fields, so "NFP V3 approved" was an assertion
+  // with nothing behind it: no file, no approver, no date anyone can check. An
+  // auditor asking to see the panel that was approved and the artwork printed
+  // from it got a version number.
+  //
+  // So the columns stay — they are the gate and the readiness step, and every
+  // consumer keeps working — but they become a MIRROR written by the approval
+  // here, never typed. Same arrangement as knife_accountability.status mirroring
+  // the sign-out log: one authority, one derived copy.
+  //
+  // An approved panel is never rewritten. A correction files a new version and
+  // supersedes the old one, exactly like artwork and a signed organoleptic
+  // record — history that can be edited is not evidence.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS nfp_versions (
+      id TEXT PRIMARY KEY,
+      sku TEXT NOT NULL,
+      -- TEXT, not a counter: this is the label that gets printed on artwork and
+      -- matched against artwork_versions.nfp_version. "V3", "2026-A".
+      version TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft','sent','approved','rejected','superseded')),
+      -- 'upload' — filed here and approved here; 'paper' — approved before
+      -- ReadyDoc, recorded with the date and the name of whoever signed it.
+      source TEXT NOT NULL DEFAULT 'upload',
+      serving_size TEXT,
+      servings_per_container TEXT,
+      -- Which formula the panel was calculated from. A reformulation that does
+      -- not move this is the case where a panel silently stops being true.
+      formula_rev TEXT,
+      drive_url TEXT,
+      change_summary TEXT,
+      -- The signed link. Stored as a SHA-256 hash and returned in clear exactly
+      -- once, same as a partner portal token: a link that can be read back out
+      -- of the database is a second copy of a credential.
+      token_hash TEXT,
+      token_issued_at TEXT,
+      token_issued_by TEXT,
+      sent_to TEXT,
+      approved_by TEXT,
+      approved_at TEXT,
+      -- 'link' | 'in_app' | 'paper' — how the decision actually arrived.
+      decided_via TEXT,
+      decision_comments TEXT,
+      rejected_reason TEXT,
+      superseded_by TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (sku, version),
+      FOREIGN KEY (sku) REFERENCES products(sku)
+    );
+    CREATE INDEX IF NOT EXISTS idx_nfp_versions_sku ON nfp_versions(sku, status);
+    CREATE INDEX IF NOT EXISTS idx_nfp_versions_token ON nfp_versions(token_hash);
+
+    -- The panel itself. Files live in R2; only the key is stored. Without one
+    -- there is nothing for an approver to look at, which is why sending a link
+    -- refuses when neither a file nor a Drive link is on the version.
+    CREATE TABLE IF NOT EXISTS nfp_files (
+      id TEXT PRIMARY KEY,
+      version_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'panel'
+        CHECK (kind IN ('panel','preview','backup','other')),
+      filename TEXT NOT NULL,
+      content_type TEXT,
+      size INTEGER,
+      storage_key TEXT NOT NULL,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (version_id) REFERENCES nfp_versions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_nfp_files_version ON nfp_files(version_id, kind);
+  `);
+
   // Post-repair hygiene clearance
   addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
   addColumnIfMissing('work_orders', 'clearance_status', 'TEXT');

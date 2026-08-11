@@ -83,6 +83,7 @@ import importRoutes from './server/api/imports.js';
 import coaRoutes from './server/api/coa.js';
 import productRoutes from './server/api/products.js';
 import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api/artwork.js';
+import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import { seedProducts } from './server/products-seed.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
@@ -1590,6 +1591,11 @@ app.use('/api/products', requireModuleWrite('products'), productRoutes);
 // proofing service authenticates with a token, not a session.
 app.use('/api/artwork/ingest', artworkIngestRoutes);
 app.use('/api/artwork', requireModuleWrite('artwork'), artworkRoutes);
+// The NFP approval link. Public and token-gated for the same reason the flavor
+// magic link is: the person who signs off a nutrition panel has no ReadyDoc
+// account. Mounted before the guarded router, outside requireModuleWrite.
+app.use('/api/nfp-link', nfpLinkRoutes);
+app.use('/api/nfp', requireModuleWrite('products'), nfpRoutes);
 app.use('/api/office', officeRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/procurement', procurementRoutes);
