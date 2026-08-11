@@ -468,14 +468,32 @@ function Lightbox({ atts, index, onNav, onClose }) {
         <button onClick={e => { e.stopPropagation(); onNav(1); }}
           className="absolute right-2 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 text-white hover:bg-white/25 z-10"><ChevronRight size={26} /></button>
       )}
-      <div ref={trackRef} className="max-w-[92vw] max-h-[84vh] will-change-transform" onClick={e => e.stopPropagation()}>
+      {/* A DOCUMENT NEEDS MORE ROOM THAN A PHOTO, and it cannot be pinched.
+          Photos and video are capped so they sit inside the frame with the
+          controls; a PDF is handed the whole box, because the browser's own
+          viewer spends a third of its width on a thumbnail rail before it draws
+          a single page. In a docked chat panel or on a phone that left the page
+          itself a couple of centimetres across — legible only in the sense that
+          pixels were present. Same reason "Open full size" is offered on the
+          document itself rather than only in the footer: below about 700px no
+          amount of sizing makes an embedded letter-size page readable, and a
+          real tab is the honest answer. */}
+      <div ref={trackRef}
+        className={`will-change-transform ${isPdf(a) ? 'w-[98vw] h-[90vh] max-w-6xl' : 'max-w-[92vw] max-h-[84vh]'}`}
+        onClick={e => e.stopPropagation()}>
         {browserRenderable(a) && a.url ? (
           <ZoomableImage src={a.url} alt={a.filename}
             onError={e => { e.target.outerHTML = '<div class="bg-white rounded-xl p-6 text-sm text-gray-700">This photo could not be displayed — use Download below to view it.</div>'; }} />
         ) : videoPlayable(a) && a.url ? (
           <video src={a.url} controls playsInline autoPlay className="max-w-[92vw] max-h-[84vh] bg-black rounded-lg" />
         ) : isPdf(a) && a.url ? (
-          <iframe src={a.url} title={a.filename} className="w-[92vw] max-w-4xl h-[84vh] bg-white rounded-lg" />
+          <div className="relative w-full h-full">
+            <iframe src={a.url} title={a.filename} className="w-full h-full bg-white rounded-lg" />
+            <a href={a.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+              className="absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-900/85 text-white text-xs font-medium shadow-lg hover:bg-gray-900">
+              <ExternalLink size={13} /> Open full size
+            </a>
+          </div>
         ) : (
           <div className="bg-white rounded-xl p-6 flex flex-col items-center gap-3 min-w-[260px]">
             <FileText size={40} className="text-powder-600" />
@@ -1127,6 +1145,7 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
     setMQuery(null);
     requestAnimationFrame(() => { if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); } });
   };
+
 
   const uploadFiles = async (files) => {
     if (!files.length || !storageOn) return;
@@ -2454,6 +2473,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     onChange: (v) => { setBody(v); writeDraft(activeId, v); },
   });
 
+
   const [mentionHi, setMentionHi] = useState(0);
   const mentionMatches = useMemo(() => {
     // Suggest channel members first (they can see the channel); fall back to all
@@ -2483,6 +2503,23 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     requestAnimationFrame(() => { if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); } });
   };
 
+  // One key handler for both composer layouts. The phone renders the textarea
+  // on its own row and the desktop renders it inline with the buttons, but they
+  // are the same field and must behave identically — two copies of this is how
+  // @mentions start working on one layout and not the other.
+  const composerKeyDown = (e) => {
+    // While the @mention menu is open: arrows move, Enter/Tab picks.
+    if (mentionMatches.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHi(h => Math.min(h + 1, mentionMatches.length - 1)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setMentionHi(h => Math.max(h - 1, 0)); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(chatName(mentionMatches[mentionHi] || mentionMatches[0])); return; }
+    }
+    if (e.key === 'Escape' && mentionQuery !== null) { setMentionQuery(null); return; }
+    // The mention menu gets first refusal on every key above; only then do the
+    // formatting shortcuts see it.
+    if (composerKeys(e)) return;
+    // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).
+  };
   const translateMessage = useCallback(async (m, lang) => {
     const r = await apiPost(`/comms/messages/${m.id}/translate`, { lang });
     return r.text;
@@ -3264,7 +3301,25 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   <FormatBar getEl={() => composerRef.current} value={body}
                     onChange={v => { setBody(v); writeDraft(activeId, v); }} />
                 </div>
-                <div className="flex items-end gap-2">
+                {/* ON A PHONE THE TEXT BOX GETS ITS OWN ROW.
+                    Everything used to sit on one line: paperclip, camera, mic,
+                    emoji, the textarea and Send. Those five controls are ~42px
+                    each plus gaps — about 250px — so on a 390px phone the place
+                    you actually type was squeezed into ~110px, a tall narrow
+                    slot two or three words wide. The buttons are all optional;
+                    the message is the point, so it gets the width and the
+                    controls go underneath. Desktop keeps the single row, where
+                    250px of chrome is a rounding error. */}
+                <div className={isCompactLayout ? 'flex flex-col gap-1.5' : 'flex items-end gap-2'}>
+                  {isCompactLayout && (
+                    <div className="flex-1 relative">
+                      <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1} onPaste={onComposerPaste}
+                        onKeyDown={composerKeyDown}
+                        placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
+                        className={`w-full relative bg-transparent text-gray-900 placeholder:text-gray-400 border-gray-300 rounded-xl resize-none max-h-60 overflow-y-auto ${COMPOSER_METRICS}`} />
+                    </div>
+                  )}
+                  <div className={isCompactLayout ? 'flex items-end gap-1' : 'contents'}>
                   {storageOn && (
                     <>
                       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onPickFiles} />
@@ -3314,35 +3369,21 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                       worse trade than not seeing bold while you write it.
                       Re-enable when someone has tested it on an actual
                       handset. */}
-                  <div className="flex-1 relative">
-                    {!isCompactLayout && (
+                  {!isCompactLayout && (
+                    <div className="flex-1 relative">
                       <MarkupOverlay textareaRef={composerRef} value={body} className={`${COMPOSER_METRICS} border-transparent rounded-xl`} />
-                    )}
-                    <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1} onPaste={onComposerPaste}
-                      onKeyDown={e => {
-                        // While the @mention menu is open: arrows move, Enter/Tab picks.
-                        if (mentionMatches.length) {
-                          if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHi(h => Math.min(h + 1, mentionMatches.length - 1)); return; }
-                          if (e.key === 'ArrowUp') { e.preventDefault(); setMentionHi(h => Math.max(h - 1, 0)); return; }
-                          if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(chatName(mentionMatches[mentionHi] || mentionMatches[0])); return; }
-                        }
-                        if (e.key === 'Escape' && mentionQuery !== null) { setMentionQuery(null); return; }
-                        // The mention menu gets first refusal on every key above;
-                        // only then do the formatting shortcuts see it.
-                        if (composerKeys(e)) return;
-                        // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).
-                      }}
-                      placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
-                      className={`w-full relative bg-transparent placeholder:text-gray-400 border-gray-300 rounded-xl resize-none max-h-60 overflow-y-auto ${COMPOSER_METRICS} ${
-                        // Its own text is hidden ONLY when the layer behind is
-                        // drawing it. With no overlay the field must render
-                        // normally, or the composer is invisible.
-                        isCompactLayout
-                          ? 'text-gray-900'
-                          : 'text-transparent caret-gray-900 selection:bg-powder-200/50 selection:text-transparent'
-                      }`} />
-                  </div>
+                      <textarea ref={composerRef} value={body} onChange={onBodyChange} rows={1} onPaste={onComposerPaste}
+                        onKeyDown={composerKeyDown}
+                        placeholder={`Message ${active.kind === 'dm' ? active.name : '#' + active.name}`}
+                        // Its own text is hidden ONLY because the layer behind
+                        // is drawing it; the caret and selection still come
+                        // from the real field.
+                        className={`w-full relative bg-transparent placeholder:text-gray-400 border-gray-300 rounded-xl resize-none max-h-60 overflow-y-auto ${COMPOSER_METRICS} text-transparent caret-gray-900 selection:bg-powder-200/50 selection:text-transparent`} />
+                    </div>
+                  )}
+                  {isCompactLayout && <div className="flex-1" />}
                   <button onClick={send} disabled={!body.trim() && pending.length === 0} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
+                  </div>
                 </div>
               </div>
               )}
