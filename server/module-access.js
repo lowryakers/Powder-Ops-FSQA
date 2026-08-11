@@ -46,6 +46,13 @@ export const ALL_MODULE_IDS = [
   // the app. Grant-able so a QA or ops lead can own form structure without
   // needing full admin.
   'log-builder',
+  // Product management. Deliberately NOT part of any role default — the floor
+  // has no reason to see the finished-goods catalogue, and a nav this long
+  // only stays usable if new groups are granted rather than assumed.
+  'products',
+  // Artwork version history and proof verification. Separate from 'products'
+  // so QA can be given the pack checks without the catalogue behind them.
+  'artwork',
 ];
 
 export function moduleLevel(user, moduleId) {

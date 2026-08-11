@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Archive, Sliders, BookText } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -60,6 +60,8 @@ const ProductionLog = lazy(() => import('./components/compliance/ProductionLog.j
 const ProductionSchedule = lazy(() => import('./components/compliance/ProductionSchedule.jsx'));
 const ProductionDashboard = lazy(() => import('./components/compliance/ProductionDashboard.jsx'));
 const COAPanel = lazy(() => import('./components/compliance/COAPanel.jsx'));
+const ProductsPanel = lazy(() => import('./components/compliance/ProductsPanel.jsx'));
+const ArtworkPanel = lazy(() => import('./components/compliance/ArtworkPanel.jsx'));
 import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import PageInfo from './components/PageInfo.jsx';
@@ -123,6 +125,16 @@ const NAV_GROUPS = [
       { id: 'equipment', label: 'Equipment', icon: Shield },
       { id: 'calibration', label: 'Calibration', icon: Thermometer },
       { id: 'loto', label: 'Lockout / Tagout', icon: Lock },
+    ],
+  },
+  {
+    // Finished goods — the catalogue, its codes and its artwork. Granted, never
+    // a role default: the floor has no reason to see it, and a nav this long
+    // only stays usable if new groups have to be asked for.
+    label: 'Product',
+    items: [
+      { id: 'products', label: 'Products', icon: Package, keywords: 'sku gtin upc barcode master list catalogue catalog flavor spec artwork shopify' },
+      { id: 'artwork', label: 'Artwork', icon: ImageIcon, keywords: 'proof proofing pack packaging label film dieline version revision print ready shaun nfp barcode' },
     ],
   },
   {
@@ -1805,6 +1817,8 @@ function App() {
           {resolvedTab === 'quality-schedules' && <QualitySchedulesPanel />}
           {resolvedTab === 'hygienic' && <HygienicDesignPanel />}
           {resolvedTab === 'coa' && <COAPanel />}
+          {resolvedTab === 'products' && <ProductsPanel />}
+          {resolvedTab === 'artwork' && <ArtworkPanel />}
           {resolvedTab === 'capa' && <CAPAPanel />}
           {(resolvedTab === 'document-control' || HUB_OF[resolvedTab] === 'document-control') &&
             <ModuleHub key={`dc-${resolvedTab}`} hubId="document-control" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
