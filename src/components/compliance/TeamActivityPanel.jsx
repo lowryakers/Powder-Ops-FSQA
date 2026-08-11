@@ -4,6 +4,24 @@ import { Users, CheckCircle2, Clock, AlertTriangle, Gauge, TrendingUp } from 'lu
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
+import ActivityDrillDown from './ActivityDrillDown.jsx';
+
+/**
+ * Every number on this page opens the tasks behind it.
+ *
+ * It was a page you could read and not act on: "27 overdue in Quality" is not
+ * an answer, it is the start of a question, and working out which twenty-seven
+ * meant going to Task Center and rebuilding the filter by hand — which nobody
+ * does, so the number got looked at and nothing happened.
+ *
+ * The drill-down asks the server, which filters with the same predicates that
+ * produced the figure (`server/activity-metrics.js`). A count and a list built
+ * from two copies of the same rule is how a dashboard starts lying.
+ *
+ * A rate is not a set, so a percentage drills to the thing a person actually
+ * means by clicking it: on-time% opens the LATE ones (the exceptions), and
+ * completion% opens what has not been handled.
+ */
 
 const RANGES = [
   { key: '30', label: 'Last 30 days', days: 30 },
@@ -15,24 +33,38 @@ const tooltipStyle = { backgroundColor: '#fff', border: '1px solid #e5e7eb', bor
 
 function iso(d) { return d.toISOString().split('T')[0]; }
 
-function KpiCard({ icon: Icon, label, value, sub, color }) {
+function pct(v) { return v == null ? '—' : `${v}%`; }
+function days(v) { return v == null ? '—' : `${v.toFixed(1)}d`; }
+function onTimeColor(v) { return v == null ? 'text-gray-400' : v >= 95 ? 'text-green-600' : v >= 80 ? 'text-amber-600' : 'text-red-600'; }
+
+/** A number that opens what is behind it, or plain text when there is nothing to open. */
+function Drillable({ metric, onDrill, disabled, className = '', title, children }) {
+  if (!metric || disabled) return <span className={className}>{children}</span>;
+  return (
+    <button type="button" onClick={() => onDrill(metric)} title={title || 'Show these tasks'}
+      className={`${className} underline decoration-dotted decoration-gray-300 underline-offset-4 hover:decoration-current rounded focus:outline-none focus:ring-2 focus:ring-powder-300`}>
+      {children}
+    </button>
+  );
+}
+
+function KpiCard({ icon: Icon, label, value, sub, color, metric, onDrill, disabled }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col gap-1">
       <div className="flex items-center gap-2 text-gray-400">
         <Icon size={16} />
         <span className="text-xs uppercase tracking-wide font-medium">{label}</span>
       </div>
-      <p className={`text-2xl font-bold ${color || 'text-gray-900'}`}>{value}</p>
+      <Drillable metric={metric} onDrill={onDrill} disabled={disabled}
+        className={`text-2xl font-bold text-left ${color || 'text-gray-900'}`}>
+        {value}
+      </Drillable>
       {sub && <p className="text-xs text-gray-500">{sub}</p>}
     </div>
   );
 }
 
-function pct(v) { return v == null ? '—' : `${v}%`; }
-function days(v) { return v == null ? '—' : `${v.toFixed(1)}d`; }
-function onTimeColor(v) { return v == null ? 'text-gray-400' : v >= 95 ? 'text-green-600' : v >= 80 ? 'text-amber-600' : 'text-red-600'; }
-
-function StatTable({ title, rows, nameKey, nameLabel }) {
+function StatTable({ title, rows, nameKey, nameLabel, scopeKey, onDrill }) {
   if (!rows || rows.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -44,6 +76,7 @@ function StatTable({ title, rows, nameKey, nameLabel }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <h3 className="text-sm font-semibold text-gray-900 px-4 pt-4 pb-2">{title}</h3>
+      <p className="text-xs text-gray-500 px-4 pb-2">Any figure opens the tasks behind it.</p>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
@@ -57,16 +90,40 @@ function StatTable({ title, rows, nameKey, nameLabel }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rows.map(r => (
-              <tr key={r[nameKey]}>
-                <td className="px-4 py-2 font-medium text-gray-900">{r[nameKey]}</td>
-                <td className="px-4 py-2 text-right text-gray-600">{r.total}</td>
-                <td className="px-4 py-2 text-right text-gray-600">{r.completed}</td>
-                <td className={`px-4 py-2 text-right font-medium ${onTimeColor(r.on_time_pct)}`}>{pct(r.on_time_pct)}</td>
-                <td className={`px-4 py-2 text-right ${r.overdue > 0 ? 'text-red-600 font-medium' : 'text-gray-400'}`}>{r.overdue}</td>
-                <td className="px-4 py-2 text-right text-gray-600">{days(r.avg_days)}</td>
-              </tr>
-            ))}
+            {rows.map(r => {
+              // The scope this row narrows to: a department key, or a person's
+              // name — whichever table this is.
+              const scope = { [scopeKey]: scopeKey === 'department' ? r.key : r.name };
+              const label = r[nameKey];
+              const drill = (metric) => onDrill({ metric, scope, label });
+              return (
+                <tr key={r[nameKey]}>
+                  <td className="px-4 py-2 font-medium text-gray-900">{label}</td>
+                  <td className="px-4 py-2 text-right text-gray-600">
+                    <Drillable metric="due" onDrill={drill} disabled={!r.total}>{r.total}</Drillable>
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-600">
+                    <Drillable metric="completed" onDrill={drill} disabled={!r.completed}>{r.completed}</Drillable>
+                  </td>
+                  <td className={`px-4 py-2 text-right font-medium ${onTimeColor(r.on_time_pct)}`}>
+                    <Drillable metric="late" onDrill={drill}
+                      disabled={r.on_time_pct == null || r.completed === r.on_time}
+                      title="Show the ones completed late">
+                      {pct(r.on_time_pct)}
+                    </Drillable>
+                  </td>
+                  <td className={`px-4 py-2 text-right ${r.overdue > 0 ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                    <Drillable metric="overdue" onDrill={drill} disabled={!r.overdue}>{r.overdue}</Drillable>
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-600">
+                    <Drillable metric="completed" onDrill={drill} disabled={r.avg_days == null}
+                      title="Show the completed tasks this average is over">
+                      {days(r.avg_days)}
+                    </Drillable>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -76,6 +133,7 @@ function StatTable({ title, rows, nameKey, nameLabel }) {
 
 export default function TeamActivityPanel() {
   const [rangeKey, setRangeKey] = useState('30');
+  const [drill, setDrill] = useState(null);
   const range = RANGES.find(r => r.key === rangeKey) || RANGES[0];
 
   const { from, to } = useMemo(() => {
@@ -94,6 +152,10 @@ export default function TeamActivityPanel() {
     'On-time': w.on_time,
   }));
 
+  const openOverall = (metric) => setDrill({ query: { from, to, metric }, scopeLabel: 'Everyone' });
+  const openScoped = ({ metric, scope, label }) =>
+    setDrill({ query: { from, to, metric, ...scope }, scopeLabel: label });
+
   return (
     <div className="max-w-6xl mx-auto space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -103,6 +165,7 @@ export default function TeamActivityPanel() {
           </h2>
           <p className="text-sm text-gray-500 mt-1">
             Task throughput and on-time performance from work-order timing. Operational data — separate from the audit compliance trail.
+            <span className="block">Every figure below opens the tasks behind it.</span>
           </p>
         </div>
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
@@ -122,11 +185,20 @@ export default function TeamActivityPanel() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <KpiCard icon={CheckCircle2} label="Completed" value={o.completed} sub={`of ${o.total} due`} />
-            <KpiCard icon={Gauge} label="On-time" value={pct(o.on_time_pct)} sub="of completed" color={onTimeColor(o.on_time_pct)} />
-            <KpiCard icon={Clock} label="Completion" value={pct(o.completion_pct)} sub="handled / due" />
-            <KpiCard icon={AlertTriangle} label="Overdue" value={o.overdue} sub="missed or past due" color={o.overdue > 0 ? 'text-red-600' : 'text-gray-900'} />
-            <KpiCard icon={TrendingUp} label="Avg time" value={days(o.avg_days)} sub="create → complete" />
+            <KpiCard icon={CheckCircle2} label="Completed" value={o.completed} sub={`of ${o.total} due`}
+              metric="completed" onDrill={openOverall} disabled={!o.completed} />
+            {/* A rate has no rows of its own — clicking it means "show me the
+                ones that were late", which is the exception people are after. */}
+            <KpiCard icon={Gauge} label="On-time" value={pct(o.on_time_pct)} sub="of completed"
+              color={onTimeColor(o.on_time_pct)}
+              metric="late" onDrill={openOverall} disabled={o.completed === o.on_time} />
+            <KpiCard icon={Clock} label="Completion" value={pct(o.completion_pct)} sub="handled / due"
+              metric="outstanding" onDrill={openOverall} disabled={o.completion_pct === 100} />
+            <KpiCard icon={AlertTriangle} label="Overdue" value={o.overdue} sub="missed or past due"
+              color={o.overdue > 0 ? 'text-red-600' : 'text-gray-900'}
+              metric="overdue" onDrill={openOverall} disabled={!o.overdue} />
+            <KpiCard icon={TrendingUp} label="Avg time" value={days(o.avg_days)} sub="create → complete"
+              metric="completed" onDrill={openOverall} disabled={o.avg_days == null} />
           </div>
 
           {trendData.length > 0 && (
@@ -146,9 +218,15 @@ export default function TeamActivityPanel() {
             </div>
           )}
 
-          <StatTable title="By department" rows={data.by_department} nameKey="label" nameLabel="Department" />
-          <StatTable title="By person" rows={data.by_person} nameKey="name" nameLabel="Team member" />
+          <StatTable title="By department" rows={data.by_department} nameKey="label" nameLabel="Department"
+            scopeKey="department" onDrill={openScoped} />
+          <StatTable title="By person" rows={data.by_person} nameKey="name" nameLabel="Team member"
+            scopeKey="person" onDrill={openScoped} />
         </>
+      )}
+
+      {drill && (
+        <ActivityDrillDown query={drill.query} scopeLabel={drill.scopeLabel} onClose={() => setDrill(null)} />
       )}
     </div>
   );

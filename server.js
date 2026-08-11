@@ -69,7 +69,7 @@ import { storageEnabled, putObject, deleteObject } from './server/storage.js';
 import { voyageEnabled } from './server/embeddings.js';
 import { pushEnabled } from './server/push.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
-import productionRoutes from './server/api/production.js';
+import productionRoutes, { qaActionNudges } from './server/api/production.js';
 import structureRoutes from './server/api/structure.js';
 import logBuilderRoutes from './server/api/log-builder.js';
 import { seedStructureLists } from './server/structure-seed.js';
@@ -1674,7 +1674,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

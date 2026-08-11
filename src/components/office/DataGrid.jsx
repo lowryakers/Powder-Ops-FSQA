@@ -2,6 +2,7 @@ import { useState, useMemo, Fragment } from 'react';
 import { Search, ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import TextCell from '../common/TextCell.jsx';
 
 // A plain, fast table for the office data sheets: click a header to sort,
 // type to search everything, and pick values from any column marked filterable.
@@ -148,7 +149,18 @@ export default function DataGrid({
                           onKeyDown={e => { if (e.key === 'Enter') commit(row, c); if (e.key === 'Escape') setEditing(null); }}
                           type={c.type === 'number' || c.type === 'money' ? 'number' : 'text'} step="any"
                           className={`w-full px-1 py-0.5 border border-powder-400 rounded text-sm ${c.align === 'right' ? 'text-right' : ''}`} />
-                      ) : fmt(row, c)}
+                      ) : (
+                        // A grid column can hold a note somebody typed a
+                        // paragraph into. Clamped so one long value cannot
+                        // restructure every row; a column that returns its own
+                        // markup (a chip, a link) is left alone.
+                        (() => {
+                          const v = fmt(row, c);
+                          return typeof v === 'string' || typeof v === 'number'
+                            ? <TextCell value={v} width={c.width || '20rem'} className={c.align === 'right' ? 'ml-auto' : ''} />
+                            : v;
+                        })()
+                      )}
                     </td>
                   );
                 })}

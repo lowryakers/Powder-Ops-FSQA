@@ -137,6 +137,19 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] pay review nudges failed:', e.message); }
   }
 
+  // Production entries QA has asked someone to correct. The flag is set once,
+  // so a request that is ignored would otherwise be silent forever — which is
+  // how entries sat flagged for weeks with the QA Review queue ageing around
+  // them. Every other day, and only for asks at least two days old.
+  const lastQaAction = getFlag(db, 'last_qa_action_nudge_at');
+  if (deps.qaActionNudges && (!lastQaAction || (now - new Date(lastQaAction)) >= 2 * 86400000)) {
+    try {
+      const sent = await deps.qaActionNudges(db);
+      setFlag(db, 'last_qa_action_nudge_at', now.toISOString());
+      if (sent.sent) console.log(`[jobs] QA correction nudges: ${sent.sent} of ${sent.entries} outstanding`);
+    } catch (e) { console.warn('[jobs] QA correction nudges failed:', e.message); }
+  }
+
   // Monday PM digest: each team's recurring work for the week, posted into the
   // team's own channel — where people already look — like the schedule publish.
   if (day === 1 && getFlag(db, 'last_pm_digest_week') !== week) {

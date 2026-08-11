@@ -20,6 +20,58 @@ completed/on-time/overdue/avg-cycle KPIs, weekly trend, by-department and by-per
 Whole view is admin-gated, which satisfies the agreed sensitivity guard (per-person detail never shown to
 non-admins). If it's ever opened to supervisors, re-apply aggregate-by-default with admin-only drill-down.
 
+**Every figure on it now opens the tasks behind it** (`server/activity-metrics.js`, `GET /activity/tasks`,
+`ActivityDrillDown.jsx`). "27 overdue in Quality" is not an answer, it is the start of a question, and
+working out *which* twenty-seven meant rebuilding the filter by hand in Task Center — which nobody does.
+- **The predicates moved OUT of the route into `activity-metrics.js` and both endpoints import them.** The
+  moment a number is clickable, a drill-down built from a second copy of the rule is a list that disagrees
+  with the figure above it, and whoever clicked cannot tell which is wrong. The tests assert reconciliation
+  on every card, every department row and every person row, plus that the departments partition the total.
+- **A rate is not a set, so a percentage drills to what a person MEANS by clicking it**: on-time% opens the
+  ones completed *late* (the exceptions), completion% opens what has not been handled. `MEASURES.late` and
+  `MEASURES.outstanding` exist for exactly this and have no card of their own.
+- **`DUE_IN_WINDOW` LEFT JOINs equipment.** A task raised from a chat message has `equipment_id NULL`; an
+  inner join would show 2 on the department row and return 0 rows when you clicked it — the same bug that
+  made tasks appear in the Operator View and not the Task Center. Asserted with fixtures, since the seed
+  has no such rows and the check would otherwise pass vacuously.
+- A figure with nothing behind it renders as plain text, not a button that opens an empty drawer.
+- `days_late`, `on_time` and `cycle_days` are computed SERVER-side and rendered as given — a drawer that
+  re-decides what the server already decided is the second mechanism all over again.
+
+### A long note must not restructure a log (`common/TextCell.jsx`)
+Someone typed a two-sentence reason into a disposal and every row on the screen became a 400px ribbon.
+**`max-width` on a `<td>` does nothing under the default `table-layout: auto`** — the browser gives the
+column whatever width the row leaves and wraps to fifteen lines. The constraint has to go on a block
+*inside* the cell. `<TextCell value width lines preLine />` clamps to two lines with the full text on
+`title`; nothing is lost, because every one of these logs opens the record on row click and a table is for
+scanning, not for reading a paragraph.
+- Wired into the **generic QMS log** (`QMSRecordsPanel` — every `logColumns` cell, so deviations,
+  non-conformances and on-hold records are all covered by one change), Disposals, LOTO executions and the
+  office `DataGrid` (which only clamps string/number cells — a column returning its own chip or link is left
+  alone). Short values are untouched; the clamp only bites when the text does not belong in a table.
+- **`preLine` is the second, different cause**, found by measuring rather than reading: the disposal
+  write-off cell is `whitespace-pre-line` holding several values on their own lines. Those newlines are
+  meaningful, so they are kept — and clamped, because eight of them still wall off the row.
+- The class name is **written out, never built** (`CLAMP[lines]`): Tailwind generates utilities by scanning
+  source for literal names, so `line-clamp-${n}` yields a class in the markup and nothing in the stylesheet.
+- Measured, not eyeballed: tallest Disposals row 177px → 77px against a 57px median.
+
+### QA asking for a correction has to reach the person
+`production_entries.qa_action_required` authorizes the filer to amend their own entry — but the ask lived
+only on a banner at the top of the Production Log, so it worked only if they happened to open that screen.
+Entries sat flagged for weeks while the QA Review queue aged around them (same failure as the 72-hour
+re-clean badge the cleaner could not see).
+- **`notifyQaAction()` in api/production.js** DMs the submitter through ReadyBot and pushes to their phone
+  the moment the flag is set, carrying **QA's actual note** and naming the entry (date · team · MO) — "your
+  entry needs a correction" with no note is an errand, not an instruction.
+- Called from `signOffProductionEntry`, which both the Production Log and QA Review go through, so the
+  notification cannot depend on which door QA used. **Fire-and-forget**: a comms outage must never fail a
+  signature that is already written.
+- **`qaActionNudges()`** (scheduled-jobs, flag `last_qa_action_nudge_at`) chases what nobody has fixed —
+  every **other** day, and only asks at least **two days** old, so nobody is chased the morning after. The
+  reminder reads as a reminder ("Still waiting — asked 5 days ago"), not as a fresh request. Resolving the
+  entry stops it permanently.
+
 ### Comms → compliance-record crossover  (SHIPPED 2026-07-23)
 "Create compliance record…" in the message 3-dot menu + mobile long-press sheet → picker
 (Deviation / Non-Conformance / On Hold) → `POST /api/comms/messages/:id/to-record` creates a draft

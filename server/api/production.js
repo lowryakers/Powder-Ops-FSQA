@@ -3,7 +3,9 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { hasExplicitEdit } from '../module-access.js';
-import { getChannelByName, postMessageAs, getModuleLinks } from './comms.js';
+import { getChannelByName, postMessageAs, getModuleLinks, botDm } from './comms.js';
+import { pushToUser } from '../push.js';
+import { readyDocOrigin } from '../links.js';
 import { roomLabel } from '../../shared/rooms.js';
 
 // Production teams whose schedule gets published to a matching comms channel.
@@ -697,7 +699,68 @@ export function signOffProductionEntry(db, id, { by, notes, actionRequired } = {
 
   const updated = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
   logAudit(by, 'qa_signoff', 'production_entry', id, { qa_notes: notes, qa_action_required: needsAction }, existing, updated);
+  // Telling the person is part of asking them. Fire-and-forget so a comms
+  // outage can never fail a signature that is already written.
+  if (needsAction) notifyQaAction(db, updated, by).catch(() => {});
   return { entry: updated };
+}
+
+/**
+ * Tell the supervisor that QA has asked them to correct their own entry.
+ *
+ * Without this the ask lived entirely on a banner at the top of the Production
+ * Log, which only works if the person happens to open that screen — so entries
+ * sat flagged for weeks while the QA Review queue aged around them. Same failure
+ * as the 72-hour re-clean badge the cleaner could not see.
+ *
+ * The DM says what to fix and where, because "your entry needs a correction"
+ * with no note is an errand, not an instruction.
+ */
+export async function notifyQaAction(db, entry, flaggedBy, { reminder = false } = {}) {
+  const who = db.prepare('SELECT id, name FROM users WHERE name = ? AND is_active = 1').get(entry.submitted_by);
+  if (!who) return false;
+  const { bot, dm } = botDm(db, who.id);
+  const what = [entry.date, entry.team, entry.mo_number && `MO ${entry.mo_number}`]
+    .filter(Boolean).join(' · ');
+  const age = entry.qa_signoff_at
+    ? Math.floor((Date.now() - new Date(`${String(entry.qa_signoff_at).replace(' ', 'T')}Z`).getTime()) / 86400000)
+    : null;
+  const lead = reminder
+    ? `⏰ Still waiting on a correction${age != null ? ` — asked ${age} day${age === 1 ? '' : 's'} ago` : ''}`
+    : `📝 QA has asked you to correct a production entry`;
+  // Bot bold is *text*, not **text** — the chat renderer isn't markdown.
+  await postMessageAs(db, dm, bot,
+    `${lead}\n*${what}*\n${flaggedBy || entry.qa_signoff_by || 'QA'}: "${entry.qa_notes || ''}"\n`
+    + `Open the Production Log to amend it — you can edit this entry without an edit grant, and it returns to Pending QA once corrected.\n`
+    + `${readyDocOrigin()}/?tab=production-log`);
+  pushToUser(who.id, {
+    title: reminder ? 'Correction still needed' : 'QA asked for a correction',
+    body: `${what} — ${entry.qa_notes || ''}`.slice(0, 120),
+    tag: `qa-action-${entry.id}`, renotify: true, url: '/?tab=production-log',
+  }).catch(() => {});
+  return true;
+}
+
+/**
+ * Chase the corrections nobody has made.
+ *
+ * The flag is set once, so without this a request that is ignored is silent
+ * forever — which is exactly the state the QA Review queue was in. Every other
+ * day rather than daily: a reminder people mute is worse than none. Only entries
+ * asked about at least two days ago, so nobody is chased the morning after.
+ */
+export async function qaActionNudges(db) {
+  const rows = db.prepare(`
+    SELECT * FROM production_entries
+    WHERE qa_action_required = 1 AND qa_action_resolved_at IS NULL
+      AND qa_signoff_at IS NOT NULL AND qa_signoff_at <= datetime('now', '-2 days')
+    ORDER BY qa_signoff_at`).all();
+  let sent = 0;
+  for (const entry of rows) {
+    try { if (await notifyQaAction(db, entry, null, { reminder: true })) sent++; }
+    catch { /* one bad DM must not stop the rest */ }
+  }
+  return { entries: rows.length, sent };
 }
 
 // PUT /entries/:id/qa-signoff — QA signs off on a production entry

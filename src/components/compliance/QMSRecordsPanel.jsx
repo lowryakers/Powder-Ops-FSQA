@@ -8,6 +8,7 @@ import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, Fil
 import KioskQrModal from '../kiosk/KioskQrModal';
 import RecordAttachments from './RecordAttachments';
 import { formatDateTime } from '../../lib/datetime.js';
+import TextCell from '../common/TextCell.jsx';
 
 // Mirror of server canSignApproval — admin always; else role/department match.
 //
@@ -1196,7 +1197,19 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
                       if (col === 'status') return <td key={col} className="px-2 py-2 text-center"><StatusBadge cfg={cfg} rec={rec} /></td>;
                       if (col === 'result') return <td key={col} className="px-2 py-2 text-center"><ResultBadge cfg={cfg} rec={rec} /></td>;
                       const primary = ci === 0 || col === cfg.primaryField;
-                      return <td key={col} className={`px-2 py-2 ${primary ? 'font-medium text-gray-900' : 'text-gray-600'} ${col === 'record_number' ? 'whitespace-nowrap' : ''}`}>{displayValue(cfg, rec, col)}</td>;
+                      // Every log column goes through TextCell. A deviation's
+                      // description or an on-hold reason is a paragraph, and an
+                      // unbounded cell lets one of them wrap into a fifteen-line
+                      // ribbon that pushes the rest of the log off the screen.
+                      // Short values are untouched — the clamp only bites when
+                      // the text is genuinely too long to belong in a table.
+                      return (
+                        <td key={col} className={`px-2 py-2 align-top ${primary ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
+                          <TextCell value={displayValue(cfg, rec, col)}
+                            lines={col === 'record_number' ? 1 : 2}
+                            width={primary ? '20rem' : '16rem'} />
+                        </td>
+                      );
                     })}
                     {rowAction && canEdit && (
                       <td className="px-2 py-2 whitespace-nowrap text-right" onClick={e => e.stopPropagation()}>

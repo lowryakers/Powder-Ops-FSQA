@@ -5,6 +5,7 @@ import { canEditModule } from '../../utils/permissions';
 import FileUpload from '../FileUpload';
 import { Plus, Search, Edit2, Trash2, Download, Upload, X, Trash, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
+import TextCell from '../common/TextCell.jsx';
 
 const CATEGORIES = [
   { value: '', label: '—' },
@@ -279,9 +280,9 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
                     <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{it.item_number || '—'}</td>
                     <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{it.lot_number || '—'}</td>
                     <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{it.quantity || '—'}</td>
-                    <td className="px-2 py-1.5 text-gray-600">{it.reason_disposed || '—'}</td>
+                    <td className="px-2 py-1.5 text-gray-600 align-top"><TextCell value={it.reason_disposed} width="18rem" /></td>
                     <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{it.date_disposed || '—'}</td>
-                    <td className="px-2 py-1.5 text-gray-600 whitespace-pre-line">{it.write_off_number || '—'}</td>
+                    <td className="px-2 py-1.5 text-gray-600 align-top"><TextCell value={it.write_off_number} width="11rem" preLine /></td>
                   </tr>
                 ))}
               </tbody>
@@ -685,9 +686,9 @@ export default function DisposalsPanel() {
                     <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{r.item_number || '—'}</td>
                     <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{r.lot_number || '—'}</td>
                     <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{r.quantity || '—'}</td>
-                    <td className="px-2 py-2 text-gray-600 max-w-[220px]">{r.reason_disposed || '—'}</td>
+                    <td className="px-2 py-2 text-gray-600 align-top"><TextCell value={r.reason_disposed} width="16rem" /></td>
                     <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{r.date_disposed || '—'}</td>
-                    <td className="px-2 py-2 text-gray-600 whitespace-pre-line">{r.write_off_number || '—'}</td>
+                    <td className="px-2 py-2 text-gray-600 align-top"><TextCell value={r.write_off_number} width="11rem" preLine /></td>
                     <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
                       {r.disposal_number || '—'}
                       {r._d?.status === 'draft' && <span className="ml-1.5 text-[9px] font-bold uppercase px-1 py-0.5 rounded bg-amber-100 text-amber-700">Draft</span>}

@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
+import {
+  GROUP_LABELS, MEASURES, dateOnly, drill, isoWeekStart, predicates, rollup,
+} from '../activity-metrics.js';
 
 const router = Router();
 
@@ -10,100 +13,65 @@ const router = Router();
 //
 // Admin-only: this org has no lower-level staff who could misuse per-person data,
 // so individual detail is shown openly alongside the department rollups.
+//
+// Every number here is clickable, and the rows behind it come from
+// `activity-metrics.js` — the same predicates that produced the number. A
+// drill-down computed separately is a list that disagrees with the figure above
+// it, and whoever clicked has no way to know which is wrong.
 
-const GROUP_LABELS = {
-  warehouse: 'Warehouse',
-  maintenance: 'Maintenance',
-  qa: 'Quality',
-  cleaning: 'Cleaning',
-  document_control: 'Document Control',
-};
-
-// Date portion of a timestamp, robust to both ISO ('T') and SQLite (' ') forms.
-function dateOnly(ts) { return ts ? String(ts).slice(0, 10) : ''; }
-
-function isoWeekStart(dateStr) {
-  // Monday of the week containing dateStr, as YYYY-MM-DD.
-  const d = new Date(dateStr + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return dateStr;
-  const day = d.getDay();
-  d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
-  return d.toISOString().split('T')[0];
+/** The window both endpoints read, resolved identically. */
+function window_(db, query) {
+  const today = new Date().toISOString().split('T')[0];
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(query.to || '') ? query.to : today;
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(query.from || '')
+    ? query.from
+    : db.prepare("SELECT date(?, '-30 days') d").get(to).d;
+  return { from, to, today };
 }
 
-function daysBetween(fromIso, toIso) {
-  const a = new Date(fromIso).getTime();
-  const b = new Date(toIso).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b)) return null;
-  return (b - a) / 86400000;
-}
+// Universe: work orders due within the window — the work that was expected in
+// this period. Everything is selected because the drill-down has to render a
+// real task, not just count one.
+//
+// LEFT JOIN, never inner: a task raised from a chat message or created for a
+// team rather than a machine has no equipment_id, and an inner join here would
+// silently drop it from both the count and the list. That is the exact bug that
+// made tasks appear in the Operator View and not the Task Center.
+const DUE_IN_WINDOW = `
+  SELECT wo.*, e.name AS equipment_name
+  FROM work_orders wo
+  LEFT JOIN equipment e ON wo.equipment_id = e.id
+  WHERE wo.due_date BETWEEN ? AND ?`;
 
 router.get('/summary', requireRole('admin'), (req, res) => {
   const db = getDb();
-  const today = new Date().toISOString().split('T')[0];
-  // Default window: last 30 days through today.
-  const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : today;
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '')
-    ? req.query.from
-    : db.prepare("SELECT date(?, '-30 days') d").get(to).d;
+  const { from, to, today } = window_(db, req.query);
+  const rows = db.prepare(DUE_IN_WINDOW).all(from, to);
+  const roll = (list) => rollup(list, today);
 
-  // Universe: work orders due within the window (the work that was expected in
-  // this period). Metrics are computed over this set in JS.
-  const rows = db.prepare(`
-    SELECT task_group, assigned_to, completed_by, status, due_date, created_at, completed_at
-    FROM work_orders
-    WHERE due_date BETWEEN ? AND ?`).all(from, to);
-
-  const isCompleted = (r) => r.status === 'completed';
-  const isNA = (r) => r.status === 'not_applicable';
-  const isOnTime = (r) => isCompleted(r) && r.completed_at && r.due_date &&
-    dateOnly(r.completed_at) <= r.due_date;
-  const isOverdue = (r) => r.status === 'missed' ||
-    (['open', 'in_progress', 'overdue'].includes(r.status) && r.due_date < today);
-  const cycleDays = (r) => (isCompleted(r) && r.created_at && r.completed_at)
-    ? daysBetween(r.created_at, r.completed_at) : null;
-
-  function rollup(list) {
-    const total = list.length;
-    const completed = list.filter(isCompleted).length;
-    const onTime = list.filter(isOnTime).length;
-    const overdue = list.filter(isOverdue).length;
-    const cycles = list.map(cycleDays).filter(v => v != null && v >= 0);
-    const avgDays = cycles.length ? cycles.reduce((a, b) => a + b, 0) / cycles.length : null;
-    // On-time rate is measured against work that was actually completed.
-    const onTimePct = completed ? Math.round((onTime / completed) * 100) : null;
-    const naCount = list.filter(isNA).length;
-    // Completion rate counts completed + N/A as "handled" against the total due.
-    const completionPct = total ? Math.round(((completed + naCount) / total) * 100) : null;
-    return { total, completed, on_time: onTime, overdue, avg_days: avgDays, on_time_pct: onTimePct, completion_pct: completionPct };
-  }
-
-  const overall = rollup(rows);
+  const overall = roll(rows);
 
   // By department (task_group).
   const byGroup = {};
-  for (const r of rows) {
-    const key = r.task_group || 'warehouse';
-    (byGroup[key] ||= []).push(r);
-  }
+  for (const r of rows) (byGroup[r.task_group || 'warehouse'] ||= []).push(r);
   const by_department = Object.entries(byGroup)
-    .map(([key, list]) => ({ key, label: GROUP_LABELS[key] || key, ...rollup(list) }))
+    .map(([key, list]) => ({ key, label: GROUP_LABELS[key] || key, ...roll(list) }))
     .sort((a, b) => b.total - a.total);
 
   // By person: attribute completed work to completed_by, and outstanding/overdue
   // work to assigned_to. A person appears if they touched either side.
   const people = {};
-  const touch = (name) => (people[name] ||= []);
   for (const r of rows) {
     const who = r.completed_by || r.assigned_to;
-    if (who) touch(who).push(r);
+    if (who) (people[who] ||= []).push(r);
   }
   const by_person = Object.entries(people)
-    .map(([name, list]) => ({ name, ...rollup(list) }))
-    .filter(p => p.completed > 0 || p.overdue > 0)
+    .map(([name, list]) => ({ name, ...roll(list) }))
+    .filter((p) => p.completed > 0 || p.overdue > 0)
     .sort((a, b) => b.completed - a.completed);
 
   // Weekly completion trend (by completion date within the window).
+  const { isCompleted, isOnTime } = predicates(today);
   const weeks = {};
   for (const r of rows) {
     if (!isCompleted(r) || !r.completed_at) continue;
@@ -117,6 +85,66 @@ router.get('/summary', requireRole('admin'), (req, res) => {
   const trend = Object.values(weeks).sort((a, b) => a.week.localeCompare(b.week));
 
   res.json({ from, to, overall, by_department, by_person, trend });
+});
+
+/**
+ * The tasks behind a number.
+ *
+ * `metric` names a measure in MEASURES; `department` and `person` narrow it the
+ * same way the two tables do. Bounded like every other list endpoint here —
+ * `total` is the honest count so a truncated page never reads as the whole
+ * answer, and it is computed from the same filter, not from the summary.
+ */
+router.get('/tasks', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const { from, to, today } = window_(db, req.query);
+  const metric = String(req.query.metric || 'due');
+  if (!MEASURES[metric]) {
+    return res.status(400).json({ error: `Unknown measure "${metric}".` });
+  }
+  const department = req.query.department ? String(req.query.department) : null;
+  const person = req.query.person ? String(req.query.person) : null;
+  const limit = Math.min(Number(req.query.limit) || 200, 500);
+
+  const rows = db.prepare(DUE_IN_WINDOW).all(from, to);
+  const matched = drill(rows, { metric, department, person, today });
+  const { isOverdue, isCompleted, isOnTime, cycleDays } = predicates(today);
+
+  // Most-overdue first for outstanding work, most-recent first for finished
+  // work — in both cases the row someone opened this to see is at the top.
+  const finished = ['completed', 'on_time', 'late'].includes(metric);
+  matched.sort((a, b) => (finished
+    ? String(b.completed_at || '').localeCompare(String(a.completed_at || ''))
+    : String(a.due_date || '').localeCompare(String(b.due_date || ''))));
+
+  const tasks = matched.slice(0, limit).map((r) => ({
+    id: r.id,
+    title: r.title,
+    task_group: r.task_group,
+    equipment_name: r.equipment_name || null,
+    assigned_to: r.assigned_to,
+    completed_by: r.completed_by,
+    status: r.status,
+    due_date: r.due_date,
+    completed_at: r.completed_at,
+    created_at: r.created_at,
+    priority: r.priority,
+    // Derived here so the drawer never re-decides what the server already
+    // decided — the whole point of the shared predicates.
+    overdue: isOverdue(r),
+    on_time: isCompleted(r) ? isOnTime(r) : null,
+    days_late: r.due_date && !isCompleted(r)
+      ? Math.max(0, Math.floor((new Date(today) - new Date(r.due_date)) / 86400000))
+      : (isCompleted(r) && r.completed_at && r.due_date
+        ? Math.max(0, Math.floor((new Date(dateOnly(r.completed_at)) - new Date(r.due_date)) / 86400000))
+        : null),
+    cycle_days: cycleDays(r),
+  }));
+
+  res.json({
+    from, to, metric, label: MEASURES[metric].label, department, person,
+    total: matched.length, truncated: matched.length > tasks.length, tasks,
+  });
 });
 
 export default router;
