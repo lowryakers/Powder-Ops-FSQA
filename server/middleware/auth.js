@@ -39,6 +39,9 @@ const PUBLIC_ROUTES = [
   // hashed token compared in the handler, and off entirely unless
   // PRODUCT_MASTER_TOKEN is set. It exposes only what a printer already holds.
   { method: 'GET', path: '/products/master.csv' },
+  // The other half of the same integration: the proofing service files its
+  // finished jobs here. Same token, checked in the handler.
+  { prefix: '/artwork/ingest' },
   { path: '/version' },
   { path: '/health' },
 ];

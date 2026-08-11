@@ -50,6 +50,9 @@ export const ALL_MODULE_IDS = [
   // has no reason to see the finished-goods catalogue, and a nav this long
   // only stays usable if new groups are granted rather than assumed.
   'products',
+  // Artwork version history and proof verification. Separate from 'products'
+  // so QA can be given the pack checks without the catalogue behind them.
+  'artwork',
 ];
 
 export function moduleLevel(user, moduleId) {

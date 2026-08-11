@@ -82,6 +82,7 @@ import receivingRoutes from './server/api/receiving.js';
 import importRoutes from './server/api/imports.js';
 import coaRoutes from './server/api/coa.js';
 import productRoutes from './server/api/products.js';
+import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api/artwork.js';
 import { seedProducts } from './server/products-seed.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
@@ -1585,6 +1586,10 @@ app.use('/api/mock-recalls', requireModuleWrite('recall'), mockRecallRoutes);
 app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator'), productionRoutes);
 app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
 app.use('/api/products', requireModuleWrite('products'), productRoutes);
+// Mounted before the guarded router, and outside requireModuleWrite: the
+// proofing service authenticates with a token, not a session.
+app.use('/api/artwork/ingest', artworkIngestRoutes);
+app.use('/api/artwork', requireModuleWrite('artwork'), artworkRoutes);
 app.use('/api/office', officeRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/procurement', procurementRoutes);

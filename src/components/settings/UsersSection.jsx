@@ -39,6 +39,7 @@ const MODULE_GROUPS = [
     label: 'Product',
     modules: [
       { id: 'products', label: 'Products (master list)' },
+      { id: 'artwork', label: 'Artwork versions & proofing' },
     ],
   },
   {

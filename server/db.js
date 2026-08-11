@@ -1774,6 +1774,91 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_product_colors_sku ON product_colors(sku);
   `);
 
+  // ── Artwork ───────────────────────────────────────────────────────────────
+  // Version history for what is actually printed on the pack, shaped like
+  // sop_documents / sop_versions / document_attachments because QA already
+  // reads controlled documents that way and this is the same job: which
+  // revision is current, what changed, who signed it, and show me the file.
+  //
+  // Rows are created two ways. Someone uploads a proof, or — the common case —
+  // the Artwork-Proofing service finishes a job and posts its results here, so
+  // the history accumulates as a side effect of the check that already runs.
+  // Shaun keeps working in Drive and uploads nothing.
+  //
+  // An approved version is never rewritten. A change files a new version and
+  // supersedes the old one, same rule as a signed organoleptic record.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS artwork_versions (
+      id TEXT PRIMARY KEY,
+      sku TEXT NOT NULL,
+      -- One SKU can have several printed components: the pouch, the case, the
+      -- shipper. They revise independently.
+      component TEXT NOT NULL DEFAULT 'primary',
+      version INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft','in_review','approved','print_ready','superseded','rejected')),
+      -- 'upload' or 'proofing' — where this version came into existence.
+      source TEXT NOT NULL DEFAULT 'upload',
+      proof_job_id TEXT,
+      drive_url TEXT,
+      -- The NFP revision this artwork was drawn against. Artwork cannot reach
+      -- print_ready unless this matches the product's approved NFP.
+      nfp_version TEXT,
+      effective_date TEXT,
+      superseded_by TEXT,
+      change_summary TEXT,
+      approved_by TEXT,
+      approved_at TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (sku, component, version),
+      FOREIGN KEY (sku) REFERENCES products(sku)
+    );
+    CREATE INDEX IF NOT EXISTS idx_artwork_versions_sku ON artwork_versions(sku, component, version);
+    CREATE INDEX IF NOT EXISTS idx_artwork_versions_status ON artwork_versions(status);
+
+    -- Files live in R2; only the key is stored. 'preview' is a rendered PNG of
+    -- page 1, which is what lets the list show the actual pack instead of a
+    -- filename — the proofing service already rasterises every page, so it
+    -- costs nothing to keep one.
+    CREATE TABLE IF NOT EXISTS artwork_files (
+      id TEXT PRIMARY KEY,
+      version_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'print_pdf'
+        CHECK (kind IN ('print_pdf','preview','dieline','proof_report','other')),
+      filename TEXT NOT NULL,
+      content_type TEXT,
+      size INTEGER,
+      storage_key TEXT NOT NULL,
+      page INTEGER,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (version_id) REFERENCES artwork_versions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_artwork_files_version ON artwork_files(version_id, kind);
+
+    -- One row per check, per version. Results arrive from the proofing engine
+    -- or are recorded by hand. A dismissal keeps the finding and records who
+    -- waved it through, because "we looked and it was fine" is the answer an
+    -- auditor wants and deleting the row cannot give it.
+    CREATE TABLE IF NOT EXISTS artwork_checks (
+      id TEXT PRIMARY KEY,
+      version_id TEXT NOT NULL,
+      check_name TEXT NOT NULL,
+      result TEXT NOT NULL CHECK (result IN ('pass','fail','warn','dismissed')),
+      detail TEXT,
+      expected TEXT,
+      found TEXT,
+      checked_by TEXT,
+      checked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      dismissed_by TEXT,
+      dismissed_reason TEXT,
+      FOREIGN KEY (version_id) REFERENCES artwork_versions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_artwork_checks_version ON artwork_checks(version_id);
+  `);
+
   // Post-repair hygiene clearance
   addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
   addColumnIfMissing('work_orders', 'clearance_status', 'TEXT');
