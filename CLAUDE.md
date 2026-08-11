@@ -89,6 +89,119 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## Product management (Products · Artwork · the proofing loop)
+
+Finished goods — what we sell, its codes, and the film it prints on. **Distinct from
+`coa_specifications`, which is raw materials coming IN from vendors**; these are the products going out.
+The only pre-existing `sku` in the codebase was `coa_specifications.sku_number` and it means something
+else entirely. Modules `products` and `artwork`, in a "Product" nav group, both **granted rather than
+role defaults** — the floor has no reason to see the catalogue, and a nav this long only stays usable if
+new groups have to be asked for.
+
+Origin: a standalone Fastify/Postgres app (`lowryakers/Product-Management`) that audited 118 real SKUs.
+That repo still holds the audit, the normalised dataset, the SKU-standard analysis and the rename
+runbook — `docs/01`–`docs/09`. Attach it when any of that matters; it is not duplicated here.
+
+### `GET /api/products/master.csv` is a contract, not a convenience
+It feeds the **Artwork-Proofing** service (`lowryakers/Artwork-Proofing`, Python/Flask), whose
+`_fetch_sheet_rows()` matches on **sixteen specific lowercased headers** — `sku`, `gtin`, `flavor`,
+`packaging type`, `material`, `zipper`, `print`, `trim length`, `trim width`, `gusset dimension`,
+`front panel dimension`, `wind direction`, `pms spot colors`, `hex spot colors`, `eye mark color`,
+`die line required`. **Rename a column here and proofing breaks silently over there**, because its parser
+skips headers it does not recognise — it does not error, it just checks against nothing. Extra columns are
+free; the sixteen are not. `sku` deliberately carries the CURRENT code, because that is what is printed on
+today's artwork.
+Public path, token compared as a hash, off entirely unless `PRODUCT_MASTER_TOKEN` is set. **Registered
+before `/:sku`** — Express matches in declaration order and `/master.csv` is a perfectly good `:sku`.
+
+### The proofing loop
+`master.csv` out, `POST /api/artwork/ingest` back. Two env vars on the proofing service
+(`READYDOC_URL`, `READYDOC_TOKEN`) and **one shared secret** — `READYDOC_TOKEN` is the same value as
+`PRODUCT_MASTER_TOKEN`, because the two endpoints are two halves of one integration and a second secret to
+rotate buys nothing.
+Ingest is **not** behind `requireModuleWrite`: that guard rejects any non-GET without a `req.user`, and the
+caller is a service holding a token, not a person. It is mounted separately at `/api/artwork/ingest`
+**before** the guarded router, the same arrangement `partner-portal` uses. Getting this wrong turns every
+post-back into a silent 401.
+Idempotent on `(job_id, sku, component)`, one ingest **per file not per job** (a job can carry a pouch and
+a stick — different products, different histories), and it resolves the product **by GTIN before SKU**
+because a decoded barcode is the only unambiguous identification.
+
+### Versions file themselves
+Artwork history is a **side effect of the proofing run**, not an upload. Shaun keeps working in Google
+Drive and changes nothing; the record accumulates because the check was already happening. Manual upload
+exists only for files that never went through proofing. `pdftoppm` already rasterises page 1, so the
+preview PNG that makes the board a grid of packs rather than a list of filenames is free.
+
+### Rules that are load-bearing
+- **The seed is insert-only and skips once `products` has rows.** A redeploy must never overwrite a GTIN
+  someone corrected by hand — that is worse than no seed at all.
+- **`legacy_sku` is never cleared.** The SKU is the join key; a code that changes must still resolve on a
+  two-year-old PO. `POST /products/:sku/rename` is its own endpoint rather than a field edit so rewriting a
+  join key reads as a deliberate act in the audit log, and it is the only thing that sets `legacy_sku`.
+- **`defer_foreign_keys` in that rename transaction.** `foreign_keys` is ON app-wide, so renaming the parent
+  leaves `product_colors` dangling for the instant between the two statements. Scoped to the transaction,
+  unlike `foreign_keys = OFF`, which would be a global switch flipped from inside a request handler.
+- **A GTIN that fails its GS1 check digit is never stored, from any door.** `gtin_valid` is a stored column
+  (the readiness check and the list badge read it) and every write path recomputes it.
+- **Nothing reaches `print_ready`** with an open failing check, without an approved NFP, or against an NFP
+  that is not the product's current one. Releasing supersedes the other live versions in the same component
+  and updates the product row, so "current" cannot mean two things.
+- **Dismissing a check is not a delete.** It keeps the row, demands a reason and records who waved it
+  through — "we looked and it was fine" is the answer an auditor wants and a deleted row cannot give it.
+  Released artwork cannot be deleted at all.
+- **`readiness` is computed, not stored.** Nine steps (SKU, GS1, spec, formula, NFP, artwork, colours,
+  Shopify, ShipHero) so "what is still missing" needs no side checklist. Adding a step is one row in
+  `READINESS` in `api/products.js`. Expect most products to read incomplete — Shopify SKU, MRP formula and
+  ShipHero are empty across all 118 seeded rows, which is the punch list working.
+
+### Two traps this cost time on
+- **`mediaUpload()` returns a multer instance, not middleware.** `.array('files', n)` is what a router can
+  mount; passing the instance throws `argument handler must be a function` at boot.
+- **The artwork board API returns `packs`, not `current`.** React's compiler treats a `.current` field
+  access as a ref and refuses to memoize the consuming component — an eslint error, not a runtime one.
+
+### GS1 numbers are finite and one block is nearly full
+Every GTIN is a 12-digit UPC-A: 9-digit company prefix + 2-digit item + check digit, so **100 numbers per
+prefix**. `850046726` is at 76/100. Allocation should prefer the roomiest prefix a line already uses and
+warn under 25 free. All 118 existing check digits verify, which is the most expensive thing to get right
+and is genuinely well maintained — the job is keeping it that way.
+
+## Not built yet: the rest of product management
+
+Built in this order deliberately — the destinations first, then the thing that feeds them. A triage screen
+whose buttons have nowhere to land is worse than no triage screen.
+
+1. **New product** — a new flavour needs a SKU and a GS1 barcode, and two different people make them
+   (someone else invents the SKU, Lowry allocates the barcode). Suggests both, with the **reasoning and any
+   warning shown** — 37 of 118 existing abbreviations disagree with plain initials, so a suggestion you
+   cannot interrogate is one you should not accept. The SKU half goes out as a **share link** so whoever
+   names them needs no account (same pattern as `/approve/<token>`). The suggester proposes the **new
+   standard** (`WHY-PLG-BLM` — category · pack · flavour, no serial), not the legacy `PP-`/`PSP-` prefixes;
+   see `Product-Management/docs/07`. The 67-flavour table belongs in the DB, append-only: a code that can
+   change is a code you cannot print.
+2. **Packaging orders** — **a PO is scoped to one packaging spec.** Sticks, LG pouch and SM pouch are always
+   separate documents because one spec = one film = one price tier = one thing Mike quotes. The three real
+   POs are exactly `SPEC-STICK-LG` (38 lines), `SPEC-POUCH-LG` (37), `SPEC-POUCH-SM` (11). So the builder is
+   pick-a-spec-then-pick-SKUs, and the footer renders `vendor_spec_string` from the spec rather than being
+   typed — which is the fix for "SKUs: 21" printing on a 38-line PO.
+   `POLine.excluded` must keep a removed line visible while its money leaves every total: a note in a cell
+   was a message to a human, a flag the sum respects is a control. Two of three real POs overstated by
+   **$24,850** because of exactly this.
+3. **Capture + six outcomes** — replaces the standalone app's inbox. Capture stays (ten seconds, almost no
+   fields). What goes is the status queue: triage should ask **"what does this turn into?"** and make it —
+   new product · artwork revision · RFQ to Mike · NFP revision · packaging order · archive. Each creates a
+   real record with a real owner; the captured note becomes its origin and is **never edited**. "I get lost
+   after triage" was a correct reading of a screen where nothing was produced.
+
+### The SKU rename is a separate project, and it is not free
+The new standard is adopted for **new products only**; the existing 118 are untouched. A full cutover is
+costed in `Product-Management/docs/08`. The 3PL has confirmed the expensive half: scanning tolerates either
+code, but **inventory locations and open order lines are keyed to the SKU**, and **Shopify snapshots the SKU
+onto each order line at sale time**, so SKU-grouped sales reporting splits into two buckets at the cutover.
+Order is ShipHero → Shopify, sync paused throughout, on-hand snapshot first. The ReadyDoc half is already
+built and tested (`/products/:sku/rename`) — it is the easy one.
+
 ## Not every task has equipment (the "shows in Operator View but not Task Center" bug)
 `/pm/by-frequency`, `/pm/search`, `/pm/completed-history` and `/pm/clearance-pending` all did
 `JOIN equipment e ON wo.equipment_id = e.id` — an **inner** join. A task raised from a chat message has
