@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ListOrdered, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import { ListOrdered, ChevronDown, ChevronUp, AlertCircle, FileText } from 'lucide-react';
 import ScalePlacementDiagram from './ScalePlacementDiagram.jsx';
 
 // The Scale Calibration Verification procedure, shown on the form you're filling in.
@@ -76,6 +76,20 @@ export default function ScaleProcedureCard({ procedure, form, defaultOpen = true
               </li>
             ))}
           </ol>
+
+          {/* The controlled sheet these steps and the diagram were transcribed
+              from. Served straight out of `public/forms` — an operator at a
+              scale, or an auditor asking to see the procedure, must be able to
+              open it whether or not file storage is configured. Same reasoning
+              as the Brittle Plastic & Glass diagram. */}
+          {procedure.document?.url && (
+            <a href={procedure.document.url} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-powder-700 hover:text-powder-800 hover:underline">
+              <FileText size={13} />
+              View the procedure sheet
+              {procedure.document.code ? ` (${procedure.document.code})` : ''}
+            </a>
+          )}
         </div>
       )}
     </div>
