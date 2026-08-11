@@ -100,6 +100,152 @@ router.get('/specs', (_req, res) => {
 // the proofing-feed code; only the registration has to be up here.
 router.get('/master.csv', (req, res) => masterCsv(req, res));
 
+/**
+ * What is wrong with the catalogue right now.
+ *
+ * DERIVED ON EVERY READ, never stored — the same rule as `readiness`. A punch
+ * list that has to be regenerated is a punch list that goes stale, and the
+ * whole point of this one is that it shrinks as the data is fixed.
+ *
+ * The counts were previously worked out by hand in a spreadsheet and written
+ * into a document. That answers the question once. This answers it whenever
+ * someone asks, against the catalogue that is actually live.
+ *
+ * The COLLISIONS are the part that blocks other work. The new SKU standard
+ * (`WHY-PLG-BLM` — category · pack · flavour) uses a flavour abbreviation as a
+ * key, and an abbreviation that means two flavours cannot be a key. Freezing
+ * the flavour table with `CC` meaning both Cookie Crumble and Cheesecake
+ * Crumble bakes the ambiguity into every code minted afterwards — and a code
+ * that has been printed cannot be changed. So they are surfaced beside the
+ * data faults rather than left in a document.
+ *
+ * Nothing here is auto-fixed. Every item is a decision about a real product:
+ * which flavour keeps `CC`, whether Key Lime and Key Lime Pie are one flavour,
+ * whether a missing colour was never chosen or never recorded.
+ */
+router.get('/data-health', (_req, res) => {
+  const db = getDb();
+  const products = db.prepare(`${SELECT}`).all();
+  const colors = db.prepare('SELECT * FROM product_colors ORDER BY sku, slot').all();
+
+  const bySku = new Map();
+  for (const c of colors) {
+    if (!bySku.has(c.sku)) bySku.set(c.sku, []);
+    bySku.get(c.sku).push(c);
+  }
+
+  const issues = [];
+  const add = (kind, sku, detail) => issues.push({ kind, sku, detail });
+
+  for (const p of products) {
+    // A spec you cannot print from is not a spec. The readiness step asks for
+    // `material_structure` too, so this uses the same test — one definition of
+    // "has a usable spec", or the punch list and the readiness bar disagree.
+    if (!p.spec_id) add('no_spec', p.sku, 'No packaging spec assigned');
+    else if (!p.material_structure) add('no_spec', p.sku, `Spec ${p.spec_id} has no material structure recorded`);
+
+    if (!p.gtin) add('gtin', p.sku, 'No GS1 barcode');
+    else if (!p.gtin_valid) add('gtin', p.sku, `GTIN ${p.gtin} fails its GS1 check digit`);
+
+    // A row whose "SKU" is an 8+ digit number is a Shopify variant id that got
+    // into the SKU column. It is not a code anyone prints.
+    if (/^\d{8,}$/.test(p.sku)) add('not_a_sku', p.sku, 'This is a numeric id, not a SKU');
+
+    const cs = bySku.get(p.sku) || [];
+    if (!cs.length) add('no_colors', p.sku, 'No brand colours recorded');
+    for (const c of cs) {
+      if (!c.hex_valid) add('bad_color', p.sku, `Slot ${c.slot}: "${c.hex}" is not a usable hex value`);
+      else if (!c.pms_valid) add('bad_color', p.sku, `Slot ${c.slot}: "${c.pms}" is not a usable PMS value`);
+    }
+  }
+
+  // One abbreviation, more than one flavour. Read from the MIDDLE segment of
+  // the existing code (PP-CM-02 → CM) rather than re-derived from the flavour
+  // name, because what matters is the collision as it exists on today's
+  // printed codes.
+  const byAbbr = new Map();
+  for (const p of products) {
+    const m = String(p.sku).match(/^[A-Z]+-([A-Z]+)-/);
+    if (!m) continue;
+    if (!byAbbr.has(m[1])) byAbbr.set(m[1], new Map());
+    const flavors = byAbbr.get(m[1]);
+    if (!flavors.has(p.base_flavor)) flavors.set(p.base_flavor, []);
+    flavors.get(p.base_flavor).push(p.sku);
+  }
+  const collisions = [...byAbbr.entries()]
+    .filter(([, f]) => f.size > 1)
+    .map(([abbr, f]) => ({
+      abbr,
+      flavors: [...f.entries()].map(([flavor, skus]) => ({ flavor, skus })),
+    }))
+    .sort((a, b) => a.abbr.localeCompare(b.abbr));
+
+  // Two flavour names where one is a prefix of the other — "Key Lime" and
+  // "Key Lime Pie". Sometimes two products, sometimes one product named twice,
+  // and only a person knows which. Reported, never merged.
+  const names = [...new Set(products.map(p => p.base_flavor))].sort();
+  const similar = [];
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      const a = names[i].toLowerCase(), b = names[j].toLowerCase();
+      if (b.startsWith(`${a} `) || a.startsWith(`${b} `)) {
+        similar.push({
+          a: names[i], b: names[j],
+          a_skus: products.filter(p => p.base_flavor === names[i]).map(p => p.sku),
+          b_skus: products.filter(p => p.base_flavor === names[j]).map(p => p.sku),
+        });
+      }
+    }
+  }
+
+  /**
+   * How much GS1 numbering is left.
+   *
+   * Every GTIN here is a 12-digit UPC-A: a 9-digit company prefix, a 2-digit
+   * item reference, a check digit. That is ONE HUNDRED numbers per prefix, and
+   * there is no way to make it more. Running out is not a degradation — it is a
+   * hard stop on launching anything, discovered at the worst moment, because
+   * obtaining a new block from GS1 takes weeks.
+   *
+   * Counted from the GTINs actually in use rather than tracked in a field, so
+   * it cannot drift from reality.
+   */
+  const prefixes = new Map();
+  for (const p of products) {
+    if (!p.gtin || String(p.gtin).length !== 12) continue;
+    const prefix = String(p.gtin).slice(0, 9);
+    if (!prefixes.has(prefix)) prefixes.set(prefix, new Set());
+    prefixes.get(prefix).add(String(p.gtin).slice(9, 11));
+  }
+  const gs1 = [...prefixes.entries()]
+    .map(([prefix, used]) => ({
+      prefix,
+      used: used.size,
+      capacity: 100,
+      remaining: 100 - used.size,
+      // 25 is roughly one flavour launched across every format. Below that,
+      // ordering the next block stops being housekeeping.
+      low: 100 - used.size < 25,
+    }))
+    .sort((a, b) => a.remaining - b.remaining);
+
+  const KINDS = ['no_spec', 'bad_color', 'no_colors', 'not_a_sku', 'gtin'];
+  const counts = Object.fromEntries(KINDS.map(k => [k, new Set(issues.filter(i => i.kind === k).map(i => i.sku)).size]));
+
+  res.json({
+    products: products.length,
+    flavors: names.length,
+    counts,
+    // SKUs affected, not issues raised — one SKU with three bad colour slots is
+    // one product to go and fix, and reporting three overstates the work.
+    affected: new Set(issues.map(i => i.sku)).size,
+    issues,
+    collisions,
+    similar,
+    gs1,
+  });
+});
+
 router.get('/:sku', (req, res) => {
   const db = getDb();
   const row = db.prepare(`${SELECT} WHERE p.sku = ?`).get(req.params.sku);

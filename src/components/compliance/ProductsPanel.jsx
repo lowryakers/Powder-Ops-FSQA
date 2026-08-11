@@ -3,8 +3,10 @@ import { useApiGet, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader';
+import ModuleTabs from '../common/ModuleTabs.jsx';
+import ProductDataHealth from './ProductDataHealth.jsx';
 import {
-  Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight,
+  Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope,
 } from 'lucide-react';
 
 /**
@@ -245,11 +247,16 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
 export default function ProductsPanel() {
   const { user } = useAuth();
   const { data, refresh } = useApiGet('/products');
+  // Fetched HERE rather than inside the panel below so the tab can carry the
+  // count — the number shrinking is the point of the punch list, and a number
+  // you have to open a tab to see does not do that job.
+  const { data: health } = useApiGet('/products/data-health');
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const [pack, setPack] = useState('');
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [open, setOpen] = useState(null);
+  const [view, setView] = useState('list');
 
   const canEdit = ['admin', 'supervisor'].includes(user?.role)
     || ['qa', 'quality'].includes((user?.department || '').toLowerCase());
@@ -290,6 +297,17 @@ export default function ProductsPanel() {
         </p>
       </div>
 
+      <ModuleTabs value={view} onChange={setView} tabs={[
+        { id: 'list', label: 'Catalogue', icon: Package, badge: products.length },
+        // The punch list lives beside the catalogue rather than in a document,
+        // so it is counted live and shrinks as the data is fixed.
+        { id: 'health', label: 'Data health', icon: Stethoscope,
+          badge: health?.affected || undefined, badgeTone: health?.affected ? 'alert' : undefined },
+      ]} />
+
+      {view === 'health' && <ProductDataHealth data={health} />}
+
+      {view === 'list' && (<>
       {badGtin > 0 && (
         <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
@@ -365,6 +383,8 @@ export default function ProductsPanel() {
           </tbody>
         </table>
       </div>
+
+      </>)}
 
       {open && <Detail sku={open} canEdit={canEdit} onClose={() => setOpen(null)} onSaved={refresh} />}
     </div>
