@@ -1679,6 +1679,101 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_certifications_person ON certifications(person_name);
   `);
 
+  // ── Product management ────────────────────────────────────────────────────
+  // The finished-goods catalogue: what we sell, its codes, and the film it
+  // prints on. Distinct from coa_specifications, which covers raw materials
+  // coming IN from vendors — these are the products going out.
+  //
+  // `sku` is the primary key and the join key for everything downstream, which
+  // is why `legacy_sku` sits beside it: a code that changes must still resolve
+  // on a two-year-old PO or Shopify order. Nothing ever clears legacy_sku.
+  //
+  // This table is also the master the Artwork-Proofing service reads
+  // (api/products.js -> GET /master.csv), so a column rename here is a contract
+  // change over there.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS packaging_specs (
+      spec_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      format TEXT NOT NULL,
+      material_structure TEXT,
+      zipper TEXT,
+      print_process TEXT,
+      trim_length_mm REAL,
+      trim_width_mm REAL,
+      gusset_mm REAL,
+      front_panel_mm REAL,
+      wind_direction TEXT,
+      core_in TEXT,
+      dieline_required INTEGER NOT NULL DEFAULT 1,
+      vendor TEXT,
+      last_unit_cost REAL,
+      -- The exact string that prints on a PO footer. Stored once and rendered
+      -- from here, so "SKUs: 21" on a 38-line PO cannot happen again.
+      vendor_spec_string TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS products (
+      sku TEXT PRIMARY KEY,
+      legacy_sku TEXT,
+      gtin TEXT UNIQUE,
+      -- Stored rather than computed so it can be sorted and filtered on.
+      -- Every write path that touches gtin must maintain it.
+      gtin_valid INTEGER NOT NULL DEFAULT 0,
+      category TEXT NOT NULL,
+      protein_type TEXT,
+      pack TEXT NOT NULL,
+      pack_count INTEGER,
+      flavor TEXT NOT NULL,
+      -- What joins a flavour across formats. "Double Chocolate" is five SKUs.
+      base_flavor TEXT NOT NULL,
+      flavor_code TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      spec_id TEXT,
+      eyemark_color TEXT,
+      dieline_required INTEGER NOT NULL DEFAULT 1,
+      shopify_sku TEXT,
+      shopify_variant_id TEXT,
+      shiphero_synced_at TEXT,
+      -- Pointers. The formula itself lives in the MRP and is never copied here.
+      mrp_formula_id TEXT,
+      formula_rev TEXT,
+      nfp_version TEXT,
+      nfp_approved_at TEXT,
+      artwork_version TEXT,
+      artwork_status TEXT,
+      drive_url TEXT,
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (spec_id) REFERENCES packaging_specs(spec_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+    CREATE INDEX IF NOT EXISTS idx_products_base_flavor ON products(base_flavor);
+    CREATE INDEX IF NOT EXISTS idx_products_status ON products(status);
+
+    -- One row per colour slot rather than three columns, because the number of
+    -- spot colours varies by pack and a fourth colour should not need a schema
+    -- change. Validity is stored so a bad value stays visible instead of
+    -- silently rendering as black.
+    CREATE TABLE IF NOT EXISTS product_colors (
+      id TEXT PRIMARY KEY,
+      sku TEXT NOT NULL,
+      slot INTEGER NOT NULL,
+      pms TEXT,
+      hex TEXT,
+      pms_valid INTEGER NOT NULL DEFAULT 0,
+      hex_valid INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (sku, slot),
+      FOREIGN KEY (sku) REFERENCES products(sku) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_colors_sku ON product_colors(sku);
+  `);
+
   // Post-repair hygiene clearance
   addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
   addColumnIfMissing('work_orders', 'clearance_status', 'TEXT');

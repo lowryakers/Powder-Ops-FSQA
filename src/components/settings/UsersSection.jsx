@@ -36,6 +36,12 @@ const MODULE_GROUPS = [
     ],
   },
   {
+    label: 'Product',
+    modules: [
+      { id: 'products', label: 'Products (master list)' },
+    ],
+  },
+  {
     label: 'Production',
     modules: [
       { id: 'production-log', label: 'Production Log' },

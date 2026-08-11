@@ -1,0 +1,6 @@
+spec_id,spec_name,format,material_structure,zipper,print_process,trim_length_mm,trim_width_mm,gusset_mm,front_panel_mm,wind_direction,core_in,vendor,last_unit_cost,dieline_required,vendor_spec_string,notes
+SPEC-POUCH-LG,Large Protein Pouch (10x10+3G),Pouch,Karess Soft Touch Matte PET / White 48ga METPET / 3.0mil Clear LLDPE,Aplix,CMYK,254,254,76.2,,,,Professional Packaging Services (PPS),0.506,TRUE,Size: 10.00 W x 10.00 L + 3.00 G,Used by whey / beef / plant protein pouches.
+SPEC-POUCH-SM,Small Mix Pouch (8x9+3G),Pouch,Karess Soft Touch Matte PET / White 48ga METPET / 3.0mil Clear LLDPE,Aplix,CMYK,228.6,203.2,76.2,,,,Professional Packaging Services (PPS),0.434,TRUE,Size: 8.00 W x 9.00 L + 3.00 G,Pancake / crepe / cupcake / GF flour pouches.
+SPEC-STICK-LG,Large Stick Film (175mm web),Stick,#781 PET Soft Touch on #858 COS Web metallocene,,CMYK,175,140,,66,3,3.00,Professional Packaging Services (PPS),0.0749,TRUE,Size: 6.8898 Web x 5.5118 | Structure: .50ga Soft Touch Matte PET/280ga White Stickweb | Core 3.00 | Max OD: ?,CONFLICT: master sheet and PO footer describe this structure differently. Reconcile with PPS and keep one string.
+SPEC-BOX-DONUT,Donut Mix Carton,Box,,,,,,,,,,,,,,GAP: no physical spec recorded for 26 donut mix SKUs.
+SPEC-CUP-OAT,Oatmeal Cup,Cup,,,,,,,,,,,,,,GAP: no physical spec recorded for 3 oatmeal cup SKUs.

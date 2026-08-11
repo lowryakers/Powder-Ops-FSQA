@@ -35,6 +35,10 @@ const PUBLIC_ROUTES = [
   // URL and scoped to one partner account inside the handler — read, upload and
   // dispute only. See server/api/partner-portal.js for why that set is safe.
   { prefix: '/partner-portal/' },
+  // The Artwork-Proofing service's master-list feed. Read-only, guarded by a
+  // hashed token compared in the handler, and off entirely unless
+  // PRODUCT_MASTER_TOKEN is set. It exposes only what a printer already holds.
+  { method: 'GET', path: '/products/master.csv' },
   { path: '/version' },
   { path: '/health' },
 ];

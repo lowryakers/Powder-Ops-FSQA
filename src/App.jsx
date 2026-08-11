@@ -60,6 +60,7 @@ const ProductionLog = lazy(() => import('./components/compliance/ProductionLog.j
 const ProductionSchedule = lazy(() => import('./components/compliance/ProductionSchedule.jsx'));
 const ProductionDashboard = lazy(() => import('./components/compliance/ProductionDashboard.jsx'));
 const COAPanel = lazy(() => import('./components/compliance/COAPanel.jsx'));
+const ProductsPanel = lazy(() => import('./components/compliance/ProductsPanel.jsx'));
 import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import PageInfo from './components/PageInfo.jsx';
@@ -123,6 +124,15 @@ const NAV_GROUPS = [
       { id: 'equipment', label: 'Equipment', icon: Shield },
       { id: 'calibration', label: 'Calibration', icon: Thermometer },
       { id: 'loto', label: 'Lockout / Tagout', icon: Lock },
+    ],
+  },
+  {
+    // Finished goods — the catalogue, its codes and its artwork. Granted, never
+    // a role default: the floor has no reason to see it, and a nav this long
+    // only stays usable if new groups have to be asked for.
+    label: 'Product',
+    items: [
+      { id: 'products', label: 'Products', icon: Package, keywords: 'sku gtin upc barcode master list catalogue catalog flavor spec artwork shopify' },
     ],
   },
   {
@@ -1805,6 +1815,7 @@ function App() {
           {resolvedTab === 'quality-schedules' && <QualitySchedulesPanel />}
           {resolvedTab === 'hygienic' && <HygienicDesignPanel />}
           {resolvedTab === 'coa' && <COAPanel />}
+          {resolvedTab === 'products' && <ProductsPanel />}
           {resolvedTab === 'capa' && <CAPAPanel />}
           {(resolvedTab === 'document-control' || HUB_OF[resolvedTab] === 'document-control') &&
             <ModuleHub key={`dc-${resolvedTab}`} hubId="document-control" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
