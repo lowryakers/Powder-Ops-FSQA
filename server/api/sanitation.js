@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { recordGroupFor } from '../qa-records.js';
+import { activeChemicalNames } from '../chemicals.js';
 
 const router = Router();
 
@@ -48,7 +49,36 @@ router.get('/', (req, res) => {
 const NONFOOD_DEFAULT = new RegExp([
   'restroom', 'bathroom', 'break\\s?room', 'lobby', 'office', 'lunch', 'grounds', 'exterior', 'janitor',
   'brittle', 'glass', 'light inspection', 'temp\\s*/?\\s*humidity', 'chemical (verification|dilution)',
+  // QA files sanitizer dilution checks in this log, and the area they type is
+  // "Sanitizer dilution", not "Chemical dilution" — so the term above matched
+  // nothing they actually write and a jug of sanitizer was being told to
+  // re-clean itself every 72 hours. The check is a real record; it is just not
+  // a room.
+  'dilution', 'titration',
 ].join('|'), 'i');
+
+function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// A REGISTERED CHEMICAL IS NOT A ROOM.
+//
+// `sanitation_records.area` is free text, so a concentration check filed
+// against "Simple Green" became a room in recleanRooms() with a 72-hour clock
+// on it. The registry is already the single answer to "is this a chemical"
+// (activeChemicalNames — the same one the kiosk and the sign-out use), so ask
+// it rather than keeping a second hand-written list of product names in here
+// that would drift the moment QA approves another sanitizer.
+//
+// Word-boundary matching, and only names of 4+ characters: a short chemical
+// code would otherwise match half the room names in the plant. An admin
+// override in reclean_rooms still wins over this, both directions.
+function chemicalAreaTest(db) {
+  let names = [];
+  try { names = activeChemicalNames(db); } catch { /* optional */ }
+  const parts = names.map(n => String(n || '').trim()).filter(n => n.length >= 4).map(escapeRe);
+  if (!parts.length) return () => false;
+  const re = new RegExp(`(^|[^a-z0-9])(${parts.join('|')})([^a-z0-9]|$)`, 'i');
+  return (area) => re.test(String(area || ''));
+}
 
 // Actions (dismiss / N-A / not-in-use / assigned) bind to this key; a new
 // passed clean or new use changes the key, which re-arms the flag.
@@ -88,6 +118,7 @@ export function recleanRooms(db) {
   try { overrides = new Map(db.prepare('SELECT room, applicable FROM reclean_rooms').all().map(r => [r.room, !!r.applicable])); } catch { /* optional */ }
   const cleanBy = lastCleanByArea(db);
   const useBy = lastUseByRoom(db);
+  const isChemical = chemicalAreaTest(db);
   let latestAction = null;
   try { latestAction = db.prepare('SELECT * FROM reclean_actions WHERE room = ? AND flag_key = ? ORDER BY created_at DESC LIMIT 1'); } catch { /* optional */ }
   const now = Date.now();
@@ -104,7 +135,9 @@ export function recleanRooms(db) {
       hoursIdle = Math.floor((now - new Date(clean.replace(' ', 'T') + 'Z').getTime()) / 3600000);
       status = hoursIdle >= 72 ? 'expired_72h' : 'clean';
     }
-    const applicable = overrides.has(room) ? overrides.get(room) : !NONFOOD_DEFAULT.test(room);
+    const applicable = overrides.has(room)
+      ? overrides.get(room)
+      : !(NONFOOD_DEFAULT.test(room) || isChemical(room));
     const flagKey = recleanFlagKey(room, clean, used);
     const flagged = status === 'expired_72h' || status === 'dirty';
     const action = flagged && latestAction ? (latestAction.get(room, flagKey) || null) : null;

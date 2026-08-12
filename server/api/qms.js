@@ -8,6 +8,7 @@ import { readyDocOrigin } from '../links.js';
 import { nextDisposalNumber } from './disposals.js';
 import { QMS_TYPES, getType, canSignApproval, RETURN_REASONS, USED_UP_REASON } from '../qms-config.js';
 import { syncKnifeStatus, syncAllKnifeStatuses } from '../knife-state.js';
+import { activeChemicalNames } from '../chemicals.js';
 import { createReadStream } from 'fs';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
@@ -129,27 +130,10 @@ function maintenanceItemOptions(rows) {
 
 // Chemicals from the approved registry are checkable-out items too. They're
 // merged in at read time (never stored in maintenance_items) so the sign-out
-// dropdown always tracks the registry.
-// "Is this a chemical?" has one answer, used by the kiosk, the in-app form and
-// the server-side check that a use specification was picked. Two sources:
-// the approved registry, and anything filed under the Chemicals category in the
-// editable item list — because not everything that needs a use spec is in the
-// registry (baking soda is the case that raised this).
-//
-// The category IS the marker, not a label. Adding "Chemicals" to the editor as
-// a display group alone would have made an item look like a chemical while the
-// sign-out quietly skipped its use spec, which is worse than not offering it.
-export function activeChemicalNames(db) {
-  const names = new Set();
-  try {
-    for (const r of db.prepare('SELECT name FROM approved_chemicals ORDER BY name').all()) names.add(r.name);
-  } catch { /* table optional */ }
-  try {
-    const rows = db.prepare("SELECT name FROM maintenance_items WHERE category = 'Chemicals' ORDER BY sort_order, name").all();
-    for (const r of rows) names.add(r.name);
-  } catch { /* table optional */ }
-  return [...names];
-}
+// dropdown always tracks the registry. The list itself lives in
+// server/chemicals.js — sanitation asks the same question and must get the
+// same answer. Re-exported here so existing importers are untouched.
+export { activeChemicalNames };
 function withChemicals(db, rows) {
   const have = new Set(rows.map(r => r.name));
   const chems = activeChemicalNames(db).filter(n => !have.has(n));
