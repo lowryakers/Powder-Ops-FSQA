@@ -41,6 +41,19 @@ const STATUS_COLORS = {
 function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
   const [form, setForm] = useState({ notes: '', lubricant_used: '', lubricant_is_food_grade: true, chemical_id: '' });
   const [saving, setSaving] = useState(false);
+  // This form used to record no steps at all, so every task completed from the
+  // Task Center reached QA's hygiene clearance with an empty step list — which
+  // then read as "0 of 3 ticked". The Operator View has always asked; the
+  // desktop path simply never did.
+  const steps = safeParseFe(wo.procedure_steps, []);
+  const isHeading = (t) => typeof t === 'string' && t.endsWith(':');
+  const [stepChecks, setStepChecks] = useState([]);
+  const toggleStep = (i) => setStepChecks(prev => {
+    const next = [...prev];
+    next[i] = !next[i];
+    return next;
+  });
+  const tickedCount = stepChecks.filter(Boolean).length;
 
   const lubricants = (chemicals || []).filter(c => c.category === 'lubricant');
 
@@ -57,11 +70,41 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onComplete(wo.id, form); } finally { setSaving(false); }
+    try {
+      // Send the ticks only when there are some — an array of nothing but
+      // `false` would assert every step was deliberately skipped, which is a
+      // different (and worse) claim than not recording them.
+      await onComplete(wo.id, {
+        ...form,
+        ...(tickedCount > 0 ? { step_results: steps.map((_, i) => !!stepChecks[i]) } : {}),
+      });
+    } finally { setSaving(false); }
   };
 
   return (
     <form onSubmit={handleSubmit} className="bg-green-50 rounded-lg border border-green-200 p-3 mt-2 space-y-2">
+      {/* Ticking is what gives QA an account of the work at hygiene clearance.
+          Left optional rather than required: this is completed on the floor,
+          and a form that refuses to submit is one people work around. */}
+      {steps.length > 0 && (
+        <div className="bg-white rounded-lg border border-green-200 p-2">
+          <p className="text-xs font-semibold text-gray-700 mb-1">
+            Steps done <span className="font-normal text-gray-400">— {tickedCount} of {steps.filter(t => !isHeading(t)).length}</span>
+          </p>
+          <ul className="space-y-0.5">
+            {steps.map((step, i) => (isHeading(step) ? (
+              <li key={i} className="text-xs font-semibold text-gray-700 pt-1">{step}</li>
+            ) : (
+              <li key={i}>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!stepChecks[i]} onChange={() => toggleStep(i)} className="mt-0.5 shrink-0" />
+                  <span className={`text-xs leading-snug ${stepChecks[i] ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{step}</span>
+                </label>
+              </li>
+            )))}
+          </ul>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Lubricant Used</label>
@@ -406,6 +449,18 @@ function WorkDone({ wo, compact = false }) {
   const hasReadings = Object.keys(readings).length > 0;
   const done = stepResults.filter(r => r === true || r === 'done' || r === 'pass').length;
 
+  // NOT RECORDED IS NOT THE SAME AS NOT DONE, and showing them the same way is
+  // a false statement about somebody's work.
+  //
+  // Only the Operator View asks for steps to be ticked, and even there it is
+  // optional; the desktop Task Center's Complete form does not ask at all, and
+  // Batch Complete writes an empty list outright. So an empty `step_results`
+  // usually means "this completion path never asked", not "the technician
+  // skipped every step" — and a column of empty circles reading "0 of 3
+  // ticked" says the second thing.
+  const stepsRecorded = stepResults.length > 0;
+  const realSteps = steps.filter(t => !(typeof t === 'string' && t.endsWith(':')));
+
   if (!steps.length && !hasReadings && !wo.lubricant_used && !wo.notes && wo.issue_flagged !== 1) {
     return (
       <p className="text-sm text-gray-500 italic">
@@ -418,12 +473,20 @@ function WorkDone({ wo, compact = false }) {
     <div className={compact ? 'space-y-2.5' : 'space-y-4'}>
       {steps.length > 0 && (
         <div>
-          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
-            <CheckCircle size={12} /> Procedure steps
+          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1 flex-wrap">
+            <CheckCircle size={12} /> {stepsRecorded ? 'Procedure steps' : 'What this task called for'}
             <span className="font-normal normal-case tracking-normal text-gray-400">
-              — {done} of {steps.filter(t => !(typeof t === 'string' && t.endsWith(':'))).length} ticked
+              {stepsRecorded
+                ? `— ${done} of ${realSteps.length} ticked`
+                : `— ${realSteps.length} step${realSteps.length === 1 ? '' : 's'}, not individually recorded`}
             </span>
           </h5>
+          {!stepsRecorded && (
+            <p className="text-[11px] text-gray-500 mb-1.5">
+              This task was completed from a screen that does not ask for each step to be ticked, so the
+              record does not say which were done. The procedure is below.
+            </p>
+          )}
           <ul className="space-y-1 text-sm">
             {steps.map((step, i) => {
               const isHeader = typeof step === 'string' && step.endsWith(':');
@@ -431,11 +494,12 @@ function WorkDone({ wo, compact = false }) {
               const ticked = result === true || result === 'done' || result === 'pass';
               return (
                 <li key={i} className={`flex items-start gap-2 ${isHeader ? 'font-semibold text-gray-800 mt-2' : 'text-gray-600 pl-3'}`}>
-                  {!isHeader && (
+                  {!isHeader && stepsRecorded && (
                     <span className={`mt-0.5 shrink-0 ${ticked ? 'text-green-500' : 'text-gray-300'}`}>
                       {ticked ? <CheckCircle size={14} /> : <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-gray-300" />}
                     </span>
                   )}
+                  {!isHeader && !stepsRecorded && <span className="mt-1.5 shrink-0 w-1 h-1 rounded-full bg-gray-400" />}
                   <span>{step}</span>
                 </li>
               );

@@ -54,10 +54,10 @@ const inputCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
 
 /* ── Entry / edit form ───────────────────────────────────────────────────── */
 
-function ReceivingForm({ user, record, onSaved, onCancel, onOpenChecklist }) {
+function ReceivingForm({ user, record, inspectionNo, onSaved, onCancel, onOpenChecklist }) {
   const [form, setForm] = useState(() => (record
     ? { ...BLANK, ...record, part_in_mrp: !!record.part_in_mrp, received_in_mrp: !!record.received_in_mrp }
-    : { ...BLANK, received_by: user?.name || '' }));
+    : { ...BLANK, received_by: user?.name || '', inspection_no: inspectionNo || '' }));
   const [custom, setCustom] = useState(record?.custom_data || {});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -148,7 +148,7 @@ function ReceivingForm({ user, record, onSaved, onCancel, onOpenChecklist }) {
           <p className="text-xs text-powder-800">
             {checklistTarget
               ? <>Truck, driver, vendor and the 18 inspection checks for <span className="font-semibold">{checklistTarget}</span>.</>
-              : 'Truck, driver, vendor and the 18 inspection checks. It covers the whole delivery — save the first line, or type an existing inspection #, to open it.'}
+              : 'The inspection comes first — start it on the Inspections tab, then file these lines against its number. Typing an existing number here opens its checklist.'}
           </p>
         </div>
         <button type="button" disabled={!checklistTarget}
@@ -547,24 +547,167 @@ function ReceivingTable({ user }) {
   );
 }
 
+// Who may file a receipt. Mirrors `canLog` in server/api/receiving.js; kept in
+// one place here because both the default tab and the tab list read it.
+const canFile = (user) => user?.role === 'admin' || user?.role === 'supervisor'
+  || user?.department === 'warehouse'
+  || (user?.module_access && !Array.isArray(user.module_access) && !!user.module_access['receiving-log']);
+
+/* ── Inspections: where a delivery actually starts ─────────────────────────
+ *
+ * The warehouse's real order is: work the checklist at the truck, enter the
+ * items in the ERP, then file the receiving lines here. The module used to
+ * open on the log with "New Record" as the only action, which is that order
+ * backwards — the checklist was reachable only AFTER a line existed, so the
+ * first step of the process depended on the last.
+ *
+ * This is the front door now: start an inspection (which issues the number),
+ * or pick up one somebody left half-finished.
+ */
+function InspectionsTab({ canLog, onOpen }) {
+  const { data: rows, refresh } = useApiGet('/receiving/checklists');
+  const { data: nextNo } = useApiGet('/receiving/next-inspection-no');
+  const [starting, setStarting] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [error, setError] = useState('');
+
+  const start = async (inspection_no) => {
+    setStarting(true); setError('');
+    try {
+      const c = await apiPost('/receiving/checklist', inspection_no ? { inspection_no } : {});
+      setTyped('');
+      refresh();
+      onOpen(c.inspection_no);
+    } catch (e) { setError(e.message || 'Could not start the inspection.'); }
+    finally { setStarting(false); }
+  };
+
+  const open = (rows || []).filter(r => !r.reviewed_at);
+  const done = (rows || []).filter(r => r.reviewed_at);
+
+  const Card = ({ r }) => {
+    const pct = r.total ? Math.round((r.answered / r.total) * 100) : 0;
+    return (
+      <button type="button" onClick={() => onOpen(r.inspection_no)}
+        className="w-full text-left bg-white border border-gray-200 rounded-lg px-3 py-2.5 hover:border-powder-300 hover:bg-powder-50/40">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <p className="font-semibold text-gray-900 text-sm">
+              {r.inspection_no}
+              {r.vendor ? <span className="font-normal text-gray-500"> · {r.vendor}</span> : ''}
+              {r.po_number ? <span className="font-normal text-gray-500"> · PO {r.po_number}</span> : ''}
+            </p>
+            <p className="text-xs text-gray-500">
+              {r.inspection_date || '—'} · {r.inspector || 'unassigned'}
+              {' · '}{r.line_count} line{r.line_count === 1 ? '' : 's'} filed
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* An unsent escalation is the one thing that should pull somebody
+                back to a checklist, so it outranks the progress figure. */}
+            {r.escalations_outstanding > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-semibold">
+                <AlertTriangle size={11} /> {r.escalations_outstanding} to notify
+              </span>
+            )}
+            {r.reviewed_at ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-[11px] font-semibold">
+                <CheckCircle size={11} /> Signed off
+              </span>
+            ) : (
+              <span className="text-[11px] text-gray-500 tabular-nums">{r.answered}/{r.total} answered</span>
+            )}
+          </div>
+        </div>
+        {!r.reviewed_at && (
+          <div className="mt-1.5 h-1 rounded-full bg-gray-100 overflow-hidden">
+            <div className={`h-full ${pct === 100 ? 'bg-green-500' : 'bg-powder-500'}`} style={{ width: `${pct}%` }} />
+          </div>
+        )}
+      </button>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {canLog && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+          <div>
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <ClipboardCheck size={16} className="text-powder-600" /> Start a receiving inspection
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Step 1 of the delivery: work FORM 204-01 at the truck. It issues the inspection number,
+              which the receiving lines join once the items are in the ERP.
+            </p>
+          </div>
+          {error && <p className="text-sm text-red-700 bg-red-50 rounded-lg p-2">{error}</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" disabled={starting} onClick={() => start(null)}
+              className="px-3 py-2 rounded-lg bg-powder-600 text-white text-sm font-semibold hover:bg-powder-700 disabled:opacity-50">
+              {starting ? 'Starting…' : `Start ${nextNo?.inspection_no || 'a new inspection'}`}
+            </button>
+            <span className="text-xs text-gray-400">or</span>
+            {/* A paper form already filled in has its own number written on it. */}
+            <input value={typed} onChange={e => setTyped(e.target.value)}
+              placeholder="Number already on a paper form"
+              className="px-2.5 py-2 border border-gray-300 rounded-lg text-sm w-56" />
+            <button type="button" disabled={starting || !typed.trim()} onClick={() => start(typed.trim())}
+              className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50 disabled:opacity-40">
+              Open that one
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+          In progress ({open.length})
+        </h4>
+        {open.length === 0 ? (
+          <p className="text-sm text-gray-500">Nothing open. Start one when a truck arrives.</p>
+        ) : (
+          <div className="space-y-1.5">{open.map(r => <Card key={r.id} r={r} />)}</div>
+        )}
+      </div>
+
+      {done.length > 0 && (
+        <div>
+          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+            Signed off ({done.length})
+          </h4>
+          <div className="space-y-1.5 max-h-80 overflow-y-auto">{done.map(r => <Card key={r.id} r={r} />)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Module ──────────────────────────────────────────────────────────────── */
 
 export default function ReceivingLogPanel({ user }) {
-  const [tab, setTab] = useState('log');
+  // Warehouse lands on Inspections — that is step one of a delivery, and it
+  // used to be the step you could only reach after finishing the last one.
+  const [tab, setTab] = useState(() => (canFile(user) ? 'inspections' : 'log'));
   const [refreshKey, setRefreshKey] = useState(0);
   // FORM 204-01 for one inspection — opened from the form after filing, or
   // from any log row carrying that inspection number.
   const [checklist, setChecklist] = useState(null);
-  const canLog = user?.role === 'admin' || user?.role === 'supervisor'
-    || user?.department === 'warehouse'
-    || (user?.module_access && !Array.isArray(user.module_access) && !!user.module_access['receiving-log']);
+  // Set when the checklist sends you to file a line, so the form opens against
+  // that inspection instead of asking you to retype its number.
+  const [prefillInspection, setPrefillInspection] = useState('');
+  const canLog = canFile(user);
   // Importing rewrites the log in bulk — thousands of compliance records in one
   // action — so it stays admin-only rather than riding on the edit grant.
   const canImport = user?.role === 'admin';
   const { data: targets } = useApiGet(canImport ? '/imports/targets' : null);
   const importTarget = (targets || []).find(t => t.key === 'receiving_log');
 
+  // In the order the work actually happens: inspect the delivery, then file
+  // the lines, then read the log. Someone who cannot file skips straight to
+  // the log, which is all they came for.
   const tabs = [
+    ...(canLog ? [{ id: 'inspections', label: 'Inspections', icon: ClipboardCheck }] : []),
     { id: 'log', label: 'Receiving Log', icon: ClipboardList },
     ...(canLog ? [{ id: 'form', label: 'New Record', icon: Plus }] : []),
     ...(canImport ? [{ id: 'import', label: 'Import', icon: Upload }] : []),
@@ -580,12 +723,16 @@ export default function ReceivingLogPanel({ user }) {
           </button>
         ))}
       </div>
+      {tab === 'inspections' && canLog && (
+        <InspectionsTab canLog={canLog} onOpen={setChecklist} />
+      )}
       {tab === 'form' && canLog && (
-        <ReceivingForm user={user} onSaved={() => setRefreshKey(k => k + 1)}
-          onOpenChecklist={setChecklist} />
+        <ReceivingForm key={prefillInspection} user={user} inspectionNo={prefillInspection}
+          onSaved={() => setRefreshKey(k => k + 1)} onOpenChecklist={setChecklist} />
       )}
       {checklist && (
-        <ReceivingChecklist inspectionNo={checklist} onClose={() => setChecklist(null)} />
+        <ReceivingChecklist inspectionNo={checklist} onClose={() => setChecklist(null)}
+          onAddLine={(no) => { setChecklist(null); setPrefillInspection(no); setTab('form'); }} />
       )}
       {tab === 'import' && canImport && importTarget && (
         <ImportPanel target="receiving_log" targetLabel="Receiving Log"

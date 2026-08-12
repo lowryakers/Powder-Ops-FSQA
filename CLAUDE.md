@@ -557,6 +557,20 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
 `server/receiving-notify.js` + checklist routes in `api/receiving.js` + `ReceivingChecklist.jsx`.
 Not user-editable: changing what a receiving inspection asks is a Document Change Request, same doctrine as
 `scale-forms.js` tolerances. `checklist_revision` is stamped on every filed checklist.
+- **THE CHECKLIST COMES FIRST — it is what starts an inspection and issues its number.** The warehouse's
+  real order is: work FORM 204-01 at the truck → enter the items in the ERP (MRPEasy today, Keychain soon,
+  hence `part_in_mrp`/`received_in_mrp` on the line) → file the ReadyDoc lines. The first cut had it exactly
+  backwards: the checklist could only be reached AFTER a receiving line existed, so step one depended on
+  step three. `POST /receiving/checklist` with no number now issues one, and **`nextInspectionNo()` counts
+  MAX across `receiving_log` AND `receiving_checklists`** — a checklist claims a number before any line
+  exists, so counting only the log hands the same number to the next truck.
+- **`GET /receiving/checklists`** lists what is open with progress + line counts, because a checklist is
+  started at a truck and finished at a desk, sometimes the next day. The module's first tab is
+  **Inspections** and warehouse lands there; the log stays the default for people who cannot file.
+- The **DATA ENTRY section shows the lines filed against the inspection** and offers to add one — answering
+  "Receiving information entered into system?" without being able to see what was entered is guesswork.
+  Sign-off is refused until that section is answered, so the checklist cannot close before the ERP/ReadyDoc
+  step actually happened.
 - **ONE CHECKLIST PER INSPECTION, not per row.** An arrival is routinely several `receiving_log` lines against
   one PO (the Monday import has 1,328 rows sharing 511 inspection numbers) and the paper form has one header,
   one set of checks and one approval. `receiving_checklists.inspection_no` is UNIQUE and the POST is
@@ -600,6 +614,18 @@ list — which is how a clearance becomes a rubber stamp.
   `frequency_type`, which answers "which procedure was this, and how often does it run".
 - The lubricant line says **"Not marked food-grade"** in red when the flag is off, rather than omitting it —
   an absent line reads as "no lubricant", which is the wrong conclusion on a food-contact clearance.
+- **"NOT RECORDED" IS NOT "NOT DONE", and rendering them the same way is a false statement about somebody's
+  work.** An empty `step_results` almost always means the completion path never asked: only the Operator
+  View offers ticks (and optionally), the Task Center's `CompleteForm` did not ask at all, and
+  `batch-complete` hard-writes `'[]'`. So every clearance card read "0 of 3 ticked", which says the
+  technician skipped everything. `stepsRecorded` splits the two: with a record it is "2 of 3 ticked" with
+  ticks; without one it is "what this task called for", plain bullets, and a line saying the record is
+  silent and why.
+- The gap itself is closed going forward — `CompleteForm` now asks which steps were done. **Left optional,
+  not required**: this is completed on the floor, and a form that refuses to submit is one people work
+  around. Whether a food-contact clearance task should *demand* its ticks is a policy call, not a UI one.
+  Ticks are sent only when at least one is set — an array of all-`false` would assert every step was
+  deliberately skipped, which is a worse claim than not recording them.
 
 ## Attaching the signed paper copy: both doors
 `DocumentAttachments` was mounted only in `DocumentViewer` (row click), so someone who opened a document with

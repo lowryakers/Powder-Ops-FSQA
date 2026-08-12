@@ -64,10 +64,21 @@ function readBody(body) {
 // padded to 4, but it keeps counting past 9999 rather than wrapping).
 const INSPECTION_PREFIX = 'A-100-';
 
+/**
+ * The next inspection number, counted across BOTH tables.
+ *
+ * The warehouse's real order is: fill the checklist at the truck, enter the
+ * items in the ERP, then file the receiving lines here. So a checklist exists
+ * — and has claimed a number — before any `receiving_log` row does. Counting
+ * only the log would hand the same number to the next inspection started
+ * before the first one's lines were keyed in, which on a busy dock is the
+ * normal case, not an edge case.
+ */
 function nextInspectionNo(db) {
-  const rows = db.prepare(
-    "SELECT inspection_no FROM receiving_log WHERE inspection_no LIKE 'A-100-%'"
-  ).all();
+  const rows = [
+    ...db.prepare("SELECT inspection_no FROM receiving_log WHERE inspection_no LIKE 'A-100-%'").all(),
+    ...db.prepare("SELECT inspection_no FROM receiving_checklists WHERE inspection_no LIKE 'A-100-%'").all(),
+  ];
   let max = 0;
   for (const r of rows) {
     const n = Number(String(r.inspection_no).slice(INSPECTION_PREFIX.length));
@@ -159,6 +170,35 @@ const shapeChecklist = (r) => {
   };
 };
 
+/**
+ * Inspections in progress, newest first.
+ *
+ * A checklist is started at the truck and finished at a desk, sometimes on a
+ * different device and sometimes after lunch. Without a list of what is open,
+ * the only way back to one is remembering its number.
+ */
+router.get('/checklists', (req, res) => {
+  const db = getDb();
+  const open = req.query.open === '1';
+  const rows = db.prepare(`
+    SELECT c.*, (SELECT COUNT(*) FROM receiving_log r WHERE r.inspection_no = c.inspection_no) AS line_count
+    FROM receiving_checklists c
+    ${open ? 'WHERE c.reviewed_at IS NULL' : ''}
+    ORDER BY c.reviewed_at IS NOT NULL, c.created_at DESC
+    LIMIT ?`).all(Math.min(Number(req.query.limit) || 100, 300));
+  res.json(rows.map(r => {
+    const c = shapeChecklist(r);
+    return {
+      ...c,
+      // Enough to decide which one to pick up without opening each in turn.
+      answered: Object.keys(c.answers).length,
+      total: c.unanswered.length + Object.keys(c.answers).length,
+      escalations_outstanding: c.escalations.filter(
+        e => !c.notifications.some(n => n.item === e.key)).length,
+    };
+  }));
+});
+
 // The blank form. Public to any signed-in reader — a form nobody can see is a
 // form nobody fills in.
 router.get('/checklist/form', (_req, res) => res.json(CHECKLIST));
@@ -186,8 +226,12 @@ const HEADER_COLS = ['po_number', 'truck_number', 'pallet_count', 'driver_name',
 router.post('/checklist', (req, res) => {
   if (!canLog(req.user)) return res.status(403).json({ error: 'Filing a receiving inspection needs the Receiving Log.' });
   const db = getDb();
-  const no = String(req.body?.inspection_no || '').trim();
-  if (!no) return res.status(400).json({ error: 'An inspection number is required.' });
+  // Blank number = STARTING a new inspection, which is the first thing that
+  // happens when a truck arrives. The checklist issues the number and the
+  // receiving lines join it later — the order the warehouse actually works in.
+  // A number supplied explicitly is someone resuming a checklist, or keying in
+  // one already written on a paper form.
+  const no = String(req.body?.inspection_no || '').trim() || nextInspectionNo(db);
 
   let row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(no);
   if (!row) {
