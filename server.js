@@ -75,7 +75,7 @@ import logBuilderRoutes from './server/api/log-builder.js';
 import { seedStructureLists } from './server/structure-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
-import { tagQaInspectionRecords } from './server/qa-records.js';
+import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-records.js';
 import { syncAllKnifeStatuses } from './server/knife-state.js';
 import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
 import receivingRoutes from './server/api/receiving.js';
@@ -950,6 +950,11 @@ try {
   // the tagger has to run again here — the migration pass in db.js saw an empty
   // table on a fresh database. Idempotent.
   tagQaInspectionRecords(db);
+  // The same for the TASKS that produce those records. A plant seeded before
+  // the inspection seeders set task_group='qa' has schedules — and every work
+  // order generated from them since — sitting under Cleaning, and the seeders
+  // skip once data exists, so nothing else would ever correct it.
+  tagQaInspectionTasks(db);
   // The knife master list is a MIRROR of the sign-out log (see
   // server/knife-state.js). It drifted for as long as the kiosk was the only
   // thing writing it — a return recorded in the app left the tool showing as

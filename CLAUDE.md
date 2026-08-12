@@ -542,6 +542,18 @@ Light Inspection (110-01/02), Brittle Plastic & Glass (431-02) and Temperature &
 Each list asks for its own group (`GET /sanitation?group=qa|sanitation|all`), so a record is in **exactly
 one** list — nothing is duplicated. Temp/Humidity was missing from the regex, which is why it showed up in
 Sanitation.
+**The RECORDS and the TASKS are two different tables and were fixed at different times**, which is how a
+plant ended up with QA's inspection records correctly on QA's list while the schedules and work orders that
+produce them still sat under Cleaning — the `CLN` badge on every Brittle Plastic & Glass task.
+`tagQaInspectionTasks()` is the task-side twin, matching on the schedule TITLE
+(`Brittle Plastic%` / `Light Inspection%` / `Temp & Humidity%`) and moving `pm_schedules.task_group` plus any
+work order still outstanding. It lives beside the record-side tagger in `qa-records.js` so the two cannot
+drift again. The seeders already insert `task_group = 'qa'` and `createNextWorkOrder` copies the schedule's
+group — **the missing piece was purely a backfill**, and because the seeders skip once data exists, nothing
+else would ever have corrected it. **Completed work is deliberately left as filed**: `task_group` routed the
+work at the time, and rewriting it would move finished work between departments in Team Activity's history;
+the count left behind is logged rather than left silent.
+
 **`tagQaInspectionRecords()` must run both in `runMigrations` AND after the cleaning seeds in server.js.**
 On a fresh DB the migration pass sees an empty table and the seeds then insert every inspection with the
 default `sanitation` group — a brand-new deploy came up with an empty QA Inspections list and 407 of QA's

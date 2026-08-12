@@ -6,10 +6,15 @@
 // carries the group it belongs to, and each list asks for its own — a record is
 // in exactly ONE list, so nothing is ever duplicated between the two views.
 //
-// This lives in its own module because three callers need to agree on it: the
+// This lives in its own module because several callers need to agree on it: the
 // write path (api/sanitation.js), the migration for records filed before the
-// column existed (db.js), and the post-seed re-tag (server.js). One list, one
-// definition.
+// column existed (db.js), the post-seed re-tag (server.js) — and now the TASK
+// side too. One list, one definition.
+//
+// The record side and the task side are two different tables and were fixed at
+// different times, which is how a plant ended up with QA's inspection records
+// correctly on QA's list while the tasks that produce them still sat under
+// Cleaning. Both live here now so they cannot drift again.
 
 export const QA_RECORD_AREA = /^(brittle plastic|light inspection|temp\s*\/?\s*humidity|temperature\s*(&|and)?\s*humidity)/i;
 
@@ -42,5 +47,57 @@ export function tagQaInspectionRecords(db) {
   } catch (e) {
     console.warn('[db] QA inspection tagging skipped:', e.message);
     return 0;
+  }
+}
+
+/* ── The task side: schedules and work orders ─────────────────────────────── */
+
+// The same three inspections, matched on the TITLE a schedule carries:
+//   "Brittle Plastic & Glass Inspection — Break Room"
+//   "Light Inspection — Warehouse"
+//   "Temp & Humidity Check — Production"
+// SQL rather than the regex because this re-tags in bulk, and the two are kept
+// side by side so a change to one is an obvious prompt to change the other.
+const TASK_TITLE_SQL = `(title LIKE 'Brittle Plastic%' OR title LIKE 'Light Inspection%'
+  OR title LIKE 'Temp & Humidity%' OR title LIKE 'Temp/Humidity%'
+  OR title LIKE 'Temperature & Humidity%' OR title LIKE 'Temperature and Humidity%')`;
+
+/**
+ * Put QA's inspection TASKS on QA's list.
+ *
+ * The seeders create these with `task_group = 'qa'` and `createNextWorkOrder`
+ * copies the schedule's group, so anything generated today is already right.
+ * What was missing is a backfill: a plant seeded before that was true has
+ * schedules — and every work order generated from them since — sitting under
+ * Cleaning, and the seeders skip once data exists, so a redeploy never fixes
+ * it. This is the task-side twin of `tagQaInspectionRecords`.
+ *
+ * COMPLETED work is deliberately left alone. `task_group` routed the work at
+ * the time and the completed row is the record of that; rewriting it would
+ * move finished work between departments in Team Activity's history. Only
+ * schedules (which govern what is generated next) and work that is still
+ * outstanding are moved. The count of completed rows left behind is returned
+ * so a caller can say so rather than leave it silent.
+ *
+ * Idempotent — a second run changes nothing.
+ */
+export function tagQaInspectionTasks(db) {
+  try {
+    const sched = db.prepare(`UPDATE pm_schedules SET task_group = 'qa'
+      WHERE COALESCE(task_group, '') != 'qa' AND ${TASK_TITLE_SQL}`).run();
+    const open = db.prepare(`UPDATE work_orders SET task_group = 'qa'
+      WHERE COALESCE(task_group, '') != 'qa' AND ${TASK_TITLE_SQL}
+        AND status IN ('open', 'in_progress', 'overdue', 'missed')`).run();
+    const completed = db.prepare(`SELECT COUNT(*) AS n FROM work_orders
+      WHERE COALESCE(task_group, '') != 'qa' AND ${TASK_TITLE_SQL}
+        AND status NOT IN ('open', 'in_progress', 'overdue', 'missed')`).get().n;
+    if (sched.changes || open.changes) {
+      console.log(`[db] Moved ${sched.changes} inspection schedule(s) and ${open.changes} open task(s) to QA`
+        + (completed ? ` (${completed} already-completed task(s) left as filed)` : ''));
+    }
+    return { schedules: sched.changes, open: open.changes, completed_left: completed };
+  } catch (e) {
+    console.warn('[db] QA inspection task tagging skipped:', e.message);
+    return { schedules: 0, open: 0, completed_left: 0 };
   }
 }
