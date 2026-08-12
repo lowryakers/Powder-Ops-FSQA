@@ -293,6 +293,24 @@ onto each order line at sale time**, so SKU-grouped sales reporting splits into 
 Order is ShipHero → Shopify, sync paused throughout, on-hand snapshot first. The ReadyDoc half is already
 built and tested (`/products/:sku/rename`) — it is the easy one.
 
+## The floor could only ever see today (`missed` and the Operator View)
+`markMissedWorkOrders()` flips anything past due to **`missed`** on ordinary page loads, and
+`/pm/operator-tasks` selected `status IN ('open','in_progress','overdue')`. So a task due yesterday was
+`missed` today and **dropped off the operator's screen entirely** — the Overdue bucket could never contain
+anything and the cleaner had a one-day window on her own work. The Task Center's search has always covered
+`missed`; this screen did not. Same class as the inner join that hid equipment-less tasks: two screens
+disagreeing about whether a task exists.
+- `missed` is now in the filter, and the client already buckets by date so it lands under Overdue with no
+  change there.
+- **`collapseMissed()` stops the same job appearing once per day it was missed.** Housekeeping marks the
+  past-due task missed AND regenerates one, so a daily clean left a fortnight leaves fourteen rows behind
+  it. A schedule with a live task keeps ONE card carrying `missed_count` / `missed_since`; a schedule with
+  nothing live keeps its OLDEST missed task so the work does not vanish; and a **one-off task with no
+  schedule always survives**, because nothing regenerates it — dropping that is not deduplication, it is
+  losing the task.
+- The card shows `5× missed since <date>` in EN and ES. Completing a missed task works, so seeing it is
+  actionable rather than just informational.
+
 ## Not every task has equipment (the "shows in Operator View but not Task Center" bug)
 `/pm/by-frequency`, `/pm/search`, `/pm/completed-history` and `/pm/clearance-pending` all did
 `JOIN equipment e ON wo.equipment_id = e.id` — an **inner** join. A task raised from a chat message has

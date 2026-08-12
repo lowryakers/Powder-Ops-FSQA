@@ -135,6 +135,10 @@ const strings = {
   // Checklist
   checklist: { en: 'Checklist', es: 'Lista de Verificación' },
   steps_complete: { en: 'steps complete', es: 'pasos completados' },
+  // A recurring job missed several times is ONE job to do, with a history —
+  // not several identical cards.
+  missed_times: { en: 'missed', es: 'no hecho' },
+  missed_since: { en: 'since', es: 'desde' },
   // Food-contact tasks cannot be completed without ticking each step — QA has
   // to clear the machine before it runs again and cannot do that from a task
   // that does not say what was done.

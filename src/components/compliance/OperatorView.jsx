@@ -53,6 +53,9 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
   const issuePhotos = (() => { try { return JSON.parse(task.issue_attachments || '[]'); } catch { return []; } })();
   const today = localDateStr();
   const isOverdue = task.due_date < today;
+  // How many times this recurring job has been missed, folded onto the one
+  // card by the server rather than shown as N identical cards.
+  const missedCount = task.missed_count || 0;
   const isDueToday = task.due_date === today;
   const isCritical = task.priority === 'critical' || task.priority === 'high';
 
@@ -253,6 +256,16 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 {isOverdue ? <AlertTriangle size={11} /> : <Clock size={11} />}
                 {formatDueLabelI18n(task.due_date, t)}
               </span>
+
+              {/* A job she is behind on says so once, with how far behind —
+                  rather than appearing as one card per day it was missed. */}
+              {missedCount > 0 && (
+                <span className="text-xs font-semibold text-red-700 bg-red-100 rounded-full px-2 py-0.5 flex items-center gap-1">
+                  <AlertTriangle size={10} />
+                  {missedCount}× {t('missed_times')}
+                  {task.missed_since ? ` ${t('missed_since')} ${task.missed_since}` : ''}
+                </span>
+              )}
 
               {task.assigned_to && (
                 <span className="text-xs text-gray-400">&middot; {task.assigned_to}</span>

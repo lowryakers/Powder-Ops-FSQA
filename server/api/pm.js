@@ -1042,6 +1042,55 @@ router.post('/generate', (_req, res) => {
 
 // --- Operator view: simplified task list ---
 
+/**
+ * Missed work, without showing the same job twice.
+ *
+ * Housekeeping marks a past-due task 'missed' AND creates a fresh one for the
+ * schedule, so a daily clean left undone for a fortnight leaves fourteen missed
+ * rows behind it. Listing them all would bury today's work under a fortnight of
+ * identical cards, and the cleaner would complete one and watch thirteen
+ * others linger — they are one physical job.
+ *
+ * So:
+ *  • a schedule that already has a live task keeps ONE card, and that card
+ *    carries `missed_count` / `missed_since` — she is told she is behind
+ *    without being handed the same job fourteen times;
+ *  • a schedule with nothing live keeps its OLDEST missed task, because
+ *    otherwise the work disappears from the screen altogether;
+ *  • a ONE-OFF task with no schedule always survives. Nothing regenerates it,
+ *    so dropping it is not deduplication, it is losing the task.
+ */
+function collapseMissed(rows) {
+  const live = new Set();
+  for (const r of rows) {
+    if (r.pm_schedule_id && r.status !== 'missed') live.add(r.pm_schedule_id);
+  }
+  const missedBySchedule = new Map();
+  for (const r of rows) {
+    if (r.status !== 'missed' || !r.pm_schedule_id) continue;
+    const cur = missedBySchedule.get(r.pm_schedule_id);
+    if (!cur) missedBySchedule.set(r.pm_schedule_id, { count: 1, oldest: r });
+    else {
+      cur.count += 1;
+      if (String(r.due_date) < String(cur.oldest.due_date)) cur.oldest = r;
+    }
+  }
+  const out = [];
+  for (const r of rows) {
+    if (r.status !== 'missed') {
+      const m = r.pm_schedule_id ? missedBySchedule.get(r.pm_schedule_id) : null;
+      out.push(m ? { ...r, missed_count: m.count, missed_since: m.oldest.due_date } : r);
+      continue;
+    }
+    // A one-off missed task has nothing to fold into and nothing to replace it.
+    if (!r.pm_schedule_id) { out.push(r); continue; }
+    if (live.has(r.pm_schedule_id)) continue; // folded onto the live card above
+    const m = missedBySchedule.get(r.pm_schedule_id);
+    if (m && m.oldest.id === r.id) out.push({ ...r, missed_count: m.count, missed_since: m.oldest.due_date });
+  }
+  return out;
+}
+
 router.get('/operator-tasks', (req, res) => {
   const db = getDb();
   runPmHousekeeping(db);
@@ -1062,7 +1111,15 @@ router.get('/operator-tasks', (req, res) => {
     FROM work_orders wo
     LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
-    WHERE wo.status IN ('open', 'in_progress', 'overdue')`;
+    -- 'missed' IS INCLUDED, and leaving it out is why the floor could not see
+    -- overdue work. markMissedWorkOrders flips anything past due to 'missed'
+    -- on ordinary page loads, so a task due yesterday was already 'missed'
+    -- today and dropped out of this list entirely — the Overdue bucket could
+    -- never contain anything, and the operator had a one-day window on her own
+    -- work. The Task Center's search has always covered missed; this screen
+    -- did not, which is the same two-screens-disagreeing bug as the inner join
+    -- that hid equipment-less tasks.
+    WHERE wo.status IN ('open', 'in_progress', 'overdue', 'missed')`;
   const params = [];
 
   if (assigned_to) { sql += ' AND wo.assigned_to = ?'; params.push(assigned_to); }
@@ -1085,7 +1142,7 @@ router.get('/operator-tasks', (req, res) => {
   //
   // This screen is now only work orders: something to go and do, one at a
   // time. Signing is a review, and reviews happen in QA Review.
-  res.json(rows.map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
+  res.json(collapseMissed(rows).map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
 });
 
 router.put('/schedules/:id/items', (req, res) => {
