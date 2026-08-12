@@ -2,11 +2,12 @@ import { useState, useMemo, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import {
   PackageCheck, Plus, ClipboardList, Search, Filter, Pencil,
-  CheckCircle, Clock, AlertTriangle, ChevronUp, ChevronDown, ExternalLink, Upload,
+  CheckCircle, Clock, AlertTriangle, ChevronUp, ChevronDown, ExternalLink, Upload, ClipboardCheck,
 } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import ImportPanel from '../common/ImportPanel';
+import ReceivingChecklist from './ReceivingChecklist.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
@@ -53,7 +54,7 @@ const inputCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
 
 /* ── Entry / edit form ───────────────────────────────────────────────────── */
 
-function ReceivingForm({ user, record, onSaved, onCancel }) {
+function ReceivingForm({ user, record, onSaved, onCancel, onOpenChecklist }) {
   const [form, setForm] = useState(() => (record
     ? { ...BLANK, ...record, part_in_mrp: !!record.part_in_mrp, received_in_mrp: !!record.received_in_mrp }
     : { ...BLANK, received_by: user?.name || '' }));
@@ -120,6 +121,13 @@ function ReceivingForm({ user, record, onSaved, onCancel }) {
               Add another line to {lastFiled}
             </button>
           )}
+          {/* FORM 204-01 covers the whole delivery, so it belongs here — at
+              the moment the receipt exists and the truck may still be on the
+              dock — not as something to remember later. */}
+          <button type="button" onClick={() => onOpenChecklist?.(lastFiled)}
+            className="px-2 py-0.5 rounded-md border border-powder-300 bg-white text-xs font-medium text-powder-800 hover:bg-powder-50 inline-flex items-center gap-1">
+            <ClipboardCheck size={12} /> Inspection checklist
+          </button>
         </div>
       )}
 
@@ -240,6 +248,8 @@ function ReceivingTable({ user }) {
   const [sortCol, setSortCol] = useState('date_received');
   const [sortDir, setSortDir] = useState('desc');
   const [editing, setEditing] = useState(null);
+  // The inspection whose FORM 204-01 checklist is open, if any.
+  const [checklist, setChecklist] = useState(null);
   const expand = useRowExpand();
 
   // Searching runs on the server and deliberately IGNORES the date filter.
@@ -476,6 +486,14 @@ function ReceivingTable({ user }) {
                               <ExternalLink size={12} /> Packing slip
                             </a>
                           )}
+                          {/* One checklist covers the whole receipt, so it
+                              opens from any line that carries the number. */}
+                          {r.inspection_no && (
+                            <button type="button" onClick={() => setChecklist(r.inspection_no)}
+                              className="inline-flex items-center gap-1 text-powder-700 hover:underline text-xs font-medium">
+                              <ClipboardCheck size={12} /> Inspection checklist ({r.inspection_no})
+                            </button>
+                          )}
                           <CustomFieldValues scope={SCOPE} data={r.custom_data} />
                           {r.source && (
                             <div className="mt-2 text-[11px] text-gray-500">
@@ -494,6 +512,10 @@ function ReceivingTable({ user }) {
           <ShowMore view={view} noun="receipts" />
         </div>
       )}
+
+      {checklist && (
+        <ReceivingChecklist inspectionNo={checklist} onClose={() => setChecklist(null)} />
+      )}
     </div>
   );
 }
@@ -503,6 +525,9 @@ function ReceivingTable({ user }) {
 export default function ReceivingLogPanel({ user }) {
   const [tab, setTab] = useState('log');
   const [refreshKey, setRefreshKey] = useState(0);
+  // FORM 204-01 for one inspection — opened from the form after filing, or
+  // from any log row carrying that inspection number.
+  const [checklist, setChecklist] = useState(null);
   const canLog = user?.role === 'admin' || user?.role === 'supervisor'
     || user?.department === 'warehouse'
     || (user?.module_access && !Array.isArray(user.module_access) && !!user.module_access['receiving-log']);
@@ -529,7 +554,11 @@ export default function ReceivingLogPanel({ user }) {
         ))}
       </div>
       {tab === 'form' && canLog && (
-        <ReceivingForm user={user} onSaved={() => setRefreshKey(k => k + 1)} />
+        <ReceivingForm user={user} onSaved={() => setRefreshKey(k => k + 1)}
+          onOpenChecklist={setChecklist} />
+      )}
+      {checklist && (
+        <ReceivingChecklist inspectionNo={checklist} onClose={() => setChecklist(null)} />
       )}
       {tab === 'import' && canImport && importTarget && (
         <ImportPanel target="receiving_log" targetLabel="Receiving Log"

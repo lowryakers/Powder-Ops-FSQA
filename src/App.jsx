@@ -268,6 +268,16 @@ function wantsMessagesTab(u) {
   return w.includes('messages');
 }
 
+// The ways a sign-out ends without the item coming back. These mirror
+// RETURN_REASONS in server/qms-config.js minus 'Returned' (which is the button
+// beside them); the server validates against that list, so a label here can
+// never put a value into the log that its filters do not know.
+const UNRETURNED_OUTCOMES = [
+  { value: 'Used up / ran out', label: 'Used up / ran out', note: 'Chemical finished, consumable spent. Raises a restock suggestion for the office.' },
+  { value: 'Damaged', label: 'Damaged', note: 'Broken or unusable. QA opens this one rather than batch-signing it.' },
+  { value: 'Lost', label: 'Lost', note: "Can't be found. QA opens this one too." },
+];
+
 function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, scheduleNotice, onOpenComms }) {
   const { data: aiStatus } = useApiGet('/ai/status');
   const { data: commsChannels, refresh: refreshComms } = useApiGet('/comms/channels', [activeTab]);
@@ -275,10 +285,16 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, 
   // return them, with a one-click Return. Refetches on every tab change.
   const { data: myOut, refresh: refreshMyOut } = useApiGet('/qms/mine/checked-out', [activeTab]);
   const [returningId, setReturningId] = useState(null);
-  const returnItem = async (it) => {
+  const [closingOut, setClosingOut] = useState(null);
+  // `return_reason` is validated server-side against the log's own outcome
+  // list, so these labels can never introduce a value the log cannot filter.
+  const returnItem = async (it, reason) => {
     setReturningId(it.id);
-    try { await apiPost(`/qms/mine/checked-out/${it.id}/return`, {}); refreshMyOut(); }
-    catch { /* leave in list */ }
+    try {
+      await apiPost(`/qms/mine/checked-out/${it.id}/return`, reason ? { return_reason: reason } : {});
+      setClosingOut(null);
+      refreshMyOut();
+    } catch { /* leave in list */ }
     finally { setReturningId(null); }
   };
   const commsUnread = (commsChannels || []).reduce((n, c) => n + (c.unread || 0), 0);
@@ -454,8 +470,36 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, 
                   className="shrink-0 px-2 py-1 text-[10px] font-semibold bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50">
                   {returningId === it.id ? '…' : 'Return'}
                 </button>
+                {/* Not everything comes back. A chemical runs out, a tool
+                    breaks or is lost — with only a Return button the record
+                    either stayed open forever or was closed as a return that
+                    never happened. */}
+                <button onClick={() => setClosingOut(closingOut === it.id ? null : it)}
+                  title="It isn't coming back"
+                  className={`shrink-0 px-1.5 py-1 text-[10px] font-semibold rounded-md border ${closingOut === it.id || closingOut?.id === it.id
+                    ? 'bg-amber-100 border-amber-300 text-amber-800'
+                    : 'border-amber-300 text-amber-700 hover:bg-amber-100'}`}>
+                  …
+                </button>
               </div>
             ))}
+            {closingOut && (
+              <div className="rounded-lg bg-white border border-amber-300 p-2 space-y-1">
+                <p className="text-[10px] font-semibold text-gray-700 truncate">
+                  {closingOut.item} — what happened to it?
+                </p>
+                {UNRETURNED_OUTCOMES.map(o => (
+                  <button key={o.value} onClick={() => returnItem(closingOut, o.value)}
+                    disabled={returningId === closingOut.id}
+                    className="w-full text-left px-2 py-1.5 rounded-md text-[11px] hover:bg-amber-50 disabled:opacity-50">
+                    <span className="font-semibold text-gray-800">{o.label}</span>
+                    <span className="block text-[10px] text-gray-500">{o.note}</span>
+                  </button>
+                ))}
+                <button onClick={() => setClosingOut(null)}
+                  className="w-full px-2 py-1 text-[10px] text-gray-500 hover:text-gray-700">Cancel</button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -6,7 +6,7 @@ import { getDb, logAudit } from '../db.js';
 import { smsEnabled, sendSms, approverPhone } from '../sms.js';
 import { readyDocOrigin } from '../links.js';
 import { nextDisposalNumber } from './disposals.js';
-import { QMS_TYPES, getType, canSignApproval } from '../qms-config.js';
+import { QMS_TYPES, getType, canSignApproval, RETURN_REASONS, USED_UP_REASON } from '../qms-config.js';
 import { syncKnifeStatus, syncAllKnifeStatuses } from '../knife-state.js';
 import { createReadStream } from 'fs';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
@@ -270,9 +270,16 @@ router.get('/mine/checked-out', (req, res) => {
   res.json(out);
 });
 
-// Return your own item — sets status + return date/time/name. Deliberately
-// does NOT require module edit access: you can always return what you
-// personally checked out. QA still reviews/approves the record afterwards.
+// Close out your own sign-out. Deliberately does NOT require module edit
+// access: you can always close what you personally checked out. QA still
+// reviews/approves the record afterwards.
+//
+// "Returned" is not the only way a sign-out ends. A chemical runs out, an
+// abrasive is used up, a tool is broken or lost — none of those come back, and
+// with only a Return button the record either stayed open forever or was closed
+// as a return that never happened. `return_reason` already existed on the
+// record and in the log's filters; what was missing was any way to SET it from
+// the one screen where people actually close these out.
 router.post('/mine/checked-out/:id/return', (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
@@ -283,18 +290,36 @@ router.post('/mine/checked-out/:id/return', (req, res) => {
   if ((flat.employee_name || '').trim().toLowerCase() !== (req.user?.name || '').trim().toLowerCase()) {
     return res.status(403).json({ error: 'You can only return items you checked out yourself.' });
   }
+  // Only the outcomes the log knows about — an outcome you cannot filter on is
+  // a sentence, and this column is one people filter.
+  const reason = RETURN_REASONS.includes(req.body?.return_reason) ? req.body.return_reason : 'Returned';
+  const cameBack = reason === 'Returned';
   const data = parseJson(row.data, {});
   const now = new Date();
   data.return_date = now.toISOString().slice(0, 10);
   data.return_time = now.toTimeString().slice(0, 5);
   data.returned_by = req.user.name;
-  if (!data.condition_returned) data.condition_returned = req.body?.condition === 'Bad' ? 'Bad' : 'Good';
+  data.return_reason = reason;
+  // Condition is a fact about an item you are handing back. Asking for it on
+  // something that no longer exists invites a meaningless "Good".
+  if (cameBack && !data.condition_returned) {
+    data.condition_returned = req.body?.condition === 'Bad' ? 'Bad' : 'Good';
+  }
+  if (req.body?.comments) {
+    const note = String(req.body.comments).slice(0, 500);
+    data.comments = data.comments ? `${data.comments}\n${note}` : note;
+  }
+  // `status` still becomes 'returned' — it means "closed, no longer out", and
+  // it is what CheckedOutPanel, the badges and QA Review all read. The outcome
+  // is what says whether anything physically came back.
   db.prepare("UPDATE qms_records SET status = 'returned', data = ?, updated_at = datetime('now') WHERE id = ?")
     .run(JSON.stringify(data), row.id);
   logAudit(req.user, 'update', row.record_type, row.id,
-    { self_return: true, return_date: data.return_date, condition_returned: data.condition_returned },
+    { self_return: true, return_date: data.return_date, return_reason: reason, condition_returned: data.condition_returned },
     null, null, String(flat.item_description || flat.tool_id || row.record_number));
-  res.json({ ok: true });
+  // Used up raises a restock SUGGESTION for the office — no extra write, the
+  // suggestion is this record read through `openSuggestions()`.
+  res.json({ ok: true, return_reason: reason, suggests_restock: reason === USED_UP_REASON });
 });
 
 // ── Flavor approval: text the taste-test request to the approver ─────────────
@@ -876,9 +901,14 @@ router.post('/:type/:id/approve', (req, res) => {
 // Exported so the QA Review Center works from the SAME definition of "routine"
 // rather than a second, looser one. A record that fails `routine` is never
 // offered as a checkbox anywhere — it has to be opened and signed deliberately.
+const NEEDS_A_LOOK = ['Damaged', 'Lost'];
+
 export const BULK_APPROVE = {
-  maintenance_sign_out: { role: 'quality', routine: (r) => r.status === 'returned' && r.condition_out !== 'Bad' && r.condition_returned !== 'Bad' },
-  knife_sign_out: { role: 'quality', routine: (r) => r.status === 'returned' && r.condition_out !== 'Bad' && r.condition_returned !== 'Bad' },
+  // An outcome of Damaged or Lost is NOT routine: something went wrong and it
+  // deserves QA opening the record, not a checkbox in a list. Used up is
+  // routine — a chemical finishing is the ordinary end of a sign-out.
+  maintenance_sign_out: { role: 'quality', routine: (r) => r.status === 'returned' && r.condition_out !== 'Bad' && r.condition_returned !== 'Bad' && !NEEDS_A_LOOK.includes(r.return_reason) },
+  knife_sign_out: { role: 'quality', routine: (r) => r.status === 'returned' && r.condition_out !== 'Bad' && r.condition_returned !== 'Bad' && !NEEDS_A_LOOK.includes(r.return_reason) },
   // A component pull has no condition to triage on — what QA is confirming is
   // that the right lot went to the right MO, which is on every row.
   component_sign_out: { role: 'quality', routine: () => true },

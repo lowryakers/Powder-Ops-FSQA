@@ -115,17 +115,30 @@ function printDocument(doc, bodyEl) {
     doc.status && `Status: ${doc.status}`,
     doc.owner && `Owner: ${doc.owner}`,
   ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  // A withdrawn document must never print looking current. The banner goes at
+  // the top of the paper, not only in the footer stamp — somebody reading a
+  // printout of a Work Instruction has to know at a glance that it no longer
+  // applies, and why.
+  const withdrawn = doc.status === 'archived' ? `
+    <div class="withdrawn">
+      <strong>NO LONGER IN USE</strong>
+      ${doc.archived_at ? ` — withdrawn ${doc.archived_at}` : ''}${doc.archived_by ? ` by ${doc.archived_by}` : ''}.
+      ${doc.archive_reason ? `<br>${doc.archive_reason}` : ''}
+      <br>Do not work to this document. Check the registry for the current one.
+    </div>` : '';
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${doc.doc_number || ''} ${doc.title}</title>
     <style>
       body { font: 12pt/1.5 Georgia, serif; margin: 0.75in; color: #111; }
       h1 { font-size: 16pt; margin: 0 0 4px; }
       .meta { font: 9pt/1.4 Helvetica, Arial, sans-serif; color: #444; border-bottom: 1px solid #999; padding-bottom: 8px; margin-bottom: 16px; }
+      .withdrawn { font: 10pt/1.45 Helvetica, Arial, sans-serif; border: 2px solid #b91c1c; color: #7f1d1d; padding: 8px 10px; margin: 0 0 16px; }
       .foot { position: fixed; bottom: 0.4in; left: 0.75in; right: 0.75in; font: 8pt Helvetica, Arial, sans-serif; color: #777; border-top: 1px solid #ccc; padding-top: 4px; }
       table { border-collapse: collapse; } td, th { border: 1px solid #999; padding: 4px 6px; font-size: 10pt; }
       h3, h4, h5 { margin: 12px 0 4px; } p { margin: 6px 0; } ul, ol { margin: 6px 0 6px 20px; }
     </style></head><body>
     <h1>${doc.title}</h1>
     <div class="meta">${meta}</div>
+    ${withdrawn}
     <div>${bodyEl ? bodyEl.innerHTML : ''}</div>
     <div class="foot">Printed from ReadyDoc ${new Date().toLocaleString()} — uncontrolled when printed. Verify the revision against the registry.</div>
     </body></html>`);

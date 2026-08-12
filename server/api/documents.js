@@ -607,14 +607,61 @@ router.put('/:id', (req, res) => {
   res.json({ ...updated, retraining_triggered });
 });
 
-// DELETE — soft archive
+/**
+ * Withdraw a document — mark it no longer in use.
+ *
+ * The document is NOT deleted and does not stop being readable. Someone
+ * following a Work Instruction last month needs to be able to see the one they
+ * followed, and an auditor asking "what did you withdraw and when" gets an
+ * answer rather than an absence. What changes is that it leaves the active
+ * registry and is stamped, everywhere it appears, as no longer in use.
+ *
+ * A reason is required. A controlled document withdrawn with nothing written
+ * against it is indistinguishable six months later from a mis-click.
+ */
 router.delete('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  db.prepare("UPDATE sop_documents SET status='archived', updated_at=datetime('now') WHERE id=?").run(req.params.id);
-  logAudit(req.user, 'document_archived', 'document', req.params.id, { title: existing.title }, existing, null);
-  res.json({ success: true });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) {
+    return res.status(400).json({ error: 'Say why this document is no longer in use — it stays on the record and an auditor will ask.' });
+  }
+  // `effective_from` lets a withdrawal be dated to when it actually stopped
+  // applying, which is not always the day somebody got round to recording it.
+  const effective = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.effective_from || '')
+    ? req.body.effective_from : new Date().toISOString().slice(0, 10);
+  db.prepare(`UPDATE sop_documents SET status='archived', archived_at=?, archived_by=?,
+    archive_reason=?, updated_at=datetime('now') WHERE id=?`)
+    .run(effective, req.user.name, reason, req.params.id);
+  const updated = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
+  logAudit(req.user, 'document_archived', 'document', req.params.id,
+    { title: existing.title, doc_number: existing.doc_number, reason, effective_from: effective },
+    existing, updated);
+  res.json({ success: true, document: updated });
+});
+
+/**
+ * Put a withdrawn document back into use.
+ *
+ * The way back from a withdrawal is a deliberate act with its own audit entry,
+ * not an edit that silently clears three columns — the same rule as revoking a
+ * signature. It returns to draft rather than straight to approved: whatever
+ * made it wrong enough to withdraw should be looked at before it is effective
+ * again.
+ */
+router.post('/:id/reinstate', (req, res) => {
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (existing.status !== 'archived') return res.status(409).json({ error: 'This document is already in use.' });
+  db.prepare(`UPDATE sop_documents SET status='draft', archived_at=NULL, archived_by=NULL,
+    archive_reason=NULL, updated_at=datetime('now') WHERE id=?`).run(req.params.id);
+  const updated = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
+  logAudit(req.user, 'document_reinstated', 'document', req.params.id,
+    { title: existing.title, was_withdrawn: existing.archived_at, prior_reason: existing.archive_reason },
+    existing, updated);
+  res.json({ success: true, document: updated });
 });
 
 // Bulk permanent delete — removes documents (and their version history) for

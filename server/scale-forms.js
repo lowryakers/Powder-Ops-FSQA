@@ -10,35 +10,56 @@
 // NOT user-editable on purpose — changing a tolerance is a document change
 // (a new revision through Document Control), not a settings toggle.
 
-// The procedure that goes with every one of these forms, transcribed from the
-// plant's own Scale Calibration Verification procedure sheet.
+// The procedure that goes with these forms, transcribed from the plant's own
+// Scale Calibration Verification procedure sheet. Wording follows the sheet; it
+// is not editable in-app for the same reason the tolerances aren't.
 //
-// It is the SAME for all five forms — the only thing that differs between them
-// is the three weights, which the form already knows — so it lives here once
-// and every form renders it. Wording follows the sheet; it is not editable
-// in-app for the same reason the tolerances aren't.
-// Re-transcribed from the plant's updated PROCEDURE FOR SCALE CALIBRATION
-// VERIFICATION sheet. Two steps changed and they change what the operator
-// physically does, which is why the wording is followed rather than tidied:
-// the second and third weights go on BOTH SIDES OF the weight already on the
-// scale, not on one corner and then the opposite one. The sheet also makes
-// "ensure the scale is zeroed before placing any weights" part of the setup,
-// not just the first step.
+// MOST of it is genuinely shared — zeroing, the order of the three points, the
+// re-check between points, QA verifying before production. What is NOT shared
+// is WHERE THE WEIGHTS GO, because the sheet was revised for one scale only.
+//
+// That split is the whole point of this structure. The placement wording and
+// the placement diagram describe the same physical act, so they must travel
+// together: a form showing corners while its steps say "on both sides of the
+// centre weight" is telling an operator two different things about where to put
+// a certified weight. Both now come from `PLACEMENT_PATTERNS`, keyed on the
+// form's `diagram`, so neither can be changed without the other.
 //
 // The file it came from is served alongside this (`SCALE_PROCEDURE.document`)
 // so an operator — or an auditor — can read the controlled sheet itself rather
 // than only this rendering of it.
+export const PLACEMENT_PATTERNS = {
+  // The plant's long-standing sheet, and still the pattern on four of the five
+  // forms: centre, then two opposing corners.
+  corners: {
+    about: 'Three points, in order: minimum, target, maximum. Place the weights at the centre of the scale and at two opposing corners.',
+    second: 'Without removing the first weight, add the second weight at a corner to reach the TARGET, and record the reading.',
+    third: 'Add the third weight at the opposite corner to reach the MAXIMUM, and record the reading.',
+  },
+  // The revised sheet, supplied for the Batching PALLET scale. The weights go
+  // either side of the centre weight rather than at corners — a different
+  // physical instruction, which is why it is not applied to the other forms.
+  centerline: {
+    about: 'Three points, in this order: minimum, target, maximum. Place the first weight at the centre of the scale and the other two either side of it. Make sure the scale is zeroed before any weight goes on it.',
+    second: 'Without removing the first weight, add the second weight(s) on both sides of the first weight(s) to reach the TARGET weight, and record the result.',
+    third: 'Add the third weight(s) on the sides of the centre weight to reach the MAXIMUM weight, and record the result.',
+  },
+};
+
 export const SCALE_PROCEDURE = {
   title: 'Scale Calibration Verification — procedure',
   note: 'Perform daily when operating in a production room. Scales are assigned to production rooms — check that the scale\'s asset tag matches the room number. If more than one scale will be used in the same room, notify QA for approval first.',
-  about: 'Three points, in this order: minimum, target, maximum. Place the weights at the centre of the scale and at two opposing corners. Make sure the scale is zeroed before any weight goes on it.',
+  // Filled in per form by `procedureFor()`. Present here so a caller that
+  // renders the bare procedure still shows the common pattern rather than
+  // an empty step.
+  ...PLACEMENT_PATTERNS.corners,
   steps: [
-    'Zero the scale before beginning the test.',
-    'Place the MINIMUM weight in the centre of the scale and record the result.',
-    'Without removing the first weight, add the second weight(s) on both sides of the first weight(s) to reach the TARGET weight, and record the result.',
-    'Add the third weight(s) on the sides of the centre weight to reach the MAXIMUM weight, and record the result.',
-    'The zero may be checked between each location to see that it has not changed; re-zero between tests if necessary.',
-    'QA/QC personnel must verify the documentation before production starts.',
+    'Zero the scale before you begin.',
+    'Place the MINIMUM weight in the centre of the scale and record the reading.',
+    PLACEMENT_PATTERNS.corners.second,
+    PLACEMENT_PATTERNS.corners.third,
+    'You may re-check the zero between each point, and re-zero if it has drifted.',
+    'QA/QC verifies the record before production starts.',
   ],
   // The controlled sheet itself. Kept in `public/forms` rather than R2 for the
   // same reason as FORM 431-01: it is a reference an operator must be able to
@@ -49,6 +70,22 @@ export const SCALE_PROCEDURE = {
     url: '/forms/Procedure-for-Scale-Calibration-Verification.pdf',
   },
 };
+
+/**
+ * The procedure as THIS form's operator should read it.
+ *
+ * Steps 3 and 4 are the placement steps and come from the form's own pattern;
+ * everything else is shared. Served already assembled so the client renders
+ * what it is given rather than deciding which wording applies — the same rule
+ * the drill-downs follow.
+ */
+export function procedureFor(form) {
+  const p = PLACEMENT_PATTERNS[form?.diagram] || PLACEMENT_PATTERNS.corners;
+  const steps = SCALE_PROCEDURE.steps.slice();
+  steps[2] = p.second;
+  steps[3] = p.third;
+  return { ...SCALE_PROCEDURE, about: p.about, steps };
+}
 
 export const SCALE_FORMS = [
   {
@@ -87,6 +124,11 @@ export const SCALE_FORMS = [
     short: 'Batching · Pallet',
     area: 'Batching',
     unit: 'kg',
+    // The one scale whose placement sheet was revised: all three weights sit
+    // in a row across the centre line rather than at opposing corners. Every
+    // other form keeps the corner pattern, which is why this is a per-form
+    // property and not a global change to the drawing.
+    diagram: 'centerline',
     // The paper form prints the third row as "150kg (± .1g)"; the header for
     // the same form says "± .1kg", as do the other two points. Taking the
     // header — a 0.1 g tolerance on a 150 kg pallet scale isn't achievable.

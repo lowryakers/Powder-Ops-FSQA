@@ -1017,6 +1017,46 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_receiving_part ON receiving_log(part_number);
     CREATE INDEX IF NOT EXISTS idx_receiving_lot ON receiving_log(vendor_lot);
 
+    -- FORM 204-01 — the Receiving Inspection Checklist.
+    --
+    -- ONE PER INSPECTION, not per line. An arrival is routinely several
+    -- receiving_log rows against one PO (the imported Monday history has 1,328
+    -- rows sharing 511 inspection numbers), and the paper form has one header,
+    -- one set of checks and one approval covering the whole delivery. Keyed on
+    -- inspection_no rather than a row id for exactly that reason.
+    --
+    -- The answers live as JSON because the questions are a controlled form, not
+    -- a schema: they change through Document Control, and checklist_revision
+    -- records which revision this one was filed against.
+    CREATE TABLE IF NOT EXISTS receiving_checklists (
+      id TEXT PRIMARY KEY,
+      inspection_no TEXT NOT NULL UNIQUE,
+      checklist_revision TEXT NOT NULL,
+      inspection_date TEXT,
+      inspector TEXT,
+      po_number TEXT,
+      truck_number TEXT,
+      pallet_count REAL,
+      driver_name TEXT,
+      vendor TEXT,
+      vendor_lot TEXT,
+      customer_number TEXT,
+      answers TEXT NOT NULL DEFAULT '{}',
+      item_notes TEXT,
+      -- Escalations actually sent: [{item, target, to[], at, by}]. Appended,
+      -- never rewritten — "we told QA at 09:14" is the evidence the form's
+      -- "*notify Adam" instruction exists to produce.
+      notifications TEXT NOT NULL DEFAULT '[]',
+      system_status TEXT,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_receiving_checklists_no ON receiving_checklists(inspection_no);
+    CREATE INDEX IF NOT EXISTS idx_receiving_checklists_date ON receiving_checklists(inspection_date DESC);
+
     -- ── Universal file importer ──────────────────────────────────────────
     -- One row per uploaded file. The parsed rows are held here between the
     -- analyze and commit steps so the preview is a true dry run against the
@@ -2314,6 +2354,23 @@ function runMigrations() {
   addColumnIfMissing('sop_documents', 'equipment_id', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_training_courses_equipment ON training_courses(equipment_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sop_documents_equipment ON sop_documents(equipment_id)');
+
+  // Withdrawing a controlled document is a DECISION, not housekeeping.
+  //
+  // `status = 'archived'` already got a document out of the active list, but it
+  // recorded nothing about why or when — and for an SOP, a Work Instruction or
+  // a Job Description those are the two facts an auditor asks for. "Who decided
+  // this instruction no longer applies, and from when?" cannot be answered by a
+  // row that merely stopped appearing.
+  //
+  // Reusing the existing status rather than adding a sixth is deliberate: the
+  // registry, the review-due query, the doc-review queue and the training
+  // retrain check all read `status`, and a new value would have to be added to
+  // every one of them correctly or a withdrawn document would keep generating
+  // work. What changes is that the state now carries its reason.
+  addColumnIfMissing('sop_documents', 'archived_at', 'TEXT');
+  addColumnIfMissing('sop_documents', 'archived_by', 'TEXT');
+  addColumnIfMissing('sop_documents', 'archive_reason', 'TEXT');
 
   // Spanish translations (AI-assisted, stored + editable) for documents + tests.
   addColumnIfMissing('sop_documents', 'description_es', 'TEXT');
@@ -3780,6 +3837,9 @@ const ACTION_SUFFIXES = [
   ['_updated', 'update'],
   ['_deleted', 'delete'],
   ['_archived', 'archive'],
+  // The other half of archive — a document put back into use. Without this
+  // the pair reads as `archive` and `document_reinstated` in the same filter.
+  ['_reinstated', 'reinstate'],
   ['_imported', 'import'],
   ['_approved', 'approve'],
 ];

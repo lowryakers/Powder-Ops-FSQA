@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { getType, CHEMICAL_USE_SPECS } from '../qms-config.js';
 import { getChannelByName, postMessageAs } from './comms.js';
-import { SCALE_FORMS, SCALE_PROCEDURE } from '../scale-forms.js';
+import { SCALE_FORMS, SCALE_PROCEDURE, procedureFor } from '../scale-forms.js';
 import { recordScaleVerification } from './scale-verification.js';
 import { activeChemicalNames } from './qms.js';
 import { openSignOuts, syncKnifeStatus, toolIdOf } from '../knife-state.js';
@@ -367,7 +367,7 @@ router.get('/scale-forms', (_req, res) => {
   } catch { rooms = []; }
   // The kiosk is a public path, so the procedure travels with the forms — the
   // person on the floor needs the directions beside the boxes.
-  res.json({ forms: SCALE_FORMS, rooms, procedure: SCALE_PROCEDURE });
+  res.json({ forms: SCALE_FORMS.map(f => ({ ...f, procedure: procedureFor(f) })), rooms, procedure: SCALE_PROCEDURE });
 });
 
 router.post('/scale-verification', (req, res) => {

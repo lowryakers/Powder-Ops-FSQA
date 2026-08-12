@@ -552,6 +552,66 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
 `pm_schedules.procedure_steps` (`item|qty|material`, one schedule per zone) and the zone names in the
 `bpg_zones` managed list. Operator task views don't render reference documents yet.
 
+## Receiving Inspection Checklist — FORM 204-01 V1
+`server/receiving-checklist.js` (the form, verbatim, typos included — "informm purchasing" stays) +
+`server/receiving-notify.js` + checklist routes in `api/receiving.js` + `ReceivingChecklist.jsx`.
+Not user-editable: changing what a receiving inspection asks is a Document Change Request, same doctrine as
+`scale-forms.js` tolerances. `checklist_revision` is stamped on every filed checklist.
+- **ONE CHECKLIST PER INSPECTION, not per row.** An arrival is routinely several `receiving_log` lines against
+  one PO (the Monday import has 1,328 rows sharing 511 inspection numbers) and the paper form has one header,
+  one set of checks and one approval. `receiving_checklists.inspection_no` is UNIQUE and the POST is
+  get-or-create, so opening the same delivery twice or on a second device lands on the same record.
+- **The escalations are the reason this is in the app at all.** Six of the eighteen lines end in "*If YES,
+  notify Adam or QA" / "*If NO, inform purchasing", which on paper depends on the receiver walking off the
+  dock. Each carries a `notify` rule (which answer fires it, who it reaches); the button appears the moment
+  the answer triggers it, and `notifications` records who was told and when.
+- **Escalations are DERIVED from the answers on every read, never stored as a list** — correct a mis-tap and
+  the escalation withdraws itself. `POST /notify` refuses to send one the answers don't support, or the
+  record would claim QA was told about contamination nobody reported.
+- **Sign-off is refused while any question is blank AND while a required escalation is unsent.** A checklist
+  filed with blanks reads later as if those checks passed; an unsent escalation is the whole point of the line.
+  Revoke → correct → sign again, all audited.
+- **Answers save as they are tapped** — this is filled in next to a truck on a phone, and a form you have to
+  remember to submit loses a delivery's worth of checks when someone walks into the cold store. Validation
+  belongs at sign-off, which is where it is.
+- `resolveTarget()` matches Adam/Maria BY NAME with a department fallback (the env-limits precedent), and the
+  fallback fires only when nobody named is found — per-name fallback would quietly widen an escalation to a
+  whole department on a rename. The caller is never notified of their own escalation.
+- The allergen line has an instruction ("print placards"), not a person to tell, so it carries a `note` and
+  no `notify`. Six escalate, not seven.
+
+## Withdrawing a controlled document ("No longer in use")
+`status = 'archived'` already existed and got a document out of the registry, but recorded nothing — and for
+an SOP/WI/JD the two facts an auditor asks are *when did this stop applying* and *who decided*.
+`archived_at` / `archived_by` / `archive_reason` (db.js), `DELETE /documents/:id` now **400s without a reason**.
+- **The stored value stays `archived`; only the LABEL becomes "No longer in use".** The registry query, the
+  review-due check, the doc-review queue and the retrain trigger all read `status`, and a sixth value would
+  have to be added to every one of them correctly or a withdrawn document would keep generating work.
+- **Withdrawn ≠ deleted.** It stays readable and keeps its history; the viewer shows a red banner and
+  `printDocument()` stamps "NO LONGER IN USE" at the TOP of the paper, not just in the footer — a printout of
+  a withdrawn Work Instruction must never look current. Reachable via the status filter.
+- `effective_from` is editable: a document usually stopped applying before anyone recorded it, and an honest
+  back-date beats a date everybody knows is wrong.
+- **`POST /:id/reinstate` returns it to `draft`, not to approved** — whatever made it wrong enough to withdraw
+  should be looked at before it is effective again. Its own audit entry, like revoking a signature.
+- `_reinstated` was added to `ACTION_SUFFIXES` → `reinstate`, so the pair doesn't read as `archive` and
+  `document_reinstated` in the same filter.
+
+## Closing a sign-out when nothing comes back
+`return_reason` and the office restock suggestion were already built — what was missing was any way to SET the
+outcome from the **sidebar Return button**, which is the one screen people actually close these out on. It
+posted `{}`, so a chemical that ran out was either left open forever or filed as a return that never happened.
+- `POST /qms/mine/checked-out/:id/return` now takes `return_reason`, validated against `RETURN_REASONS` —
+  an outcome the log cannot filter is refused rather than stored. The sidebar offers Used up / Damaged / Lost
+  beside Return.
+- **No `condition_returned` is invented for something that no longer exists.** Asking the condition of a
+  used-up chemical only produces a meaningless "Good".
+- `status` still becomes `returned` — it means "closed, no longer out" and is what CheckedOutPanel, the badges
+  and QA Review read. The *outcome* is what says whether anything physically came back.
+- **`BULK_APPROVE.routine` now excludes Damaged and Lost** (`NEEDS_A_LOOK`). Something went wrong and it
+  deserves QA opening the record, not a checkbox. Used up stays routine — a chemical finishing is the ordinary
+  end of a sign-out.
+
 ## Scale Verification (Forms 417-01 … 417-05)
 Daily three-point scale checks, one form per scale/area. `server/scale-forms.js` holds the five definitions
 (nominal + tolerance per point) — **not user-editable on purpose**: changing a tolerance is a document
@@ -564,6 +624,19 @@ calibration; this is three weighed points every morning, and merging them would 
 UI: `ScaleKiosk.jsx` (QR at `/kiosk/scale`, Quick Forms entry `form-scale`, live in/out-of-tolerance feedback)
 → `ScaleVerificationTab.jsx`, a tab in Calibration Management with one status card per form ("has today's
 check been run") and QA counter-signature. Room links to a `calibration_instruments` row when the name matches.
+
+### THE PLACEMENT DIAGRAM IS PER FORM, and so is the wording that goes with it
+Only the **Batching PALLET** scale (417-02) uses the revised sheet where all three weights sit in a row across
+the centre line. The other four keep the long-standing centre-plus-either-diagonal-corner pattern. A single
+global drawing is how four forms silently started showing a placement nobody agreed for them.
+- `diagram: 'centerline'` on the form picks it; absent means corners, which is the safe default.
+- **The two placement STEPS travel with it.** `PLACEMENT_PATTERNS` holds `about` + steps 3 and 4 per pattern
+  and `procedureFor(form)` assembles the rest, served already-assembled by both `/scale-verification/forms`
+  and the public `/submit/scale-forms`. A form drawing corners while its steps say "on both sides of the
+  centre weight" is telling an operator two different things about where to put a certified weight — which is
+  exactly the state a global re-transcription left it in.
+- `ScaleProcedureCard` reads `form.procedure` and falls back to the shared object; every read goes through
+  `proc`, or the fallback is a decoration that never applies.
 
 ## Controlled changes: a deployed definition is not the same as one in use
 `server/controlled.js` + `server/api/controlled.js` + `ControlledChangesPanel.jsx`. Document Control decides

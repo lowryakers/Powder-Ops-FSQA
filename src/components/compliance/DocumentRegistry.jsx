@@ -21,7 +21,12 @@ const STATUSES = [
   { value: 'under_review', label: 'In Review', color: 'bg-amber-100 text-amber-700' },
   { value: 'active', label: 'Approved / Effective', color: 'bg-green-100 text-green-700' },
   { value: 'superseded', label: 'Superseded', color: 'bg-orange-100 text-orange-700' },
-  { value: 'archived', label: 'Archived', color: 'bg-gray-100 text-gray-500' },
+  // The VALUE stays `archived` — the registry query, the review-due check, the
+  // doc-review queue and the retrain trigger all read it. Only the wording
+  // changes, because "Archived" reads as housekeeping and what this actually
+  // means for an SOP, a Work Instruction or a Job Description is: do not work
+  // to this.
+  { value: 'archived', label: 'No longer in use', color: 'bg-red-50 text-red-700' },
 ];
 const STATUS_MAP = Object.fromEntries(STATUSES.map(s => [s.value, s]));
 
@@ -360,7 +365,61 @@ function DocumentAttachments({ docId, canEdit }) {
   );
 }
 
-function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose }) {
+/* ───────── Withdrawing a document ───────── */
+// A reason is required and it is stored on the record, so this is a form and
+// not a confirm dialog. `effective_from` defaults to today but is editable: a
+// document often stopped applying before anyone got round to recording it, and
+// back-dating it honestly is better than a date everybody knows is wrong.
+function WithdrawForm({ doc, onCancel, onConfirm }) {
+  const [reason, setReason] = useState('');
+  const [effective, setEffective] = useState(() => new Date().toISOString().slice(0, 10));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async () => {
+    setBusy(true); setError('');
+    try { await onConfirm(doc, { reason: reason.trim(), effective_from: effective }); }
+    catch (e) { setError(e.message); setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-[60] flex items-start justify-center p-4 overflow-y-auto" onClick={onCancel}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md my-10 p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div>
+          <h3 className="font-semibold text-gray-900">Mark as no longer in use</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {doc.doc_number ? `${doc.doc_number} — ` : ''}{doc.title}
+          </p>
+        </div>
+        <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+          The document is not deleted. It stays readable and keeps its history, stamped
+          &ldquo;no longer in use&rdquo; wherever it appears — including on anything printed from it.
+        </p>
+        <label className="block">
+          <span className="text-xs font-medium text-gray-700">Why is it no longer in use? *</span>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+            placeholder="Replaced by WI021 V3 / process retired / equipment removed…"
+            className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-medium text-gray-700">In effect from</span>
+          <input type="date" value={effective} onChange={e => setEffective(e.target.value)}
+            className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </label>
+        {error && <p className="text-sm text-red-700 bg-red-50 rounded p-2">{error}</p>}
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">Cancel</button>
+          <button onClick={submit} disabled={busy || reason.trim().length < 3}
+            className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+            {busy ? 'Saving…' : 'Mark as no longer in use'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onReinstate, onClose }) {
   const { data: versions } = useApiGet(`/documents/${doc.id}/versions`, [doc.id]);
   const [showVersions, setShowVersions] = useState(false);
   const [lang, setLang] = useState('en');
@@ -394,6 +453,21 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose })
           </div>
         </div>
 
+        {/* A withdrawn document stays readable — somebody following it last
+            month has to be able to see what they followed — but it can never
+            look current. The banner carries the two facts an auditor asks for:
+            when it stopped applying, and why. */}
+        {doc.status === 'archived' && (
+          <div className="mx-5 mt-4 rounded-lg border-2 border-red-300 bg-red-50 px-3 py-2.5">
+            <p className="text-sm font-bold text-red-800">No longer in use — do not work to this document.</p>
+            <p className="text-xs text-red-700 mt-0.5">
+              {doc.archived_at ? `Withdrawn ${doc.archived_at}` : 'Withdrawn'}
+              {doc.archived_by ? ` by ${doc.archived_by}` : ''}
+              {doc.archive_reason ? ` — ${doc.archive_reason}` : ''}
+            </p>
+          </div>
+        )}
+
         <div className="px-5 py-4 max-h-[55vh] overflow-y-auto">
           <MarkdownView text={lang === 'es' && hasEs ? doc.description_es : doc.description} />
         </div>
@@ -410,9 +484,15 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onClose })
           <div className="flex-1" />
           {canEdit && (
             <>
-              <button onClick={() => onArchive(doc)} className="px-3 py-1.5 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 flex items-center gap-1.5">
-                <Archive size={14} /> Archive
-              </button>
+              {doc.status === 'archived' ? (
+                <button onClick={() => onReinstate(doc)} className="px-3 py-1.5 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-100 flex items-center gap-1.5">
+                  <Archive size={14} /> Put back into use
+                </button>
+              ) : (
+                <button onClick={() => onArchive(doc)} className="px-3 py-1.5 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 flex items-center gap-1.5">
+                  <Archive size={14} /> No longer in use
+                </button>
+              )}
               <button onClick={() => onEdit(doc)} className="px-3 py-1.5 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 flex items-center gap-1.5">
                 <Edit2 size={14} /> Edit
               </button>
@@ -720,6 +800,8 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [viewing, setViewing] = useState(null);
+  // The document being withdrawn — opens the reason form rather than firing.
+  const [withdrawing, setWithdrawing] = useState(null);
   const [importing, setImporting] = useState(false);
   // Updating documents already on file, as distinct from importing new ones.
   const [revising, setRevising] = useState(false);
@@ -773,8 +855,18 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
     setViewing(null);
     refresh();
   };
-  const handleArchive = async (doc) => {
-    await apiFetch(`/documents/${doc.id}`, { method: 'DELETE' });
+  // Withdrawing needs a reason, so it goes through a small form rather than
+  // firing on click. `setWithdrawing` opens it; this is the commit.
+  const handleArchive = async (doc, { reason, effective_from }) => {
+    await apiFetch(`/documents/${doc.id}`, {
+      method: 'DELETE', body: JSON.stringify({ reason, effective_from }),
+    });
+    setWithdrawing(null);
+    setViewing(null);
+    refresh();
+  };
+  const handleReinstate = async (doc) => {
+    await apiPost(`/documents/${doc.id}/reinstate`, {});
     setViewing(null);
     refresh();
   };
@@ -922,8 +1014,12 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
       {viewing && !editing && (
         <DocumentViewer doc={viewing} typeLabel={typeLabel} canEdit={canEdit}
           onEdit={(d) => { setViewing(null); setEditing(d); }}
-          onArchive={handleArchive}
+          onArchive={(d) => setWithdrawing(d)}
+          onReinstate={handleReinstate}
           onClose={() => setViewing(null)} />
+      )}
+      {withdrawing && (
+        <WithdrawForm doc={withdrawing} onCancel={() => setWithdrawing(null)} onConfirm={handleArchive} />
       )}
       {revising && <RevisionUploadModal onClose={() => setRevising(false)} onDone={refresh} />}
       {importing && (
