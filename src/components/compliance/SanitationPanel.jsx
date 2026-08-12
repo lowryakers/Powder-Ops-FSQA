@@ -5,6 +5,7 @@ import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
+import { areaLabel } from '../../../shared/rooms.js';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
 const RECLEAN_ACTION_META = {
@@ -104,7 +105,7 @@ function RecleanSection() {
             {open.map(r => (
               <div key={r.room} className="bg-white border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap">
                 <div className="min-w-[140px] flex-1">
-                  <span className="text-sm font-medium text-gray-800">{r.room}</span>
+                  <span className="text-sm font-medium text-gray-800">{areaLabel(r.room)}</span>
                   <span className="block text-[11px] text-gray-500">
                     {r.status === 'expired_72h' ? `idle ${r.hours_since_clean}h since clean (72h rule)` : 'used after last clean'}
                   </span>
@@ -127,7 +128,7 @@ function RecleanSection() {
             ))}
             {handled.map(r => (
               <div key={r.room} className="bg-white/60 border border-gray-200 rounded-lg px-3 py-1.5 flex items-center gap-2 text-[11px] text-gray-500 flex-wrap">
-                <span className="font-medium text-gray-600">{r.room}</span>
+                <span className="font-medium text-gray-600">{areaLabel(r.room)}</span>
                 <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{ACTION_LABEL[r.action.action]}</span>
                 {r.action.reason && <span className="italic truncate max-w-[260px]">“{r.action.reason}”</span>}
                 <span className="text-gray-400">{r.action.by}</span>
@@ -151,7 +152,7 @@ function RecleanSection() {
               <label key={r.room} className="flex items-center gap-2 text-sm text-gray-700 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer">
                 <input type="checkbox" checked={r.applicable} onChange={e => setApplicable(r.room, e.target.checked)}
                   className="rounded border-gray-300 text-powder-600" />
-                <span className="truncate">{r.room}</span>
+                <span className="truncate">{areaLabel(r.room)}</span>
               </label>
             ))}
           </div>
@@ -174,7 +175,7 @@ function SanitationDetail({ record, onClose }) {
         <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 m-2 space-y-4">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="font-semibold text-gray-900 text-base">{record.area}</h4>
+              <h4 className="font-semibold text-gray-900 text-base">{areaLabel(record.area)}</h4>
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[record.type]}`}>{TYPE_LABELS[record.type]}</span>
               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${RESULT_COLORS[record.result]}`}>{record.result.toUpperCase()}</span>
             </div>
@@ -186,7 +187,7 @@ function SanitationDetail({ record, onClose }) {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Area</p>
-              <p className="text-sm font-semibold text-gray-900">{record.area}</p>
+              <p className="text-sm font-semibold text-gray-900">{areaLabel(record.area)}</p>
             </div>
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Type</p>
@@ -281,6 +282,7 @@ function LateChip({ record }) {
 }
 
 function RecordForm({ equipment, chemicals, onSave, onCancel }) {
+  const { data: areas } = useApiGet('/structure/lists/sanitation_areas');
   const [form, setForm] = useState({
     area: '', type: 'pre_op', equipment_id: '', performed_by: '',
     chemical_id: '', chemicals_used: '', concentration: '', contact_time_minutes: '',
@@ -333,8 +335,21 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Area *</label>
-          <input required value={form.area} onChange={e => setForm({ ...form, area: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Room 3, Line 1" />
+          {/* A managed list, not a text box. This was free text, which is how
+              one room came to be filed under four spellings — and, worse, how
+              the 72-hour rule stopped joining to the Production Log, which
+              stores the bare room token. The value sent is that token; the
+              label is what a person reads. Adding an area is a Settings task. */}
+          <select required value={form.area} onChange={e => setForm({ ...form, area: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+            <option value="">Select an area…</option>
+            {(areas?.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          {areas && !(areas.options || []).length && (
+            <p className="text-[11px] text-amber-700 mt-1">
+              No areas configured yet — an admin adds them in Settings → Log Structure → Dropdown Lists.
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
@@ -423,6 +438,76 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   );
 }
 
+// Folding the free-text history onto the canonical areas.
+//
+// An amber strip, shown only while there is something to fold and only to
+// people who can do it — the same shape as the draft-specs review. Nothing is
+// rewritten until somebody reads the counts and presses the button: this edits
+// filed compliance records, and a bulk rewrite nobody checked is exactly how a
+// log stops being trustworthy. What the rule does NOT recognise is listed
+// alongside, because "we left these alone" is the half of the report that says
+// whether the mapping was right.
+function AreaNormalizeStrip({ onDone }) {
+  const { user } = useAuth() || {};
+  const canManage = user?.role === 'admin' || user?.role === 'supervisor' || user?.department === 'qa';
+  const { data, refresh } = useApiGet(canManage ? '/sanitation/areas/preview' : null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const changes = data?.changes || [];
+  if (!canManage || !changes.length) return null;
+
+  const go = async () => {
+    setBusy(true); setErr(null);
+    try { await apiPost('/sanitation/areas/normalize', {}); refresh(); onDone?.(); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="text-sm font-semibold text-amber-900">
+          {data.records} record{data.records === 1 ? '' : 's'} filed under {changes.length} spelling{changes.length === 1 ? '' : 's'} of an area that already has a name
+        </div>
+        <button onClick={() => setOpen(o => !o)} className="text-[11px] text-amber-700 hover:text-amber-900 underline">
+          {open ? 'Hide' : 'Review'}
+        </button>
+      </div>
+      <p className="text-[11px] text-amber-800">
+        The 72-hour rule matches a clean against the room the Production Log recorded a run in, so a clean
+        filed as “Room 7” never meets a run in room 7. Folding these onto one name is what makes that rule work.
+      </p>
+      {open && (
+        <div className="space-y-2">
+          <ul className="text-xs text-gray-700 space-y-0.5 max-h-56 overflow-y-auto">
+            {changes.map(c => (
+              <li key={c.from} className="flex items-baseline gap-2">
+                <span className="text-gray-400 tabular-nums w-10 shrink-0 text-right">{c.records}</span>
+                <span className="line-through text-gray-500 break-words">{c.from}</span>
+                <span className="text-gray-400">→</span>
+                <span className="font-medium break-words">{c.label}</span>
+              </li>
+            ))}
+          </ul>
+          {!!(data.unmatched || []).length && (
+            <div className="text-[11px] text-gray-500">
+              <span className="font-medium text-gray-600">Left exactly as filed ({data.unmatched.length}):</span>{' '}
+              {data.unmatched.map(u => `${u.area} (${u.records})`).join(', ')}
+            </div>
+          )}
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          <button onClick={go} disabled={busy}
+            className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 disabled:opacity-50">
+            {busy ? 'Applying…' : `Apply to ${data.records} record${data.records === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SanitationPanel() {
   const { data: records, loading, refresh } = useApiGet('/sanitation');
   const view = useCappedList(records);
@@ -456,6 +541,8 @@ export default function SanitationPanel() {
         </button>
       </div>
 
+      <AreaNormalizeStrip onDone={refresh} />
+
       <RecleanSection />
 
       {showForm && <RecordForm equipment={equipment} chemicals={chemicals} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
@@ -469,7 +556,7 @@ export default function SanitationPanel() {
             <div key={r.id} className={`bg-white rounded-xl border border-gray-200 border-l-4 ${stripe} shadow-sm overflow-hidden`}>
               <div onClick={() => setExpandedId(isExpanded ? null : r.id)} className="p-3 active:bg-gray-50">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1 font-medium text-gray-900 break-words">{r.area}</div>
+                  <div className="min-w-0 flex-1 font-medium text-gray-900 break-words">{areaLabel(r.area)}</div>
                   <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_COLORS[r.result]}`}>{r.result}</span>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
@@ -530,7 +617,7 @@ export default function SanitationPanel() {
                       onClick={() => setExpandedId(isExpanded ? null : r.id)}
                       className={`border-b border-gray-100 cursor-pointer transition-colors hover:bg-powder-50 ${isExpanded ? 'bg-powder-50' : ''}`}
                     >
-                      <td className="px-4 py-3 font-medium w-full">{r.area}</td>
+                      <td className="px-4 py-3 font-medium w-full">{areaLabel(r.area)}</td>
                       <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs ${TYPE_COLORS[r.type]}`}>{TYPE_LABELS[r.type]}</span></td>
                       <td className="px-4 py-3 text-gray-600">{r.equipment_name || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.performed_by}</td>

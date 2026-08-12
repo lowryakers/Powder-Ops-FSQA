@@ -6,6 +6,7 @@
 // a code change — which is the entire point.
 
 import { ensureList } from './custom-fields.js';
+import { SANITATION_AREAS } from './sanitation-areas.js';
 
 // Brittle plastic & glass inspection zones (Form 431-02). This list is the
 // reason the feature exists: the zone set used to be a hardcoded array, so
@@ -56,6 +57,23 @@ export function seedStructureLists(db) {
       'Management Review', 'Food Safety Team (HACCP)', 'Production / Operations',
       'Safety', 'Quality Review', 'Training', 'Customer / Supplier', 'Other',
     ],
+  });
+
+  // Where a clean happened. This was a free-text box, which is how one room
+  // ended up filed under four spellings and how the 72-hour rule stopped
+  // joining to the Production Log at all (see sanitation-areas.js).
+  //
+  // The VALUE is the room token the schedule and Production Log already store;
+  // the LABEL is what a person reads. Adding an area is a Settings task from
+  // here on — which is the point, and is why the picker has no free-text
+  // escape hatch back into the state this fixes.
+  added += ensureList(db, {
+    key: 'sanitation_areas',
+    label: 'Sanitation — Areas',
+    description: 'Where a clean was performed. The stored value matches the Production Log\'s room, so the 72-hour re-clean rule can tell whether a cleaned room has since been used.',
+    options: SANITATION_AREAS.map(a => ({
+      value: a.value, label: a.label, meta: { applicable: a.applicable },
+    })),
   });
 
   if (added > 0) console.log(`[seed] Structure lists: added ${added} list options`);

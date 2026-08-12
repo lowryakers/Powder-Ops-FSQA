@@ -20,3 +20,34 @@ export function roomLabel(room) {
   if (!s) return '';
   return /batching/i.test(s) ? s : `Room ${s}`;
 }
+
+/**
+ * The rooms roomLabel() is allowed to prefix.
+ *
+ * Kept here rather than imported from constants/productionLines.js because
+ * `shared/` is loaded by the server too and must not reach into the client
+ * tree. It is the same set, deliberately including the retired room: a record
+ * filed against Room 8 still has to read as "Room 8" forever.
+ */
+const ROOM_TOKENS = new Set([
+  '1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7', '8', '15',
+  'Batching 1', 'Batching 2', 'Batching 3',
+]);
+
+/**
+ * How a sanitation AREA is written when a person reads it.
+ *
+ * The sanitation log stores the same token the Production Log and the schedule
+ * store — it has to, or the 72-hour rule joins a clean of "Room 7" against a
+ * run in "7" and finds neither. But a table cell reading just "7" is not a
+ * sentence, and the log's other areas ("Restrooms", "Warehouse & Grounds") are
+ * not rooms and must never come out as "Room Restrooms".
+ *
+ * So: a known room token gets the label, everything else passes through as
+ * written. Pure, so the picker, the log rows and the re-clean list all render
+ * one area name the same way without any of them fetching a list to do it.
+ */
+export function areaLabel(area) {
+  const s = String(area ?? '').trim();
+  return ROOM_TOKENS.has(s) ? roomLabel(s) : s;
+}

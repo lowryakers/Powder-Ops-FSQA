@@ -3,6 +3,8 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { recordGroupFor } from '../qa-records.js';
 import { activeChemicalNames } from '../chemicals.js';
+import { areaLabel } from '../../shared/rooms.js';
+import { canonicalArea, previewAreaNormalization, NON_PRODUCTION_AREAS } from '../sanitation-areas.js';
 
 const router = Router();
 
@@ -113,7 +115,17 @@ export function recleanRooms(db) {
   const rooms = new Set();
   try { db.prepare("SELECT DISTINCT room FROM production_entries WHERE room IS NOT NULL").all().forEach(r => rooms.add(r.room)); } catch { /* optional */ }
   try { db.prepare("SELECT DISTINCT room FROM production_schedule WHERE room IS NOT NULL AND room_type != 'cleaning'").all().forEach(r => rooms.add(r.room)); } catch { /* optional */ }
-  try { db.prepare('SELECT DISTINCT area FROM sanitation_records').all().forEach(r => rooms.add(r.area)); } catch { /* optional */ }
+  // CLEANING records only. The QA inspection lists live in this table too
+  // (brittle plastic zones, light inspection zones, temp/humidity points —
+  // 33 of them on a seeded database against 4 real cleaning areas), and every
+  // one of them was entering the room list. Nothing was ever wrongly flagged,
+  // because the non-food regex excluded them all, but they were the great bulk
+  // of what made this screen unreadable. `record_group` already says which list
+  // a record belongs to; this just asks it.
+  try {
+    db.prepare("SELECT DISTINCT area FROM sanitation_records WHERE COALESCE(record_group, 'sanitation') = 'sanitation'")
+      .all().forEach(r => rooms.add(r.area));
+  } catch { /* optional */ }
   let overrides = new Map();
   try { overrides = new Map(db.prepare('SELECT room, applicable FROM reclean_rooms').all().map(r => [r.room, !!r.applicable])); } catch { /* optional */ }
   const cleanBy = lastCleanByArea(db);
@@ -135,9 +147,11 @@ export function recleanRooms(db) {
       hoursIdle = Math.floor((now - new Date(clean.replace(' ', 'T') + 'Z').getTime()) / 3600000);
       status = hoursIdle >= 72 ? 'expired_72h' : 'clean';
     }
+    // NON_PRODUCTION_AREAS comes from the canonical area list, so the picker
+    // and the rule cannot disagree about whether QA Room owes a re-clean.
     const applicable = overrides.has(room)
       ? overrides.get(room)
-      : !(NONFOOD_DEFAULT.test(room) || isChemical(room));
+      : !(NON_PRODUCTION_AREAS.has(room) || NONFOOD_DEFAULT.test(room) || isChemical(room));
     const flagKey = recleanFlagKey(room, clean, used);
     const flagged = status === 'expired_72h' || status === 'dirty';
     const action = flagged && latestAction ? (latestAction.get(room, flagKey) || null) : null;
@@ -186,10 +200,15 @@ export function generateRecleanTasks(db) {
         : `idle ${entry.hours_since_clean}h since last clean (72h rule)`;
       const woId = uuid();
       const eq = findEq.get(entry.room, entry.room);
-      insWo.run(woId, eq?.id || null, `72h Re-clean — ${entry.room}`,
-        `Room "${entry.room}" needs a full re-clean before next use: ${why}. Log the clean in Sanitation when done.`, today);
+      // The stored area is the Production Log's token ("7"), which is right for
+      // the join and wrong on a task card. `72h Re-clean — 7` is not an
+      // instruction. closeRecleanTasksFor() labels it the same way, so the
+      // clean still finds and closes its own task.
+      const title = `72h Re-clean — ${areaLabel(entry.room)}`;
+      insWo.run(woId, eq?.id || null, title,
+        `${areaLabel(entry.room)} needs a full re-clean before next use: ${why}. Log the clean in Sanitation when done.`, today);
       insAction.run(uuid(), entry.room, entry.flag_key, woId);
-      logAudit('system', 'auto_generate', 'work_order', woId, { room: entry.room, source: 'reclean_72h' }, null, null, `72h Re-clean — ${entry.room}`);
+      logAudit('system', 'auto_generate', 'work_order', woId, { room: entry.room, source: 'reclean_72h' }, null, null, title);
       created++;
     }
   });
@@ -287,6 +306,51 @@ router.put('/reclean-rooms', (req, res) => {
   res.json({ ok: true, rooms: recleanRooms(db) });
 });
 
+/* ── Folding the free-text history onto the canonical areas ──────────────── */
+
+// Preview writes NOTHING. This rewrites filed compliance records, so the counts
+// go in front of a person first — the same preview-then-commit shape as every
+// importer in here. Declared before `/:id`, or Express reads "areas" as an id.
+router.get('/areas/preview', (req, res) => {
+  if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can normalize areas.' });
+  res.json(previewAreaNormalization(getDb()));
+});
+
+// Apply it. Audited PER RECORD plus one summary row — a bulk edit has to leave
+// the trail a manual one would.
+//
+// Only the CLEANING group is touched: the QA inspection lists in this table use
+// area as a zone name and have nothing to do with the room vocabulary.
+router.post('/areas/normalize', (req, res) => {
+  if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can normalize areas.' });
+  const db = getDb();
+  const plan = previewAreaNormalization(db);
+  if (!plan.changes.length) return res.json({ ok: true, updated: 0, changes: [] });
+
+  const rows = db.prepare(
+    "SELECT id, area FROM sanitation_records WHERE COALESCE(record_group, 'sanitation') = 'sanitation' AND area IN (" +
+    plan.changes.map(() => '?').join(',') + ')'
+  ).all(...plan.changes.map(c => c.from));
+  const to = new Map(plan.changes.map(c => [c.from, c.to]));
+  const upd = db.prepare('UPDATE sanitation_records SET area = ? WHERE id = ?');
+
+  let updated = 0;
+  db.transaction(() => {
+    for (const r of rows) {
+      const next = to.get(r.area);
+      if (!next || next === r.area) continue;
+      upd.run(next, r.id);
+      logAudit(req.user, 'update', 'sanitation_record', r.id, { field: 'area', from: r.area, to: next, source: 'area_normalization' },
+        { area: r.area }, { area: next }, areaLabel(next));
+      updated++;
+    }
+  })();
+
+  logAudit(req.user, 'bulk_update', 'sanitation_record', 'area_normalization',
+    { updated, changes: plan.changes, left_alone: plan.unmatched });
+  res.json({ ok: true, updated, changes: plan.changes, unmatched: plan.unmatched });
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const record = db.prepare(`SELECT sr.*, e.name as equipment_name
@@ -307,11 +371,17 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id, performed_at, late_entry_reason } = req.body;
+  const { type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id, performed_at, late_entry_reason } = req.body;
 
-  if (!area || !type || !performed_by || !result) {
+  if (!req.body?.area || !type || !performed_by || !result) {
     return res.status(400).json({ error: 'area, type, performed_by, and result are required' });
   }
+
+  // Normalized on the SERVER, not only in the picker. The picker already sends
+  // the canonical value, but the kiosk paths and the importers post here too,
+  // and a rule the client alone applies is a suggestion. An area this does not
+  // recognise is stored exactly as it arrived — see canonicalArea().
+  const area = canonicalArea(req.body.area) || String(req.body.area).trim();
 
   let when = null;
   let late = 0;
@@ -358,8 +428,9 @@ router.post('/', (req, res) => {
 // completion, so it completes the task and says which record did it.
 function closeRecleanTasksFor(db, area, who, record) {
   try {
+    const title = `72h Re-clean — ${areaLabel(area)}`;
     const open = db.prepare(`SELECT id FROM work_orders
-      WHERE title = ? AND status IN ('open','in_progress','overdue','missed')`).all(`72h Re-clean — ${area}`);
+      WHERE title = ? AND status IN ('open','in_progress','overdue','missed')`).all(title);
     if (!open.length) return 0;
     const upd = db.prepare(`UPDATE work_orders SET status = 'completed', completed_at = datetime('now'), completed_by = ?,
       notes = COALESCE(notes || char(10), '') || ?, updated_at = datetime('now') WHERE id = ?`);
