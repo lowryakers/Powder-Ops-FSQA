@@ -114,13 +114,23 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
     return true;
   };
 
+  // Completing food-contact work puts the machine in QA's hygiene clearance
+  // queue, and QA cannot clear it from a task with no account of the steps.
+  // Enforced server-side too — this is so the operator is asked, not refused.
+  const realSteps = steps.filter(s => !(typeof s === 'string' && s.endsWith(':')));
+  const stepsRequired = !!task.is_food_contact && realSteps.length > 0;
+  const stepsOutstanding = stepsRequired
+    ? steps.filter((st, i) => !(typeof st === 'string' && st.endsWith(':')) && !stepChecks[i]).length
+    : 0;
+
   const handleSubmit = async () => {
     setSaving(true);
     try {
       await onComplete(task.id, {
         notes: notes || null,
         readings: Object.keys(readings).length > 0 ? readings : undefined,
-        step_results: stepChecks.length > 0 ? stepChecks : undefined,
+        step_results: (stepsRequired || stepChecks.length > 0)
+          ? steps.map((_, i) => !!stepChecks[i]) : undefined,
         reading_result: getReadingResult(),
       });
       setCompleting(false);
@@ -691,8 +701,12 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
               </>
             )}
 
-            {/* Step-by-step checkoff for cleaning and equipment PM */}
-            {(taskType === 'cleaning' || taskType === 'equipment_pm') && steps.length > 0 && (
+            {/* Step-by-step checkoff for cleaning and equipment PM — and ALWAYS
+                when the steps are required, whatever the task type. A
+                food-contact task typed as a temp check or a pre-op clean would
+                otherwise be refused by the server with no ticks on screen to
+                satisfy it: a rule the operator cannot comply with. */}
+            {(taskType === 'cleaning' || taskType === 'equipment_pm' || stepsRequired) && steps.length > 0 && (
               <>
                 <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><ClipboardCheck size={12} /> {t('checklist')}</h4>
                 <div className="space-y-1">
@@ -705,7 +719,20 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                   ))}
                 </div>
                 {steps.length > 0 && (
-                  <p className="text-[10px] text-gray-500 text-center">{stepChecks.filter(Boolean).length} / {steps.length} {t('steps_complete')}</p>
+                  <>
+                    <p className="text-[10px] text-gray-500 text-center">{stepChecks.filter(Boolean).length} / {steps.length} {t('steps_complete')}</p>
+                    {stepsRequired && (
+                      <div className="mt-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5">
+                        <p className="text-[11px] text-amber-900 font-medium">{t('steps_required')}</p>
+                        <p className="text-[10px] text-amber-800 mt-0.5">{t('cant_do_step')}</p>
+                        {stepsOutstanding > 0 && (
+                          <p className="text-[11px] text-amber-900 font-bold mt-1">
+                            {stepsOutstanding} {t('steps_left')}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -734,7 +761,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 the one button that finishes the job off screen. Static on
                 desktop, where the whole form fits. */}
             <div className="flex gap-2 sticky bottom-14 md:static z-10 bg-green-50 py-2 -my-2 rounded-lg">
-              <button onClick={handleSubmit} disabled={saving || !canSubmit()}
+              <button onClick={handleSubmit} disabled={saving || !canSubmit() || stepsOutstanding > 0}
                 className="flex-1 py-3 md:py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
                 {saving ? t('saving') : t('mark_complete')}
               </button>

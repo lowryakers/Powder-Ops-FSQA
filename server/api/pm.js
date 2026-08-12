@@ -290,7 +290,8 @@ router.get('/work-orders', (req, res) => {
   const db = getDb();
   runPmHousekeeping(db);
   const { status, equipment_id, from, to, assigned_to } = req.query;
-  let sql = `SELECT wo.*, e.name as equipment_name, e.room, ps.title as pm_title, ps.frequency_type
+  let sql = `SELECT wo.*, e.name as equipment_name, e.room, e.is_food_contact,
+    ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
     LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id WHERE 1=1`;
@@ -308,7 +309,8 @@ router.get('/work-orders', (req, res) => {
 
 router.get('/work-orders/:id', (req, res) => {
   const db = getDb();
-  const wo = db.prepare(`SELECT wo.*, e.name as equipment_name, e.room, ps.title as pm_title
+  const wo = db.prepare(`SELECT wo.*, e.name as equipment_name, e.room, e.is_food_contact,
+    ps.title as pm_title
     FROM work_orders wo LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id WHERE wo.id = ?`).get(req.params.id);
   if (!wo) return res.status(404).json({ error: 'Work order not found' });
@@ -450,6 +452,41 @@ router.get('/metrics', (req, res) => {
 
 // --- Complete a Work Order and auto-generate next occurrence ---
 
+/**
+ * A food-contact task cannot be completed without an account of its steps.
+ *
+ * Completing a clean on a food-contact machine puts it in QA's hygiene
+ * clearance queue, and QA's whole job there is to decide whether it is fit to
+ * run again. Doing that from a task with no step record is a rubber stamp —
+ * which is exactly what was happening, because no completion screen asked.
+ *
+ * Enforced HERE and not only in the form: a rule the client alone applies is a
+ * suggestion, and there are three ways to complete a task.
+ *
+ * Two deliberate limits on the rule:
+ *  • It only applies to equipment flagged `is_food_contact` — the same fact
+ *    that raises the clearance — so the rest of the floor is not blocked by a
+ *    gate that exists for hygiene.
+ *  • A task with no procedure steps has nothing to tick, and refusing it would
+ *    make it impossible to complete at all.
+ *
+ * Headings (a step ending in ':') are not steps and are not counted.
+ */
+export function missingStepTicks(procedureStepsJson, stepResults) {
+  let steps;
+  try { steps = JSON.parse(procedureStepsJson || '[]'); } catch { steps = []; }
+  if (!Array.isArray(steps)) steps = [];
+  const isHeading = (t) => typeof t === 'string' && t.endsWith(':');
+  const results = Array.isArray(stepResults) ? stepResults : [];
+  const ticked = (v) => v === true || v === 'done' || v === 'pass';
+  const outstanding = [];
+  steps.forEach((step, i) => {
+    if (isHeading(step)) return;
+    if (!ticked(results[i])) outstanding.push(step);
+  });
+  return { total: steps.filter(t => !isHeading(t)).length, outstanding };
+}
+
 router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
@@ -464,6 +501,19 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
 
   const eq = db.prepare('SELECT is_food_contact FROM equipment WHERE id = ?').get(existing.equipment_id);
   const needsClearance = eq && eq.is_food_contact === 1 ? 1 : 0;
+
+  // Food-contact work goes to QA for hygiene clearance, and QA cannot clear a
+  // machine from a task that does not say what was done.
+  if (needsClearance) {
+    const { total, outstanding } = missingStepTicks(existing.procedure_steps, step_results);
+    if (total > 0 && outstanding.length) {
+      return res.status(400).json({
+        error: `This is food-contact equipment, so QA has to sign it off before it runs again — tick each step you completed. ${outstanding.length} of ${total} still unticked.`,
+        outstanding,
+        requires_steps: true,
+      });
+    }
+  }
 
   db.prepare(`
     UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
@@ -523,14 +573,24 @@ router.post('/work-orders/batch-complete', (req, res) => {
   const getSched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?');
   const getEq = db.prepare('SELECT is_food_contact FROM equipment WHERE id = ?');
 
+  // A batch tick-off writes no step record at all, so it cannot satisfy the
+  // food-contact gate. Those tasks are SKIPPED and named, rather than quietly
+  // completed with an empty account of the work — which is the state that put
+  // "0 of 3 ticked" in front of QA in the first place.
+  const skipped = [];
   const batchRun = db.transaction(() => {
     for (const id of ids) {
       const wo = getWO.get(id);
       if (!wo || wo.status === 'completed') continue;
-      completeStmt.run(completedAt, completedBy, id);
 
       const eq = getEq.get(wo.equipment_id);
       const needsClearance = eq && eq.is_food_contact === 1 ? 1 : 0;
+      if (needsClearance && missingStepTicks(wo.procedure_steps, []).total > 0) {
+        skipped.push({ id, title: wo.title, reason: 'Food-contact equipment — open it and tick the steps.' });
+        continue;
+      }
+
+      completeStmt.run(completedAt, completedBy, id);
       if (needsClearance) {
         db.prepare("UPDATE work_orders SET clearance_required=1, clearance_status='pending' WHERE id=?").run(id);
         logAudit('system', 'clearance_required', 'work_order', id, 'Food-contact equipment — hygiene clearance pending');
@@ -550,7 +610,7 @@ router.post('/work-orders/batch-complete', (req, res) => {
   });
 
   batchRun();
-  res.json({ completed: results.length, ids: results });
+  res.json({ completed: results.length, ids: results, skipped });
 });
 
 // --- Mark Work Order Not Applicable ---
@@ -815,7 +875,7 @@ router.put('/work-orders/:id/clearance', requireDepartment('qa'), (req, res) => 
 router.get('/clearance-pending', (req, res) => {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT wo.*, e.name as equipment_name, e.location, e.asset_id, e.room,
+    SELECT wo.*, e.name as equipment_name, e.location, e.asset_id, e.room, e.is_food_contact,
            ps.title AS pm_title, ps.frequency_type, ps.procedure_steps AS schedule_steps
     FROM work_orders wo
     LEFT JOIN equipment e ON wo.equipment_id = e.id
@@ -842,7 +902,7 @@ router.get('/search', (req, res) => {
 
   const rows = db.prepare(`
     SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
-      e.asset_id, ps.title as pm_title, ps.frequency_type, ps.procedure_steps as pm_steps
+      e.asset_id, e.is_food_contact, ps.title as pm_title, ps.frequency_type, ps.procedure_steps as pm_steps
     FROM work_orders wo
     -- LEFT: "a task you can name is a task you should be able to find" was not
     -- true of a task with no equipment.
@@ -865,7 +925,8 @@ router.get('/by-frequency', (req, res) => {
   const { frequency, equipment_id, group } = req.query;
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
-    e.asset_id, ps.title as pm_title, ps.frequency_type, ps.procedure_steps as pm_steps
+    e.asset_id, e.is_food_contact,
+    ps.title as pm_title, ps.frequency_type, ps.procedure_steps as pm_steps
     FROM work_orders wo
     -- LEFT, because NOT EVERY TASK HAS EQUIPMENT. New Task creates team tasks
     -- with no equipment, and a task raised from a chat message always has
@@ -907,7 +968,7 @@ router.get('/completed-history', (req, res) => {
   const dateCol = 'COALESCE(wo.completed_at, wo.due_date)';
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
-    e.asset_id, ps.title as pm_title, ps.frequency_type
+    e.asset_id, e.is_food_contact, ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
     LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
@@ -996,7 +1057,7 @@ router.get('/operator-tasks', (req, res) => {
   let sql = `SELECT wo.id, wo.title, wo.description, wo.status, wo.priority, wo.due_date, wo.assigned_to,
     wo.procedure_steps, wo.pm_schedule_id, wo.task_group,
     wo.issue_flagged, wo.issue_notes, wo.issue_attachments, wo.issue_flagged_by, wo.issue_flagged_at,
-    e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id,
+    e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id, e.is_food_contact,
     ps.frequency_type, ps.title as schedule_title
     FROM work_orders wo
     LEFT JOIN equipment e ON wo.equipment_id = e.id

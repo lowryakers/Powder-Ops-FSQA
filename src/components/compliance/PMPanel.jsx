@@ -53,7 +53,15 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
     next[i] = !next[i];
     return next;
   });
+  const realSteps = steps.filter(t => !isHeading(t));
   const tickedCount = stepChecks.filter(Boolean).length;
+  // Food-contact work goes to QA for hygiene clearance, and QA cannot clear a
+  // machine from a task that does not say what was done. The server enforces
+  // this; the form asks for it up front so nobody fills the notes in and then
+  // gets refused. `is_food_contact` is the same fact that raises the clearance.
+  const stepsRequired = !!wo.is_food_contact && realSteps.length > 0;
+  const allTicked = steps.every((t, i) => isHeading(t) || stepChecks[i]);
+  const blockedForSteps = stepsRequired && !allTicked;
 
   const lubricants = (chemicals || []).filter(c => c.category === 'lubricant');
 
@@ -76,7 +84,9 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
       // different (and worse) claim than not recording them.
       await onComplete(wo.id, {
         ...form,
-        ...(tickedCount > 0 ? { step_results: steps.map((_, i) => !!stepChecks[i]) } : {}),
+        ...(stepsRequired || tickedCount > 0
+          ? { step_results: steps.map((_, i) => !!stepChecks[i]) }
+          : {}),
       });
     } finally { setSaving(false); }
   };
@@ -87,10 +97,18 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
           Left optional rather than required: this is completed on the floor,
           and a form that refuses to submit is one people work around. */}
       {steps.length > 0 && (
-        <div className="bg-white rounded-lg border border-green-200 p-2">
+        <div className={`bg-white rounded-lg border p-2 ${blockedForSteps ? 'border-amber-300' : 'border-green-200'}`}>
           <p className="text-xs font-semibold text-gray-700 mb-1">
-            Steps done <span className="font-normal text-gray-400">— {tickedCount} of {steps.filter(t => !isHeading(t)).length}</span>
+            Steps done
+            <span className="font-normal text-gray-400"> — {tickedCount} of {realSteps.length}</span>
+            {stepsRequired && <span className="ml-1 text-amber-700 font-semibold">· required</span>}
           </p>
+          {stepsRequired && (
+            <p className="text-[11px] text-amber-800 mb-1.5">
+              Food-contact equipment: QA signs this off before it runs again, so tick each step you did.
+              If one could not be done, flag an issue instead of completing.
+            </p>
+          )}
           <ul className="space-y-0.5">
             {steps.map((step, i) => (isHeading(step) ? (
               <li key={i} className="text-xs font-semibold text-gray-700 pt-1">{step}</li>
@@ -134,9 +152,15 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" rows={2} />
       </div>
       <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+        <button type="submit" disabled={saving || blockedForSteps}
+          className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
           {saving ? 'Saving...' : 'Complete & Generate Next'}
         </button>
+        {blockedForSteps && (
+          <span className="text-[11px] text-amber-800 self-center">
+            {realSteps.length - tickedCount} step{realSteps.length - tickedCount === 1 ? '' : 's'} left to tick
+          </span>
+        )}
         <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs hover:bg-gray-200">Cancel</button>
       </div>
     </form>

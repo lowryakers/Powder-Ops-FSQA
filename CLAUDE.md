@@ -621,11 +621,29 @@ list — which is how a clearance becomes a rubber stamp.
   technician skipped everything. `stepsRecorded` splits the two: with a record it is "2 of 3 ticked" with
   ticks; without one it is "what this task called for", plain bullets, and a line saying the record is
   silent and why.
-- The gap itself is closed going forward — `CompleteForm` now asks which steps were done. **Left optional,
-  not required**: this is completed on the floor, and a form that refuses to submit is one people work
-  around. Whether a food-contact clearance task should *demand* its ticks is a policy call, not a UI one.
-  Ticks are sent only when at least one is set — an array of all-`false` would assert every step was
-  deliberately skipped, which is a worse claim than not recording them.
+- **Ticking is now REQUIRED to complete food-contact work** (user decision, 2026-08-12). `missingStepTicks()`
+  in api/pm.js is the single rule and `complete-and-recur` enforces it — a rule the client alone applies is
+  a suggestion, and there are three ways to complete a task. Three deliberate limits keep it from becoming
+  a floor-wide blocker:
+  - It keys off **`equipment.is_food_contact`**, the same fact that raises the clearance, so nothing else
+    on the floor is gated by a rule that exists for hygiene.
+  - A task with **no procedure steps** has nothing to tick and stays completable; refusing it would make it
+    impossible to close at all.
+  - **Headings (a step ending in `:`) are not steps** and are never counted.
+- **`batch-complete` writes no step record, so it cannot satisfy the gate** — food-contact tasks are now
+  SKIPPED there and named in `skipped[]` with a reason, rather than quietly completed with an empty account
+  of the work, which is the state that put "0 of 3 ticked" in front of QA in the first place.
+- **`e.is_food_contact` is on EVERY work-order read** (7 queries), so no list can offer a Complete button
+  that skips the gate. Both forms ask up front and disable Complete with a live count, rather than letting
+  someone fill in the notes and then be refused.
+- **The Operator View renders the step list whenever the ticks are required, whatever the task type.** It
+  used to render only for `cleaning`/`equipment_pm`, so a food-contact task typed as a temp check or a
+  pre-op clean would have been refused by the server with no ticks on screen to satisfy it — a rule the
+  operator could not comply with.
+- The floor strings are in `i18n/operatorStrings.js` in **both languages**; a safety rule shown only in
+  English is a rule half the shift cannot read.
+- The escape hatch is **flag an issue**, not a silent skip: if a step genuinely could not be done, that is a
+  fact QA should see rather than a box left unticked.
 
 ## Attaching the signed paper copy: both doors
 `DocumentAttachments` was mounted only in `DocumentViewer` (row click), so someone who opened a document with

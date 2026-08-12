@@ -135,6 +135,18 @@ const strings = {
   // Checklist
   checklist: { en: 'Checklist', es: 'Lista de Verificación' },
   steps_complete: { en: 'steps complete', es: 'pasos completados' },
+  // Food-contact tasks cannot be completed without ticking each step — QA has
+  // to clear the machine before it runs again and cannot do that from a task
+  // that does not say what was done.
+  steps_required: {
+    en: 'Food-contact equipment — tick each step you did. QA signs this off before the machine runs again.',
+    es: 'Equipo de contacto con alimentos: marque cada paso que hizo. Calidad lo aprueba antes de volver a usar la máquina.',
+  },
+  steps_left: { en: 'step(s) still to tick', es: 'paso(s) por marcar' },
+  cant_do_step: {
+    en: "If a step could not be done, flag an issue instead of completing.",
+    es: 'Si no pudo hacer un paso, reporte un problema en vez de completar.',
+  },
 
   // Notes placeholders
   notes_temp: { en: 'Corrective actions taken, dehumidifier status...', es: 'Acciones correctivas tomadas, estado del deshumidificador...' },
