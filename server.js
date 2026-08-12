@@ -86,6 +86,7 @@ import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api
 import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import { seedProducts } from './server/products-seed.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
+import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
@@ -946,6 +947,12 @@ try {
   seedLightInspectionRecords(db);
   seedLightInspectionPMSchedules(db);
   seedApprovedChemicals(db);
+  // One daily task PER CHEMICAL, and it must run AFTER seedCleaningPMSchedules
+  // — it hangs the schedules on the Chemical Station zone that seeder creates,
+  // and returns 0 without complaint if it isn't there yet. Its own seeder
+  // because that one is all-or-nothing on an empty database and would never
+  // reach an instance that already has cleaning schedules, which is all of them.
+  seedDilutionSchedules(db);
   // Inspection records seed into sanitation_records with the default group, so
   // the tagger has to run again here — the migration pass in db.js saw an empty
   // table on a fresh database. Idempotent.

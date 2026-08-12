@@ -93,6 +93,8 @@ const strings = {
   lot_number: { en: 'Lot Number', es: 'Número de Lote' },
   expiration_date: { en: 'Expiration Date', es: 'Fecha de Vencimiento' },
   acceptable_range: { en: 'Within acceptable range? *', es: '¿Dentro del rango aceptable? *' },
+  target: { en: 'Target:', es: 'Objetivo:' },
+  mixed_to: { en: 'Mixed to', es: 'Mezclado a' },
   pass: { en: 'Pass', es: 'Aprobado' },
   fail: { en: 'Fail', es: 'Fallo' },
 

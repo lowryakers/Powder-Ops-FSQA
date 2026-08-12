@@ -8,6 +8,52 @@ import { generateRecleanTasks } from './sanitation.js';
 import { getChannelByName, postMessageAs, botDm } from './comms.js';
 import { pushToUser } from '../push.js';
 import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
+import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
+import { recordGroupFor } from '../qa-records.js';
+
+// The daily chemical dilution check is a TASK and a RECORD, and it files both.
+//
+// The task used to store its reading in `work_orders.readings` and stop there,
+// so Form 106-01 — the Chemical Dilution Logbook, which is the controlled log
+// an auditor asks for — got nothing, and QA re-typed every check by hand in
+// Sanitation. That is the same two-mechanisms split as the QA inspection
+// records that sat under Cleaning: the work happened once and only one of the
+// two places that describe it knew about it.
+//
+// The area is `Chemical Verification`, which is what the plant's own history is
+// filed under. It is not a room, and the 72-hour re-clean rule already knows
+// that — see NONFOOD_DEFAULT in api/sanitation.js.
+const DILUTION_AREA = 'Chemical Verification';
+
+// What the operator entered for THIS dilution: a number off a test strip, or a
+// yes/no confirmation that a ratio was mixed correctly.
+function dilutionValue(form, readings) {
+  const r = readings || {};
+  return isMeasured(form) ? (r.ppm_reading ?? r.reading) : (r.dilution_pass ?? r.ratio_confirmed);
+}
+
+function fileDilutionRecord(db, { form, grade, readings, notes, by, workOrderId }) {
+  const r = readings || {};
+  const id = uuid();
+  const detail = [
+    `${DILUTION_REVISION} — target ${form.target}.`,
+    grade?.reason ? `Result: ${grade.reason}.` : null,
+    r.lot_number ? `Lot #${r.lot_number}.` : null,
+    r.expiration_date ? `Expires ${r.expiration_date}.` : null,
+    String(notes || '').trim() || null,
+    `Filed from task ${workOrderId}.`,
+  ].filter(Boolean).join(' ');
+
+  db.prepare(`
+    INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, entered_at,
+      chemicals_used, concentration, result, record_group, notes)
+    VALUES (?, ?, 'pre_op', ?, datetime('now'), datetime('now'), ?, ?, ?, ?, ?)
+  `).run(id, DILUTION_AREA, by, form.chemical,
+    isMeasured(form) && dilutionValue(form, r) ? `${dilutionValue(form, r)} ${form.unit}` : form.target,
+    grade.result,
+    recordGroupFor(DILUTION_AREA), detail);
+  return id;
+}
 
 // Side-effects to run when any work order transitions to completed, regardless
 // of which completion path handled it. Completing a document-review task
@@ -515,22 +561,61 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     }
   }
 
-  db.prepare(`
-    UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
-    notes=?, lubricant_used=?, lubricant_is_food_grade=?,
-    readings=?, step_results=?, reading_result=?,
-    clearance_required=?, clearance_status=?,
-    chemical_id=?,
-    rework_required=0,
-    updated_at=datetime('now') WHERE id=?
-  `).run(completedAt, completedBy, notes || null, lubricant_used || null,
-    lubricant_is_food_grade ? 1 : 0,
-    JSON.stringify(readings || {}), JSON.stringify(step_results || []), reading_result || null,
-    needsClearance, needsClearance ? 'pending' : null,
-    req.body.chemical_id || null,
-    req.params.id);
+  // A chemical dilution check is graded by its RANGE, not by the operator's
+  // tap — the same rule the scale forms follow. It was previously possible to
+  // enter 300 ppm, press Pass, and have the record say pass.
+  const dilution = formFromTitle(existing.title);
+  const graded = dilution ? gradeDilution(dilution, dilutionValue(dilution, readings)) : null;
 
-  logAudit(completedBy, 'complete', 'work_order', req.params.id, { notes, readings, reading_result }, null, null);
+  // A dilution check with no reading cannot be completed. The reading IS the
+  // check — a task closed without one says on the record that the dilution was
+  // verified, and it wasn't. Same rule as the step ticks on food-contact work,
+  // and nobody is trapped by it: a dilution that genuinely wasn't mixed today
+  // is closed with Skip / Not applicable, which recurs the schedule so
+  // tomorrow's task still arrives.
+  if (dilution && !graded.result) {
+    return res.status(400).json({
+      error: isMeasured(dilution)
+        ? `Enter the ${dilution.chemical} reading (${dilution.target}) before completing this check — or use Skip / Not applicable if it wasn't mixed today.`
+        : `Confirm whether ${dilution.chemical} was mixed to ${dilution.target} — or use Skip / Not applicable if it wasn't mixed today.`,
+      requires_reading: true,
+      target: dilution.target,
+    });
+  }
+
+  const finalResult = graded ? graded.result : (reading_result || null);
+
+  // The task and the RECORD are written together. A completion that files no
+  // record is what sent QA back to typing Form 106-01 in by hand, and a record
+  // that exists without its completion (or the other way round) is two
+  // mechanisms disagreeing about one check.
+  let filedRecordId = null;
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
+      notes=?, lubricant_used=?, lubricant_is_food_grade=?,
+      readings=?, step_results=?, reading_result=?,
+      clearance_required=?, clearance_status=?,
+      chemical_id=?,
+      rework_required=0,
+      updated_at=datetime('now') WHERE id=?
+    `).run(completedAt, completedBy, notes || null, lubricant_used || null,
+      lubricant_is_food_grade ? 1 : 0,
+      JSON.stringify(readings || {}), JSON.stringify(step_results || []), finalResult,
+      needsClearance, needsClearance ? 'pending' : null,
+      req.body.chemical_id || null,
+      req.params.id);
+
+    if (dilution) {
+      filedRecordId = fileDilutionRecord(db, {
+        form: dilution, grade: graded, readings, notes, by: completedBy, workOrderId: req.params.id,
+      });
+    }
+  })();
+
+  logAudit(completedBy, 'complete', 'work_order', req.params.id,
+    { notes, readings, reading_result: finalResult, ...(filedRecordId ? { sanitation_record_id: filedRecordId, graded: graded.reason } : {}) },
+    null, null);
   if (isEnvironmentalCheck(existing.title)) {
     const eqName = db.prepare('SELECT name, room FROM equipment WHERE id = ?').get(existing.equipment_id);
     notifyEnvironmentalBreach(db, { ...existing, equipment_name: eqName?.room || eqName?.name }, readings, completedBy)

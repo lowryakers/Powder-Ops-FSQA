@@ -7,6 +7,7 @@ import FileUpload from '../FileUpload';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 import { canSeeQaReview } from '../../utils/permissions';
 import { formatDateTime } from '../../lib/datetime.js';
+import { formFromTitle, gradeDilution, isMeasured } from '../../../shared/dilution-forms.js';
 
 function detectTaskType(task) {
   const t = (task.title || '').toLowerCase();
@@ -59,6 +60,10 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
   const isDueToday = task.due_date === today;
   const isCritical = task.priority === 'critical' || task.priority === 'high';
 
+  // Which dilution this task is, when it is one of the four per-chemical
+  // schedules. Null for the legacy lumped task, which keeps the old form.
+  const dilutionForm = formFromTitle(task.title);
+
   const updateReading = (key, val) => setReadings(prev => ({ ...prev, [key]: val }));
   const toggleStep = (i) => setStepChecks(prev => {
     const next = [...prev];
@@ -73,6 +78,11 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
       return h <= 40 ? 'pass' : 'fail';
     }
     if (taskType === 'chemical_dilution') {
+      // The RANGE decides, exactly as it does on the server (gradeDilution is
+      // the same function). This screen used to let someone type 300 ppm and
+      // press Pass; now the buttons are gone for a measured dilution and the
+      // verdict is shown as it is typed.
+      if (dilutionForm) return gradeDilution(dilutionForm, isMeasured(dilutionForm) ? readings.ppm_reading : readings.dilution_pass).result;
       return readings.dilution_pass === 'yes' ? 'pass' : readings.dilution_pass === 'no' ? 'fail' : null;
     }
     if (taskType === 'light_inspection') {
@@ -95,7 +105,13 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
 
   const canSubmit = () => {
     if (taskType === 'temp_humidity') return readings.temperature && readings.humidity;
-    if (taskType === 'chemical_dilution') return readings.chemical_name && readings.ppm_reading && readings.dilution_pass;
+    if (taskType === 'chemical_dilution') {
+      // A per-chemical task already knows its chemical, so the only thing
+      // missing is the reading. The server refuses a completion without one
+      // (use Skip / Not applicable instead), so the button must not offer it.
+      if (dilutionForm) return !!(isMeasured(dilutionForm) ? readings.ppm_reading : readings.dilution_pass);
+      return readings.chemical_name && readings.ppm_reading && readings.dilution_pass;
+    }
     if (taskType === 'light_inspection') return readings.foot_candles && readings.light_pass;
     if (taskType === 'glass_plastic') {
       const bpgItems = steps.filter(s => s.includes('|'));
@@ -424,7 +440,15 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
             {taskType === 'chemical_dilution' && (
               <>
                 <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1"><FlaskConical size={12} /> {t('chemical_verification')}</h4>
-                <div className="grid grid-cols-2 gap-2">
+                {dilutionForm ? (
+                  /* The task names its chemical, so it is stated rather than
+                     asked for — the old select is how a check of four
+                     chemicals closed having recorded one. */
+                  <div className="rounded-lg bg-white border border-green-200 px-3 py-2">
+                    <div className="text-sm font-bold text-gray-900">{dilutionForm.chemical}</div>
+                    <div className="text-xs text-gray-500">{dilutionForm.method} — {t('target')} {dilutionForm.target}</div>
+                  </div>
+                ) : (
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('chemical_label')}</label>
                     <select value={readings.chemical_name || ''} onChange={e => updateReading('chemical_name', e.target.value)}
@@ -437,12 +461,16 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                       <option value="Other">Other</option>
                     </select>
                   </div>
+                )}
+                {(!dilutionForm || isMeasured(dilutionForm)) && (
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('ppm_reading')}</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      {t('ppm_reading')}{dilutionForm ? ` (${dilutionForm.unit})` : ''}
+                    </label>
                     <input type="number" step="any" value={readings.ppm_reading || ''} onChange={e => updateReading('ppm_reading', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 225" />
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 225" autoFocus={!!dilutionForm} />
                   </div>
-                </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('lot_number')}</label>
@@ -455,19 +483,37 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{t('acceptable_range')}</label>
-                  <div className="flex gap-2">
-                    <button onClick={() => updateReading('dilution_pass', 'yes')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.dilution_pass === 'yes' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      {t('pass')}
-                    </button>
-                    <button onClick={() => updateReading('dilution_pass', 'no')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.dilution_pass === 'no' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
-                      {t('fail')}
-                    </button>
+                {dilutionForm && isMeasured(dilutionForm) ? (
+                  /* THE READING DECIDES. The paper form has the operator circle
+                     an out-of-range value; here the range does it, so 300 ppm
+                     can no longer be filed as a pass. */
+                  readings.ppm_reading ? (() => {
+                    const g = gradeDilution(dilutionForm, readings.ppm_reading);
+                    return (
+                      <div className={`rounded-lg p-2 text-xs font-bold text-center ${g.result === 'pass' ? 'bg-green-200 text-green-900' : 'bg-red-200 text-red-900'}`}>
+                        {g.result === 'pass' ? t('pass_range') : t('fail')} — {readings.ppm_reading} {dilutionForm.unit} / {dilutionForm.target}
+                      </div>
+                    );
+                  })() : (
+                    <p className="text-xs text-gray-500 text-center">{t('target')} {dilutionForm.target}</p>
+                  )
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      {dilutionForm ? `${t('mixed_to')} ${dilutionForm.target}?` : t('acceptable_range')}
+                    </label>
+                    <div className="flex gap-2">
+                      <button onClick={() => updateReading('dilution_pass', 'yes')}
+                        className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.dilution_pass === 'yes' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                        {t('pass')}
+                      </button>
+                      <button onClick={() => updateReading('dilution_pass', 'no')}
+                        className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${readings.dilution_pass === 'no' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+                        {t('fail')}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             )}
 
