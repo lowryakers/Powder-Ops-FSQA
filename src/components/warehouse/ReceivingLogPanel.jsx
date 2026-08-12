@@ -72,6 +72,9 @@ function ReceivingForm({ user, record, onSaved, onCancel, onOpenChecklist }) {
   const { data: nextNo } = useApiGet(record ? null : '/receiving/next-inspection-no');
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  // Whichever inspection this checklist would be for: one typed into the field,
+  // or the one the last save issued. Blank until there is one to open.
+  const checklistTarget = (form.inspection_no || '').trim() || lastFiled || '';
 
   const submit = async (e) => {
     e.preventDefault();
@@ -130,6 +133,30 @@ function ReceivingForm({ user, record, onSaved, onCancel, onOpenChecklist }) {
           </button>
         </div>
       )}
+
+      {/* FORM 204-01 is part of receiving, not a separate errand — so it is on
+          this screen from the moment it opens, not only in the strip that
+          appears after a line is saved.
+          The truck, driver, vendor, pallet count and customer # live on the
+          CHECKLIST rather than on each line: one arrival is several lines and
+          those facts belong to the delivery, so asking for them per line would
+          be the same answer typed three times and three places to correct it. */}
+      <div className="rounded-lg border border-powder-200 bg-powder-50 p-3 flex flex-wrap items-center gap-2">
+        <ClipboardCheck size={16} className="text-powder-700 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-powder-900">Inspection Checklist — FORM 204-01</p>
+          <p className="text-xs text-powder-800">
+            {checklistTarget
+              ? <>Truck, driver, vendor and the 18 inspection checks for <span className="font-semibold">{checklistTarget}</span>.</>
+              : 'Truck, driver, vendor and the 18 inspection checks. It covers the whole delivery — save the first line, or type an existing inspection #, to open it.'}
+          </p>
+        </div>
+        <button type="button" disabled={!checklistTarget}
+          onClick={() => onOpenChecklist?.(checklistTarget)}
+          className="shrink-0 px-3 py-1.5 rounded-lg bg-powder-600 text-white text-xs font-semibold hover:bg-powder-700 disabled:opacity-40 disabled:cursor-not-allowed">
+          Open checklist
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div>

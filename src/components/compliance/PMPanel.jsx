@@ -385,18 +385,145 @@ function ReviewTrail({ wo }) {
   );
 }
 
-function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
-  const [reviewing, setReviewing] = useState(false);
+/**
+ * What was actually done on a task.
+ *
+ * Extracted so QA's hygiene-clearance card and the completed-task view render
+ * the SAME account of the work. A clearance decision made from a title and a
+ * name is a rubber stamp: QA has to see which steps were ticked, what was read,
+ * what was lubricated with, and whether the operator flagged anything — and
+ * they should not have to know the daily and weekly procedures by heart, or go
+ * to the Equipment list to look them up, to get it.
+ *
+ * A second copy of this would be the other half of that problem: two screens
+ * describing one piece of work slightly differently.
+ */
+function WorkDone({ wo, compact = false }) {
   const steps = safeParseFe(wo.procedure_steps, []);
   const stepResults = safeParseFe(wo.step_results, []);
   const readings = safeParseFe(wo.readings, {});
+  const issuePhotos = safeParseFe(wo.issue_attachments, []);
+  const hasReadings = Object.keys(readings).length > 0;
+  const done = stepResults.filter(r => r === true || r === 'done' || r === 'pass').length;
+
+  if (!steps.length && !hasReadings && !wo.lubricant_used && !wo.notes && wo.issue_flagged !== 1) {
+    return (
+      <p className="text-sm text-gray-500 italic">
+        No steps, readings or notes were recorded against this task.
+      </p>
+    );
+  }
+
+  return (
+    <div className={compact ? 'space-y-2.5' : 'space-y-4'}>
+      {steps.length > 0 && (
+        <div>
+          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <CheckCircle size={12} /> Procedure steps
+            <span className="font-normal normal-case tracking-normal text-gray-400">
+              — {done} of {steps.filter(t => !(typeof t === 'string' && t.endsWith(':'))).length} ticked
+            </span>
+          </h5>
+          <ul className="space-y-1 text-sm">
+            {steps.map((step, i) => {
+              const isHeader = typeof step === 'string' && step.endsWith(':');
+              const result = stepResults[i];
+              const ticked = result === true || result === 'done' || result === 'pass';
+              return (
+                <li key={i} className={`flex items-start gap-2 ${isHeader ? 'font-semibold text-gray-800 mt-2' : 'text-gray-600 pl-3'}`}>
+                  {!isHeader && (
+                    <span className={`mt-0.5 shrink-0 ${ticked ? 'text-green-500' : 'text-gray-300'}`}>
+                      {ticked ? <CheckCircle size={14} /> : <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-gray-300" />}
+                    </span>
+                  )}
+                  <span>{step}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {hasReadings && (
+        <div>
+          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <Thermometer size={12} /> Readings & inspection data
+          </h5>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {Object.entries(readings).map(([key, val]) => (
+              <div key={key} className="bg-gray-50 rounded-lg px-3 py-2">
+                <p className="text-xs text-gray-500 capitalize">{key.replace(/_/g, ' ')}</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Food-grade or not is the whole question when QA is clearing a
+          food-contact machine, so it is never hidden behind an expander. */}
+      {wo.lubricant_used && (
+        <div className="flex items-center gap-3 bg-blue-50 rounded-lg p-3">
+          <Droplets size={16} className="text-blue-600 shrink-0" />
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Lubricant used</p>
+            <p className="text-sm font-medium text-gray-900">
+              {wo.lubricant_used}
+              {wo.lubricant_is_food_grade
+                ? <span className="ml-2 text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">Food-grade</span>
+                : <span className="ml-2 text-xs text-red-700 bg-red-100 px-1.5 py-0.5 rounded-full">Not marked food-grade</span>}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {wo.notes && (
+        <div>
+          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Notes from the technician</h5>
+          <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-3 whitespace-pre-line">{wo.notes}</p>
+        </div>
+      )}
+
+      {wo.issue_flagged === 1 && (
+        <div className="bg-red-50 rounded-lg border border-red-200 p-3">
+          <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> Issue reported</p>
+          <p className="text-sm text-red-900">{wo.issue_notes}</p>
+          <p className="text-xs text-red-600 mt-1">
+            Flagged by {wo.issue_flagged_by} · {formatDateTime(wo.issue_flagged_at, '')}
+          </p>
+          {/* The photos the operator took of the problem. QA clearing a machine
+              needs to see them, not a count of them. */}
+          {issuePhotos.length > 0 && (
+            <div className="mt-2 flex gap-2 flex-wrap">
+              {issuePhotos.map((a, i) => (
+                <a key={i} href={a.url} target="_blank" rel="noopener noreferrer">
+                  {/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(a.originalName || a.filename) ? (
+                    <img src={a.url} alt={a.originalName} className="h-16 w-16 object-cover rounded-lg border border-red-200 hover:ring-2 hover:ring-red-400" />
+                  ) : (
+                    <div className="h-16 w-16 rounded-lg border border-red-200 flex flex-col items-center justify-center bg-white hover:ring-2 hover:ring-red-400">
+                      <Paperclip size={14} className="text-red-400" />
+                      <span className="text-[9px] text-red-500 truncate w-14 text-center mt-0.5">{a.originalName || a.filename}</span>
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
+  const [reviewing, setReviewing] = useState(false);
+  // Steps, readings, lubricant, notes and the issue report all render through
+  // <WorkDone>, which QA's clearance card uses too.
   const attachments = safeParseFe(wo.attachments, []);
-  const issueAttachments = safeParseFe(wo.issue_attachments, []);
   const isNA = wo.status === 'not_applicable';
   const isMissed = wo.status === 'missed';
-
-  const hasReadings = Object.keys(readings).length > 0;
-  const hasSteps = steps.length > 0;
 
   return (
     <div className="bg-white rounded-xl border-2 border-powder-200 shadow-lg p-5 space-y-4">
@@ -466,64 +593,8 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
         )}
       </div>
 
-      {/* Procedure Steps */}
-      {hasSteps && (
-        <div>
-          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
-            <CheckCircle size={12} /> Procedure Steps ({steps.length})
-          </h5>
-          <ul className="space-y-1 text-sm">
-            {steps.map((step, i) => {
-              const isHeader = typeof step === 'string' && step.endsWith(':');
-              const result = stepResults[i];
-              const done = result === true || result === 'done' || result === 'pass';
-              return (
-                <li key={i} className={`flex items-start gap-2 ${isHeader ? 'font-semibold text-gray-800 mt-2' : 'text-gray-600 pl-3'}`}>
-                  {!isHeader && (
-                    <span className={`mt-0.5 shrink-0 ${done ? 'text-green-500' : 'text-gray-300'}`}>
-                      {done ? <CheckCircle size={14} /> : <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-gray-300" />}
-                    </span>
-                  )}
-                  <span>{step}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-
-      {/* Readings / Inspection Data */}
-      {hasReadings && (
-        <div>
-          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
-            <Thermometer size={12} /> Readings & Inspection Data
-          </h5>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {Object.entries(readings).map(([key, val]) => (
-              <div key={key} className="bg-gray-50 rounded-lg px-3 py-2">
-                <p className="text-xs text-gray-500 capitalize">{key.replace(/_/g, ' ')}</p>
-                <p className="text-sm font-medium text-gray-900">
-                  {typeof val === 'object' ? JSON.stringify(val) : String(val)}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Lubricant Info */}
-      {wo.lubricant_used && (
-        <div className="flex items-center gap-3 bg-blue-50 rounded-lg p-3">
-          <Droplets size={16} className="text-blue-600 shrink-0" />
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Lubricant Used</p>
-            <p className="text-sm font-medium text-gray-900">
-              {wo.lubricant_used}
-              {wo.lubricant_is_food_grade ? <span className="ml-2 text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">Food-Grade</span> : ''}
-            </p>
-          </div>
-        </div>
-      )}
+      {/* One account of the work, shared with QA's clearance card. */}
+      <WorkDone wo={wo} />
 
       {/* Clearance Info */}
       {wo.clearance_required === 1 && (
@@ -542,40 +613,6 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
         </div>
       )}
 
-      {/* Notes */}
-      {wo.notes && (
-        <div>
-          <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Notes</h5>
-          <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-3">{wo.notes}</p>
-        </div>
-      )}
-
-      {/* Issue Flags */}
-      {wo.issue_flagged === 1 && (
-        <div className="bg-red-50 rounded-lg border border-red-200 p-3">
-          <p className="text-xs font-semibold text-red-800 flex items-center gap-1 mb-1"><Flag size={11} /> Issue Reported</p>
-          <p className="text-sm text-red-900">{wo.issue_notes}</p>
-          <p className="text-xs text-red-600 mt-1">
-            Flagged by {wo.issue_flagged_by} · {formatDateTime(wo.issue_flagged_at, '')}
-          </p>
-          {issueAttachments.length > 0 && (
-            <div className="mt-2 flex gap-2 flex-wrap">
-              {issueAttachments.map((a, i) => (
-                <a key={i} href={a.url} target="_blank" rel="noopener noreferrer">
-                  {/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(a.originalName || a.filename) ? (
-                    <img src={a.url} alt={a.originalName} className="h-16 w-16 object-cover rounded-lg border border-red-200 hover:ring-2 hover:ring-red-400" />
-                  ) : (
-                    <div className="h-16 w-16 rounded-lg border border-red-200 flex flex-col items-center justify-center bg-white hover:ring-2 hover:ring-red-400">
-                      <Paperclip size={14} className="text-red-400" />
-                      <span className="text-[9px] text-red-500 truncate w-14 text-center mt-0.5">{a.originalName || a.filename}</span>
-                    </div>
-                  )}
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Attachments */}
       {attachments.length > 0 && (
@@ -821,12 +858,25 @@ function ClearanceCard({ wo, onClear, user }) {
             </span>
             <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">Assigned to: QA</span>
           </div>
-          <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
+          <h4 className="font-medium text-gray-900">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
+          {/* Which procedure this was and how often it runs. QA should not have
+              to know the daily and weekly schedules by heart, or open the
+              Equipment list, to know what they are clearing. */}
+          {wo.pm_title && wo.pm_title !== wo.title && (
+            <p className="text-xs text-gray-500 mt-0.5">From schedule: {wo.pm_title}</p>
+          )}
           <p className="text-xs text-gray-400 mt-0.5">
-            Due: {wo.due_date} · Completed {wo.completed_at ? formatDateTime(wo.completed_at) : '—'} by {wo.completed_by || '—'}
+            {wo.frequency_type ? `${wo.frequency_type} · ` : ''}Due: {wo.due_date}
+            {' · '}Completed {wo.completed_at ? formatDateTime(wo.completed_at) : '—'} by {wo.completed_by || '—'}
           </p>
         </div>
+      </div>
+
+      {/* What was actually done — the same account the completed-task view
+          shows. Clearing a machine from a title and a name is a rubber stamp. */}
+      <div className="rounded-lg border border-gray-200 p-3">
+        <WorkDone wo={wo} compact />
       </div>
 
       {!isQA ? (

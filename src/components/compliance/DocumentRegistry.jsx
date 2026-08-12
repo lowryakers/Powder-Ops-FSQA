@@ -264,6 +264,24 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
           </button>
           <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
         </div>
+        {/* Attaching the signed paper original is the reason most people open
+            a document at all, so it is on BOTH doors — the edit pencil and the
+            row — rather than only on the read view. Uploading is its own
+            immediate action: files attach when you pick them and are not
+            waiting on Save, which is why it sits below the Save row.
+            A document being created has no id yet, so there is nothing to
+            attach to; the line says so rather than showing a control that
+            would fail. The -mx-5 pulls it out to the card's edges, since the
+            component draws its own padding and divider. */}
+        <div className="-mx-5 -mb-5">
+          {initial?.id ? (
+            <DocumentAttachments docId={initial.id} canEdit />
+          ) : (
+            <p className="px-5 py-3 border-t border-gray-100 text-xs text-gray-500">
+              Save the document first, then attach the signed paper original to it.
+            </p>
+          )}
+        </div>
       </form>
     </div>
   );
@@ -319,7 +337,7 @@ function DocumentAttachments({ docId, canEdit }) {
         {f.uploaded_by} · {formatDate(f.created_at)}
       </span>
       {canEdit && (
-        <button onClick={() => remove(f)} className="p-1 text-gray-300 hover:text-red-600 shrink-0" data-tip="Remove"><Trash2 size={12} /></button>
+        <button type="button" onClick={() => remove(f)} className="p-1 text-gray-300 hover:text-red-600 shrink-0" data-tip="Remove"><Trash2 size={12} /></button>
       )}
     </div>
   );

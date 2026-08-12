@@ -803,12 +803,23 @@ router.put('/work-orders/:id/clearance', requireDepartment('qa'), (req, res) => 
   res.json({ success: true });
 });
 
+// What QA has to clear, and — the part that was missing — WHAT WAS DONE.
+//
+// The card used to show a title, a machine and a name. Deciding whether a
+// machine is fit to run again from that means either knowing the daily and
+// weekly procedures by heart or going to the Equipment list to look them up,
+// which is how a clearance becomes a rubber stamp. The steps, their tick
+// state, the readings and any flagged issue were all already on the row; the
+// schedule join adds the one thing that wasn't — which procedure this was and
+// how often it runs.
 router.get('/clearance-pending', (req, res) => {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT wo.*, e.name as equipment_name, e.location, e.asset_id, e.room
+    SELECT wo.*, e.name as equipment_name, e.location, e.asset_id, e.room,
+           ps.title AS pm_title, ps.frequency_type, ps.procedure_steps AS schedule_steps
     FROM work_orders wo
     LEFT JOIN equipment e ON wo.equipment_id = e.id
+    LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
     WHERE wo.clearance_required = 1 AND wo.clearance_status = 'pending'
     ORDER BY wo.completed_at DESC
   `).all();

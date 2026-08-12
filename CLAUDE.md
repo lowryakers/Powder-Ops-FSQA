@@ -574,11 +574,40 @@ Not user-editable: changing what a receiving inspection asks is a Document Chang
 - **Answers save as they are tapped** — this is filled in next to a truck on a phone, and a form you have to
   remember to submit loses a delivery's worth of checks when someone walks into the cold store. Validation
   belongs at sign-off, which is where it is.
+- **The checklist is on the New Receiving Record form from the moment it opens**, not only in the strip that
+  appears after a line is saved — a step that only exists once you have already finished is a step people
+  never find. It opens against a typed inspection # or the one the last save issued.
+- **Truck, driver, vendor, pallet count and customer # live on the CHECKLIST, not on each log line.** One
+  arrival is several lines; asking per line would be the same answer typed three times and three places to
+  correct it.
 - `resolveTarget()` matches Adam/Maria BY NAME with a department fallback (the env-limits precedent), and the
   fallback fires only when nobody named is found — per-name fallback would quietly widen an escalation to a
   whole department on a rename. The caller is never notified of their own escalation.
 - The allergen line has an instruction ("print placards"), not a person to tell, so it carries a `note` and
   no `notify`. Six escalate, not seven.
+
+## QA clearing a machine needs to see what was done
+The hygiene-clearance card showed a title, a machine and a name. Deciding whether a food-contact machine is
+fit to run again from that means knowing the daily and weekly procedures by heart or opening the Equipment
+list — which is how a clearance becomes a rubber stamp.
+- **`<WorkDone wo />` in PMPanel is the single account of a task's work** — steps with their tick state
+  ("3 of 4 ticked"), readings, lubricant *and whether it was food-grade*, the technician's notes, and any
+  flagged issue with its photos. Rendered by BOTH `CompletedTaskDetail` and `ClearanceCard`; a second copy
+  would be two screens describing one piece of work slightly differently.
+- **None of it needed new columns.** `procedure_steps`, `step_results`, `readings`, `lubricant_used`,
+  `issue_*` were already on `work_orders` and already in the `/pm/clearance-pending` payload — the card just
+  never rendered them. The only query change is a LEFT JOIN to `pm_schedules` for `pm_title` and
+  `frequency_type`, which answers "which procedure was this, and how often does it run".
+- The lubricant line says **"Not marked food-grade"** in red when the flag is off, rather than omitting it —
+  an absent line reads as "no lubricant", which is the wrong conclusion on a food-contact clearance.
+
+## Attaching the signed paper copy: both doors
+`DocumentAttachments` was mounted only in `DocumentViewer` (row click), so someone who opened a document with
+the edit pencil found no way to attach the signed original. It now renders in `DocumentEditor` too.
+- **Every button inside it carries `type="button"`.** The editor's `<form>` IS the modal card, and a button
+  with no type defaults to `submit` — the attachment Remove button would have saved the document.
+- Uploading is its own immediate action, so it sits below Save and does not wait on it. A document being
+  created has no id, so the block says "save first" instead of showing a control that would 404.
 
 ## Withdrawing a controlled document ("No longer in use")
 `status = 'archived'` already existed and got a document out of the registry, but recorded nothing — and for
