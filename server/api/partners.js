@@ -140,9 +140,45 @@ function normalizeLines(raw) {
 const linesTotalOf = (items) =>
   (items.length ? round2(items.reduce((t, i) => t + (i.amount || 0), 0)) : null);
 
+/**
+ * What is still missing before this ledger is fit to show the other company.
+ *
+ * Deliberately counted over the WHOLE ledger, ignoring the caller's search and
+ * direction filter. "Am I ready to share the link" is a question about the
+ * ledger, not about whatever is on screen — a readiness number that fell to
+ * zero because somebody typed in the search box would be worse than none.
+ *
+ * Void documents are excluded from all three: a voided row is a decision
+ * already made and is not a gap to close.
+ */
+function documentGaps(db, partnerId) {
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) total,
+      -- An invoice with nothing behind it. The other company is being asked to
+      -- agree a number against a row somebody typed.
+      SUM(CASE WHEN storage_key IS NULL THEN 1 ELSE 0 END) no_file,
+      -- Draft counts toward nothing, so it is invisible in the balance both
+      -- sides are settling against.
+      SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) draft,
+      -- No category means the credit cannot absorb it, whatever it is for.
+      SUM(CASE WHEN category IS NULL OR category = '' THEN 1 ELSE 0 END) uncategorised
+    FROM partner_documents
+    WHERE partner_id = ? AND status != 'void'`).get(partnerId);
+  return {
+    total: row?.total || 0,
+    no_file: row?.no_file || 0,
+    draft: row?.draft || 0,
+    uncategorised: row?.uncategorised || 0,
+  };
+}
+
 router.get('/:id/documents', (req, res) => {
   const db = getDb();
-  res.json({ documents: listDocuments(db, req.params.id, req.query) });
+  res.json({
+    documents: listDocuments(db, req.params.id, req.query),
+    gaps: documentGaps(db, req.params.id),
+  });
 });
 
 // Create a document, with or without a file. Both paths land here so there is

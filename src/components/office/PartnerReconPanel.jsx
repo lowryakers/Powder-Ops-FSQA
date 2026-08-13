@@ -5,7 +5,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import {
   Scale, Search, Check, FileText, Pencil, Plus, X, Link2,
-  ArrowUpRight, ArrowDownLeft, Ban, Trash2, Copy, ExternalLink, History, Upload,
+  ArrowUpRight, ArrowDownLeft, Ban, Trash2, Copy, ExternalLink, History, Upload, CheckCircle2,
 } from 'lucide-react';
 
 // X − Y = Z.
@@ -198,6 +198,55 @@ function DocumentForm({ partner, initial, onClose, onSaved }) {
  * refused outright, so whoever hit that entered the numbers by hand and the
  * paperwork never caught up.
  */
+/**
+ * Is this ledger fit to show the other company?
+ *
+ * Three gaps, each of which makes the shared link say something untrue or
+ * incomplete: an invoice with nothing behind it, a document still in draft so
+ * it counts toward nothing, and one with no category so the credit cannot
+ * absorb it. The counts come from the SERVER over the whole ledger, not from
+ * the rows on screen — a readiness figure that dropped because somebody typed
+ * in the search box would be worse than no figure at all.
+ *
+ * Every number filters the list to exactly those rows. A count you cannot act
+ * on is a count nobody acts on.
+ */
+function ReadyToShare({ gaps, active, onPick }) {
+  if (!gaps || !gaps.total) return null;
+  const items = [
+    { id: 'no_file', n: gaps.no_file, label: 'with no file attached', fix: 'Attach the invoice on each row.' },
+    { id: 'draft', n: gaps.draft, label: 'still in draft', fix: 'Approve as final so they count toward the balance.' },
+    { id: 'uncategorised', n: gaps.uncategorised, label: 'with no category', fix: 'Set a category, or the credit cannot absorb them.' },
+  ].filter(i => i.n > 0);
+
+  if (!items.length) {
+    return (
+      <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-900 flex items-center gap-2">
+        <CheckCircle2 size={15} className="shrink-0" />
+        All {gaps.total} documents have a file, a category and are approved as final. Ready to share.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-1.5">
+      <p className="text-sm font-medium text-amber-900">Before you share the link</p>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map(i => (
+          <button key={i.id} type="button" onClick={() => onPick(active === i.id ? null : i.id)}
+            className={`text-xs px-2 py-1 rounded-lg border ${active === i.id
+              ? 'bg-amber-600 text-white border-amber-600'
+              : 'bg-white text-amber-900 border-amber-300 hover:bg-amber-100'}`}>
+            <span className="font-semibold">{i.n}</span> {i.label}
+          </button>
+        ))}
+      </div>
+      {active && <p className="text-xs text-amber-800">{items.find(i => i.id === active)?.fix}</p>}
+      {!active && <p className="text-xs text-amber-700">Tap a number to see just those documents.</p>}
+    </div>
+  );
+}
+
 function AttachFile({ docId, label, onDone }) {
   const [busy, setBusy] = useState(false);
   return (
@@ -573,6 +622,8 @@ export default function PartnerReconPanel({ user }) {
   const [asOf, setAsOf] = useState('');
   const [q, setQ] = useState('');
   const [dirFilter, setDirFilter] = useState('');
+  // Which readiness gap the list is narrowed to, if any.
+  const [gap, setGap] = useState(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -597,7 +648,19 @@ export default function PartnerReconPanel({ user }) {
     || (user?.role === 'supervisor' && ['office', 'admin'].includes((user?.department || '').toLowerCase()));
 
   const reloadAll = () => { refreshRecon(); refreshDocs(); refreshSettlements(); setAdding(false); setEditing(null); };
-  const docs = useMemo(() => docData?.documents || [], [docData]);
+  // The gap filter is applied HERE, on the rows already returned, rather than
+  // as another query parameter: the counts above it are ledger-wide and must
+  // not move when the list narrows. Void rows are never a gap, matching the
+  // server's count.
+  const docs = useMemo(() => {
+    const all = docData?.documents || [];
+    if (!gap) return all;
+    const live = all.filter(d => d.status !== 'void');
+    if (gap === 'no_file') return live.filter(d => !d.filename);
+    if (gap === 'draft') return live.filter(d => d.status === 'draft');
+    if (gap === 'uncategorised') return live.filter(d => !d.category);
+    return all;
+  }, [docData, gap]);
 
   const act = async (fn) => {
     setBusy(true);
@@ -687,6 +750,14 @@ export default function PartnerReconPanel({ user }) {
 
       {view === 'documents' && (
         <div className="space-y-3">
+          {/* Before the link goes to the other company, three things make it
+              embarrassing: an invoice with nothing behind it, a document still
+              sitting in draft so it counts toward nothing, and one with no
+              category so the credit cannot absorb it. Each number filters the
+              list to exactly those rows — a count you cannot act on is the
+              same as no count. */}
+          <ReadyToShare gaps={docData?.gaps} active={gap} onPick={setGap} />
+
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[200px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
