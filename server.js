@@ -30,6 +30,7 @@ import qaReviewRoutes from './server/api/qa-review.js';
 import cleanupRoutes from './server/api/cleanup.js';
 import sanitationRoutes from './server/api/sanitation.js';
 import auditRoutes from './server/api/audit.js';
+import integrationsRoutes from './server/api/integrations.js';
 import complianceRoutes, { buildBackupZip, computeCritical } from './server/api/compliance.js';
 import { startScheduledJobs } from './server/scheduled-jobs.js';
 import lotoRoutes from './server/api/loto.js';
@@ -1556,6 +1557,9 @@ app.use('/api/sanitation', requireModuleWrite('sanitation'), sanitationRoutes);
 app.use('/api/qa-review', qaReviewRoutes);
 app.use('/api/cleanup', cleanupRoutes);
 app.use('/api/audit', auditRoutes);
+// Which optional services are on. Admin-only, and it returns variable NAMES
+// only — never a value. The router guards each route itself.
+app.use('/api/integrations', integrationsRoutes);
 app.use('/api/compliance', complianceRoutes);
 app.use('/api/loto', requireModuleWrite('loto'), lotoRoutes);
 app.use('/api/users', userRoutes);

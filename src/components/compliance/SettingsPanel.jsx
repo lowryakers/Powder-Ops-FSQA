@@ -6,7 +6,7 @@ import DataBackupSection from '../settings/DataBackupSection.jsx';
 import ShareableLinksSection from '../settings/ShareableLinksSection.jsx';
 import LogBuilderPanel from '../settings/LogBuilderPanel.jsx';
 import CleanupReviewPanel from '../settings/CleanupReviewPanel.jsx';
-import QuickBooksSetupCard from './QuickBooksSetupCard.jsx';
+import IntegrationsSection from '../settings/IntegrationsSection.jsx';
 
 // Settings is a REGISTRY, not a page.
 //
@@ -91,10 +91,11 @@ const SECTIONS = [
       {
         id: 'integrations',
         label: 'Integrations',
-        description: 'QuickBooks',
-        keywords: 'quickbooks qbo accounting sync bills invoices',
+        description: 'File storage, AI, notifications, QuickBooks — what is switched on',
+        keywords: 'quickbooks qbo accounting sync bills invoices r2 storage upload cloudflare '
+          + 'anthropic ai translation voyage push vapid twilio sms plaid bank env variables not working',
         icon: Plug,
-        Component: QuickBooksSetupCard,
+        Component: IntegrationsSection,
       },
       {
         id: 'cleanup',
