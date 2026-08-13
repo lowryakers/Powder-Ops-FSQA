@@ -117,6 +117,95 @@ export function reconcile(docs, asOf) {
   };
 }
 
+/* ── The credit facility ──────────────────────────────────────────────────── */
+
+/**
+ * WHAT A CREDIT MAY ABSORB, and the one rule that keeps it honest.
+ *
+ * A document is eligible only when it says so. `category` is nullable and is
+ * never guessed from a description — a facility that covers production runs and
+ * explicitly not the raw materials M4 buys would otherwise be drained by an
+ * ingredient invoice that happened to mention a product name. Uncategorised is
+ * NOT manufacturing; it is uncategorised, and it stays outside the credit until
+ * somebody says what it is.
+ *
+ * Direction matters too: a credit granted against what they owe us cannot
+ * reduce what we owe them.
+ */
+export function creditEligible(doc, credit) {
+  if (!credit || credit.status !== 'active') return false;
+  if (doc.direction !== credit.direction) return false;
+  if (doc.doc_type === 'credit') return false;      // a credit note is not work to absorb
+  return String(doc.category || '') === String(credit.applies_to || '');
+}
+
+/**
+ * Draw the credit down across this period's eligible documents.
+ *
+ * PURE, and derived from `applied` rather than from a stored balance. Two
+ * mechanisms describing one number is how a balance and its list of draws start
+ * disagreeing, and on a $200,000 facility that argument is expensive.
+ *
+ * A document is absorbed in full or in PART: when only $3,000 of headroom is
+ * left against a $10,000 run, the credit takes $3,000 and the remaining $7,000
+ * is still owed. Rounding to cents each step, so the parts always sum to the
+ * whole.
+ */
+export function applyCredit(result, credit, appliedToDate = 0) {
+  const opening = round2(Number(credit?.amount || 0) - Number(appliedToDate || 0));
+  const draws = [];
+  let remaining = Math.max(0, opening);
+
+  if (credit && credit.status === 'active' && remaining > 0) {
+    const pool = credit.direction === 'payable' ? result.documents.payable : result.documents.receivable;
+    for (const d of pool) {
+      if (remaining <= 0) break;
+      if (!creditEligible(d, credit)) continue;
+      // `signed` is negative for a credit note; only positive work draws down.
+      if (d.signed <= 0) continue;
+      const take = round2(Math.min(remaining, d.signed));
+      if (take <= 0) continue;
+      draws.push({
+        document_id: d.id, doc_number: d.doc_number, description: d.description,
+        amount: take, covered_in_full: take >= d.signed, document_total: d.signed,
+      });
+      remaining = round2(remaining - take);
+    }
+  }
+
+  const drawn = round2(draws.reduce((t, x) => t + x.amount, 0));
+  // The credit reduces the side it was granted against, so the net moves toward
+  // whoever holds it.
+  const sign = credit?.direction === 'payable' ? 1 : -1;
+  const net_after = round2(result.net_amount + sign * drawn);
+
+  return {
+    credit_id: credit?.id || null,
+    label: credit?.label || null,
+    applies_to: credit?.applies_to || null,
+    direction: credit?.direction || null,
+    facility: round2(Number(credit?.amount || 0)),
+    applied_to_date: round2(Number(appliedToDate || 0)),
+    opening_balance: opening,
+    drawn_this_period: drawn,
+    // What is left AFTER this period settles — the running balance the card shows.
+    remaining_balance: round2(Math.max(0, opening - drawn)),
+    draws,
+    net_before_credit: result.net_amount,
+    net_amount: net_after,
+    owed_to: net_after > 0 ? 'us' : net_after < 0 ? 'them' : 'nobody',
+    amount_due: round2(Math.abs(net_after)),
+    // Named so the report can say why an eligible-looking document was not
+    // absorbed, rather than leaving somebody to work it out from the totals.
+    ineligible: (credit?.direction === 'payable' ? result.documents.payable : result.documents.receivable)
+      .filter(d => !creditEligible(d, credit) && d.signed > 0)
+      .map(d => ({
+        document_id: d.id, doc_number: d.doc_number, description: d.description, amount: d.signed,
+        reason: !d.category ? 'uncategorised' : `category is ${d.category}`,
+      })),
+  };
+}
+
 /* ── Month boundaries ─────────────────────────────────────────────────────── */
 
 // Settlement is monthly: "who owes what at the end of each month".

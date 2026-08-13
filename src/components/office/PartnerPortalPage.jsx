@@ -76,6 +76,106 @@ function DocList({ title, rows, tone, token, onDispute }) {
   );
 }
 
+/**
+ * The credit facility, from the partner's side.
+ *
+ * The whole working, not the balance alone. A partner shown only "you have
+ * $95,000 left" has to take our word for it, which is exactly the standoff this
+ * module exists to end — so this names the facility, what was drawn before,
+ * what THIS period draws and against which of their runs, and what is left.
+ *
+ * "Not covered" is here for the same reason: "why wasn't my run credited" is
+ * the first question, and an answer that needs a phone call puts the two
+ * companies back on separate books.
+ */
+function PortalCredit({ credit, history }) {
+  const [open, setOpen] = useState(false);
+  if (!credit) return null;
+  const used = credit.facility - credit.remaining_balance;
+  const pct = credit.facility > 0 ? Math.min(100, Math.round((used / credit.facility) * 100)) : 0;
+
+  return (
+    <div className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50/70 p-3">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <span className="text-xs font-semibold uppercase tracking-wide text-indigo-900">
+          {credit.label} · {credit.applies_to} only
+        </span>
+        <button type="button" onClick={() => setOpen(o => !o)} className="text-[11px] text-indigo-700 underline">
+          {open ? 'Hide detail' : 'How this was used'}
+        </button>
+      </div>
+      <div className="mt-1 flex items-baseline gap-2 flex-wrap">
+        <span className="text-2xl font-bold text-indigo-900">{money(credit.remaining_balance)}</span>
+        <span className="text-xs text-indigo-800">left of {money(credit.facility)}</span>
+      </div>
+      <div className="mt-2 h-1.5 w-full rounded-full bg-indigo-200 overflow-hidden">
+        <div className="h-full bg-indigo-600" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-1.5 text-[11px] text-indigo-800">
+        This credit applies to {credit.applies_to} only — raw material purchases are not covered by it.
+      </p>
+
+      {open && (
+        <div className="mt-2.5 space-y-2 border-t border-indigo-200 pt-2">
+          <div className="grid grid-cols-3 gap-2 text-[11px]">
+            {[['Credit', credit.facility], ['Used before this period', credit.used_before_this_period],
+              ['Applied this period', credit.applied_this_period]].map(([l, v]) => (
+              <div key={l}>
+                <div className="text-indigo-700">{l}</div>
+                <div className="font-semibold text-indigo-900">{money(v)}</div>
+              </div>
+            ))}
+          </div>
+
+          {credit.applied_to?.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold text-indigo-900">Applied to, this period</p>
+              <ul className="mt-0.5 space-y-0.5">
+                {credit.applied_to.map(d => (
+                  <li key={d.document_id} className="text-[11px] text-indigo-800 flex justify-between gap-2">
+                    <span className="truncate">{d.doc_number || d.description}</span>
+                    <span className="shrink-0 font-medium">
+                      {money(d.amount)}{!d.covered_in_full && ` of ${money(d.document_total)} — credit ran out`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {credit.not_covered?.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold text-gray-700">Not covered by the credit</p>
+              <ul className="mt-0.5 space-y-0.5">
+                {credit.not_covered.map(d => (
+                  <li key={d.document_id} className="text-[11px] text-gray-600 flex justify-between gap-2">
+                    <span className="truncate">{d.doc_number || d.description}</span>
+                    <span className="shrink-0">{money(d.amount)} · {d.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {history?.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold text-indigo-900">Earlier draws</p>
+              <ul className="mt-0.5 space-y-0.5 max-h-40 overflow-y-auto">
+                {history.map((h, i) => (
+                  <li key={i} className="text-[11px] text-indigo-800 flex justify-between gap-2">
+                    <span className="truncate">{h.doc_number || h.description}{h.period_end ? ` · ${h.period_end}` : ''}</span>
+                    <span className="shrink-0 font-medium">{money(h.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PartnerPortalPage({ token }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -171,8 +271,20 @@ export default function PartnerPortalPage({ token }) {
             <span className="text-gray-400">−</span>
             <span><span className="text-gray-400">you&apos;re owed</span> {money(data.you_are_owed)}</span>
             <span className="text-gray-400">=</span>
-            <span className="font-semibold text-gray-900">{money(Math.abs(data.net_amount))}</span>
+            <span className={data.credit?.applied_this_period ? 'text-gray-500' : 'font-semibold text-gray-900'}>
+              {money(Math.abs(data.credit ? data.credit.your_balance_before_credit : data.net_amount))}
+            </span>
+            {data.credit?.applied_this_period > 0 && (
+              <>
+                <span className="text-gray-400">−</span>
+                <span><span className="text-gray-400">credit</span> {money(data.credit.applied_this_period)}</span>
+                <span className="text-gray-400">=</span>
+                <span className="font-semibold text-gray-900">{money(Math.abs(data.net_amount))}</span>
+              </>
+            )}
           </div>
+
+          <PortalCredit credit={data.credit} history={data.credit_history} />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">

@@ -25,8 +25,8 @@ import { createHash } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { presignGet } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
-import { endOfMonth } from '../partner-recon.js';
-import { createDocument, currentReconciliation } from './partners.js';
+import { endOfMonth, applyCredit } from '../partner-recon.js';
+import { createDocument, currentReconciliation, creditFor } from './partners.js';
 
 const router = Router();
 
@@ -67,6 +67,37 @@ router.get('/:token', (req, res) => {
   const settlements = db.prepare(`SELECT id, period_end, net_amount, owed_to, status, paid_at, payment_reference
     FROM partner_settlements WHERE partner_id = ? ORDER BY period_end DESC LIMIT 24`).all(partner.id);
 
+  // The credit, in full, from their side.
+  //
+  // A facility the partner cannot see is one they have to take our word for,
+  // which is precisely the standoff this module exists to end — so this carries
+  // the whole working, not the balance alone: the facility, what has been drawn
+  // before, what THIS period draws and against which documents, what is left,
+  // and the number before and after the credit. It also names what the credit
+  // did NOT cover and why, because "my run wasn't credited" is the first
+  // question they will have, and an answer that requires a phone call is how
+  // two companies end up reconciling from different books again.
+  const { credit, appliedToDate } = creditFor(db, partner.id);
+  const c = credit ? applyCredit(r, credit, appliedToDate) : null;
+  const creditView = c && {
+    label: c.label,
+    applies_to: c.applies_to,
+    facility: c.facility,
+    used_before_this_period: c.applied_to_date,
+    available_this_period: c.opening_balance,
+    applied_this_period: c.drawn_this_period,
+    remaining_balance: c.remaining_balance,
+    applied_to: c.draws,
+    not_covered: c.ineligible,
+    your_balance_before_credit: -c.net_before_credit,
+    your_balance_after_credit: -c.net_amount,
+  };
+  const past = db.prepare(`SELECT a.amount, a.created_at, d.doc_number, d.description, s.period_end
+    FROM partner_credit_applications a
+    LEFT JOIN partner_documents d ON d.id = a.document_id
+    LEFT JOIN partner_settlements s ON s.id = a.settlement_id
+    WHERE a.credit_id = ? ORDER BY a.created_at DESC LIMIT 200`);
+
   res.json({
     partner: { name: partner.name, terms_days: partner.terms_days },
     as_of: asOf,
@@ -88,6 +119,11 @@ router.get('/:token', (req, res) => {
     excluded_summary: r.excluded_summary,
     counts: r.counts,
     settlements,
+    // The credit reduces what they owe, so their bottom line follows it.
+    credit: creditView,
+    credit_history: credit ? past.all(credit.id) : [],
+    ...(c ? { net_amount: -c.net_amount, amount_due: c.amount_due,
+      owed_to: c.owed_to === 'us' ? 'powder-ops' : c.owed_to === 'them' ? 'you' : 'nobody' } : {}),
   });
 });
 

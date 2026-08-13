@@ -174,9 +174,107 @@ function DocumentForm({ partner, initial, onClose, onSaved }) {
 
 /* ── The number ───────────────────────────────────────────────────────────── */
 
+/**
+ * The credit facility, on the settlement card.
+ *
+ * Shows the WORKING, not just the balance: what the facility is, what was used
+ * before this period, what this period draws and against which runs, and what
+ * is left. A single remaining figure is a number somebody has to trust; the
+ * draws behind it are a number they can check.
+ *
+ * It also names what the credit did NOT cover. "Why wasn't my run credited" is
+ * the first question anyone asks, and an uncategorised document is the usual
+ * answer — the credit refuses to guess, so the screen has to say so.
+ */
+function CreditCard({ credit }) {
+  const [open, setOpen] = useState(false);
+  if (!credit) return null;
+  const pct = credit.facility > 0
+    ? Math.min(100, Math.round(((credit.facility - credit.remaining_balance) / credit.facility) * 100)) : 0;
+
+  return (
+    <div className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50/70 p-3">
+      <button type="button" onClick={() => setOpen(o => !o)} className="w-full text-left">
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <span className="text-xs font-semibold uppercase tracking-wide text-indigo-900">
+            {credit.label || 'Credit'} · {credit.applies_to} only
+          </span>
+          <span className="text-[11px] text-indigo-700 underline">{open ? 'Hide' : 'How this was used'}</span>
+        </div>
+        <div className="mt-1 flex items-baseline gap-2 flex-wrap">
+          <span className="text-2xl font-bold text-indigo-900">{money(credit.remaining_balance)}</span>
+          <span className="text-xs text-indigo-800">left of {money(credit.facility)}</span>
+        </div>
+        <div className="mt-2 h-1.5 w-full rounded-full bg-indigo-200 overflow-hidden">
+          <div className="h-full bg-indigo-600" style={{ width: `${pct}%` }} />
+        </div>
+        {credit.drawn_this_period > 0 && (
+          <p className="mt-1.5 text-[11px] text-indigo-800">
+            {money(credit.drawn_this_period)} of this period&rsquo;s {credit.applies_to} comes off the credit —
+            the balance due drops from {money(credit.net_before_credit)} to {money(credit.net_amount)}.
+          </p>
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-2.5 space-y-2 border-t border-indigo-200 pt-2">
+          <div className="grid grid-cols-3 gap-2 text-[11px]">
+            {[['Facility', credit.facility], ['Used before this period', credit.applied_to_date],
+              ['Drawn this period', credit.drawn_this_period]].map(([l, v]) => (
+              <div key={l}>
+                <div className="text-indigo-700">{l}</div>
+                <div className="font-semibold text-indigo-900">{money(v)}</div>
+              </div>
+            ))}
+          </div>
+
+          {credit.draws.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold text-indigo-900">Coming off the credit this period</p>
+              <ul className="mt-0.5 space-y-0.5">
+                {credit.draws.map(d => (
+                  <li key={d.document_id} className="text-[11px] text-indigo-800 flex justify-between gap-2">
+                    <span className="truncate">{d.doc_number || d.description || d.document_id}</span>
+                    <span className="shrink-0 font-medium">
+                      {money(d.amount)}{!d.covered_in_full && ` of ${money(d.document_total)} — credit ran out`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {credit.ineligible.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold text-gray-700">Not covered by the credit</p>
+              <ul className="mt-0.5 space-y-0.5">
+                {credit.ineligible.map(d => (
+                  <li key={d.document_id} className="text-[11px] text-gray-600 flex justify-between gap-2">
+                    <span className="truncate">{d.doc_number || d.description || d.document_id}</span>
+                    <span className="shrink-0">{money(d.amount)} · {d.reason}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[10px] text-gray-500">
+                An uncategorised document is never absorbed — set its category to {credit.applies_to} if it belongs.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TheNumber({ recon, partner, canSettle, onSettle, busy }) {
   if (!recon) return null;
-  const { owed_to, amount_due, receivable_total, payable_total, net_amount } = recon;
+  const credit = recon.credit;
+  // After the credit is what is actually owed, so that is the headline. The
+  // before-credit figure stays visible in the working below it.
+  const owed_to = credit ? credit.owed_to : recon.owed_to;
+  const amount_due = credit ? credit.amount_due : recon.amount_due;
+  const net_amount = credit ? credit.net_amount : recon.net_amount;
+  const { receivable_total, payable_total } = recon;
   const nobody = owed_to === 'nobody';
   const tone = nobody ? 'border-gray-200 bg-gray-50'
     : owed_to === 'us' ? 'border-green-300 bg-green-50' : 'border-amber-300 bg-amber-50';
@@ -199,8 +297,20 @@ function TheNumber({ recon, partner, canSettle, onSettle, busy }) {
         <span className="text-gray-400">−</span>
         <span><span className="text-gray-400">we owe them</span> {money(payable_total)}</span>
         <span className="text-gray-400">=</span>
-        <span className="font-semibold text-gray-900">{money(net_amount)}</span>
+        <span className={credit?.drawn_this_period ? 'text-gray-500' : 'font-semibold text-gray-900'}>
+          {money(recon.net_amount)}
+        </span>
+        {credit?.drawn_this_period > 0 && (
+          <>
+            <span className="text-gray-400">−</span>
+            <span><span className="text-gray-400">credit</span> {money(credit.drawn_this_period)}</span>
+            <span className="text-gray-400">=</span>
+            <span className="font-semibold text-gray-900">{money(net_amount)}</span>
+          </>
+        )}
       </div>
+
+      <CreditCard credit={credit} />
 
       {canSettle && !nobody && (
         <button onClick={onSettle} disabled={busy}
@@ -292,11 +402,21 @@ export default function PartnerReconPanel({ user }) {
 
   const settle = async () => {
     if (!recon) return;
-    const who = recon.owed_to === 'us' ? `${partner.name} pays Powder Ops` : `Powder Ops pays ${partner.name}`;
-    if (!window.confirm(`${who} ${money(recon.amount_due)}.\n\nThis closes ${recon.counts.receivable + recon.counts.payable} documents into a settlement you can reopen later. Record it as paid?`)) return;
+    // AFTER the credit — that is what is actually being paid, and it is what
+    // the server recomputes and compares `expected_net` against. Sending the
+    // pre-credit figure would 409 on every period the credit draws on.
+    const c = recon.credit;
+    const owedTo = c ? c.owed_to : recon.owed_to;
+    const due = c ? c.amount_due : recon.amount_due;
+    const expected = c ? c.net_amount : recon.net_amount;
+    const who = owedTo === 'us' ? `${partner.name} pays Powder Ops` : `Powder Ops pays ${partner.name}`;
+    const creditLine = c?.drawn_this_period > 0
+      ? `\n\n${money(c.drawn_this_period)} comes off the ${c.applies_to} credit, leaving ${money(c.remaining_balance)} on it.`
+      : '';
+    if (!window.confirm(`${who} ${money(due)}.${creditLine}\n\nThis closes ${recon.counts.receivable + recon.counts.payable} documents into a settlement you can reopen later. Record it as paid?`)) return;
     const reference = window.prompt('Payment reference (cheque #, ACH, note) — optional:') ?? '';
     await act(() => apiPost(`/partners/${pid}/settle`, {
-      as_of: recon.as_of, expected_net: recon.net_amount, payment_reference: reference,
+      as_of: recon.as_of, expected_net: expected, payment_reference: reference,
     }));
   };
 

@@ -1272,6 +1272,55 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_partner_docs_due ON partner_documents(due_date);
     CREATE INDEX IF NOT EXISTS idx_partner_docs_settlement ON partner_documents(settlement_id);
 
+    -- A standing credit facility, not a credit note.
+    --
+    -- A credit note (doc_type='credit') reduces ONE settlement. This is the
+    -- other thing: an agreed pot that draws down as qualifying work is settled,
+    -- with a running balance both companies can see. Danny's $200,000 against
+    -- M4's manufacturing is the case it was built for.
+    --
+    -- applies_to is what stops it being spent on the wrong thing. The credit
+    -- covers production runs and explicitly NOT the raw materials M4 buys, so
+    -- eligibility has to be a recorded fact about each document rather than
+    -- something read out of a description string.
+    CREATE TABLE IF NOT EXISTS partner_credits (
+      id TEXT PRIMARY KEY,
+      partner_id TEXT NOT NULL,
+      -- Which side it reduces. 'receivable' = it reduces what they owe us.
+      direction TEXT NOT NULL DEFAULT 'receivable'
+        CHECK (direction IN ('receivable', 'payable')),
+      applies_to TEXT NOT NULL DEFAULT 'manufacturing',
+      amount REAL NOT NULL DEFAULT 0,
+      label TEXT,
+      description TEXT,
+      issued_date TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed', 'void')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      updated_at TEXT,
+      updated_by TEXT,
+      FOREIGN KEY (partner_id) REFERENCES partner_accounts(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_partner_credits ON partner_credits(partner_id, status);
+
+    -- What the credit actually absorbed, stamped at settlement and immutable
+    -- with it. The BALANCE is derived from these rows and never stored — a
+    -- stored balance and a list of draws is two mechanisms for one number, and
+    -- the first time they disagree nobody can say which is right.
+    CREATE TABLE IF NOT EXISTS partner_credit_applications (
+      id TEXT PRIMARY KEY,
+      credit_id TEXT NOT NULL,
+      settlement_id TEXT,
+      document_id TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      FOREIGN KEY (credit_id) REFERENCES partner_credits(id),
+      FOREIGN KEY (document_id) REFERENCES partner_documents(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_credit_apps ON partner_credit_applications(credit_id);
+    CREATE INDEX IF NOT EXISTS idx_credit_apps_settlement ON partner_credit_applications(settlement_id);
+
     CREATE TABLE IF NOT EXISTS partner_settlements (
       id TEXT PRIMARY KEY,
       partner_id TEXT NOT NULL,
@@ -3667,6 +3716,16 @@ function runMigrations() {
   // summary that implies the invoice held less than it did.
   addColumnIfMissing('partner_documents', 'line_items', 'TEXT');
   addColumnIfMissing('partner_documents', 'lines_total', 'REAL');
+  // WHAT THE DOCUMENT IS FOR, which is a different question from what kind of
+  // document it is (`doc_type` is invoice / po / credit).
+  //
+  // A credit facility that covers manufacturing and explicitly not raw
+  // materials cannot work without this. Deliberately NULLABLE and never
+  // inferred: reading "manufacturing" out of a description string would spend
+  // a $200,000 facility on an ingredient invoice, which is the one thing the
+  // agreement says must not happen. Uncategorised means uncategorised, and the
+  // credit refuses to absorb it.
+  addColumnIfMissing('partner_documents', 'category', 'TEXT');
 
   // Slack import: original message ts for idempotent re-imports.
   addColumnIfMissing('chat_messages', 'external_id', 'TEXT');
