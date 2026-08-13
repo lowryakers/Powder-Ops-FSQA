@@ -7,6 +7,7 @@ import FileUpload from '../FileUpload';
 import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square, Eye, QrCode, ListChecks } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
 import RecordAttachments from './RecordAttachments';
+import RecordHistory from '../common/RecordHistory.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
 import TextCell from '../common/TextCell.jsx';
 
@@ -484,6 +485,11 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
               because evidence added afterwards changes what was signed for. */}
           <RecordAttachments recordType={cfg.key} recordId={rec.id}
             canEdit={rec.can_edit !== false} blockReason={rec.edit_block_reason} />
+
+          {/* Who changed this record and when — the first thing an auditor
+              asks about any one record. The entity type is the RECORD TYPE,
+              because that is what qms.js writes to the audit log. */}
+          <RecordHistory type={cfg.key} id={rec.id} label="Record history" />
         </div>
 
         <div className="flex items-center gap-2 px-5 py-3 border-t border-gray-200">

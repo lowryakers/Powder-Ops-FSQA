@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square, Sparkles, Paperclip } from 'lucide-react';
 import MarkdownView from '../common/MarkdownView.jsx';
+import RecordHistory from '../common/RecordHistory.jsx';
 import RevisionUploadModal from '../settings/RevisionUploadModal.jsx';
 import { formatDate } from '../../lib/datetime.js';
 
@@ -537,6 +538,14 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onReinstat
         )}
 
         <DocumentAttachments docId={doc.id} canEdit={canEdit} />
+
+        {/* Version history above is the CONTROLLED record of revisions; this is
+            the audit trail of every change to the row itself — who withdrew it,
+            who reinstated it, who moved its effective date. Different question,
+            different answer, and an auditor asks both. */}
+        <div className="px-5 pb-4">
+          <RecordHistory type="document" id={doc.id} label="Change history (audit trail)" />
+        </div>
       </div>
     </div>
   );

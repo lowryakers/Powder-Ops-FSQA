@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, useEffect, Fragment } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload, apiDelete } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
@@ -513,8 +513,140 @@ function CreditCard({ credit, pid, canSettle, onChanged }) {
               </p>
             </div>
           )}
+
+          {/* What has ALREADY come off it, across every settled period. The
+              card only showed this period's draws, so "how did we get from
+              $200,000 to this number" had no answer on screen — which is the
+              question a running balance exists to answer, and the one the
+              other company will ask first. */}
+          <CreditHistory creditId={credit.id} />
+
+          {canSettle && <EditCredit credit={credit} onChanged={onChanged} />}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The settled draws behind the balance. */
+function CreditHistory({ creditId }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let live = true;
+    apiFetch(`/partners/credits/${creditId}/applications`)
+      .then(r => { if (live) setRows(r); })
+      .catch(e => { if (live) setErr(e.message); });
+    return () => { live = false; };
+  }, [creditId]);
+
+  if (err) return <p className="text-[11px] text-red-700">Could not load the history: {err}</p>;
+  if (!rows) return <p className="text-[11px] text-indigo-700">Loading history…</p>;
+  if (!rows.length) {
+    return <p className="text-[11px] text-indigo-700">Nothing has been settled against this credit yet.</p>;
+  }
+  return (
+    <div>
+      <p className="text-[11px] font-semibold text-indigo-900">Already settled against the credit</p>
+      <ul className="mt-0.5 space-y-0.5 max-h-40 overflow-y-auto">
+        {rows.map(a => (
+          <li key={a.id} className="text-[11px] text-indigo-800 flex justify-between gap-2">
+            <span className="truncate min-w-0">
+              {a.doc_number || a.description || a.document_id}
+              {a.period_end && <span className="text-indigo-600"> · period to {a.period_end}</span>}
+            </span>
+            <span className="shrink-0 font-medium">{money(a.amount)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Correcting a credit.
+ *
+ * The endpoint existed with nothing able to reach it, so a credit opened with
+ * the wrong figure or the wrong category could only be worked around. The
+ * server refuses to change the AMOUNT, CATEGORY or DIRECTION once anything has
+ * settled against it — those are what past settlements were calculated from —
+ * and says so; this form surfaces that refusal rather than hiding the fields,
+ * because "why can't I edit this" is answered by the message.
+ */
+function EditCredit({ credit, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    label: credit.label || '', amount: credit.amount ?? credit.facility ?? '',
+    applies_to: credit.applies_to || 'manufacturing', description: credit.description || '',
+    status: credit.status || 'active',
+  });
+  const [busy, setBusy] = useState(false);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="text-[11px] text-indigo-700 underline hover:text-indigo-900">
+        Correct this credit
+      </button>
+    );
+  }
+  const save = async () => {
+    setBusy(true);
+    try {
+      await apiPut(`/partners/credits/${credit.id}`, { ...form, amount: Number(form.amount) });
+      setOpen(false);
+      onChanged?.();
+    } catch (e) { window.alert(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="rounded-lg border border-indigo-300 bg-white p-2.5 space-y-2">
+      <p className="text-[11px] font-semibold text-indigo-900">Correct this credit</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="block">
+          <span className="block text-[10px] text-gray-600 mb-0.5">Label</span>
+          <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
+            className="w-full px-2 py-1 border border-gray-300 rounded text-xs" />
+        </label>
+        <label className="block">
+          <span className="block text-[10px] text-gray-600 mb-0.5">Facility</span>
+          <input type="number" step="any" min="0" value={form.amount}
+            onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+            className="w-full px-2 py-1 border border-gray-300 rounded text-xs" />
+        </label>
+        <label className="block">
+          <span className="block text-[10px] text-gray-600 mb-0.5">Applies to</span>
+          <select value={form.applies_to} onChange={e => setForm(f => ({ ...f, applies_to: e.target.value }))}
+            className="w-full px-2 py-1 border border-gray-300 rounded text-xs">
+            {['manufacturing', 'materials', 'freight', 'other'].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="block text-[10px] text-gray-600 mb-0.5">Status</span>
+          <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+            className="w-full px-2 py-1 border border-gray-300 rounded text-xs">
+            {['active', 'closed', 'void'].map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className="block">
+        <span className="block text-[10px] text-gray-600 mb-0.5">Note</span>
+        <textarea rows={2} value={form.description}
+          onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+          className="w-full px-2 py-1 border border-gray-300 rounded text-xs" />
+      </label>
+      <p className="text-[10px] text-gray-500">
+        The facility, category and direction are frozen once anything has settled against this credit — past
+        settlements were calculated from them. Close it and open a new one instead.
+      </p>
+      <div className="flex gap-2">
+        <button type="button" onClick={save} disabled={busy}
+          className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)}
+          className="px-3 py-1 rounded-lg border border-gray-300 text-gray-600 text-xs">Cancel</button>
+      </div>
     </div>
   );
 }
