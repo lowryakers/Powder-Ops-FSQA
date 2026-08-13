@@ -64,7 +64,12 @@ router.get('/:token', (req, res) => {
   const { db, partner } = ctx;
   const asOf = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.as_of || '')) ? req.query.as_of : endOfMonth();
   const r = currentReconciliation(db, partner.id, asOf);
-  const settlements = db.prepare(`SELECT id, period_end, net_amount, owed_to, status, paid_at, payment_reference
+  // `proof_filename` is on this list because the partner is exactly who asks
+  // for it. An explicit column list silently drops a new column — the same way
+  // `category` went missing from the reconcile query — and the symptom here
+  // would be a settlement that looks unproven on their side and proven on ours.
+  const settlements = db.prepare(`SELECT id, period_end, net_amount, owed_to, status, paid_at, payment_reference,
+      proof_filename
     FROM partner_settlements WHERE partner_id = ? ORDER BY period_end DESC LIMIT 24`).all(partner.id);
 
   // The credit, in full, from their side.
@@ -125,6 +130,20 @@ router.get('/:token', (req, res) => {
     ...(c ? { net_amount: -c.net_amount, amount_due: c.amount_due,
       owed_to: c.owed_to === 'us' ? 'powder-ops' : c.owed_to === 'them' ? 'you' : 'nobody' } : {}),
   });
+});
+
+/** The remittance advice for a settlement, from their side of the link. */
+router.get('/:token/settlements/:settlementId/proof', async (req, res) => {
+  const ctx = partnerFor(req, res); if (!ctx) return;
+  const { db, partner } = ctx;
+  // Scoped to THIS partner's settlements. A token is a credential for one
+  // account, and an id in a URL is not.
+  const st = db.prepare('SELECT * FROM partner_settlements WHERE id = ? AND partner_id = ?')
+    .get(req.params.settlementId, partner.id);
+  if (!st?.proof_storage_key) return res.status(404).json({ error: 'No proof of payment on this settlement.' });
+  const url = await presignGet(st.proof_storage_key, st.proof_filename);
+  if (!url) return res.status(503).json({ error: 'File storage is not configured.' });
+  res.json({ url, filename: st.proof_filename });
 });
 
 router.post('/:token/documents', uploadDocs, async (req, res) => {

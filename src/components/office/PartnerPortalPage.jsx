@@ -398,6 +398,15 @@ export default function PartnerPortalPage({ token }) {
                     {s.period_end} · {money(Math.abs(s.net_amount))}{' '}
                     <span className="text-gray-500">
                       {s.owed_to === 'us' ? 'you paid Powder Ops' : s.owed_to === 'them' ? 'Powder Ops paid you' : ''}
+                      {s.proof_filename && (
+                        <button type="button" onClick={async () => {
+                          try {
+                            const r = await fetch(`/api/partner-portal/${token}/settlements/${s.id}/proof`);
+                            const j = await r.json();
+                            if (j.url) window.open(j.url, '_blank'); else window.alert(j.error || 'Not available.');
+                          } catch { window.alert('Could not open the file.'); }
+                        }} className="ml-2 text-[11px] text-indigo-700 underline">proof of payment</button>
+                      )}
                     </span>
                   </span>
                   <span className="text-xs text-gray-400 whitespace-nowrap">

@@ -190,6 +190,78 @@ function DocumentForm({ partner, initial, onClose, onSaved }) {
   );
 }
 
+/**
+ * Put the invoice on a document that hasn't got one.
+ *
+ * There was no way to do this at all, which is how the ledger ends up with
+ * rows that were typed in: an upload attempted while storage was off is
+ * refused outright, so whoever hit that entered the numbers by hand and the
+ * paperwork never caught up.
+ */
+function AttachFile({ docId, label, onDone }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <label className={`inline-flex items-center gap-1 text-xs cursor-pointer ${busy ? 'text-gray-400' : 'text-powder-600 hover:underline'}`}>
+      <Upload size={11} /> {busy ? 'Uploading…' : label}
+      <input type="file" className="hidden" disabled={busy}
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          setBusy(true);
+          try {
+            const fd = new FormData();
+            fd.append('files', f);
+            await apiUpload(`/partners/documents/${docId}/file`, fd);
+            onDone?.();
+          } catch (err) { window.alert(err.message); }
+          finally { setBusy(false); e.target.value = ''; }
+        }} />
+    </label>
+  );
+}
+
+/**
+ * Proof that the money moved.
+ *
+ * The payment reference is what somebody typed; the remittance advice is the
+ * thing the other company asks for when a settlement is questioned later.
+ */
+function PaymentProof({ settlement, canSettle, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const open = async () => {
+    try {
+      const { url } = await apiFetch(`/partners/settlements/${settlement.id}/proof`);
+      if (url) window.open(url, '_blank');
+    } catch (e) { window.alert(e.message); }
+  };
+  if (settlement.proof_filename) {
+    return (
+      <button onClick={open} className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline">
+        <ExternalLink size={10} /> {settlement.proof_filename}
+      </button>
+    );
+  }
+  if (!canSettle) return <span className="text-[11px] text-gray-400">no proof attached</span>;
+  return (
+    <label className={`inline-flex items-center gap-1 text-[11px] cursor-pointer ${busy ? 'text-gray-400' : 'text-amber-700 hover:underline'}`}>
+      <Upload size={10} /> {busy ? 'Uploading…' : 'Attach proof of payment'}
+      <input type="file" className="hidden" disabled={busy}
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          setBusy(true);
+          try {
+            const fd = new FormData();
+            fd.append('files', f);
+            await apiUpload(`/partners/settlements/${settlement.id}/proof`, fd);
+            onDone?.();
+          } catch (err) { window.alert(err.message); }
+          finally { setBusy(false); e.target.value = ''; }
+        }} />
+    </label>
+  );
+}
+
 /* ── The number ───────────────────────────────────────────────────────────── */
 
 /**
@@ -550,6 +622,10 @@ export default function PartnerReconPanel({ user }) {
     await act(() => apiPost(`/partners/${pid}/settle`, {
       as_of: recon.as_of, expected_net: expected, payment_reference: reference,
     }));
+    // The proof is attached to the settlement that now exists, rather than
+    // riding along with the settle call — an upload failure must never be in
+    // the path of recording a payment. It appears on the settlement below.
+    window.alert('Settled. Attach the remittance advice or bank confirmation to it in Settlement history below.');
   };
 
   if (!partner) {
@@ -725,15 +801,30 @@ export default function PartnerReconPanel({ user }) {
                             { label: 'Dispute', value: d.disputed_reason ? `${d.disputed_reason} — ${d.disputed_by}` : null },
                           ]} />
                           <LineItems doc={d} money={money} onRead={reloadAll} />
-                          {d.filename && (
-                            <button onClick={async () => {
-                              try {
-                                const { url } = await apiFetch(`/partners/documents/${d.id}/file`);
-                                if (url) window.open(url, '_blank');
-                              } catch (e) { window.alert(e.message); }
-                            }} className="mt-2 inline-flex items-center gap-1 text-xs text-powder-600 hover:underline">
-                              <ExternalLink size={11} /> {d.filename}{d.has_text ? ' · searchable' : ''}
-                            </button>
+                          {d.filename ? (
+                            <div className="mt-2 flex items-center gap-3 flex-wrap">
+                              <button onClick={async () => {
+                                try {
+                                  const { url } = await apiFetch(`/partners/documents/${d.id}/file`);
+                                  if (url) window.open(url, '_blank');
+                                } catch (e) { window.alert(e.message); }
+                              }} className="inline-flex items-center gap-1 text-xs text-powder-600 hover:underline">
+                                <ExternalLink size={11} /> {d.filename}{d.has_text ? ' · searchable' : ''}
+                              </button>
+                              {canSettle && !d.settlement_id && (
+                                <AttachFile docId={d.id} label="Replace" onDone={reloadAll} />
+                              )}
+                            </div>
+                          ) : (
+                            /* A row with no invoice behind it. Said plainly,
+                               because a ledger of typed numbers is what the
+                               partner will question first. */
+                            <div className="mt-2 flex items-center gap-3 flex-wrap">
+                              <span className="text-xs text-amber-700">No file attached</span>
+                              {canSettle && !d.settlement_id && (
+                                <AttachFile docId={d.id} label="Attach the invoice" onDone={reloadAll} />
+                              )}
+                            </div>
                           )}
                         </DetailRow>
                       )}
@@ -765,6 +856,9 @@ export default function PartnerReconPanel({ user }) {
                   {' '}{s.document_count} document{s.document_count === 1 ? '' : 's'}
                   {s.payment_reference ? ` · ref ${s.payment_reference}` : ''}
                 </p>
+                <div className="mt-1">
+                  <PaymentProof settlement={s} canSettle={canSettle} onDone={reloadAll} />
+                </div>
               </div>
               <span className="text-xs text-gray-400 whitespace-nowrap">
                 paid {(s.paid_at || '').slice(0, 10)} · {s.paid_by}

@@ -515,6 +515,115 @@ router.put('/documents/:docId/category', (req, res) => {
   res.json({ ...after, extracted_text: undefined });
 });
 
+/**
+ * Attach (or replace) the file on a document that already exists.
+ *
+ * There was no way to do this, which is how a ledger ends up with rows that
+ * were typed in and no invoice behind them: an upload attempted while storage
+ * was off is REFUSED outright (createDocument 503s on the whole call rather
+ * than filing a document with a missing file), so whoever hit that entered the
+ * numbers by hand and the paperwork never caught up.
+ *
+ * Replacing is allowed and the old object is deleted, because the usual reason
+ * is that the first scan was the wrong page. Refused once settled: the document
+ * is part of what was paid against.
+ */
+router.post('/documents/:docId/file', uploadDocs, async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!canSettle(req.user)) return res.status(403).json({ error: 'Only the office or an admin can attach a document file.' });
+    const db = getDb();
+    const before = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(req.params.docId);
+    if (!before) return res.status(404).json({ error: 'Document not found' });
+    if (before.settlement_id) {
+      return res.status(400).json({ error: 'This document is part of a settled payment and cannot be changed.' });
+    }
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured — set the R2 variables.' });
+    const f = files[0];
+    if (!f) return res.status(400).json({ error: 'No file received.' });
+
+    const buf = readFileSync(f.path);
+    const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+    const key = `partners/${before.partner_id}/${before.id}-${safe}`;
+    await putObject(key, buf, f.mimetype);
+    // Best effort: a scan that cannot be read is still the document.
+    let text = null;
+    try { text = await extractInvoiceText(buf, f.mimetype, f.originalname); } catch { text = null; }
+
+    const old = before.storage_key && before.storage_key !== key ? before.storage_key : null;
+    db.prepare(`UPDATE partner_documents SET storage_key = ?, filename = ?, content_type = ?, size = ?,
+        extracted_text = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?`)
+      .run(key, (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null,
+        text, req.user?.name || null, before.id);
+    if (old) { try { await deleteObject(old); } catch { /* the row is what matters */ } }
+
+    const after = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(before.id);
+    logAudit(req.user, 'update', 'partner_document', before.id,
+      { field: 'file', filename: after.filename, replaced: !!old }, null, null, after.doc_number || after.id);
+    res.json({ ...after, extracted_text: undefined, has_text: !!after.extracted_text });
+  } catch (err) {
+    res.status(400).json({ error: uploadErrorMessage(err) });
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+/**
+ * Proof that the money actually moved.
+ *
+ * `payment_reference` is what somebody typed; the remittance advice or bank
+ * confirmation is the thing that shows it happened, and it is what the other
+ * company asks for when a settlement is questioned a year later.
+ *
+ * Attached AFTER the settlement rather than during it, deliberately: the settle
+ * call recomputes the number and refuses a stale one, and making it multipart
+ * so a file could ride along would put an upload failure in the path of
+ * recording a payment. A settlement with no proof yet is honest and fixable; a
+ * payment that failed to record because a PDF was too big is not.
+ */
+router.post('/settlements/:settlementId/proof', uploadDocs, async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!canSettle(req.user)) return res.status(403).json({ error: 'Only the office or an admin can attach proof of payment.' });
+    const db = getDb();
+    const st = db.prepare('SELECT * FROM partner_settlements WHERE id = ?').get(req.params.settlementId);
+    if (!st) return res.status(404).json({ error: 'Settlement not found' });
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured — set the R2 variables.' });
+    const f = files[0];
+    if (!f) return res.status(400).json({ error: 'No file received.' });
+
+    const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+    const key = `partners/${st.partner_id}/settlements/${st.id}-${safe}`;
+    await putObject(key, readFileSync(f.path), f.mimetype);
+    const old = st.proof_storage_key && st.proof_storage_key !== key ? st.proof_storage_key : null;
+    db.prepare(`UPDATE partner_settlements SET proof_storage_key = ?, proof_filename = ?,
+        proof_content_type = ?, proof_size = ?, proof_uploaded_by = ?, proof_uploaded_at = datetime('now')
+      WHERE id = ?`).run(key, (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null,
+      req.user?.name || null, st.id);
+    if (old) { try { await deleteObject(old); } catch { /* the row is what matters */ } }
+
+    const after = db.prepare('SELECT * FROM partner_settlements WHERE id = ?').get(st.id);
+    logAudit(req.user, 'update', 'partner_settlement', st.id,
+      { field: 'payment_proof', filename: after.proof_filename, replaced: !!old }, null, null,
+      `${st.period_end} proof of payment`);
+    res.json(after);
+  } catch (err) {
+    res.status(400).json({ error: uploadErrorMessage(err) });
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+/** The proof itself, for whoever can see the ledger. */
+router.get('/settlements/:settlementId/proof', async (req, res) => {
+  const db = getDb();
+  const st = db.prepare('SELECT * FROM partner_settlements WHERE id = ?').get(req.params.settlementId);
+  if (!st?.proof_storage_key) return res.status(404).json({ error: 'No proof of payment on this settlement.' });
+  const url = await presignGet(st.proof_storage_key, st.proof_filename);
+  if (!url) return res.status(503).json({ error: 'File storage is not configured.' });
+  res.json({ url, filename: st.proof_filename });
+});
+
 // "Approve as final" — the goods went out, or the production run finished. This
 // is what lets a document into the number.
 router.post('/documents/:docId/finalize', (req, res) => {

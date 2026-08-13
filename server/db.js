@@ -1335,6 +1335,16 @@ function initSchema() {
       paid_at TEXT,
       paid_by TEXT,
       payment_reference TEXT,
+      -- Proof of payment. A reference number is what somebody typed; the
+      -- remittance advice or bank confirmation is the thing that shows the
+      -- money moved, and it is what the other company asks for when a
+      -- settlement is disputed a year later.
+      proof_storage_key TEXT,
+      proof_filename TEXT,
+      proof_content_type TEXT,
+      proof_size INTEGER,
+      proof_uploaded_by TEXT,
+      proof_uploaded_at TEXT,
       notes TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       created_by TEXT,
