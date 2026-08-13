@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiFetch, apiUpload } from '../../hooks/useApi';
+import ProductFileImport from './ProductFileImport.jsx';
 import {
   FileText, Link2, Upload, CheckCircle2, XCircle, Clock, Copy, Check,
   AlertTriangle, Trash2, Plus, Send,
@@ -360,7 +361,7 @@ export function NfpForSku({ sku, formulaRev, canEdit, onChanged }) {
 // `data` comes from the panel above, which fetches it so the tab can carry the
 // count. One fetch, one number — the badge and this board cannot disagree.
 /** The roll-up: what is waiting, and what has nothing on file. */
-export default function NfpBoard({ data, onOpenSku }) {
+export default function NfpBoard({ data, onOpenSku, canManage, onChanged }) {
   if (!data) return <p className="text-sm text-gray-400">Loading…</p>;
 
   const versions = data.versions || [];
@@ -398,6 +399,13 @@ export default function NfpBoard({ data, onOpenSku }) {
           </div>
         )}
       </div>
+
+      {/* Directly above the list of what is missing, because that list IS the
+          reason to do this — a folder of finished panels in Drive and 118
+          products with nothing on file. */}
+      {canManage && (
+        <ProductFileImport target="nfp" title="Import panels from a folder" onDone={onChanged} />
+      )}
 
       {/* The list that earns its keep. A catalogue of the panels that exist
           cannot tell you which product is about to go to artwork without one. */}

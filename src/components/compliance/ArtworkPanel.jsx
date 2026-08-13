@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApiGet, apiFetch, apiUpload } from '../../hooks/useApi';
+import ProductFileImport from './ProductFileImport.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import {
   Image as ImageIcon, Search, X, AlertTriangle, CheckCircle2, XCircle,
@@ -286,6 +287,10 @@ export default function ArtworkPanel() {
   const [status, setStatus] = useState('');
   const [open, setOpen] = useState(null);
   const [showMissing, setShowMissing] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const { user } = useAuth();
+  const canManage = ['admin', 'supervisor'].includes(user?.role)
+    || ['qa', 'quality'].includes((user?.department || '').toLowerCase());
 
   const packs = useMemo(() => data?.packs || [], [data]);
   const missing = useMemo(() => data?.missing || [], [data]);
@@ -311,7 +316,20 @@ export default function ArtworkPanel() {
           What is on the pack, which revision it is, and whether it checks out against
           the master list. Versions file themselves when a proofing job finishes.
         </p>
+        {canManage && !showImport && (
+          <button type="button" onClick={() => setShowImport(true)}
+            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50">
+            <Upload size={14} /> Import from a folder
+          </button>
+        )}
       </div>
+
+      {/* Same importer as the panels — the job is identical, and Shaun's
+          finished files live in a Drive folder the same way. */}
+      {canManage && showImport && (
+        <ProductFileImport target="artwork" title="Import artwork from a folder"
+          onDone={() => { refresh(); setShowImport(false); }} />
+      )}
 
       {failing > 0 && (
         <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">

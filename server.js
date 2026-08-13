@@ -84,6 +84,7 @@ import coaRoutes from './server/api/coa.js';
 import productRoutes from './server/api/products.js';
 import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api/artwork.js';
 import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
+import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedDilutionSchedules } from './server/dilution-seed.js';
@@ -1614,6 +1615,9 @@ app.use('/api/artwork', requireModuleWrite('artwork'), artworkRoutes);
 // account. Mounted before the guarded router, outside requireModuleWrite.
 app.use('/api/nfp-link', nfpLinkRoutes);
 app.use('/api/nfp', requireModuleWrite('products'), nfpRoutes);
+// One importer for panels and artwork. Guarded on `products` because that is
+// the grant that owns the catalogue; the target decides which table it writes.
+app.use('/api/product-files', requireModuleWrite('products'), productFileImportRoutes);
 app.use('/api/office', officeRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/procurement', procurementRoutes);

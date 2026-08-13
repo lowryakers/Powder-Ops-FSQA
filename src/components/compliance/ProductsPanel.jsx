@@ -330,7 +330,8 @@ export default function ProductsPanel() {
           badge: health?.affected || undefined, badgeTone: health?.affected ? 'alert' : undefined },
       ]} />
 
-      {view === 'nfp' && <NfpBoard data={nfp} onOpenSku={(s) => { setView('list'); setOpen(s); }} />}
+      {view === 'nfp' && <NfpBoard data={nfp} onOpenSku={(s) => { setView('list'); setOpen(s); }}
+        canManage={canEdit} onChanged={refreshNfp} />}
       {view === 'health' && <ProductDataHealth data={health} />}
 
       {view === 'list' && (<>
