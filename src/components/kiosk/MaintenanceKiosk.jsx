@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useKioskLang } from './useKioskLang.js';
+import KioskLangToggle from './KioskLangToggle.jsx';
 import { Wrench, CheckCircle, AlertTriangle, X } from 'lucide-react';
 
 const EMPTY = { employee_name: '', tool_box: '', asset_tag: '', condition_out: 'Good' };
 
 export default function MaintenanceKiosk({ defaultName = '' }) {
+  const { lang, toggle, t } = useKioskLang();
   const [form, setForm] = useState({ ...EMPTY, employee_name: defaultName });
   // Picked items: [{ name, qty, use_spec }] — use_spec only for chemicals.
   const [picked, setPicked] = useState([]);
@@ -28,7 +31,7 @@ export default function MaintenanceKiosk({ defaultName = '' }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!picked.length) { setError('Pick at least one item.'); return; }
+    if (!picked.length) { setError(t('k_pick_one_item')); return; }
     const missingSpec = picked.find(p => isChemical(p.name) && !p.use_spec);
     if (missingSpec) { setError(`Pick a use specification for ${missingSpec.name}.`); return; }
     setSaving(true); setError('');
@@ -53,7 +56,7 @@ export default function MaintenanceKiosk({ defaultName = '' }) {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
         <div className="text-center max-w-sm">
           <CheckCircle size={64} className="mx-auto text-green-500 mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-3">{created.length === 1 ? 'Item Signed Out' : `${created.length} Items Signed Out`}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-3">{created.length === 1 ? t('k_item_signed_out') : `${created.length} × ${t('k_item_signed_out')}`}</h1>
           <div className="text-left bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 mb-4">
             {created.map(c => (
               <div key={c.record_number} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
@@ -62,10 +65,10 @@ export default function MaintenanceKiosk({ defaultName = '' }) {
               </div>
             ))}
           </div>
-          <p className="text-sm text-gray-500 mb-6">Return is completed by QA in the app.</p>
+          <p className="text-sm text-gray-500 mb-6">{t('k_return_by_qa')}</p>
           <button onClick={() => { setResult(null); setPicked([]); setForm({ ...EMPTY, employee_name: form.employee_name, tool_box: form.tool_box }); }}
             className="px-6 py-3 bg-powder-600 text-white rounded-xl font-bold hover:bg-powder-700">
-            Sign Out More
+            {t('k_sign_out_more')}
           </button>
         </div>
       </div>
@@ -77,30 +80,33 @@ export default function MaintenanceKiosk({ defaultName = '' }) {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="max-w-lg mx-auto">
+        <div className="flex justify-end mb-2">
+          <KioskLangToggle lang={lang} onToggle={toggle} />
+        </div>
         <div className="text-center mb-6">
           <div className="h-12 w-12 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3">
             <Wrench size={24} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Equipment/Tool/Chemical Sign In-Out</h1>
-          <p className="text-sm text-gray-500 mt-1">Sign out one or more items — tools, equipment, or chemicals</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('k_maint_title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('k_maint_sub')}</p>
         </div>
 
         <form onSubmit={submit} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Your Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_your_name')}</label>
               <input required value={form.employee_name} onChange={e => set('employee_name', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Enter your name" />
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_enter_name')} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tool Box #</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_tool_box')}</label>
               <input value={form.tool_box} onChange={e => set('tool_box', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="e.g. 2" />
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_eg_2')} />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Items * <span className="text-gray-400 font-normal">(add as many as you're taking)</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_items')}</label>
             {picked.length > 0 && (
               <div className="space-y-1.5 mb-2">
                 {picked.map(p => (
@@ -139,14 +145,14 @@ export default function MaintenanceKiosk({ defaultName = '' }) {
 
           {picked.length === 1 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Asset Tag</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_asset_tag')}</label>
               <input value={form.asset_tag} onChange={e => set('asset_tag', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Optional" />
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_optional')} />
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Condition</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('k_condition')}</label>
             <div className="grid grid-cols-2 gap-2">
               {['Good', 'Bad'].map(c => (
                 <button key={c} type="button" onClick={() => set('condition_out', c)}

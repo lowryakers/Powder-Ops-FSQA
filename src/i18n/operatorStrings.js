@@ -183,6 +183,96 @@ const strings = {
   toast_na: { en: 'Marked not applicable', es: 'Marcada como no aplica' },
   toast_batch: { en: 'tasks completed', es: 'tareas completadas' },
   toast_batch_fail: { en: 'Batch complete failed', es: 'Error al completar lote' },
+  // ── Kiosks (public, no login) ───────────────────────────────────────────────
+  // The four big-tap forms on the floor phones and tablets. They were English
+  // only, which for half this shift means filling in a compliance form they
+  // cannot read — the same reason the Operator View's strings are here.
+  // The Spanish is plant vocabulary, not a literal gloss: a "sign out" is a
+  // "registro de salida", and the scale form's warning is worded as an
+  // instruction because that is what it is.
+  k_lang: { en: 'Español', es: 'English' },
+
+  // Shared across kiosks
+  k_your_name: { en: 'Your Name *', es: 'Su Nombre *' },
+  k_enter_name: { en: 'Enter your name', es: 'Escriba su nombre' },
+  k_optional: { en: 'Optional', es: 'Opcional' },
+  k_qty: { en: 'Qty', es: 'Cantidad' },
+  k_condition: { en: 'Condition', es: 'Condición' },
+  k_something_wrong: { en: 'Something went wrong', es: 'Algo salió mal' },
+  k_submitting: { en: 'Submitting…', es: 'Enviando…' },
+
+  // Component Sign In/Out
+  k_comp_title: { en: 'Component Sign In/Out', es: 'Registro de Componentes' },
+  k_comp_sub: { en: 'Log components pulled from or returned to inventory', es: 'Registre componentes retirados o devueltos al inventario' },
+  k_direction: { en: 'Direction', es: 'Movimiento' },
+  k_pulling: { en: 'Pulling from inventory', es: 'Retirando del inventario' },
+  k_returning: { en: 'Returning to inventory', es: 'Devolviendo al inventario' },
+  k_item_name: { en: 'Item Name *', es: 'Nombre del Artículo *' },
+  k_part_number: { en: 'Part Number', es: 'Número de Parte' },
+  k_lot_number: { en: 'Lot Number', es: 'Número de Lote' },
+  k_mo_number: { en: 'MO #', es: 'MO #' },
+  k_job_for: { en: "Job it's for", es: 'Para qué trabajo' },
+  k_eg_wand: { en: 'e.g. Metal detector test wand', es: 'ej. Varilla de prueba del detector de metales' },
+  k_eg_2: { en: 'e.g. 2', es: 'ej. 2' },
+  k_sign_out: { en: 'Sign Out', es: 'Registrar Salida' },
+  k_logged_as: { en: 'Logged as', es: 'Registrado como' },
+  k_log_another: { en: 'Log Another', es: 'Registrar Otro' },
+
+  // Knife / Blade
+  k_knife_title: { en: 'Knife / Razor Blade / Scissor Sign In/Out', es: 'Registro de Cuchillos / Navajas / Tijeras' },
+  k_knife_sub: { en: 'Tap your knife to check it out or return it', es: 'Toque su cuchillo para retirarlo o devolverlo' },
+  k_search_knife: { en: 'Search by knife #...', es: 'Buscar por # de cuchillo...' },
+  k_no_knives: { en: 'No knives registered yet.', es: 'Aún no hay cuchillos registrados.' },
+  k_available: { en: 'Available', es: 'Disponible' },
+  k_available_out: { en: 'Available to check out', es: 'Disponible para retirar' },
+  k_issued_to: { en: 'Currently issued to', es: 'Actualmente con' },
+  k_blade_condition: { en: 'Blade Condition', es: 'Condición de la Hoja' },
+  k_check_out: { en: 'Check Out', es: 'Retirar' },
+  k_check_in: { en: 'Check In', es: 'Devolver' },
+  k_checked_out: { en: 'Checked Out', es: 'Retirado' },
+  k_checked_in: { en: 'Checked In', es: 'Devuelto' },
+  k_condition_recorded: { en: 'Condition recorded:', es: 'Condición registrada:' },
+  k_back_to_list: { en: 'Back to list', es: 'Volver a la lista' },
+  k_done: { en: 'Done', es: 'Listo' },
+  k_need_name: { en: 'Please enter your name.', es: 'Por favor escriba su nombre.' },
+
+  // Equipment / Tool / Chemical
+  k_maint_title: { en: 'Equipment/Tool/Chemical Sign In-Out', es: 'Registro de Equipo / Herramienta / Químico' },
+  k_maint_sub: { en: 'Sign out one or more items — tools, equipment, or chemicals', es: 'Registre la salida de uno o más artículos — herramientas, equipo o químicos' },
+  k_items: { en: 'Items *', es: 'Artículos *' },
+  k_select_item: { en: 'Select an item…', es: 'Seleccione un artículo…' },
+  k_add_another: { en: 'Add another item…', es: 'Agregar otro artículo…' },
+  k_use_spec: { en: 'Use specification (required for chemicals)…', es: 'Especificación de uso (obligatoria para químicos)…' },
+  k_food_contact: { en: 'Food Contact', es: 'Contacto con Alimentos' },
+  k_non_food_contact: { en: 'Non-Food Contact', es: 'Sin Contacto con Alimentos' },
+  k_food_grade: { en: 'Food Grade', es: 'Grado Alimenticio' },
+  k_non_food_grade: { en: 'Non-Food Grade', es: 'No Grado Alimenticio' },
+  k_tool_box: { en: 'Tool Box #', es: '# de Caja de Herramientas' },
+  k_asset_tag: { en: 'Asset Tag', es: 'Etiqueta de Activo' },
+  k_pick_one_item: { en: 'Pick at least one item.', es: 'Seleccione al menos un artículo.' },
+  k_item_signed_out: { en: 'Item Signed Out', es: 'Artículo Registrado' },
+  k_return_by_qa: { en: 'Return is completed by QA in the app.', es: 'La devolución la completa QA en la aplicación.' },
+  k_sign_out_more: { en: 'Sign Out More', es: 'Registrar Más' },
+
+  // Scale verification
+  k_scale_title: { en: 'Scale Verification', es: 'Verificación de Báscula' },
+  k_which_scale: { en: 'Which scale are you checking?', es: '¿Qué báscula está verificando?' },
+  k_different_scale: { en: 'Different scale', es: 'Otra báscula' },
+  k_pick_different_form: { en: 'Pick a different form', es: 'Elegir otro formulario' },
+  k_loading_forms: { en: 'Loading forms…', es: 'Cargando formularios…' },
+  k_room_no: { en: 'Room #', es: '# de Sala' },
+  k_eg_batching1: { en: 'e.g. Batching 1', es: 'ej. Batching 1' },
+  k_weights_serial: { en: 'Weights serial #', es: '# de serie de las pesas' },
+  k_readings: { en: 'Readings', es: 'Lecturas' },
+  k_comments: { en: 'Comments', es: 'Comentarios' },
+  k_first_last: { en: 'First and last name', es: 'Nombre y apellido' },
+  k_submit_verification: { en: 'Submit Verification', es: 'Enviar Verificación' },
+  k_verification_passed: { en: 'Verification Passed', es: 'Verificación Aprobada' },
+  k_recorded_failed: { en: 'Recorded — FAILED', es: 'Registrado — FALLÓ' },
+  // Worded as an instruction, because that is what it is.
+  k_do_not_use: { en: 'Do not use this scale. Tell your supervisor and QA now.', es: 'No use esta báscula. Avise a su supervisor y a QA ahora.' },
+  k_awaiting_qa: { en: 'Awaiting QA verification in Calibration.', es: 'Pendiente de verificación por QA en Calibración.' },
+  k_check_another: { en: 'Check Another Scale', es: 'Verificar Otra Báscula' },
 };
 
 export function createTranslator(lang = 'en') {

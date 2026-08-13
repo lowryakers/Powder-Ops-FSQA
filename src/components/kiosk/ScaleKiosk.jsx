@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Scale, CheckCircle, AlertTriangle, ChevronLeft } from 'lucide-react';
 import ScaleProcedureCard from '../common/ScaleProcedureCard.jsx';
+import { useKioskLang } from './useKioskLang.js';
+import KioskLangToggle from './KioskLangToggle.jsx';
 
 // Scale Calibration Verification — Forms 417-01 … 417-05.
 //
@@ -22,6 +24,7 @@ function pointState(point, raw) {
 }
 
 export default function ScaleKiosk({ defaultName = '' }) {
+  const { lang, toggle, t } = useKioskLang();
   const [forms, setForms] = useState([]);
   // The directions, so the person at the scale reads them where they type.
   const [procedure, setProcedure] = useState(null);
@@ -84,7 +87,7 @@ export default function ScaleKiosk({ defaultName = '' }) {
             ? <AlertTriangle size={64} className="mx-auto text-red-500 mb-4" />
             : <CheckCircle size={64} className="mx-auto text-green-500 mb-4" />}
           <h1 className="text-2xl font-bold text-gray-900 mb-1">
-            {failed ? 'Recorded — FAILED' : 'Verification Passed'}
+            {failed ? t('k_recorded_failed') : t('k_verification_passed')}
           </h1>
           <p className="text-gray-600 mb-1">{result.form_title}</p>
           <p className="text-sm text-gray-500 mb-4">
@@ -102,17 +105,17 @@ export default function ScaleKiosk({ defaultName = '' }) {
           </div>
           {failed && (
             <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">
-              Do not use this scale. Tell your supervisor and QA now.
+              {t('k_do_not_use')}
             </p>
           )}
-          <p className="text-xs text-gray-400 mb-5">Awaiting QA verification in Calibration.</p>
+          <p className="text-xs text-gray-400 mb-5">{t('k_awaiting_qa')}</p>
           <div className="flex flex-col gap-2">
             <button onClick={() => startOver(true)}
               className="px-6 py-3 bg-powder-600 text-white rounded-xl font-bold hover:bg-powder-700">
-              Check Another Scale
+              {t('k_check_another')}
             </button>
             <button onClick={() => startOver(false)} className="text-sm text-gray-500 hover:text-gray-700">
-              Pick a different form
+              {t('k_pick_different_form')}
             </button>
           </div>
         </div>
@@ -125,12 +128,15 @@ export default function ScaleKiosk({ defaultName = '' }) {
     return (
       <div className="min-h-screen bg-gray-50 px-4 py-8">
         <div className="max-w-lg mx-auto">
+          <div className="flex justify-end mb-2">
+            <KioskLangToggle lang={lang} onToggle={toggle} />
+          </div>
           <div className="text-center mb-6">
             <div className="h-12 w-12 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3">
               <Scale size={24} className="text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Scale Verification</h1>
-            <p className="text-sm text-gray-500 mt-1">Which scale are you checking?</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('k_scale_title')}</h1>
+            <p className="text-sm text-gray-500 mt-1">{t('k_which_scale')}</p>
           </div>
           <div className="space-y-2">
             {forms.map(f => (
@@ -142,7 +148,7 @@ export default function ScaleKiosk({ defaultName = '' }) {
                 </div>
               </button>
             ))}
-            {forms.length === 0 && <p className="text-center text-sm text-gray-400 py-8">Loading forms…</p>}
+            {forms.length === 0 && <p className="text-center text-sm text-gray-400 py-8">{t('k_loading_forms')}</p>}
           </div>
         </div>
       </div>
@@ -155,9 +161,12 @@ export default function ScaleKiosk({ defaultName = '' }) {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="max-w-lg mx-auto">
-        <button onClick={() => setForm(null)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-3">
-          <ChevronLeft size={15} /> Different scale
-        </button>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <button onClick={() => setForm(null)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+            <ChevronLeft size={15} /> {t('k_different_scale')}
+          </button>
+          <KioskLangToggle lang={lang} onToggle={toggle} />
+        </div>
         <div className="text-center mb-6">
           <div className="h-12 w-12 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3">
             <Scale size={24} className="text-white" />
@@ -177,15 +186,15 @@ export default function ScaleKiosk({ defaultName = '' }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Room #</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('k_room_no')}</label>
               <input list="scale-rooms" value={meta.room} onChange={e => set('room', e.target.value)}
-                className={inputCls} placeholder="e.g. Batching 1" />
+                className={inputCls} placeholder={t('k_eg_batching1')} />
               <datalist id="scale-rooms">
                 {rooms.map(r => <option key={r} value={r} />)}
               </datalist>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Weights serial #</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('k_weights_serial')}</label>
               <input value={meta.weights_serial} onChange={e => set('weights_serial', e.target.value)} className={inputCls} />
             </div>
             <div>
@@ -239,17 +248,17 @@ export default function ScaleKiosk({ defaultName = '' }) {
               Your name <span className="text-red-600">*</span>
             </label>
             <input required value={meta.performed_by} onChange={e => set('performed_by', e.target.value)}
-              className={inputCls} placeholder="First and last name" />
+              className={inputCls} placeholder={t('k_first_last')} />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Comments</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('k_comments')}</label>
             <textarea value={meta.notes} onChange={e => set('notes', e.target.value)} rows={2} className={inputCls} />
           </div>
 
           <button type="submit" disabled={saving || !complete}
             className="w-full py-3.5 bg-powder-600 text-white rounded-xl font-bold text-lg hover:bg-powder-700 disabled:opacity-50">
-            {saving ? 'Saving…' : 'Submit Verification'}
+            {saving ? t('k_submitting') : t('k_submit_verification')}
           </button>
         </form>
       </div>

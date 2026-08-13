@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Scissors, CheckCircle, AlertTriangle, Search, ArrowLeft, LogOut, LogIn } from 'lucide-react';
+import { useKioskLang } from './useKioskLang.js';
+import KioskLangToggle from './KioskLangToggle.jsx';
 
 export default function KnifeKiosk({ defaultName = '' }) {
+  const { lang, toggle, t } = useKioskLang();
   const [knives, setKnives] = useState([]);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
@@ -21,7 +24,7 @@ export default function KnifeKiosk({ defaultName = '' }) {
   }, [knives, query]);
 
   const submit = async () => {
-    if (!name.trim()) { setError('Please enter your name.'); return; }
+    if (!name.trim()) { setError(t('k_need_name')); return; }
     setSaving(true); setError('');
     try {
       const res = await fetch('/api/submit/knife', {
@@ -71,7 +74,7 @@ export default function KnifeKiosk({ defaultName = '' }) {
       <div className="min-h-screen bg-gray-50 px-4 py-8">
         <div className="max-w-lg mx-auto">
           <button onClick={() => { setSelected(null); setError(''); }} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
-            <ArrowLeft size={16} /> Back to list
+            <ArrowLeft size={16} /> {t('k_back_to_list')}
           </button>
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-5">
             <div className="text-center">
@@ -82,18 +85,18 @@ export default function KnifeKiosk({ defaultName = '' }) {
               <p className="text-sm text-gray-500 mt-1">
                 {isIssued
                   ? <>Currently issued to <span className="font-medium text-gray-700">{selected.issued_to || 'someone'}</span></>
-                  : 'Available to check out'}
+                  : t('k_available_out')}
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Your Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_your_name')}</label>
               <input value={name} onChange={e => setName(e.target.value)} autoFocus
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Enter your name" />
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_enter_name')} />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Blade Condition</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('k_blade_condition')}</label>
               <div className="grid grid-cols-2 gap-2">
                 {['Good', 'Bad'].map(c => (
                   <button key={c} type="button" onClick={() => setCondition(c)}
@@ -132,25 +135,28 @@ export default function KnifeKiosk({ defaultName = '' }) {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="max-w-lg mx-auto">
+        <div className="flex justify-end mb-2">
+          <KioskLangToggle lang={lang} onToggle={toggle} />
+        </div>
         <div className="text-center mb-6">
           <div className="h-12 w-12 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3">
             <Scissors size={24} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Knife / Razor Blade / Scissor Sign In/Out</h1>
-          <p className="text-sm text-gray-500 mt-1">Tap your knife to check it out or return it</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('k_knife_title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('k_knife_sub')}</p>
         </div>
 
         <div className="relative mb-4">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input value={query} onChange={e => setQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base"
-            placeholder="Search by knife #..." />
+            placeholder={t('k_search_knife')} />
         </div>
 
         <div className="space-y-2">
           {filtered.length === 0 && (
             <div className="text-center py-10 text-gray-500 bg-white rounded-2xl border border-gray-200">
-              {knives.length === 0 ? 'No knives registered yet.' : `No knives match "${query}"`}
+              {knives.length === 0 ? t('k_no_knives') : `No knives match "${query}"`}
             </div>
           )}
           {filtered.map(k => {

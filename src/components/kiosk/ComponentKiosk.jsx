@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useKioskLang } from './useKioskLang.js';
+import KioskLangToggle from './KioskLangToggle.jsx';
 import { PackageCheck, CheckCircle, AlertTriangle, LogOut, LogIn } from 'lucide-react';
 
 const EMPTY = { direction: 'Out', item_name: '', part_number: '', lot_number: '', mo_number: '', qty_pulled: '', person: '' };
 
 export default function ComponentKiosk({ defaultName = '' }) {
+  const { lang, toggle, t } = useKioskLang();
   const [form, setForm] = useState({ ...EMPTY, person: defaultName });
   const [options, setOptions] = useState({ item_names: [], part_numbers: [], mo_numbers: [] });
   const [saving, setSaving] = useState(false);
@@ -49,7 +52,7 @@ export default function ComponentKiosk({ defaultName = '' }) {
               one job is the common case, and it stays visible to be changed. */}
           <button onClick={() => { setResult(null); setForm({ ...EMPTY, direction: form.direction, person: form.person, mo_number: form.mo_number }); }}
             className="px-6 py-3 bg-powder-600 text-white rounded-xl font-bold hover:bg-powder-700">
-            Log Another
+            {t('k_log_another')}
           </button>
         </div>
       </div>
@@ -59,21 +62,24 @@ export default function ComponentKiosk({ defaultName = '' }) {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="max-w-lg mx-auto">
+        <div className="flex justify-end mb-2">
+          <KioskLangToggle lang={lang} onToggle={toggle} />
+        </div>
         <div className="text-center mb-6">
           <div className="h-12 w-12 bg-powder-600 rounded-xl flex items-center justify-center mx-auto mb-3">
             <PackageCheck size={24} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Component Sign In/Out</h1>
-          <p className="text-sm text-gray-500 mt-1">Log components pulled from or returned to inventory</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('k_comp_title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('k_comp_sub')}</p>
         </div>
 
         <form onSubmit={submit} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Direction</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('k_direction')}</label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { value: 'Out', label: 'Sign Out', desc: 'Pulling from inventory', Icon: LogOut },
-                { value: 'In', label: 'Sign In', desc: 'Returning to inventory', Icon: LogIn },
+                { value: 'Out', label: t('k_sign_out'), desc: t('k_pulling'), Icon: LogOut },
+                { value: 'In', label: t('k_check_in'), desc: t('k_returning'), Icon: LogIn },
               ].map(d => (
                 <button key={d.value} type="button" onClick={() => set('direction', d.value)}
                   className={`p-3 rounded-xl border-2 text-left transition-all ${form.direction === d.value ? 'border-powder-500 bg-powder-50' : 'border-gray-200 hover:border-gray-300'}`}>
@@ -85,42 +91,42 @@ export default function ComponentKiosk({ defaultName = '' }) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Your Name *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_your_name')}</label>
             <input required value={form.person} onChange={e => set('person', e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Enter your name" />
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_enter_name')} />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Item Name *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_item_name')}</label>
             <input required list="ck-items" value={form.item_name} onChange={e => set('item_name', e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="e.g. Metal detector test wand" />
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_eg_wand')} />
             <datalist id="ck-items">{options.item_names.map(n => <option key={n} value={n} />)}</datalist>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Part Number</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_part_number')}</label>
               <input list="ck-parts" value={form.part_number} onChange={e => set('part_number', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Optional" />
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_optional')} />
               <datalist id="ck-parts">{options.part_numbers.map(n => <option key={n} value={n} />)}</datalist>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Qty</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_qty')}</label>
               <input value={form.qty_pulled} onChange={e => set('qty_pulled', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="e.g. 2" />
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_eg_2')} />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Lot Number</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_lot_number')}</label>
               <input value={form.lot_number} onChange={e => set('lot_number', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Optional" />
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_optional')} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">MO #</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_mo_number')}</label>
               <input list="ck-mos" value={form.mo_number} onChange={e => set('mo_number', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Job it's for" />
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_job_for')} />
               <datalist id="ck-mos">{(options.mo_numbers || []).map(n => <option key={n} value={n} />)}</datalist>
             </div>
           </div>
