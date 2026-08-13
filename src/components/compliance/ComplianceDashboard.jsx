@@ -26,9 +26,56 @@ function ReadinessItem({ label, status, detail, tab }) {
   );
 }
 
+/**
+ * The binder-completeness review, fetched only while open. Sections and their
+ * gaps come from the server (audit-readiness.js) — nothing here decides what
+ * counts as ready, it renders what it is told, and every gap links to the
+ * module that owns it.
+ */
+function ReadinessReview() {
+  const { data, loading, error } = useApiGet('/compliance/readiness-review');
+  if (loading) return <p className="text-sm text-gray-400 py-4 text-center">Checking every program…</p>;
+  if (error) return <p className="text-sm text-red-600 py-2">{error}</p>;
+  if (!data) return null;
+  const DOT = { good: 'bg-green-500', warning: 'bg-amber-500', critical: 'bg-red-500' };
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <h3 className="font-semibold text-gray-900">Readiness review — is the binder complete?</h3>
+        <span className="text-xs text-gray-500">
+          {data.gaps === 0 ? 'No gaps found' : `${data.gaps} gap${data.gaps === 1 ? '' : 's'} across ${data.sections.filter(s => s.status !== 'good').length} programs`}
+        </span>
+      </div>
+      <div className="grid md:grid-cols-2 gap-x-6 gap-y-4">
+        {data.sections.map(sec => (
+          <div key={sec.title}>
+            <p className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-1">
+              <span className={`w-2 h-2 rounded-full ${DOT[sec.status]}`} /> {sec.title}
+            </p>
+            <ul className="space-y-0.5">
+              {sec.items.map((it, i) => (
+                <li key={i}
+                  onClick={it.tab ? () => goTo(it.tab) : undefined}
+                  className={`text-xs flex items-start gap-1.5 py-0.5 ${it.tab ? 'cursor-pointer hover:bg-gray-50 -mx-1 px-1 rounded' : ''}`}>
+                  <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${DOT[it.status]}`} />
+                  <span className="min-w-0">
+                    <span className={it.status === 'good' ? 'text-gray-600' : 'text-gray-900 font-medium'}>{it.label}</span>
+                    {it.detail && <span className="text-gray-500"> — {it.detail}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ComplianceDashboard() {
   const { data, loading, error } = useApiGet('/compliance/dashboard');
   const [showOnlyFailing, setShowOnlyFailing] = useState(false);
+  const [showReview, setShowReview] = useState(false);
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading compliance dashboard...</div>;
   if (error) return <div className="text-center py-12 text-danger-600">{error}</div>;
@@ -157,7 +204,17 @@ export default function ComplianceDashboard() {
               style={{ width: `${readinessPercent}%` }} />
           </div>
         </div>
+        {/* The score answers "is this week's work done"; the review answers
+            "is the binder complete" — programs with gaps an auditor will
+            find, computed from the records. */}
+        <button type="button"
+          onClick={(e) => { e.stopPropagation(); setShowReview(v => !v); }}
+          className="shrink-0 px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+          {showReview ? 'Hide readiness review' : 'Full readiness review'}
+        </button>
       </div>
+
+      {showReview && <ReadinessReview />}
 
       {/* What's needed for a full pass */}
       {!overallReady && todo.length > 0 && (

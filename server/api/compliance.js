@@ -6,6 +6,7 @@ import { QMS_TYPES } from '../qms-config.js';
 import { recleanRooms } from './sanitation.js';
 import { requireRole } from '../middleware/auth.js';
 import { hasExplicitGrant } from '../module-access.js';
+import { readinessReview } from '../audit-readiness.js';
 // One definition of "waiting on a signature" — see the sign-out badge note below.
 import { getSource, safeCount } from '../qa-review.js';
 
@@ -242,6 +243,19 @@ router.get('/backups', requireRole('admin'), async (req, res) => {
     out.push({ ...b, url });
   }
   res.json({ backups: out });
+});
+
+// The binder-completeness review behind the dashboard's readiness score —
+// program-by-program gaps computed from the records, never ticked by hand.
+// Admins, supervisors and QA: the audience that acts on "the org chart has no
+// approved version", and a screen that names every unplaced person and every
+// unsigned program is not for the whole floor.
+router.get('/readiness-review', (req, res) => {
+  const u = req.user;
+  const allowed = u && (['admin', 'supervisor'].includes(u.role)
+    || ['qa', 'quality', 'document_control'].includes((u.department || '').toLowerCase()));
+  if (!allowed) return res.status(403).json({ error: 'The readiness review is for admins, supervisors and QA.' });
+  res.json(readinessReview(getDb()));
 });
 
 router.get('/dashboard', (_req, res) => {
