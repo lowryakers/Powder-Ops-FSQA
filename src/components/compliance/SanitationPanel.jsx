@@ -313,7 +313,13 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, contact_time_minutes: form.contact_time_minutes ? parseInt(form.contact_time_minutes) : null, atp_reading: form.atp_reading ? parseFloat(form.atp_reading) : null }); } finally { setSaving(false); }
+    try { await onSave({ ...form, contact_time_minutes: form.contact_time_minutes ? parseInt(form.contact_time_minutes) : null, atp_reading: form.atp_reading ? parseFloat(form.atp_reading) : null }); } catch (saveErr) {
+      // A refused save must SAY so. This was try/finally with NO catch, so a
+      // 403 or a validation 400 cleared the spinner and left the modal sitting
+      // there — indistinguishable from a dead button, which is how a
+      // deliberate rule reads as a broken screen.
+      window.alert(saveErr.message);
+    } finally { setSaving(false); }
   };
 
   return (

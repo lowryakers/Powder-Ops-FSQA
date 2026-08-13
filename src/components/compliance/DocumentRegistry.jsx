@@ -113,6 +113,12 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
     setSaving(true);
     try {
       await onSave({ ...form, doc_type: docType });
+    } catch (saveErr) {
+      // A refused save must SAY so. This was try/finally with NO catch, so a
+      // 403 or a validation 400 cleared the spinner and left the modal sitting
+      // there — indistinguishable from a dead button, which is how a
+      // deliberate rule reads as a broken screen.
+      window.alert(saveErr.message);
     } finally {
       setSaving(false);
     }
@@ -788,7 +794,13 @@ function ConfirmDeleteModal({ count, onConfirm, onClose }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const ok = text.trim().toUpperCase() === 'DELETE';
-  const go = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } };
+  const go = async () => { setBusy(true); try { await onConfirm(); } catch (saveErr) {
+      // A refused save must SAY so. This was try/finally with NO catch, so a
+      // 403 or a validation 400 cleared the spinner and left the modal sitting
+      // there — indistinguishable from a dead button, which is how a
+      // deliberate rule reads as a broken screen.
+      window.alert(saveErr.message);
+    } finally { setBusy(false); } };
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto">

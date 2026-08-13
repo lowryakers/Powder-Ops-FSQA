@@ -32,7 +32,13 @@ function CardEditor({ card, onSave, onCancel, tr = (x) => x, lang = 'en' }) {
   const [form, setForm] = useState({ kind: card?.kind || 'general', title: card?.title || '', body: card?.body || '' });
   const [saving, setSaving] = useState(false);
   return (
-    <form onSubmit={async e => { e.preventDefault(); setSaving(true); try { await onSave(form); } finally { setSaving(false); } }}
+    <form onSubmit={async e => { e.preventDefault(); setSaving(true); try { await onSave(form); } catch (saveErr) {
+      // A refused save must SAY so. This was try/finally with NO catch, so a
+      // 403 or a validation 400 cleared the spinner and left the modal sitting
+      // there — indistinguishable from a dead button, which is how a
+      // deliberate rule reads as a broken screen.
+      window.alert(saveErr.message);
+    } finally { setSaving(false); } }}
       className="bg-white rounded-xl border border-powder-200 p-3 space-y-2">
       {/* Cards are written once, in English, and translated on display — so the
           editor always shows the original no matter which way the toggle is set. */}

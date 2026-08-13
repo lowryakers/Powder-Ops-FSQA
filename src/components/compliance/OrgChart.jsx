@@ -36,8 +36,13 @@ function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, on
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, parent_id: form.parent_id || null }); }
-    finally { setSaving(false); }
+    try { await onSave({ ...form, parent_id: form.parent_id || null }); } catch (saveErr) {
+      // A refused save must SAY so. This was try/finally with NO catch, so a
+      // 403 or a validation 400 cleared the spinner and left the modal sitting
+      // there — indistinguishable from a dead button, which is how a
+      // deliberate rule reads as a broken screen.
+      window.alert(saveErr.message);
+    } finally { setSaving(false); }
   };
 
   return (
@@ -101,7 +106,13 @@ function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, on
 function MetaModal({ meta, onSave, onCancel }) {
   const [form, setForm] = useState({ version: meta?.version || '', approved_by: meta?.approved_by || '', effective_date: meta?.effective_date || '' });
   const [saving, setSaving] = useState(false);
-  const submit = async (e) => { e.preventDefault(); setSaving(true); try { await onSave(form); } finally { setSaving(false); } };
+  const submit = async (e) => { e.preventDefault(); setSaving(true); try { await onSave(form); } catch (saveErr) {
+      // A refused save must SAY so. This was try/finally with NO catch, so a
+      // 403 or a validation 400 cleared the spinner and left the modal sitting
+      // there — indistinguishable from a dead button, which is how a
+      // deliberate rule reads as a broken screen.
+      window.alert(saveErr.message);
+    } finally { setSaving(false); } };
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onCancel}>
       <form onClick={e => e.stopPropagation()} onSubmit={submit} className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-3 max-h-[92vh] overflow-y-auto">

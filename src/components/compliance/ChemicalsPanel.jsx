@@ -27,7 +27,13 @@ function ChemicalForm({ initial, onSave, onCancel }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, is_food_grade: form.is_food_grade ? 1 : 0 }); } finally { setSaving(false); }
+    try { await onSave({ ...form, is_food_grade: form.is_food_grade ? 1 : 0 }); } catch (saveErr) {
+      // A refused save must SAY so. This was try/finally with NO catch, so a
+      // 403 or a validation 400 cleared the spinner and left the modal sitting
+      // there — indistinguishable from a dead button, which is how a
+      // deliberate rule reads as a broken screen.
+      window.alert(saveErr.message);
+    } finally { setSaving(false); }
   };
 
   const set = (k, v) => setForm({ ...form, [k]: v });
