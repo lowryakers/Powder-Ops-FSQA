@@ -90,6 +90,49 @@ const TARGETS = {
     identityFallback: ['date_received', 'part_description', 'quantity_received'],
   },
 
+  /* ── Monday.com procurement board ────────────────────────────────────────── */
+
+  purchase_orders: {
+    label: 'Purchase Orders (Monday board)',
+    table: 'purchase_orders',
+    module: 'procurement',
+    fields: [
+      { key: 'description', label: 'Item', required: true, aliases: ['name', 'item', 'description', 'part description'] },
+      { key: 'part_no', label: 'Item #', aliases: ['item #', 'item no', 'part #', 'part no', 'part number'] },
+      { key: 'po_number', label: 'PO #', aliases: ['po', 'po #', 'po number', 'purchase order'] },
+      { key: 'qty', label: 'Order qty', type: 'number', aliases: ['order qty', 'qty', 'quantity', 'order quantity'] },
+      { key: 'expected_date', label: 'ETA', type: 'date', aliases: ['eta', 'expected', 'expected date', 'due'] },
+      { key: 'vendor', label: 'Vendor', aliases: ['vendor', 'supplier'] },
+      { key: 'source_status', label: 'Status', aliases: ['status'] },
+      { key: 'label', label: 'Label', aliases: ['label', 'priority'] },
+      { key: 'lead_time_days', label: 'Lead Time', type: 'number', aliases: ['lead time', 'lead time (days)'] },
+      { key: 'customer_po', label: 'Customer PO', aliases: ['customer po', 'cust po'] },
+      { key: 'customer', label: 'Customer', aliases: ['customer', 'cust'] },
+      { key: 'notes', label: 'Notes', aliases: ['notes', 'comment', 'comments'] },
+      { key: 'bol', label: 'BOL', aliases: ['bol', 'bill of lading'] },
+    ],
+    columns: ['description', 'part_no', 'po_number', 'qty', 'expected_date', 'vendor', 'source_status',
+      'lead_time_days', 'customer_po', 'customer', 'notes', 'bol', 'status', 'urgent'],
+    transform: (row) => ({
+      ...row,
+      // `vendor` is NOT NULL and 44 of the real rows have none — an inquiry
+      // raised before anyone was chosen. Written as Unknown so the row
+      // survives and stays findable, rather than being dropped as invalid.
+      vendor: clean(row.vendor) || 'Unknown',
+      // `qty` is NOT NULL DEFAULT 0 and 145 of the real rows have no quantity —
+      // an inquiry raised before anyone decided how much. An explicit NULL
+      // violates the constraint, so it takes the column's own default and the
+      // row survives.
+      qty: Number(row.qty) || 0,
+      status: PO_STATUS[String(clean(row.source_status)).toLowerCase()] || 'draft',
+      urgent: /urgent/i.test(String(row.label ?? '')) ? 1 : 0,
+    }),
+    // A board row is one item on one PO. Rows with no PO yet (145 of 351 —
+    // they are inquiries) still need identity, so the item carries it.
+    identity: ['po_number', 'part_no', 'description'],
+    identityFallback: ['description', 'vendor', 'qty'],
+  },
+
   /* ── QuickBooks report exports ─────────────────────────────────────────────
    *
    * The API route to this data is gated behind an Intuit app review that may
@@ -227,6 +270,35 @@ const TARGETS = {
     },
     filteredNote: 'payments, subtotals and total rows',
   },
+};
+
+/**
+ * Monday's seven states onto the six this table admits.
+ *
+ * The board distinguishes things the schema does not, so the mapping loses a
+ * distinction — which is why `source_status` keeps Monday's own word verbatim
+ * on every row. Two calls worth stating out loud:
+ *
+ *   * "Inquired" is a DRAFT, not an open order. 111 of the 351 rows are
+ *     inquiries; counting them as open would say a third of the board is on
+ *     order when nothing has been placed.
+ *   * "Received (partial)" is OPEN, because the question this board answers is
+ *     what is still coming, and part of it is. Calling it received would close
+ *     a line that still owes product.
+ *
+ * A blank status is a draft rather than the table's own `open` default — an
+ * unstated status is not a placed order.
+ */
+const PO_STATUS = {
+  inquired: 'draft',
+  ordered: 'open',
+  payment: 'confirmed',
+  paid: 'confirmed',
+  shipped: 'shipped',
+  'received (partial)': 'open',
+  received: 'received',
+  cancelled: 'cancelled',
+  canceled: 'cancelled',
 };
 
 // `open_balance` is read from the file but is not a column on either ledger —
@@ -408,6 +480,10 @@ router.post('/analyze', upload.single('file'), (req, res) => {
 });
 
 // Step 2 — dry run. Nothing is written; this is the "what will happen" screen.
+// Thrown to unwind the preview's trial transaction. Its own object so a real
+// database error is never mistaken for the deliberate rollback.
+const ROLLBACK = Symbol('preview-rollback');
+
 router.post('/:id/preview', (req, res) => {
   const db = getDb();
   const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(req.params.id);
@@ -419,7 +495,9 @@ router.post('/:id/preview', (req, res) => {
   const rows = JSON.parse(batch.rows_json);
   const existing = new Set(db.prepare(`SELECT external_id FROM ${target.table} WHERE external_id IS NOT NULL`).all().map(r => r.external_id));
 
+  const cols = target.columns || target.fields.map(f => f.key);
   let create = 0, update = 0, skip = 0, filtered = 0;
+  const accepted = [];
   const issues = [];
   const seenContent = new Set();   // identical rows entered twice
   const keyCounts = new Map();     // occurrences of each business key
@@ -449,11 +527,48 @@ router.post('/:id/preview', (req, res) => {
     const ext = identityFor(target, row, occ);
     if (ext && existing.has(ext)) update++; else create++;
     if (preview.length < 8) preview.push(row);
+    accepted.push(shapeRow(target, row));
   });
+
+  // A PREVIEW THAT THE COMMIT THEN REFUSES IS WORSE THAN NO PREVIEW.
+  //
+  // Everything above validates the FILE — required fields, duplicates,
+  // identity. None of it validates the TABLE, so a column constraint the
+  // mapping violates showed a clean "347 will be created" and then threw on
+  // commit with nothing written and no explanation. (The real case: the
+  // procurement board leaves 145 quantities blank and `qty` is NOT NULL.)
+  //
+  // So the preview now attempts the inserts for real and rolls them back. The
+  // rollback is the whole point — nothing survives — but SQLite has checked
+  // every constraint by then, which is the only way to know the commit will go
+  // through. Cheap at these row counts (~350 here, ~2,100 on the receiving log)
+  // because it is one transaction that is thrown away.
+  let blocked = null;
+  if (accepted.length) {
+    try {
+      db.transaction(() => {
+        const defaults = (shaped) => (target.insertDefaults ? target.insertDefaults(shaped) : {});
+        // Byte-for-byte the statement commit uses, or the trial proves nothing.
+        const ins = db.prepare(`INSERT INTO ${target.table}
+          (id, ${cols.join(', ')}, source, external_id, created_by)
+          VALUES (?, ${cols.map(() => '?').join(', ')}, ?, ?, ?)`);
+        for (const shaped of accepted) {
+          const d = defaults(shaped);
+          ins.run(uuid(), ...cols.map(c => (shaped[c] !== undefined ? shaped[c] : d[c]) ?? null), 'preview', null, null);
+        }
+        throw ROLLBACK;
+      })();
+    } catch (e) {
+      if (e !== ROLLBACK) blocked = e.message;
+    }
+  }
 
   res.json({
     batch_id: batch.id, total: rows.length, create, update, skip, filtered, issues, preview,
     filtered_note: target.filteredNote || null,
+    // Non-null means the commit WILL fail. Named here rather than discovered
+    // after someone presses the button on two thousand rows.
+    blocked,
   });
 });
 

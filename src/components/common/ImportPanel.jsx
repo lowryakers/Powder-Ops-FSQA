@@ -164,6 +164,21 @@ export default function ImportPanel({ target, targetLabel, fields, onDone }) {
           </div>
           <p className="text-xs text-gray-500">Nothing has been written yet.</p>
 
+          {/* The server tried these inserts for real and rolled them back, so
+              this is the commit failing in advance rather than after the
+              button. Import is blocked while it is set — a preview that says
+              "347 will be created" and then throws is worse than no preview. */}
+          {preview.blocked && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-xs font-semibold text-red-900">This import cannot be written as mapped.</p>
+              <p className="mt-1 text-[11px] text-red-800 font-mono break-words">{preview.blocked}</p>
+              <p className="mt-1 text-[11px] text-red-800">
+                Check the column mapping — usually a required value is landing in the wrong column, or is blank
+                in the file where the record needs one.
+              </p>
+            </div>
+          )}
+
           {preview.issues?.length > 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
               <p className="text-xs font-semibold text-amber-900">Rows that will be skipped (first {preview.issues.length}):</p>
@@ -196,7 +211,7 @@ export default function ImportPanel({ target, targetLabel, fields, onDone }) {
 
           <div className="flex justify-between">
             <button type="button" onClick={() => setStep(1)} className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Back to columns</button>
-            <button type="button" onClick={commit} disabled={busy || (preview.create + preview.update) === 0}
+            <button type="button" onClick={commit} disabled={busy || !!preview.blocked || (preview.create + preview.update) === 0}
               className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
               {busy ? 'Importing…' : `Import ${(preview.create + preview.update).toLocaleString()} rows`}
             </button>

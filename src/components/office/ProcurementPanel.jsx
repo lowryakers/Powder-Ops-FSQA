@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import DataGrid from './DataGrid.jsx';
 import { Plus, FlaskConical, RotateCcw, Check, Beaker, X } from 'lucide-react';
+import ImportPanel from '../common/ImportPanel';
 
 // Procurement & demand planning — the working replacement for Jake's two
 // workbooks. Purchase orders and their KPIs, a demand plan that explodes
@@ -231,8 +232,14 @@ export default function ProcurementPanel() {
     }] : []),
   ], [canEdit, refreshPos, refreshSummary]);
 
+  // `fields` drives the mapping step, so the target definition has to be in
+  // hand before the panel mounts — it reads fields.length unguarded.
+  const { data: importTargets } = useApiGet(canEdit ? '/imports/targets' : null);
+  const importTarget = (importTargets || []).find(t => t.key === 'purchase_orders');
+
   const tabs = [
     ['pos', 'Purchase Orders'],
+    ...(canEdit ? [['import', 'Import board']] : []),
     ['demand', 'Demand Plan'],
     ['parts-demand', 'Parts Needed'],
     ['parts', 'Parts & Pricing'],
@@ -291,6 +298,16 @@ export default function ProcurementPanel() {
             ) : null}
           />
         </>
+      )}
+
+      {/* The Monday board this module replaces. Preview-then-commit and
+          idempotent on the item, so re-exporting from Monday updates the rows
+          already here instead of doubling them. */}
+      {tab === 'import' && canEdit && (
+        importTarget ? (
+          <ImportPanel target="purchase_orders" targetLabel="Purchase Orders (Monday board)"
+            fields={importTarget.fields} onDone={() => { refreshPos(); refreshSummary(); }} />
+        ) : <p className="text-sm text-gray-500">Loading…</p>
       )}
 
       {tab === 'demand' && (

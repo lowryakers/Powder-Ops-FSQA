@@ -3512,6 +3512,28 @@ function runMigrations() {
       );
       CREATE INDEX IF NOT EXISTS idx_po_scenario ON purchase_orders(scenario_id, status);
     `);
+    // Columns the Monday board carried that this table did not.
+    //
+    // `customer` / `customer_po` are on 245 of the 351 real rows: a great deal
+    // of what is bought is bought against somebody else's job (ProDough, M4),
+    // and folding that into a notes string would make "what is on order for
+    // ProDough" unanswerable. `source_status` keeps Monday's own word for the
+    // row verbatim — the CHECK here has six states and the board has seven,
+    // so the mapping loses a distinction and this is what preserves it.
+    //
+    // `source` / `external_id` are what the universal importer upserts on;
+    // without them a re-import doubles the board instead of updating it.
+    // AFTER the CREATE above, never before — addColumnIfMissing ALTERs, and
+    // PRAGMA table_info on a table that does not exist yet returns empty, so
+    // the "missing" test passes and the ALTER throws on a fresh database.
+    addColumnIfMissing('purchase_orders', 'customer', 'TEXT');
+    addColumnIfMissing('purchase_orders', 'customer_po', 'TEXT');
+    addColumnIfMissing('purchase_orders', 'bol', 'TEXT');
+    addColumnIfMissing('purchase_orders', 'lead_time_days', 'INTEGER');
+    addColumnIfMissing('purchase_orders', 'source_status', 'TEXT');
+    addColumnIfMissing('purchase_orders', 'source', 'TEXT');
+    addColumnIfMissing('purchase_orders', 'external_id', 'TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_po_external ON purchase_orders(external_id);');
   } catch (e) {
     console.warn('[db] procurement tables unavailable:', e.message);
   }
