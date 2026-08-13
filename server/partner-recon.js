@@ -201,6 +201,9 @@ export function applyCredit(result, credit, appliedToDate = 0) {
       .filter(d => !creditEligible(d, credit) && d.signed > 0)
       .map(d => ({
         document_id: d.id, doc_number: d.doc_number, description: d.description, amount: d.signed,
+        // The current value travels with the row so the screen can offer to
+        // change it in place, rather than sending someone to find the document.
+        category: d.category || null,
         reason: !d.category ? 'uncategorised' : `category is ${d.category}`,
       })),
   };

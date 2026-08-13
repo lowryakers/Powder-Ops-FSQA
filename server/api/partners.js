@@ -474,6 +474,47 @@ router.put('/documents/:docId', (req, res) => {
   res.json({ ...after, extracted_text: undefined, has_text: !!after.extracted_text });
 });
 
+/**
+ * Setting what a document is FOR, on its own.
+ *
+ * Deliberately not part of the edit form. The edit pencil only appears on
+ * drafts — rightly, because changing the amount of a finalised invoice is a
+ * different act — but the documents that need categorising are precisely the
+ * FINAL ones, since those are the ones in the number and drawing on the credit.
+ * Without this the four uncategorised invoices on the settlement card had no
+ * door at all.
+ *
+ * So this changes one field and nothing else. It is refused once the document
+ * is settled: the category decides what the credit absorbed, and re-classifying
+ * a settled document would rewrite what a paid settlement was calculated
+ * against — the same rule that stops a drawn-on credit being resized.
+ */
+router.put('/documents/:docId/category', (req, res) => {
+  if (!canSettle(req.user)) return res.status(403).json({ error: 'Only the office or an admin can categorise a document.' });
+  const db = getDb();
+  const before = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(req.params.docId);
+  if (!before) return res.status(404).json({ error: 'Document not found' });
+  if (before.settlement_id) {
+    return res.status(400).json({
+      error: 'This document is part of a settled payment. Its category is what the credit was applied against and cannot be changed.',
+    });
+  }
+  const raw = req.body?.category;
+  // An empty string is a deliberate "back to uncategorised"; an unknown value
+  // is refused rather than silently stored, or a typo becomes a category that
+  // no credit will ever match.
+  if (raw !== null && raw !== undefined && raw !== '' && !CATEGORIES.includes(raw)) {
+    return res.status(400).json({ error: `Category must be one of: ${CATEGORIES.join(', ')}.` });
+  }
+  const category = raw === '' || raw === null || raw === undefined ? null : raw;
+  db.prepare("UPDATE partner_documents SET category = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?")
+    .run(category, req.user?.name || null, before.id);
+  const after = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(before.id);
+  logAudit(req.user, 'update', 'partner_document', before.id,
+    { field: 'category', from: before.category, to: category }, before, after, after.doc_number || after.id);
+  res.json({ ...after, extracted_text: undefined });
+});
+
 // "Approve as final" — the goods went out, or the production run finished. This
 // is what lets a document into the number.
 router.post('/documents/:docId/finalize', (req, res) => {

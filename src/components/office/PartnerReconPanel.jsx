@@ -273,6 +273,36 @@ function OpenCreditForm({ pid, onDone, onCancel }) {
   );
 }
 
+// Categorise one document without opening the edit form.
+//
+// It sits in the "Not covered by the credit" list because that is where the
+// problem is noticed — the shortest path from "why wasn't that absorbed" to
+// "now it is". The edit pencil can't do this job: it only appears on drafts,
+// and the documents that need categorising are the final ones.
+const CATEGORY_OPTIONS = [
+  ['', 'Not categorised'],
+  ['manufacturing', 'Manufacturing'],
+  ['materials', 'Raw materials'],
+  ['freight', 'Freight'],
+  ['other', 'Other'],
+];
+
+function CategoryPicker({ documentId, value, onChanged, disabled }) {
+  const [busy, setBusy] = useState(false);
+  const set = async (v) => {
+    setBusy(true);
+    try { await apiPut(`/partners/documents/${documentId}/category`, { category: v }); onChanged?.(); }
+    catch (e) { window.alert(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <select value={value || ''} disabled={busy || disabled} onChange={e => set(e.target.value)}
+      className="px-1.5 py-0.5 border border-gray-300 rounded text-[11px] bg-white disabled:opacity-50">
+      {CATEGORY_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
+  );
+}
+
 function CreditCard({ credit, pid, canSettle, onChanged }) {
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -345,16 +375,20 @@ function CreditCard({ credit, pid, canSettle, onChanged }) {
           {credit.ineligible.length > 0 && (
             <div>
               <p className="text-[11px] font-semibold text-gray-700">Not covered by the credit</p>
-              <ul className="mt-0.5 space-y-0.5">
+              <ul className="mt-0.5 space-y-1">
                 {credit.ineligible.map(d => (
-                  <li key={d.document_id} className="text-[11px] text-gray-600 flex justify-between gap-2">
-                    <span className="truncate">{d.doc_number || d.description || d.document_id}</span>
-                    <span className="shrink-0">{money(d.amount)} · {d.reason}</span>
+                  <li key={d.document_id} className="text-[11px] text-gray-600 flex items-center justify-between gap-2 flex-wrap">
+                    <span className="truncate min-w-0 flex-1">{d.doc_number || d.description || d.document_id}</span>
+                    <span className="shrink-0">{money(d.amount)}</span>
+                    {canSettle
+                      ? <CategoryPicker documentId={d.document_id} value={d.category} onChanged={onChanged} />
+                      : <span className="shrink-0">{d.reason}</span>}
                   </li>
                 ))}
               </ul>
               <p className="mt-1 text-[10px] text-gray-500">
-                An uncategorised document is never absorbed — set its category to {credit.applies_to} if it belongs.
+                An uncategorised document is never absorbed. Set one to {credit.applies_to} and it comes off the credit
+                straight away.
               </p>
             </div>
           )}
