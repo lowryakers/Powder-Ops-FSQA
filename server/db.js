@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { personKey } from './person-key.js';
 import { tagQaInspectionRecords } from './qa-records.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1612,6 +1613,56 @@ function initSchema() {
   runMigrations();
 }
 
+/**
+ * Link org-chart positions to the accounts that hold them.
+ *
+ * MUST RUN AFTER THE ORG SEEDER AS WELL AS IN runMigrations. On a fresh
+ * database the migration pass sees an empty org_positions table, links nothing,
+ * and — if it marked itself done — would never look again, while the seeder
+ * inserts twenty-three positions a moment later. Exactly the ordering that
+ * brought a new deploy up with an empty QA Inspections list, so the marker is
+ * only written once there is something to link.
+ *
+ * Idempotent and safe to call twice; server.js calls it again after seeding.
+ */
+export function linkOrgPositionsToUsers() {
+  try {
+    const done = db.prepare("SELECT value FROM app_settings WHERE key = 'org_user_backfilled'").get();
+    if (done) return 0;
+    const pending = db.prepare(
+      "SELECT id, name FROM org_positions WHERE user_id IS NULL AND name IS NOT NULL AND name != ''"
+    ).all();
+    // Nothing to work with yet — do NOT mark it done, or the seeded chart that
+    // arrives seconds later is never linked.
+    if (!pending.length) return 0;
+
+    // personKey, not an exact string match. The chart writes "Danny Augustyn"
+    // where an account may read "Augustyn, Danny", and accents differ between
+    // the two — matching as written is what left 92 of 94 people unlinked in
+    // the Training Log importer. A key appearing TWICE in the roster is skipped
+    // rather than guessed at.
+    const byKey = new Map();
+    for (const u of db.prepare('SELECT id, name FROM users').all()) {
+      const k = personKey(u.name);
+      if (!k) continue;
+      byKey.set(k, byKey.has(k) ? null : u.id);
+    }
+    const link = db.prepare('UPDATE org_positions SET user_id = ? WHERE id = ?');
+    let n = 0;
+    for (const p of pending) {
+      const hit = byKey.get(personKey(p.name));
+      if (hit) { link.run(hit, p.id); n++; }
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('org_user_backfilled', ?)")
+      .run(new Date().toISOString());
+    if (n) console.log(`[migrate] Org chart: linked ${n} of ${pending.length} position(s) to their account`);
+    return n;
+  } catch (e) {
+    console.warn('[db] org position user link skipped:', e.message);
+    return 0;
+  }
+}
+
 function addColumnIfMissing(table, column, definition) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!cols.find(c => c.name === column)) {
@@ -2364,6 +2415,21 @@ function runMigrations() {
 
   // Link an org-chart position to its Job Description document
   addColumnIfMissing('org_positions', 'job_description_id', 'TEXT');
+
+  // WHO HOLDS THE POSITION — the account, not a typed name.
+  //
+  // org_positions.name was free text, so the chart was a snapshot of whoever
+  // typed it: a rename in Settings never reached it, somebody leaving left
+  // their name on the box, and a new starter did not appear until an admin
+  // remembered to edit the chart. Exactly what happened to the pay roster
+  // (Josefa → Debora), and the same rule applies — THE LINK IS THE IDENTITY,
+  // THE STORED NAME IS A LABEL.
+  //
+  // `name` is kept, not dropped: a vacant position and a contractor who has no
+  // ReadyDoc account both need something on the box, and every chart printed
+  // before this existed should still read the way it did.
+  addColumnIfMissing('org_positions', 'user_id', 'TEXT');
+  linkOrgPositionsToUsers();
 
   // "Logged on paper" flag — grandfathered/historical disposals whose Ops
   // Manager & QC signatures live on the uploaded scanned form, not in-system,

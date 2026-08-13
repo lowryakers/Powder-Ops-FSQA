@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createReadStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { personKey } from '../person-key.js';
 import { aiEnabled, generateTestQuestions } from '../ai.js';
 import { storageEnabled, putStream, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo } from '../media.js';
@@ -565,14 +566,9 @@ const normName = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+
 // So a person's key is their name's WORDS, accent-folded and sorted. Sorting
 // makes it order-independent, which beats deciding which side of a comma is
 // the surname — a call that "Lopez Fernande, Estefany Maria" would get wrong.
-function personKey(name) {
-  return String(name || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\(.*?\)/g, ' ')          // "Vergara, Kimberly (?)" — the log author's own uncertainty
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim().split(' ').filter(Boolean).sort().join(' ');
-}
+// personKey now lives in server/person-key.js — the org chart links its
+// positions to accounts with the same rule, and two copies is how one of them
+// starts matching people the other does not.
 
 // What goes on the record when there's no account to take the name from.
 // One comma is "Surname, First" and reads better flipped; anything else is

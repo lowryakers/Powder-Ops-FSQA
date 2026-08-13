@@ -18,7 +18,7 @@ const DEPT_CLASS = {
 };
 const cap = (s) => (s || '').charAt(0).toUpperCase() + (s || '').slice(1);
 
-function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, onSave, onCancel }) {
+function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, people, onSave, onCancel }) {
   const [form, setForm] = useState({
     title: initial?.title || '',
     name: initial?.name || '',
@@ -26,6 +26,7 @@ function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, on
     department: initial?.department || 'production',
     parent_id: initial?.parent_id ?? (initial?._defaultParent ?? ''),
     job_description_id: initial?.job_description_id || '',
+    user_id: initial?.user_id || '',
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -60,9 +61,16 @@ function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, on
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
-            <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Person's name"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            {/* WHO HOLDS IT, by account. A typed name froze the chart at
+                whatever was entered — a rename in Settings never reached it and
+                a leaver kept their box. The free-text field survives below for
+                a contractor or an agency temp with no ReadyDoc account. */}
+            <label className="block text-xs font-medium text-gray-700 mb-1">Person</label>
+            <select value={form.user_id || ''} onChange={e => set('user_id', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">— Vacant / not an account —</option>
+              {(people || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Back-up</label>
@@ -85,6 +93,18 @@ function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, on
             </select>
           </div>
         </div>
+        {!form.user_id && (
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Name on the chart</label>
+            <input value={form.name} onChange={e => set('name', e.target.value)}
+              placeholder="Leave blank if the position is vacant"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <p className="mt-1 text-[11px] text-gray-500">
+              Only for someone without a ReadyDoc account. Pick a person above and the chart follows their
+              account, so a rename in Settings reaches it.
+            </p>
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Job Description</label>
           <select value={form.job_description_id || ''} onChange={e => set('job_description_id', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
@@ -158,7 +178,26 @@ function TreeNode({ node, canEdit, dnd, onAddChild, onEdit, onDelete }) {
         title={canEdit ? 'Drag onto another position to change reporting line' : undefined}
       >
         <div className="text-xs font-bold text-gray-900 leading-tight">{node.title}</div>
-        {node.name && <div className="text-xs text-gray-700 mt-0.5">{node.name}</div>}
+        {node.name ? (
+          <div className="text-xs text-gray-700 mt-0.5 flex items-center gap-1 flex-wrap justify-center">
+            <span>{node.name}</span>
+            {/* A box whose holder has left still shows their name on every
+                printed chart until somebody notices. Now it says so. */}
+            {node.person_active === false && (
+              <span className="text-[10px] px-1 py-0.5 rounded bg-red-100 text-red-700 font-medium">left</span>
+            )}
+            {node.link_broken && (
+              <span className="text-[10px] px-1 py-0.5 rounded bg-red-100 text-red-700 font-medium">account gone</span>
+            )}
+            {!node.user_id && (
+              <span className="text-[10px] px-1 py-0.5 rounded bg-gray-100 text-gray-500" title="Typed name — not linked to a ReadyDoc account, so a rename in Settings will not reach it">
+                unlinked
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="text-xs text-gray-400 mt-0.5 italic">Vacant</div>
+        )}
         {node.backup && <div className="text-[10px] text-gray-400 mt-0.5">Back-up: {node.backup}</div>}
         {node.job_description_id && (
           <button
@@ -192,6 +231,7 @@ export default function OrgChart() {
   const canEdit = canEditModule(user, 'org-chart');
   const { data, loading, refresh } = useApiGet('/org');
   const { data: jobDescriptions } = useApiGet('/documents?doc_type=job_description');
+  const { data: people } = useApiGet('/org/people');
   const [editing, setEditing] = useState(null);   // position being edited
   const [adding, setAdding] = useState(null);      // { _defaultParent, parentTitle } when adding
   const [editMeta, setEditMeta] = useState(false);
@@ -302,6 +342,23 @@ export default function OrgChart() {
         </div>
       </div>
 
+      {/* WHO IS NOT ON THE CHART. An org chart missing people is the hole an
+          auditor finds, and until now nothing compared it to the roster. Named
+          rather than counted, because the point is to place them. */}
+      {(data?.unplaced?.length > 0) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <p className="text-sm font-medium text-amber-900">
+            {data.unplaced.length} {data.unplaced.length === 1 ? 'person is' : 'people are'} not on the chart
+          </p>
+          <p className="mt-0.5 text-xs text-amber-800">
+            {data.unplaced.map(u => u.name).join(', ')}
+          </p>
+          <p className="mt-1 text-[11px] text-amber-700">
+            Add a position for each, or link them to one that already exists.
+          </p>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-center py-12 text-gray-500">Loading org chart…</div>
       ) : roots.length === 0 ? (
@@ -330,6 +387,7 @@ export default function OrgChart() {
           parentTitle={adding?.parentTitle}
           allPositions={positions}
           jobDescriptions={jobDescriptions}
+          people={people}
           onSave={handleSavePosition}
           onCancel={() => { setEditing(null); setAdding(null); }}
         />

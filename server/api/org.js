@@ -4,23 +4,76 @@ import { getDb, logAudit } from '../db.js';
 
 const router = Router();
 
+/**
+ * The person on each box comes from the LINKED ACCOUNT, not the stored string.
+ *
+ * `org_positions.name` was the only answer, so the chart froze at whatever was
+ * typed: renames in Settings never reached it, leavers kept their box, and new
+ * starters were invisible until somebody remembered to edit it. The pay roster
+ * had the identical bug and the same fix — the link is the identity, the stored
+ * name is a label.
+ *
+ * `name_on_file` is returned alongside so a chart that has drifted can be seen
+ * to have drifted rather than silently corrected, and `person_active` is what
+ * lets the UI mark a box whose holder has left. An unlinked position falls back
+ * to its stored name, which is right for a contractor with no account and for
+ * every position filled before this existed.
+ */
+function withPeople(db, positions) {
+  const users = new Map(db.prepare('SELECT id, name, is_active, department FROM users').all().map(u => [u.id, u]));
+  return positions.map((p) => {
+    const u = p.user_id ? users.get(p.user_id) : null;
+    return {
+      ...p,
+      name: u ? u.name : p.name,
+      name_on_file: p.name || null,
+      person_active: u ? (u.is_active === null || u.is_active === 1) : null,
+      // A link that points at an account that no longer exists is a fact worth
+      // showing, not one to hide by falling back silently.
+      link_broken: !!(p.user_id && !u),
+    };
+  });
+}
+
 // GET / — all positions + chart meta
 router.get('/', (_req, res) => {
   const db = getDb();
-  const positions = db.prepare('SELECT * FROM org_positions ORDER BY sort_order, title').all();
+  const rows = db.prepare('SELECT * FROM org_positions ORDER BY sort_order, title').all();
+  const positions = withPeople(db, rows);
   const meta = db.prepare('SELECT * FROM org_chart_meta WHERE id = 1').get() || null;
-  res.json({ positions, meta });
+
+  // WHO IS NOT ON THE CHART. An org chart that is missing people is the one an
+  // auditor finds a hole in, and until now nothing compared it to the roster.
+  const linked = new Set(rows.map(p => p.user_id).filter(Boolean));
+  const unplaced = db.prepare(
+    "SELECT id, name, role, department FROM users WHERE (is_active IS NULL OR is_active = 1) ORDER BY name"
+  ).all().filter(u => !linked.has(u.id) && u.role !== 'auditor' && !/^readybot$/i.test(u.name || ''));
+
+  res.json({ positions, meta, unplaced });
+});
+
+// The roster the position picker chooses from.
+router.get('/people', (_req, res) => {
+  const db = getDb();
+  res.json(db.prepare(
+    "SELECT id, name, role, department FROM users WHERE (is_active IS NULL OR is_active = 1) ORDER BY name"
+  ).all());
 });
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { title, name, backup, department, parent_id, sort_order, job_description_id } = req.body;
+  const { title, name, backup, department, parent_id, sort_order, job_description_id, user_id } = req.body;
   if (!title) return res.status(400).json({ error: 'Title is required' });
+  // The stored name is kept as the label for a vacancy or a contractor with no
+  // account; when a person is linked, THEIR account is what the chart reads.
+  const person = user_id ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(user_id) : null;
+  if (user_id && !person) return res.status(400).json({ error: 'That person no longer has an account.' });
   const id = uuid();
-  db.prepare(`INSERT INTO org_positions (id, title, name, backup, department, parent_id, job_description_id, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    id, title, name || null, backup || null, department || null,
-    parent_id || null, job_description_id || null, Number.isInteger(sort_order) ? sort_order : 0
+  db.prepare(`INSERT INTO org_positions (id, title, name, backup, department, parent_id, job_description_id, sort_order, user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    id, title, person ? person.name : (name || null), backup || null, department || null,
+    parent_id || null, job_description_id || null, Number.isInteger(sort_order) ? sort_order : 0,
+    person ? person.id : null
   );
   const created = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(id);
   logAudit(req.user, 'org_position_created', 'org_position', id, { title, name });
@@ -58,7 +111,12 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { title, name, backup, department, parent_id, sort_order, job_description_id } = req.body;
+  const { title, name, backup, department, parent_id, sort_order, job_description_id, user_id } = req.body;
+  // An ABSENT user_id means "leave the link alone"; an explicit null unlinks,
+  // which is how a position becomes vacant without losing its title.
+  const changingPerson = user_id !== undefined;
+  const person = user_id ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(user_id) : null;
+  if (user_id && !person) return res.status(400).json({ error: 'That person no longer has an account.' });
 
   // Guard against making a node its own ancestor (cycle)
   if (parent_id) {
@@ -70,11 +128,17 @@ router.put('/:id', (req, res) => {
     }
   }
 
-  db.prepare(`UPDATE org_positions SET title=?, name=?, backup=?, department=?, parent_id=?, job_description_id=?, sort_order=?, updated_at=datetime('now') WHERE id=?`).run(
-    title || existing.title, name ?? existing.name, backup ?? existing.backup,
+  db.prepare(`UPDATE org_positions SET title=?, name=?, backup=?, department=?, parent_id=?, job_description_id=?, sort_order=?, user_id=?, updated_at=datetime('now') WHERE id=?`).run(
+    title || existing.title,
+    // Linking someone stamps their current name so an export or an old print
+    // still reads; unlinking keeps whatever was there rather than blanking it.
+    changingPerson && person ? person.name : (name ?? existing.name),
+    backup ?? existing.backup,
     department ?? existing.department, parent_id !== undefined ? (parent_id || null) : existing.parent_id,
     job_description_id !== undefined ? (job_description_id || null) : existing.job_description_id,
-    Number.isInteger(sort_order) ? sort_order : existing.sort_order, req.params.id
+    Number.isInteger(sort_order) ? sort_order : existing.sort_order,
+    changingPerson ? (person ? person.id : null) : existing.user_id,
+    req.params.id
   );
   const updated = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'org_position_updated', 'org_position', req.params.id, { title: updated.title }, existing, updated);

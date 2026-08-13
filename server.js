@@ -9,7 +9,7 @@ import { gunzipSync } from 'zlib';
 import { execSync } from 'child_process';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
-import { getDb, dataDir, logAudit } from './server/db.js';
+import { getDb, dataDir, logAudit, linkOrgPositionsToUsers } from './server/db.js';
 import { readyDocOrigin } from './server/links.js';
 import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import procurementRoutes from './server/api/procurement.js';
@@ -1354,6 +1354,11 @@ if (orgCount === 0) {
         .run('6', 'Lowry Akers', '2026-02-20');
     });
     seedOrg();
+    // Link the seeded positions to their accounts NOW. runMigrations ran
+    // before this seeder existed on a fresh database, so it had an empty table
+    // to work with — the same ordering that once brought a new deploy up with
+    // an empty QA Inspections list.
+    linkOrgPositionsToUsers();
     console.log(`[seed] Seeded org chart (${n} positions, Version 6)`);
   } catch (e) {
     console.warn('[seed] Could not seed org chart:', e.message);
