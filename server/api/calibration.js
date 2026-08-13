@@ -42,10 +42,24 @@ router.get('/instruments', (req, res) => {
 
   const rows = db.prepare(sql).all(...params);
 
+  // The overdue sweep USED TO RUN ON EVERY READ, one UPDATE per lapsed row —
+  // a GET that mutated the database once per instrument, on a screen people
+  // open all day. It is throttled through the same helper as PM housekeeping
+  // now, and does the whole sweep in one statement instead of a loop.
+  //
+  // The rows in hand are still corrected in memory so this response is right
+  // even on a tick where the sweep did not run: the status the caller sees is
+  // derived from next_due either way, and the stored column is what the
+  // throttled write brings into line.
   const today = new Date().toISOString().split('T')[0];
+  periodically('calibration-overdue', (d) => {
+    d.prepare(`UPDATE calibration_instruments SET status = 'overdue'
+      WHERE status NOT IN ('retired', 'out_of_service', 'overdue')
+        AND next_due IS NOT NULL AND next_due < ?`).run(today);
+  }, db);
+
   for (const r of rows) {
     if (r.status !== 'retired' && r.status !== 'out_of_service' && r.next_due && r.next_due < today) {
-      db.prepare("UPDATE calibration_instruments SET status = 'overdue' WHERE id = ? AND status != 'overdue'").run(r.id);
       r.status = 'overdue';
     }
   }
@@ -130,7 +144,12 @@ router.get('/records', (req, res) => {
   if (from) { sql += ' AND cr.calibrated_at >= ?'; params.push(from); }
   if (to) { sql += ' AND cr.calibrated_at <= ?'; params.push(to); }
 
-  sql += ' ORDER BY cr.calibrated_at DESC';
+  // Bounded, like the sanitation and production logs. This grows with every
+  // calibration and was shipping the whole table to render a screen of rows.
+  // Callers wanting history ask with from/to or a bigger limit.
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
+  sql += ' ORDER BY cr.calibrated_at DESC LIMIT ?';
+  params.push(limit);
   res.json(db.prepare(sql).all(...params));
 });
 

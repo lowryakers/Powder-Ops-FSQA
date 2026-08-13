@@ -6,6 +6,7 @@ import { generateDocumentReviewTasks, recomputeDocumentReview } from './document
 import { generateQualityScheduleTasks } from './quality-schedules.js';
 import { generateRecleanTasks } from './sanitation.js';
 import { getChannelByName, postMessageAs, botDm } from './comms.js';
+import { periodically, resetHousekeeping } from '../housekeeping.js';
 import { pushToUser } from '../push.js';
 import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
 import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
@@ -104,16 +105,11 @@ function createNextWorkOrder(db, sched, triggeredBy = null) {
 // schedule coming due at 6am must produce a task that morning), so they run at
 // most once every few minutes, whoever happens to ask first. Startup runs them
 // once eagerly; see server.js.
-const HOUSEKEEPING_MS = 5 * 60 * 1000;
-const lastRunAt = new Map();
-function periodically(key, fn, db) {
-  const now = Date.now();
-  if (now - (lastRunAt.get(key) || 0) < HOUSEKEEPING_MS) return;
-  lastRunAt.set(key, now);
-  try { fn(db); } catch (e) { console.warn(`[pm] ${key} skipped:`, e.message); }
-}
+// The throttle itself lives in server/housekeeping.js so calibration's
+// overdue sweep uses the same one — a second copy is how two sweeps start
+// disagreeing about how often "periodically" means.
 export function runPmHousekeeping(db, { force = false } = {}) {
-  if (force) lastRunAt.clear();
+  if (force) resetHousekeeping();
   periodically('mark-missed', markMissedWorkOrders, db);
   periodically('doc-review', generateDocumentReviewTasks, db);
   periodically('quality-schedules', generateQualityScheduleTasks, db);
@@ -352,7 +348,14 @@ router.get('/work-orders', (req, res) => {
   if (from) { sql += ' AND wo.due_date >= ?'; params.push(from); }
   if (to) { sql += ' AND wo.due_date <= ?'; params.push(to); }
 
-  sql += ' ORDER BY wo.due_date ASC';
+  // Bounded. work_orders is the largest table in the plant (2,227 rows on a
+  // seeded database and it only grows), and this endpoint has no status filter
+  // by default, so it was the whole history. The Task Center reads
+  // /by-frequency, which is already scoped to what is outstanding; this one is
+  // the raw list and callers that want history pass from/to or a bigger limit.
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
+  sql += ' ORDER BY wo.due_date ASC LIMIT ?';
+  params.push(limit);
   res.json(db.prepare(sql).all(...params));
 });
 

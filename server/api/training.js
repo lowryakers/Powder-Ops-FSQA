@@ -113,7 +113,12 @@ router.get('/', (req, res) => {
   if (status) { sql += ' AND tr.status = ?'; params.push(status); }
   if (course_id) { sql += ' AND tr.course_id = ?'; params.push(course_id); }
   if (sop_id) { sql += ' AND tr.sop_id = ?'; params.push(sop_id); }
-  sql += ' ORDER BY tr.training_date DESC';
+  // Bounded, like the sanitation and production logs. This grows with every
+  // completion and was shipping the whole table to render a screen of rows.
+  // Callers wanting history ask with from/to or a bigger limit.
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
+  sql += ' ORDER BY tr.training_date DESC LIMIT ?';
+  params.push(limit);
   res.json(db.prepare(sql).all(...params));
 });
 

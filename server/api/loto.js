@@ -87,7 +87,12 @@ router.get('/executions', (req, res) => {
   if (from) { sql += ' AND le.locked_at >= ?'; params.push(from); }
   if (to) { sql += ' AND le.locked_at <= ?'; params.push(to); }
 
-  sql += ' ORDER BY le.locked_at DESC';
+  // Bounded, like the sanitation and production logs. This grows with every
+  // lockout and was shipping the whole table to render a screen of rows.
+  // Callers wanting history ask with from/to or a bigger limit.
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
+  sql += ' ORDER BY le.locked_at DESC LIMIT ?';
+  params.push(limit);
   res.json(db.prepare(sql).all(...params));
 });
 
