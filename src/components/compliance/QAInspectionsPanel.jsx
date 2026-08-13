@@ -83,7 +83,9 @@ export default function QAInspectionsPanel() {
   const verify = async (r) => {
     setVerifying(r.id);
     try {
-      await apiPut(`/sanitation/${r.id}/verify`, { verified_by: user.name });
+      // The server takes the signer from the session; sending a name here
+      // would imply the body decides who signed.
+      await apiPut(`/sanitation/${r.id}/verify`, {});
       refresh();
     } finally { setVerifying(null); }
   };

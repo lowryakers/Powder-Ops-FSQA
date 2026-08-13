@@ -535,6 +535,7 @@ const SANITATION_COLUMNS = [
 ];
 
 export default function SanitationPanel() {
+  const { user } = useAuth() || {};
   const { data: records, loading, refresh } = useApiGet('/sanitation');
   // Newest first by default — a cleaning log is read from today backwards.
   const { sorted, sortCol, sortDir, toggleSort } = useTableSort(records, SANITATION_COLUMNS, 'performed_at', 'desc');
@@ -552,11 +553,18 @@ export default function SanitationPanel() {
     refresh();
   };
 
+  // A counter-signature is a statement about WHO reviewed the record, so it is
+  // the signed-in user — never a name typed into a prompt. This asked for the
+  // verifier's name and sent it, which made the signature a free-text field
+  // with a person's name in it; the server takes it from the session now and
+  // ignores the body, so asking here would only be theatre.
   const handleVerify = async (id) => {
-    const name = prompt('Verifier name:');
-    if (!name) return;
-    await apiPut(`/sanitation/${id}/verify`, { verified_by: name });
-    refresh();
+    if (!user?.name) return;
+    if (!window.confirm(`Verify this cleaning record as ${user.name}?`)) return;
+    try {
+      await apiPut(`/sanitation/${id}/verify`, {});
+      refresh();
+    } catch (e) { window.alert(e.message); }
   };
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading sanitation records...</div>;

@@ -40,26 +40,16 @@ import { signOffProductionEntry } from './api/production.js';
 import { verifyScaleCheck } from './api/scale-verification.js';
 import { signQmsApproval, BULK_APPROVE } from './api/qms.js';
 import { getType } from './qms-config.js';
-import { hasExplicitEdit, hasExplicitGrant } from './module-access.js';
+import { hasExplicitEdit } from './module-access.js';
+// The signing predicates live in qa-signing.js so the modules' OWN Verify
+// routes can apply the same rule without importing this file back — see the
+// note there. Re-exported because this module's public surface already
+// included isQaReviewer.
+import {
+  isQaReviewer, canSignProduction, canSignSanitation, canSignInspection, canSignScale,
+} from './qa-signing.js';
 
-// Who QA Review is for. NOT every supervisor: that handed the queue to Filling,
-// Batching and Warehouse supervisors by role alone, over the top of whatever
-// Settings said, and let them counter-sign QA records. Admins, the QA/quality
-// department, or an explicit grant.
-//
-// Signing a specific module's records survives this independently — each
-// canSign* below also accepts that module's own edit grant, so a production
-// supervisor with Production Log edit can still sign production entries.
-//
-// Keep in step with `canSeeQaReview` in src/utils/permissions.js.
-export const isQaReviewer = (u) => u?.role === 'admin'
-  || ['qa', 'quality'].includes((u?.department || '').toLowerCase())
-  || hasExplicitGrant(u, 'qa-review');
-
-const canSignProduction = (u) => isQaReviewer(u) || hasExplicitEdit(u, 'production-log');
-const canSignSanitation = (u) => isQaReviewer(u) || hasExplicitEdit(u, 'sanitation');
-const canSignInspection = (u) => isQaReviewer(u) || hasExplicitEdit(u, 'qa-inspections');
-const canSignScale = (u) => isQaReviewer(u) || hasExplicitEdit(u, 'calibration');
+export { isQaReviewer };
 
 // Oldest first everywhere: the point of the queue is that nothing ages out of
 // sight, so the top of the list is always the thing that has waited longest.
@@ -168,7 +158,7 @@ export const SOURCES = [
     })),
     canSign: canSignInspection,
     sign: (db, user, id) => {
-      const { error } = verifySanitationRecord(db, id, user?.name);
+      const { error } = verifySanitationRecord(db, user, id);
       return error ? { error, status: 400 } : { ok: true };
     },
   },
@@ -195,7 +185,7 @@ export const SOURCES = [
     })),
     canSign: canSignSanitation,
     sign: (db, user, id) => {
-      const { error } = verifySanitationRecord(db, id, user?.name);
+      const { error } = verifySanitationRecord(db, user, id);
       return error ? { error, status: 400 } : { ok: true };
     },
   },

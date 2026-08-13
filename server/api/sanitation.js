@@ -5,6 +5,7 @@ import { recordGroupFor } from '../qa-records.js';
 import { activeChemicalNames } from '../chemicals.js';
 import { areaLabel } from '../../shared/rooms.js';
 import { canonicalArea, previewAreaNormalization, NON_PRODUCTION_AREAS } from '../sanitation-areas.js';
+import { canVerifySanitation } from '../qa-signing.js';
 
 const router = Router();
 
@@ -452,23 +453,51 @@ function closeRecleanTasksFor(db, area, who, record) {
  *
  * Returns { error } or { record }.
  */
-export function verifySanitationRecord(db, id, verifiedBy) {
+/**
+ * QA's counter-signature on a cleaning record or a QA inspection.
+ *
+ * TWO THINGS WERE WRONG HERE and both mattered:
+ *
+ * 1. NO AUTHORIZATION AT ALL. `requireModuleWrite('sanitation')` on the mount
+ *    lets a user through whenever `module_access` is null — which is its
+ *    documented "role decides, nothing on the floor breaks" behaviour and the
+ *    state most accounts are in — so any signed-in operator could apply QA's
+ *    verification to any cleaning record. The QA Review Center already had the
+ *    right rule in `canSignSanitation`; the module's own route went round it.
+ *    That is the same two-doors-one-checked shape as the QMS router, and the
+ *    reason `signQmsApproval` exists.
+ *
+ * 2. THE NAME CAME FROM THE REQUEST BODY, so the signature said whoever the
+ *    caller typed. A counter-signature is a statement about who reviewed the
+ *    record; taking it from the payload makes it a free-text field with a
+ *    person's name in it. It comes from the SESSION now, like the scale check.
+ *
+ * Takes `user` rather than a name string for exactly that reason, and passes
+ * the object to logAudit so actor_id/role/department are captured.
+ * Returns { error, status } or { record }.
+ */
+export function verifySanitationRecord(db, user, id) {
+  if (!canVerifySanitation(user)) {
+    return { error: 'Only QA, supervisors or admins can verify a cleaning record.', status: 403 };
+  }
   const existing = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
-  if (!existing) return { error: 'Record not found' };
-  if (!verifiedBy) return { error: 'verified_by is required' };
-  if (existing.verified_by) return { error: 'Already verified.' };
+  if (!existing) return { error: 'Record not found', status: 404 };
+  if (existing.verified_by) return { error: 'Already verified.', status: 400 };
+
+  const verifiedBy = user?.name;
+  if (!verifiedBy) return { error: 'Not authenticated', status: 401 };
 
   db.prepare("UPDATE sanitation_records SET verified_by = ?, verified_at = datetime('now') WHERE id = ?")
     .run(verifiedBy, id);
 
   const updated = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
-  logAudit(verifiedBy, 'verify', 'sanitation_record', id, null, existing, updated);
+  logAudit(user, 'verify', 'sanitation_record', id, null, existing, updated);
   return { record: updated };
 }
 
 router.put('/:id/verify', (req, res) => {
-  const { error, record } = verifySanitationRecord(getDb(), req.params.id, req.body?.verified_by);
-  if (error) return res.status(error === 'Record not found' ? 404 : 400).json({ error });
+  const { error, status, record } = verifySanitationRecord(getDb(), req.user, req.params.id);
+  if (error) return res.status(status || 400).json({ error });
   res.json(record);
 });
 
