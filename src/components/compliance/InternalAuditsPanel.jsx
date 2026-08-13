@@ -137,7 +137,7 @@ function CarModal({ auditId, item, users, onClose, onRaised }) {
   };
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="text-base font-semibold text-gray-900">Raise a corrective action</h3>
           <p className="text-xs text-gray-500 mt-0.5">{item.prompt}</p>

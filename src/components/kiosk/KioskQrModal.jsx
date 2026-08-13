@@ -45,7 +45,7 @@ export default function KioskQrModal({ cfg, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4 text-center">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4 text-center max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Post this at the station</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>

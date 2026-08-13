@@ -754,7 +754,7 @@ function QASignoffModal({ entry, user, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-5 w-full max-w-md space-y-3 shadow-xl">
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-5 w-full max-w-md space-y-3 shadow-xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">QA Signoff</h3>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>

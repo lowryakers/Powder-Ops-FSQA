@@ -652,7 +652,7 @@ function ChangePasswordModal({ onClose, forced = false }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center px-4" onClick={forced ? undefined : onClose}>
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-5 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-1">
           <KeyRound size={18} className="text-powder-600" />
           <h3 className="text-base font-bold text-gray-900">{forced ? 'Time to change your password' : 'Change your password'}</h3>

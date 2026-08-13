@@ -82,7 +82,7 @@ function ImportModal({ onClose, onDone }) {
   };
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Import training records (CSV)</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
@@ -535,7 +535,7 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <form onSubmit={submit} onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3">
+      <form onSubmit={submit} onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit' : 'Log'} training completion</h3>
           <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>

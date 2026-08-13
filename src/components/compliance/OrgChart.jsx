@@ -42,7 +42,7 @@ function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, on
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onCancel}>
-      <form onClick={e => e.stopPropagation()} onSubmit={submit} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3">
+      <form onClick={e => e.stopPropagation()} onSubmit={submit} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit Position' : 'Add Position'}</h3>
           <button type="button" onClick={onCancel} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
@@ -104,7 +104,7 @@ function MetaModal({ meta, onSave, onCancel }) {
   const submit = async (e) => { e.preventDefault(); setSaving(true); try { await onSave(form); } finally { setSaving(false); } };
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onCancel}>
-      <form onClick={e => e.stopPropagation()} onSubmit={submit} className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-3">
+      <form onClick={e => e.stopPropagation()} onSubmit={submit} className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Chart Details</h3>
           <button type="button" onClick={onCancel} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>

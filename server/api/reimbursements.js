@@ -25,7 +25,7 @@ import { readFileSync } from 'fs';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
-import { coerceCustomData, mergeCustomData } from '../custom-fields.js';
+import { coerceCustomData, mergeCustomData, parseJson } from '../custom-fields.js';
 
 const router = Router();
 
@@ -125,7 +125,11 @@ router.get('/', (req, res) => {
   res.json({
     reimbursements: rows.map(r => ({
       ...withPermissions(r, req.user),
-      custom_data: r.custom_data ? JSON.parse(r.custom_data) : {},
+      // parseJson, not bare JSON.parse: this is a LIST, so one row with
+      // malformed custom_data took the whole response down with a 500 rather
+      // than degrading that row. Every other module on the custom-fields
+      // engine already uses it.
+      custom_data: parseJson(r.custom_data, {}),
       receipts: (byId[r.id] || []).map(({ storage_key, ...x }) => ({ ...x, has_file: !!storage_key })),
     })),
     totals,
@@ -209,7 +213,7 @@ function loadOne(db, id, user) {
     FROM reimbursement_receipts WHERE reimbursement_id = ?`).all(id);
   return {
     ...withPermissions(row, user),
-    custom_data: row.custom_data ? JSON.parse(row.custom_data) : {},
+    custom_data: parseJson(row.custom_data, {}),
     receipts: receipts.map(({ storage_key, ...r }) => ({ ...r, has_file: !!storage_key })),
   };
 }

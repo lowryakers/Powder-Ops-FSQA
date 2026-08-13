@@ -577,7 +577,7 @@ function MessageToTaskModal({ draft, channel, users, onCancel, onJustSend, onCre
 
   return (
     <div className="fixed inset-0 bg-black/40 z-[75] flex items-center justify-center p-4" onClick={onCancel}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex items-start gap-2">
           <ClipboardCheck size={18} className="text-powder-600 mt-0.5 shrink-0" />
           <div>
@@ -681,7 +681,7 @@ function NewChannelModal({ users, me, onClose, onCreated }) {
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">New channel</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
@@ -983,7 +983,7 @@ function RemindPicker({ m, onClose }) {
   };
   return (
     <div className="fixed inset-0 bg-black/30 z-[90] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-xs p-4 space-y-1" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-xs p-4 space-y-1 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <p className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-2"><Clock size={15} className="text-powder-600" /> Remind me about this</p>
         {done ? (
           <p className="text-sm text-green-700 py-2">✓ ReadyBot will remind you {done.toLowerCase()}.</p>
@@ -1638,7 +1638,7 @@ function ConvertRecordModal({ m, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3 max-h-[92vh] overflow-y-auto">
         {done ? (
           <div className="text-center py-2 space-y-2">
             <ClipboardCheck size={36} className="mx-auto text-green-600" />
@@ -1701,7 +1701,7 @@ function ForwardModal({ m, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3 max-h-[92vh] overflow-y-auto">
         {done ? (
           <div className="text-center py-2 space-y-2">
             <Forward size={36} className="mx-auto text-green-600" />

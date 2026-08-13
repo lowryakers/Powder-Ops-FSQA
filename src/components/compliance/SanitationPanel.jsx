@@ -27,7 +27,7 @@ function RecleanActionModal({ room, action, onDone, onClose }) {
   };
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-3">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-3 max-h-[92vh] overflow-y-auto">
         <h3 className="font-semibold text-gray-900">{meta.title} — {room}</h3>
         <p className="text-xs text-gray-500">{meta.hint}</p>
         <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)} rows={3}

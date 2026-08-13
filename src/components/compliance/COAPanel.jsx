@@ -14,7 +14,7 @@ function ConfirmDeleteModal({ count, onConfirm, onClose }) {
   const go = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } };
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center gap-2 text-red-600"><Trash2 size={18} /><h3 className="font-semibold">Permanently delete {count} lab request{count === 1 ? '' : 's'}</h3></div>
         <p className="text-sm text-gray-600">This removes the selected request{count === 1 ? '' : 's'}, their test results, and attached files for good. This cannot be undone. Type <span className="font-mono font-semibold">DELETE</span> to confirm.</p>
         <input value={text} onChange={e => setText(e.target.value)} placeholder="DELETE" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus />
@@ -736,7 +736,7 @@ function SignCoaModal({ requestId, onSigned, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
           <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2"><PenLine size={17} className="text-powder-600" /> Sign Certificate</h3>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded"><X size={18} /></button>

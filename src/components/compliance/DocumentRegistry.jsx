@@ -750,7 +750,7 @@ function BulkEditModal({ count, onApply, onClose }) {
   };
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <form onClick={e => e.stopPropagation()} onSubmit={submit} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+      <form onClick={e => e.stopPropagation()} onSubmit={submit} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Edit {count} document{count === 1 ? '' : 's'}</h3>
           <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
@@ -791,7 +791,7 @@ function ConfirmDeleteModal({ count, onConfirm, onClose }) {
   const go = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } };
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center gap-2 text-red-600"><Trash2 size={18} /><h3 className="font-semibold">Permanently delete {count} document{count === 1 ? '' : 's'}</h3></div>
         <p className="text-sm text-gray-600">This removes the selected document{count === 1 ? '' : 's'} and all version history for good. This cannot be undone. Type <span className="font-mono font-semibold">DELETE</span> to confirm.</p>
         <input value={text} onChange={e => setText(e.target.value)} placeholder="DELETE" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus />

@@ -286,7 +286,7 @@ function FieldEditor() {
 
       {confirmRetire && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-4 max-h-[92vh] overflow-y-auto">
             <h4 className="font-semibold text-gray-900 flex items-center gap-2">
               <AlertTriangle size={16} className="text-amber-500" /> Retire "{confirmRetire.field.label}"?
             </h4>

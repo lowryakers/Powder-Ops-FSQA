@@ -394,7 +394,7 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">
             Room {room} — {DAYS[dayIndex]}
@@ -634,7 +634,7 @@ function DuplicateDayModal({ weekStart, sourceDay, userName, onClose, onSaved })
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Duplicate {DAYS[sourceDay]}</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
@@ -774,7 +774,7 @@ function DownstreamModal({ product, batchDay, weekStart, userName, nextSlotFor, 
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-gray-900">Set up downstream steps</h3>
