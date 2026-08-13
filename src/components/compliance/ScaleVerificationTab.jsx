@@ -1,5 +1,24 @@
 import { useState, Fragment } from 'react';
 import { useApiGet, apiPut } from '../../hooks/useApi';
+import { useTableSort } from '../../lib/useTableSort';
+import SortHeader from '../common/SortHeader.jsx';
+
+// Columns as data. Readings has no key — it renders three weighed points, and
+// ordering a log by a triple of numbers answers no question anyone has.
+const SCALE_COLUMNS = [
+  { label: '', width: '2rem' },
+  // The cell shows the form TITLE, so sort by that rather than the code, or
+  // clicking "Scale" appears to scramble the list.
+  { key: 'form_title', label: 'Scale', type: 'text' },
+  { key: 'performed_at', label: 'Performed', type: 'date' },
+  { key: 'performed_by', label: 'By', type: 'text' },
+  { key: 'room', label: 'Room', type: 'text' },
+  { label: 'Readings' },
+  { key: 'result', label: 'Result', type: 'text' },
+  // Blank while unverified, so those sort last — "what is QA still owed" is
+  // what this column gets scanned for.
+  { key: 'verified_by', label: 'QA verified', type: 'text' },
+];
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle2, XCircle, AlertTriangle, Clock, QrCode } from 'lucide-react';
 import ScaleProcedureCard from '../common/ScaleProcedureCard.jsx';
@@ -73,7 +92,8 @@ export default function ScaleVerificationTab() {
     } finally { setVerifying(null); }
   };
 
-  const list = rows || [];
+  // Newest first — a daily-check log is read from today backwards.
+  const { sorted: list, sortCol, sortDir, toggleSort } = useTableSort(rows, SCALE_COLUMNS, 'performed_at', 'desc');
   const fails = list.filter(r => r.result === 'fail').length;
   const unverified = list.filter(r => !r.verified_by).length;
 
@@ -177,14 +197,10 @@ export default function ScaleVerificationTab() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  <th className="w-8 px-2 py-3" />
-                  <th className="px-4 py-3">Scale</th>
-                  <th className="px-4 py-3">Performed</th>
-                  <th className="px-4 py-3">By</th>
-                  <th className="px-4 py-3">Room</th>
-                  <th className="px-4 py-3">Readings</th>
-                  <th className="px-4 py-3">Result</th>
-                  <th className="px-4 py-3">QA verified</th>
+                  {SCALE_COLUMNS.map((c, i) => (
+                    <SortHeader key={c.key || `x${i}`} col={c} sortCol={sortCol} sortDir={sortDir}
+                      onSort={toggleSort} className="px-4 py-3 font-semibold text-gray-500 uppercase tracking-wide" />
+                  ))}
                   {canVerify && <th className="px-4 py-3" />}
                 </tr>
               </thead>

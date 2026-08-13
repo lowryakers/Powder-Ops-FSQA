@@ -19,6 +19,37 @@ function buildQuery(q) {
   return { sql, params };
 }
 
+/**
+ * Ordering, decided HERE rather than in the browser.
+ *
+ * This list is paged (LIMIT/OFFSET over a table with hundreds of thousands of
+ * rows), so sorting the fetched page client-side would reorder a hundred rows
+ * while the header implied it had ordered the whole log — an auditor clicking
+ * "Actor" would get the As from page four and conclude nobody else ever
+ * touched the record.
+ *
+ * An ALLOWLIST, never the raw parameter: this is interpolated into the SQL
+ * because a column name cannot be a bound parameter, so anything not on this
+ * list falls back to the default rather than reaching the query.
+ */
+const SORTABLE = new Set(['timestamp', 'actor', 'actor_role', 'action', 'entity_type', 'entity_id']);
+
+function orderBy(q) {
+  const col = SORTABLE.has(String(q.sort)) ? String(q.sort) : 'timestamp';
+  const dir = String(q.dir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  if (col === 'timestamp') return ` ORDER BY timestamp ${dir}`;
+  // COLLATE NOCASE on the text columns. SQLite's default collation compares
+  // raw bytes, so every capitalised name sorts before every lowercase one —
+  // "Matt Rowley" and "system" end up in separate blocks rather than in one
+  // alphabet, and an auditor scanning for a name reads past the end of the As
+  // and concludes it isn't there. Same trap that made the Hours roster look
+  // unsorted.
+  //
+  // Timestamp is the tiebreak, so rows sharing an actor or an action still
+  // read newest-first within that group.
+  return ` ORDER BY ${col} COLLATE NOCASE ${dir}, timestamp DESC`;
+}
+
 router.get('/', (req, res) => {
   const db = getDb();
   const { sql: baseSql, params } = buildQuery(req.query);
@@ -26,7 +57,7 @@ router.get('/', (req, res) => {
   const countSql = baseSql.replace('SELECT *', 'SELECT COUNT(*) as total');
   const total = db.prepare(countSql).get(...params).total;
 
-  const sql = baseSql + ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+  const sql = baseSql + orderBy(req.query) + ' LIMIT ? OFFSET ?';
   const rows = db.prepare(sql).all(...params, parseInt(req.query.limit) || 100, parseInt(req.query.offset) || 0);
   res.json({ total, data: rows });
 });
@@ -53,7 +84,10 @@ function csvCell(v) {
 router.get('/export', (req, res) => {
   const db = getDb();
   const { sql: baseSql, params } = buildQuery(req.query);
-  const sql = baseSql + ' ORDER BY timestamp DESC LIMIT ?';
+  // The SAME ordering the screen is using. An export that comes out in a
+  // different order from the list it was taken from is the kind of thing an
+  // auditor notices and then stops trusting the rest of.
+  const sql = baseSql + orderBy(req.query) + ' LIMIT ?';
   const rows = db.prepare(sql).all(...params, parseInt(req.query.limit) || 10000);
 
   const cols = ['id', 'timestamp', 'actor', 'actor_role', 'actor_department', 'action', 'entity_type', 'entity_id', 'entity_label', 'details'];

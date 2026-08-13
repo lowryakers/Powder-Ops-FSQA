@@ -6,9 +6,25 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import { formatDateTime } from '../../lib/datetime.js';
+import { useTableSort } from '../../lib/useTableSort';
+import SortHeader from '../common/SortHeader.jsx';
 import TextCell from '../common/TextCell.jsx';
 
-const ENERGY_TYPES = ['Electrical', 'Pneumatic', 'Hydraulic', 'Mechanical', 'Thermal', 'Chemical', 'Gravitational', 'Stored Energy'];
+// Columns as data, driving both the header and the sort. The first has no key
+// — it is the expand chevron, not a value.
+const LOTO_EXEC_COLUMNS = [
+  { label: '', width: '2rem' },
+  { key: 'equipment_name', label: 'Equipment', type: 'text' },
+  { key: 'locked_by', label: 'Locked By', type: 'text' },
+  { key: 'locked_at', label: 'Locked At', type: 'date' },
+  { key: 'reason', label: 'Reason', type: 'text' },
+  { key: 'status', label: 'Status', type: 'text' },
+  // Blank on anything still locked out, so those sort last — "what is still
+  // locked" is what this column is scanned for.
+  { key: 'released_at', label: 'Released', type: 'date' },
+];
+
+const ENERGY_TYPES =['Electrical', 'Pneumatic', 'Hydraulic', 'Mechanical', 'Thermal', 'Chemical', 'Gravitational', 'Stored Energy'];
 const STATUS_COLORS = { locked: 'bg-red-100 text-red-800', verified: 'bg-yellow-100 text-yellow-800', released: 'bg-green-100 text-green-800' };
 
 function ProcedureForm({ equipment, onSave, onCancel }) {
@@ -262,6 +278,8 @@ function ProcedureCard({ proc, onExecute, executing }) {
 export default function LOTOPanel() {
   const { data: procedures, loading, refresh: refreshProcs } = useApiGet('/loto/procedures');
   const { data: executions, refresh: refreshExecs } = useApiGet('/loto/executions');
+  // Newest lockout first — the log is read from today backwards.
+  const execSort = useTableSort(executions, LOTO_EXEC_COLUMNS, 'locked_at', 'desc');
   const expand = useRowExpand();
   const { data: equipment } = useApiGet('/equipment');
   const { data: uncovered, refresh: refreshUncovered } = useApiGet('/loto/uncovered-equipment');
@@ -434,17 +452,14 @@ export default function LOTOPanel() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="w-8 px-2 py-3" />
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Equipment</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Locked By</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Locked At</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Reason</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Released</th>
+                {LOTO_EXEC_COLUMNS.map((c, i) => (
+                  <SortHeader key={c.key || `x${i}`} col={c} sortCol={execSort.sortCol}
+                    sortDir={execSort.sortDir} onSort={execSort.toggleSort} className="px-4 py-3" />
+                ))}
               </tr>
             </thead>
             <tbody>
-              {(executions || []).map(ex => (
+              {execSort.sorted.map(ex => (
                 <Fragment key={ex.id}>
                 <tr {...expand.rowProps(ex.id, 'border-b border-gray-100')}>
                   <td className="px-2 py-3"><ExpandCell open={expand.isExpanded(ex.id)} /></td>

@@ -5,6 +5,23 @@ import { canEditModule } from '../../utils/permissions';
 import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion, Users, Video, FileText, Loader2 } from 'lucide-react';
 import { DEPARTMENT_VALUES } from '../../constants/departments';
 import ModuleTabs from '../common/ModuleTabs.jsx';
+import { useModuleTabs } from '../../lib/useModuleTabs.js';
+import { useTableSort } from '../../lib/useTableSort';
+import SortHeader from '../common/SortHeader.jsx';
+
+// Columns as data for the Records tab. Evidence and the actions cell have no
+// key — a link is not a value to order by.
+const TRAINING_RECORD_COLUMNS = [
+  { key: 'employee_name', label: 'Employee', type: 'text' },
+  // The cell falls back to training_topic for imported rows that never matched
+  // a course, so the sort has to fall back the same way or those file under
+  // blank and bury themselves at the end.
+  { key: 'course_title', label: 'Course', type: 'text', sortValue: r => r.course_title || r.training_topic },
+  { key: 'completion_date', label: 'Completed', type: 'date' },
+  { key: 'score', label: 'Score', type: 'number' },
+  { label: 'Evidence' },
+  { label: '' },
+];
 
 const CATEGORIES = ['GMP', 'Food Safety', 'HACCP', 'Allergen', 'Food Defense', 'Sanitation', 'Safety', 'Onboarding', 'Other'];
 const ROLES = ['admin', 'supervisor', 'operator', 'auditor'];
@@ -1092,7 +1109,17 @@ export default function TrainingPanel() {
   const { data: users } = useApiGet('/users');
   const { data: aiStatus } = useApiGet('/ai/status');
   const aiOn = !!aiStatus?.enabled;
-  const [view, setView] = useState('matrix');
+  const TABS = useMemo(() => [
+    { id: 'matrix', label: 'Compliance Matrix' },
+    { id: 'due', label: 'Retraining Due' },
+    { id: 'courses', label: 'Courses' },
+    { id: 'records', label: 'Records' },
+  ], []);
+
+  // useModuleTabs, not plain useState: this module had neither ?view=
+  // deep-linking nor the remembered-last-tab every other module has, so a link
+  // to the Records tab always landed on the matrix.
+  const { tabs: trainingTabs, tab: view, setTab: setView } = useModuleTabs({ id: 'training', tabs: TABS });
   const [importing, setImporting] = useState(false);
   const [importingLog, setImportingLog] = useState(false);
   const [importingScans, setImportingScans] = useState(false);
@@ -1111,12 +1138,9 @@ export default function TrainingPanel() {
     return (records || []).filter(r => !s || r.employee_name?.toLowerCase().includes(s) || (r.course_title || r.training_topic || '').toLowerCase().includes(s));
   }, [records, search]);
 
-  const TABS = useMemo(() => [
-    { id: 'matrix', label: 'Compliance Matrix' },
-    { id: 'due', label: 'Retraining Due' },
-    { id: 'courses', label: 'Courses' },
-    { id: 'records', label: 'Records' },
-  ], []);
+  // Most-recent completions first — this is the tab somebody opens to check
+  // that what they just imported actually landed.
+  const recSort = useTableSort(filteredRecords, TRAINING_RECORD_COLUMNS, 'completion_date', 'desc');
 
   return (
     <div className="space-y-5">
@@ -1150,7 +1174,7 @@ export default function TrainingPanel() {
         <StatCard label="Current" value={counts.current} tone="green" active={view === 'matrix'} onClick={() => setView('matrix')} />
       </div>
 
-      <ModuleTabs tabs={TABS} value={view} onChange={setView} />
+      <ModuleTabs tabs={trainingTabs} value={view} onChange={setView} />
 
       {/* Matrix */}
       {view === 'matrix' && matrix && (
@@ -1276,15 +1300,13 @@ export default function TrainingPanel() {
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b"><tr>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Employee</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Course</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Completed</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Score</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Evidence</th>
-                <th className="px-4 py-2"></th>
+                {TRAINING_RECORD_COLUMNS.map((c, i) => (
+                  <SortHeader key={c.key || `x${i}`} col={c} sortCol={recSort.sortCol}
+                    sortDir={recSort.sortDir} onSort={recSort.toggleSort} className="px-4 py-2" />
+                ))}
               </tr></thead>
               <tbody>
-                {filteredRecords.map(r => (
+                {recSort.sorted.map(r => (
                   <tr key={r.id} className="border-b border-gray-100 last:border-0">
                     <td className="px-4 py-2 font-medium text-gray-800">{r.employee_name}</td>
                     <td className="px-4 py-2 text-gray-600">{r.course_title || r.training_topic || '—'}</td>

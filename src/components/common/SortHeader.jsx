@@ -13,7 +13,18 @@ import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 export default function SortHeader({ col, sortCol, sortDir, onSort, className = '' }) {
   const align = col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
   const base = `${align} px-3 py-2.5 font-medium text-gray-600 ${className}`;
-  if (!col.key) return <th className={base} style={col.width ? { width: col.width } : undefined} />;
+  // No key = not sortable, but it may still be a real column. A chevron or
+  // actions cell has no label and renders empty; a column like "Details" —
+  // which holds a JSON blob nobody would order by — keeps its heading and
+  // simply isn't clickable. Dropping the label here left unsortable columns
+  // with blank headings.
+  if (!col.key) {
+    return (
+      <th className={base} style={col.width ? { width: col.width } : undefined}>
+        {col.label || null}
+      </th>
+    );
+  }
 
   const active = sortCol === col.key;
   return (

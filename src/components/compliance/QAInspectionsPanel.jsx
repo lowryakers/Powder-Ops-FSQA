@@ -5,9 +5,26 @@ import { canEditModule } from '../../utils/permissions';
 import { Search, CheckCircle2, XCircle, Lightbulb, ShieldAlert, Thermometer, FileText } from 'lucide-react';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
+import { useTableSort } from '../../lib/useTableSort';
+import SortHeader from '../common/SortHeader.jsx';
 import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { formatDateTime } from '../../lib/datetime.js';
+
+// Columns as data, so the header and the sort cannot disagree. The first entry
+// has no key — it is the expand chevron, which is not a value to order by.
+// The Verify column is conditional on canEdit and stays outside this list.
+const QA_COLUMNS = [
+  { label: '', width: '2rem' },
+  { key: 'area', label: 'Zone / Area', type: 'text' },
+  { key: 'performed_at', label: 'Performed', type: 'date' },
+  { key: 'performed_by', label: 'By', type: 'text' },
+  { key: 'result', label: 'Result', type: 'text' },
+  // Sorted by WHO verified, with unverified rows blank so they sort last —
+  // "who is still waiting on QA" is the question this column gets asked.
+  { key: 'verified_by', label: 'QA verified', type: 'text' },
+  { key: 'notes', label: 'Notes', type: 'text' },
+];
 
 // QA-owned facility inspections: Light Inspection (Form 110-01/02), Brittle
 // Plastic & Glass (Form 431-02) and Temperature & Humidity Control (Form
@@ -52,7 +69,10 @@ export default function QAInspectionsPanel() {
     });
   }, [records, kind, q, resultFilter]);
 
-  const view = useCappedList(rows);
+  // Newest first: an inspection log is read from today backwards.
+  const { sorted, sortCol, sortDir, toggleSort } = useTableSort(rows, QA_COLUMNS, 'performed_at', 'desc');
+  // Sorted BEFORE the 100-row cap, or only the visible hundred get ordered.
+  const view = useCappedList(sorted);
 
   const activeKind = KINDS.find(k => k.value === kind);
   const referenceFor = (area) => KINDS.find(k => k.reference && k.match?.test(area || ''))?.reference || null;
@@ -157,13 +177,10 @@ export default function QAInspectionsPanel() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  <th className="w-8 px-2 py-2" />
-                  <th className="px-4 py-2">Zone / Area</th>
-                  <th className="px-4 py-2">Performed</th>
-                  <th className="px-4 py-2">By</th>
-                  <th className="px-4 py-2">Result</th>
-                  <th className="px-4 py-2">QA verified</th>
-                  <th className="px-4 py-2">Notes</th>
+                  {QA_COLUMNS.map((c, i) => (
+                    <SortHeader key={c.key || `x${i}`} col={c} sortCol={sortCol} sortDir={sortDir}
+                      onSort={toggleSort} className="px-4 py-2 font-semibold text-gray-500 uppercase tracking-wide" />
+                  ))}
                   {canEdit && <th className="px-4 py-2"></th>}
                 </tr>
               </thead>

@@ -3,6 +3,8 @@ import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList, Settings2 } from 'lucide-react';
 import { useCappedList } from '../../lib/useCappedList';
+import { useTableSort } from '../../lib/useTableSort';
+import SortHeader from '../common/SortHeader.jsx';
 import ShowMore from '../common/ShowMore.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
 import { areaLabel } from '../../../shared/rooms.js';
@@ -508,9 +510,37 @@ function AreaNormalizeStrip({ onDone }) {
   );
 }
 
+/**
+ * The columns, as DATA — one array drives both the header and the sort, so a
+ * column cannot be sortable in one place and not the other. An entry with no
+ * `key` (the Verify cell, the eye) renders as a plain header and is not
+ * clickable, which is right: those are not values to order by.
+ *
+ * `sortValue` is here because several cells render something other than the
+ * raw column — Area shows a label derived from a room token, Type shows a
+ * chip. Sorting must follow WHAT IS ON SCREEN, or clicking "Area" appears to
+ * scramble the list.
+ */
+const SANITATION_COLUMNS = [
+  { key: 'area', label: 'Area', type: 'text', sortValue: r => areaLabel(r.area) },
+  { key: 'type', label: 'Type', type: 'text', sortValue: r => TYPE_LABELS[r.type] || r.type },
+  { key: 'equipment_name', label: 'Equipment', type: 'text' },
+  { key: 'performed_by', label: 'Performed By', type: 'text' },
+  { key: 'performed_at', label: 'Date', type: 'date' },
+  { key: 'chemicals_used', label: 'Chemical', type: 'text' },
+  { key: 'atp_reading', label: 'ATP', type: 'number' },
+  { key: 'result', label: 'Result', type: 'text' },
+  { key: 'verified_by', label: 'Verified', type: 'text' },
+  { label: '', width: '2.5rem' },
+];
+
 export default function SanitationPanel() {
   const { data: records, loading, refresh } = useApiGet('/sanitation');
-  const view = useCappedList(records);
+  // Newest first by default — a cleaning log is read from today backwards.
+  const { sorted, sortCol, sortDir, toggleSort } = useTableSort(records, SANITATION_COLUMNS, 'performed_at', 'desc');
+  // SORT BEFORE THE CAP. useCappedList renders the first 100; sorting after it
+  // would only order the hundred rows that happened to be on screen.
+  const view = useCappedList(sorted);
   const { data: equipment } = useApiGet('/equipment');
   const { data: chemicals } = useApiGet('/chemicals');
   const [showForm, setShowForm] = useState(false);
@@ -596,16 +626,10 @@ export default function SanitationPanel() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Area</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Equipment</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Performed By</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Chemical</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">ATP</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Result</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Verified</th>
-                <th className="px-4 py-3 w-10"></th>
+                {SANITATION_COLUMNS.map((c, i) => (
+                  <SortHeader key={c.key || `x${i}`} col={c} sortCol={sortCol} sortDir={sortDir}
+                    onSort={toggleSort} className="px-4 py-3" />
+                ))}
               </tr>
             </thead>
             <tbody>

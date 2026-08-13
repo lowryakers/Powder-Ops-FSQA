@@ -4,6 +4,21 @@ import { Shield, Download } from 'lucide-react';
 import { useRowExpand } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { formatDateTime } from '../../lib/datetime.js';
+import SortHeader from '../common/SortHeader.jsx';
+
+// Columns as data. These keys are the ones the server allowlists in SORTABLE —
+// offering a header the server would ignore is how a click silently does
+// nothing. Details is deliberately keyless: it holds a JSON blob, and ordering
+// a log by the text of its payload answers no question anyone has.
+const AUDIT_COLUMNS = [
+  { label: '', width: '2rem' },
+  { key: 'timestamp', label: 'Timestamp', type: 'date' },
+  { key: 'actor', label: 'Actor', type: 'text' },
+  { key: 'actor_role', label: 'Role', type: 'text' },
+  { key: 'action', label: 'Action', type: 'text' },
+  { key: 'entity_type', label: 'Entity', type: 'text' },
+  { label: 'Details' },
+];
 
 const ROLE_TONE = {
   admin: 'bg-purple-100 text-purple-700',
@@ -51,7 +66,21 @@ function FieldChanges({ entry }) {
 export default function AuditLogPanel() {
   const [filters, setFilters] = useState({ entity_type: '', actor: '', action: '', actor_role: '', actor_department: '', from: '', to: '' });
   const [exporting, setExporting] = useState(false);
-  const query = Object.entries(filters).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  // SORTED ON THE SERVER. The log is paged over a table with hundreds of
+  // thousands of rows, so ordering the fetched page in the browser would
+  // reorder a hundred entries while the header claimed to have ordered the
+  // whole log — click "Actor" and you would get the As from this page only.
+  const [sort, setSort] = useState({ col: 'timestamp', dir: 'desc' });
+  const toggleSort = (key) => setSort(s => (s.col === key
+    ? { col: key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+    // A new column starts descending here, not ascending: every column on an
+    // audit log is read newest-relevant-first.
+    : { col: key, dir: 'desc' }));
+
+  const query = [
+    ...Object.entries(filters).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`),
+    `sort=${sort.col}`, `dir=${sort.dir}`,
+  ].join('&');
   const { data, loading } = useApiGet(`/audit?${query}`, [query]);
   const { data: facets } = useApiGet('/audit/facets');
   const expand = useRowExpand();
@@ -221,13 +250,10 @@ export default function AuditLogPanel() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    <th className="w-8 px-2 py-3" />
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Timestamp</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Actor</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Action</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Entity</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Details</th>
+                    {AUDIT_COLUMNS.map((c, i) => (
+                      <SortHeader key={c.key || `x${i}`} col={c} sortCol={sort.col} sortDir={sort.dir}
+                        onSort={toggleSort} className="px-4 py-3" />
+                    ))}
                   </tr>
                 </thead>
                 <tbody>

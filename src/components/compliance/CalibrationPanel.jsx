@@ -8,6 +8,43 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ScaleVerificationTab from './ScaleVerificationTab.jsx';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
+import { useTableSort } from '../../lib/useTableSort';
+import SortHeader from '../common/SortHeader.jsx';
+
+// Columns as data for both tables on this module. Entries with no key are the
+// expand chevron and the actions cell — neither is a value to order by.
+const CAL_INSTRUMENT_COLUMNS = [
+  { label: '', width: '2rem' },
+  { key: 'asset_number', label: 'Asset #', type: 'text' },
+  { key: 'serial_number', label: 'Serial #', type: 'text' },
+  { key: 'manufacturer', label: 'Make', type: 'text' },
+  { key: 'model', label: 'Model', type: 'text' },
+  { key: 'room', label: 'Room', type: 'text' },
+  { key: 'last_calibrated', label: 'Last Cal.', type: 'date' },
+  { key: 'next_due', label: 'Next Due', type: 'date' },
+  // TEXT, not number: this holds "500g x 0.01g". Number() on that is NaN, which
+  // the numeric comparator would file as 0 and sort every instrument together.
+  // The collator is numeric-aware, so "9 kg" still sorts before "10 kg".
+  { key: 'max_capacity', label: 'Max Capacity', type: 'text' },
+  { key: 'department', label: 'Dept', type: 'text' },
+  { key: 'status', label: 'Status', type: 'text' },
+  { label: 'Actions', align: 'right' },
+];
+
+const CAL_RECORD_COLUMNS = [
+  { label: '', width: '2rem' },
+  { key: 'instrument_name', label: 'Instrument', type: 'text' },
+  { key: 'calibrated_at', label: 'Date', type: 'date' },
+  { key: 'result', label: 'Result', type: 'text' },
+  // Readings are free text on this form ("0.003 g", "within tol"), so the same
+  // rule applies as max_capacity above.
+  { key: 'reading_before', label: 'Before', type: 'text' },
+  { key: 'reading_after', label: 'After', type: 'text' },
+  { key: 'calibrated_by', label: 'By', type: 'text' },
+  { key: 'standard_used', label: 'Standard', type: 'text' },
+  { key: 'next_due', label: 'Next Due', type: 'date' },
+  { label: 'Cert' },
+];
 
 const STATUS_COLORS = {
   active: 'bg-green-100 text-green-800',
@@ -295,6 +332,11 @@ export default function CalibrationPanel() {
     return true;
   });
 
+  // Due soonest first: the question this list gets asked is "what is coming up
+  // for calibration", and a blank next_due sorts last as missing data.
+  const instSort = useTableSort(filtered, CAL_INSTRUMENT_COLUMNS, 'next_due', 'asc');
+  const recSort = useTableSort(records, CAL_RECORD_COLUMNS, 'calibrated_at', 'desc');
+
   const departments = [...new Set((instruments || []).map(i => i.department).filter(Boolean))];
   const today = new Date().toISOString().split('T')[0];
 
@@ -406,22 +448,14 @@ export default function CalibrationPanel() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="w-8 px-2 py-3" />
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Asset #</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Serial #</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Make</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Model</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Room</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Last Cal.</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Next Due</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Max Capacity</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Dept</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
+                  {CAL_INSTRUMENT_COLUMNS.map((c, i) => (
+                    <SortHeader key={c.key || `x${i}`} col={c} sortCol={instSort.sortCol}
+                      sortDir={instSort.sortDir} onSort={instSort.toggleSort} className="px-4 py-3" />
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(inst => {
+                {instSort.sorted.map(inst => {
                   const isOverdue = inst.next_due && inst.next_due < today && !['retired', 'out_of_service'].includes(inst.status);
                   return (
                     <Fragment key={inst.id}>
@@ -500,20 +534,14 @@ export default function CalibrationPanel() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="w-8 px-2 py-3" />
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Instrument</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Result</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Before</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">After</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">By</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Standard</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Next Due</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Cert</th>
+                {CAL_RECORD_COLUMNS.map((c, i) => (
+                  <SortHeader key={c.key || `x${i}`} col={c} sortCol={recSort.sortCol}
+                    sortDir={recSort.sortDir} onSort={recSort.toggleSort} className="px-4 py-3" />
+                ))}
               </tr>
             </thead>
             <tbody>
-              {(records || []).map(r => (
+              {recSort.sorted.map(r => (
                 <Fragment key={r.id}>
                 <tr {...expandRec.rowProps(r.id, 'border-b border-gray-100')}>
                   <td className="px-2 py-3"><ExpandCell open={expandRec.isExpanded(r.id)} /></td>
