@@ -815,6 +815,19 @@ clicks Add to orders. What gets ordered stays the office's decision.
 `data.suggestion_state` (`open` / `dismissed` / `ordered`) lives on that record, so nothing can fall out of
 sync. `openSuggestions()` reads it with `json_extract`, bounded to 500.
 
+## Module access: a NULL map means what `moduleLevel` says (decided 2026-08-13)
+`requireModuleWrite` used to pass every user WITHOUT a granular map straight through — a migration grace
+period so the floor kept working while maps were being set. Once the user had mapped every employee, that
+grace period was the hole: the client's `moduleLevel` already told an unmapped operator `view` and hid the
+edit buttons, while the server accepted the same operator's writes — two mechanisms, one fact, the server
+looser than its own UI. Both sides now ask `moduleLevel`: **NULL = role decides (supervisor edit, operator
+view), legacy array = same rule per listed module, object map = exactly what Settings says.**
+- **A brand-new account with no map is view-only on every guarded module** until an admin grants its
+  modules in Settings — safe by default. Set the map when creating the account.
+- An unmapped supervisor keeps role-default edit, so leadership was never locked out by the change.
+- Public kiosk paths (`/api/submit`) carry no `req.user` and are not behind this guard; QMS filing stays
+  open at the handler level on purpose.
+
 ## QMS records: who may change a filed record
 `server/api/qms.js` — **filing stays open on purpose** (anyone who sees a deviation should be able to
 report it), everything after that is records integrity. `mayEdit()`: the filer while unsigned, plus
