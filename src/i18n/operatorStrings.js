@@ -95,6 +95,9 @@ const strings = {
   acceptable_range: { en: 'Within acceptable range? *', es: '¿Dentro del rango aceptable? *' },
   target: { en: 'Target:', es: 'Objetivo:' },
   mixed_to: { en: 'Mixed to', es: 'Mezclado a' },
+  verified: { en: 'Verified', es: 'Verificado' },
+  optional: { en: 'optional', es: 'opcional' },
+  out_of_range_fail: { en: 'outside the range — recorded as a FAIL', es: 'fuera del rango — registrado como FALLO' },
   pass: { en: 'Pass', es: 'Aprobado' },
   fail: { en: 'Fail', es: 'Fallo' },
 

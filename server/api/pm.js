@@ -25,11 +25,11 @@ import { recordGroupFor } from '../qa-records.js';
 // that — see NONFOOD_DEFAULT in api/sanitation.js.
 const DILUTION_AREA = 'Chemical Verification';
 
-// What the operator entered for THIS dilution: a number off a test strip, or a
-// yes/no confirmation that a ratio was mixed correctly.
+// What the operator answered for THIS dilution. The form's own answer is Pass
+// or Fail; the ppm box is optional and only cross-checks it.
 function dilutionValue(form, readings) {
   const r = readings || {};
-  return isMeasured(form) ? (r.ppm_reading ?? r.reading) : (r.dilution_pass ?? r.ratio_confirmed);
+  return { confirmed: r.dilution_pass ?? r.ratio_confirmed, reading: r.ppm_reading ?? r.reading };
 }
 
 function fileDilutionRecord(db, { form, grade, readings, notes, by, workOrderId }) {
@@ -49,7 +49,10 @@ function fileDilutionRecord(db, { form, grade, readings, notes, by, workOrderId 
       chemicals_used, concentration, result, record_group, notes)
     VALUES (?, ?, 'pre_op', ?, datetime('now'), datetime('now'), ?, ?, ?, ?, ?)
   `).run(id, DILUTION_AREA, by, form.chemical,
-    isMeasured(form) && dilutionValue(form, r) ? `${dilutionValue(form, r)} ${form.unit}` : form.target,
+    // The concentration column records the volunteered reading when there is
+    // one, and otherwise the target the check was made against — which is what
+    // the paper log carries.
+    isMeasured(form) && r.ppm_reading ? `${r.ppm_reading} ${form.unit}` : form.target,
     grade.result,
     recordGroupFor(DILUTION_AREA), detail);
   return id;
@@ -575,9 +578,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   // tomorrow's task still arrives.
   if (dilution && !graded.result) {
     return res.status(400).json({
-      error: isMeasured(dilution)
-        ? `Enter the ${dilution.chemical} reading (${dilution.target}) before completing this check — or use Skip / Not applicable if it wasn't mixed today.`
-        : `Confirm whether ${dilution.chemical} was mixed to ${dilution.target} — or use Skip / Not applicable if it wasn't mixed today.`,
+      error: `Mark ${dilution.chemical} Pass or Fail against ${dilution.target} before completing this check — or use Skip / Not applicable if it wasn't checked today.`,
       requires_reading: true,
       target: dilution.target,
     });

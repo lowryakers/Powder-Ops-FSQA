@@ -91,31 +91,55 @@ export function formFromTitle(title) {
 }
 
 /**
- * The reading decides — never the operator's tap.
+ * THE ANSWER IS PASS OR FAIL, because that is what the form asks for.
  *
- * The paper form has the operator circle out-of-range readings; here the range
- * does it, the same rule `gradeReadings()` follows for the scale forms. It was
- * previously possible to type 300 ppm and press Pass, and the record would say
- * pass.
+ * An earlier cut of this required a ppm number and graded it against the range.
+ * Reading the plant's own filled-in logbooks settled it: the "Result ppm"
+ * column is a printed *Pass / Fail* that gets circled, and across fourteen
+ * pages of three years' records not one number was ever written. Requiring one
+ * would have asked the floor on Monday for something they have never recorded.
+ * (User decision, 2026-08-13: match the paper.)
+ *
+ * `min`/`max` are KEPT even though nothing is graded on them. They are the
+ * acceptance criteria printed at the top of the form, they are what the
+ * operator is checking the strip against, and the screen shows them — a target
+ * the person cannot see is not a target.
+ *
+ * The reading stays OPTIONAL: the column is headed "Result ppm", so somewhere
+ * to put the number belongs on the form. When one IS volunteered it is
+ * cross-checked, and a number outside the range cannot be filed as a pass —
+ * that is the one control worth keeping, and it costs nothing when the box is
+ * left empty, which is the normal case.
+ *
+ * `value` is `{ confirmed, reading }`; a bare value is read as the
+ * confirmation, so older callers keep working.
  *
  * Returns `{ result, reason }` where result is 'pass' | 'fail' | null. NULL IS
- * NOT A FAIL — a blank or unreadable entry is a gap in the record, not an
- * out-of-range dilution, and filing it as a failure would raise an
- * investigation into something nobody measured.
+ * NOT A FAIL — an unanswered check is a gap in the record, not an out-of-range
+ * dilution, and filing it as a failure would raise an investigation into
+ * something nobody looked at.
  */
 export function gradeDilution(form, value) {
   if (!form) return { result: null, reason: 'Unknown dilution' };
 
-  if (!isMeasured(form)) {
-    // A ratio is confirmed, not measured. `value` is the confirmation.
-    if (value === 'yes' || value === true || value === 'pass') return { result: 'pass', reason: `Mixed to ${form.target}` };
-    if (value === 'no' || value === false || value === 'fail') return { result: 'fail', reason: `Not mixed to ${form.target}` };
-    return { result: null, reason: 'Not confirmed' };
-  }
+  const v = (value && typeof value === 'object') ? value : { confirmed: value };
+  const yes = v.confirmed === 'yes' || v.confirmed === true || v.confirmed === 'pass';
+  const no = v.confirmed === 'no' || v.confirmed === false || v.confirmed === 'fail';
+  if (!yes && !no) return { result: null, reason: 'Not answered' };
 
-  const n = parseFloat(String(value ?? '').replace(/[^0-9.\-]/g, ''));
-  if (!Number.isFinite(n)) return { result: null, reason: 'No reading recorded' };
-  if (n < form.min) return { result: 'fail', reason: `${n} ${form.unit} is below the ${form.target} range` };
-  if (n > form.max) return { result: 'fail', reason: `${n} ${form.unit} is above the ${form.target} range` };
-  return { result: 'pass', reason: `${n} ${form.unit} is within ${form.target}` };
+  const within = isMeasured(form) ? `verified ${form.target}` : `mixed to ${form.target}`;
+  const n = parseFloat(String(v.reading ?? '').replace(/[^0-9.\-]/g, ''));
+  const measured = isMeasured(form) && Number.isFinite(n);
+
+  if (yes && measured && (n < form.min || n > form.max)) {
+    // The one place the number still overrules the tap. A recorded reading and
+    // a circled Pass that disagree is not a record anybody can defend.
+    return {
+      result: 'fail',
+      reason: `${n} ${form.unit} is outside ${form.target} — recorded as a fail despite being marked pass`,
+      contradiction: true,
+    };
+  }
+  if (yes) return { result: 'pass', reason: measured ? `${n} ${form.unit}, ${within}` : within };
+  return { result: 'fail', reason: measured ? `${n} ${form.unit} — not ${within}` : `not ${within}` };
 }

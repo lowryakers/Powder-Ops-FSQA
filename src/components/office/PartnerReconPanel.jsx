@@ -45,6 +45,7 @@ function DocumentForm({ partner, initial, onClose, onSaved }) {
   const [f, setF] = useState(() => initial || {
     direction: 'receivable', doc_type: 'invoice', doc_number: '', reference: '',
     description: '', issued_date: today(), terms_days: partner?.terms_days ?? 30, amount: '',
+    category: '',
   });
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -99,6 +100,23 @@ function DocumentForm({ partner, initial, onClose, onSaved }) {
                 <option value="invoice">Invoice</option>
                 <option value="po">Purchase order</option>
                 <option value="credit">Credit note</option>
+              </select>
+            </label>
+            {/* WHAT IT IS FOR, which is a different question from what kind of
+                document it is — and the only thing that lets a credit tell a
+                production run apart from an ingredient sale. Left blank means
+                blank: nothing is ever guessed from the description. */}
+            <label className="block">
+              <span className="block text-xs font-medium text-gray-600 mb-1">
+                What it&rsquo;s for <span className="font-normal text-gray-400">— decides credit</span>
+              </span>
+              <select value={f.category || ''} onChange={e => set('category', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="">Not categorised</option>
+                <option value="manufacturing">Manufacturing / production run</option>
+                <option value="materials">Raw materials / ingredients</option>
+                <option value="freight">Freight</option>
+                <option value="other">Other</option>
               </select>
             </label>
             <label className="block">
@@ -186,9 +204,89 @@ function DocumentForm({ partner, initial, onClose, onSaved }) {
  * the first question anyone asks, and an uncategorised document is the usual
  * answer — the credit refuses to guess, so the screen has to say so.
  */
-function CreditCard({ credit }) {
+// Opening the facility. Without this the endpoint exists and nothing can reach
+// it — which is exactly how the credit was invisible after the first deploy.
+function OpenCreditForm({ pid, onDone, onCancel }) {
+  const [amount, setAmount] = useState('200000');
+  const [label, setLabel] = useState('');
+  const [appliesTo, setAppliesTo] = useState('manufacturing');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const go = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await apiPost(`/partners/${pid}/credits`, {
+        amount: Number(amount), applies_to: appliesTo, direction: 'receivable',
+        label: label.trim() || undefined, description: note.trim() || undefined,
+      });
+      onDone();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  };
+
+  return (
+    <div className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50/70 p-3 space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-indigo-900">Open a credit</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="block">
+          <span className="block text-[11px] text-indigo-800 mb-1">Amount</span>
+          <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)}
+            className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm bg-white" />
+        </label>
+        <label className="block">
+          <span className="block text-[11px] text-indigo-800 mb-1">Applies to</span>
+          <select value={appliesTo} onChange={e => setAppliesTo(e.target.value)}
+            className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm bg-white">
+            <option value="manufacturing">Manufacturing / production runs</option>
+            <option value="materials">Raw materials / ingredients</option>
+            <option value="freight">Freight</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+      </div>
+      <label className="block">
+        <span className="block text-[11px] text-indigo-800 mb-1">Name it</span>
+        <input value={label} onChange={e => setLabel(e.target.value)} placeholder="M4 manufacturing credit"
+          className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm bg-white" />
+      </label>
+      <label className="block">
+        <span className="block text-[11px] text-indigo-800 mb-1">What was agreed</span>
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+          placeholder="e.g. Danny — production runs only, not raw material purchases."
+          className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm bg-white" />
+      </label>
+      <p className="text-[11px] text-indigo-800">
+        Only documents marked as {appliesTo === 'manufacturing' ? 'manufacturing' : appliesTo} draw on this.
+        Anything left uncategorised is never absorbed.
+      </p>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      <div className="flex gap-2">
+        <button type="button" onClick={go} disabled={busy || !(Number(amount) > 0)}
+          className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+          {busy ? 'Opening…' : 'Open credit'}
+        </button>
+        <button type="button" onClick={onCancel}
+          className="px-3 py-2 rounded-lg border border-indigo-200 text-indigo-800 text-sm hover:bg-indigo-100">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function CreditCard({ credit, pid, canSettle, onChanged }) {
   const [open, setOpen] = useState(false);
-  if (!credit) return null;
+  const [opening, setOpening] = useState(false);
+  if (!credit) {
+    if (!canSettle) return null;
+    return opening
+      ? <OpenCreditForm pid={pid} onDone={() => { setOpening(false); onChanged?.(); }} onCancel={() => setOpening(false)} />
+      : (
+        <button type="button" onClick={() => setOpening(true)}
+          className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-800 bg-white text-xs font-medium hover:bg-indigo-50">
+          + Add a credit
+        </button>
+      );
+  }
   const pct = credit.facility > 0
     ? Math.min(100, Math.round(((credit.facility - credit.remaining_balance) / credit.facility) * 100)) : 0;
 
@@ -266,7 +364,7 @@ function CreditCard({ credit }) {
   );
 }
 
-function TheNumber({ recon, partner, canSettle, onSettle, busy }) {
+function TheNumber({ recon, partner, canSettle, onSettle, busy, onCreditChanged }) {
   if (!recon) return null;
   const credit = recon.credit;
   // After the credit is what is actually owed, so that is the headline. The
@@ -310,7 +408,7 @@ function TheNumber({ recon, partner, canSettle, onSettle, busy }) {
         )}
       </div>
 
-      <CreditCard credit={credit} />
+      <CreditCard credit={credit} pid={partner?.id} canSettle={canSettle} onChanged={onCreditChanged} />
 
       {canSettle && !nobody && (
         <button onClick={onSettle} disabled={busy}
@@ -467,7 +565,8 @@ export default function PartnerReconPanel({ user }) {
               </button>
             )}
           </div>
-          <TheNumber recon={recon} partner={partner} canSettle={canSettle} onSettle={settle} busy={busy} />
+          <TheNumber recon={recon} partner={partner} canSettle={canSettle} onSettle={settle} busy={busy}
+            onCreditChanged={reloadAll} />
           <div className="grid gap-4 lg:grid-cols-2">
             <SideList title={`${partner.name} owes Powder Ops`} rows={recon?.documents?.receivable} tone="green" />
             <SideList title={`Powder Ops owes ${partner.name}`} rows={recon?.documents?.payable} tone="amber" />
