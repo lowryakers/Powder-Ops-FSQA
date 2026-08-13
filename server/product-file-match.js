@@ -151,14 +151,14 @@ export function readNfpText(text) {
   if (!t) return out;
 
   // "Serving size 2 sticks (40g)" / "Serving Size: 1 packet (30 g)"
-  const ss = t.match(/serving\s*size\s*[:\-]?\s*([^.;]{1,60}?)(?=\s*(?:(?:about\s*)?[\d.]+\s*servings?\s*per|servings?\s*per|amount\s*per|calories|$))/i);
+  const ss = t.match(/serving\s*size\s*[:-]?\s*([^.;]{1,60}?)(?=\s*(?:(?:about\s*)?[\d.]+\s*servings?\s*per|servings?\s*per|amount\s*per|calories|$))/i);
   if (ss) {
     out.serving_size = ss[1].trim().replace(/[,\s]+$/, '') || null;
     out.evidence.serving_size = ss[0].trim().slice(0, 120);
   }
 
   // "Servings per container 20" / "About 14 servings per container"
-  const spc = t.match(/servings?\s*per\s*container\s*[:\-]?\s*(about\s*)?([\d.]+)/i)
+  const spc = t.match(/servings?\s*per\s*container\s*[:-]?\s*(about\s*)?([\d.]+)/i)
     || t.match(/(?:about\s*)?([\d.]+)\s*servings?\s*per\s*container/i);
   if (spc) {
     const n = spc[2] ?? spc[1];

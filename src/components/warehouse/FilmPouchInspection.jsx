@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApiGet, apiPost, apiFetch, apiUpload } from '../../hooks/useApi';
 import {
   ScanLine, X, CheckCircle2, XCircle, RotateCcw, Plus, Camera, Trash2, AlertTriangle,
@@ -84,14 +84,17 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
     setHeader(Object.fromEntries((form?.header || []).map(h => [h.key, rec?.[h.key] ?? ''])));
   }, [data, rec, form]);
 
-  const save = useCallback(async (patch) => {
+  // Not memoized: it is only ever called from event handlers, never from an
+  // effect's dependency list, and useCallback over optional-chained fields is
+  // memoization the React compiler cannot preserve anyway.
+  const save = async (patch) => {
     setError('');
     try {
       await apiPost('/film-inspection', {
         inspection_no: rec?.inspection_no, flavor: rec?.flavor, ...patch,
       });
     } catch (e) { setError(e.message); }
-  }, [rec?.inspection_no, rec?.flavor]);
+  };
 
   const answer = async (key, val) => {
     setAnswers(a => ({ ...a, [key]: val }));

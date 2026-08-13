@@ -13,7 +13,11 @@
     "start": "node server.js",
     "seed": "node server/seed.js",
     "backup": "node scripts/backup-db.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check:routes": "node scripts/check-route-order.mjs",
+    "check:boot": "node scripts/check-fresh-boot.mjs",
+    "check:endpoints": "node scripts/check-endpoints.mjs",
+    "check": "npm run lint && npm run build && npm run check:routes && npm run check:boot && npm run check:endpoints"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

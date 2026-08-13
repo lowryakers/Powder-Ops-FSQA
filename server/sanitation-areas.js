@@ -109,7 +109,7 @@ export function canonicalArea(raw) {
  * compliance records, so the counts go in front of a person first.
  */
 export function previewAreaNormalization(db) {
-  let rows = [];
+  let rows;
   try {
     rows = db.prepare(
       "SELECT area, COUNT(*) AS records FROM sanitation_records WHERE COALESCE(record_group, 'sanitation') = 'sanitation' GROUP BY area"

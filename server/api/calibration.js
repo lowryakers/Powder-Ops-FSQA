@@ -4,6 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync } from 'fs';
 import { getDb, logAudit, dataDir } from '../db.js';
+import { periodically } from '../housekeeping.js';
 
 // Beside the DB (the persistent volume in production) — NOT the app dir,
 // which is wiped on every deploy.

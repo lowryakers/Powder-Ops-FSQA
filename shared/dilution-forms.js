@@ -128,7 +128,7 @@ export function gradeDilution(form, value) {
   if (!yes && !no) return { result: null, reason: 'Not answered' };
 
   const within = isMeasured(form) ? `verified ${form.target}` : `mixed to ${form.target}`;
-  const n = parseFloat(String(v.reading ?? '').replace(/[^0-9.\-]/g, ''));
+  const n = parseFloat(String(v.reading ?? '').replace(/[^0-9.-]/g, ''));
   const measured = isMeasured(form) && Number.isFinite(n);
 
   if (yes && measured && (n < form.min || n > form.max)) {

@@ -2493,7 +2493,12 @@ function runMigrations() {
   // ReadyDoc account both need something on the box, and every chart printed
   // before this existed should still read the way it did.
   addColumnIfMissing('org_positions', 'user_id', 'TEXT');
-  linkOrgPositionsToUsers();
+  // The backfill itself runs further down, immediately after `app_settings` is
+  // created — it reads and writes its own done-marker there, and on a fresh
+  // database that table does not exist yet at this point in boot order. Calling
+  // it here caught its own exception and skipped, which looked like a warning
+  // and was actually the whole backfill not running. Same trap as an index
+  // naming a table created four hundred lines later.
 
   // "Logged on paper" flag — grandfathered/historical disposals whose Ops
   // Manager & QC signatures live on the uploaded scanned form, not in-system,
@@ -2875,6 +2880,14 @@ function runMigrations() {
   } catch (e) {
     console.warn('[db] app_settings unavailable:', e.message);
   }
+
+  // Link the org chart to accounts. Here rather than beside its ALTER TABLE
+  // because it stores its done-marker in app_settings, which is created
+  // directly above. On an EXISTING database this is the pass that does the
+  // work; on a fresh one the chart has not been seeded yet, so it finds
+  // nothing, declines to mark itself done, and server.js runs it again after
+  // the seeders — which is why it must not write the marker on an empty pass.
+  linkOrgPositionsToUsers();
 
   // Generic content-translation cache: reusable across modules (operator task
   // titles/steps, etc.). Keyed by a hash of the source text + target language so

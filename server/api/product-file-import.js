@@ -72,7 +72,7 @@ const TARGETS = {
         `Imported from ${file.originalname}.`, user);
       return { id };
     },
-    attach(db, { id, sku, key, file, user }) {
+    attach(db, { id, key, file, user }) {
       db.prepare(`INSERT INTO nfp_files (id, version_id, kind, filename, content_type, size, storage_key, uploaded_by)
         VALUES (?, ?, 'panel', ?, ?, ?, ?, ?)`)
         .run(uuid(), id, file.originalname.slice(0, 255), file.mimetype || null, file.size || null, key, user);
@@ -103,7 +103,7 @@ const TARGETS = {
         id, sku, version, product?.nfp_version || null, `Imported from ${file.originalname}.`, user);
       return { id };
     },
-    attach(db, { id, sku, key, file, user }) {
+    attach(db, { id, key, file, user }) {
       db.prepare(`INSERT INTO artwork_files (id, version_id, kind, filename, content_type, size, storage_key, uploaded_by)
         VALUES (?, ?, 'print_pdf', ?, ?, ?, ?, ?)`)
         .run(uuid(), id, file.originalname.slice(0, 255), file.mimetype || null, file.size || null, key, user);
@@ -185,7 +185,7 @@ router.post('/:target/commit', withUpload, async (req, res) => {
   const files = req.files || [];
   if (!files.length) return res.status(400).json({ error: 'No files received.' });
 
-  let mapping = {};
+  let mapping;
   try { mapping = JSON.parse(req.body?.mapping || '{}'); } catch { mapping = {}; }
 
   const db = getDb();

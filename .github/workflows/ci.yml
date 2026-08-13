@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      # Express matches in declaration order, so a literal route declared after
+      # a `/:param` on the same path is answered by the param handler and can
+      # never fire. /master.csv, /batch/send and PUT /org/meta were each in that
+      # state after shipping, none of them noticeably.
+      - name: Route order
+        run: npm run check:routes
+
+      # The one the production volume will never tell you about: a column
+      # migration or an index that names a table created later kills a BRAND NEW
+      # database at boot, while every existing deploy comes up fine because the
+      # table is already there. New deploys and disaster-recovery restores are
+      # exactly where that matters.
+      - name: Fresh-database boot
+        run: npm run check:boot
+
+      # A screen cannot tell "the query returned nothing" from "the request
+      # failed" — it renders empty either way, and gets reported as data loss.
+      # This GETs everything the app opens on and fails on anything that errors.
+      - name: Every screen's first request
+        run: npm run check:endpoints
