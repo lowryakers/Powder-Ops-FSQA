@@ -2,21 +2,23 @@
 // Mirrors src/utils/permissions.js — keep the two in sync.
 //
 // Semantics (matching the client):
-//   module_access null   → role decides: supervisors edit, everyone else view
-//   legacy array         → visible modules, level per role (same rule)
+//   module_access null   → NOTHING ASSIGNED — no modules, reads included
+//   legacy array         → visible modules, level per role
 //   object {id: level}   → explicit per-module 'view' | 'edit'; absent = none
 //
-// A NULL MAP MEANS WHAT moduleLevel SAYS IT MEANS — decided 2026-08-13, once
-// every employee had an explicit map set in Settings. During the migration,
-// requireModuleWrite passed every non-granular user through so nothing on the
-// floor would break; that grace period had a hole shaped exactly like the
-// bugs this codebase keeps finding: the CLIENT's moduleLevel already told an
-// unmapped operator 'view' and hid the edit buttons, while the server
-// accepted the same operator's writes — two mechanisms, one fact, the server
-// looser than its own UI. Now both sides ask moduleLevel. Practical meaning:
-// a brand-new account with no map is view-only on every guarded module until
-// an admin grants its modules — safe by default — and an unmapped supervisor
-// keeps role-default edit, so the migration path never locked leadership out.
+// A NULL MAP IS AN EMPTY ACCOUNT — decided 2026-08-13, tightened the same
+// day. The first cut of this decision made NULL mean "role decides"
+// (supervisors edit, everyone else view everywhere); the user's rule is
+// stricter and simpler: a brand-new account gets NOTHING automatically except
+// Messages (comms is not behind this guard and has its own membership rules).
+// Every ReadyDoc module is assigned in Settings, whatever the role — an
+// unmapped supervisor is as empty as an unmapped operator. Since every
+// existing employee already carries an explicit map, this changes only
+// accounts nobody has set up yet, which is the point: safe by default.
+//
+// Auditors are the one exception: their whole contract is read-only
+// everywhere (GETs pass, every write refused), because the Auditor View reads
+// across every module by design.
 //
 // A router can span several modules (production serves the log, schedule and
 // KPIs), so a write is allowed when the user has edit on ANY of the mapped
@@ -70,7 +72,8 @@ export function moduleLevel(user, moduleId) {
   if (!user) return null;
   const ma = user.module_access;
   if (user.role === 'admin') return 'edit';
-  if (ma == null) return user.role === 'supervisor' ? 'edit' : 'view';
+  if (user.role === 'auditor') return 'view';
+  if (ma == null) return null; // nothing assigned — see the note at the top
   if (Array.isArray(ma)) return ma.includes(moduleId) ? (user.role === 'supervisor' ? 'edit' : 'view') : null;
   const lvl = ma[moduleId];
   return lvl === 'edit' ? 'edit' : lvl === 'view' ? 'view' : null;
@@ -94,18 +97,25 @@ export function hasExplicitEdit(user, moduleId) {
   return !!(ma && !Array.isArray(ma) && ma[moduleId] === 'edit');
 }
 
-// Express middleware: gate non-GET requests on edit access to any of the
-// router's modules. GETs pass (View means read). Auditors are always
-// read-only. Everyone else — mapped, legacy-array or NULL — is answered by
-// moduleLevel, the same rule the client renders buttons with (see the
-// philosophy note at the top).
+// Express middleware. Writes are gated on edit access to any of the router's
+// modules; GETs pass for any MAPPED user (view-level cross-module reads are
+// load-bearing — the warehouse reading QA's film inspections is the worked
+// example) and for auditors, whose contract is read-only everywhere. The one
+// account whose GETs are refused is the NOTHING-ASSIGNED account: a NULL map
+// means no modules, and "no modules" that still answered every read would be
+// the same two-mechanisms gap this rule just closed on the write side.
 export function requireModuleWrite(...moduleIds) {
   return (req, res, next) => {
-    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
     const user = req.user;
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    const unassigned = user.role !== 'admin' && user.role !== 'auditor' && user.module_access == null;
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+      if (unassigned) return res.status(403).json({ error: 'No modules have been assigned to this account yet. An admin assigns them in Settings.' });
+      return next();
+    }
     if (user.role === 'admin') return next();
     if (user.role === 'auditor') return res.status(403).json({ error: 'Auditor accounts are read-only.' });
+    if (unassigned) return res.status(403).json({ error: 'No modules have been assigned to this account yet. An admin assigns them in Settings.' });
     if (canEditAny(user, moduleIds)) return next();
     return res.status(403).json({ error: 'You have view-only access to this module. An admin can grant edit access in Settings.' });
   };

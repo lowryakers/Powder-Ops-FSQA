@@ -1,9 +1,18 @@
 // Per-module access levels.
 //
 // A user's `module_access` can be:
-//   - null            → no restriction (see all modules; edit per role)
+//   - null            → NOTHING ASSIGNED — no modules at all (decided 2026-08-13)
 //   - ["a","b"]       → legacy: visible modules; edit per role (auto-migrated to object form)
 //   - { a:"edit", b:"view" } → explicit per-module level; modules absent = no access
+//
+// A NULL MAP IS AN EMPTY ACCOUNT, NOT A ROLE DEFAULT. It briefly meant "role
+// decides" (supervisors edit, operators view everywhere), which made every
+// brand-new account a viewer of the whole compliance system before anyone
+// decided that. The user's rule is the opposite: the only thing an account
+// gets automatically is Messages (public channels — comms is not module-gated
+// and has its own membership rules); every ReadyDoc module is assigned in
+// Settings. Auditors are the exception — their whole contract is read-only
+// everywhere, enforced server-side, and they land in the Auditor View.
 //
 // Admins default to full edit access. If an admin is given an explicit
 // module_access OBJECT they respect it (so specific modules can be un-selected
@@ -23,7 +32,8 @@ export function moduleLevel(user, moduleId) {
     if (ma && !Array.isArray(ma) && !ADMIN_ALWAYS.has(moduleId)) return ma[moduleId] ? 'edit' : null;
     return 'edit';
   }
-  if (ma == null) return roleDefault(user.role);
+  if (user.role === 'auditor') return 'view';
+  if (ma == null) return null;
   if (Array.isArray(ma)) return ma.includes(moduleId) ? roleDefault(user.role) : null;
   const lvl = ma[moduleId];
   return lvl === 'edit' ? 'edit' : lvl === 'view' ? 'view' : null;
@@ -49,7 +59,11 @@ export function visibleModuleIds(user, allIds) {
     if (ma && !Array.isArray(ma)) return allIds.filter(id => ADMIN_ALWAYS.has(id) || ma[id]);
     return allIds;
   }
-  if (ma == null) return allIds;
+  // Auditors never see this nav — they land in the Auditor View — but the
+  // answer stays consistent with moduleLevel if anything else asks.
+  if (user.role === 'auditor') return allIds;
+  // Nothing assigned means nothing shown — see the note at the top.
+  if (ma == null) return [];
   if (Array.isArray(ma)) return allIds.filter(id => ma.includes(id));
   return allIds.filter(id => ma[id]);
 }

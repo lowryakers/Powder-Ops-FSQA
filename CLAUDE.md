@@ -815,18 +815,24 @@ clicks Add to orders. What gets ordered stays the office's decision.
 `data.suggestion_state` (`open` / `dismissed` / `ordered`) lives on that record, so nothing can fall out of
 sync. `openSuggestions()` reads it with `json_extract`, bounded to 500.
 
-## Module access: a NULL map means what `moduleLevel` says (decided 2026-08-13)
+## Module access: a NULL map is an EMPTY account (decided 2026-08-13, tightened same day)
 `requireModuleWrite` used to pass every user WITHOUT a granular map straight through — a migration grace
-period so the floor kept working while maps were being set. Once the user had mapped every employee, that
-grace period was the hole: the client's `moduleLevel` already told an unmapped operator `view` and hid the
-edit buttons, while the server accepted the same operator's writes — two mechanisms, one fact, the server
-looser than its own UI. Both sides now ask `moduleLevel`: **NULL = role decides (supervisor edit, operator
-view), legacy array = same rule per listed module, object map = exactly what Settings says.**
-- **A brand-new account with no map is view-only on every guarded module** until an admin grants its
-  modules in Settings — safe by default. Set the map when creating the account.
-- An unmapped supervisor keeps role-default edit, so leadership was never locked out by the change.
-- Public kiosk paths (`/api/submit`) carry no `req.user` and are not behind this guard; QMS filing stays
-  open at the handler level on purpose.
+period so the floor kept working while maps were being set. With every employee mapped, that hole closed;
+the first cut made NULL mean "role decides" (supervisor edit, operator view everywhere). **The user's rule
+is stricter: the only thing an account gets automatically is Messages. Every ReadyDoc module is assigned
+in Settings, whatever the role — an unmapped supervisor is as empty as an unmapped operator.**
+- **NULL = nothing**: no nav, GETs on guarded mounts refused ("No modules have been assigned…"), writes
+  refused. The client renders a welcome screen with an Open Messages button instead of an empty sidebar
+  that reads as broken. Settings shows the row amber: "No modules assigned".
+- **Legacy array = the listed modules** (level per role); **object map = exactly what Settings says**;
+  **admins unchanged**; **auditors are the exception** — read-only everywhere (GETs pass, writes refused),
+  because the Auditor View reads across every module by design.
+- **Mapped users' GETs still pass the mount guard** — view-level cross-module reads are load-bearing (the
+  warehouse reading QA's film inspections is the worked example). Only the nothing-assigned account loses
+  reads.
+- Comms is not behind this guard (own membership rules); public kiosk paths (`/api/submit`) carry no
+  `req.user`; QMS filing stays open at the handler level on purpose.
+- **Set the module map when creating an account** — until then the person can only use Messages.
 
 ## QMS records: who may change a filed record
 `server/api/qms.js` — **filing stays open on purpose** (anyone who sees a deviation should be able to

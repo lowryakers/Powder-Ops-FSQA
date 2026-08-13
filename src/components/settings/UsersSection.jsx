@@ -640,7 +640,11 @@ function moduleCountOf(u) {
   })();
   return {
     access,
-    count: !access ? ALL_MODULE_IDS.length : (Array.isArray(access) ? access.length : Object.keys(access).length),
+    // A missing map is an EMPTY account now, not "all modules" — a roster row
+    // reading 58/58 for someone who can open nothing is the wrong warning.
+    count: !access
+      ? (u.role === 'admin' ? ALL_MODULE_IDS.length : 0)
+      : (Array.isArray(access) ? access.length : Object.keys(access).length),
   };
 }
 
@@ -662,9 +666,10 @@ function DeptChip({ department }) {
 
 function AccessNote({ u }) {
   const { access, count } = moduleCountOf(u);
-  return u.role === 'admin' && !access
-    ? <span className="text-[10px] text-gray-400">All modules</span>
-    : <span className="text-[10px] text-gray-500">{count}/{ALL_MODULE_IDS.length} modules</span>;
+  if (u.role === 'admin' && !access) return <span className="text-[10px] text-gray-400">All modules</span>;
+  // Amber, because this account can open nothing until someone acts.
+  if (count === 0) return <span className="text-[10px] font-semibold text-amber-600">No modules assigned</span>;
+  return <span className="text-[10px] text-gray-500">{count}/{ALL_MODULE_IDS.length} modules</span>;
 }
 
 function StatusChip({ active }) {

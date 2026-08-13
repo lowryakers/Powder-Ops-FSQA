@@ -1740,6 +1740,49 @@ function App() {
     );
   }
 
+  // NOTHING ASSIGNED: the only automatic thing an account gets is Messages.
+  // A brand-new account has no module map, sees no modules, and lands here —
+  // a door into the public channels and a plain statement of the state,
+  // rather than an empty sidebar beside an empty pane that reads as broken.
+  // (The Messages workspace itself renders earlier, on workspace === 'comms',
+  // so the button below is all this screen needs.)
+  if (effectiveModules.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <header className="bg-white border-b border-gray-200">
+          <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
+            <div className="h-9 w-9 bg-powder-600 rounded-lg flex items-center justify-center">
+              <Shield size={20} className="text-white" />
+            </div>
+            <h1 className="text-lg font-bold text-gray-900 flex-1">Powder Ops</h1>
+            <span className="text-xs text-gray-500">{user.name}</span>
+            <button onClick={logout} className="text-gray-400 hover:text-gray-600" title="Sign Out">
+              <LogOut size={18} />
+            </button>
+          </div>
+        </header>
+        <main className="flex-1 flex items-center justify-center px-4">
+          <div className="max-w-md text-center space-y-4">
+            <MessageSquare size={40} className="text-powder-500 mx-auto" />
+            <div>
+              <p className="text-lg font-bold text-gray-900">Welcome, {user.name.split(' ')[0]}</p>
+              <p className="text-sm text-gray-600 mt-1">
+                Your account is set up for Messages. ReadyDoc modules are assigned by an admin —
+                ask a supervisor if you're expecting access to one.
+              </p>
+            </div>
+            <button onClick={() => setWorkspace('comms')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700">
+              <MessageSquare size={16} /> Open Messages
+            </button>
+          </div>
+        </main>
+        <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
+        <UpdateBanner />
+      </div>
+    );
+  }
+
   // Show first accessible module if current tab isn't accessible. No silent
   // dashboard fallback: a user with zero modules gets an empty state instead
   // of a page they can't actually access.
