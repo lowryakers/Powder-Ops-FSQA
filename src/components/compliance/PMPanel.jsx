@@ -1141,7 +1141,11 @@ export default function PMPanel() {
     .map(f => {
       let items = grouped[f];
       if (q) items = items.filter(wo => [wo.title, wo.equipment_name, wo.location, wo.assigned_to].some(v => v && v.toLowerCase().includes(q)));
-      if (statusFilter === 'overdue') items = items.filter(wo => wo.due_date < today && wo.status !== 'completed' && wo.status !== 'missed');
+      // Overdue = past due and not done. `missed` IS that state — housekeeping
+      // flips every past-due open task to it — so excluding it here is what
+      // made the Overdue card open an empty list on a plant with real overdue
+      // work. It must match the server's count, which counts the same set.
+      if (statusFilter === 'overdue') items = items.filter(wo => wo.due_date < today && wo.status !== 'completed' && wo.status !== 'not_applicable');
       else if (statusFilter === 'open') items = items.filter(wo => wo.status === 'open' || wo.status === 'in_progress');
       else if (statusFilter === 'missed') items = items.filter(wo => wo.status === 'missed');
       return { freq: f, items };
@@ -1192,7 +1196,7 @@ export default function PMPanel() {
 
       {/* Metrics */}
       {!metricsLoading && metrics && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div onClick={() => { setStatusFilter(null); setView('active'); }}
             className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${metrics.meets_sqf_target ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
             <p className="text-xs text-gray-600 mb-1">Completion Rate</p>
@@ -1210,17 +1214,22 @@ export default function PMPanel() {
             <p className="text-2xl font-bold text-yellow-600">{metrics.open}</p>
             {statusFilter === 'open' && <p className="text-[10px] text-yellow-600 mt-1">Filtered</p>}
           </div>
-          <div onClick={() => { setStatusFilter(statusFilter === 'missed' ? null : 'missed'); setView('active'); }}
-            className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${statusFilter === 'missed' ? 'ring-2 ring-gray-500' : ''} ${metrics.missed > 0 ? 'border-gray-300 bg-gray-50' : 'border-gray-200 bg-white'}`}>
-            <p className="text-xs text-gray-600 mb-1">Missed</p>
-            <p className="text-2xl font-bold text-gray-600">{metrics.missed}</p>
-            {statusFilter === 'missed' && <p className="text-[10px] text-gray-600 mt-1">Filtered</p>}
-          </div>
+          {/* ONE card, not two. Overdue and Missed were separate cards showing
+              the same fact: nothing ever writes status='overdue', so every
+              past-due task becomes 'missed' — the Overdue card sat at zero and
+              the Missed card opened an empty list. Missed is now the sub-line
+              it always was, and still filters to exactly those. */}
           <div onClick={() => { setStatusFilter(statusFilter === 'overdue' ? null : 'overdue'); setView('active'); }}
             className={`rounded-xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${statusFilter === 'overdue' ? 'ring-2 ring-red-500' : ''} ${metrics.overdue > 0 ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
             <p className="text-xs text-gray-600 mb-1">Overdue</p>
             <p className="text-2xl font-bold text-red-600">{metrics.overdue}</p>
-            {statusFilter === 'overdue' && <p className="text-[10px] text-red-600 mt-1">Filtered</p>}
+            {metrics.missed > 0 ? (
+              <button type="button"
+                onClick={(e) => { e.stopPropagation(); setStatusFilter(statusFilter === 'missed' ? null : 'missed'); setView('active'); }}
+                className={`text-[10px] mt-1 underline ${statusFilter === 'missed' ? 'text-gray-900 font-semibold' : 'text-gray-600 hover:text-gray-900'}`}>
+                {metrics.missed} missed
+              </button>
+            ) : statusFilter === 'overdue' && <p className="text-[10px] text-red-600 mt-1">Filtered</p>}
           </div>
         </div>
       )}

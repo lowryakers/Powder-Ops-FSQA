@@ -452,6 +452,9 @@ router.get('/metrics', (req, res) => {
   const defaultTo = now.toISOString().split('T')[0];
   const start = from || defaultFrom;
   const end = to || defaultTo;
+  // "Past due" is measured against today, never against the report window: a
+  // task due last March is overdue now whatever period is being looked at.
+  const todayStr = now.toISOString().split('T')[0];
 
   const gf = group ? ' AND task_group = ?' : '';
   const gp = group ? [group] : [];
@@ -460,10 +463,29 @@ router.get('/metrics', (req, res) => {
   const rateCutoff = yesterday.toISOString().split('T')[0];
   const total = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ?" + gf).get(start, rateCutoff, ...gp);
   const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')" + gf).get(start, rateCutoff, ...gp);
-  const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, rateCutoff, ...gp);
   const naCount = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'not_applicable'" + gf).get(start, rateCutoff, ...gp);
-  const overdue = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')" + gf).get(end, ...gp);
   const open = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status IN ('open','in_progress')" + gf).get(...gp);
+
+  // OVERDUE IS PAST DUE AND NOT DONE — which in this app means `missed`.
+  //
+  // Nothing ever writes status='overdue': markMissedWorkOrders flips every
+  // past-due open task to 'missed' on ordinary page loads. So the old count
+  // ("past due AND status open/in_progress/overdue") could only ever catch the
+  // few that housekeeping had not swept yet, and the Overdue card sat at zero
+  // on a plant with real overdue work — beside a Missed card whose list came
+  // back empty because /by-frequency excluded the status. Two cards, both
+  // wrong, describing one fact.
+  //
+  // UN-WINDOWED, because these two describe WHAT IS IN FRONT OF YOU and the
+  // list they open is not windowed either. The period stats above (completion
+  // rate, the trend) are the historical view and keep their window.
+  const overdue = db.prepare(
+    "SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue','missed')" + gf
+  ).get(todayStr, ...gp);
+  const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status = 'missed'" + gf).get(...gp);
+  // Kept windowed and named for what it is: how much was missed in the period,
+  // which is the compliance question the trend chart asks.
+  const missedInPeriod = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, rateCutoff, ...gp);
 
   const completionRate = total.count > 0 ? ((completed.count / total.count) * 100).toFixed(1) : 0;
 
@@ -489,6 +511,7 @@ router.get('/metrics', (req, res) => {
     total: total.count,
     completed: completed.count,
     missed: missed.count,
+    missed_in_period: missedInPeriod.count,
     not_applicable: naCount.count,
     overdue: overdue.count,
     open: open.count,
@@ -1021,7 +1044,14 @@ router.get('/by-frequency', (req, res) => {
     -- so the same task existed on one screen and not the other.
     LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
-    WHERE wo.status IN ('open', 'in_progress', 'overdue')`;
+    -- 'missed' BELONGS HERE. Housekeeping flips anything past due to missed
+    -- on ordinary page loads, so a task due yesterday is missed today — and
+    -- with it excluded, the Task Center could not show one at all. Its own
+    -- Missed KPI card counts them (from /metrics, which reads the table) and
+    -- then filters THIS list to them, so the card showed a number and opened
+    -- an empty list. Exactly the bug that hid the cleaner's overdue work in
+    -- the Operator View, fixed there and left standing here.
+    WHERE wo.status IN ('open', 'in_progress', 'overdue', 'missed')`;
   const params = [];
 
   if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
@@ -1030,7 +1060,12 @@ router.get('/by-frequency', (req, res) => {
 
   sql += ' ORDER BY ps.frequency_type, e.name';
 
-  const rows = db.prepare(sql).all(...params);
+  // Collapsed for the same reason the Operator View collapses: housekeeping
+  // marks the past-due task missed AND regenerates one, so a daily clean left
+  // a fortnight puts fourteen identical rows behind the live card. One card
+  // carrying `missed_count` / `missed_since` says "you are behind" without
+  // handing somebody the same job fourteen times.
+  const rows = collapseMissed(db.prepare(sql).all(...params));
 
   const grouped = {};
   for (const r of rows) {
