@@ -27,6 +27,33 @@ router.post('/', (req, res) => {
   res.status(201).json(created);
 });
 
+/**
+ * The chart's version, who approved it and when it took effect.
+ *
+ * DECLARED BEFORE `/:id`. Express matches in declaration order and 'meta' is a
+ * perfectly good position id, so with this below the update handler every call
+ * was answered by it, looked for a position called "meta", and 404'd — these
+ * three fields have never once been settable. Same trap as /master.csv on the
+ * products router and /batch/send on the NFP one.
+ *
+ * They are also the three facts that make an org chart a controlled document
+ * rather than a drawing, which is what an auditor asks it for.
+ */
+router.put('/meta', (req, res) => {
+  const db = getDb();
+  const { version, approved_by, effective_date } = req.body;
+  const existing = db.prepare('SELECT * FROM org_chart_meta WHERE id = 1').get();
+  if (existing) {
+    db.prepare(`UPDATE org_chart_meta SET version=?, approved_by=?, effective_date=?, updated_at=datetime('now') WHERE id=1`)
+      .run(version ?? existing.version, approved_by ?? existing.approved_by, effective_date ?? existing.effective_date);
+  } else {
+    db.prepare('INSERT INTO org_chart_meta (id, version, approved_by, effective_date) VALUES (1, ?, ?, ?)')
+      .run(version || null, approved_by || null, effective_date || null);
+  }
+  logAudit(req.user, 'org_meta_updated', 'org_chart', '1', req.body);
+  res.json(db.prepare('SELECT * FROM org_chart_meta WHERE id = 1').get());
+});
+
 router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(req.params.id);
@@ -66,22 +93,6 @@ router.delete('/:id', (req, res) => {
   tx();
   logAudit(req.user, 'org_position_deleted', 'org_position', req.params.id, { title: existing.title }, existing, null);
   res.json({ success: true });
-});
-
-// PUT /meta — chart version / approval metadata
-router.put('/meta', (req, res) => {
-  const db = getDb();
-  const { version, approved_by, effective_date } = req.body;
-  const existing = db.prepare('SELECT * FROM org_chart_meta WHERE id = 1').get();
-  if (existing) {
-    db.prepare(`UPDATE org_chart_meta SET version=?, approved_by=?, effective_date=?, updated_at=datetime('now') WHERE id=1`)
-      .run(version ?? existing.version, approved_by ?? existing.approved_by, effective_date ?? existing.effective_date);
-  } else {
-    db.prepare('INSERT INTO org_chart_meta (id, version, approved_by, effective_date) VALUES (1, ?, ?, ?)')
-      .run(version || null, approved_by || null, effective_date || null);
-  }
-  logAudit(req.user, 'org_meta_updated', 'org_chart', '1', req.body);
-  res.json(db.prepare('SELECT * FROM org_chart_meta WHERE id = 1').get());
 });
 
 export default router;
