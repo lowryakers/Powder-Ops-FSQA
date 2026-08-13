@@ -848,7 +848,21 @@ const AMEND_FIELDS = [
   { key: 'mo_number', label: 'MO #', type: 'text' },
   { key: 'lot_number', label: 'Lot #', type: 'text' },
   { key: 'team', label: 'Team', type: 'select', options: TEAMS },
-  { key: 'line', label: 'Line', type: 'select', options: ['', ...PRODUCTION_LINES.map(l => l.value)] },
+  // A line is which FILLING machine a run went through — the tag that exists
+  // because Stick Pack and Hand Fill merged into one team. Kitting has no line,
+  // and neither does Batching or Warehouse. The entry form has always known
+  // that (`form.team === FILLING_TEAM`); this form did not, so a Kitting
+  // supervisor correcting a typo was shown a field that means nothing for his
+  // work and reasonably read it as the thing blocking him.
+  //
+  // `applies` hides it — unless the record already CARRIES a line, in which
+  // case it stays visible so a wrong one can be corrected or cleared
+  // deliberately. Hiding a field that holds a value is how a value gets stuck.
+  {
+    key: 'line', label: 'Line', type: 'select',
+    options: [{ value: '', label: '—' }, ...PRODUCTION_LINES.map(l => ({ value: l.value, label: l.label }))],
+    applies: (entry, form) => form.team === FILLING_TEAM || !!entry.line,
+  },
   { key: 'room', label: 'Room', type: 'select', options: ROOMS },
   { key: 'start_time', label: 'Start time', type: 'time' },
   { key: 'end_time', label: 'End time', type: 'time' },
@@ -861,6 +875,12 @@ const MIN_REASON = 10;
 
 const fmtStamp = (ts) => formatDateTime(ts, '');
 const showVal = (v) => (v === null || v === undefined || v === '' ? '(blank)' : String(v));
+// A stored value read back as the word a person uses for it. The change list
+// said "hand_fill → auto_pouch"; nobody calls them that.
+const optLabel = (field, v) => {
+  const o = (field.options || []).find(x => typeof x === 'object' && String(x.value) === String(v));
+  return o ? o.label : v;
+};
 
 // The correction trail, shown on the record itself. An auditor should be able
 // to see that an entry was amended, what changed, who changed it and why,
@@ -911,13 +931,13 @@ function AmendModal({ entry, onClose, onSaved }) {
   // which the server derives from line 0.
   const multiMo = Array.isArray(entry.mo_lines) && entry.mo_lines.length > 0;
   const HIDDEN_FOR_MO = new Set(['product_name', 'mo_number', 'lot_number', 'quantity_completed']);
-  const amendFields = multiMo ? AMEND_FIELDS.filter(f => !HIDDEN_FOR_MO.has(f.key)) : AMEND_FIELDS;
-
   const [form, setForm] = useState(() => {
     const f = {};
     for (const { key } of AMEND_FIELDS) f[key] = entry[key] ?? '';
     return f;
   });
+  const amendFields = (multiMo ? AMEND_FIELDS.filter(f => !HIDDEN_FOR_MO.has(f.key)) : AMEND_FIELDS)
+    .filter(f => !f.applies || f.applies(entry, form));
   const [moLines, setMoLines] = useState(() =>
     (entry.mo_lines || []).map(l => ({ ...blankMoLine(), ...l, batches: l.batches ?? '', quantity: l.quantity ?? '' })));
   const [cleans, setCleans] = useState(() =>
@@ -1021,11 +1041,20 @@ function AmendModal({ entry, onClose, onSaved }) {
                     // this the select falls back to its first option and an
                     // amendment to the notes silently moves the shift to
                     // another room.
-                    <select value={form[f.key]} onChange={e => set(e.target.value)} className={cls}>
-                      {(f.options.includes(form[f.key]) || !form[f.key]
-                        ? f.options : [form[f.key], ...f.options]
-                      ).map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    (() => {
+                      // Options may be plain strings or {value,label}. The raw
+                      // stored value is the wrong thing to show a person:
+                      // this dropdown was offering "hand_fill" and
+                      // "auto_pouch" where the entry form says "Hand Fill".
+                      const opts = f.options.map(o => (typeof o === 'string' ? { value: o, label: o } : o));
+                      const known = opts.some(o => String(o.value) === String(form[f.key]));
+                      const all = known || !form[f.key] ? opts : [{ value: form[f.key], label: form[f.key] }, ...opts];
+                      return (
+                        <select value={form[f.key]} onChange={e => set(e.target.value)} className={cls}>
+                          {all.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      );
+                    })()
                   ) : f.type === 'textarea' ? (
                     <textarea value={form[f.key]} onChange={e => set(e.target.value)} rows={2} className={cls} />
                   ) : (
@@ -1057,7 +1086,7 @@ function AmendModal({ entry, onClose, onSaved }) {
               <ul className="mt-1 ml-4 list-disc text-[11px] text-gray-600">
                 {changed.map(f => (
                   <li key={f.key}>
-                    {f.label}: <span className="line-through">{showVal(entry[f.key])}</span> → <span className="font-semibold">{showVal(form[f.key])}</span>
+                    {f.label}: <span className="line-through">{showVal(optLabel(f, entry[f.key]))}</span> → <span className="font-semibold">{showVal(optLabel(f, form[f.key]))}</span>
                   </li>
                 ))}
               </ul>
@@ -1072,7 +1101,17 @@ function AmendModal({ entry, onClose, onSaved }) {
           {error && <div className="px-3 py-2 rounded-lg text-sm bg-red-50 text-red-800">{error}</div>}
         </div>
 
-        <div className="flex justify-end gap-2 px-4 sm:px-5 py-3 border-t border-gray-200 sticky bottom-0 bg-white sm:rounded-b-xl">
+        <div className="flex flex-wrap items-center justify-end gap-2 px-4 sm:px-5 py-3 border-t border-gray-200 sticky bottom-0 bg-white sm:rounded-b-xl">
+          {/* A disabled button with nothing saying why is how somebody
+              concludes the blocker is whichever field they were last looking
+              at — which is exactly what happened here. */}
+          {!ready && !saving && (
+            <p className="mr-auto text-[11px] text-amber-700">
+              {changed.length === 0 && !moChanged && !cleansChanged
+                ? 'Change something first — a correction with no change has nothing to record.'
+                : `Add a reason (${MIN_REASON - reason.trim().length} more character${MIN_REASON - reason.trim().length === 1 ? '' : 's'}).`}
+            </p>
+          )}
           <button type="button" onClick={onClose} className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</button>
           <button type="submit" disabled={!ready || saving}
             className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50">
