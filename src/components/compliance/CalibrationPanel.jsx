@@ -8,6 +8,11 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ScaleVerificationTab from './ScaleVerificationTab.jsx';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
+// SQLite's datetime('now') returns "2026-08-06 19:27:43" — a space, and no
+// timezone marker — which JavaScript parses as LOCAL time. `new Date(...)` on
+// one of those columns reads six hours late in Utah, and a date-only value
+// lands on the previous evening. These helpers are the fix.
+import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 
@@ -546,7 +551,7 @@ export default function CalibrationPanel() {
                 <tr {...expandRec.rowProps(r.id, 'border-b border-gray-100')}>
                   <td className="px-2 py-3"><ExpandCell open={expandRec.isExpanded(r.id)} /></td>
                   <td className="px-4 py-3 font-medium w-full">{r.instrument_name}</td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(r.calibrated_at).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(r.calibrated_at)}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.result === 'pass' ? 'bg-green-100 text-green-800' : r.result === 'fail' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
                       {r.result}
@@ -575,7 +580,7 @@ export default function CalibrationPanel() {
                   <DetailRow colSpan={10}>
                     <DetailFields fields={[
                       { label: 'Instrument', value: r.instrument_name },
-                      { label: 'Calibrated', value: new Date(r.calibrated_at).toLocaleString() },
+                      { label: 'Calibrated', value: formatDateTime(r.calibrated_at) },
                       { label: 'Result', value: r.result },
                       { label: 'Reading before', value: r.reading_before },
                       { label: 'Reading after', value: r.reading_after },
