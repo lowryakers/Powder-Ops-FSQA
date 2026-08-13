@@ -648,8 +648,42 @@ router.post('/entries', (req, res) => {
     if (!room) room = lines.map(l => l.room).find(Boolean) || cleans.map(c => c.room).find(Boolean) || '';
   }
 
-  if (!date || !team || !room || !product_name || !mo_number || !lot_number || !start_time || !end_time || quantity_completed == null || !people_count || !submitted_by) {
-    return res.status(400).json({ error: 'Missing required fields: date, team, room, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by' });
+  // A SHIFT THAT ONLY CLEANED IS A REAL SHIFT.
+  //
+  // Bernardo's own log opens with "Full Clean (ATP Swab and Allergen Swab)
+  // Room 1, Sifter (160) and Utensils (06:40-07:45)" as its own event, and a
+  // changeover day can be nothing but cleaning. With product/MO/lot required
+  // unconditionally, that shift could not be filed at all: the work was done,
+  // the cleaning events were in the payload, and the form answered with a list
+  // of fields it does not even display for a multi-MO team. Same shape as the
+  // Kitting supervisor who could not submit a correction because the form
+  // wanted a production line his area does not have.
+  //
+  // The columns are NOT NULL, and every filter, KPI and export reads them — so
+  // they still hold a value. It is an empty string, which renders as blank
+  // rather than claiming a product was run. `cleaning_events` is what says
+  // what the shift actually was.
+  const cleanOnly = cleans.length > 0 && lines.length === 0
+    && !product_name && !mo_number && !lot_number;
+  if (cleanOnly) {
+    product_name = ''; mo_number = ''; lot_number = '';
+    if (quantity_completed == null) quantity_completed = 0;
+  }
+
+  const missing = [
+    !date && 'date', !team && 'team', !room && 'room',
+    !cleanOnly && !product_name && 'product_name',
+    !cleanOnly && !mo_number && 'mo_number',
+    !cleanOnly && !lot_number && 'lot_number',
+    !start_time && 'start_time', !end_time && 'end_time',
+    quantity_completed == null && 'quantity_completed',
+    !people_count && 'people_count', !submitted_by && 'submitted_by',
+  ].filter(Boolean);
+  if (missing.length) {
+    // Name what is ACTUALLY missing. The old message listed all eleven fields
+    // whatever was wrong, so somebody staring at a filled-in form was told to
+    // supply things they had already supplied.
+    return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
   }
 
   // Team EOD template answers, stored as JSON. Only an object is accepted.

@@ -20,8 +20,20 @@ router.post('/work-order', (req, res) => {
   const db = getDb();
   const { equipment_id, title, description, priority, submitted_by, attachments } = req.body;
 
-  if (!title || !submitted_by || !equipment_id) {
-    return res.status(400).json({ error: 'title, submitted_by, and equipment are required' });
+  // EQUIPMENT IS OPTIONAL, and that is the point of this form.
+  //
+  // The QR is posted where staff report problems, and a great many problems
+  // are not a machine in the register: a leaking pipe, a light out, a door
+  // that won't latch, a machine nobody has entered yet. Requiring it meant the
+  // search came back "No equipment found" and the report was simply lost —
+  // the person who scanned the code walked away, and nothing recorded that
+  // anything was wrong.
+  //
+  // `work_orders.equipment_id` is nullable and every list LEFT JOINs it (the
+  // fix for tasks raised from chat appearing on one screen and not another),
+  // so a report with no machine behaves like any other task.
+  if (!title || !submitted_by) {
+    return res.status(400).json({ error: 'A title and your name are required.' });
   }
 
   const id = uuid();
@@ -31,7 +43,7 @@ router.post('/work-order', (req, res) => {
   db.prepare(`
     INSERT INTO work_orders (id, equipment_id, title, description, priority, assigned_to, due_date, attachments, task_group)
     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'maintenance')
-  `).run(id, equipment_id, title, description || null, priority || 'normal', due_date.toISOString().split('T')[0], JSON.stringify(attachments || []));
+  `).run(id, equipment_id || null, title, description || null, priority || 'normal', due_date.toISOString().split('T')[0], JSON.stringify(attachments || []));
 
   logAudit(submitted_by, 'submit_public', 'work_order', id, { title, submitted_by }, null, null, title);
   res.status(201).json({ id, message: 'Work order submitted successfully' });

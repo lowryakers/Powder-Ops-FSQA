@@ -42,7 +42,7 @@ function EquipmentSearch({ equipment, value, onChange }) {
 
   return (
     <div ref={ref} className="relative">
-      <label className="block text-sm font-medium text-gray-700 mb-1">Equipment *</label>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Equipment</label>
       {value && selected && !open ? (
         <div className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base flex items-center justify-between bg-white">
           <span className="truncate">{eqLabel(selected)}</span>
@@ -62,7 +62,9 @@ function EquipmentSearch({ equipment, value, onChange }) {
       {open && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
           {results.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-gray-500">No equipment found for "{query}"</div>
+            <div className="px-4 py-3 text-sm text-gray-500">
+              No equipment found for &ldquo;{query}&rdquo; — leave this blank and describe it below instead.
+            </div>
           ) : results.map(eq => (
             <button key={eq.id} type="button"
               onClick={() => { onChange(eq.id); setQuery(''); setOpen(false); }}
@@ -73,7 +75,14 @@ function EquipmentSearch({ equipment, value, onChange }) {
           ))}
         </div>
       )}
-      <input type="hidden" required value={value} />
+      {/* NOT required. A great many reports are not a machine in the register
+          — a leaking pipe, a light out, a door that won't latch — and a hidden
+          `required` here meant the form could not be submitted at all once the
+          search came up empty. The person walked away and nothing recorded
+          that anything was wrong. */}
+      <p className="mt-1 text-xs text-gray-500">
+        Optional. If it isn&rsquo;t a machine on this list, leave it blank and say what and where in the description.
+      </p>
     </div>
   );
 }

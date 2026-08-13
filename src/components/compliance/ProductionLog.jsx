@@ -467,8 +467,13 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
     e.preventDefault();
     // Multi-MO teams need at least one line with an MO number; the shared
     // scalar MO/product/lot come from that first line server-side.
-    if (multiMo && !moLines.some(l => l.mo_number.trim() || l.product_name.trim())) {
-      setMessage({ type: 'error', text: 'Add at least one MO (with an MO # or product).' });
+    // A shift needs SOMETHING on it — but a changeover day that was nothing
+    // but cleaning is a real shift, and requiring an MO meant it could not be
+    // filed at all. Either an MO run or a clean is enough.
+    const hasMo = moLines.some(l => l.mo_number.trim() || l.product_name.trim());
+    const hasClean = cleans.some(c => c.level || (c.scope || []).length);
+    if (multiMo && !hasMo && !hasClean) {
+      setMessage({ type: 'error', text: 'Add at least one MO, or a clean if the shift was cleaning only.' });
       return;
     }
     // The browser can't enforce `required` on a field that isn't rendered, so
