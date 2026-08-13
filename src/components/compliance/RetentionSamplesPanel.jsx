@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment } from 'react';
-import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
+import { useApiGet, apiFetch, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { useCappedList } from '../../lib/useCappedList';
@@ -512,6 +512,96 @@ function BoxImportModal({ onClose, onDone }) {
   );
 }
 
+
+/**
+ * "Do we still hold a jar of that lot, and where is it?"
+ *
+ * The recall question. `GET /retention/by-lot/:lot` answered it and nothing
+ * called it — the general search filters the table, which tells you the rows
+ * exist but not the thing a trace actually needs: which BOX each sample is in,
+ * when that box is due for destruction, and whether it has already gone.
+ *
+ * A lot with nothing held is a real answer and says so plainly, because during
+ * a mock recall "no results" and "we no longer hold it" are different
+ * statements and only one of them is evidence.
+ */
+function LotTrace() {
+  const [lot, setLot] = useState('');
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const trace = async () => {
+    const v = lot.trim();
+    if (!v) return;
+    setBusy(true); setErr(null); setRows(null);
+    try { setRows(await apiFetch(`/retention/by-lot/${encodeURIComponent(v)}`)); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+      <div className="flex items-end gap-2 flex-wrap">
+        <label className="flex-1 min-w-[12rem]">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Trace a lot</span>
+          <input value={lot} onChange={e => setLot(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') trace(); }}
+            placeholder="Lot number — e.g. 101692"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </label>
+        <button type="button" onClick={trace} disabled={busy || !lot.trim()}
+          className="px-4 py-2 rounded-lg bg-powder-600 text-white text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
+          {busy ? 'Looking…' : 'Trace'}
+        </button>
+      </div>
+      <p className="text-[11px] text-gray-500">
+        What is held for a lot, which box it is in, and when that box is due to be destroyed.
+      </p>
+
+      {err && <p className="text-xs text-red-700">{err}</p>}
+      {rows?.length === 0 && (
+        <p className="text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
+          No retention samples are held for lot <span className="font-mono">{lot.trim()}</span>. That is either a lot
+          we never retained or one whose box has already been destroyed — check the Boxes tab before reporting it.
+        </p>
+      )}
+      {rows?.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                {['Item', 'Stage', 'Retains', 'Lab', 'Box', 'Box due', 'Box status'].map(h => (
+                  <th key={h} className="text-left px-3 py-2 font-medium text-gray-600">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} className="border-b border-gray-100 last:border-0">
+                  <td className="px-3 py-2 text-gray-900">{r.item_name || r.item_number || '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.stage || '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.retain_count ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.lab_count ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.box_no ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.destruction_date || '—'}</td>
+                  <td className="px-3 py-2">
+                    {/* A destroyed box is the whole point of asking — it means
+                        the jar is gone, not that the record is missing. */}
+                    <span className={r.box_status === 'destroyed' ? 'text-red-700 font-medium' : 'text-green-700'}>
+                      {r.box_status === 'destroyed' ? 'destroyed' : (r.box_status || 'held')}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RetentionSamplesPanel({ user }) {
   const [tab, setTab] = useState('samples');
   const [stage, setStage] = useState('');
@@ -614,6 +704,11 @@ export default function RetentionSamplesPanel({ user }) {
           onOpenBox={(b) => { setBoxFilter(b.id); setTab('samples'); }} />
       ) : (
         <>
+          {/* Above the filters, because a trace is a different act from
+              browsing the log: the general search narrows the table, this
+              answers where a specific lot is and whether it still exists. */}
+          <LotTrace />
+
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[200px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
