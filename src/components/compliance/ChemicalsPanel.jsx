@@ -80,7 +80,12 @@ function ChemicalForm({ initial, onSave, onCancel }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Contact Time (min)</label>
-          <input type="number" value={form.required_contact_time_minutes || ''} onChange={e => set('required_contact_time_minutes', e.target.value ? parseInt(e.target.value) : '')}
+          {/* step="any" AND parseFloat. A bare type="number" refuses 1.5 at the
+              browser, and parseInt then truncated whatever did get through — a
+              sanitizer's required dwell time is an acceptance criterion, and
+              silently rounding it down is the wrong direction to round. */}
+          <input type="number" step="any" min="0" value={form.required_contact_time_minutes ?? ''}
+            onChange={e => set('required_contact_time_minutes', e.target.value ? parseFloat(e.target.value) : '')}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
         <div>

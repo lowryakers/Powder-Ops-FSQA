@@ -128,7 +128,11 @@ function FieldInput({ f, value, onChange }) {
   const base = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
   if (f.type === 'textarea') return <textarea value={value || ''} onChange={e => onChange(e.target.value)} rows={3} className={base} />;
   if (f.type === 'date') return <input type="date" value={value || ''} onChange={e => onChange(e.target.value)} className={base} />;
-  if (f.type === 'number') return <input type="number" value={value ?? ''} onChange={e => onChange(e.target.value)} className={base} />;
+  // step="any" — a bare type="number" defaults to step=1, so the browser
+  // silently refuses 687.8 and blocks the submit with a tooltip that reads as
+  // the app being broken. This renderer covers every configured QMS field, so
+  // weights, temperatures and quantities all depend on it.
+  if (f.type === 'number') return <input type="number" step="any" value={value ?? ''} onChange={e => onChange(e.target.value)} className={base} />;
   if (f.type === 'checkbox') return <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} className="rounded border-gray-300" /> {f.label}</label>;
   if (f.type === 'select') {
     // options can be a flat list of strings or grouped [{ group, items }] → optgroups

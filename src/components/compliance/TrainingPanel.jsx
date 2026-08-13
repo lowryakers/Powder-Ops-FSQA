@@ -569,7 +569,7 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Score (%)</label>
-            <input type="number" min="0" max="100" value={form.score || ''} onChange={e => set('score', e.target.value ? parseFloat(e.target.value) : '')}
+            <input type="number" step="any" min="0" max="100" value={form.score || ''} onChange={e => set('score', e.target.value ? parseFloat(e.target.value) : '')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
           <div>
@@ -679,7 +679,7 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
                   <input type="checkbox" checked={!!sel[u.id]?.checked} onChange={() => toggle(u)} />
                   <span className="flex-1 text-sm text-gray-800">{u.name} <span className="text-[11px] text-gray-400 capitalize">{(u.department || '').replace(/_/g, ' ')}</span></span>
                   {sel[u.id]?.checked && (
-                    <input type="number" min="0" max="100" value={sel[u.id].score} onChange={e => setScore(u.id, e.target.value)} placeholder="score" className="w-16 px-2 py-1 border border-gray-300 rounded text-xs" />
+                    <input type="number" step="any" min="0" max="100" value={sel[u.id].score} onChange={e => setScore(u.id, e.target.value)} placeholder="score" className="w-16 px-2 py-1 border border-gray-300 rounded text-xs" />
                   )}
                 </div>
               ))}
@@ -826,7 +826,7 @@ function CourseModal({ initial, onClose, onSaved }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Pass score (%)</label>
-            <input type="number" min="0" max="100" value={form.passing_score} onChange={e => set('passing_score', parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <input type="number" step="any" min="0" max="100" value={form.passing_score} onChange={e => set('passing_score', parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
           <div className="col-span-3">
             <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
@@ -1041,7 +1041,7 @@ function TestEditor({ course, aiEnabled, onClose, onSaved }) {
             </div>
             <div className="w-28">
               <label className="block text-xs font-medium text-gray-700 mb-1">Pass score (%)</label>
-              <input type="number" min="0" max="100" value={passing} onChange={e => setPassing(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              <input type="number" step="any" min="0" max="100" value={passing} onChange={e => setPassing(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             {aiEnabled && (
               <button type="button" onClick={generate} disabled={generating}
