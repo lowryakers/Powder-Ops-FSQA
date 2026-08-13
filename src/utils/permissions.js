@@ -72,3 +72,12 @@ export function visibleModuleIds(user, allIds) {
 export const canSeeQaReview = (u) => u?.role === 'admin'
   || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase())
   || hasExplicitGrant(u, 'qa-review');
+
+// Who runs a film/pouch inspection (FORM 418-01). It shows on the Receiving
+// module's tab strip because that is where the delivery is, but the work — and
+// the signature — is QA's, so it is NOT the warehouse's permission. Mirror of
+// `canInspect` in server/api/film-inspection.js; the server refuses regardless,
+// this only decides whether the buttons are offered.
+export const canFilmInspect = (u) => u?.role === 'admin'
+  || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase())
+  || hasExplicitGrant(u, 'qa-inspections');

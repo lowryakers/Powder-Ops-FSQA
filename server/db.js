@@ -1058,6 +1058,70 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_receiving_checklists_no ON receiving_checklists(inspection_no);
     CREATE INDEX IF NOT EXISTS idx_receiving_checklists_date ON receiving_checklists(inspection_date DESC);
 
+    -- FORM 418-01 — the QA Film/Pouch Inspection Checklist.
+    --
+    -- FORM 204-01's very first question is "Is the product Packaging (Film or
+    -- pouches)?" and, on YES, tells the receiver to notify Maria and Adam for a
+    -- QA inspection. THIS is that inspection, and until now it had nowhere to
+    -- land: the escalation went out and the answer came back as a photo in a
+    -- chat channel. QA inspects the packaging first; the warehouse's own
+    -- receiving process follows once QA has accepted it.
+    --
+    -- ONE ROW PER FLAVOUR, because the paper says "1 SHEET PER FLAVOR" and it
+    -- matters — a delivery is routinely several flavours of film on one PO,
+    -- each with its own rolls, lot and artwork, and one sheet covering the
+    -- pallet could not record that flavour three was rejected while the rest
+    -- were fine. Same reasoning that made FORM 204-01 one checklist per
+    -- inspection rather than per line, applied one level down.
+    CREATE TABLE IF NOT EXISTS film_pouch_inspections (
+      id TEXT PRIMARY KEY,
+      inspection_no TEXT NOT NULL,
+      flavor TEXT NOT NULL,
+      checklist_revision TEXT NOT NULL,
+      vendor TEXT,
+      part_no TEXT,
+      inspection_date TEXT,
+      roll_count REAL,
+      vendor_lot TEXT,
+      qa_lead TEXT,
+      assistant TEXT,
+      -- The two "CIRCLE ONE" rows. Facts about the roll rather than pass/fail
+      -- judgements, so they are recorded as values while their items keep
+      -- their own yes/no: "wind direction is correct: yes" without recording
+      -- WHICH direction cannot be checked afterwards.
+      wind_direction TEXT,
+      film_width TEXT,
+      answers TEXT NOT NULL DEFAULT '{}',
+      -- ACCEPTED / REJECTED, as QA circles it. Never derived: the form mixes
+      -- lines that are good when YES with lines that are good when NO and
+      -- never says which is which, so a computed verdict would be invented.
+      decision TEXT,
+      issue_notes TEXT,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (inspection_no, flavor)
+    );
+    CREATE INDEX IF NOT EXISTS idx_film_inspections_no ON film_pouch_inspections(inspection_no);
+    CREATE INDEX IF NOT EXISTS idx_film_inspections_date ON film_pouch_inspections(inspection_date DESC);
+
+    -- The photos the form's failure instruction asks for. A rejection with no
+    -- picture is an assertion; these are the evidence behind it.
+    CREATE TABLE IF NOT EXISTS film_pouch_photos (
+      id TEXT PRIMARY KEY,
+      inspection_id TEXT NOT NULL REFERENCES film_pouch_inspections(id) ON DELETE CASCADE,
+      storage_key TEXT NOT NULL,
+      filename TEXT,
+      content_type TEXT,
+      size_bytes INTEGER,
+      caption TEXT,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_film_photos_inspection ON film_pouch_photos(inspection_id);
+
     -- ── Universal file importer ──────────────────────────────────────────
     -- One row per uploaded file. The parsed rows are held here between the
     -- analyze and commit steps so the preview is a true dry run against the

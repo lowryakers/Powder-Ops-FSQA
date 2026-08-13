@@ -3,15 +3,18 @@ import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import {
   PackageCheck, Plus, ClipboardList, Search, Filter, Pencil,
   CheckCircle, Clock, AlertTriangle, ChevronUp, ChevronDown, ExternalLink, Upload, ClipboardCheck,
+  ScanLine,
 } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import ImportPanel from '../common/ImportPanel';
 import ReceivingChecklist from './ReceivingChecklist.jsx';
+import FilmPouchInspection, { FilmInspectionsTab } from './FilmPouchInspection.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import { canFilmInspect } from '../../utils/permissions';
 
 // Receiving Log — incoming raw material, labels and components (replaces the
 // Monday board). Both dropdowns are managed lists and the extra questions are
@@ -696,7 +699,10 @@ export default function ReceivingLogPanel({ user }) {
   // Set when the checklist sends you to file a line, so the form opens against
   // that inspection instead of asking you to retype its number.
   const [prefillInspection, setPrefillInspection] = useState('');
+  // FORM 418-01 for one flavour on one delivery.
+  const [filmId, setFilmId] = useState(null);
   const canLog = canFile(user);
+  const canFilm = canFilmInspect(user);
   // Importing rewrites the log in bulk — thousands of compliance records in one
   // action — so it stays admin-only rather than riding on the edit grant.
   const canImport = user?.role === 'admin';
@@ -708,6 +714,10 @@ export default function ReceivingLogPanel({ user }) {
   // the log, which is all they came for.
   const tabs = [
     ...(canLog ? [{ id: 'inspections', label: 'Inspections', icon: ClipboardCheck }] : []),
+    // Read-only for the warehouse, filed by QA: whether QA has cleared the
+    // packaging is exactly what the warehouse needs before putting it away, so
+    // the tab is not hidden from them.
+    { id: 'film', label: 'Packaging QA', icon: ScanLine },
     { id: 'log', label: 'Receiving Log', icon: ClipboardList },
     ...(canLog ? [{ id: 'form', label: 'New Record', icon: Plus }] : []),
     ...(canImport ? [{ id: 'import', label: 'Import', icon: Upload }] : []),
@@ -725,6 +735,10 @@ export default function ReceivingLogPanel({ user }) {
       </div>
       {tab === 'inspections' && canLog && (
         <InspectionsTab canLog={canLog} onOpen={setChecklist} />
+      )}
+      {tab === 'film' && <FilmInspectionsTab canInspect={canFilm} onOpen={setFilmId} />}
+      {filmId && (
+        <FilmPouchInspection id={filmId} canInspect={canFilm} onClose={() => setFilmId(null)} />
       )}
       {tab === 'form' && canLog && (
         <ReceivingForm key={prefillInspection} user={user} inspectionNo={prefillInspection}

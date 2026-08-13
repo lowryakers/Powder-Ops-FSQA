@@ -15,6 +15,7 @@ import {
   CHECKLIST, CHECKLIST_REVISION, getItem, normalizeAnswers, triggeredEscalations, unanswered,
 } from '../receiving-checklist.js';
 import { sendEscalation } from '../receiving-notify.js';
+import { nextInspectionNo } from '../inspection-no.js';
 
 const router = Router();
 const MODULE = 'receiving-log';
@@ -60,32 +61,10 @@ function readBody(body) {
 // another line to that receipt and you keep it. The imported Monday history
 // works exactly this way — 1,328 rows share 511 A-100 numbers.
 //
-// Format is the one the warehouse already writes by hand: A-100-#### (zero
-// padded to 4, but it keeps counting past 9999 rather than wrapping).
-const INSPECTION_PREFIX = 'A-100-';
-
-/**
- * The next inspection number, counted across BOTH tables.
- *
- * The warehouse's real order is: fill the checklist at the truck, enter the
- * items in the ERP, then file the receiving lines here. So a checklist exists
- * — and has claimed a number — before any `receiving_log` row does. Counting
- * only the log would hand the same number to the next inspection started
- * before the first one's lines were keyed in, which on a busy dock is the
- * normal case, not an edge case.
- */
-function nextInspectionNo(db) {
-  const rows = [
-    ...db.prepare("SELECT inspection_no FROM receiving_log WHERE inspection_no LIKE 'A-100-%'").all(),
-    ...db.prepare("SELECT inspection_no FROM receiving_checklists WHERE inspection_no LIKE 'A-100-%'").all(),
-  ];
-  let max = 0;
-  for (const r of rows) {
-    const n = Number(String(r.inspection_no).slice(INSPECTION_PREFIX.length));
-    if (Number.isFinite(n) && n > max) max = n;
-  }
-  return INSPECTION_PREFIX + String(max + 1).padStart(4, '0');
-}
+// The issuer itself now lives in ../inspection-no.js, because a THIRD record
+// can claim a number: QA's film/pouch inspection happens before the warehouse
+// receives packaging at all. Counting fewer tables than there are claimants is
+// how two deliveries end up sharing a number.
 
 // GET /next-inspection-no — what the form shows before anything is saved.
 // Advisory only: two people filling the form at once both see the same number,
