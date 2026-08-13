@@ -13,6 +13,7 @@ import { useModuleTabs } from '../../lib/useModuleTabs.js';
 // one of those columns reads six hours late in Utah, and a date-only value
 // lands on the previous evening. These helpers are the fix.
 import { formatDate, formatDateTime } from '../../lib/datetime.js';
+import { keepCurrent } from '../../lib/selectOptions';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 
@@ -88,7 +89,11 @@ function InstrumentForm({ initial, ccps, onSave, onCancel }) {
           <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
           <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            {TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+            {/* 11 seeded certified weights are typed "weight", which this list
+                does not offer — without keepCurrent, opening one and saving
+                retypes it "scale", and a certified weight is the standard a
+                scale is checked AGAINST. */}
+            {keepCurrent(TYPES, form.type).map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
           </select>
         </div>
         <div>
@@ -121,7 +126,10 @@ function InstrumentForm({ initial, ccps, onSave, onCancel }) {
           <select value={form.department || ''} onChange={e => setForm({ ...form, department: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             <option value="">Select...</option>
-            {['Production', 'Warehouse', 'KITTING', 'QA', 'Maintenance'].map(d => <option key={d} value={d}>{d}</option>)}
+            {/* Real rows hold "Batching" and lowercase "qa"; both would be
+                silently reassigned to Production on the next save. */}
+            {keepCurrent(['Production', 'Warehouse', 'KITTING', 'QA', 'Maintenance'], form.department)
+              .map(d => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
         <div>
@@ -133,7 +141,7 @@ function InstrumentForm({ initial, ccps, onSave, onCancel }) {
           <label className="block text-xs font-medium text-gray-700 mb-1">Calibration Frequency</label>
           <select value={form.calibration_frequency} onChange={e => setForm({ ...form, calibration_frequency: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            {['daily', 'weekly', 'monthly', 'quarterly', 'semi_annual', 'annual'].map(f =>
+            {keepCurrent(['daily', 'weekly', 'monthly', 'quarterly', 'semi_annual', 'annual'], form.calibration_frequency).map(f =>
               <option key={f} value={f}>{f.replace('_', ' ')}</option>
             )}
           </select>

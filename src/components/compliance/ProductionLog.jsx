@@ -4,6 +4,7 @@ import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCi
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { hasExplicitGrant } from '../../utils/permissions';
 import { PRODUCTION_LINES, lineLabel, FILLING_TEAM, PRODUCTION_TEAMS as TEAMS, PRODUCTION_ROOMS, RETIRED_ROOMS, CLEAN_SCOPE } from '../../constants/productionLines';
+import { keepCurrent } from '../../lib/selectOptions';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
@@ -586,10 +587,13 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
         ) : (
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Room *</label>
+            {/* keepCurrent: an entry filed against a room this form no longer
+                offers ("0", "1 & 8", the retired Room 8) must stay selectable,
+                or amending its notes silently moves the shift to Batching 1. */}
             <select required value={form.room} onChange={e => set('room', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
               <option value="">Select room...</option>
-              {ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
+              {keepCurrent(ROOMS, form.room).map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
         )}
@@ -601,7 +605,7 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
             <select required value={form.line} onChange={e => set('line', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
               <option value="">Select line...</option>
-              {PRODUCTION_LINES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+              {keepCurrent(PRODUCTION_LINES, form.line).map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
             </select>
           </div>
         )}
