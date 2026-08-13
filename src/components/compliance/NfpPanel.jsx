@@ -78,7 +78,7 @@ function NewPanelForm({ sku, formulaRev, onDone, onCancel }) {
   const submit = async () => {
     setBusy(true); setError('');
     try {
-      const created = await apiFetch('/nfp', { method: 'POST', body: JSON.stringify({ ...f, sku }) });
+      const created = await apiFetch('/nfp', { method: 'POST', body: { ...f, sku } });
       onDone(created);
     } catch (e) { setError(e.message); }
     setBusy(false);
@@ -170,7 +170,7 @@ function VersionCard({ v, canEdit, onChanged }) {
   };
 
   const send = () => act('send', async () => {
-    const r = await apiFetch(`/nfp/${v.id}/send`, { method: 'POST', body: JSON.stringify({ sent_to: sentTo }) });
+    const r = await apiFetch(`/nfp/${v.id}/send`, { method: 'POST', body: { sent_to: sentTo } });
     setLink(r.link);
     onChanged();
   });
@@ -178,7 +178,7 @@ function VersionCard({ v, canEdit, onChanged }) {
   const submitDecision = () => act('decide', async () => {
     const r = await apiFetch(`/nfp/${v.id}/decide`, {
       method: 'POST',
-      body: JSON.stringify({ decision: deciding, approved_by: by, comments }),
+      body: { decision: deciding, approved_by: by, comments },
     });
     setStranded(r.stranded_artwork || []);
     setDeciding(null); setBy(''); setComments('');
@@ -358,6 +358,94 @@ export function NfpForSku({ sku, formulaRev, canEdit, onChanged }) {
   );
 }
 
+/**
+ * One text instead of ten.
+ *
+ * Ten SKUs whose serving size changed together is one decision the formulator
+ * makes once, and ten separate links is a lift big enough that it does not get
+ * done — which leaves ten panels unapproved and ten packs that cannot print.
+ * Pick the ones going out together, get ONE link.
+ *
+ * The decisions stay per panel on the other end. What is shared is the trip.
+ */
+function BatchSend({ versions, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState(() => new Set());
+  const [sentTo, setSentTo] = useState('');
+  const [note, setNote] = useState('');
+  const [link, setLink] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const toggle = (id) => setPicked((s) => {
+    const n = new Set(s);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+
+  const send = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await apiFetch('/nfp/batch/send', {
+        method: 'POST',
+        body: { version_ids: [...picked], sent_to: sentTo.trim(), note: note.trim() },
+      });
+      setLink(r.link);
+      onDone?.();
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50">
+        <Send size={14} /> Send several for approval on one link
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-powder-200 bg-powder-50/60 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold text-gray-900">One link, several panels</h4>
+        <button type="button" onClick={() => { setOpen(false); setLink(''); }}
+          className="text-xs text-gray-500 hover:text-gray-700 underline">Close</button>
+      </div>
+
+      {link ? <LinkBox link={link} /> : (
+        <>
+          <p className="text-xs text-gray-600">
+            Pick the panels going out together. The approver gets one page, sees each panel and its file, and
+            decides them one at a time or approves the lot — each recorded against their name separately.
+          </p>
+          <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
+            {versions.map((v) => (
+              <label key={v.id} className="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer hover:bg-gray-50">
+                <input type="checkbox" checked={picked.has(v.id)} onChange={() => toggle(v.id)} />
+                <code className="text-xs text-gray-900 w-24 shrink-0 truncate">{v.sku}</code>
+                <span className="text-gray-700 flex-1 truncate">{v.flavor}</span>
+                <span className="text-xs text-gray-400 shrink-0">{v.version} · {v.status}</span>
+              </label>
+            ))}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input value={sentTo} onChange={(e) => setSentTo(e.target.value)} placeholder="Who is it going to?"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="A line of context (optional)"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          {err && <p className="text-xs text-red-700">{err}</p>}
+          <button type="button" onClick={send} disabled={busy || picked.size < 1}
+            className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
+            {busy ? 'Creating…' : `Create one link for ${picked.size} panel${picked.size === 1 ? '' : 's'}`}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // `data` comes from the panel above, which fetches it so the tab can carry the
 // count. One fetch, one number — the badge and this board cannot disagree.
 /** The roll-up: what is waiting, and what has nothing on file. */
@@ -406,6 +494,8 @@ export default function NfpBoard({ data, onOpenSku, canManage, onChanged }) {
       {canManage && (
         <ProductFileImport target="nfp" title="Import panels from a folder" onDone={onChanged} />
       )}
+
+      {canManage && open.length > 1 && <BatchSend versions={open} onDone={onChanged} />}
 
       {/* The list that earns its keep. A catalogue of the panels that exist
           cannot tell you which product is about to go to artwork without one. */}

@@ -90,7 +90,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
   const save = async () => {
     setSaving(true); setError('');
     try {
-      await apiFetch(`/products/${encodeURIComponent(sku)}`, { method: 'PUT', body: JSON.stringify(form) });
+      await apiFetch(`/products/${encodeURIComponent(sku)}`, { method: 'PUT', body: form });
       setEditing(false); refresh(); onSaved?.();
     } catch (e) { setError(e.message); }
     setSaving(false);

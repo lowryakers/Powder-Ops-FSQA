@@ -74,7 +74,7 @@ function CheckRow({ check, canEdit, onChanged }) {
     const reason = window.prompt(`Why is "${check.check_name}" acceptable?\n\nThis note stays on the record.`);
     if (!reason?.trim()) return;
     setBusy(true);
-    try { await apiFetch(`/artwork/checks/${check.id}/dismiss`, { method: 'POST', body: JSON.stringify({ reason }) }); onChanged(); }
+    try { await apiFetch(`/artwork/checks/${check.id}/dismiss`, { method: 'POST', body: { reason } }); onChanged(); }
     catch (e) { window.alert(e.message); }
     setBusy(false);
   };
@@ -131,7 +131,7 @@ function VersionDetail({ sku, onClose, onChanged }) {
   const move = async (v, status) => {
     setBusy(true); setError('');
     try {
-      await apiFetch(`/artwork/versions/${v.id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
+      await apiFetch(`/artwork/versions/${v.id}/status`, { method: 'POST', body: { status } });
       refresh(); onChanged?.();
     } catch (e) { setError(e.message); }
     setBusy(false);
@@ -140,7 +140,7 @@ function VersionDetail({ sku, onClose, onChanged }) {
   const addVersion = async () => {
     setBusy(true); setError('');
     try {
-      await apiFetch('/artwork', { method: 'POST', body: JSON.stringify({ sku, component: 'primary' }) });
+      await apiFetch('/artwork', { method: 'POST', body: { sku, component: 'primary' } });
       refresh(); onChanged?.();
     } catch (e) { setError(e.message); }
     setBusy(false);

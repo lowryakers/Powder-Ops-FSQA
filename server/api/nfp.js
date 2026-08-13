@@ -200,6 +200,101 @@ router.post('/', (req, res) => {
   res.status(201).json(hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(id)])[0]);
 });
 
+/* ── Batch: one link, several panels ──────────────────────────────────────────
+ *
+ * DECLARED BEFORE THE `/:id` ROUTES. Express matches in declaration order and
+ * `/batch/send` is a perfectly good `/:id/send` — with these below, every batch
+ * call was answered by the single-panel handler looking for a version called
+ * "batch". Same trap as `/master.csv` on the products router.
+ */
+
+/**
+ * ONE LINK FOR SEVERAL PANELS.
+ *
+ * Ten SKUs whose serving size changed together is one decision the formulator
+ * makes once. Ten separate texts is a lift big enough that it does not happen,
+ * and a panel nobody approved is a pack that cannot go to print.
+ *
+ * The BATCH owns the token; the DECISIONS stay per panel. Each one records his
+ * name, its own timestamp and `decided_via = 'link'`, and goes through the same
+ * `decide()` the single link and the in-app button use — so a batch approval is
+ * byte-for-byte the record a one-at-a-time approval would have produced. What
+ * is shared is the trip, not the decision.
+ */
+router.post('/batch/send', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const ids = Array.isArray(req.body?.version_ids) ? req.body.version_ids.filter(Boolean) : [];
+  if (!ids.length) return res.status(400).json({ error: 'Pick at least one panel to send.' });
+
+  const versions = db.prepare(
+    `SELECT * FROM nfp_versions WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  if (versions.length !== ids.length) return res.status(400).json({ error: 'One of those panels no longer exists.' });
+
+  // Same two refusals as the single link, applied per panel: an already-decided
+  // panel is not up for decision, and a panel with nothing to look at would be
+  // a rubber stamp. Named individually, or the person fixes one and resends
+  // only to be refused for the next.
+  const bad = [];
+  for (const v of versions) {
+    if (!['draft', 'sent', 'rejected'].includes(v.status)) {
+      bad.push(`${v.sku} ${v.version} has already been decided`);
+      continue;
+    }
+    const hasFile = db.prepare('SELECT COUNT(*) n FROM nfp_files WHERE version_id = ?').get(v.id).n > 0;
+    if (!hasFile && !v.drive_url) bad.push(`${v.sku} ${v.version} has no panel to look at`);
+  }
+  if (bad.length) return res.status(409).json({ error: `Cannot send: ${bad.join('; ')}.`, problems: bad });
+
+  const token = randomBytes(24).toString('base64url');
+  const id = uuid();
+  const sentTo = (req.body?.sent_to || '').trim() || null;
+  const note = (req.body?.note || '').trim() || null;
+
+  db.transaction(() => {
+    db.prepare('INSERT INTO nfp_batches (id, token_hash, sent_to, note, created_by) VALUES (?, ?, ?, ?, ?)')
+      .run(id, hashToken(token), sentTo, note, req.user.name);
+    const link = db.prepare('INSERT INTO nfp_batch_items (batch_id, version_id) VALUES (?, ?)');
+    const mark = db.prepare(`UPDATE nfp_versions SET status = 'sent', token_issued_at = datetime('now'),
+      token_issued_by = ?, sent_to = ?, updated_at = datetime('now') WHERE id = ?`);
+    for (const v of versions) { link.run(id, v.id); mark.run(req.user.name, sentTo, v.id); }
+  })();
+
+  logAudit(req.user, 'nfp_link_issued', 'nfp', id,
+    { batch: true, count: versions.length, sent_to: sentTo, skus: versions.map(v => `${v.sku} ${v.version}`) },
+    null, null, `${versions.length} panels for approval`);
+
+  res.json({ ok: true, batch_id: id, count: versions.length, link: `${readyDocOrigin()}/nfp/batch/${token}` });
+});
+
+/** What has been sent as a batch, and how far through it the approver is. */
+router.get('/batch/list', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`SELECT b.*,
+      (SELECT COUNT(*) FROM nfp_batch_items i WHERE i.batch_id = b.id) AS total,
+      (SELECT COUNT(*) FROM nfp_batch_items i JOIN nfp_versions v ON v.id = i.version_id
+         WHERE i.batch_id = b.id AND v.status IN ('approved','rejected','superseded')) AS decided
+    FROM nfp_batches b ORDER BY b.created_at DESC LIMIT 50`).all();
+  res.json(rows.map(({ token_hash, ...r }) => ({ ...r, link_live: !!token_hash })));
+});
+
+/** Withdraw the whole batch. Undecided panels go back to draft; decided ones
+ *  are history and are left exactly as they are. */
+router.post('/batch/:id/revoke', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const b = db.prepare('SELECT * FROM nfp_batches WHERE id = ?').get(req.params.id);
+  if (!b) return res.status(404).json({ error: 'Not found' });
+  db.transaction(() => {
+    db.prepare("UPDATE nfp_batches SET token_hash = NULL, revoked_at = datetime('now'), revoked_by = ? WHERE id = ?")
+      .run(req.user.name, b.id);
+    db.prepare(`UPDATE nfp_versions SET status = 'draft', updated_at = datetime('now')
+      WHERE status = 'sent' AND id IN (SELECT version_id FROM nfp_batch_items WHERE batch_id = ?)`).run(b.id);
+  })();
+  logAudit(req.user, 'nfp_link_revoked', 'nfp', b.id, { batch: true }, null, null, 'Batch approval link');
+  res.json({ ok: true });
+});
+
 /** Attach the panel file. Streamed from disk, so a big PDF is not buffered. */
 router.post('/:id/files', nfpUpload, async (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
@@ -484,6 +579,108 @@ linkRouter.post('/:token', async (req, res) => {
     { sku: v.sku, version: v.version, via: 'signed-link' }, null, null, `${v.sku} NFP ${v.version}`);
   await tellIssuer(db, v, decision, by, comments);
   res.json({ ok: true, decision, sku: v.sku, version: v.version });
+});
+
+/* ── The batch link, from the approver's side ─────────────────────────────── */
+
+/**
+ * The token stays LIVE until every panel in the batch has been decided.
+ *
+ * A single-panel link is cleared by its decision, which is right when there is
+ * one decision to make. Here there are ten: clearing on the first would strand
+ * the other nine, and someone who approves six and comes back after lunch for
+ * the rest must find the link still working. It clears itself when the last one
+ * is answered.
+ */
+function batchByToken(db, token) {
+  if (!token || token.length < 20) return null;
+  return db.prepare('SELECT * FROM nfp_batches WHERE token_hash = ? AND revoked_at IS NULL').get(hashToken(token));
+}
+
+async function batchView(db, b) {
+  const versions = db.prepare(`SELECT v.* FROM nfp_batch_items i JOIN nfp_versions v ON v.id = i.version_id
+    WHERE i.batch_id = ? ORDER BY v.sku`).all(b.id);
+  const panels = [];
+  for (const v of versions) {
+    const view = await approverView(db, v);
+    panels.push({ ...view, id: v.id, status: v.status, decided: ['approved', 'rejected'].includes(v.status),
+      approved_by: v.approved_by, rejected_reason: v.rejected_reason });
+  }
+  return {
+    batch_id: b.id, note: b.note, sent_to: b.sent_to, sent_by: b.created_by,
+    total: panels.length,
+    outstanding: panels.filter(p => !p.decided).length,
+    panels,
+    storage: storageEnabled(),
+  };
+}
+
+/** Clear the token once nothing is left to decide. */
+function closeIfFinished(db, batchId) {
+  const left = db.prepare(`SELECT COUNT(*) n FROM nfp_batch_items i JOIN nfp_versions v ON v.id = i.version_id
+    WHERE i.batch_id = ? AND v.status = 'sent'`).get(batchId).n;
+  if (!left) db.prepare('UPDATE nfp_batches SET token_hash = NULL WHERE id = ?').run(batchId);
+  return left;
+}
+
+linkRouter.get('/batch/:token', async (req, res) => {
+  const db = getDb();
+  const b = batchByToken(db, req.params.token);
+  if (!b) return res.status(404).json({ error: GONE });
+  res.json(await batchView(db, b));
+});
+
+/**
+ * Decide one panel, or all of the ones still outstanding.
+ *
+ * `version_id` decides one; omitting it with `decision: 'approved'` approves
+ * everything still outstanding — which is the case this exists for, ten SKUs
+ * carrying one change. Each still becomes its own record through `decide()`.
+ *
+ * REJECTING IS ALWAYS ONE AT A TIME. An approval across a batch says "all of
+ * these are right", which is a thing a person can mean; a rejection has to say
+ * what is wrong, and one reason spread over ten panels tells whoever fixes them
+ * nothing about any of them.
+ */
+linkRouter.post('/batch/:token', async (req, res) => {
+  const db = getDb();
+  const b = batchByToken(db, req.params.token);
+  if (!b) return res.status(404).json({ error: GONE });
+
+  const decision = req.body?.decision === 'approved' ? 'approved'
+    : req.body?.decision === 'rejected' ? 'rejected' : null;
+  if (!decision) return res.status(400).json({ error: 'Decision must be approved or rejected.' });
+
+  const by = (req.body?.name || '').trim();
+  if (by.length < 2) return res.status(400).json({ error: 'Please give your name — the approval is recorded against it.' });
+  const comments = (req.body?.comments || '').trim();
+
+  const wanted = req.body?.version_id;
+  if (decision === 'rejected' && !wanted) {
+    return res.status(400).json({ error: 'Reject one panel at a time, and say what is wrong with it.' });
+  }
+  if (decision === 'rejected' && comments.length < 3) {
+    return res.status(400).json({ error: 'Please say what is wrong with the panel.' });
+  }
+
+  const rows = db.prepare(`SELECT v.* FROM nfp_batch_items i JOIN nfp_versions v ON v.id = i.version_id
+    WHERE i.batch_id = ? AND v.status = 'sent'${wanted ? ' AND v.id = ?' : ''}`)
+    .all(...(wanted ? [b.id, wanted] : [b.id]));
+  if (!rows.length) return res.status(409).json({ error: 'Nothing left to decide on this link.' });
+
+  const done = [], stranded = [];
+  for (const v of rows) {
+    const s = decide(db, v, { decision, by, comments, via: 'link' });
+    logAudit(by, decision === 'approved' ? 'nfp_approved' : 'nfp_rejected', 'nfp', v.id,
+      { sku: v.sku, version: v.version, via: 'signed-link', batch: b.id }, null, null, `${v.sku} NFP ${v.version}`);
+    done.push({ sku: v.sku, version: v.version });
+    // Print-ready artwork drawn against the older panel is REPORTED, never
+    // changed — the film already printed is still what is on the shelf.
+    for (const a of s) stranded.push({ sku: v.sku, ...a });
+    tellIssuer(db, v, decision, by, comments).catch(() => {});
+  }
+  const left = closeIfFinished(db, b.id);
+  res.json({ ok: true, decision, decided: done, outstanding: left, stranded });
 });
 
 export default router;

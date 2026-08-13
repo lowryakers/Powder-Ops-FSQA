@@ -2020,6 +2020,34 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_nfp_versions_sku ON nfp_versions(sku, status);
     CREATE INDEX IF NOT EXISTS idx_nfp_versions_token ON nfp_versions(token_hash);
 
+    -- ONE LINK, MANY PANELS.
+    --
+    -- Ten SKUs whose serving size changed together is one decision the
+    -- formulator makes once, and ten texts is a lift big enough that it does
+    -- not get done. The batch owns the token; the DECISIONS stay per panel,
+    -- each with his name and its own timestamp, because a nutrition approval
+    -- is a statement about one product.
+    CREATE TABLE IF NOT EXISTS nfp_batches (
+      id TEXT PRIMARY KEY,
+      -- SHA-256. The clear text is handed over exactly once, at issue.
+      token_hash TEXT,
+      sent_to TEXT,
+      note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      revoked_at TEXT,
+      revoked_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_nfp_batches_token ON nfp_batches(token_hash);
+
+    CREATE TABLE IF NOT EXISTS nfp_batch_items (
+      batch_id TEXT NOT NULL,
+      version_id TEXT NOT NULL,
+      PRIMARY KEY (batch_id, version_id),
+      FOREIGN KEY (batch_id) REFERENCES nfp_batches(id) ON DELETE CASCADE,
+      FOREIGN KEY (version_id) REFERENCES nfp_versions(id) ON DELETE CASCADE
+    );
+
     -- The panel itself. Files live in R2; only the key is stored. Without one
     -- there is nothing for an approver to look at, which is why sending a link
     -- refuses when neither a file nor a Drive link is on the version.

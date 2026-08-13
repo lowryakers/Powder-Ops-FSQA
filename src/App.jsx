@@ -50,6 +50,7 @@ const CertificationsPanel = lazy(() => import('./components/compliance/Certifica
 const CriticalPanel = lazy(() => import('./components/compliance/CriticalPanel.jsx'));
 import ApprovePage from './components/ApprovePage.jsx';
 import NfpApprovePage from './components/NfpApprovePage.jsx';
+import NfpBatchApprovePage from './components/NfpBatchApprovePage.jsx';
 const TrainingPanel = lazy(() => import('./components/compliance/TrainingPanel.jsx'));
 const MockRecallPanel = lazy(() => import('./components/compliance/MockRecallPanel.jsx'));
 const MeetingsPanel = lazy(() => import('./components/compliance/MeetingsPanel.jsx'));
@@ -1425,7 +1426,11 @@ function App() {
   // /approve/ so the flavor link's resolution stays a single lookup, and so a
   // token can never be tried against the wrong record type.
   if (path.startsWith('/nfp/')) {
-    return <NfpApprovePage token={path.split('/')[2] || ''} />;
+    // /nfp/batch/<token> is one link covering several panels; /nfp/<token> is
+    // the single-panel link. Both are public and token-gated.
+    const parts = path.split('/');
+    if (parts[2] === 'batch') return <NfpBatchApprovePage token={parts[3] || ''} />;
+    return <NfpApprovePage token={parts[2] || ''} />;
   }
 
   // A trading partner's own view of the shared ledger. Public and token-gated

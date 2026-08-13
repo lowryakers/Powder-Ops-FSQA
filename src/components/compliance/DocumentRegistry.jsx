@@ -877,7 +877,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
   // firing on click. `setWithdrawing` opens it; this is the commit.
   const handleArchive = async (doc, { reason, effective_from }) => {
     await apiFetch(`/documents/${doc.id}`, {
-      method: 'DELETE', body: JSON.stringify({ reason, effective_from }),
+      method: 'DELETE', body: { reason, effective_from },
     });
     setWithdrawing(null);
     setViewing(null);
