@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -54,6 +54,7 @@ import NfpBatchApprovePage from './components/NfpBatchApprovePage.jsx';
 const TrainingPanel = lazy(() => import('./components/compliance/TrainingPanel.jsx'));
 const MockRecallPanel = lazy(() => import('./components/compliance/MockRecallPanel.jsx'));
 const MeetingsPanel = lazy(() => import('./components/compliance/MeetingsPanel.jsx'));
+const SafetyPanel = lazy(() => import('./components/compliance/SafetyPanel.jsx'));
 const InternalAuditsPanel = lazy(() => import('./components/compliance/InternalAuditsPanel.jsx'));
 const DocReviewPanel = lazy(() => import('./components/compliance/DocReviewPanel.jsx'));
 const FacilityMapPanel = lazy(() => import('./components/compliance/FacilityMapPanel.jsx'));
@@ -168,6 +169,9 @@ const NAV_GROUPS = [
       // covers production and safety meetings too.
       { id: 'meetings', label: 'Meetings', icon: Users, keywords: 'minutes management review food safety team agenda attendance action items' },
       { id: 'internal-audits', label: 'Internal Audits', icon: ClipboardCheck, keywords: 'form 403-01 checklist audit findings CAR corrective action self audit' },
+      // The three safety forms: crisis contacts (501-01), evacuation
+      // headcounts (501-02), first aid injuries (502-01).
+      { id: 'safety', label: 'Safety', icon: LifeBuoy, keywords: 'crisis management contact list evacuation headcount drill first aid injury accident form 501 502 emergency' },
     ],
   },
   {
@@ -1896,6 +1900,7 @@ function App() {
           {resolvedTab === 'training' && <TrainingPanel />}
           {resolvedTab === 'recall' && <MockRecallPanel />}
           {resolvedTab === 'meetings' && <MeetingsPanel />}
+          {resolvedTab === 'safety' && <SafetyPanel user={user} />}
           {resolvedTab === 'internal-audits' && <InternalAuditsPanel />}
           {resolvedTab === 'doc-review' && <DocReviewPanel />}
           {resolvedTab === 'facility-map' && <FacilityMapPanel user={user} />}

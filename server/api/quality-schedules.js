@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { EMP_SCHEDULES, EMP_SITE_LIST } from '../emp-site-list.js';
 
 const router = Router();
 
@@ -141,7 +142,10 @@ export function seedQualitySchedules(db) {
     (id, title, description, module_id, frequency_type, frequency_value, procedure_steps, next_due, is_active)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`);
   const today = db.prepare("SELECT date('now') d").get().d;
-  for (const s of SEED_SCHEDULES) {
+  // The EMP schedules come from FORM 604-01 (emp-site-list.js) — the form is
+  // the authority on what gets sampled and how often, so its schedules live
+  // beside its transcription rather than being retyped here.
+  for (const s of [...SEED_SCHEDULES, ...EMP_SCHEDULES]) {
     if (exists.get(s.title)) continue;
     ins.run(uuid(), s.title, s.description, s.module_id, s.frequency_type, s.frequency_value,
       JSON.stringify(s.procedure_steps), today);
@@ -161,6 +165,11 @@ function requireManage(req, res, next) {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Quality management access required' });
   next();
 }
+
+// FORM 604-01, the Master Site List, verbatim — plus which schedule covers
+// each of its rows, so "is everything on the form actually scheduled" is
+// answerable from the screen. Declared before any parameterised route.
+router.get('/emp-site-list', (_req, res) => res.json(EMP_SITE_LIST));
 
 router.get('/', (req, res) => {
   const db = getDb();

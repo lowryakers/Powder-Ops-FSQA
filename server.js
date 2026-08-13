@@ -81,6 +81,7 @@ import { syncAllKnifeStatuses } from './server/knife-state.js';
 import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
 import receivingRoutes from './server/api/receiving.js';
 import filmInspectionRoutes from './server/api/film-inspection.js';
+import safetyRoutes from './server/api/safety.js';
 import importRoutes from './server/api/imports.js';
 import coaRoutes from './server/api/coa.js';
 import productRoutes from './server/api/products.js';
@@ -1608,6 +1609,7 @@ app.use('/api/receiving', requireModuleWrite('receiving-log'), receivingRoutes);
 // QA's work — gating it on the warehouse's module would have meant every QA
 // lead needed Receiving Log before they could look at a roll of film.
 app.use('/api/film-inspection', requireModuleWrite('qa-inspections'), filmInspectionRoutes);
+app.use('/api/safety', requireModuleWrite('safety'), safetyRoutes);
 // Per-target permission is enforced inside the router (each target names the
 // module its importer requires).
 app.use('/api/imports', importRoutes);

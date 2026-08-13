@@ -281,6 +281,95 @@ export default function QualitySchedulesPanel() {
           onSave={async () => { setEditing(null); refresh(); }}
         />
       )}
+
+      <EmpSiteList schedules={rows} />
+    </div>
+  );
+}
+
+/**
+ * FORM 604-01 — the Master Site List, rendered verbatim from the server's
+ * transcription, with a coverage table naming which schedule above answers
+ * each of the form's rows. Collapsed by default: it is the reference behind
+ * the schedules, not the daily screen.
+ */
+function EmpSiteList({ schedules }) {
+  const { data: emp } = useApiGet('/quality-schedules/emp-site-list');
+  const [open, setOpen] = useState(false);
+  if (!emp) return null;
+  const byTitle = new Map((schedules || []).map(s => [s.title.toLowerCase(), s]));
+  return (
+    <div className="mt-6 border border-gray-200 rounded-xl bg-white">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left">
+        <div>
+          <p className="font-semibold text-gray-900">{emp.title} — {emp.form_code} {emp.revision}</p>
+          <p className="text-xs text-gray-500">The EMP's sampling sites, limits and frequencies — the document behind the schedules above.</p>
+        </div>
+        <span className="text-xs text-powder-700 font-medium shrink-0">{open ? 'Hide' : 'Show'}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-4">
+          {/* Which schedule covers each of the form's rows — the audit question
+              this reference exists to answer. */}
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1.5">Coverage</p>
+            <ul className="space-y-1">
+              {emp.coverage.map((c, i) => {
+                const s = byTitle.get(c.schedule.toLowerCase());
+                return (
+                  <li key={i} className="text-xs text-gray-700 flex items-start gap-1.5">
+                    {s?.is_active
+                      ? <CheckCircle2 size={13} className="text-green-600 shrink-0 mt-px" />
+                      : <PauseCircle size={13} className="text-amber-500 shrink-0 mt-px" />}
+                    <span>{c.row} → <span className="font-medium">{c.schedule}</span>
+                      {!s && <span className="text-red-600 font-semibold"> (no schedule found)</span>}
+                      {s && !s.is_active && <span className="text-amber-700"> (paused)</span>}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          {emp.sections.map(sec => (
+            <div key={sec.key}>
+              <p className="text-sm font-bold text-gray-800 mb-1">{sec.title}</p>
+              {sec.sites && (
+                <p className="text-xs text-gray-600 mb-1.5">
+                  <span className="font-medium">Sample sites:</span> {sec.sites.join(' · ')}
+                </p>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs min-w-[520px]">
+                  <thead>
+                    <tr className="text-[10px] text-gray-500 uppercase tracking-wide border-b border-gray-200">
+                      {sec.rows[0].location !== undefined && <th className="text-left py-1 pr-3">Location</th>}
+                      {sec.rows[0].test !== undefined && <th className="text-left py-1 pr-3">Tests</th>}
+                      {sec.rows[0].limit !== undefined && <th className="text-left py-1 pr-3">Specification Limit</th>}
+                      <th className="text-left py-1 pr-3">Frequency</th>
+                      {sec.rows[0].alert !== undefined && <th className="text-left py-1 pr-3">Alert</th>}
+                      {sec.rows[0].action !== undefined && <th className="text-left py-1">Action</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sec.rows.map((r, i) => (
+                      <tr key={i} className="border-b border-gray-100 last:border-0 align-top">
+                        {r.location !== undefined && <td className="py-1.5 pr-3 text-gray-700">{r.location}</td>}
+                        {r.test !== undefined && <td className="py-1.5 pr-3 font-medium text-gray-800 whitespace-nowrap">{r.test}</td>}
+                        {r.limit !== undefined && <td className="py-1.5 pr-3 text-gray-700">{r.limit}</td>}
+                        <td className="py-1.5 pr-3 text-gray-700">{r.frequency}</td>
+                        {r.alert !== undefined && <td className="py-1.5 pr-3 text-gray-700 whitespace-nowrap">{r.alert}</td>}
+                        {r.action !== undefined && <td className="py-1.5 text-gray-700 whitespace-nowrap">{r.action}</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {sec.note && <p className="text-[11px] text-gray-500 mt-1">{sec.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

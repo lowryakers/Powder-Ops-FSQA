@@ -42,6 +42,9 @@ export const ALL_MODULE_IDS = [
   'meetings',
   // Internal audits (Form 403-01).
   'internal-audits',
+  // Safety: crisis contacts (501-01), evacuation headcounts (501-02), first
+  // aid injury log (502-01).
+  'safety',
   // Self-serve structure: edit an existing log's fields and dropdown lists in
   // the app. Grant-able so a QA or ops lead can own form structure without
   // needing full admin.

@@ -1122,6 +1122,44 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_film_photos_inspection ON film_pouch_photos(inspection_id);
 
+    -- ── Safety records ───────────────────────────────────────────────────
+    -- Form 501-02 — one row per evacuation (drill or real). The per-area
+    -- headcounts live as JSON because the paper is one sheet of rows and the
+    -- row set is the form's, not the schema's: a revision that adds an area
+    -- must not need a migration. The reason codes are the form's G/F/E/W/N.
+    CREATE TABLE IF NOT EXISTS evacuation_headcounts (
+      id TEXT PRIMARY KEY,
+      form_revision TEXT NOT NULL,
+      event_date TEXT NOT NULL,
+      event_time TEXT,
+      is_drill INTEGER NOT NULL DEFAULT 1,
+      -- [{area, total, accounted, reason}] — reason is the row's circled code.
+      areas TEXT NOT NULL DEFAULT '[]',
+      notes TEXT,
+      completed_by TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_evac_date ON evacuation_headcounts(event_date DESC);
+
+    -- FORM 502-01 — the first aid injury/accident log, one row per injury.
+    -- Columns mirror the paper's five, plus provenance.
+    CREATE TABLE IF NOT EXISTS first_aid_injuries (
+      id TEXT PRIMARY KEY,
+      form_revision TEXT NOT NULL,
+      employee_name TEXT NOT NULL,
+      injury_date TEXT NOT NULL,
+      injury_description TEXT,
+      explanation TEXT,
+      supervisor_name TEXT,
+      supervisor_date TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_first_aid_date ON first_aid_injuries(injury_date DESC);
+
     -- ── Universal file importer ──────────────────────────────────────────
     -- One row per uploaded file. The parsed rows are held here between the
     -- analyze and commit steps so the preview is a true dry run against the

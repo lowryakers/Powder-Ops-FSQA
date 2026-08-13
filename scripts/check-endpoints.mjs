@@ -44,6 +44,7 @@ const PATHS = [
   '/haccp', '/hygienic-design', '/internal-audits', '/mock-recalls', '/meetings',
   '/retention', '/retention/boxes', '/facility/map-status', '/quality-schedules',
   '/chemicals', '/checklists/templates',
+  '/safety/forms', '/safety/evacuations', '/safety/first-aid', '/quality-schedules/emp-site-list',
   // calibration — the one that started this
   '/calibration/instruments', '/calibration/records', '/calibration/stats',
   '/scale-verification/forms', '/scale-verification',
