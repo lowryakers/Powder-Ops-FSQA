@@ -1105,7 +1105,11 @@ export default function TrainingPanel() {
   const { data: matrix, refresh: refreshMatrix } = useApiGet('/training/matrix');
   const { data: courses, refresh: refreshCourses } = useApiGet('/training/courses');
   const { data: due } = useApiGet('/training/due');
-  const { data: records, refresh: refreshRecords } = useApiGet('/training');
+  // The record list is bounded to the newest 500, so the search term goes to
+  // the SERVER — sifting only the fetched page made a two-year-old record
+  // unfindable from the very tab that exists to prove it is on file.
+  const [recQ, setRecQ] = useState('');
+  const { data: records, refresh: refreshRecords } = useApiGet(`/training${recQ ? `?q=${encodeURIComponent(recQ)}` : ''}`, [recQ]);
   const { data: users } = useApiGet('/users');
   const { data: aiStatus } = useApiGet('/ai/status');
   const aiOn = !!aiStatus?.enabled;
@@ -1129,6 +1133,13 @@ export default function TrainingPanel() {
   const [testCourse, setTestCourse] = useState(null);
   const [search, setSearch] = useState('');
   const [flash, setFlash] = useState('');
+
+  // Debounced — a keystroke should not be a query, but the settled term must
+  // reach the server (see the note on the records fetch above).
+  useEffect(() => {
+    const t = setTimeout(() => setRecQ(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const refreshAll = () => { refreshMatrix(); refreshCourses(); refreshRecords(); };
   const counts = matrix?.counts || { missing: 0, overdue: 0, due_soon: 0, current: 0 };

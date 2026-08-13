@@ -114,6 +114,16 @@ router.get('/', (req, res) => {
   if (status) { sql += ' AND tr.status = ?'; params.push(status); }
   if (course_id) { sql += ' AND tr.course_id = ?'; params.push(course_id); }
   if (sop_id) { sql += ' AND tr.sop_id = ?'; params.push(sop_id); }
+  // SEARCH IS SERVER-SIDE because the list below is bounded. The plant has
+  // 3,600+ imported completions back to 2022; the newest 500 is right for the
+  // default view, but a search box that only sifted that page answered "who
+  // did GMP in 2023" with silence while the records sat in the table — a
+  // bounded list plus a client-only search reads exactly like lost data.
+  if (req.query.q) {
+    sql += ' AND (tr.employee_name LIKE ? OR tr.training_topic LIKE ? OR c.title LIKE ? OR c.code LIKE ?)';
+    const like = `%${req.query.q}%`;
+    params.push(like, like, like, like);
+  }
   // Bounded, like the sanitation and production logs. This grows with every
   // completion and was shipping the whole table to render a screen of rows.
   // Callers wanting history ask with from/to or a bigger limit.

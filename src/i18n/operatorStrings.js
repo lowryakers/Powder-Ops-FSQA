@@ -144,6 +144,7 @@ const strings = {
   // not several identical cards.
   missed_times: { en: 'missed', es: 'no hecho' },
   missed_since: { en: 'since', es: 'desde' },
+  assigned_from: { en: 'assigned to you from', es: 'asignado a ti de' },
   // Food-contact tasks cannot be completed without ticking each step — QA has
   // to clear the machine before it runs again and cannot do that from a task
   // that does not say what was done.
@@ -250,6 +251,9 @@ const strings = {
   k_tool_box: { en: 'Tool Box #', es: '# de Caja de Herramientas' },
   k_asset_tag: { en: 'Asset Tag', es: 'Etiqueta de Activo' },
   k_pick_one_item: { en: 'Pick at least one item.', es: 'Seleccione al menos un artículo.' },
+  // {q} / {name} are substituted by the caller.
+  k_no_knives_match: { en: 'No knives match "{q}"', es: 'Ningún cuchillo coincide con "{q}"' },
+  k_pick_use_spec: { en: 'Pick a use specification for {name}.', es: 'Seleccione una especificación de uso para {name}.' },
   k_item_signed_out: { en: 'Item Signed Out', es: 'Artículo Registrado' },
   k_return_by_qa: { en: 'Return is completed by QA in the app.', es: 'La devolución la completa QA en la aplicación.' },
   k_sign_out_more: { en: 'Sign Out More', es: 'Registrar Más' },

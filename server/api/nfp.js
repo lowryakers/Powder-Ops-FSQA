@@ -288,8 +288,16 @@ router.post('/batch/:id/revoke', (req, res) => {
   db.transaction(() => {
     db.prepare("UPDATE nfp_batches SET token_hash = NULL, revoked_at = datetime('now'), revoked_by = ? WHERE id = ?")
       .run(req.user.name, b.id);
+    // A panel also sitting on ANOTHER live batch stays 'sent' — that other
+    // link is still asking about it, and flipping it to draft would leave the
+    // second batch listing a panel its own POST can no longer decide.
     db.prepare(`UPDATE nfp_versions SET status = 'draft', updated_at = datetime('now')
-      WHERE status = 'sent' AND id IN (SELECT version_id FROM nfp_batch_items WHERE batch_id = ?)`).run(b.id);
+      WHERE status = 'sent' AND id IN (SELECT version_id FROM nfp_batch_items WHERE batch_id = ?)
+      AND id NOT IN (
+        SELECT i.version_id FROM nfp_batch_items i
+        JOIN nfp_batches ob ON ob.id = i.batch_id
+        WHERE ob.id != ? AND ob.token_hash IS NOT NULL
+      )`).run(b.id, b.id);
   })();
   logAudit(req.user, 'nfp_link_revoked', 'nfp', b.id, { batch: true }, null, null, 'Batch approval link');
   res.json({ ok: true });
@@ -405,10 +413,27 @@ router.post('/:id/revoke', (req, res) => {
   const db = getDb();
   const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
   if (!v) return res.status(404).json({ error: 'Not found' });
+
+  // A PANEL PULLED BACK LEAVES ANY LIVE BATCH IT WAS ON. Flipping it to
+  // 'draft' while a batch link still listed it left the batch permanently
+  // unfinishable — the batch POST only offers 'sent' panels, so the approver
+  // saw an undecidable row — and worse, once the other panels were decided,
+  // closeIfFinished counted zero 'sent' members and closed the link saying
+  // "that is all of them" over a panel nobody ever decided. Removing the
+  // membership makes both honest: the batch page lists what is actually still
+  // being asked, and the close fires only when everything on it was decided.
+  const liveBatches = db.prepare(`SELECT b.id FROM nfp_batches b
+    JOIN nfp_batch_items i ON i.batch_id = b.id
+    WHERE i.version_id = ? AND b.token_hash IS NOT NULL`).all(v.id);
   db.prepare(`UPDATE nfp_versions SET token_hash = NULL,
     status = CASE WHEN status = 'sent' THEN 'draft' ELSE status END,
     updated_at = datetime('now') WHERE id = ?`).run(v.id);
-  logAudit(req.user, 'nfp_link_revoked', 'nfp', v.id, { sku: v.sku, version: v.version }, null, null,
+  for (const b of liveBatches) {
+    db.prepare('DELETE FROM nfp_batch_items WHERE batch_id = ? AND version_id = ?').run(b.id, v.id);
+    closeIfFinished(db, b.id);
+  }
+  logAudit(req.user, 'nfp_link_revoked', 'nfp', v.id,
+    { sku: v.sku, version: v.version, removed_from_batches: liveBatches.map(b => b.id) }, null, null,
     `${v.sku} NFP ${v.version}`);
   res.json({ ok: true });
 });

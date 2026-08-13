@@ -33,7 +33,10 @@ export default function MaintenanceKiosk({ defaultName = '' }) {
     e.preventDefault();
     if (!picked.length) { setError(t('k_pick_one_item')); return; }
     const missingSpec = picked.find(p => isChemical(p.name) && !p.use_spec);
-    if (missingSpec) { setError(`Pick a use specification for ${missingSpec.name}.`); return; }
+    // The one message that enforces the chemical use-spec rule — of all the
+    // kiosk strings this is the last that may be English-only, since the
+    // person it blocks has to read it to get unblocked.
+    if (missingSpec) { setError(t('k_pick_use_spec').replace('{name}', missingSpec.name)); return; }
     setSaving(true); setError('');
     try {
       const res = await fetch('/api/submit/maintenance-signout', {

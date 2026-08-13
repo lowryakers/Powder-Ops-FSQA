@@ -748,13 +748,14 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
   );
 }
 
-function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete, chemicals, flagging, onStartFlag, onFlag, onCancelFlag, canSnooze, snoozing, onStartSnooze, onSnooze, onCancelSnooze }) {
+function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete, chemicals, flagging, onStartFlag, onFlag, onCancelFlag, canSnooze, snoozing, onStartSnooze, onSnooze, onCancelSnooze, canReassign, technicians, onReassign }) {
   const steps = wo.procedure_steps || [];
   const attachments = (() => { try { return JSON.parse(wo.attachments || '[]'); } catch { return []; } })();
   const issueAttachments = (() => { try { return JSON.parse(wo.issue_attachments || '[]'); } catch { return []; } })();
   const snoozes = (() => { try { return JSON.parse(wo.snooze_history || '[]'); } catch { return []; } })();
   const [expanded, setExpanded] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
 
   return (
     <div className={`bg-white rounded-xl border p-4 ${wo.issue_flagged ? 'border-red-300 ring-1 ring-red-100' : wo.rework_required ? 'border-amber-300 ring-1 ring-amber-100' : 'border-gray-200'}`}>
@@ -767,6 +768,14 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[wo.status]}`}>{wo.status}</span>
             {wo.issue_flagged === 1 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs font-semibold"><Flag size={10} /> Issue</span>}
             {wo.rework_required === 1 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold"><Flag size={10} /> Rework</span>}
+            {/* Folded missed runs — one card, not one per day it was missed.
+                The same chip the Operator View shows; without it, the Missed
+                filter opens cards that never say why they qualified. */}
+            {wo.missed_count > 0 && (
+              <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-semibold">
+                {wo.missed_count}× missed{wo.missed_since ? ` since ${wo.missed_since}` : ''}
+              </span>
+            )}
             {wo.priority === 'critical' && <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full text-xs">Critical</span>}
             {wo.priority === 'high' && !wo.issue_flagged && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
             {attachments.length > 0 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs"><Paperclip size={10} />{attachments.length}</span>}
@@ -774,7 +783,27 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
           </div>
           <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
-          <p className="text-xs text-gray-400 mt-0.5">Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}
+            {/* Covering an absence means handing this task to somebody else
+                TODAY, without editing the schedule it came from — the schedule
+                keeps generating for the usual person; only this run moves. */}
+            {canReassign && ['open', 'in_progress', 'overdue', 'missed'].includes(wo.status) && (
+              <button type="button" onClick={() => setReassigning(r => !r)}
+                className="ml-1.5 text-powder-600 hover:text-powder-700 underline">
+                {wo.assigned_to ? 'Reassign' : 'Assign'}
+              </button>
+            )}
+          </p>
+          {reassigning && (
+            <select autoFocus value={wo.assigned_to || ''} onChange={(e) => { setReassigning(false); onReassign?.(wo.id, e.target.value); }}
+              className="mt-1 px-2 py-1 border border-gray-300 rounded-md text-xs">
+              <option value="">Unassigned (whole team)</option>
+              {(technicians || []).map(u => (
+                <option key={u.id} value={u.name}>{u.name}{u.department ? ` · ${String(u.department).replace(/_/g, ' ')}` : ''}</option>
+              ))}
+            </select>
+          )}
           {snoozes.length > 0 && (
             <p className="text-xs text-sky-700 mt-0.5">
               Deferred{snoozes.length > 1 ? ` ×${snoozes.length}` : ''} by {snoozes[snoozes.length - 1].by}: {snoozes[snoozes.length - 1].reason}
@@ -1072,6 +1101,11 @@ export default function PMPanel() {
     refreshTasks();
   };
 
+  const handleReassign = async (woId, name) => {
+    await apiPut(`/pm/work-orders/${woId}`, { assigned_to: name || null });
+    refreshTasks();
+  };
+
   const handleStartWO = async (woId, action) => {
     if (action === 'start') {
       await apiPut(`/pm/work-orders/${woId}`, { status: 'in_progress' });
@@ -1151,9 +1185,15 @@ export default function PMPanel() {
       // flips every past-due open task to it — so excluding it here is what
       // made the Overdue card open an empty list on a plant with real overdue
       // work. It must match the server's count, which counts the same set.
-      if (statusFilter === 'overdue') items = items.filter(wo => wo.due_date < today && wo.status !== 'completed' && wo.status !== 'not_applicable');
+      // The list is COLLAPSED: a schedule's run of missed tasks is folded onto
+      // one card (missed_count on a live card, or the surviving oldest missed
+      // row). So "missed" must match the folded cards too, or the count above
+      // opens a list that looks empty — the card carrying 14 missed runs has
+      // status 'open'. The server's /pm/metrics counts these same collapsed
+      // cards; keep the two predicates in step.
+      if (statusFilter === 'overdue') items = items.filter(wo => wo.status === 'missed' || wo.missed_count > 0 || (wo.due_date < today && wo.status !== 'completed' && wo.status !== 'not_applicable'));
       else if (statusFilter === 'open') items = items.filter(wo => wo.status === 'open' || wo.status === 'in_progress');
-      else if (statusFilter === 'missed') items = items.filter(wo => wo.status === 'missed');
+      else if (statusFilter === 'missed') items = items.filter(wo => wo.status === 'missed' || wo.missed_count > 0);
       return { freq: f, items };
     })
     .filter(g => g.items.length > 0) : [];
@@ -1362,6 +1402,7 @@ export default function PMPanel() {
                     onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)}
                     canSnooze={canSnooze} snoozing={snoozingId}
                     onStartSnooze={(id) => { setSnoozingId(snoozingId === id ? null : id); setCompleting(null); setFlagging(null); }}
+                    canReassign={isAdmin} technicians={technicians} onReassign={handleReassign}
                     onSnooze={handleSnooze} onCancelSnooze={() => setSnoozingId(null)} />
                 </div>
               ))}
@@ -1396,6 +1437,7 @@ export default function PMPanel() {
                       onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)}
                       canSnooze={canSnooze} snoozing={snoozingId}
                       onStartSnooze={(id) => { setSnoozingId(snoozingId === id ? null : id); setCompleting(null); setFlagging(null); }}
+                    canReassign={isAdmin} technicians={technicians} onReassign={handleReassign}
                       onSnooze={handleSnooze} onCancelSnooze={() => setSnoozingId(null)} />
                   ))}
                 </div>
@@ -1429,6 +1471,7 @@ export default function PMPanel() {
                     onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)}
                     canSnooze={canSnooze} snoozing={snoozingId}
                     onStartSnooze={(id) => { setSnoozingId(snoozingId === id ? null : id); setCompleting(null); setFlagging(null); }}
+                    canReassign={isAdmin} technicians={technicians} onReassign={handleReassign}
                     onSnooze={handleSnooze} onCancelSnooze={() => setSnoozingId(null)} />
                 ))}
               </div>

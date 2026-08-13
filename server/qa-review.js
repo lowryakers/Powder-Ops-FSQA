@@ -158,8 +158,12 @@ export const SOURCES = [
     })),
     canSign: canSignInspection,
     sign: (db, user, id) => {
-      const { error } = verifySanitationRecord(db, user, id);
-      return error ? { error, status: 400 } : { ok: true };
+      // Pass the module's own status through — it distinguishes a permission
+      // refusal (403) from a missing record (404), and flattening both to 400
+      // makes the queue report the same refusal differently from the module's
+      // own button, which is the drift the shared function exists to prevent.
+      const { error, status } = verifySanitationRecord(db, user, id);
+      return error ? { error, status: status || 400 } : { ok: true };
     },
   },
   {
@@ -185,8 +189,12 @@ export const SOURCES = [
     })),
     canSign: canSignSanitation,
     sign: (db, user, id) => {
-      const { error } = verifySanitationRecord(db, user, id);
-      return error ? { error, status: 400 } : { ok: true };
+      // Pass the module's own status through — it distinguishes a permission
+      // refusal (403) from a missing record (404), and flattening both to 400
+      // makes the queue report the same refusal differently from the module's
+      // own button, which is the drift the shared function exists to prevent.
+      const { error, status } = verifySanitationRecord(db, user, id);
+      return error ? { error, status: status || 400 } : { ok: true };
     },
   },
   {

@@ -1717,8 +1717,17 @@ export function linkOrgPositionsToUsers() {
       const hit = byKey.get(personKey(p.name));
       if (hit) { link.run(hit, p.id); n++; }
     }
-    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('org_user_backfilled', ?)")
-      .run(new Date().toISOString());
+    // THE MARKER IS WRITTEN ONLY WHEN SOMETHING ACTUALLY LINKED. A fresh
+    // deployment seeds the 23-position chart while the users table holds one
+    // admin — pending is non-empty, nothing matches, and marking that pass
+    // done would freeze the chart unlinked forever, with the real roster
+    // bulk-added minutes later. The empty-POSITIONS guard above covers one
+    // table being behind; this covers the other. Re-scanning 23 rows on boots
+    // where nothing ever matches (an all-contractor chart) costs nothing.
+    if (n > 0) {
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('org_user_backfilled', ?)")
+        .run(new Date().toISOString());
+    }
     if (n) console.log(`[migrate] Org chart: linked ${n} of ${pending.length} position(s) to their account`);
     return n;
   } catch (e) {

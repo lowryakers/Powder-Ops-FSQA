@@ -16,7 +16,10 @@ import { CheckCircle2, Circle, Loader2, AlertTriangle, Copy, Check } from 'lucid
  * of a secret and the server never sends them.
  */
 export default function IntegrationsSection() {
-  const { data, loading, refetch } = useApiGet('/integrations');
+  // `refresh`, not `refetch` — useApiGet has no refetch, so the destructure
+  // was undefined and the post-test refresh a silent no-op: the "N of M
+  // connected" count sat stale until a page reload.
+  const { data, loading, refresh } = useApiGet('/integrations');
 
   return (
     <div className="space-y-4">
@@ -37,7 +40,7 @@ export default function IntegrationsSection() {
             {data.counts.on} of {data.counts.total} connected.
           </p>
           <div className="space-y-2.5">
-            {data.services.map(s => <Service key={s.id} s={s} onRetest={refetch} />)}
+            {data.services.map(s => <Service key={s.id} s={s} onRetest={refresh} />)}
           </div>
         </>
       )}

@@ -153,6 +153,7 @@ router.post('/', (req, res) => {
   const no = String(req.body?.inspection_no || '').trim() || nextInspectionNo(db);
 
   let row = db.prepare('SELECT * FROM film_pouch_inspections WHERE inspection_no = ? AND flavor = ?').get(no, flavor);
+  const created = !row;
   if (!row) {
     db.prepare(`INSERT INTO film_pouch_inspections
       (id, inspection_no, flavor, checklist_revision, inspection_date, qa_lead, created_by)
@@ -160,9 +161,11 @@ router.post('/', (req, res) => {
       uuid(), no, flavor, FILM_REVISION, req.body?.inspection_date || null,
       req.body?.qa_lead || req.user.name, req.user.name);
     row = db.prepare('SELECT * FROM film_pouch_inspections WHERE inspection_no = ? AND flavor = ?').get(no, flavor);
-    logAudit(req.user, 'film_inspection_created', 'film_inspection', row.id,
-      { inspection_no: no, flavor }, null, row, `${no} · ${flavor}`);
-    return res.status(201).json(shape(row));
+    // DELIBERATELY FALLS THROUGH to the patch below. "Answers save as they are
+    // tapped" is the contract, and a create that returned early silently
+    // dropped any header fields or answers sent in the same request — the
+    // first tap of an offline-queue replay, or any client that starts a sheet
+    // with details, would look saved and not be.
   }
   // A signed sheet is the record of the packaging that was accepted or refused.
   if (row.reviewed_at) return res.status(409).json({ error: 'This inspection is signed off. Revoke the sign-off to correct it.' });
@@ -181,9 +184,14 @@ router.post('/', (req, res) => {
       updated_at = datetime('now') WHERE id = ?`).run(...Object.values(patch), row.id);
   }
   const updated = db.prepare('SELECT * FROM film_pouch_inspections WHERE id = ?').get(row.id);
-  logAudit(req.user, 'film_inspection_updated', 'film_inspection', row.id,
-    { inspection_no: no, flavor, fields: Object.keys(patch) }, row, updated, `${no} · ${flavor}`);
-  res.json(shape(updated));
+  if (created) {
+    logAudit(req.user, 'film_inspection_created', 'film_inspection', row.id,
+      { inspection_no: no, flavor, fields: Object.keys(patch) }, null, updated, `${no} · ${flavor}`);
+  } else {
+    logAudit(req.user, 'film_inspection_updated', 'film_inspection', row.id,
+      { inspection_no: no, flavor, fields: Object.keys(patch) }, row, updated, `${no} · ${flavor}`);
+  }
+  res.status(created ? 201 : 200).json(shape(updated));
 });
 
 /**

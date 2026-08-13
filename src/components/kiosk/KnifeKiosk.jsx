@@ -156,7 +156,7 @@ export default function KnifeKiosk({ defaultName = '' }) {
         <div className="space-y-2">
           {filtered.length === 0 && (
             <div className="text-center py-10 text-gray-500 bg-white rounded-2xl border border-gray-200">
-              {knives.length === 0 ? t('k_no_knives') : `No knives match "${query}"`}
+              {knives.length === 0 ? t('k_no_knives') : t('k_no_knives_match').replace('{q}', query)}
             </div>
           )}
           {filtered.map(k => {

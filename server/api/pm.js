@@ -482,10 +482,22 @@ router.get('/metrics', (req, res) => {
   // UN-WINDOWED, because these two describe WHAT IS IN FRONT OF YOU and the
   // list they open is not windowed either. The period stats above (completion
   // rate, the trend) are the historical view and keep their window.
-  const overdue = db.prepare(
-    "SELECT COUNT(*) as count FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue','missed')" + gf
-  ).get(todayStr, ...gp);
-  const missed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status = 'missed'" + gf).get(...gp);
+  // COUNTED FROM THE SAME COLLAPSED ROWS THE LIST SHOWS. /by-frequency folds a
+  // schedule's run of missed tasks onto one card (collapseMissed), so a raw
+  // `COUNT(*) WHERE status='missed'` here read 14 while the list the card
+  // opens showed one folded card whose status is 'open' — "14 missed" opening
+  // a seemingly empty list, which is the exact bug the un-windowing of these
+  // two counts was meant to end. A card carries missed work when its own
+  // status is 'missed' OR it has missed runs folded onto it (missed_count).
+  const activeRows = db.prepare(
+    "SELECT id, status, due_date, pm_schedule_id FROM work_orders WHERE status IN ('open','in_progress','overdue','missed')" + gf
+  ).all(...gp);
+  const collapsed = collapseMissed(activeRows);
+  const missed = { count: collapsed.filter(r => r.status === 'missed' || r.missed_count > 0).length };
+  const overdue = { count: collapsed.filter(r => r.status === 'missed' || r.missed_count > 0 || String(r.due_date) < todayStr).length };
+  // The RAW run count still matters — "3 schedules are behind" and "14 runs
+  // were missed" answer different questions — so it travels alongside.
+  const missedRuns = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status = 'missed'" + gf).get(...gp);
   // Kept windowed and named for what it is: how much was missed in the period,
   // which is the compliance question the trend chart asks.
   const missedInPeriod = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, rateCutoff, ...gp);
@@ -514,6 +526,7 @@ router.get('/metrics', (req, res) => {
     total: total.count,
     completed: completed.count,
     missed: missed.count,
+    missed_runs: missedRuns.count,
     missed_in_period: missedInPeriod.count,
     not_applicable: naCount.count,
     overdue: overdue.count,
@@ -1247,7 +1260,27 @@ router.get('/operator-tasks', (req, res) => {
   const params = [];
 
   if (assigned_to) { sql += ' AND wo.assigned_to = ?'; params.push(assigned_to); }
-  if (group) { sql += ' AND wo.task_group = ?'; params.push(group); }
+  if (group) {
+    // A TASK ASSIGNED TO YOU IS YOURS WHATEVER DEPARTMENT IT CAME FROM.
+    //
+    // This view is locked to the caller's department, which is right as a
+    // default — but assignment is the stronger fact. Adam covering an absence
+    // by handing a cleaning task to a warehouse operator changed
+    // `assigned_to` and nothing else; the task's `task_group` stayed
+    // 'cleaning', this filter stayed 'warehouse', and the one person meant to
+    // do the work was the one person whose screen could not show it. The
+    // reassignment looked like it silently failed.
+    //
+    // Admins browsing a department keep the pure filter — that is a browse
+    // tool, and mixing their own assignments into another team's list would
+    // make the browse lie about that team.
+    if (!canViewAll && req.user?.name) {
+      sql += ' AND (wo.task_group = ? OR wo.assigned_to = ?)';
+      params.push(group, req.user.name);
+    } else {
+      sql += ' AND wo.task_group = ?'; params.push(group);
+    }
+  }
 
   sql += ` ORDER BY
     CASE wo.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,

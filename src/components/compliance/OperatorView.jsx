@@ -35,7 +35,7 @@ const PRIORITY_RING = {
   high: 'ring-2 ring-orange-300 border-orange-300',
 };
 
-function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, isAdmin, batchMode, batchSelected, onBatchToggle, t, tc = (s) => s }) {
+function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, isAdmin, batchMode, batchSelected, onBatchToggle, viewDept, t, tc = (s) => s }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
@@ -284,6 +284,15 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
 
               {task.assigned_to && (
                 <span className="text-xs text-gray-400">&middot; {task.assigned_to}</span>
+              )}
+
+              {/* A task handed across teams to cover an absence says where it
+                  came from — otherwise a cleaning task in a warehouse list
+                  reads as somebody else's work to skip. */}
+              {viewDept && task.task_group && task.task_group !== viewDept && (
+                <span className="text-xs font-semibold text-purple-700 bg-purple-100 rounded-full px-2 py-0.5">
+                  {t('assigned_from')} {String(task.task_group).replace(/_/g, ' ')}
+                </span>
               )}
 
               {/* Where a recurring task comes from — only when the schedule's
@@ -1250,7 +1259,7 @@ export default function OperatorView() {
           {overdue.length > 0 && (!bucketFilter || bucketFilter === 'overdue') && (
             <SectionHeader icon={AlertTriangle} title={t('section_overdue')} count={overdue.length} color="bg-red-500" defaultOpen={true}>
               {overdue.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1258,7 +1267,7 @@ export default function OperatorView() {
           {today.length > 0 && (!bucketFilter || bucketFilter === 'today') && (
             <SectionHeader icon={CircleDot} title={t('section_due_today')} count={today.length} color="bg-powder-600" defaultOpen={true}>
               {today.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1266,7 +1275,7 @@ export default function OperatorView() {
           {thisWeek.length > 0 && (!bucketFilter || bucketFilter === 'thisWeek') && (
             <SectionHeader icon={CalendarDays} title={t('section_this_week')} count={thisWeek.length} color="bg-gray-500" defaultOpen={bucketFilter === 'thisWeek' || overdue.length + today.length < 10}>
               {thisWeek.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1274,7 +1283,7 @@ export default function OperatorView() {
           {upcoming.length > 0 && (!bucketFilter || bucketFilter === 'upcoming') && (
             <SectionHeader icon={Clock} title={t('section_upcoming')} count={upcoming.length} color="bg-gray-400" defaultOpen={bucketFilter === 'upcoming' || overdue.length + today.length + thisWeek.length < 5}>
               {upcoming.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} t={t} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} tc={tc} />
               ))}
             </SectionHeader>
           )}
