@@ -8,6 +8,7 @@ import EquipmentSetupChecklist from './EquipmentSetupChecklist.jsx';
 import SchedulesFromTasksModal, { RepairTaskTextModal } from './SchedulesFromTasksModal.jsx';
 import EquipmentFiles, { ManualSearch } from './EquipmentFiles.jsx';
 import { MACHINE_TYPES, ZONE_TYPES, defaultAssetKind } from '../../../shared/equipment-types.js';
+import { keepCurrent } from '../../lib/selectOptions.js';
 
 // Types come from shared/equipment-types.js so the form, the setup checklist
 // and the boot migrations all speak the same vocabulary. The type only sets the
@@ -200,13 +201,14 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">PM Assigned To</label>
+          {/* Built from PM_ASSIGNEES — this select used to carry its own
+              hardcoded copy of four teams, which is how "assign the forklift
+              to Batching" stayed impossible after the shared list gained the
+              production teams. One list, both forms. */}
           <select value={form.task_group || ''} onChange={e => setForm({ ...form, task_group: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             <option value="">Unassigned</option>
-            <option value="maintenance">Maintenance</option>
-            <option value="warehouse">Warehouse</option>
-            <option value="qa">QA</option>
-            <option value="cleaning">Cleaning</option>
+            {keepCurrent(PM_ASSIGNEES, form.task_group).map(t => <option key={t} value={t}>{TEAM_LABEL[t] || t}</option>)}
           </select>
           <p className="text-[10px] text-gray-400 mt-1">Who this equipment's PM tasks go to. Applies to its PM schedules and open work orders.</p>
         </div>
@@ -342,7 +344,7 @@ function EquipmentDetailRow({ eq, colSpan, onEdit, canEditFiles }) {
               <ClipboardList size={16} className="text-gray-500" />
               <h4 className="text-sm font-semibold text-gray-800">Preventive Maintenance Schedule</h4>
               {taskCount > 0 && <span className="text-xs text-gray-500">({taskCount} tasks)</span>}
-              {eq.task_group && <span className="ml-auto text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-powder-100 text-powder-700">{{ maintenance: 'Maintenance', warehouse: 'Warehouse', qa: 'QA', cleaning: 'Cleaning', batching: 'Batching', kitting: 'Kitting', filling: 'Filling' }[eq.task_group] || eq.task_group}</span>}
+              {eq.task_group && <span className="ml-auto text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-powder-100 text-powder-700">{TEAM_LABEL[eq.task_group] || eq.task_group}</span>}
             </div>
             <MaintenanceTasksView tasks={tasks} />
           </div>
@@ -394,6 +396,7 @@ function SetupGapChip({ counts, onClick, className = '' }) {
 // forklift that lives in the production room — a list without them meant the
 // machine could only ever be assigned to Warehouse, who never touch it.
 const PM_ASSIGNEES = ['maintenance', 'warehouse', 'qa', 'cleaning', 'batching', 'kitting', 'filling'];
+const TEAM_LABEL = { maintenance: 'Maintenance', warehouse: 'Warehouse', qa: 'QA', cleaning: 'Cleaning', batching: 'Batching', kitting: 'Kitting', filling: 'Filling' };
 
 const BULK_FIELDS = [
   { key: 'type', label: 'Type', type: 'select', options: TYPES },
