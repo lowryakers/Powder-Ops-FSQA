@@ -26,9 +26,11 @@ export default function FilePreview({ items, index = 0, onClose, onNav }) {
   }, [index, list.length]);
 
   if (!item || !item.url) return null;
-  const probe = `${item.name || ''} ${item.url}`;
-  const isImage = IMG_RE.test(probe);
-  const isPdf = PDF_RE.test(probe);
+  // Test the name and the url SEPARATELY — concatenating them put a space
+  // after the name's extension, so "cert.pdf" + a blob: url matched nothing
+  // and every blob-fetched PDF fell through to the download card.
+  const isImage = IMG_RE.test(item.name || '') || IMG_RE.test(item.url);
+  const isPdf = PDF_RE.test(item.name || '') || PDF_RE.test(item.url);
 
   return (
     <div className="fixed inset-0 bg-black/70 z-[80] flex flex-col" onClick={onClose}>

@@ -63,26 +63,49 @@ const CERTS = [
   },
 ];
 
+// The FACILITY's own registration — a second wave with its own flag, because
+// v1 had already run on the deployed database by the time this arrived. PP-5
+// of the NSF GMP for Sport Audit Guide opens the audit by asking for exactly
+// this certificate, and the readiness review checks this table for it.
+const CERTS_V2 = [
+  {
+    person: 'Powder Ops LLC', cert_type: 'SQF Food Safety Code Certification (Edition 9)',
+    issuer: 'NSF Certification, LLC', cert_number: '102651',
+    issued: '2025-12-03', expiry: '2027-01-04', file: 'powder-ops-sqf-nsf-2025',
+    notes: 'Facility registration — SQF Food Safety Code: Dietary Supplement Manufacturing, Food Manufacturing, '
+      + 'Edition 9. Food sector categories 19 (Food Ingredient Manufacturing) and 31 (Dietary Supplements '
+      + 'Manufacturing). Audit Oct 21 2025, rating Good; decision Dec 03 2025; next re-certification audit due '
+      + 'Oct 21 2026. Certificate file C0860239SQF2.',
+  },
+];
+
+const WAVES = [
+  { flag: 'certifications_seed_v1', certs: CERTS },
+  { flag: 'certifications_seed_v2', certs: CERTS_V2 },
+];
+
 export function seedCertifications(db) {
   try {
-    if (db.prepare("SELECT value FROM app_settings WHERE key = 'certifications_seed_v1'").get()) return 0;
     const exists = db.prepare(
       'SELECT 1 FROM certifications WHERE LOWER(person_name) = LOWER(?) AND LOWER(cert_type) = LOWER(?)');
     const ins = db.prepare(`INSERT INTO certifications
       (id, person_name, cert_type, issuer, cert_number, issued_date, expiry_date, notes,
        filename, asset_file, content_type, extracted_text, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'application/pdf', ?, 'system')`);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'application/pdf', ?, 'system')`);
     let added = 0;
-    for (const c of CERTS) {
-      if (exists.get(c.person, c.cert_type)) continue;
-      const pdf = `${c.file}.pdf`;
-      if (!existsSync(join(CERT_ASSETS_DIR, pdf))) continue; // asset missing — don't file a row with no evidence
-      let text = '';
-      try { text = readFileSync(join(CERT_ASSETS_DIR, `${c.file}.txt`), 'utf8'); } catch { /* searchable by metadata only */ }
-      ins.run(uuid(), c.person, c.cert_type, c.issuer, c.cert_number || null, c.issued, c.notes, pdf, pdf, text);
-      added++;
+    for (const wave of WAVES) {
+      if (db.prepare('SELECT value FROM app_settings WHERE key = ?').get(wave.flag)) continue;
+      for (const c of wave.certs) {
+        if (exists.get(c.person, c.cert_type)) continue;
+        const pdf = `${c.file}.pdf`;
+        if (!existsSync(join(CERT_ASSETS_DIR, pdf))) continue; // asset missing — don't file a row with no evidence
+        let text = '';
+        try { text = readFileSync(join(CERT_ASSETS_DIR, `${c.file}.txt`), 'utf8'); } catch { /* searchable by metadata only */ }
+        ins.run(uuid(), c.person, c.cert_type, c.issuer, c.cert_number || null, c.issued, c.expiry || null, c.notes, pdf, pdf, text);
+        added++;
+      }
+      db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run(wave.flag, new Date().toISOString());
     }
-    db.prepare("INSERT INTO app_settings (key, value) VALUES ('certifications_seed_v1', ?)").run(new Date().toISOString());
     if (added) console.log(`[seed] Certifications: filed ${added} certificate(s)`);
     return added;
   } catch (e) {

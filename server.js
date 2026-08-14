@@ -97,6 +97,8 @@ import { seedProductionEntries, seedEodTemplates } from './server/production-see
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
 import { seedReferenceLibrary } from './server/reference-seed.js';
 import { seedCertifications } from './server/cert-seed.js';
+import { importPaperInternalAudits } from './server/internal-audit-import.js';
+import { seedBannedSubstanceSopDraft } from './server/banned-substance-sop-seed.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath } from './server/middleware/auth.js';
 
@@ -1052,6 +1054,10 @@ try {
   seedReferenceLibrary(db);
   // The team's real PCQI/HACCP/food-defense certificates (one-time).
   seedCertifications(db);
+  // The two signed paper internal audits, transcribed into the module (one-time).
+  importPaperInternalAudits(db);
+  // The Banned & Prohibited Substance Control SOP, as a DRAFT for review (one-time).
+  seedBannedSubstanceSopDraft(db);
 } catch (err) {
   console.error('[seed] Error seeding training courses (non-fatal):', err.message);
 }
