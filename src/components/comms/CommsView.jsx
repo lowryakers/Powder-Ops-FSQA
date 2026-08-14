@@ -1992,9 +1992,16 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const [newMarkerTs, setNewMarkerTs] = useState(null);
   // Jump-to-date: when set, the message list shows a window starting at that day.
   const [dateView, setDateView] = useState(null);
+  // A channel with THIS many unread opens at the START of them (the "New"
+  // divider) instead of the bottom — you need to read forward from where you
+  // left off, not scroll up hunting for it. Below the threshold the divider is
+  // already on screen at the bottom, so opening at the latest costs nothing.
+  const OPEN_AT_FIRST_UNREAD_MIN = 5;
+  const landOnNewRef = useRef(null); // channel id that should open at its New divider
   const openChannel = (id) => {
     const ch = (channels || []).find(c => c.id === id);
     setNewMarkerTs(ch && ch.unread > 0 ? (ch.last_read_at || '0') : null);
+    landOnNewRef.current = (ch && ch.unread >= OPEN_AT_FIRST_UNREAD_MIN) ? id : null;
     setDateView(null);
     setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false); setActivityOpen(false);
     rememberChannel(id); rememberView('channel');
@@ -2355,7 +2362,37 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // channels kept opening on old messages. Scrolling up unpins (reading
   // history); scrolling back near the bottom re-pins.
   const pinnedRef = useRef(true);
-  useEffect(() => { pinnedRef.current = true; justOpenedRef.current = true; setShowJump(false); }, [activeId]);
+  useEffect(() => {
+    // When this channel is opening at its New divider, the pin must start OFF
+    // — the ResizeObserver below pins on every content resize while it's on,
+    // and the fetched messages landing would yank the view back to the bottom
+    // out from under the divider.
+    pinnedRef.current = landOnNewRef.current !== activeId;
+    justOpenedRef.current = true; setShowJump(false);
+  }, [activeId]);
+
+  // Land at the START of the missed messages when there are several. The New
+  // divider marks where the reader left off; opening a channel carrying a
+  // real backlog at the bottom makes them scroll UP hunting for it, reading
+  // in reverse. Runs once per open (the ref is cleared on first landing). A
+  // push-notification deep link outranks it — queueMessage() clears the ref,
+  // because that tap named an exact message.
+  useEffect(() => {
+    if (landOnNewRef.current !== activeId || !messages.length) return;
+    const first = newMarkerTs !== null && messages.find(m => m.created_at > newMarkerTs);
+    landOnNewRef.current = null;
+    if (!first) {
+      // The backlog is older than the loaded window — the bottom is honest.
+      pinnedRef.current = true;
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      return;
+    }
+    setShowJump(true);
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-mid="${first.id}"]`)?.scrollIntoView({ block: 'start' });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, activeId, newMarkerTs]);
   useEffect(() => {
     const el = scrollRef.current; if (!el) return;
     const content = el.firstElementChild;
@@ -2664,6 +2701,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const queueMessage = useCallback((mid) => {
     if (!mid) return;
     pendingMsgRef.current = mid;
+    // A deep link names an exact message — it outranks the open-at-first-unread
+    // landing, which would otherwise scroll away from it.
+    landOnNewRef.current = null;
     setPendingTick(t => t + 1);
   }, []);
   useEffect(() => { queueMessage(openMessageId); }, [openMessageId, openNonce, queueMessage]);

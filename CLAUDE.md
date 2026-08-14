@@ -347,6 +347,14 @@ clamped 320–760px, persisted in `localStorage.dock_chat_w`; the iframe goes `p
 it doesn't eat the move events.
 
 ## Comms navigation: where you land, and what counts as "read"
+**A channel with ≥5 unread opens at the START of them** (the New divider scrolled into view, Jump to latest
+offered); below that the divider is already in the bottom screenful and the channel opens at the latest, as
+always. `landOnNewRef`/`OPEN_AT_FIRST_UNREAD_MIN` in CommsView; a push-notification deep link outranks it
+(`queueMessage` clears the ref — that tap named an exact message).
+**`commsLink` is cleared on EVERY exit from the Messages workspace** (onExit, onGoToSchedule, bottom nav,
+both app-navigate handlers). It's one-shot state; any exit that left it set replayed the old notification's
+channel + message on the next visit — the "channels keep opening scrolled to an old message with Jump to
+latest showing" bug.
 **A channel is marked read when its conversation is ON SCREEN, not when its messages load.**
 `loadMessages()` used to `POST /read` as a side effect. On a phone the app also picked an active channel at
 launch (#general, else `list[0]`) while showing the channel LIST — so opening Messages loaded that channel,

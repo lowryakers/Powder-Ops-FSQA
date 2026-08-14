@@ -1287,7 +1287,7 @@ function App() {
       if (e.origin !== window.location.origin) return;
       if (e.data?.type !== 'readydoc-navigate') return;
       const tab = typeof e.data.tab === 'string' ? e.data.tab : null;
-      if (tab) { setWorkspace('fsqa'); setActiveTab(tab); }
+      if (tab) { setWorkspace('fsqa'); setCommsLink(null); setActiveTab(tab); }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -1308,7 +1308,7 @@ function App() {
     const tab = params.get('tab');
     const form = params.get('form');
     const section = params.get('section');
-    if (tab) { setWorkspace('fsqa'); setActiveTab(tab); }
+    if (tab) { setWorkspace('fsqa'); setCommsLink(null); setActiveTab(tab); }
     if (section) setDeepSection(section);
     if (form && ['knife', 'components', 'maintenance', 'scale'].includes(form)) setKioskForm(form);
     if (tab || form || section) window.history.replaceState({}, '', window.location.pathname);
@@ -1654,7 +1654,7 @@ function App() {
         user={user}
         onExit={() => { setWorkspace('fsqa'); setCommsLink(null); }}
         onSplitScreen={() => { if (!dockChat) toggleDockChat(); setWorkspace('fsqa'); setCommsLink(null); }}
-        onGoToSchedule={canViewModule(user, 'production-schedule') ? () => { setWorkspace('fsqa'); setActiveTab('production-schedule'); } : null}
+        onGoToSchedule={canViewModule(user, 'production-schedule') ? () => { setWorkspace('fsqa'); setCommsLink(null); setActiveTab('production-schedule'); } : null}
         openChannelName={commsLink?.channel}
         openChannelId={commsLink?.channelId}
         openMessageId={commsLink?.messageId}
