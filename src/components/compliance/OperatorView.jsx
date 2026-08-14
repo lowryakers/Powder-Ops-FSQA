@@ -867,6 +867,9 @@ const DEPT_KEYS = [
   { id: 'warehouse', key: 'warehouse' },
   { id: 'qa', key: 'qa' },
   { id: 'cleaning', key: 'cleaning' },
+  { id: 'batching', key: 'batching' },
+  { id: 'kitting', key: 'kitting' },
+  { id: 'filling', key: 'filling' },
   { id: 'document_control', key: 'document_control' },
 ];
 

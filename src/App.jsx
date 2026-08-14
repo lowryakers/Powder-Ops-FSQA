@@ -1559,7 +1559,7 @@ function App() {
             </div>
             <div className="flex items-center gap-2">
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${{ qa: 'bg-teal-100 text-teal-700', cleaning: 'bg-amber-100 text-amber-700', maintenance: 'bg-violet-100 text-violet-700', warehouse: 'bg-indigo-100 text-indigo-700' }[user.department] || 'bg-gray-100 text-gray-700'}`}>
-                {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH' }[user.department] || user.department?.toUpperCase()}
+                {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH', batching: 'BAT', kitting: 'KIT', filling: 'FIL' }[user.department] || user.department?.toUpperCase()}
               </span>
               <span className="text-xs text-gray-500">{user.name}</span>
               {!installEnvironment().standalone && (
@@ -1714,7 +1714,7 @@ function App() {
             </div>
             <div className="flex items-center gap-2">
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${{ qa: 'bg-teal-100 text-teal-700', cleaning: 'bg-amber-100 text-amber-700', maintenance: 'bg-violet-100 text-violet-700', warehouse: 'bg-indigo-100 text-indigo-700' }[user.department] || 'bg-gray-100 text-gray-700'}`}>
-                {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH' }[user.department] || user.department?.toUpperCase()}
+                {{ qa: 'QA', cleaning: 'CLN', maintenance: 'MNT', warehouse: 'WH', batching: 'BAT', kitting: 'KIT', filling: 'FIL' }[user.department] || user.department?.toUpperCase()}
               </span>
               <span className="text-xs text-gray-500">{user.name}</span>
               {!installEnvironment().standalone && (

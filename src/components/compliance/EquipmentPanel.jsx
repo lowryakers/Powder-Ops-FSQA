@@ -342,7 +342,7 @@ function EquipmentDetailRow({ eq, colSpan, onEdit, canEditFiles }) {
               <ClipboardList size={16} className="text-gray-500" />
               <h4 className="text-sm font-semibold text-gray-800">Preventive Maintenance Schedule</h4>
               {taskCount > 0 && <span className="text-xs text-gray-500">({taskCount} tasks)</span>}
-              {eq.task_group && <span className="ml-auto text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-powder-100 text-powder-700">{{ maintenance: 'Maintenance', warehouse: 'Warehouse', qa: 'QA', cleaning: 'Cleaning' }[eq.task_group] || eq.task_group}</span>}
+              {eq.task_group && <span className="ml-auto text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-powder-100 text-powder-700">{{ maintenance: 'Maintenance', warehouse: 'Warehouse', qa: 'QA', cleaning: 'Cleaning', batching: 'Batching', kitting: 'Kitting', filling: 'Filling' }[eq.task_group] || eq.task_group}</span>}
             </div>
             <MaintenanceTasksView tasks={tasks} />
           </div>
@@ -390,7 +390,10 @@ function SetupGapChip({ counts, onClick, className = '' }) {
 // department's kit one row at a time is exactly what bulk edit is for, and the
 // server already accepted the field and propagated it to the PM schedules and
 // open work orders (syncTaskGroupToPM) — only the picker was missing.
-const PM_ASSIGNEES = ['maintenance', 'warehouse', 'qa', 'cleaning'];
+// Every team that owns recurring PM work. Batching runs the PM on the
+// forklift that lives in the production room — a list without them meant the
+// machine could only ever be assigned to Warehouse, who never touch it.
+const PM_ASSIGNEES = ['maintenance', 'warehouse', 'qa', 'cleaning', 'batching', 'kitting', 'filling'];
 
 const BULK_FIELDS = [
   { key: 'type', label: 'Type', type: 'select', options: TYPES },

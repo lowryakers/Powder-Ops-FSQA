@@ -12,6 +12,9 @@ const strings = {
   warehouse: { en: 'Warehouse', es: 'Almacén' },
   qa: { en: 'QA', es: 'QA' },
   cleaning: { en: 'Cleaning', es: 'Limpieza' },
+  batching: { en: 'Batching', es: 'Mezcla' },
+  kitting: { en: 'Kitting', es: 'Kitting' },
+  filling: { en: 'Filling', es: 'Llenado' },
   document_control: { en: 'Doc Control', es: 'Control de Docs' },
 
   // Search & filters

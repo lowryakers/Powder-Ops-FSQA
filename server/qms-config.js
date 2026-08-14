@@ -128,13 +128,17 @@ export const QMS_TYPES = {
       { key: 'requires_training', label: 'Change requires training', type: 'checkbox' },
     ],
     logColumns: ['record_number', 'doc_number', 'doc_name', 'revision', 'change_type', 'record_date', 'approvals'],
+    // TWO SIGNATURES, not six (user decision 2026-08-14). The paper form
+    // offered R&D / Manufacturing / QC / Maintenance lines, but in practice a
+    // DCR is decided by QA and Document Control, and four permanently-empty
+    // signature rows read as a change being held up when nothing is waiting.
+    // Records already carrying one of the removed signatures keep it — the
+    // stored approval data is untouched, only the offered rows change. Note
+    // the signatures were never the gate on a deployed definition anyway:
+    // Controlled Changes approval is what promotes a parked change.
     approvals: [
       { key: 'quality_assurance', label: 'Quality Assurance', required: true, departments: ['qa'] },
       { key: 'document_control', label: 'Document Control', roles: ['admin', 'supervisor'] },
-      { key: 'research_development', label: 'Research & Development', roles: ['admin', 'supervisor'] },
-      { key: 'manufacturing', label: 'Manufacturing', roles: ['admin', 'supervisor'], departments: ['production'] },
-      { key: 'quality_control', label: 'Quality Control', departments: ['qa'] },
-      { key: 'maintenance', label: 'Maintenance', roles: ['admin', 'supervisor'], departments: ['maintenance'] },
     ],
     csv: {
       // maps a header (case/space-insensitive contains) -> field key

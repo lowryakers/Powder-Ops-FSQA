@@ -298,22 +298,42 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   // end of a shift and needs no explanation.
   const isBackdated = !!form.performed_at && form.performed_at < todayStr;
 
-  const handleChemicalSelect = (chemId) => {
+  // A clean routinely uses more than one chemical (degreaser, then sanitizer)
+  // and the single dropdown forced the record to under-report — picks are a
+  // LIST now. `chemicals_used` was always free TEXT on the record, so the
+  // picks store as a comma-joined string and nothing downstream changes;
+  // `chemical_id` keeps pointing at the FIRST pick (the registry link the
+  // dilution check reads). Concentration/contact-time defaults come from the
+  // first pick too — they describe one chemical, and guessing a blend's
+  // numbers would be worse than leaving them to the person filing.
+  const [picked, setPicked] = useState([]); // [{id, name}]
+  const [otherChem, setOtherChem] = useState('');
+  const [showOther, setShowOther] = useState(false);
+  const addChemical = (chemId) => {
+    if (!chemId || chemId === '__other') return;
     const chem = (chemicals || []).find(c => String(c.id) === String(chemId));
-    setForm({
-      ...form,
-      chemical_id: chemId,
-      chemicals_used: chem ? chem.name : '',
-      concentration: chem?.max_concentration || form.concentration,
-      contact_time_minutes: chem?.required_contact_time_minutes || form.contact_time_minutes,
-    });
+    if (!chem || picked.some(p => String(p.id) === String(chemId))) return;
+    const next = [...picked, { id: chem.id, name: chem.name }];
+    setPicked(next);
+    setForm(f => ({
+      ...f,
+      chemical_id: next[0].id,
+      concentration: next.length === 1 ? (chem.max_concentration || f.concentration) : f.concentration,
+      contact_time_minutes: next.length === 1 ? (chem.required_contact_time_minutes || f.contact_time_minutes) : f.contact_time_minutes,
+    }));
+  };
+  const removeChemical = (chemId) => {
+    const next = picked.filter(p => String(p.id) !== String(chemId));
+    setPicked(next);
+    setForm(f => ({ ...f, chemical_id: next[0]?.id || '' }));
   };
   const [saving, setSaving] = useState(false);
+  const chemicalsJoined = [...picked.map(p => p.name), otherChem.trim()].filter(Boolean).join(', ');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, contact_time_minutes: form.contact_time_minutes ? parseInt(form.contact_time_minutes) : null, atp_reading: form.atp_reading ? parseFloat(form.atp_reading) : null }); } catch (saveErr) {
+    try { await onSave({ ...form, chemicals_used: chemicalsJoined, contact_time_minutes: form.contact_time_minutes ? parseInt(form.contact_time_minutes) : null, atp_reading: form.atp_reading ? parseFloat(form.atp_reading) : null }); } catch (saveErr) {
       // A refused save must SAY so. This was try/finally with NO catch, so a
       // 403 or a validation 400 cleared the spinner and left the modal sitting
       // there — indistinguishable from a dead button, which is how a
@@ -388,18 +408,34 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Chemical Used</label>
-          <select value={form.chemical_id} onChange={e => handleChemicalSelect(e.target.value)}
+          <label className="block text-xs font-medium text-gray-700 mb-1">
+            Chemicals Used {picked.length > 0 && <span className="font-normal text-gray-400">({picked.length} selected)</span>}
+          </label>
+          {/* Picking ADDS; the select snaps back so the next pick is one tap. */}
+          <select value="" onChange={e => e.target.value === '__other' ? setShowOther(true) : addChemical(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">Select chemical...</option>
-            {(chemicals || []).filter(c => ['sanitizer', 'cleaner', 'degreaser'].includes(c.category)).map(c => (
-              <option key={c.id} value={c.id}>{c.name}{c.is_food_grade ? ' (Food Grade)' : ''}</option>
-            ))}
+            <option value="">{picked.length ? 'Add another chemical…' : 'Select chemical...'}</option>
+            {(chemicals || []).filter(c => ['sanitizer', 'cleaner', 'degreaser'].includes(c.category))
+              .filter(c => !picked.some(p => String(p.id) === String(c.id)))
+              .map(c => (
+                <option key={c.id} value={c.id}>{c.name}{c.is_food_grade ? ' (Food Grade)' : ''}</option>
+              ))}
             <option value="__other">Other (type manually)</option>
           </select>
-          {form.chemical_id === '__other' && (
-            <input value={form.chemicals_used} onChange={e => setForm({ ...form, chemicals_used: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mt-1" placeholder="Chemical name" />
+          {picked.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {picked.map(p => (
+                <span key={p.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 bg-powder-50 border border-powder-200 text-powder-800 rounded-full text-xs">
+                  {p.name}
+                  <button type="button" onClick={() => removeChemical(p.id)}
+                    className="w-4 h-4 rounded-full hover:bg-powder-200 text-powder-600 leading-none">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+          {showOther && (
+            <input value={otherChem} onChange={e => setOtherChem(e.target.value)} autoFocus
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mt-1" placeholder="Other chemical name" />
           )}
         </div>
         <div>
