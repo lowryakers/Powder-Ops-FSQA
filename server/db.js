@@ -2240,6 +2240,27 @@ function runMigrations() {
   // Contractor tracking
   addColumnIfMissing('users', 'is_contractor', 'INTEGER DEFAULT 0');
   addColumnIfMissing('users', 'contractor_company', 'TEXT');
+  // The user's drawn ("wet") signature — a small PNG data URL captured once on
+  // a phone or with a mouse, applied when they sign a controlled document.
+  // The CURRENT signature only: each document signature stores its own
+  // SNAPSHOT, so re-drawing this never rewrites what a signed record shows.
+  addColumnIfMissing('users', 'signature_image', 'TEXT');
+
+  // Wet signatures applied to controlled documents. name/capacity/image are
+  // stamped at signing time — the row is self-contained history, valid even if
+  // the account is later renamed or the drawn signature replaced.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS document_signatures (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
+      user_id TEXT,
+      name TEXT NOT NULL,
+      capacity TEXT NOT NULL,
+      signature_image TEXT,
+      signed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_doc_signatures_doc ON document_signatures(document_id);
+  `);
   addColumnIfMissing('users', 'contractor_license', 'TEXT');
   addColumnIfMissing('users', 'contractor_insurance_expiry', 'TEXT');
   addColumnIfMissing('users', 'contractor_scope', 'TEXT');

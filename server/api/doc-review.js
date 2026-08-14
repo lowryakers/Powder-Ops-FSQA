@@ -9,8 +9,20 @@
 import { Router } from 'express';
 import { getDb, logAudit } from '../db.js';
 import { SOURCES, getSource, safeCount, safePending, isDocController } from '../doc-review.js';
+import { docConsistencyReview } from '../doc-consistency.js';
 
 const router = Router();
+
+// The consistency review: where the registry disagrees with itself —
+// duplicate numbers, one title on two documents, references to documents
+// that don't exist, orphaned WIs, empty shells. A report, never a repair:
+// Daniela's starting point for bringing the digital copies up to date.
+router.get('/consistency', (req, res) => {
+  if (!isDocController(req.user)) {
+    return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
+  }
+  res.json(docConsistencyReview(getDb()));
+});
 
 // GET / — counts for every source, plus the rows for the one being looked at.
 // Counts are cheap and always returned so the tab bar can show what's behind

@@ -1,0 +1,1373 @@
+
+--- page 1 ---
+
+NSF Nutrition & Wellness Program
+Certification Policies
+NSF/ANSI 455
+September 2, 2025
+NSF Confidential
+
+--- page 2 ---
+
+Since 1944, NSF International
+(NSF) has stood at the forefront
+of global efforts to improve
+human and planet health.
+As an independent, internationally recognized
+organization, we play a pivotal role in the
+development of robust public health standards.
+NSF engages in the rigorous testing, auditing,
+and certification of an array of products and
+services. The NSF mark serves as an emblem
+of assurance, signifying to consumers, retailers,
+and regulatory bodies that our certified
+products meet or exceed requisite standards.
+These policies are subject to revision.
+Contact NSF to confirm this revision is current.
+Users of these policies may request clarifications and
+interpretations, or propose revisions by contacting:
+NSF Nutrition & Wellness
+789 North Dixboro Road, PO Box 130140
+Ann Arbor, Michigan 48113-0140 USA
+Phone: (734) 769-8010 Email: info@nsf.org
+Web: < nsf.org >
+
+--- page 3 ---
+
+NSF Certification Policies –
+NSF/ANSI 455
+Policies Developer
+NSF
+i
+
+--- page 4 ---
+
+Prepared by the
+NSF Nutrition & Wellness Program
+Adopted
+August 2019
+Revisions
+August 2021 GP April 2022 GP PP November 2022 GP
+July 2025 PP September 2025 PP
+Note . PP = Program specific policies, GP = General policies
+Published by
+NSF, PO Box 130140, Ann Arbor, Michigan 48113-0140, USA
+For inquiries regarding these policies, please reference the designation: “NSF Certification Polices for
+NSF/ANSI 455 .ˮ
+Copyright 2025 NSF International
+Unless otherwise specified, no part of this publication may be reproduced or utilized in any form or by any
+means without permission in writing from NSF.
+Printed in the United States of America.
+ii
+
+--- page 5 ---
+
+Foreword
+This edition of the policies contains the following revisions, effective September 2, 2025:
+PP – 28 NSF Product Certification audit was removed due to duplication.
+PP – 30 Suspension or withdrawal of Certification was updated to correct a spelling error.
+The following revisions were made to the Program Policies and are effective July 18, 2025:
+Definitions already included in NSF/ANSI 455 Standards were removed.
+PP - 1 Program Eligibility was added with language from old PP - 7 NSF/ANSI 455 Certification Categories and
+Site Types.
+PP – 2 Application (OLD PP – 1 Program admittance and compliance) was revised to update language and
+clarify content.
+PP – 5 Required Pre work was removed, as it is covered in NSF/ANSI 455.
+PP – 7 Certification Scope and Exclusion (OLD PP – 7 NSF/ANSI 455 Certification Categories and Site Types)
+was revised to update language and add exclusion.
+PP – 8 NSF/ANSI 455 - Out of Scope was included in the updated PP – 7.
+PP – 10 NSF/ANSI 455 Audit Types was removed, as it is covered in NSF/ANSI 455.
+PP – 13 Scope of Audits was included in the updated PP – 7.
+PP – 8 Modifications to the Certification scope was added.
+PP – 9 Audit duration (old PP – 18) was revised to update language.
+PP – 10 Auditor assignment (old PP – 12 Audit execution) was revised to update language and remove content
+covered in NSF/ANSI 455.
+PP – 11 Scheduling responsibility (old PP – 19 Audit scheduling) was revised to update language.
+PP – 12 campus location or multi-facility sites (old PP – 14 Site and campus audits) was revised to update
+language and remove language covered in NSF/ANSI 455.
+PP – 15 Audit exclusions was included in the updated PP – 7.
+PP – 16 Pre-audit requirements was removed, as it is covered in NSF/ANSI 455.
+PP – 17 Company required audit documented prior to audit was included in the updated PP – 13 and language
+was removed that is already covered in NSF/ANSI 455.
+PP – 13 Audit readiness (old PP – 20) was revised to update language.
+PP – 14 Certification audit, PP – 15 Audit completion and PP – 16 Audit report technical review were added to
+document current process.
+iii
+
+--- page 6 ---
+
+PP – 21 Onsite audit activities, PP – 22 Assessing nonconformances, PP – 23 Audit report grading, PP – 24
+Audit grade and frequency, and PP – 25 Reaudit circumstances were removed, as these are addressed in
+NSF/ANSI 455.
+PP – 17 Corrective actions (old PP – 33 Corrective action response requirements) was revised to update
+language.
+PP – 18 Disputes and Appeals was added to document current process.
+PP – 20 Public listing of certified facilities (old PP – 31) was revised to update language.
+PP – 21 Use of NSF GMP Certification Mark (old PP – 32 Correct use of the NSF Certification Mark) was revised
+to update language.
+PP – 22 Access for audits was added to document current process.
+PP 23 – Unannounced audits (old PP – 27) was revised to update language and removed language regarding
+fees.
+PP – 24 Postponed or cancelled audits (old PP – 28) was revised to update language.
+PP – 25 Outstanding payments was added to document current process.
+PP – 26 Coordination of other audits performed by NSF (old PP – 11 Other audit types performed by NSF to
+other guidelines or standards) was revised to updated language.
+PP – 27 GMP for Sport Registration (old PP- 9) was revised to update language.
+PP – 28 NSF Product Certification Audit was added from language in old PP – 12 Audit Execution.
+OLD PP – 29 Quality control records was removed as these are audit requirements in NSF/ANSI 455. PP – 29
+GRMA GMP Certification was added.
+OLD PP – 30 Obtaining and maintain NSF Certification was removed as this is covered in NSF/ANSI 455. NEW
+PP – 30 Suspension or Withdrawal of Certification (old PP – 37) was revised to update language.
+PP – 31 Reinstatement was added to document current process.
+PP – 34 Corrective Action – late submissions, PP – 35 Corrective action response requirements and PP – 36
+Repeat corrective actions were removed, as these are addressed in NSF/ANSI 455 or other program policies.
+Suggestions for improvement of this policy are welcome. Comments should be sent to standards@nsf.org , or
+c/o NSF, Standards Department, PO Box 130140, Ann Arbor, Michigan 48113-0140, USA.
+iv
+
+--- page 7 ---
+
+Table of contents
+Section I. General Policies for All Products 1
+Introduction 1
+Definitions 1
+Authorization for NSF Certification 2
+GP – 1 Eligibility 2
+GP – 2 Application 2
+GP – 3 Contract 2
+GP – 4 Notification of Certification and authorization for use of the Mark 2
+GP – 5 Transfer of authorization for Certification and use of the Mark 3
+GP – 6 NSF acknowledgment of Certified Products 3
+GP – 7 Use of the Mark for products shown in the Official Listing 3
+GP – 8 Trade designations 3
+GP – 9 Use of the Mark at authorized Locations 4
+GP – 10 NSF brand 4
+GP – 11 Product modification 4
+GP – 12 Implementation of revisions to Standards or Policies 4
+GP – 13 Private Labeling of Certified Products 4
+Audit 5
+GP – 14 Requirement and purpose of audits 5
+GP – 15 Access for audits 5
+GP – 16 Cooperation with NSF 5
+GP – 17 Sample collection 6
+GP – 18 Corrective action report 6
+GP – 19 Audit suspension due to travel restrictions 6
+GP – 20 Non-operational Locations 6
+Testing 7
+GP – 21 Conduct of testing 7
+GP – 22 Test report 7
+GP – 23 Periodic testing of Certified Products 7
+GP – 24 Disposition of test samples 7
+Records 7
+GP – 25 Records of Certified Product information 7
+GP – 26 Company records 7
+GP – 27 Company complaint records 8
+Confidentiality 8
+GP – 28 Confidentiality 8
+Advertising 8
+GP – 29 Use of the Mark or claims of NSF Certification by Certified Companies: Advertising, packaging, and
+literature 8
+GP – 30 Use of the Mark or claims of NSF Certification by parties other than the Certified Company:
+Advertising and literature 9
+Investigation of complaints 9
+GP – 31 Complaints 9
+GP – 32 Investigation of complaints: Sample selection and handling 10
+Corrective action and enforcement 10
+v
+
+--- page 8 ---
+
+GP – 33 Corrective action for general Noncompliance 10
+GP – 34 Noncompliant test results for initial qualification 10
+GP – 35 Noncompliant test results for Certified Products 11
+GP – 36 Noncompliant retest results for Certified Products 11
+GP – 37 Use of the Mark on a non-certified product 11
+GP – 38 Unauthorized change to a Certified Product 12
+GP – 39 Unauthorized shipment or disposal of Certified or non-certified products placed on hold 12
+GP – 40 Bribes offered to NSF 12
+GP – 41 Withdrawal of Certification 12
+GP – 42 Public Notice 13
+GP – 43 Reinstatement 13
+Appeals 13
+GP – 44 Appeal of a decision, result or action taken by NSF 13
+GP – 45 Legal action 14
+Fees 14
+GP – 46 Application fee 14
+GP – 47. Standards maintenance fee 14
+GP – 48 Certification fee 14
+GP – 49 Collection fee 14
+vi
+
+--- page 9 ---
+
+Section II. Program Specific Policies for GMP Certification for NSF/ANSI 455
+Introduction 15
+Definitions 15
+Program participation & compliance 16
+PP – 1 Program eligibility 16
+PP – 2 Application 16
+PP – 3 Legal and regulatory compliance 17
+PP – 4 Agreement with applicable standards 17
+PP – 5 Shared audit information with other parties 17
+PP – 6 Sharing of audit information 17
+Certification 17
+PP – 7 Certification scope and exclusion 17
+PP – 8 Modifications to the Certification scope 18
+PP – 9 Audit duration 18
+PP – 10 Auditor assignment 18
+PP – 11 Scheduling responsibility 18
+PP – 12 Campus Location or multi-facility sites 18
+PP – 13 Audit readiness 19
+PP – 14 Certification audit 19
+PP – 15 Audit completion 19
+PP – 16 Audit report technical review 19
+PP – 17 Corrective actions 20
+PP – 18 Disputes and appeals 20
+PP – 19 Notification of Certification 21
+PP – 20 Public Listing of Certified Facilities 21
+PP – 21 Use of the NSF GMP Certification Mark 21
+Special policies 22
+PP – 22 Unannounced audits 22
+PP – 23 Postponed or cancelled audits 22
+PP – 24 Outstanding payments 22
+Other audit services 23
+PP – 25 Coordination of other audits performed by NSF 23
+PP – 26 GMP for Sport Registration 23
+PP – 27 NSF Product Certification audit 23
+PP – 28 GRMA GMP Certification 24
+Enforcement 24
+PP – 29 Suspension or Withdrawal of Certification 24
+PP – 30 Reinstatement 25
+Annex A Certification Mark options and usage guidelines A1
+Annex Z Certification Agreement Z1
+vii
+
+--- page 10 ---
+
+This page is intentionally left blank.
+
+--- page 11 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+Section I. General Policies for All Products
+Introduction
+NSF offers Certification of products to any Company, subject to the requirements of the general and program-
+specific policies and any annexes attached hereto, including but not limited to Annex Z .
+The general policies (Section I) apply to all products being Certified against any Standard, within the scope of
+an NSF Certification program. There are additional program-specific policies (Section II) that further define
+requirements under each NSF Certification program. The general and program specific policies shall be
+considered in their entirety and shall be applied within the context of the standard referenced in the Contract.
+For clarity and ease of reference, these policies are presented as individually numbered items with appropriate
+headings.
+In the event of a conflict, the general policies take precedence over program policies.
+Definitions
+Certified Product : Product authorized by NSF for Certification and use of the Mark.
+Certification : NSF determination that adequate confidence is achieved that a duly identified product is in
+conformity with all applicable NSF r equirements. For Verification schemes, replace the word “Certificationˮ
+with “Verificationˮ and for “Registrationˮ schemes, replace the word “Certificationˮ with “Registrationˮ
+Note . The terms “listingˮ or “listedˮ or “certifiedˮ are synonymous with certification.
+Certification Services : Any work that NSF performs as part of the process for applying, achieving or
+continuing Certification.
+Company : The entity executing the contract to seek Certification Services.
+Compliance : Conformance with all NSF Requirement(s).
+Contract : The authorized written agreement with NSF for Certification Services.
+Corrective action/preventive action (CAPA) : An investigation into any noncompliance to expected or desired
+outcome that identifies the underlying root cause or reason the noncompliance happened, determines
+corrective action to restore compliance and preventive action to ensure the noncompliance does not recur.
+Distributor : The distributor is responsible for issuing catalogues and handling sales functions for the brand.
+The distributor has direct interaction with the retailer or purchasing customer.
+Location : Any point of final production or assembly. Multiple locations that can be audited in one audit day
+(eight hours) may be considered one location.
+Mark : An NSF trademark designated for the applicable Certification programs and used to represent
+Certification.
+New Product : Products manufactured, assembled, added or implemented after the date of Certification.
+Noncompliance : Lack of conformance with any NSF Requirement.
+NSF : NSF International or its subsidiaries and affiliates.
+NSF Requirements : Requirements of the relevant Standards, scheme, or program including but not limited to
+1
+
+--- page 12 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+the general and program specific policies, requirement documents and any agreements or contracts upon
+which NSFʼs Certification are based. In all instances where this term is used, it is understood this means the
+requirements that are appropriate and applicable to the specific Product.
+Private Labeling : Manufacture of a product by one company for sale under another companyʼs brand.
+Product : Any good, equipment, component, system, service, material, location, compound, or ingredient
+covered by a Standard for which NSF offers Certification, including those made on the behalf of another
+manufacturer or those distributed by companies other than the manufacturer.
+Public Notice : Distribution of a written notice of non-compliance.
+Standard : The document that is the basis for the Certification. This document may be an NSF Standard or
+protocol, an NSF/ANSI Standard, another voluntary standard, an NSF criteria or other criteria, a government
+regulation, or other specifications.
+Subcontract Laboratory (SCL) : A laboratory that has been evaluated and contracted by NSF to perform testing
+for NSF in accordance with NSF Requirements and procedures.
+Authorization for NSF Certification
+GP – 1 Eligibility
+A company with Products covered by a Standard for which NSF offers Certification is eligible to seek
+Certification from NSF.
+GP – 2 Application
+Application materials provided by NSF shall be completed by the Company for each physical address where
+Certification Services are requested.
+GP – 3 Contract
+A contract shall be in place with the legal entity receiving Certification. A Companyʼs subsidiaries and/ or
+affiliates may not utilize the Companyʼs Contract unless bound by the Contract and approved by NSF. NSF may
+require separate Contracts. If a Company seeks Certification of Product(s) under more than one NSF
+Certification program, NSF may require separate Contracts for each program.
+In addition to the Contract, the Company shall abide by the terms of the NSF Requirements and any annex,
+appendix, schedule, etc. attached hereto and as such, are incorporated herein by reference.
+GP – 4 Notification of Certification and authorization for use of the Mark
+The Company shall be advised in writing of the Certification, and the Certification may be made public by NSF
+or as otherwise specified by the NSF Requirements. If applicable, upon receipt of notification, the Company is
+authorized to use the Mark in connection with Certified Product(s) as outlined in these Policies and the NSF
+Requirements. The Company may be required to enter into a separate license agreement with a third party,
+such as a scheme owner, for use of the applicable Mark.
+The Company may not use the Mark in any way until receipt of written authorization from NSF. Unauthorized
+use of the Mark is prohibited. In the event that NSF determines that a Product is not in compliance with NSF
+Requirements, use of the Mark is not authorized. NSF may withdraw authorization to use the Mark at any time.
+2
+
+--- page 13 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+The Company agrees that the Mark, NSF logo and NSF name (“NSF IPˮ) are the sole property of NSF and
+nothing in these Policies or the Contract transfer any ownership of the NSF IP to the Company. The Company
+further represents and warrants that the Company shall not (1) register or attempt to register any NSF IP or
+anything which encompasses or incorporates the NSF IP, (2) claim or otherwise represent that the Company
+has any right, title or interest in the NSF IP, (3) give permission for any third party to use the NSF IP unless
+otherwise permitted in writing by NSF, or (4) do anything that is prejudicial to the interest of NSF in or to the
+NSF IP.
+GP – 5 Transfer of authorization for Certification and use of the Mark
+Upon request and with documentation of continued compliance with all applicable NSF Requirements, NSF, in
+its sole discretion, may approve the transfer of the Contract and respective Certification of specific Products to
+another Company for the purpose of a name change, change of ownership, or change of a location provided
+that the transfer is permitted by the Standard and the Company, and the new Company execute all required
+documents from NSF.
+GP – 6 NSF acknowledgment of Certified Products
+Certified Products shall bear the Mark or be otherwise represented as Certified as described in the program
+specific policies. For physical Certified Products that do not bear the Mark (e.g. not a system, service, or
+location), a statement shall be included in the Official Listing indicating how the Product will be represented as
+being Certified.
+When a Certified Product is sold with any non-certified product, the Company shall clearly indicate in a
+manner visible at minimum at the point of sale, that the non-Certified product has not been evaluated to the
+respective Standard. NSF reserves full discretion in determining acceptability of the delineation between
+Certified Product and non-certified product.
+GP – 7 Use of the Mark for products shown in the Official Listing
+The Company shall represent as Certified only Products that are in compliance with all applicable NSF
+Requirements. Products may not be represented as Certified until the trade designation or model designation
+appears in the Companyʼs Official NSF Listing.
+Certification shall only be represented as specifically authorized by NSF. The NSF Product marking, and
+advertising shall not directly or indirectly represent, imply, or claim an NSF Certification for an end use
+application for which it is not Certified by NSF.
+Failure to abide by the NSF Requirements in relation to usage of the Mark and claims may result in
+enforcement action including, but not limited to, withdrawal of Certification, and Public Notice.
+GP – 8 Trade designations
+A Company shall not use the letters “NSFˮ in its trade designation or unique identifier (e.g. name, model
+number, or other identification assigned by the Company) for a Certified or non-Certified Product, unless prior
+written authorization from NSF allows otherwise.
+A Company shall not have a trade designation for a Certified Product that directly or indirectly states or implies
+an end use application for which the Product is not Certified.
+NSF shall review any trade designation that references all or a portion of the designation of a Standard (e.g.
+“51ˮ for NSF 51, “C900ˮ or “AWWA C900ˮ for AWWA C900), or official regulation (e.g. the Codex Alimentarius)
+3
+
+--- page 14 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+before use by the Company. NSF in its sole discretion shall determine whether the use of any trade
+designation reference is authorized. NSF may include information about the scope of the NSF Certification to
+any Standards or regulations referenced in a tra de designation in the Productʼs Official Listing.
+GP – 9 Use of the Mark at authorized Locations
+The Mark shall be placed on Products only at Locations authorized by NSF, unless prior written authorization
+from NSF permits placement at another location.
+GP – 10 NSF brand
+NSFʼs iconic blue circle serves as the logo and visual representation of the NSF brand. The NSF brand
+represents NSF as an organization and is used by NSF to advertise and promote services and certifications.
+The NSF brand shall not be used in the form of a Certification Mark or to promote Certification unless
+permitted by NSF Policies.
+GP – 11 Product modification
+The Company shall notify and request authorization from NSF in writing prior to any changes of a Certified
+Product where such changes are related to any NSF Requirement. The change shall be reviewed by NSF and
+NSF will advise the Company of any required evaluation or testing. The Company shall not make such changes
+to a Certified Product without prior written acceptance by NSF.
+GP – 12 Implementation of revisions to Standards or Policies
+Upon adoption of a revision to an NSF Requirement that is applicable for Certification, NSF shall publish an
+effective date of implementation. All Certified Products shall be verified as complying with the requirements of
+the revised NSF Requirement on or before the effective date of implementation.
+Except as provided below, Products submitted for Certification after the date of adoption of a revision to an
+NSF Requirement and prior to the date of implementation may be evaluated and tested to the previous version
+of the NSF Requirement. However, full compliance with the revision shall be verified prior to the date of
+implementation. When a revision to an NSF Requirement addresses an identified public health issue, new or
+modified products submitted for Certification after the date of adoption and prior to the date of implementation
+of the revised NSF Requirement shall be in full compliance with the revised NSF Requirement upon
+qualification.
+GP – 13 Private Labeling of Certified Products
+If authorized by NSF, the Company may label Certified Products with a name and trade designation, other than
+the Companyʼs, under one of the following provisions:
+• Marking for the privately labeled Product shall include the name and trade designation of the company
+for whom the private labeling is occurring and shall also prominently identify the original Company as
+4
+
+--- page 15 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+the manufacturer of the product. The original Companyʼs name and address (or a unique company
+identifier approved by NSF); and listed trade designation shall be included on the label or data plate,
+and in all advertising materials including on all web pages and point of sale packaging. This information
+is required in close proximity to each Mark or Certification claim, and in font size equivalent or larger
+than that of the privately labeled name and trade designation; or
+• t he original Companyʼs Official Listing shall include the name and trade designation of the company for
+whom the private labeling is occurring, or
+• the original Company shall private label the Product with no modifications as “another name f orˮ on
+behalf of the private label company. A separate Listing shall be issued by NSF in the name of the
+private label company, which is supported by the original Companyʼs Certified Product.
+The Company shall be subject to additional fees and/or terms and conditions with regard to authorized private
+labeling.
+Audit
+GP – 14 Requirement and purpose of audits
+Except where otherwise provided for by these General Policies and Program Specific policies, an audit of all
+relevant facilities of the Company shall be required before Certification is authorized, and one or more
+unannounced audits may be conducted each calendar year. However, NSF reserves the right to conduct
+announced or unannounced audits as needed to monitor for compliance with all NSF Requirements. If NSF, at
+its sole discretion, determines that alternate measures may be used in place of an onsite audit, NSF shall notify
+the Company of the alternate measures necessary.
+At the election of NSF, subcontract auditors may be used in lieu of NSF staff auditors.
+GP – 15 Access for audits
+Access to facilities and Locations, of both the Company and the Companyʼs subcontractors (where applicable)
+for NSF audits shall be granted promptly by the Company. NSF shall make every attempt to accommodate
+facility vacations, inventory shutdowns and other non-productive periods or facility closings where NSF has
+been notified in advance. NSF shall be granted access to all facilities and locations of the Company, except
+where precluded from doing so by restrictions included in agreements between the Company and NSF or by
+government regulations, and where NSF has been notified in advance and is satisfied as to the validity of
+these restrictions. When necessary due to travel restrictions, NSF may contact the Company to confirm any
+onsite restrictions prior to arranging either an unannounced or announced audit. If unannounced, details of the
+time or date of the audit will not be disclosed. Refused or delayed access may result in withdrawal of
+Certification and other appropriate actions by NSF including but not limited to, issuing a Public Notice.
+GP – 16 Cooperation with NSF
+The Company shall provide any assistance required by NSF.
+While in a Company's facility, NSF representatives shall comply with all applicable health and safety laws. The
+Company shall provide authorized Company personnel to accompany NSF representatives while in the
+Companyʼs facility. The Company shall notify NS F in advance of any health and safety equipment necessary
+for access to the Companyʼs facility or shall provide the necessary health and safety equipment for the NSF
+representativeʼs use during the audit, along with instructions for proper use.
+NSF representatives may discontinue an audit at any time where their health and safety may be at risk, if they
+5
+
+--- page 16 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+are subject to harassment or discrimination, if they feel threatened or subject to abusive behavior, or the
+conduct of the Company staff hampers the completion of a valid audit. NSF representatives may also
+discontinue an audit in the presence of an individual who they believe may, intentionally or otherwise,
+influence its outcome in an inappropriate manner. An NSF representative shall immediately notify the Company
+and NSF if an audit is to be discontinued.
+GP – 17 Sample collection
+The Company shall provide samples of the Product and/or raw material for testing and retesting when and as
+required by the NSF Requirements. The samples shall be provided to NSF without charge and shipped
+immediately to NSF prepaid by the Company. NSF at its sole discretion may determine the appropriate method
+for obtaining a sample, including but not limited to obtaining a sample from the marketplace, at the Companyʼs
+expense. It is acknowledged that samples collected outside the United States may experience delays in
+customs and transit.
+GP – 18 Corrective action report
+NSF shall provide the Company with a report detailing all non-conformances noted during the audit.
+GP – 19 Audit suspension due to travel restrictions
+NSF may elect to suspend travel by its representatives to a specific geographical location or region as the
+result of official travel warnings, advisories, or other health and safety concerns including, but not limited to,
+civil unrest, personal security, and risk of communicable disease.
+If suspension of travel prevents audits from being conducted, NSF shall notify the Company that travel has
+been suspended. Where an audit is mandatory for Certification, the Certification for the Location will be denied
+or withdrawn until audits can be resumed.
+If NSF, at its sole discretion, determines that alternate measures may be used in place of an onsite audit, NSF
+shall notify the Company of the alternate measures necessary in order to proceed with Certification during the
+period in which audits are not possible.
+A Companyʼs failure to comply with the alternate measures directed by NSF may result in the withdrawal or
+denial of Certification.
+If the audit is conducted by the terms of this policy in place of an on-site audit and the travel suspension
+cannot be lifted after a one (1) year period for an initial audit or a two (2) year period for a surveillance audit,
+Certification for the Location may be continued for another length of time if approved by program management
+and authorized by the scheme and accreditation body. Otherwise, the Location shall be withdrawn from
+Certification.
+GP – 20 Non-operational Locations
+In the event that a Location becomes non-operational due to a natural disaster or other catastrophic event, the
+Company may request that the public Listing be maintained for a maximum period of 12 months while the
+Location is repaired, or work is undertaken to transfer production to another suitable location. During this
+period, audits and annual monitoring requirements of the NSF Certification program may be suspended. NSF
+may require an on-site audit of the rebuilt or the alternate location before production of the Certified Product
+can begin. In event that the Company elects not to transfer production or to re-build the facility, the Listing
+shall be discontinued immediately.
+6
+
+--- page 17 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+The Company shall document to NSFʼs satisfaction that a Location has been sufficiently damaged to prevent
+further production until repairs are completed and shall provide NSF with a time frame for transfer or re-
+construction of the Location.
+Testing
+GP – 21 Conduct of testing
+At NSFʼs sole discretion, testing may be conducted at NSF, a subcontract laboratory, the Companyʼs Location,
+or another site, as acceptable to NSF.
+GP – 22 Test report
+Upon completion of testing, NSF shall provide the test results to the Company. When a subcontract laboratory
+is used, for proprietary reasons NSF reserves the right not to identify the subcontract laboratory in the test
+report but shall provide this information to the Company if requested.
+GP – 23 Periodic testing of Certified Products
+Periodic testing of Certified Products may be required by NSF to maintain Certification.
+GP – 24 Disposition of test samples
+NSF reserves the right to retain any Product and/or raw material samples in its discretion. All samples not
+returned to the Company based on the Companyʼs direction in the sample collection form shall be disposed of
+by NSF in its discretion.
+Records
+GP – 25 Records of Certified Product information
+NSF may require a Company to submit information to document that a Product (or family of Products) fully
+conforms with all applicable requirements for Certification. Product information may be stored in a
+documentation report or other acceptable format. If required, the documentation report shall be reviewed,
+approved, and maintained by NSF.
+Each Location shall have access to a copy of the documentation report, and it shall be made available for use
+during audits by NSF. The documentation report shall not be copied or distributed by the Company without
+prior written authorization from NSF.
+GP – 26 Company records
+The Company shall maintain at the Location, or have immediate access to, records of the purchase of
+ingredients, materials, and components used in the production or assembly of all Certified Products,
+production records, shipment records, inventory records and any other records as required by the NSF
+Requirements. Such records shall be made available to NSF upon request. These records shall be maintained
+for a minimum of the preceding three (3) year period, unless a different time period is identified in the
+applicable NSF Requirements.
+7
+
+--- page 18 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+If the records required by this policy are not retained at the location being audited, NSF shall be advised by the
+Company in writing of the location of the records.
+GP – 27 Company complaint records
+The Company shall retain a record of complaints about its Certified Products relating to the scope of
+Certification and remedial actions taken by the Company since the last audit performed by NSF and shall make
+the record available to NSF upon request.
+At a minimum, the record shall include:
+• nature of the complaint
+• identification of the Product or services pertinent to the complaint
+• confirmation that remedial action(s) have been taken
+• status (open or closed) of the complaint, as known to the Company.
+The identity of the complainant need not be provided to NSF.
+The Company shall provide the record to NSF upon request by whatever means selected by NSF.
+Confidentiality
+GP – 28 Confidentiality
+Where the Company provides NSF with Company confidential information, it shall be held in strict confidence
+and shall not be disclosed or used for any purpose other than as specifically authorized/provided in the NSF
+Requirements or the Contract without the prior written consent of the Company. Confidential Information does
+not include information (a) that is or becomes generally available in the public domain other than through the
+action of NSF, (b) lawfully in the possession of NSF prior to disclosure by the Company, (c) lawfully obtained
+by NSF from a third party, or (d) independently developed by NSF without use of the Company confidential
+information. The term “confidential i nformationˮ means any confidential or proprietary information provided by
+the Company to NSF to enable NSF to perform the Certification Services under the Contract.
+Advertising
+GP – 29 Use of the Mark or claims of NSF Certification by Certified Companies:
+Advertising, packaging, and literature
+Use of a Mark on sales literature, technical publications, promotions, materials, packaging, catalogs, websites
+and in any format including electronic means, and in advertising of Certified Products is acceptable, provided
+the Company complies with the following:
+• Company shall code literature and packaging to indicate version date.
+• Company shall not directly or indirectly represent, advertise, imply, or claim that any of its non-
+Certified Products are Certified by NSF.
+• Company shall clearly indicate in advertising, packaging, and literature that any non-Certified product
+or component that is sold in combination with a Certified Product has not been evaluated to the
+8
+
+--- page 19 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+respective Standard.
+• Company shall not directly or indirectly represent, advertise, imply, or claim that any Product is
+Certified for an end use application for which it is not Certified.
+• Any use of the Mark in any literature and advertising that fails to truthfully and accurately reflect the
+Product as Certified by NSF is prohibited. Any changes to the product require that the Company shall
+notify NSF in writing prior to the change, in compliance with GP – 11 .
+• Company complies with all other marketing guidelines or instructions provided by NSF (“Guidelinesˮ).
+The Guidelines are hereby incorporated by reference into this Policy. NSF reserves the right to modify
+the Guidelines from time to time.
+GP – 30 Use of the Mark or claims of NSF Certification by parties other than the Certified
+Company: Advertising and literature
+Use of a Mark on sales literature, technical publications, promotions, materials, catalogs , and in advertising of
+Certified Products by a party other than the Company is acceptable, provided the party complies with the
+following:
+• the party shall code literature to indicate version date.
+• the party shall not directly or indirectly represent, advertise, imply, or claim that any of its non-Certified
+Products are Certified by NSF.
+• the party shall not directly or indirectly represent, advertise, imply, or claim that any Product is Certified
+for an end use application for which it is not Certified.
+• the party includes the name of the Company whose products are Certified and are being advertised,
+and the trade designation or model designation of the Certified Products or includes specific
+instructions that at NSFʼs sole discretion is adequate to obtain the name of the Company and the trade
+designation or model designation of the Certified Products.
+• the Company complies with all other marketing guidelines or instructions provided by NSF
+(“Guidelinesˮ). The Guidelines are hereby incorporated by reference into this Policy. NSF reserves the
+right to modify the Guidelines from time to time.
+Parties other than the Company whose Product is Certified shall not apply the NSF Mark to a product or any
+product packaging.
+Investigation of complaints
+GP – 31 Complaints
+NSF shall investigate complaints by any party related to Certified Products, misuse of a Mark or NSF claims of
+NSFʼs Certification Services.
+If the Company has a complaint to submit, the complaint shall be sent to NSF. When possible, NSF shall
+acknowledge receipt of a complaint, investigate the complaint and take appropriate action. NSF may advise
+the subject of the complaint or allegation. When possible, NSF shall confirm to the source that the allegation
+has, or has not, been verified as valid. NSF is not obligated to disclose any additional information concerning
+corrective actions.
+Where possible, the identity of the source will be confidential.
+9
+
+--- page 20 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+If the Company submits a complaint to NSF about a third party and such complaint is determined by NSF to be
+invalid, the Company shall reimburse NSF for all costs incurred by NSF in investigating the complaint. If NSF
+receives a complaint about the Company and NSF determines the complaint is valid, the Company shall
+reimburse NSF for all costs incurred by NSF in investigating the complaint.
+GP – 32 Investigation of complaints: Sample selection and handling
+NSF shall not, for complaint investigations:
+• test any samples submitted by a complainant for enforcement purposes
+• select samples for testing that are under the control or influence of the complainant, or test samples if
+NSF has reason to believe that the samples may have been altered.
+Samples for testing for enforcement purposes shall be collected and tested by NSF.
+Corrective action and enforcement
+GP – 33 Corrective action for general Noncompliance
+A Company shall be advised in writing by NSF of all items of Noncompliance. The Company shall submit to
+NSF, in writing within 30 days, or the deadline as required by the standard or scheme, of the date of receipt of
+written notice of the Noncompliance, a root cause analysis, a corrective action and a preventive action plan
+(CAPA) for approval. Once NSF approves the CAPA, the Company shall promptly implement the CAPA. NSF
+shall verify the Companyʼs compliance with the CAPA by means acceptable to NSF.
+Note. To prevent any misunderstanding, this policy does not relieve a Company of its continuing responsibility to
+use the Mark (or otherwise represent as Certified) only on Products complying with all NSF requirements. The 30
+days applies to the report, not to the date for corrective action.
+In addition to the CAPA, NSF may take the following action:
+• NSF may require the Product to be held until the CAPA is completed.
+• NSF may pursue additional enforcement action such as but not limited to an unannounced audit or
+increased audit frequency.
+• NSF may suspend or withdraw Certification for any or all Products for the Location. Other appropriate
+action may be taken by NSF including, but not limited to, issuing a Public Notice.
+GP – 34 Noncompliant test results for initial qualification
+Upon receipt of written notification from NSF that an initial qualification test of a Product is noncompliant, the
+Company shall investigate the noncompliant result and provide to NSF the written results of its investigation,
+including the cause and any corrective and preventive actions (CAPA) as well as its decision regarding
+resolution of the noncompliant result. NSF shall notify the Company regarding the acceptance of the CAPA
+prior to any continuance of testing should this be selected by the Company.
+When noncompliant test results for an initial qualification represent a public health or safety risk, NSF may
+notify the Company about the potential risk and/or may issue a Public Notice even if the product is not yet
+Certified.
+10
+
+--- page 21 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+GP – 35 Noncompliant test results for Certified Products
+Upon receipt of written notification from NSF that the results of its testing of a Certified Product are
+noncompliant, the Company shall promptly take reasonable measures to stop all use of the Mark on any
+noncomplying Product. The measures shall include:
+• Investigation to determine that any continuing production is in compliance
+• Review of inventory of Product bearing the Mark to verify that it is in compliance
+• Any other measures deemed necessary by NSF to protect public health including, but not limited to an
+immediate Product hold, distribution of Public Notice, or the holding in abeyance of any other product
+evaluation which could reasonably be expected to be impacted by the noncompliance under
+investigation.
+In addition to the preceding measures, the Company shall also determine the cause of the Noncompliances
+and provide to NSF a description of the root cause and a proposed resolution to the identified noncompliance
+in writing within 30 days of notification. The Company shall promptly make any required samples available and
+shall be responsible for any additional costs necessary to verify compliance. The Company shall then submit
+samples of the failed Product within 30 days of having submitted the proposed resolution for the purpose of
+verifying that the noncompliance is abated. At NSFʼs discretion , some retest samples may require auditor
+collection.
+In the event the Company cannot comply with the 30-day timeframes for proposed resolution of the
+Noncompliances or the collection of retest samples, the Company shall advise NSF in writing of the proposed
+time to completion. NSF in its sole discretion shall determine the acceptability of the requested extension.
+Note. This policy does not relieve a Company of its continuing responsibility to use the Mark (or otherwise
+represent as Certified) only on Products complying with all NSF requirements. The 30 days applies to the report,
+not to the date of corrective action.
+If the Company elects to drop the noncompliant Product from Listing, NSF reserves the right to request the
+Company provide written corrective action if the Product is subsequently resubmitted to NSF for qualification
+testing.
+GP – 36 Noncompliant retest results for Certified Products
+If the results of retesting of a Certified Product demonstrate failure for the original failed parameter(s), NSF
+shall withdraw Certification of the Product. NSF may withdraw Certification for any Nonconformance.
+NSF may take any other measures deemed necessary to protect public health including, but not limited to an
+immediate Product hold, distribution of Public Notice, or the holding in abeyance of any other product
+evaluation which could reasonably be expected to be impacted by the Noncompliance under investigation.
+GP – 37 Use of the Mark on a non-certified product
+Use of the Mark on a non-certified product or unauthorized or misleading claims or statements regarding
+Certification are prohibited. If the Company uses the Mark on a non-certified product, NSF may withdraw
+Certification for one or all Products. Other appropriate action may be taken by NSF including but not limited to
+issuing a public notice.
+11
+
+--- page 22 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+GP – 38 Unauthorized change to a Certified Product
+Unless authorized by NSF, changes to Certified Product immediately result in the Product not being Certified.
+The Company shall hold the changed Product in its inventory until released by NSF in writing.
+NSF may increase audit or testing frequency, conduct an unannounced audit, withdraw Certification for one or
+all Products for the Location. In addition to the preceding, NSF at its sole discretion may issue a Public Notice.
+GP – 39 Unauthorized shipment or disposal of Certified or non-certified products placed
+on hold
+For Product placed on hold, the Company shall hold the Product in its inventory until authorized by NSF in
+writing to release Product from hold. For the unauthorized shipment or disposal of any Product placed on hold,
+Certified or non-certified, NSF may take any or all of the following actions:
+• increase number of annual facility audits
+First occurrence
+• withdrawal of Certification, per GP – 41 , of the non-conforming Product(s)
+• increase number of annual facility audits
+Second occurrence • withdrawal of Certification, per GP – 41 , of the non-conforming Product(s)
+• withdrawal of Certification, per GP – 41 , of all Products Listed at the Location
+Other appropriate actions may be taken by NSF, at any time, including, but not limited to issuing a public
+notice.
+GP – 40 Bribes offered to NSF
+Any attempt by a Company or its employees or agents to offer inducement or bribes to NSF shall result in
+immediate withdrawal of Certification and other action deemed appropriate by NSF.
+GP – 41 Withdrawal of Certification
+NSF may withdraw Certification of any Product, at any time, for failure to comply with any NSF Requirement,
+including but not limited to termination of the Contract.
+NSF shall notify the Company, in writing, of withdrawal of Certification. Upon notice by NSF (whether written
+or oral) to the Company of withdrawal of Certification, the Company shall immediately stop applying the Mark
+to the Product. The Company shall notify its distributors and outlets that the Certification has been withdrawn.
+The Company shall confirm these actions to NSF. NSF may make public notice of withdrawal of Certification
+and the reason for such action.
+Upon withdrawal of Certification of a Product or all Products, NSF may require the Company to quarantine,
+dispose of, modify, or destroy the entire Product(s), by means acceptable to NSF, to assure that it is not sold,
+used, or represented as Certified. The Company shall provide to NSF its plan for the disposal, modification, or
+destruction of the Product(s) within 14 calendar days of notification of withdrawal of Certification. NSF shall
+verify the action taken by the Company.
+Upon withdrawal of Certification of all Products, NSF may require the Company to dispose of, modify, destroy,
+or surrender to NSF all Marks, marking devices, and marked materials, by means acceptable to NSF.
+Additionally, the Company shall cease all digital marketing and advertising, remove all product images
+displaying the NSF Mark and cease all Certification claims. The Company shall provide to NSF its plan for the
+disposal, modification, destruction, or surrender of the Marks, marked materials and digital marketing
+12
+
+--- page 23 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+compliance within 14 calendar days after NSF notifies the Company of withdrawal of Certification. Disposal,
+modification or destruction of the Marks and marked materials shall be at the Company's expense. NSF shall
+verify the action taken by the Company. No credit or refunds shall be provided for Marks disposed of,
+modified, destroyed, or surrendered. The Company shall also acknowledge in writing that it is not authorized to
+use the Mark or otherwise represent that any of its Products are Certified.
+If at NSFʼs sole discretion determines that an audit is necessary to verify compliance, the Company shall
+permit access.
+GP – 42 Public Notice
+NSF may issue a public notice for noncompliance with any NSF Requirement. NSF may also require the
+Company to distribute a notice to known purchasers or recipients of the Product. The Company shall
+cooperate in good faith with NSF in determining who should receive copies of a public notice. The notice shall
+include the name of the Company, a description of the Product, including its trade or model designation, the
+specific noncompliance and the specific health consequences, if applicable.
+NSF may issue a press release of the notice to appropriate print and broadcast media. NSF may distribute a
+written notice to those appropriate persons, agencies and entities, which may include known purchasers and
+recipients of the Product, appropriate federal, state, and local regulatory officials in the United States and other
+countries, NSFʼs Public Health Co uncil, the appropriate Joint Committee(s), Certified Companies, and other
+individuals and organizations routinely receiving the appropriate Certification information.
+GP – 43 Reinstatement
+Following a drop or withdrawal of Certification, Products may not be re-Certified until NSF has reevaluated or
+retested, or both reevaluated and retested the Product, has verified that all items of Noncompliance and issues
+of ethics or integrity have been satisfactorily resolved, and has notified the Company in writing that it is
+authorized to use the Mark in connection with the Product. The Company shall be responsible for any fees
+associated with reinstatement, and for any additional costs necessary to verify compliance with NSF
+Requirements.
+NSF may decline to accept an application of re-certification or maintain a contract for certification from a
+client, or former client, when illegal activities, history of repeated non-conformances, demonstrated history of
+not complying with certification requirements, or similar issues of concern are present.
+Appeals
+GP – 44 Appeal of a decision, result or action taken by NSF
+Any decision, result or action taken by NSF may be appealed by the Company within thirty (30) calendar days
+of the decision, result or action. The appellant may file a written request for appeal with NSF staff. NSF shall,
+within thirty (30) calendar days of the written request, inform the appellant of the results of the appeal, unless
+otherwise notified by NSF.
+To begin the appeal process, the Company must submit a written statement of appeal that must include the
+specific decision, result, or action taken by NSF that is being appealed and the basis for the Companyʼs
+appeal. Any supporting evidence and documentation that supports the statement of appeal must also be
+submitted. NSF may request additional supporting documentation to further the appeal investigation.
+Otherwise, any supporting documentation submitted after the statement of appeal will not be considered by
+13
+
+--- page 24 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+NSF.
+NSF may, at its discretion, hold in abeyance any enforcement action against a Company until the appeal has
+been conducted.
+All appeal outcomes determined by NSF are final. If the appellant is not satisfied with the outcome of the
+appeal, they have the right to contact the accrediting body, if applicable.
+GP – 45 Legal action
+The Company shall hold in abeyance any formal legal action against NSF until such time that all appeal
+mechanisms available have been exhausted.
+Fees
+GP – 46 Application fee
+The Company shall submit payment of the application fee, if applicable, with the signed application form. This
+fee, if applicable, shall be paid once by each Company for each NSF program. This fee is nonrefundable.
+GP – 47. Standards maintenance fee
+An annual standards maintenance fee, if applicable, shall be charged to each Certified Company for each
+program area in which it participates.
+GP – 48 Certification fee
+For initial Certification, the Company shall submit payment of the Certification fee and any outstanding fees
+(e.g. audit, toxicological assessment, testing or evaluation) prior to the Official Certification being granted.
+GP – 49 Collection fee
+The Company shall be responsible for any fees and costs incurred by NSF in collection of fees in arrears.
+14
+
+--- page 25 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+Section II. Program Specific Policies for GMP Certification for NSF/ANSI
+455
+Introduction
+The Certification program for NSF/ANSI 455 is intended to evaluate Facilitiesʼ compliance with GMP (Good
+Manufacturing Practices) as defined in NSF/ANSI 455-2: Good Manufacturing Practices for Dietary
+Supplements, NSF/ANSI 455-3 Good Manufacturing Practices for Cosmetics, or NSF/ANSI 455-4 Good
+Manufacturing Practices for Over-the-Counter Drugs.
+A Certification to the applicable Standard confirms that NSF has assessed and Certified a Facilityʼs conformity
+to the requirements of NSF/ANSI 455.
+While NSF/ANSI 455 outlines the audit and administrative requirements for Certification, these policies outline
+the additional operational requirements for qualifying, obtaining, and maintaining Certification to the Standard.
+As part of Certification to the Standard, the Facility agrees to abide by the policies specified herein.
+Definitions
+Campus location : Multiple site locations that are managed, owned, or operated by the Company within proximity
+to one another that are operating under the same quality systems. Additional sites that fall within the scope
+include, storage facilities (on and off site), warehouse locations, off site testing, or complaint management.
+Excluded sites shall be documented in the audit report. A single audit report will be issued for each Campus
+Location.
+Company : Entity for which NSF services are performed.
+Contract manufacturer : Subcontract facility that produces products, in whole or in part, for purchase and sale
+by an independent supplier.
+Facility : Company owned or managed physical site or premise, buildings and supporting structures used to
+conduct receipt, storage, manufacturing, packaging, control and shipment of products, raw materials,
+components, and packaging materials. 1 Sites Facilities are audited for GMP Certification.
+Manufacture or Manufacturing: Operations associated with the production, quality assurance and product
+safety of a product and may include one or more additional production stages including packaging, labeling,
+testing, or distribution.
+Objective Evidence: Facts supporting the existence or verity of something. Evidence can be obtained through
+1
+observation, measurement, test or by other means.
+Repeat Nonconformance: Nonconformances cited during a previous audit, that are not corrected by the next
+scheduled Audit.
+Withdrawal: The complete withdrawal of the Certification for a Facility (including facilities audited under a
+Campus location). The Companyʼs name will no longer appear in NSF listings and the Company may not market
+their Certification. The withdrawal of listing may impact other NSF Certifications. Company will be required to
+re-apply to the program.
+1
+https://www.iso.org/obp/ui/#iso:std:iso:9000:ed-4:v1:en:term:3.8.3
+15
+
+--- page 26 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+For additional definitions, please refer to NSF/ANSI 455-1, NSF/ANSI 455-2, NSF/ANSI 455-3, NSF/ANSI 455-
+4.
+Program participation & compliance
+PP – 1 Program eligibility
+Companies that manufacture, package, or warehouse products in scope for NSF/ANSI 455 suite of standards
+are eligible for certification. Companies desiring admission to the Program shall meet all requirements and
+agree with the terms and requirements of this document to the sole satisfaction of NSF.
+Certification Companies eligible for certification
+NSF/ANSI 455-2 Good Manufacturer, Contract Manufacturer, Packager, Contract
+Manufacturing Practices for Packager, Warehouse & Distribution of dietary supplements
+Dietary Supplements
+NSF/ANSI 455-3 Good Manufacturer, Contract Manufacturer, Packager, Contract
+Manufacturing Practices for Packager, Warehouse & Distribution of cosmetics and personal
+Cosmetics care products
+NSF/ANSI 455-4 Good Manufacturer, Contract Manufacturer, Packager, Contract
+Manufacturing Practices for Over- Packager, Warehouse & Distribution of over-the-counter drugs
+the-Counter Drugs
+Certified Companies shall fulfill certification requirements at all times, including implementation of required
+changes that are communicated by NSF, within an agreed upon timeframe.
+PP – 2 Application
+The application documents provided by NSF shall be submitted by the Company to NSF and shall contain all
+the necessary information to complete the application process. It shall clearly state the scope of certification
+requested for each site. If any required information is missing or unclear, NSF shall follow up with the Company
+until any known difference in understanding between NSF and the Company is resolved.
+NSF will evaluate the application documents and other information as requested from the Company or
+obtained by NSF when such information or materials is publicly available. Other information that may be
+requested and reviewed by NSF include, but not limited to:
+• Any previous history of participation with NSF (or its affiliates) certification or other programs,
+including but not limited to facts related to termination, legal proceeding arising out of such prior
+relationship, or both;
+• Regulatory actions including but not limited to recall, withdrawal; inspections; or other notifications
+received from any regulatory agency in the past five years including but not limited to, US FDA Form
+483, Warning Letters, import alerts, injunctions, and consent decrees within the past year from
+application with NSF;
+• Legal or regulatory actions by, against, or involving Company or its products/services, including any
+unresolved actions; and
+• Company or product marketing, public statements concerning Company, its products, or NSF,
+including matters that have the potential to damage or harm NSFʼs goodwill and reputation, or that
+conflict with or are contrary to NSFʼs mission and core values.
+16
+
+--- page 27 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+Upon review of the application, NSF reserves the right to decline a certification application if NSF
+determines it is unable to provide the certification activities requested.
+PP – 3 Legal and regulatory compliance
+The Company shall comply with all applicable federal, state/provincial and local laws, rules, guidelines,
+regulations and agrees with terms set forth in Annex A, Annex C and Annex Z.
+Failure to comply with this policy may result in the Companyʼs Certification being Suspended or Withdrawn, or
+other enforcement action as deemed by NSF to be necessary and appropriate.
+PP – 4 Agreement with applicable standards
+If one or more policies contained herein are in conflict with a requirement of the Standard, the requirement of
+the Standard will be applied based on NSFʼs interpretation of the requirement or intent of requirement.
+PP – 5 Shared audit information with other parties
+If the Company is a part of another Standard or scheme, the audit report information including but not limited
+to grade, nonconformances, audit report, and supporting documentation may be shared in accordance with
+the specific scheme requirements.
+Any other audits (if applicable) performed by NSF shall be excluded from this requirement.
+PP – 6 Sharing of audit information
+If the Company wishes to proceed with another Certification Body, the Company shall submit a request to NSF
+in writing for audit information it wishes NSF to share. NSF will make available the information pertaining to the
+previous yearʼs audits including audit report, Corrective Action Report and supporting documentation within 10
+(ten) business days of the received request to contacts designated by the Company.
+Certification
+PP – 7 Certification scope and exclusion
+The scope of certification shall be agreed upon between NSF and the Company. The scope of certification
+specifies:
+• the manufacturing, packaging, and/or warehousing sites;
+• product categories (i.e. classification of products according to form or type);
+• product technologies (i.e. process or operations utilized to manufacture or package the product
+categories).
+The Company may request an exclusion to their scope. A request must be submitted to NSF in writing at the
+time of application or prior to the audit detailing the reason for exclusion and evidence to support the exclusion
+meets the criteria as defined in the Standard (e.g. photographs, facility floor plan, process flow, etc.). A
+request for exclusion is not a guarantee of acceptance by NSF. Approved exclusion will be assessed and
+confirmed at the time of the audit.
+17
+
+--- page 28 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+NSF reserves the right to modify the scope and exclusions of the Certificate and Official listing at any time to
+reflect the accurate operations of the Company.
+The following are out of scope for NSF/ANSI 455 certification: ingredient or raw material manufacturers,
+ingredient or raw material stand-alone warehouses, packaging material manufacturers, brokers, label
+designers and printers, laboratories, office buildings, transport companies, E-Commerce companies, or
+facilities producing Medical Food or Functional Food.
+PP – 8 Modifications to the Certification scope
+The Company shall notify NSF in writing of any changes in their facility operations that may affect the scope of
+certification. In order to ensure changes are incorporated into the audit plan, NSF requires these changes be
+communicated at least one week prior to the audit start date. Failure to provide this information in advance of
+the audit may impact the certification timeline and evaluation requirements. including but not limited to addition
+of duration to the audit or conduct of a scope extension audit.
+The Company may request to add new sites, product categories, or product technologies to their scope of
+certification after completion of the audit. NSF will conduct an extension audit to verify compliance to the
+Standard requirements. An audit for an expansion of scope does not change the certification expiration date.
+NSF reserves the right to modify scope and exclusions of the Certificate and Official listing at any time to
+reflect accurately the operations of the Company.
+PP – 9 Audit duration
+The duration of each audit shall be determined by NSF according to the criteria in the Standard. NSF reserves
+the right to adjust the duration of the audit in order to have sufficient time to assess the Company to the
+requirements of the Standard and Policies. If additional audit time is required, the Company shall be
+responsible for any additional audit fees.
+PP – 10 Auditor assignment
+When the Company is ready for scheduling, NSF shall designate a qualified and approved NSF auditor. The
+Company is responsible for immediately disclosing to NSF in writing if there is a conflict of interest with the
+auditor selected to perform the audit. In the event of a conflict of interest, the auditor will be disqualified from
+that audit location. NSF may modify auditor assignment and/or schedule with advanced notice.
+PP – 11 Scheduling responsibility
+Audits will be scheduled as specified in the Standard. NSF will offer audit dates within the audit window as
+defined in the Standard for selection by the Company. Audits must be scheduled during a time when the
+facility is actively producing product within the scope of certification. The Company shall be responsible for
+ensuring the selected audit dates align with the production schedule of the facility(s) and does not result in a
+lapse in the current certification.
+PP – 12 Campus Location or multi-facility sites
+The audits are specific to the site or location. In situations where activities or operations are conducted at
+multiple sites or locations within close proximity (typically within 15 minutes of each other), NSF shall
+determine if Companyʼs operations meet the definition of a Campus Location. All sites or locations included in
+the campus location shall be included in the audit.
+18
+
+--- page 29 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+A campus audit includes but is not limited to reviewing the site operations and quality systems as well as
+proximity of other facility locations. Additional audit days may be required to ensure the full scope of the audit
+can be performed. The additional audit fees are the responsibility of the Company.
+A campus audit does not include evaluation of other Quality Management Systems or legal entities at the site
+beyond the Companyʼs certification scope. In the event of other Quality Management Systems or legal entity
+names occurring at the same site, each entity must pursue certification under their own entity. Audits may be
+performed sequentially but certifications are independent of each other.
+PP – 13 Audit readiness
+The Company shall ensure the site is operational during the audit and in production of product in scope for
+certification that is applicable for distribution and sale. As best practice, a Company applying for certification
+should have produced product(s) in scope intended for distribution and sale for at least three (3) months
+before consideration for a certification audit (i.e. initial audit). NSF, at its sole discretion, may permit exceptions
+to this practice.
+The Company shall provide NSF with the applicable documentation required by the Standard prior to the audit.
+If the Company does not provide the documents within the required timeframe, the audit may be cancelled.
+Cancelation fees shall be the responsibility of the Company (see “PP - 23 Postponed or canceled a uditsˮ) The
+re-scheduled audit may only be arranged after Company provides the required documents to NSF.
+PP – 14 Certification audit
+During the audit, the status of product categories and technologies may be classified as:
+• Active - Manufacturing and packaging operations are observed being performed during the audit.
+• Inactive – Manufacturing and packaging operations are not being performed during the audit. Review
+of production records of inactive product technologies and categories are included in the audit.
+• Non-operational – Manufacturing and packaging operations have not been performed by the facility in
+the past twelve (12) months or since the previous certification audit. Product technologies and
+categories deemed as non-operational will not be listed in the certificate.
+PP – 15 Audit completion
+The Companyʼs operations in scope for certification shall be assessed for compliance to the Standard. If the
+operations cannot be fully assessed, NSF may deem the audit as incomplete. Where an audit is incomplete, a
+follow up audit will be required to complete the assessment in order to achieve or maintain Certification.
+If NSF deems the site unprepared for the audit, the audit will be discontinued (i.e. aborted) and a reaudit shall
+be required. Company is responsible for all fees associated with the discontinuation of the audit.
+PP – 16 Audit report technical review
+Audit reports shall go through technical review and are evaluated for completeness and accuracy prior to
+release. Changes to the report may be made as a result of the review. This may include but are not limited to
+reclassification of nonconformance, modification of the nonconformance, and other changes. The
+nonconformances cited in the preliminary report shall not be deemed final until the published audit report is
+issued to the Company.
+19
+
+--- page 30 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+PP – 17 Corrective actions
+The Company shall submit planned and actual (as required by the Standard) corrective action for each
+nonconformance to NSF within the time specified in the Standard. All corrective action responses shall be
+submitted to NSF via the NSF Client Portal. Submission of a corrective action does not change the grade
+assigned during this audit cycle.
+Requests for extending the submission deadline may be submitted to NSF for review. Company shall be
+required to submit a written request prior to the deadline.
+Corrective action responses shall include:
+• root cause analysis;
+• corrective action plan;
+• preventive action plan;
+• person responsible for implementation of the plan; and
+• timeline for implementation of the plan.
+Documentation to support the corrective action plan may be requested by NSF as necessary. Objective
+evidence demonstrating implementation of the corrective action plan may be required to be submitted as
+defined in the Standard.
+NSF shall review the submitted corrective action and provide feedback within the time specified in the
+Standard. NSF may approve the corrective action or return to the client to request for additional information,
+request for clarification, or require an updated corrective action if the original response is not deemed
+acceptable. A nonconformance may also be closed without review if it is determined a corrective action does
+not need to be submitted or is not applicable anymore.
+Failure to provide necessary corrective action information within given timeframes may result in delayed
+Certification or may impact the current Certification status of the Company. NSF may request a response from
+the Company to address the failure to meet the timeframes as defined in the Standard or Policies.
+PP – 18 Disputes and appeals
+The Company has the right to dispute a nonconformance. Disputes are resolved following this process:
+1. The first level for the resolution of conflicts, disputes, or differences of opinion occurs between the
+Company and the auditor prior to the conclusion of the audit.
+2. Should a successful resolution not be reached, the Company shall submit a dispute of the
+nonconformance, including justification with evidence, through the NSF corrective action process. The
+Company shall submit any disputes within ten (10) business days after receipt of the audit report.
+3. If the decision by NSF is not accepted by the Company, a formal appeal may be submitted by the
+Company within thirty (30) calendar days of the decision. Facilitation of any formal appeal will follow
+the NSF appeal process.
+20
+
+--- page 31 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+PP – 19 Notification of Certification
+The Company shall be advised in writing of the Certification decision. NSF shall issue a certificate for each
+certified facility.
+At a minimum the certificate shall include the following information:
+• standard the Company is certified to
+• applicable normative references
+• company name
+• facility address
+• date of Certification
+• certification expiration date
+• scope of certification (i.e. technologies and categories) and any exclusions
+Certification Normative References
+NSF/ANSI 455-2 Good 21 CFR Part 111, 21 CFR Part 117, 21 CFR Part 11,
+Manufacturing Practices for Dietary 21 CFR Part 1.5 Subpart L & 21 CFR Part 1.9 Subpart O
+Supplements
+NSF/ANSI 455-3 Good ISO 22716 & US FDA Guidance for Industry - Cosmetic Good
+Manufacturing Practices for Manufacturing Practices
+Cosmetics
+NSF/ANSI 455-4 Good 21 CFR Part 210, 21 CFR Part 211, 21 CFR Part 11, 21 CFR Part 7
+Manufacturing Practices for Over- Subpart C & ICH Q1, Q7 & Q10
+the-Counter Drugs
+Certification dates and deadlines shall not be modified or extended except for administrative corrections.
+PP – 20 Public Listing of Certified Facilities
+The certified Company shall be publicly listed on the NSF website. Official Listing of each certified facility shall
+include:
+• company name, address and phone number;
+• facility location (city, state, province/country, or other identification that is traceable to the facility);
+• facility type;
+• scope certification and any exclusions; and
+• c ompany website and logo added at the Companyʼs request.
+PP – 21 Use of the NSF GMP Certification Mark
+The certified Company is permitted to use the NSF GMP Certification Mark with prior written authorization
+from NSF. The Company may use the Mark(s) depicted in Annex A, as applicable to their Certification, when
+identifying NSF GMP Certification on advertising, literature, the Companyʼs we bsite, tradeshow booth and
+promotional materials. Company agrees that its use of the Mark is its representation that the facility certified
+by NSF complies with all NSF requirements as specified in the Standard and Policies.
+21
+
+--- page 32 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+The NSF Mark, NSF company name, and/or NSF logo shall not be used in conjunction with product specific
+advertising, or on:
+• Component certificate of analysis, certificate of conformance, or letter of guarantee;
+• Packaging material certificate of analysis, certificate of conformance, or letter of guarantee;
+• Finished Product labels, packaging, certificate of analysis;
+The Company shall ensure, including by use of written contract with its customers, that no products or
+packaging/labels of products (whether products of Company or of Companyʼs customers) claim or imply that
+the product is manufactured or made in a NSF Certified facility.
+It is understood and agreed that the Mark is invalid if, as determined by NSF, the Company has altered or
+misrepresented their Certification. NSF assumes no liability for any claims arising from such alteration or
+misrepresentation by Company.
+The NSF corporate logo shall never be used by the Company.
+Special policies
+PP – 22 Unannounced audits
+Unannounced audits may be scheduled by NSF according to the requirements by the Standard or scheme
+owner. If an audit is required to be unannounced, any other audits taking place on the same visit will also be
+unannounced. The Company will receive notification of the unannounced audit window, including the audit
+plan, prior to the audit. The auditor will arrive on the start day of the audit without advance notification to the
+Company.
+PP – 23 Postponed or cancelled audits
+If a Company requests to postpone or cancel the audit, a request shall be provided to the designated NSF
+representative in writing with justification for the request. All postponements and cancellations shall be
+approved by NSF.
+NSF may request an audit cancellation if in NSFʼs sole opinion, the Company will not be able to demonstrate
+compliance to the requirements or timelines of the Standard.
+Fees associated with canceled or rescheduled audits will go into effect 30 days prior to the scheduled audit
+date and vary according to the notice given and are the responsibility of the Company. NSF refers to these
+charges collectively as “cancellation f eesˮ regardless of the type of modification of the scheduled audit date.
+NSF reserves the right, at its sole discretion, to waive fees under the following circumstances:
+1. Acts of God: This includes natural disasters such as earthquakes, hurricanes, floods, or other
+unforeseeable events beyond human control.
+2. Regulatory Inspection: This includes mandatory inspections or interventions by government or
+regulatory bodies that prevent the fulfillment of obligations.
+PP – 24 Outstanding payments
+Failure to pay issued fees in accordance with the contract may result in delays of certification documents and
+activities, suspension or withdrawal of certification. Certification dates and deadlines will not be modified or
+22
+
+--- page 33 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+extended due to non-payment.
+Other audit services
+PP – 25 Coordination of other audits performed by NSF
+NSF may perform audits other than NSF/ANSI 455 based on the Companyʼs participation in other NSF
+certification programs. These audit(s) may be performed in the same visit as the NSF/ANSI 455 audit or on a
+separate visit. NSF will determine the length and timing of the additional audit based on the certification scope.
+Additional fees may apply and shall be the responsibility of the Company.
+PP – 26 GMP for Sport Registration
+The Company may pursue NSF GMP for Sport Registration in addition to GMP Certification. The Company shall
+successfully complete the following items to NSFʼs sole satisfaction prior to certificate issuance:
+• certification to applicable GMP scheme (e.g. NSF/ANSI 455-2, NSF GMP Registration, NSF 229 section
+8);
+• compliance with Certification Policies for NSF/ANSI 455 and GMP Registration Policies;
+• compliance with GMP requirements in the Certified for Sport® Guideline;
+• successful completion of the GMP for Sport audit; and
+• submission and approval of planned and actual (if required) corrective actions for audit
+nonconformances cited.
+To maintain GMP for Sport Registration the Company must complete the following on an annual
+basis:
+• receive a passing grade on the prerequisite GMP Certification audits;
+• complete any required audits as determined by NSF Certified for Sport Guideline;
+• all Corrective Action Responses in a terminal status; and
+• have an account in good standing with NSF.
+The GMP for Sport Registration audit may be conducted on the same visit as the NSF/ANSI 455 audit or
+conducted separately.
+Warehouse and Distribution facilities are out of scope for the GMP for Sport Registration program.
+GMP for Sport Registration is not a prerequisite for companies manufacturing and packaging NSF Certified for
+Sport® products unless the certified product is under the NSF 306 All Lot testing scheme. GMP for Sport
+Registration does not equate to NSF Certified for Sport® Certification.
+PP – 27 NSF Product Certification audit
+Where the Company has NSF Certified Product (e.g. NSF/ANSI 173, NSF 229, NSF 527, NSF 306), NSF shall
+perform an annual product certification audit of the facility(ies) involved in the manufacturing and packaging of
+NSF Certified Product. The audit may be conducted on the same visit as the NSF/ANSI 455 audit or conducted
+separately.
+23
+
+--- page 34 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+The audit shall verify the Facilityʼs compliance with the appropriate Product Certification Policies, Standard or
+Guideline and to verify the manufacturing and packaging of the Certified Product are consistent with NSF
+issued documents. Audit includes, but is not limited to:
+• verification that the Facility has the most current copies of the Authorized Registered Formula issued
+by NSF for each certified product;
+• verification that production of certified product is according to the Authorized Registered Formula
+issued by NSF;
+• review of documentation and records pertaining to production of the certified product;
+• verification of manufacturing and packaging controls;
+• review of any complaints about the certified product;
+• verification of appropriate use of the applicable NSF Mark on certified product.
+PP – 28 GRMA GMP Certification
+The Company may pursue certification to GRMA GMP schemes. Assessment shall be to the applicable
+NSF/ANSI 455 Standard and GRMA scheme requirements for dietary supplements, cosmetics, and over the
+counter (OTC) drugs. The Company is responsible for requesting GRMA certification in their application to
+NSF, maintaining GRMA membership, and requesting NSF as the Certification Body via the GRMAʼs audit order
+request prior to an audit taking place. By doing so, the Company agrees to all audit information (including audit
+report, corrective action plans, audit grade, facility information, etc) being shared by NSF to GRMA via the
+GRMAuditsphere. The Companyʼs audit information and certificate shall be provided via the platform
+GRMAuditsphere in accordance with GRMA requirements.
+Company shall inform NSF when a material incident occurs, including, but not limited to product recall(s),
+receipt of warning letter(s) or complaint(s), or routine compliance activity or other public agency activity taken
+while the facility(ies) is certified. Upon receipt of such notification, NSF shall notify GRMA and may conduct a
+special assessment of the certified facility(ies) to investigate or obtain additional information regarding the
+reported issue, recall, warning, or complaint.
+The certified Company may use or display the GRMA logo in accordance with its certificate(s) of conformity.
+Company is responsible for compliance with GRMA Logo – Terms and Conditions.
+A Company with GRMA certification is not eligible to use the NSF Mark and will not be publicly listed on the
+NSF website.
+Enforcement
+PP – 29 Suspension or Withdrawal of Certification
+NSF, at its sole discretion, may Suspend or Withdraw a Facilityʼs Certification for any reason, including but not
+limited to the following:
+• failed audit
+• violation of NSF policies
+• failure to comply with the terms of the contract with NSF or the scheme owner
+24
+
+--- page 35 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+• failure to maintain compliance with the Standard requirements
+• unprofessional or unethical conduct (includes Company and any Company representative)
+• evidence of falsification of records
+• failure to submit required documents for Certification
+• refused or delayed access for audits
+• failure to respond to NSF in a timely fashion
+• non-payment of fees or outstanding invoices
+• company insolvency or declaration of bankruptcy
+• misuse of the Certification Mark
+• violations of federal, state/provincial, or local laws, rules, guidelines, or regulations
+• failure to schedule the audit within the required frequency and timeframe as specified in the Standard
+• failure to submit corrective actions to NSF within the timeline as specified in the Standard
+• failure to implement adequate corrective actions within the timeline specified in the Standard
+• unresolved repeat nonconformances; or issues of public health concern (e.g. product recall or
+withdrawal, etc.)
+NSF shall inform the Company and the scheme owner (if applicable) of the suspension and the effective date.
+Suspensions lasting longer than six (6) months may result in Withdrawal of Certification.
+For the duration of the suspension, the Company shall not:
+• Represent itself as Certified to the Standard. The Company shall not be authorized to use the NSF Mark
+or claim Certification.
+• Use any advertising, literature, the Companyʼs website, tradeshow booth and promotional materials that
+may indicate the Company is certified to the Standard.
+NSF shall inform the Company and the scheme owner (if applicable) of the withdrawal of Certification and the
+effective date and remove the Company from NSF Public Listing. Upon notice by NSF, the Company shall
+immediately discontinue the use of the Certification Mark.
+PP – 30 Reinstatement
+Following suspension or withdrawal of Certification, NSF shall provide the Company the steps and timeline for
+reinstatement. The Company may not be reinstated until NSF has verified that any items of nonconformance
+have been satisfactorily resolved and has notified the Company in writing that it is authorized to represent
+itself as certified by NSF to the relevant Standard. The Company shall be responsible for any fees associated
+with reinstatement, and for additional fees necessary to verify conformance with NSF requirements.
+If NSF determines that an audit is necessary to verify compliance, the Company shall permit access.
+25
+
+--- page 36 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+This page is intentionally left blank.
+
+--- page 37 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+Annex A
+Certification Mark options and usage guidelines
+General usage guidelines
+Companies are permitted to use the Certification Mark in the following ways:
+• On the websites and social media accounts controlled by the Company when representing that the
+Certified facility(ies) are NSF Certified to the applicable Standard.
+• In marketing promotional material and other media provided the Company, provided Certification can be
+traced back to their Official Listing.
+Companies with Certified facilities are also welcome to include links to their official NSF Listing to facilitate quick
+verification of their Certification status.
+Other guidelines include but are not limited to:
+• Colors – the NSF Mark shall appear in approved colors detailed in Table 1 and Table 2. No other colors
+are permitted;
+• the NSF Mark shall not be cropped or covered;
+• w hen referencing NSF International the Certified trademark symbol, “®ˮ shall be used regardless of
+where the Product is being sold;
+• no part of the Mark shall be transparent;
+• the Mark shall not be used in conjunction with any product goods (finished or raw) including the finished
+product label;
+• u se of “NSF GMP Registeredˮ or “NSF GMP Certifiedˮ or any combination is strictly prohibited on any
+Finished Product or Raw Material documents (COA(s), label, website, etc.);
+• t he Mark shall not be modified in any way except for its size. The Markʼs proportions shall remain
+consistent with any increase or decrease in size;
+• the Mark and its contents shall be visible and legible;
+• the Mark shall not be placed within another graphic element;
+• the Mark shall not imply or misrepresent the Certification issued by NSF; and
+• the use of the NSF Corporate logo is strictly prohibited.
+For more information about proper usage of the NSF Mark, contact your NSF Account Manager.
+A1
+
+--- page 38 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+Options for acceptable NSF Certification Marks:
+Table 1 – GMP Certified to NSF/ANSI 455
+Table 2 – NSF Certified for Sport Guideline
+NSF Certified for
+Sport® Guideline,
+Section 6
+A2
+
+--- page 39 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+Annex Z
+Certification Agreement
+The Company shall:
+• Fulfill certification requirements at all times, including implementation of required changes that are
+communicated by NSF, within an agreed upon timeframe.
+• Assure that the Certified Product continue to fulfill certification requirement for ongoing production.
+• Make arrangements for:
+o the conduct of evaluation and surveillance as required by NSF, including but not limited to,
+arranging availability of documentation, records, relevant equipment, location(s), area(s)
+o personnel and subcontractors (if applicable)
+o investigation of complaints
+o participating by observers, if applicable.
+• Assure that:
+o all claims made by the Company are consistent with the scope of Certification
+o the Product Certification is not used in a manner that would bring NSF into disrepute
+o no statements are made regarding the Certified Product that are misleading or unauthorized
+• Any Certification certificate or report related to Certification shall not be used in any misleading
+manner.
+• Discontinue use of all advertising that contains any reference to NSF Certification and take actions as
+required by the NSF Requirements, or the contract, if Certification has been suspended, withdrawn or
+terminated.
+• Upon the request of others, provide copies of the certification documents, in their entirety, or as
+specified by the NSF Requirements of the contract.
+• Assure that references to its product certification in documents, brochures or advertising comply with
+NSF Requirements.
+• Comply with any requirements contained in the scheme related to use of the NSF mark, and on
+information related to the product (i.e. marketing materials, websites).
+• Maintain a record of all complaints made known to the client relating to compliance with certification
+requirements and made these records available to NSF upon request.
+• Take appropriate action based on complaints received, and deficiencies found in Certified Product that
+affect compliance with certification requirements.
+o document actions taken
+• Inform NSF immediately of changes that may affect the clientʼs ability to conform to certification
+requirements as stated in the scheme or the contract.
+• The Company acknowledges that NSF holds various accreditations that require review, audit, and
+inspections by accreditation and oversight bodies, including advisory councils and similar boards or
+committees (“accreditation/oversight bodiesˮ). The Company agrees that such accreditation/oversight
+bodies may review, witness, and analyze any services and the associated data, information, and
+Z1
+
+--- page 40 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+Reports for the Services, whether at the premises of the Company, NSF, or elsewhere. To the extent
+required by such accreditation/oversight bodies with respect to the particular Services provided to the
+Company, the Company expressly consents that NSF may disclose to third parties the information
+about the Company or the C ompanyʼs products or services as directed by such accreditation/oversight
+bodies.
+Z2
+
+--- page 41 ---
+
+© 2025 NSF Certification Policies for NSF/ANSI 455
+
+--- page 42 ---
+
+Improving Human and Planet Health
+For more information, contact: 789 N. Dixboro Road Ann Arbor, MI 48105 USA
+standards@nsf.org nsf.org

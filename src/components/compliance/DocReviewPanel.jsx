@@ -41,8 +41,73 @@ function Row({ item, source, checked, onToggle }) {
   );
 }
 
+/**
+ * Where the registry disagrees with itself — computed server-side
+ * (doc-consistency.js), rendered as-told. Every finding names documents to
+ * LOOK at, not verdicts: this is the starting point for bringing the digital
+ * copies in line with the finalised paper, and a machine-made punch list that
+ * pretended to be a decision would just get ignored.
+ */
+function ConsistencyReview() {
+  const { data, loading, error } = useApiGet('/doc-review/consistency');
+  if (loading) return <p className="text-sm text-gray-500 py-4">Reading every document…</p>;
+  if (error) return <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>;
+  if (!data) return null;
+  const DOT = { critical: 'bg-red-500', warning: 'bg-amber-500', info: 'bg-gray-400' };
+  const docLine = (d) => `${d.doc_number || '(no number)'} — ${d.title}${d.status === 'draft' ? ' (draft)' : ''}`;
+  return (
+    <div className="border border-gray-200 rounded-xl bg-white">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <p className="text-sm font-semibold text-gray-900">
+          {data.findings === 0
+            ? `No inconsistencies found across ${data.documents_reviewed} documents.`
+            : `${data.findings} finding${data.findings === 1 ? '' : 's'} across ${data.documents_reviewed} documents`}
+        </p>
+        <p className="text-xs text-gray-500 mt-0.5">
+          A finding is a place to look, not a verdict — an unreferenced WI can be deliberate.
+          Fix the paper first, then bring the digital copy in line.
+        </p>
+      </div>
+      <div className="divide-y divide-gray-100 max-h-[65vh] overflow-y-auto">
+        {data.sections.filter(s => s.items.length > 0).map(sec => (
+          <div key={sec.key} className="px-4 py-3">
+            <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${DOT[sec.severity]}`} />
+              {sec.label} <span className="font-normal text-gray-400">({sec.items.length})</span>
+            </p>
+            <ul className="mt-1.5 space-y-1">
+              {sec.items.map((it, i) => (
+                <li key={i} className="text-xs text-gray-700">
+                  {sec.key === 'duplicate_numbers' && (
+                    <><span className="font-semibold">{it.number}</span> is carried by {it.documents.length} documents: {it.documents.map(docLine).join(' · ')}</>
+                  )}
+                  {sec.key === 'duplicate_titles' && (
+                    <><span className="font-semibold">“{it.title}”</span> appears on: {it.documents.map(docLine).join(' · ')}</>
+                  )}
+                  {(sec.key === 'dangling_references') && (
+                    <>{docLine(it.document)} cites <span className="font-semibold">{it.cites}</span>, which is not in the registry</>
+                  )}
+                  {(sec.key === 'references_to_retired') && (
+                    <>{docLine(it.document)} cites <span className="font-semibold">{it.cites}</span>, which is {it.cited_status}</>
+                  )}
+                  {['orphaned_wis', 'empty_shells', 'drafts', 'no_effective_date'].includes(sec.key) && docLine(it)}
+                  {sec.key === 'past_review' && <>{docLine(it)} — review was due {it.review_due}</>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        {data.findings === 0 && (
+          <p className="px-4 py-8 text-sm text-gray-500 text-center">The registry agrees with itself. Nothing to hand Daniela.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DocReviewPanel() {
   const [tab, setTab] = useState(null);
+  const [showConsistency, setShowConsistency] = useState(false);
   const [picked, setPicked] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -91,8 +156,8 @@ export default function DocReviewPanel() {
 
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 flex-wrap w-fit">
         {sources.map(s => (
-          <button key={s.key} onClick={() => { setTab(s.key); setPicked(new Set()); setMsg(null); }}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${active?.key === s.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <button key={s.key} onClick={() => { setTab(s.key); setShowConsistency(false); setPicked(new Set()); setMsg(null); }}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${!showConsistency && active?.key === s.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {s.label}
             {s.count > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold">
@@ -101,9 +166,15 @@ export default function DocReviewPanel() {
             )}
           </button>
         ))}
+        <button onClick={() => { setShowConsistency(true); setMsg(null); }}
+          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${showConsistency ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          Consistency Review
+        </button>
       </div>
 
-      {active && (
+      {showConsistency && <ConsistencyReview />}
+
+      {!showConsistency && active && (
         <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
           <div className="px-3 py-2.5 border-b border-gray-100 bg-gray-50/60 flex items-start gap-2 flex-wrap">
             <div className="min-w-0 flex-1">

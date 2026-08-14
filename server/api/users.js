@@ -69,6 +69,30 @@ router.get('/me', (req, res) => {
   res.json({ id: req.user.id, name: req.user.name, username: row.username || req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs, password_days_left: passwordDaysLeft(row.password_changed_at), password_expired: passwordExpired(row.password_changed_at) });
 });
 
+// The caller's drawn signature — fetched only when a signing surface needs it,
+// not on every /me (it's an image, and the shell doesn't want it).
+router.get('/me/signature', (req, res) => {
+  const row = getDb().prepare('SELECT signature_image FROM users WHERE id = ?').get(req.user.id);
+  res.json({ signature_image: row?.signature_image || null });
+});
+
+// Save the caller's drawn signature. Own signature only — there is no admin
+// path to set someone else's, because a signature drawn by someone else is
+// not a signature. Re-drawing replaces the CURRENT image; documents already
+// signed keep the snapshot they were signed with.
+router.post('/me/signature', (req, res) => {
+  const img = String(req.body?.image || '');
+  if (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(img)) {
+    return res.status(400).json({ error: 'The signature must be a drawn PNG or JPEG image.' });
+  }
+  if (img.length > 200_000) {
+    return res.status(400).json({ error: 'That signature image is too large — draw it again on the pad.' });
+  }
+  getDb().prepare("UPDATE users SET signature_image = ? WHERE id = ?").run(img, req.user.id);
+  logAudit(req.user, 'signature_saved', 'user', req.user.id, {}, null, null, req.user.name);
+  res.json({ ok: true });
+});
+
 // Let a user set their own default landing workspace.
 router.post('/me/home', (req, res) => {
   const w = req.body?.workspace === 'messages' ? 'messages' : 'fsqa';

@@ -59,7 +59,8 @@ const PATHS = [
   '/receiving', '/receiving/stats', '/receiving/checklists', '/receiving/next-inspection-no',
   '/receiving/checklist/form', '/film-inspection', '/film-inspection/form',
   // documents + training
-  '/documents', '/doc-review', '/controlled', '/training/courses', '/training', '/training/matrix', '/training/due',
+  '/documents', '/documents?doc_type=reference', '/doc-review', '/doc-review/consistency', '/controlled',
+  '/training/courses', '/training', '/training/matrix', '/training/due',
   '/certifications', '/policies', '/org', '/org/people',
   // office
   '/office/time', '/office/supply/orders', '/finance/ap', '/finance/ar',

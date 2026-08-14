@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -15,6 +15,7 @@ import LoginScreen from './components/LoginScreen.jsx';
 import AttentionBar from './components/AttentionBar.jsx';
 import ModuleBoundary from './components/ModuleBoundary.jsx';
 import InstallHelp from './components/InstallHelp.jsx';
+import SignatureModal from './components/common/SignatureCanvas.jsx';
 import SubmitWorkOrder from './components/SubmitWorkOrder.jsx';
 import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
 import ComponentKiosk from './components/kiosk/ComponentKiosk.jsx';
@@ -751,7 +752,7 @@ function ViewAsPickerModal({ onPick, onClose }) {
 }
 
 // Top-right account menu: name/avatar → View as / Change password / Sign out.
-function AccountMenu({ user, onChangePassword, onLogout, onViewAs, onInstallHelp }) {
+function AccountMenu({ user, onChangePassword, onLogout, onViewAs, onInstallHelp, onSignature }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -785,6 +786,11 @@ function AccountMenu({ user, onChangePassword, onLogout, onViewAs, onInstallHelp
           <button onClick={() => { setOpen(false); onChangePassword(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
             <KeyRound size={15} className="text-gray-400" /> Change password
           </button>
+          {onSignature && (
+            <button onClick={() => { setOpen(false); onSignature(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+              <PenLine size={15} className="text-gray-400" /> My signature
+            </button>
+          )}
           {!installEnvironment().standalone && (
             <button onClick={() => { setOpen(false); onInstallHelp(); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
               <Smartphone size={15} className="text-gray-400" /> Add to home screen
@@ -964,6 +970,10 @@ const HUB_TABS = {
     { id: 'sops', label: 'SOPs', render: () => <DocumentRegistry docType="sop" moduleId="sops" title="SOP Registry" typeLabel="SOP" /> },
     { id: 'work-instructions', label: 'Work Instructions', render: () => <DocumentRegistry docType="work_instruction" moduleId="work-instructions" title="Work Instructions" typeLabel="Work Instruction" /> },
     { id: 'job-descriptions', label: 'Job Descriptions', render: () => <DocumentRegistry docType="job_description" moduleId="job-descriptions" title="Job Descriptions" typeLabel="Job Description" /> },
+    // External standards the plant certifies against (NSF 306, NSF/ANSI 455,
+    // the GMP audit guide) — its own tab so they never read as the plant's own
+    // SOPs, seeded from server/assets/reference. Rides the sops grant.
+    { id: 'reference-library', label: 'Reference Library', render: () => <DocumentRegistry docType="reference" moduleId="sops" title="Reference Library" typeLabel="Reference" /> },
   ],
   // Forms 440-02 (knives/blades) and 703-01 (equipment/tools/chemicals) record
   // the same transaction — a person takes an item, brings it back, condition
@@ -1174,6 +1184,7 @@ function App() {
   const [homePref, setHomePref] = useState('fsqa');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
+  const [showSignature, setShowSignature] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
   // ReadyDoc feedback box — one click from anywhere in the app.
   // Docked chat: a slim Messages panel beside the modules (desktop split screen).
@@ -1584,6 +1595,7 @@ function App() {
           <OperatorView />
         </main>
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+        {showSignature && <SignatureModal onClose={() => setShowSignature(false)} />}
         {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
         <UpdateBanner />
       </div>
@@ -1739,6 +1751,7 @@ function App() {
           <OperatorView />
         </main>
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+        {showSignature && <SignatureModal onClose={() => setShowSignature(false)} />}
         {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
         <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
         <UpdateBanner />
@@ -1843,7 +1856,7 @@ function App() {
                   <Settings size={18} />
                 </button>
               )}
-              <AccountMenu user={user} onChangePassword={() => setShowChangePw(true)} onLogout={logout}
+              <AccountMenu user={user} onChangePassword={() => setShowChangePw(true)} onSignature={() => setShowSignature(true)} onLogout={logout}
                 onInstallHelp={() => setShowInstall(true)}
                 onViewAs={realUser?.role === 'admin' && !viewAs ? () => setShowViewAsPicker(true) : null} />
             </div>
@@ -2019,6 +2032,7 @@ function App() {
         </div>
       )}
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+        {showSignature && <SignatureModal onClose={() => setShowSignature(false)} />}
         {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
       {showViewAsPicker && <ViewAsPickerModal onPick={(u) => { setShowViewAsPicker(false); startViewAs(u); }} onClose={() => setShowViewAsPicker(false)} />}
       <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />

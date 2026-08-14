@@ -95,6 +95,7 @@ import { seedDilutionLog } from './server/dilution-log-seed.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
+import { seedReferenceLibrary } from './server/reference-seed.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath } from './server/middleware/auth.js';
 
@@ -1046,6 +1047,8 @@ runControlledSync(db).catch(err =>
 try {
   seedTrainingCourses(db);
   seedWorkInstructionCourses(db);
+  // The NSF standards the plant certifies against — Reference Library tab.
+  seedReferenceLibrary(db);
 } catch (err) {
   console.error('[seed] Error seeding training courses (non-fatal):', err.message);
 }

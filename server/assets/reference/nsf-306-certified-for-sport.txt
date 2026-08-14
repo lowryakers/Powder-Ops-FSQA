@@ -1,0 +1,2234 @@
+
+--- page 1 ---
+
+NSF Nutrition & Wellness Program
+Certification Guideline 306
+Certified for Sport®
+January 9, 2026
+NSF Confidential
+
+--- page 2 ---
+
+Since 1944, NSF International
+(NSF) has stood at the forefront
+of global efforts to improve
+human and planet health.
+As an independent, internationally recognized
+organization, we play a pivotal role in the
+development of robust public health standards.
+NSF engages in the rigorous testing, auditing,
+and certification of an array of products and
+services. The NSF mark serves as an emblem
+of assurance, signifying to consumers, retailers,
+and regulatory bodies that our certified
+products meet or exceed requisite standards.
+These guidelines are subject to revision.
+Contact NSF to confirm this revision is current.
+Users of these guidelines may request clarifications and
+interpretations, or propose revisions by contacting:
+NSF Nutrition & Wellness
+789 North Dixboro Road, PO Box 130140
+Ann Arbor, Michigan 48113-0140 USA
+Phone: (734) 769-8010 Email: info@nsf.org
+Web: < nsf.org >
+
+--- page 3 ---
+
+NSF Certification Guideline 306
+Certified for Sport® Program
+Guideline Developer
+NSF
+i
+
+--- page 4 ---
+
+Prepared by
+NSF Nutrition & Wellness
+Adopted
+November 2005
+Revisions
+May 2006 August 2008 November 2009
+April 2012 August 2013 December 2013
+September 2014 February 2015 September 2015
+March 2016 December 2016 August 2017
+November 2018 June 2021 October 2021
+April 2022 January 2023 January 2026
+Published by
+NSF, PO Box 130140, Ann Arbor, Michigan 48113-0140, USA
+For inquiries regarding this guideline, please reference the designation: “NSF Certification Guideline for
+Certified for Sport® ˮ
+Copyright 2026 NSF International
+Unless otherwise specified, no part of this publication may be reproduced or utilized in any form or by any
+means without permission in writing from NSF.
+Printed in the United States of America.
+ii
+
+--- page 5 ---
+
+Contents
+1 Scope 1
+1.1 Exclusions from program 1
+1.2 Certification Policies 1
+2 Normative references 1
+3 Definitions 2
+4 Certified Product Categories 6
+4.1 Dietary Supplement or Dietary Ingredient 6
+4.2 Functional Food, Beverage or Medical Food 6
+4.3 Personal Care Product 6
+5 Product documentation submission requirements 6
+6 Audits 6
+6.1 GMP Certification 6
+6.2 GMP for Sport Registration 7
+7 Sampling and Testing 8
+7.1 Sampling for Certification 8
+7.2 Testing Samples for Banned Substances 8
+Annex A Certification Policies for NSF Certified for Sport® Program A1
+Section I. General Policies for All Products 1
+Section II. Program specific policies for NSF Certified for Sport® Program 15
+Annex B NSF Certification Mark options B1
+Annex C NSF Athletic Banned Substance Screen C1
+Annex D Health Canada – Canadian policy D1
+Annex E Special Terms and Conditions for Services Relating to Cannabis Sativa L. Ingredients
+(“CSL Ingredientsˮ) or Products Containing CSL Ingredients (“CSL Productsˮ) E1
+Annex Z Certification agreement Z1
+iii
+
+--- page 6 ---
+
+This page is intentionally left blank.
+iv
+
+--- page 7 ---
+
+Foreword
+The purpose of the NSF Certified for Sport® Program Certification Guideline is to serve as an evaluation tool
+for analyzing dietary supplements, personal care and functional foods. Certification to this Guideline serves as
+a communication tool between manufacturers of ingredients and finished products, retailers, amateur and
+professional sports organizations, and consumers. The Guideline provides assurance that the product does
+not contain detectable levels of substances that are found in the Banned Substance list as defined in Annex C .
+This Guideline also includes evaluation criteria for product identity and marker constituents and assures the
+product does not contain unacceptable microbes, heavy metals, or pesticides by establishment of Certification
+to NSF/ANSI 173 Dietary Supplements, NSF 527 Certification Guideline for Personal Care or NSF 229
+Certification Guideline for Functional Foods, Beverages, and Ingredients as a requisite for Certification to this
+Guideline.
+This edition of the guideline contains the following revisions, effective January 9, 2026:
+2 Added reference to NSF/ANSI 527.
+3 Revised “Batchˮ, “Lotˮ and “Functional Ingredientˮ definitions.
+3 Added definitions for “componentˮ, “Nutritional or food supplementsˮ, “Nutritional ingredientˮ and
+“Production cycleˮ.
+4.3 Added NSF/ANSI 527 as a requirement.
+6.2 Explicitly listed ingredients which exclude manufacturers from GMP for Sport eligibility.
+Terms in the Program Specific Policies definitions defined elsewhere in the guideline were removed.
+Program Specifics Policies were rearranged, and new policies were added.
+PP – 1 Conditions of Certification was updated to add NSF 527.
+PP – 2 Acceptance of another Certification Body for NSF/ANSI 173 was added.
+PP – 3 Designation of Certified and non-certified products was updated to add requirement for reasonable
+access for purchase.
+Removed App Notification Policy.
+PP – 5 General format – (Nsfport.com and Certfiied for Sport App) was updated to revise image requirements.
+PP – 6 Maintenance of lot numbers in the NSF Official listings was updated to revise lot number and Public
+Notice requirements.
+PP – 7 Audits was updated to add facility compliance requirement.
+PP – 9 Samples for certification testing was revised to add testing schemes.
+PP – 10 Lot by lot scheme explicitly added.
+PP – 11 Target testing scheme was updated to revise product minimums. Added in-market product option for
+initial qualification.
+v
+
+--- page 8 ---
+
+PP – 13 Periodic production theme was added added. Fulfills implementation of Deviation 2025-011.
+PP – 14 Added Protein Bar and Protein Beverage Scheme.
+PP – 15 Added policy for Another Name For (ANF).
+PP – 16 Added policy for Product Multipack and Combination Packs.
+PP – 18 Company retain samples of Certified Products was updated to revise Company retains.
+PP – 19 NSF retain of Certified Products was updated to revise policy for NSF retains.
+PP – 20 Enforcement action for noncompliance was updated to add NSF 527 and NSF/ANSI 527.
+PP – 21 Noncompliance to NSF/ANSI 173, NSF 527, NSF/ANSI 527 and NSF 229 was added.
+PP – 23 Non-compliance to testing scheme was added.
+PP – 24 NSF Certification Marks was updated to add option for mark use implementation period.
+PP – 25 Labeling and literature requirements was updated to add Personal care to policy scope.
+Annex B Updated marks
+Annex C:
+Deviation 2025-032 to NSF 306 was implemented, changing the report thresholds for AICAR, octopamine, N-
+methylphenylethylamine and N,N-dimethylphenylethylamine to 10000 ng/g, 200 ng/g, 500 ng/g and 600 ng/g
+respectively.
+Deviation 2025-012 to NSF 306 was implemented, adding an endogenous threshold for AICAR at 500 mcg per
+day. The Guideline will be updated to reflect the new thresholds upon the next publication.
+Deviation 2025-026 to NSF 306 was implemented, changing the report threshold for GHB to 20000 ng/g.
+Added the substances, Higenamine, Daprodustat, Desidustat, Enarodustat, Roxadustat, Vadadustat, BAY 87-
+2243, KC7F2, FG-2216, Tolvaptan, Vosilasarm (RAD140), 17a-Methyl-1,4-androstadiene-3,17b-diol, 1-
+Androsterone enanthate, 2,17a-Dimethylandrost-1,4-dien-17b-ol-3-one and 3b-Hydroxy-estr-4-en-17-one.
+Suggestions for improvement of this guideline are welcome. Comments should be sent to standards@nsf.org ,
+or c/o NSF, Standards Department, PO Box 130140, Ann Arbor, Michigan 48113-0140, USA.
+vi
+
+--- page 9 ---
+
+© 2026 NSF NSF Certification Guideline 306
+NSF Certification Guideline
+for Nutrition & Wellness –
+Certification Guideline 306
+Certified for Sport® Program
+1 Scope
+This Guideline contains testing, auditing, quality assurance, traceability, and product risk management
+requirements for dietary supplements and dietary ingredients, functional foods and beverages, medical foods,
+and personal care products assuring that the product does not contain detectable levels of Banned
+Substances above the limits as defined in Annex C . This Guideline also references established evaluation
+criteria for product identity and marker constituents and assures that the product does not contain
+unacceptable quantities of unwanted contaminants, such as microorganisms, heavy metals, or pesticides (as
+applicable).
+1.1 Exclusions from program
+Products and ingredients deemed a hazard to public health or safety by a regulatory agency having jurisdiction
+shall be excluded from the scope of this program. NSF also holds the right to exclude from certification any
+products containing compounds it deems to be a significant public health threat based on scientific data.
+Products and ingredients containing substances Banned or Prohibited in sport shall also be excluded from the
+scope of this program whether those are intentionally or unintentionally added to the product or housed at the
+facility.
+1.2 Certification Policies
+The Company shall comply with all NSF Certification Policies established in Annex A of this guideline.
+2 Normative references
+The following documents contain provisions that, through reference, constitute provisions of this document. At
+the time of publication, the editions listed below were valid. All standards are subject to revision, and parties
+are encouraged to investigate the possibility of applying the recent editions of the documents indicated below.
+The most recently published edition of the document shall be used for undated references.
+1
+Fair Packaging and Labeling Act, 15USC §1451 -1461
+2
+Public Health Security and Bioterrorism Preparedness and Response Act of 2002
+1
+Nutrition Labeling and Education Act of 1990, as amended
+2
+FDA, Food and Drug Administration Modernization Act of 1997
+1
+U.S. Government Printing Office, 710 North Capitol Street NW, Washington, DC 20402 <www.gpo.gov>
+2
+U.S. Food and Drug Administration, 5600 Fishers Lane, Rockville, MD 20857 -0001 <http://www.fda.gov>
+1
+
+--- page 10 ---
+
+FDA, Dietary Supplements Health and Education Act of 1994, (an amendment to the Federal Food, Drug and
+2
+Cosmetic Act): Public Law 103 -417 – October 25, 1994
+NSF/ANSI 173 , Dietary Supplements
+NSF/ANSI 455, NSF/ANSI 455-2 Good Manufacturing Practices for Dietary Supplements, NSF/ANSI 455-3 Good
+Manufacturing Practices for Cosmetics, NSF/ANSI 455-4 Good Manufacturing Practices for Over-the-Counter Drugs
+NSF Certification Guideline 527, Personal Care Products
+NSF/ANSI 527, Personal Care Products
+NSF 229 Certification Guideline for Functional Foods, Beverages, and Ingredients
+NSF Certification Policies for NSF/ANSI 455
+NSF GMP Registration Polices for Dietary Supplement, Dietary Ingredient, and Functional Food Facilities
+NSF Health Sciences Product Certification Policies
+3
+The World Anti- Doping Code International Standard Prohibited List
+4
+MLB Joint Drug Prevention Program, Prohibited Substances (Section 2)
+National Football League Policy on Performance - Enhancing Substances, List of Prohibited Substances ( Annex
+5
+A )
+3 Definitions
+Terms used in this guideline that have a specific technical meaning are defined here.
+Batch or Pre-Packaged Lot : A specific quantity of a finished product or other material that is intended to be
+subsequently packaged into different finished products. The material is intended to have uniform character
+and quality, within specified limits, and is produced during a specified time period on a single line according to
+a single manufacturing record during the same cycle of manufacture. These quantities are numbered or
+otherwise differentiated to allow for traceability by either the facility or outside parties.
+Banned Substance/Prohibited Substance : Any substance prohibited by Annex C of this Guideline, WADA
+3 4
+Prohibited List , NFL List of Prohibited Substances6 and/or MLB Joint Drug Prevention Program .
+Component : Any ingredient intended for use in the manufacture of a dietary ingredient or dietary supplement,
+including those that may not appear in such finished product.
+3
+The World Anti- Doping Code International Standard Prohibited List < https://www.wada-ama.org
+4
+MLB Joint Drug Prevention Program, Prohibited Substances (Section 2)
+<http://www.mlbplayers.com/ViewArticle.dbml?DB_OEM_ID=34000&ATCLID=211078494>
+5
+National Football League Policy on Performance - Enhancing Substances, List of Prohibited Substances (Annex A)
+https://www.nflpa.com/active-players/drug-policies
+2
+
+--- page 11 ---
+
+Controlled Human Oral Studies : Phase I Clinical study with healthy normal patients.
+Cosmetic : A product that:
+• is an “article intended to be rubbed, poured, sprinkled or sprayed on, introduced into, or otherwise
+applied to the human body, or any part thereof, for cleansing, beautifying, promoting attractiveness, or
+altering the appearance...ˮ [FD&C Act, Sec. 201(i) ]
+• includes, but is not limited to, products such as: skin moisturizers, perfumes, lipsticks, fingernail
+polishes, eye and facial makeup preparations, cleansing shampoos, permanent waves, hair colors, oral
+hygiene, and deodorants; as well as any substance intended for use as a component of a cosmetic
+product.
+Dietary Ingredient : An ingredient intended for use as, or used in, a dietary supplement that is a vitamin,
+mineral, herb, or other botanical; amino acid; a dietary substance for use by humans to supplement the diet by
+increasing the total dietary intake; or a concentrate, metabolite, constituent, extract, or combination of any of
+the foregoing ingredients.
+Dietary Supplement : A product (other than tobacco) that:
+• is intended to supplement the diet and bears or contains one or more of the following dietary
+ingredients: a vitamin; a mineral; an herb or other botanical; an amino acid; a dietary substance for use
+by humans to supplement the diet by increasing the total dietary intake; or a concentrate, metabolite,
+constituent, extract, or combinations of these ingredients;
+• is intended for ingestion in pill, capsule, tablet, powder, or liquid form;
+• is not represented for use as a conventional food or as the sole item of a meal or diet;
+• is labeled as a “dietary supplementˮ or has the word “dietaryˮ deleted and replaced by the name of the
+dietary ingredient(s) in the product (e.g., calcium supplement) or an appropriately descriptive term
+indicating the type of dietary ingredients that are in the product (e.g., herbal supplement with vitamins);
+• does include an article that is approved as a new drug under section 505, certified as an antibiotic
+under section 507, or licensed as a biologic under section 351 of the Public Health Service Act (42
+U.S.C. 262) and was, prior to such approval, certification, or license, marketed as a dietary supplement
+or as a food unless the Secretary (U.S. Department of Health and Human Services, U.S. FDA) has
+issued a regulation, after notice, and comment, finding that the article, when used as or in a dietary
+supplement under the conditions of use and dosages set forth in the labeling for such dietary
+supplement, is unlawful under section 402(f), and does not include an article that is approved as a new
+drug under section 505, certified as an antibiotic under 507, or licensed as a biologic under section 351
+of the Public Health Service Act (42 U.S.C. 262) or an article authorized for investigation as a new
+drug, antibiotic, or biological for which substantial clinical investigations have been instituted and for
+which the existence of such investigations has been made public, which was not before such approval,
+certification, licensing, or authorization marketed as a dietary supplement or as a food unless the
+Secretary, at the Secretaryʼs discretion, has issued a regulati on, after notice and comment, finding that
+2
+the article would be lawful .
+DSHEA (Dietary Supplement Health and Education Act) : The Dietary Supplement Health and Education Act of
+1994, an amendment to the Federal Food, Drug and Cosmetic Act (FD&C): Public Law 103 -417 – October 25,
+2
+1994 .
+Finished Product : A product requiring no further processing prior to sale to the consumer.
+Functional Food : Foods containing one or more biologically active food components or ingredients added at a
+concentration known to enhance healthful diet beyond their basic nutritional functions. For the purposes of this
+guideline Functional Foods and Beverages, Medical Foods and Beverages and Nutritional Supplements are
+3
+
+--- page 12 ---
+
+collectively referred to as “Functional Foods ˮ except where otherwise noted.
+Functional Ingredient : An ingredient, concentrate, metabolite, constituent, or extract in a functional
+food/beverage that is a physiologically active component with some identified value leading to health or
+performance benefits, including reduced risk for disease. For the purposes of this guideline, functional
+ingredients, and nutritional ingredients will be collectively referred to as “functional ingredients ˮ except where
+noted.
+• Class I (functional ingredient): An added nutrient.
+• Class II (functional ingredient): A naturally occurring (indigenous) nutrient.
+Good Manufacturing Practices (GMP) : A system of procedures and documentation, written or analytical, to
+ensure that the product produced has the identity, strength, composition, quality and purity that it is represented
+2
+to possess.
+Label Claim : The written, printed, or graphic matter upon the immediate container of a food or supplement or
+additional material associated with the product that provides information on nutrient content, ingredients,
+health and nutrient claims.
+Lot : A specific quantity of material that is intended to have uniform character and quality, within specified
+limits, and is produced during a specified time period on a single line according to a single manufacturing
+record during the same cycle of manufacture. These quantities are numbered or otherwise differentiated to
+allow for traceability by either the facility or outside parties. A lot can be continuously produced, provided the
+components do not change (source and lot), the production equipment use is exclusive and there is no
+interruption in production.
+Lot, Pre-package lot, Batch, or Control Number: Any distinctive combination of letters, numbers, or symbols,
+or any combination of them, from which the complete history of the manufacture, processing, packing,
+holding, and distribution of a batch or lot of product or other material can be determined.
+Manufacture or Manufacturing : All operations associated with the production, quality assurance and product
+safety of a dietary supplement, dietary ingredient, or functional food, and may also include one or more
+additional production stages including packaging, labeling, testing, or distribution.
+Marker Constituent : A compound present in a botanical that is characteristic of the botanical and used for
+technical purposes and that allows for quantification of the botanical ingredients incorporated into the product,
+e.g., identification of the botanical or process control.
+Natural Health Product (Canada) (NHP) : Under the Natural Health Products Regulations, which came into
+effect on January 1, 2004, natural health products (NHPs) are defined as:
+• vitamins and minerals
+• herbal remedies
+• homeopathic medicines
+• traditional medicines such as traditional Chinese medicines
+• probiotics, and
+• other products like amino acids and essential fatty acids.
+NHPs must be safe for consideration as over-the-counter products, be available for self-care and self-
+selection and not require a prescription to be sold.
+4
+
+--- page 13 ---
+
+NSF/ANSI 173 Dietary Supplements : The Standard referenced in these Guidelines that covers the certification
+of dietary supplements by establishing evaluation criteria for product identity and marker constituents and
+assuring that the product does not contain unacceptable quantities of unwanted contaminants, such as
+microbes, heavy metals, or pesticides.
+NSF 229 Certification Guideline for Functional Foods, Beverages, and Ingredients : The Guideline referenced
+in this document covers the certification of Functional Food, Beverages, and Ingredients products by
+establishing evaluation criteria for product identity and marker constituents and assuring that the product does
+not contain unacceptable quantities of unwanted contaminants, such as microbes, heavy metals, or pesticides.
+Nutritional or food supplements : A product (other than tobacco) that:
+• claim to have specific health functions or are intended to supplement vitamins and minerals. It is
+suitable for specific people to have, has the function of regulating the body, does not treat diseases for
+the purpose, and does not produce any acute, subacute or chronic harm to the human body
+• is intended to supplement the diet that bears or contains one or more of the following nutritional
+ingredients: a vitamin; a mineral; an herb or other botanical; an amino acid; a probiotic; a nutritional
+substance for use by humans to supplement the diet by increasing the total daily intake; or a
+concentrate, metabolite, constituent, extract, or combinations of these ingredients
+• is intended for ingestion in pill, capsule, tablet, powder, gel, or liquid form
+• is not represented for use as a conventional food or as the sole item of a meal or diet
+• is labeled as a “Nutritional Supplementsˮ or has the word nutritional deleted and replaced by the name
+of the nutritional ingredients in the product (e.g. calcium supplement) or an appropriately descriptive
+term indicating the type of nutritional ingredients that are in the product (e.g. herbal supplement with
+vitamins)
+• the naming convention “nutritional supplementsˮ is intended to represent supplements marketed and
+sold in Chinaʼs regulatory jurisdiction
+• the naming convention “food supplementsˮ is intended to represent supplements marketed and sold in
+Brazil, EU and UK regulatory jurisdictions.
+Nutritional ingredient : An ingredient intended for use or used in a Nutritional Supplement that is a vitamin,
+mineral, herb, or other botanical; an amino acid; a nutritional substance for use by humans to supplement the
+diet by increasing the total nutritional intake; or a concentrate, metabolite, constituent, extract, or combination
+of any of the foregoing ingredients.
+Over-the-Counter (OTC) Drug : Articles intended for use in the diagnosis, cure, mitigation, treatment, or
+prevention of disease" and "articles (other than food) intended to affect the structure or any function of the
+body of man or other animals" [FD&C Act, sec. 201(g)(1)]. Cosmetics in this category include anti-acne
+products, toothpaste and anticavity products, antimicrobial and antifungal topicals, antiperspirants,
+astringents, corn and callus removers, dandruff products, hair growth/loss products, nail biting products,
+psoriasis products, skin bleaching products, sunscreen, topical analgesics and wart removers. OTC drugs may
+make cosmetic claims and then must comply with correct Inactive ingredient listing under Drug Facts
+regulations. All OTC drugs must comply with PL 109 -462.
+Personal Care Product : A cosmetic, soap, or OTC Drug product applied externally that is for use in such
+activities as cleansing, toning, moisturizing, hydrating, exfoliating, conditioning, anointing, massaging,
+coloring/decorating, soothing, deodorizing, perfuming, and styling.
+Production cycle : The continuous sequence of production steps a product (or product family) undergoes from
+its raw material blend through the final packaging process of the product within a week on exclusive
+equipment.
+5
+
+--- page 14 ---
+
+Soap: defined as products that consist primarily of alkali salts of fatty acids, making no label claim other than
+cleansing of the human body, and sold and labeled only as soap.
+Specifications : The quality parameters to which the Products or materials must conform and that serve as a
+basis for quality evaluation.
+4 Certified Product Categories
+4.1 Dietary Supplement or Dietary Ingredient
+A Company may achieve certification of a Dietary Supplement or Dietary Ingredient, after meeting the
+following requirements:
+• all requirements of this Guideline shall be met; and
+• shall achieve and maintain all requirements of NSF/ANSI 173.
+4.2 Functional Food, Beverage or Medical Food
+A Company may achieve certification of a Functional Food, Beverage or Medical Food after meeting the
+following requirements:
+• all requirements of this Guideline shall be met; and
+• shall achieve and maintain all requirements of NSF 229.
+4.3 Personal Care Product
+A Company may achieve certification of a Personal Care Product, after meeting the following requirements:
+• all requirements of this Guideline shall be met; and
+• shall achieve and maintain all requirements of NSF/ANSI 527 or Guideline 527.
+5 Product documentation submission requirements
+The Company shall provide the complete documentation necessary to certify the Dietary Supplement, Dietary
+Ingredient, Functional Food, Beverage, Personal Care or Medical Food to the applicable NSF Standard or
+Guideline in addition to the documentation necessary for certification to NSF Guideline 306.
+6 Audits
+6.1 GMP Certification
+A GMP audit of the location shall be required prior to granting GMP Registration and subsequently certification
+to the applicable Standard(s). Each audited location must be fully operating and producing product during the
+audit. The scope of the GMP audit may be found in the applicable Standard or Guideline (i.e. NSF/ANSI 173 § 8,
+NSF/ANSI 455, or NSF 229 § 8).
+6
+
+--- page 15 ---
+
+6.2 GMP for Sport Registration
+GMP for Sport Registration may be granted in addition to GMP Registration or Certification to facilities who
+manufacturer and/or package Dietary Supplements, Dietary Ingredients and/or Functional Foods provided they
+fulfill the requirements detailed in this section. Warehouse and Distribution facilities are excluded from GMP for
+Sport Registration scope.
+Registration Marks and usage for this program may be found in Annex A of the NSF GMP Registration Policies
+for Dietary Supplements, Dietary Ingredient, and Functional Food Facilities or Certification Policies for
+NSF/ANSI 455.
+6.2.1 Manufacturer shall not have any Banned/Prohibited Substances in their facility. This includes
+manufacturing, receiving or warehousing.
+6.2.1.1 Manufacturers housing ingredients derived from Cannabis sativa, Cannabis indica, Cannabis spp., are
+excluded from GMP for Sport eligibility. Ingredients derived from hemp seed (hulled hemp seed, hemp seed
+protein and hemp seed fixed oil) are exempt from this requirement.
+6.2.1.2 Manufacturers housing ingredients derived from Deer Velvet Antler are excluded from GMP for Sport
+eligibility.
+6.2.1.3 Manufacturers housing ingredients derived from colostrum are excluded from GMP for Sport eligibility.
+6.2.1.4 Manufacturers housing DHEA (dehydroepiandrosterone) are excluded from GMP for Sport eligibility.
+6.2.1.5 Manufacturers housing ingredients derived from Adrenal Glands are excluded from GMP for Sport
+eligibility.
+6.2.1.6 Manufacturers housing ingredients that may contain banned substances as an adulterant may be
+excluded from GMP for Sport eligibility unless controls can be demonstrated to NSFʼs sole satisfaction.
+6.2.2 Manufacturer shall ensure that references to the following documents (“listsˮ) are incorporated as part of
+applicable operating procedures and prohibit any Banned Substance/Prohibited Substance referenced therein
+from entering the facility:
+6.2.2.1 Annex C of NSF 306-Certification Guideline for Certified for Sport® Program.
+6.2.2.2 National Football League/ National Football League Players Association Banned Substances List;
+4
+6.2.2.3 Major League Baseball Prohibited Substances ;
+3
+6.2.2.4 World Anti- Doping Agency (“WADAˮ) Prohibited List .
+6.2.3 Manufacturer shall have documented procedures to ensure the following requirements are met:
+6.2.3.1 Manufacturer shall review, the Banned/Prohibited Substance lists for changes annually at minimum. All
+additions shall promptly be incorporated into the Manufacturerʼs controls to prohibit these substances from
+being manufactured, received or warehoused at the location.
+6.2.3.2 Manufacturer shall have procedures ensuring all materials purchased are not on the Banned/Prohibited
+Substances lists and document execution of those procedures.
+7
+
+--- page 16 ---
+
+6.2.3.3 Manufacturer shall provide necessary document(s) upon request by NSF to ensure that Manufacturerʼs
+practices conform to the most recent versions of the lists.
+6.2.3.4 Manufacturer shall promptly notify NSF in writing of any changes that impact the manufacturerʼs ability
+to comply with any of the GMP for Sport requirements.
+6.2.3.5 Upon request by NSF, Manufacturer shall assist NSF in obtaining all documents requested from such
+ingredient suppliers, including obtaining affidavits about practices, substances, and ingredients.
+7 Sampling and Testing
+7.1 Sampling for Certification
+The Company shall submit the requested quantity of test samples to NSF to fulfill test requirements under the
+applicable Standard or Guideline, in addition to the Athletic Banned Substance testing required for certification
+to NSF Guideline 306.
+7.2 Testing Samples for Banned Substances
+Products for which certification under NSF Guideline 306 is sought shall be tested for all substances on the
+Banned Substances List (see Annex C ).
+NSF shall test samples utilizing appropriate methodology that may include Gas Chromatography-Mass
+Spectrometry (GCMS), Liquid Chromatography - Mass Spectrometry (LCMS), High Performance Liquid
+Chromatography (HPLC), and/or immunoassay techniques (e.g., ELISA ). Testing shall be performed on Pre-
+Packaged product, finished product, ingredients, and/or under Controlled Human Oral Studies in which the blood
+or urine is analyzed. Specific preparation and analysis methods shall be validated for product sample matrices.
+Detection levels of specific compounds shall be determined by the methodology and the product sample matrix.
+8
+
+--- page 17 ---
+
+Annex A
+Certification Policies for NSF Certified for Sport® Program
+Section I. General Policies for All Products
+Introduction
+NSF offers Certification of products to any Company, subject to the requirements of the general and program-
+specific policies and any annexes attached hereto, including but not limited to Annex Z .
+The general policies (Section I) apply to all products being Certified against any Standard, within the scope of
+an NSF Certification program. There are additional program-specific policies (Section II) that further define
+requirements under each NSF Certification program. The general and program specific policies shall be
+considered in their entirety and shall be applied within the context of the standard referenced in the Contract.
+For clarity and ease of reference, these policies are presented as individually numbered items with appropriate
+headings.
+In the event of a conflict, the general policies take precedence over program policies.
+Definitions
+Certified Product : Product authorized by NSF for Certification and use of the Mark.
+Certification : NSF determination that adequate confidence is achieved that a duly identified product is in
+conformity with all applicable NSF requirements. For Verification schemes, replace the word “Certificationˮ
+with “Verificationˮ and for “Registrationˮ schemes, replace the word “Certificationˮ with “Registrationˮ
+Note . The terms “listingˮ or “listedˮ or “certifiedˮ are synonymous with certification.
+Certification Services : Any work that NSF performs as part of the process for applying, achieving or
+continuing Certification.
+Company : The entity executing the contract to seek Certification Services.
+Compliance : Conformance with all NSF Requirement(s).
+Contract : The authorized written agreement with NSF for Certification Services.
+Corrective action/preventive action (CAPA) : An investigation into any noncompliance to expected or desired
+outcome that identifies the underlying root cause or reason the noncompliance happened, determines
+corrective action to restore compliance and preventive action to ensure the noncompliance does not recur.
+Distributor : The distributor is responsible for issuing catalogues and handling sales functions for the brand.
+The distributor has direct interaction with the retailer or purchasing customer.
+Location : Any point of final production or assembly. Multiple locations that can be audited in one audit day
+(eight hours) may be considered one location.
+Mark : An NSF trademark designated for the applicable Certification programs and used to represent
+Certification.
+New Product : Products manufactured, assembled, added or implemented after the date of Certification.
+Noncompliance : Lack of conformance with any NSF Requirement.
+A1
+
+--- page 18 ---
+
+NSF : NSF International or its subsidiaries and affiliates.
+NSF Requirements : Requirements of the relevant Standards, scheme, or program including but not limited to
+the general and program specific policies, requirement documents and any agreements or contracts upon
+which NSFʼs Certification are based. In all instances where this term is used, it is understood this means the
+requirements that are appropriate and applicable to the specific Product.
+Private labeling : Manufacture of a product by one company for sale under another companyʼs brand.
+Product : Any good, equipment, component, system, service, material, location, compound, or ingredient
+covered by a Standard for which NSF offers Certification, including those made on the behalf of another
+manufacturer or those distributed by companies other than the manufacturer.
+Public Notice : Distribution of a written notice of non-compliance.
+Standard : The document that is the basis for the Certification. This document may be an NSF Standard or
+protocol, an NSF/ANSI Standard, another voluntary standard, an NSF criteria or other criteria, a government
+regulation, or other specifications.
+Subcontract Laboratory (SCL) : A laboratory that has been evaluated and contracted by NSF to perform testing
+for NSF in accordance with NSF Requirements and procedures.
+Authorization for NSF Certification
+GP – 1 Eligibility
+A company with Products covered by a Standard for which NSF offers Certification is eligible to seek
+Certification from NSF.
+GP – 2 Application
+Application materials provided by NSF shall be completed by the Company for each physical address where
+Certification Services are requested.
+GP – 3 Contract
+A contract shall be in place with the legal entity receiving Certification. A Companyʼs subsidiaries and/ or
+affiliates may not utilize the Companyʼs Contract unless bound by the Contract and approved by NSF. NSF may
+require separate Contracts. If a Company seeks Certification of Product(s) under more than one NSF
+Certification program, NSF may require separate Contracts for each program.
+In addition to the Contract, the Company shall abide by the terms of the NSF Requirements and any annex,
+appendix, schedule, etc. attached hereto and as such, are incorporated herein by reference.
+GP – 4 Notification of Certification and authorization for use of the Mark
+The Company shall be advised in writing of the Certification, and the Certification may be made public by NSF
+or as otherwise specified by the NSF Requirements. If applicable, upon receipt of notification, the Company is
+authorized to use the Mark in connection with Certified Product(s) as outlined in these Policies and the NSF
+Requirements. The Company may be required to enter into a separate license agreement with a third party,
+such as a scheme owner, for use of the applicable Mark.
+A2
+
+--- page 19 ---
+
+The Company may not use the Mark in any way until receipt of written authorization from NSF. Unauthorized
+use of the Mark is prohibited. In the event that NSF determines that a Product is not in compliance with NSF
+Requirements, use of the Mark is not authorized. NSF may withdraw authorization to use the Mark at any time.
+The Company agrees that the Mark, NSF logo and NSF name (“NSF IPˮ) are the sole property of NSF and
+nothing in these Policies or the Contract transfer any ownership of the NSF IP to the Company. The Company
+further represents and warrants that the Company shall not (1) register or attempt to register any NSF IP or
+anything which encompasses or incorporates the NSF IP, (2) claim or otherwise represent that the Company
+has any right, title or interest in the NSF IP, (3) give permission for any third party to use the NSF IP unless
+otherwise permitted in writing by NSF, or (4) do anything that is prejudicial to the interest of NSF in or to the
+NSF IP.
+GP – 5 Transfer of authorization for Certification and use of the Mark
+Upon request and with documentation of continued compliance with all applicable NSF Requirements, NSF, in
+its sole discretion, may approve the transfer of the Contract and respective Certification of specific Products to
+another Company for the purpose of a name change, change of ownership, or change of a location provided
+that the transfer is permitted by the Standard and the Company, and the new Company execute all required
+documents from NSF.
+GP – 6 NSF acknowledgment of Certified Products
+Certified Products shall bear the Mark or be otherwise represented as Certified as described in the program
+specific policies. For physical Certified Products that do not bear the Mark (e.g. not a system, service, or
+location), a statement shall be include d in the Official Listing indicating how the Product will be represented as
+being Certified.
+When a Certified Product is sold with any non-certified product, the Company shall clearly indicate in a
+manner visible at minimum at the point of sale, that the non-Certified product has not been evaluated to the
+respective Standard. NSF reserves full discretion in determining acceptability of the delineation between
+Certified Product and non-certified product.
+GP – 7 Use of the Mark for products shown in the Official Listing
+The Company shall represent as Certified only Products that are in compliance with all applicable NSF
+Requirements. Products may not be represented as Certified until the trade designation or model designation
+appears in the Companyʼs Official NSF Listing.
+Certification shall only be represented as specifically authorized by NSF. The NSF Product marking, and
+advertising shall not directly or indirectly represent, imply, or claim an NSF Certification for an end use
+application for which it is not Certified by NSF.
+Failure to abide by the NSF Requirements in relation to usage of the Mark and claims may result in
+enforcement action including, but not limited to, withdrawal of Certification, and Public Notice.
+GP – 8 Trade designations
+A Company shall not use the letters “NSFˮ in its trade designation or unique identifier (e.g. name, model
+number, or other identification assigned by the Company) for a Certified or non-Certified Product, unless prior
+written authorization from NSF allows otherwise.
+A Company shall not have a trade designation for a Certified Product that directly or indirectly states or implies
+an end use application for which the Product is not Certified.
+A3
+
+--- page 20 ---
+
+NSF shall review any trade designation that references all or a portion of the designation of a Standard (e.g.
+“51ˮ for NSF 51, “C900ˮ or “AWWA C900ˮ for AWWA C900), or official regulation (e.g. the Codex Alimentarius)
+before use by the Company. NSF in its sole discretion shall determine whether the use of any trade
+designation reference is authorized. NSF may include information about the scope of the NSF Certification to
+any Standards or regulations referenced in a trade designation in the Productʼs Official Listing.
+GP – 9 Use of the Mark at authorized Locations
+The Mark shall be placed on Products only at Locations authorized by NSF, unless prior written authorization
+from NSF permits placement at another location.
+GP – 10 NSF brand
+NSFʼs iconic blue circle serves as the logo and visual representation of the NSF brand. The NSF brand
+represents NSF as an organization and is used by NSF to advertise and promote services and certifications.
+The NSF brand shall not be used in the form of a Certification Mark or to promote Certification unless
+permitted by NSF Policies.
+GP – 11 Product modification
+The Company shall notify and request authorization from NSF in writing prior to any changes of a Certified
+Product where such changes are related to any NSF Requirement. The change shall be reviewed by NSF and
+NSF will advise the Company of any required evaluation or testing. The Company shall not make such changes
+to a Certified Product without prior written acceptance by NSF.
+GP – 12 Implementation of revisions to Standards or Policies
+Upon adoption of a revision to an NSF Requirement that is applicable for Certification, NSF shall publish an
+effective date of implementation. All Certified Products shall be verified as complying with the requirements of
+the revised NSF Requirement on or before the effective date of implementation.
+Except as provided below, Products submitted for Certification after the date of adoption of a revision to an
+NSF Requirement and prior to the date of implementation may be evaluated and tested to the previous version
+of the NSF Requirement. However, full compliance with the revision shall be verified prior to the date of
+implementation. When a revision to an NSF Requirement addresses an identified public health issue, new or
+modified products submitted for Certification after the date of adoption and prior to the date of implementation
+of the revised NSF Requirement shall be in full compliance with the revised NSF Requirement upon
+qualification.
+GP – 13 Private labeling of Certified Products
+If authorized by NSF, the Company may label Certified Products with a name and trade designation, other than
+the Companyʼs, under one of the following provisions:
+A4
+
+--- page 21 ---
+
+• Marking for the privately labeled Product shall include the name and trade designation of the company
+for whom the private labeling is occurring and shall also prominently identify the original Company as
+the manufacturer of the product. The original Compa nyʼs name and address (or a unique company
+identifier approved by NSF); and listed trade designation shall be included on the label or data plate,
+and in all advertising materials including on all web pages and point of sale packaging. This information
+is required in close proximity to each Mark or Certification claim, and in font size equivalent or larger
+than that of the privately labeled name and trade designation; or
+• the original Companyʼs Official Listing shall include the name and trade designation of the company for
+whom the private labeling is occurring, or
+• the original Company shall private label the Product with no modifications as “another name forˮ on
+behalf of the private label company. A separate Listing shall be issued by NSF in the name of the
+private label company, which is supported by the original Companyʼs Certified Product.
+The Company shall be subject to additional fees and/or terms and conditions with regard to authorized private
+labeling.
+Audit
+GP – 14 Requirement and purpose of audits
+Except where otherwise provided for by these General Policies and Program Specific policies, an audit of all
+relevant facilities of the Company shall be required before Certification is authorized, and one or more
+unannounced audits may be conducted each calendar year. However, NSF reserves the right to conduct
+announced or unannounced audits as needed to monitor for compliance with all NSF Requirements. If NSF, at
+its sole discretion, determines that alternate measures may be used in place of an onsite audit, NSF shall notify
+the Company of the alternate measures necessary.
+At the election of NSF, subcontract auditors may be used in lieu of NSF staff auditors.
+GP – 15 Access for audits
+Access to facilities and Locations, of both the Company and the Companyʼs subcontractors (where applicable)
+for NSF audits shall be granted promptly by the Company. NSF shall make every attempt to accommodate
+facility vacations, inventory shutdowns and other non-productive periods or facility closings where NSF has
+been notified in advance. NSF shall be granted access to all facilities and locations of the Company, except
+where precluded from doing so by restrictions included in agreements between the Company and NSF or by
+government regulations, and where NSF has been notified in advance and is satisfied as to the validity of
+these restrictions. When necessary, due to travel restrictions, NSF may contact the Company to confirm any
+onsite restrictions prior to arranging either an unannounced or announced audit. If unannounced, details of the
+time or date of the audit will not be disclosed. Refused or delayed access may result in withdrawal of
+Certification and other appropriate actions by NSF including but not limited to, issuing a Public Notice.
+GP – 16 Cooperation with NSF
+The Company shall provide any assistance required by NSF.
+While in a Company's facility, NSF representatives shall comply with all applicable health and safety laws. The
+Company shall provide authorized Company personnel to accompany NSF representatives while in the
+Companyʼs facility. The Company shall notify NS F in advance of any health and safety equipment necessary
+for access to the Companyʼs facility or shall provide the necessary health and safety equipment for the NSF
+A5
+
+--- page 22 ---
+
+representativeʼs use during the audit, along with instructions for proper use.
+NSF representatives may discontinue an audit at any time where their health and safety may be at risk, if they
+are subject to harassment or discrimination, if they feel threatened or subject to abusive behavior, or the
+conduct of the Company staff hampers the completion of a valid audit. NSF representatives may also
+discontinue an audit in the presence of an individual who they believe may, intentionally or otherwise,
+influence its outcome in an inappropriate manner. An NSF representative shall immediately notify the Company
+and NSF if an audit is to be discontinued.
+GP – 17 Sample collection
+The Company shall provide samples of the Product and/or raw material for testing and retesting when and as
+required by the NSF Requirements. The samples shall be provided to NSF without charge and shipped
+immediately to NSF prepaid by the Company. NSF at its sole discretion may determine the appropriate method
+for obtaining a sample, including but not limited to obtaining a sample from the marketplace, at the Companyʼs
+expense. It is acknowledged that samples collected outside the United States may experience delays in
+customs and transit.
+GP – 18 Corrective action report
+NSF shall provide the Company with a report detailing all non-conformances noted during the audit.
+GP – 19 Audit suspension due to travel restrictions
+NSF may elect to suspend travel by its representatives to a specific geographical location or region as the
+result of official travel warnings, advisories, or other health and safety concerns including, but not limited to,
+civil unrest, personal security, and risk of communicable disease.
+If suspension of travel prevents audits from being conducted, NSF shall notify the Company that travel has
+been suspended. Where an audit is mandatory for Certification, the Certification for the Location will be denied
+or withdrawn until audits can be resumed.
+If NSF, at its sole discretion, determines that alternate measures may be used in place of an onsite audit, NSF
+shall notify the Company of the alternate measures necessary in order to proceed with Certification during the
+period in which audits are not possible.
+A Companyʼs failure to comply with the alternate measures directed by NSF may result in the withdrawal or
+denial of Certification.
+If the audit is conducted by the terms of this policy in place of an on-site audit and the travel suspension
+cannot be lifted after a one (1) year period for an initial audit or a two (2) year period for a surveillance audit,
+Certification for the Location may be continued for another length of time if approved by program management
+and authorized by the scheme and accreditation body. Otherwise, the Location shall be withdrawn from
+Certification.
+GP – 20 Non-operational Locations
+In the event that a Location becomes non -operational due to a natural disaster or other catastrophic event, the
+Company may request that the public Listing be maintained for a maximum period of 12 months while the
+Location is repaired, or work is undertake n to transfer production to another suitable location. During this
+period, audits and annual monitoring requirements of the NSF Certification program may be suspended. NSF
+may require an on-site audit of the rebuilt or the alternate location before production of the Certified Product
+A6
+
+--- page 23 ---
+
+can begin. In event that the Company elects not to transfer production or to re- build the facility, the Listing
+shall be discontinued immediately.
+The Company shall document to NSFʼs satisfaction that a Location has been sufficiently damaged to prevent
+further production until repairs are completed and shall provide NSF with a time frame for transfer or re-
+construction of the Location.
+Testing
+GP – 21 Conduct of testing
+At NSFʼs sole discretion, testing may be conducted at NSF, a subcontract laboratory, the Companyʼs Location,
+or another site, as acceptable to NSF.
+GP – 22 Test report
+Upon completion of testing, NSF shall provide the test results to the Company. When a subcontract laboratory
+is used, for proprietary reasons NSF reserves the right not to identify the subcontract laboratory in the test
+report but shall provide this information to the Company if requested.
+GP – 23 Periodic testing of Certified Products
+Periodic testing of Certified Products may be required by NSF to maintain Certification.
+GP – 24 Disposition of test samples
+NSF reserves the right to retain any Product and/or raw material samples in its discretion. All samples not
+returned to the Company based on the Companyʼs direction in the sample collection form shall be disposed of
+by NSF in its discretion.
+Records
+GP – 25 Records of Certified Product information
+NSF may require a Company to submit information to document that a Product (or family of Products) fully
+conforms with all applicable requirements for Certification. Product information may be stored in a
+documentation report or other acceptable format. If required, the documentation report shall be reviewed,
+approved, and maintained by NSF.
+Each Location shall have access to a copy of the documentation report, and it shall be made available for use
+during audits by NSF. The documentation report shall not be copied or distributed by the Company without
+prior written authorization from NSF.
+GP – 26 Company records
+The Company shall maintain at the Location, or have immediate access to, records of the purchase of
+ingredients, materials, and components used in the production or assembly of all Certified Products,
+production records, shipment records, inventory records and any other records as required by the NSF
+Requirements. Such records shall be made available to NSF upon request. These records shall be maintained
+A7
+
+--- page 24 ---
+
+for a minimum of the preceding three (3) year period, unless a different time period is identified in the
+applicable NSF Requirements.
+If the records required by this policy are not retained at the location being audited, NSF shall be advised by the
+Company in writing of the location of the records.
+GP – 27 Company complaint records
+The Company shall retain a record of complaints about its Certified Products relating to the scope of
+Certification and remedial actions taken by the Company since the last audit performed by NSF and shall make
+the record available to NSF upon request.
+At a minimum, the record shall include:
+• nature of the complaint
+• identification of the Product or services pertinent to the complaint
+• confirmation that remedial action(s) have been taken
+• status (open or closed) of the complaint, as known to the Company.
+The identity of the complainant need not be provided to NSF.
+The Company shall provide the record to NSF upon request by whatever means selected by NSF.
+Confidentiality
+GP – 28 Confidentiality
+Where the Company provides NSF with Company confidential information, it shall be held in strict confidence
+and shall not be disclosed or used for any purpose other than as specifically authorized/provided in the NSF
+Requirements or the Contract without the prior written consent of the Company. Confidential Information does
+not include information (a) that is or becomes generally available in the public domain other than through the
+action of NSF, (b) lawfully in the possession of NSF prior to disclosure by the Company, (c) lawfully obtained
+by NSF from a third party, or (d) independently developed by NSF without use of the Company confidential
+information. The term “confidential informationˮ means any confidential or proprietary information provided by
+the Company to NSF to enable NSF to perform the Certification Services under the Contract.
+Advertising
+GP – 29 Use of the Mark or claims of NSF Certification by Certified Companies:
+Advertising, packaging, and literature
+Use of a Mark on sales literature, technical publications, promotions, materials, packaging, catalogs, websites
+and in any format including electronic means, and in advertising of Certified Products is acceptable, provided
+the Company complies with the following:
+• Company shall code literature and packaging to indicate version date.
+• Company shall not directly or indirectly represent, advertise, imply, or claim that any of its non-
+A8
+
+--- page 25 ---
+
+Certified Products are Certified by NSF.
+• Company shall clearly indicate in advertising, packaging, and literature that any non-certified product
+or component that is sold in combination with a Certified Product has not been evaluated to the
+respective Standard.
+• Company shall not directly or indirectly represent, advertise, imply, or claim that any Product is
+Certified for an end use application for which it is not Certified.
+• Any use of the Mark in any literature and advertising that fails to truthfully and accurately reflect the
+Product as Certified by NSF is prohibited. Any changes to the product require that the Company shall
+notify NSF in writing prior to the change, in compliance with GP – 11 .
+• Company complies with all other marketing guidelines or instructions provided by NSF (“Guidelinesˮ).
+The Guidelines are hereby incorporated by reference into this Policy. NSF reserves the right to modify
+the Guidelines from time to time.
+GP – 30 Use of the Mark or claims of NSF Certification by parties other than the Certified
+Company: Advertising and literature
+Use of a Mark on sales literature, technical publications, promotions, materials, catalogs , and in advertising of
+Certified Products by a party other than the Company is acceptable, provided the party complies with the
+following:
+• the party shall code literature to indicate version date.
+• the party shall not directly or indirectly represent, advertise, imply, or claim that any of its non-Certified
+Products are Certified by NSF.
+• the party shall not directly or indirectly represent, advertise, imply, or claim that any Product is Certified
+for an end use application for which it is not Certified.
+• the party includes the name of the Company whose products are Certified and are being advertised,
+and the trade designation or model designation of the Certified Products or includes specific
+instructions that at NSFʼs sole discretion is adequate to obtain the name of the Company and the trade
+designation or model designation of the Certified Products.
+• the Company complies with all other marketing guidelines or instructions provided by NSF
+(“Guidelinesˮ). The Guidelines are hereby incorporated by reference into this Policy. NSF reserves the
+right to modify the Guidelines from time to time.
+Parties other than the Company whose Product is Certified shall not apply the NSF Mark to a product or any
+product packaging.
+Investigation of complaints
+GP – 31 Complaints
+NSF shall investigate complaints by any party related to Certified Products, misuse of a Mark or NSF claims of
+NSFʼs Certification Services.
+If the Company has a complaint to submit, the complaint shall be sent to NSF. When possible, NSF shall
+acknowledge receipt of a complaint, investigate the complaint and take appropriate action. NSF may advise
+the subject of the complaint or allegation. When possible, NSF shall confirm to the source that the allegation
+has, or has not, been verified as valid. NSF is not obligated to disclose any additional information concerning
+A9
+
+--- page 26 ---
+
+corrective actions.
+Where possible, the identity of the source will be confidential.
+If the Company submits a complaint to NSF about a third party and such complaint is determined by NSF to be
+invalid, the Company shall reimburse NSF for all costs incurred by NSF in investigating the complaint. If NSF
+receives a complaint about the Company and NSF determines the complaint is valid, the Company shall
+reimburse NSF for all costs incurred by NSF in investigating the complaint.
+GP – 32 Investigation of complaints: Sample selection and handling
+NSF shall not, for complaint investigations:
+• test any samples submitted by a complainant for enforcement purposes
+• select samples for testing that are under the control or influence of the complainant, or test samples if
+NSF has reason to believe that the samples may have been altered.
+Samples for testing for enforcement purposes shall be collected and tested by NSF.
+Corrective action and enforcement
+GP – 33 Corrective action for general Noncompliance
+A Company shall be advised in writing by NSF of all items of Noncompliance. The Company shall submit to
+NSF, in writing within 30 days, or the deadline as required by the standard or scheme, of the date of receipt of
+written notice of the Noncompliance, a root cause analysis, a corrective action and a preventive action plan
+(CAPA) for approval. Once NSF approves the CAPA, the Company shall promptly implement the CAPA. NSF
+shall verify the Companyʼs compliance with the CAPA by means acceptable to NSF.
+Note. To prevent any misunderstanding, this policy does not relieve a Company of its continuing responsibility to
+use the Mark (or otherwise represent as Certified) only on Products complying with all NSF requirements. The 30
+days applies to the report, not to the date for corrective action.
+In addition to the CAPA, NSF may take the following action:
+• NSF may require the Product to be held until the CAPA is completed.
+• NSF may pursue additional enforcement action such as but not limited to an unannounced audit or
+increased audit frequency.
+• NSF may suspend or withdraw Certification for any or all Products for the Location. Other appropriate
+action may be taken by NSF including, but not limited to, issuing a Public Notice.
+GP – 34 Noncompliant test results for initial qualification
+Upon receipt of written notification from NSF that an initial qualification test of a Product is noncompliant, the
+Company shall investigate the noncompliant result and provide to NSF the written results of its investigation,
+including the cause and any corrective and preventive actions (CAPA) as well as its decision regarding
+resolution of the noncompliant result. NSF shall notify the Company regarding the acceptance of the CAPA
+prior to any continuance of testing should this be selected by the Company.
+When noncompliant test results for an initial qualification represent a public health or safety risk, NSF may
+A10
+
+--- page 27 ---
+
+notify the Company about the potential risk and/or may issue a Public Notice even if the product is not yet
+Certified.
+GP – 35 Noncompliant test results for Certified Products
+Upon receipt of written notification from NSF that the results of its testing of a Certified Product are
+noncompliant, the Company shall promptly take reasonable measures to stop all use of the Mark on any
+noncomplying Product. The measures shall include:
+• Investigation to determine that any continuing production is in compliance
+• Review of inventory of Product bearing the Mark to verify that it is in compliance
+• Any other measures deemed necessary by NSF to protect public health including, but not limited to an
+immediate Product hold, distribution of Public Notice, or the holding in abeyance of any other product
+evaluation which could reasonably be expected to be impacted by the noncompliance under
+investigation.
+In addition to the preceding measures, the Company shall also determine the cause of the Noncompliances
+and provide to NSF a description of the root cause and a proposed resolution to the identified noncompliance
+in writing within 30 days of notification. The Company shall promptly make any required samples available and
+shall be responsible for any additional costs necessary to verify compliance. The Company shall then submit
+samples of the failed Product within 30 days of having submitted the proposed resolution for the purpose of
+verifying that the noncompliance is abated. At NSFʼs discretion, some retest samples may require auditor
+collection.
+In the event the Company cannot comply with the 30-day timeframes for proposed resolution of the
+Noncompliances or the collection of retest samples, the Company shall advise NSF in writing of the proposed
+time to completion. NSF in its sole discretion shall determine the acceptability of the requested extension.
+Note. This policy does not relieve a Company of its continuing responsibility to use the Mark (or otherwise
+represent as Certified) only on Products complying with all NSF requirements. The 30 days applies to the report,
+not to the date of corrective action.
+If the Company elects to drop the noncompliant Product from Listing, NSF reserves the right to request the
+Company provide written corrective action if the Product is subsequently resubmitted to NSF for qualification
+testing.
+GP – 36 Noncompliant retest results for Certified Products
+If the results of retesting of a Certified Product demonstrate failure for the original failed parameter(s), NSF
+shall withdraw Certification of the Product. NSF may withdraw Certification for any Nonconformance.
+NSF may take any other measures deemed necessary to protect public health including, but not limited to an
+immediate Product hold, distribution of Public Notice, or the holding in abeyance of any other product
+evaluation which could reasonably be expected to be impacted by the Noncompliance under investigation.
+GP – 37 Use of the Mark on a non-certified product
+Use of the Mark on a non-certified product or unauthorized or misleading claims or statements regarding
+Certification are prohibited. If the Company uses the Mark on a non-certified product, NSF may withdraw
+Certification for one or all Products. Other appropriate action may be taken by NSF including but not limited to
+issuing a public notice.
+A11
+
+--- page 28 ---
+
+GP – 38 Unauthorized change to a Certified Product
+Unless authorized by NSF, changes to Certified Product immediately result in the Product not being Certified.
+The Company shall hold the changed Product in its inventory until released by NSF in writing.
+NSF may increase audit or testing frequency, conduct an unannounced audit, withdraw Certification for one or
+all Products for the Location. In addition to the preceding, NSF at its sole discretion may issue a Public Notice.
+GP – 39 Unauthorized shipment or disposal of Certified or non-certified products placed
+on hold
+For Product placed on hold, the Company shall hold the Product in its inventory until authorized by NSF in
+writing to release Product from hold. For the unauthorized shipment or disposal of any Product placed on hold,
+Certified or non-certified, NSF may take any or all of the following actions:
+• increase number of annual facility audits
+First occurrence
+• withdrawal of Certification, per GP – 41 , of the non-conforming Product(s)
+• increase number of annual facility audits
+Second occurrence • withdrawal of Certification, per GP – 41 , of the non-conforming Product(s)
+• withdrawal of Certification, per GP – 41 , of all Products Listed at the Location
+Other appropriate actions may be taken by NSF, at any time, including, but not limited to issuing a public
+notice.
+GP – 40 Bribes offered to NSF
+Any attempt by a Company or its employees or agents to offer inducement or bribes to NSF shall result in
+immediate withdrawal of Certification and other action deemed appropriate by NSF.
+GP – 41 Withdrawal of Certification
+NSF may withdraw Certification of any Product, at any time, for failure to comply with any NSF Requirement,
+including but not limited to termination of the Contract.
+NSF shall notify the Company, in writing, of withdrawal of Certification. Upon notice by NSF (whether written
+or oral) to the Company of withdrawal of Certification, the Company shall immediately stop applying the Mark
+to the Product. The Company shall notify its distributors and outlets that the Certification has been withdrawn.
+The Company shall confirm these actions to NSF. NSF may make public notice of withdrawal of Certification
+and the reason for such action.
+Upon withdrawal of Certification of a Product or all Products, NSF may require the Company to quarantine,
+dispose of, modify, or destroy the entire Product(s), by means acceptable to NSF, to assure that it is not sold,
+used, or represented as Certified. The Company shall provide to NSF its plan for the disposal, modification, or
+destruction of the Product(s) within 14 calendar days of notification of withdrawal of Certification. NSF shall
+verify the action taken by the Company.
+Upon withdrawal of Certification of all Products, NSF may require the Company to dispose of, modify, destroy,
+or surrender to NSF all Marks, marking devices, and marked materials, by means acceptable to NSF.
+Additionally, the Company shall cease all digital marketing and advertising, remove all product images
+displaying the NSF Mark and cease all Certification claims. The Company shall provide to NSF its plan for the
+disposal, modification, destruction, or surrender of the Marks, marked materials and digital marketing
+A12
+
+--- page 29 ---
+
+compliance within 14 calendar days after NSF notifies the Company of withdrawal of Certification. Disposal,
+modification or destruction of the Marks and marked materials shall be at the Company's expense. NSF shall
+verify the action taken by the Company. No credit or refunds shall be provided for Marks disposed of,
+modified, destroyed, or surrendered. The Company shall also acknowledge in writing that it is not authorized to
+use the Mark or otherwise represent that any of its Products are Certified.
+If at NSFʼs sole discretion determines that an audit is necessary to verify compliance, the Company shall
+permit access.
+GP – 42 Public Notice
+NSF may issue a public notice for noncompliance with any NSF Requirement. NSF may also require the
+Company to distribute a notice to known purchasers or recipients of the Product. The Company shall
+cooperate in good faith with NSF in determining who should receive copies of a public notice. The notice shall
+include the name of the Company, a description of the Product, including its trade or model designation, the
+specific noncompliance and the specific health consequences, if applicable.
+NSF may issue a press release of the notice to appropriate print and broadcast media. NSF may distribute a
+written notice to those appropriate persons, agencies and entities, which may include known purchasers and
+recipients of the Product, appropriate federal, state, and local regulatory officials in the United States and other
+countries, NSFʼs Public Health Council, the appropriate Joint Committee(s), Certified Companies, and other
+individuals and organizations routinely receiving the appropriate Certification information.
+GP – 43 Reinstatement
+Following a drop or withdrawal of Certification, Products may not be re-Certified until NSF has reevaluated or
+retested, or both reevaluated and retested the Product, has verified that all items of Noncompliance and issues
+of ethics or integrity have been satisfactorily resolved, and has notified the Company in writing that it is
+authorized to use the Mark in connection with the Product. The Company shall be responsible for any fees
+associated with reinstatement, and for any additional costs necessary to verify compliance with NSF
+Requirements.
+NSF may decline to accept an application of re-certification or maintain a contract for certification from a
+client, or former client, when illegal activities, history of repeated non-conformances, demonstrated history of
+not complying with certification requirements, or similar issues of concern are present.
+Appeals
+GP – 44 Appeal of a decision, result or action taken by NSF
+Any decision, result or action taken by NSF may be appealed by the Company within thirty (30) calendar days
+of the decision, result or action. The appellant may file a written request for appeal with NSF staff. NSF shall,
+within thirty (30) calendar days of the written request, inform the appellant of the results of the appeal, unless
+otherwise notified by NSF.
+To begin the appeal process, the Company must submit a written statement of appeal that must include the
+specific decision, result, or action taken by NSF that is being appealed and the basis for the Companyʼs
+appeal. Any supporting evidence and documentation that supports the statement of appeal must also be
+submitted. NSF may request additional supporting documentation to further the appeal investigation.
+Otherwise, any supporting documentation submitted after the statement of appeal will not be considered by
+A13
+
+--- page 30 ---
+
+NSF.
+NSF may, at its discretion, hold in abeyance any enforcement action against a Company until the appeal has
+been conducted.
+All appeal outcomes determined by NSF are final. If the appellant is not satisfied with the outcome of the
+appeal, they have the right to contact the accrediting body, if applicable.
+GP – 45 Legal action
+The Company shall hold in abeyance any formal legal action against NSF until such time that all appeal
+mechanisms available have been exhausted.
+Fees
+GP – 46 Application fee
+The Company shall submit payment of the application fee, if applicable, with the signed application form. This
+fee, if applicable, shall be paid once by each Company for each NSF program. This fee is nonrefundable.
+GP – 47 Standards maintenance fee
+An annual standards maintenance fee, if applicable, shall be charged to each Certified Company for each
+program area in which it participates.
+GP – 48 Certification fee
+For initial Certification, the Company shall submit payment of the Certification fee and any outstanding fees
+(e.g. audit, toxicological assessment, testing or evaluation) prior to the Official Certification being granted.
+GP – 49 Collection fee
+The Company shall be responsible for any fees and costs incurred by NSF in collection of fees in arrears.
+A14
+
+--- page 31 ---
+
+Section II. Program specific policies for NSF Certified for Sport® Program
+Definitions
+Authorized Registered Formulation (ARF) : Documentation that is generated at NSF and sent to the
+manufacturer to register the formulation of the Product that is authorized for Certification and is to be made
+available to NSF auditors during audits for the purpose of verifying that only authorized materials are being
+used in Certified Products. This document supports the Certified Product Listing.
+Contract Manufactured : Products manufactured, in whole or in part, for the supplier by a subcontractor.
+Official Listing/Listing : The public directory where all Certified Products will be displayed by trade designation
+for each qualified facility location. Listings may be found though the nsf.org home webpage. Only products
+listed on this page may be represented as Certified.
+Mark : NSF Certified for Sport® mark
+Pre-Packaged : Pre-Packaged form means the product is in final form where no further ingredient, flavor, or
+additive processing shall occur outside of packaging the Finished Product.
+Protein Bar and Protein Beverage : A bar or beverage product where the primary marketed nutrient is protein.
+Products may also be fortified with vitamins and/or minerals. This excludes powders, pills and capsules.
+Targeted Testing : A scheme where a specified number of lots, as determined by NSF, are selected and tested
+to represent the entire population of a specific Trade Designation and permit its Certification in whole.
+Testing : Refers to the evaluation of results compiled by the testing of ingredients and finished products or
+results obtained by retesting as appropriate.
+Unauthorized Registered Formulation (URF) : Documentation that is generated at NSF and sent to the
+manufacturer to register the formulation of the product. This document shall not support Certified Product
+Listing.
+General requirements
+PP – 1 Conditions of Certification
+Product is eligible to be certified to NSF 306 under the following conditions:
+• All requirements of NSF/ANSI 173, NSF 229 or NSF/ANSI-527, NSF 527 Certification are met and found
+to be compliant; and
+• First production run of Product shall be submitted for annual testing requirements of NSF/ANSI 173,
+NSF 229, NSF/ANSI 527, NSF 527 and the annual sampling requirements have been met, unless
+otherwise approved by NSF in advance; and
+• Submissions for certification are subjected to the NSF athletic banned substance screening, with test
+results not exceeding the report threshold, the per serving threshold (for endogenous substances)
+and/or the maximum report threshold as described in Annex C ; and
+• The Product does not contain other dietary ingredients in Annex C or ingredients that are banned by
+sports organizations.
+A15
+
+--- page 32 ---
+
+PP – 2 Acceptance of another Certification Body for NSF/ANSI 173
+NSF may accept certification of a Product certified to NSF/ANSI 173 with a one-year transition from date of
+application to NSF provided the following criteria are met to NSFʼs sole satisfaction:
+• Certification Body is accredited to ISO 17065 and has NSF/ANSI 173 listed as an accredited scope
+• Certification Body is accredited to ISO 17025 for Dietary Supplement testing
+• Product is Certified to the most recent version of NSF/ANSI 173
+• Customer provides NSF with all required documentation for Products seeking certification to this
+guideline which includes but is not limited to:
+o Test report with testing details
+o Testing methodology (if applicable)
+o Formulation
+o Product Information Form
+o Certificates of Analysis (COAs)
+o Product labels
+o Bracketed formulas (if applicable)
+ Bracketed products may be considered, but shall be reviewed by NSF to determine
+compliance (i.e. technical review and formula review) to confirm they are equitable to
+NSF scheme requirements
+o Ingredient safety information (if applicable)
+o Audit report demonstrating compliance to NSF/ANSI 173, Section 8 including supporting
+information
+ Valid certificate from an accredited Certification Body (ISO 17065 with NSF/ANSI 455-2
+and applicable product forms listed on certificate)
+ Corrective Action Report showing corrective action closure and acceptance
+ Additional supporting documentation to support corrective action resolution
+Fees can apply for the review of these documents but do not guarantee acceptance to the Certified for
+Sport Program. NSF may deem that additional testing is required to demonstrate compliance.
+• If accepted
+o Certification shall only be to the Lot -by- Lot Scheme. Other schemes may only be
+pursued once the NSF/ANSI 173 certification has been transferred to NSF.
+o The use of the NSF/ANSI 173 certification mark is prohibited until certification is
+obtained from NSF.
+o NSF/ANSI 173 application shall be submitted and transferred and Certified within the
+twelve-month period from application date. Failure to comply shall result in the
+immediate Withdraw from certification and public listings.
+o Full compliance with the guideline and policies.
+A16
+
+--- page 33 ---
+
+PP – 3 Designation of Certified and non-Certified Products
+A Company shall not use the same designation, or brand name on its Certified and non-certified product.
+If the designation or brand name for a Companyʼs Products is the Company name or a registered trademark,
+either the Certified or non-certified product shall include additional information that clearly differentiates the
+Certified Product from the non-certified product.
+For Certified Product with “Lot by Lotˮ listings: different Lot numbers satisfies the requirements of this policy.
+For Certified Product with “All Lotˮ listings: different Lot numbers do not satisfy the requirements of this policy.
+Certification shall not be implied or misrepresented to consumers (i.e. product packaging, Product label,
+marketing sites, promotional material, etc.). In cases when the brand and/or trade name is the same for a
+product, but not all production lots and locations are certified, Consumers shall have reasonable access to
+purchase Certified Product.
+Official listing
+PP – 4 General format (NSF.org)
+The Official Listing may include at a minimum the following information for each Company with Certified
+Products:
+• Company name, address and phone number;
+• Company website;
+• Production location (city/state, province/country, or other facility identification that is traceable to the
+production facility);
+• Product sales contact;
+• Nutrient Category;
+• Trade name or designation;
+• Product ID (Lot/Batch Number or “Allˮ in the case when a Certified Product is tested under the Targeted
+Testing ( PP-11 ) or Pre-Packaged testing schemes ( PP-12 );
+• Product Form;
+• Recommended Daily Serving Size; and
+• The Company logo may be added to the Official Listing at the Companyʼs request.
+PP – 5 General format – (NSFSPORT.com and Certified for Sport® App)
+The Official Listing may include at a minimum the following information for each Company with Certified
+Products:
+• Company website;
+• Product sales contact;
+• Trade Designation;
+A17
+
+--- page 34 ---
+
+• Product photo;
+• Product family photo;
+• Brand logo;
+• Product label; and
+• Product Details;
+o Brand
+o Product type
+o Purpose/Goal (limit 5)
+o Qualified Lot Number(s)
+o Product Form
+o Flavor Category
+o Serving Size
+o Calories
+o Sugar
+o Fat
+o Carbohydrates
+o Protein
+o Country of Sale
+o Package Size
+For all images, the required specs will be:
+• Should be in “.pngˮ format only (not .jpeg, .gif, .tiff, .eps or .bmp)
+• Images should be high resolution (minimum 300x300 pixels)
+• Images should be either on white background or transparent (preferably transparent)
+PP – 6 Maintenance of lot numbers in the NSF Official Listings
+NSF will maintain the Listing of Certified Products for one (1) year past the product shelf life or expiration date.
+In the event no product shelf life or expiration date exists, Product lots may be removed by NSF three (3) years
+from their original listed date.
+When a Company withdraws or is withdrawn from Certification to this Guideline and has a Certified Product
+with an “Allˮ lot listing , the “Allˮ lot l istings will be converted to a “Lot by Lotˮ listing. Individual lot numbers
+produced during the time the Companyʼs Product(s) held the “Allˮ lot designation shall be identified from
+monthly production records submissions required in PP-11 , PP-12 , PP-13 or PP-14 . In the absence of the
+monthly production records NSF will list only the specific lot numbers identified on passing certification test
+reports released by NSF during the “Allˮ lot designation period.
+NSF reserves the right to remove products from Official Listings without notice to the Company. Reasons for
+removal of listings may include but are not limited to; Company no longer actively pursuing certification; NSF
+has been notified that the product is no longer available for purchase in the marketplace; or Company is
+A18
+
+--- page 35 ---
+
+dropped due to non-payment. A Public Notice may be issued upon removal in accordance with GP-41 and GP-
+42 in circumstances where marked product is still available in the market.
+Upon written request from the Company, NSF may remove an individual lot n umber from the Official Listing. A
+Public Notice may be issued upon removal in accordance with GP-41 and GP-42 in circumstances where
+marked product is still available in the market.
+Audit
+PP – 7 Audits
+The scope and frequency of audits shall be in accordance with the requirements of NSF/ANSI 173, NSF/ANSI
+455, NSF/ANSI 527, NSF 527 or NSF 229. Additional audits may be required for noncompliance resulting from
+unsatisfactory test results or other noncompliance of Certified Products, misuse of the Mark, investigation of
+complaints, product recall, or other reasons stipulated in the contract or policies. Facility compliance is
+required for Products to remain Certified to this Guideline.
+Sampling/Testing
+PP – 8 Samples for Certificating testing
+Products submitted for Certification testing shall:
+• be in finished product form unless otherwise specified by this guideline;
+• submitted in the quantity of sample requested for testing; and
+• sent to NSF with the provided shipping forms.
+PP – 9 Samples for Certificating testing
+NSF offers six (6) testing scheme options for Certification to the Guideline:
+• Lot by Lot;
+• Periodic Production;
+• Protein Bar and Protein Beverage;
+• Pre-Packaged;
+• ANF (Another Name For); and
+• Targeted Testing.
+NSF will request Product samples to test in support of Certification to this guideline. The number and
+frequency of testing required to certify and/or maintain ongoing Certification will depend on the Companyʼs
+Listing type (lot by lot or “Allˮ lots). For products with an “Allˮ lot Listing, NSF will determine the frequency of
+testing based on Productʼs testing scheme. See PP – 11 , PP – 12 , PP – 13 and PP – 14 for specific requirements
+of these testing schemes.
+Only the Lot -by- Lot scheme can be combined with another testing scheme at the same facility location.
+A19
+
+--- page 36 ---
+
+Combination of other schemes is prohibited.
+Manufacturers ineligible for GMP for Sport are ineligible to manufacture product for schemes other than Lot by
+Lot.
+PP – 10 Lot by lot Scheme
+Qualifications :
+• The base program for certified product(s) where individual lots may be certified without the
+requirement of certification for every lot.
+• Each Product lot shall meet the program requirements described in PP-1 or PP-2 , and PP-3 .
+• Product shall not be released from brand control until all requirements have been met.
+• GMP for Sport is not required for compliance to this scheme.
+• Products with ingredients that pose elevated risks to athletes may only be eligible for certification with
+this scheme.
+Listing :
+After qualification criteria have been met, the Product listing shall reflect the lot number on the Official Listings
+page for each trade designation that has met the criteria.
+PP – 11 Target testing scheme
+Qualifications:
+• GMP for Sport Registration is required for all facilities involved in the manufacturing and packaging of
+Products (except labelling only facilities) certified under this scheme;
+• Products shall be manufactured and packaged at the same facility location unless the manufacturer
+can demonstrate to NSFʼs sole satisfaction that there is no exposure of banned substances to the
+Product and has full control & traceability of the Product;
+• When a Certified Product is produced at multiple facilities, all production locations and all Product shall
+be Certified to one or more certification schemes;
+• The facility shall manufacture a minimum of four (4) lots per month of a Product(s)Family(ies) certified
+to this scheme;
+• Company shall successfully complete Certification for a specified number of product samples before
+shifting to the Targeted Testing scheme. The number of lots that must achieve Certification to this
+Guideline will be determined by NSF based on the facility ʼs production frequency, the product
+formulation(s) and flavor(s) Certified;
+• The Company, at the sole discretion of NSF, may use Product in market to fulfill Certification
+qualification requirements. Product shall not be considered Certified nor bear the mark. The product
+shall fulfill all other requirements of this guideline; and
+• By participating in this testing scheme, all Finished Product lots of the participating Product shall be
+Certified to this Guideline.
+A20
+
+--- page 37 ---
+
+Listing :
+After qualification criteria have been met, product listing shall reflect “Allˮ on the Official Listings page for each
+trade designation that has met the criteria. After such time, testing shall be performed randomly each month to
+monitor for compliance. Failure to meet any of the requirements below shall result in re-evaluation to the
+scheme and possible Withdraw.
+Other requirements include but are not limited to:
+• Application of this scheme is specific to the facility;
+• Production of finished lots produced by each facility shall be shared with NSF monthly;
+• Product shall be submitted in finished product form;
+• Monthly sample requirements shall be met;
+• In the event of monthly production disruption, previous months production may be used in its place to
+fulfil the minimum sample requirements (not to exceed two occurrences in a calendar year);
+• Monthly samples shall be submitted no later than the last business day of the month; and
+• All other requirements of this guideline shall be met.
+PP – 12 Pre-packaged Scheme
+Qualifications :
+• GMP for Sport Registration is required for all facilities involved in the manufacturing and packaging of
+Products (except labelling only facilities) certified under this scheme;
+• Products shall be manufactured and packaged at the same facility location unless the manufacturer
+can demonstrate to NSFʼs sole satisfaction that there is no exposure of banned substances to the
+Product and has full control & traceability of the Product
+• When a Certified Product is produced at multiple facilities, all production locations and Product shall be
+Certified to this Guideline; and
+• By participating in this testing scheme, all unique pre-packaged production lots shall be tested and
+Certified to this Guideline.
+Listing :
+After qualification criteria have been met, product listing shall reflect “Allˮ on the Official Listings page for each
+trade designation that has met the criteria. After such time, testing shall be performed on each Pre-Packaged
+production at each facility location in addition to the random quarterly sampling. Failure to meet any of the
+requirements below shall result in re-evaluation to the scheme and possible Withdrawal.
+Other requirements include but are not limited to:
+• Application of this scheme is specific to the facility;
+• Product shall be held and not released until Certified for Sport® testing has been issued as a “Passˮ;
+• Production of Pre-Packaged lots and their respective finished lots by each individual facility shall be
+shared with NSF monthly;
+• Each facility shall have random quarterly finished product testing performed each year in addition to
+the scheme; and
+A21
+
+--- page 38 ---
+
+• All other requirements of this guideline shall be met.
+PP – 13 Periodic Production Scheme
+Qualifications :
+• GMP for Sport Registration is required for all facilities involved in the manufacturing and packaging of
+Products (except labelling only facilities) certified under this scheme;
+• Products shall be manufactured and packaged at the same facility location unless the manufacturer
+can demonstrate to NSFʼs sole satisfaction that there is no exposure of banned substances to the
+Product and has full control & traceability of the Product;
+• The facility shall manufacture a minimum of forty-eight (48) lots annually (twelve month period,
+January to January) of a Certified Product (or family of Certified Products);
+The Company must provide a minimum of 12 months of production records for each Product (or Product
+Family) for eligibility to this scheme;
+• Company shall successfully complete Certification for a specified number of product samples before
+shifting to the Periodic Production scheme. The number of lots that must achieve Certification to this
+Guideline will be determined by NSF based on the facil ityʼs production frequency, the product
+formulation(s) and flavor(s) Certified; and
+• By participating in this testing scheme, all Finished Product lots of the participating Product shall be
+Certified to this Guideline.
+Listing :
+After qualification criteria have been met, product listing shall reflect “Allˮ on the Official Listings page for each
+trade designation that has met the criteria. After such time, testing shall be performed randomly after each
+production cycle to monitor for compliance. Failure to meet any of the requirements below shall result in re-
+evaluation to the scheme and possible Withdrawal.
+Other requirements include but are not limited to:
+• Application of this scheme is specific to the facility;
+• Production of finished lots produced by each facility shall be shared with NSF after each production
+cycle;
+• Product shall be submitted in finished product form;
+• Production cycle sample requirements shall be met;
+• Client shall provide each finished product and its lot number from the production cycle
+• Production cycle samples shall be submitted no later than the five (5) business days after the cycle
+end; and
+• All other requirements of this guideline shall be met.
+PP – 14 Protein Bar and Protein Beverage Scheme
+Qualifications :
+• The product shall be a protein bar or a RTD protein shake or water.
+• Products shall only be fortified with protein, vitamins and/or minerals.
+A22
+
+--- page 39 ---
+
+• GMP for Sport Registration is required for all facilities involved in the manufacturing and packaging of
+Products (except labelling only facilities) certified under this scheme;
+• Products shall be manufactured and packaged at the same facility location unless the manufacturer
+can demonstrate to NSFʼs sole satisfaction that there is no exposure of banned substances to the
+Product and has full control & traceability of the Product
+• Company shall successfully complete Certification for a specified number of product samples before
+shifting to the scheme. The number of lots that must achieve Certification to this Guideline will be
+determined by NSF based on the facilityʼs production fre quency, the product formulation(s) and
+flavor(s) Certified;
+• When a Certified Product is produced at multiple facilities, all production locations and Product shall be
+Certified to this Guideline; and
+• By participating in this testing scheme, all Finished Product lots of the participating Product shall be
+Certified to this Guideline.
+Listing :
+After qualification criteria have been met, product listing shall reflect “Allˮ on the Official Listings page for each
+trade designation that has met the criteria. After such time, testing shall be performed on each Protein Bar and
+Beverage production at each facility location by random quarterly sampling. Failure to meet any of the
+requirements below shall result in re-evaluation to the scheme and possible Withdrawal.
+Other requirements include but are not limited to:
+• Application of this scheme is specific to the facility;
+• Production of finished lots produced by each facility shall be shared with NSF monthly;
+• Monthly random samples shall be procured no later than the last business day of the month; and
+• All other requirements of this guideline shall be met.
+PP – 15 Another Name for (ANF)
+• The ANF program permits products certified to NSF/ANSI 173, NSF 229, NSF 527, or NSF/ANSI 527
+eligibility for Certified for Sport under a different company name;
+• Both Companies shall agree to NSF terms and conditions pertaining to this program for each facility
+location;
+• The program allows a different Company to certify to this guideline under the Lot -by- Lot scheme,
+products meeting the General Requirements described in PP-1 and PP-3 ;
+• No other testing schemes are permitted;
+• Companies must ensure compliance with all relevant regulations and standards pertaining to the
+NSF/ANSI 173, NSF 229, NSF 527, or NSF/ANSI 527 certifications;
+• If Certification Requirements for a product are no longer met under PP-1 or PP-3 , NSF shall Withdraw
+Certification and no future lots will be eligible for certification. Lot numbers will be maintained in
+accordance with Maintenance of lot numbers in the NSF Official Listing Policy ( PP-6 ); and
+• All other requirements of this guideline shall be met.
+A23
+
+--- page 40 ---
+
+PP – 16 Product multipack and combination packs
+Finished Products that have been certified to this guideline as individual lots and are subsequently combined
+into different secondary packaging may be exempt from additional testing. This exemption is contingent upon
+the verification that all lots within the secondary packaging have been tested by NSF. NSF will perform a GMP
+document review and list the secondary packaging lots accordingly. To ensure compliance and facilitate this
+process, all manufacturing records shall be up to date and accurate (additional fees may apply).
+PP – 17 Alternate sources of test samples
+At NSFʼs discretion, samples of Certified Products may be obtained at any time and tested by NSF. All costs
+associated with purchasing and testing Products can be charged back to the Company.
+PP – 18 Company retain samples of Certified Products
+The Company shall retain or have access to one (1) year a sample of the identical Product Lot and flavor(s)
+Certified to this Guideline or until the Certified Product has expired. The quantity of the Companyʼs retain shall
+at least equal to the amount of sample sent to NSF for testing.
+PP – 19 NSF retain of Certified Products
+NSF shall retain all original samples for at least 90 days past the authorization date of the report with which
+they are associated to ensure that no additional testing is necessary.
+• For a sample where the test result was a “PASSˮ the sample may be disposed of any time after 90 -days
+from report authorization. Prior to disposal, a laboratory representative shall photo document the front
+label, rear label and lot number.
+• For a sample where the test result was a “FAILˮ: All original sample shall be kept for at least one (1) year
+past the date of sample receipt or Product expiration date. Disposal of a sample that fails testing is at
+the discretion of the Certification Account Manager.
+Non-compliance
+PP – 20 Enforcement action for noncompliance
+If an athletically banned substance is detected at a concentration that exceeds the report threshold, the per
+serving threshold (for endogenous substances) and/or the maximum report threshold as described in Annex C ,
+the product shall be quarantined. The Company shall submit a corrective action plan to NSF within 30 days of
+the reported failure that addresses the current failure and mitigates future failures.
+A confirmed failure will result in exclusion of the product from certification to this guideline. NSF may also
+withdraw Certification of the product to NSF/ANSI 173. NSF 229, NSF 527, NSF/ANSI 527 and/or the
+manufacturing facilityʼs GMP Registration/Certi fication. Other action may be taken by NSF, including but not
+limited to, issuing a Public Notice, notification to athletic associations, performance of additional product
+testing and requiring the destruction of the affected batch or lot.
+A24
+
+--- page 41 ---
+
+The Company expressly consents and agrees that NSF shall be entitled, without any liability to NSF, to notify
+and discuss with amateur or professional athletic organizations and anti-doping organizations when a Product
+and/or ingredient in a Product tests positive for a substance on the Banned Substance List ( Annex C ).
+PP – 21 Noncompliance to NSF/ANSI 173, NSF 527, NSF/ANSI 527or NSF 229
+• Products (including bracketed formulas) noncompliant to NSF/ANSI 173, NSF 229, NSF/ANSI 527, NSF
+527 shall not be permitted to conduct further certification to this guideline until the failure is resolved.
+• Noncompliance to NSF/ANSI 173, NSF 527, NSF/ANSI 527or NSF 229 NSF may result in withdrawal of
+Certification or other actions.
+PP – 22 Misrepresentation of Certification
+Any intentional or unintentional misrepresentation of Certification by the Company may result in immediate
+suspension or withdrawal of certification and may impact the Companyʼs ability to apply for Certification to this
+guideline in the future, due to the potentially severe negative impact for users of Certified for Sport® Product
+should they errantly ingest non-certified for Sport® Product.
+If evidence of noncompliance to this or any other policy is identified, NSF will perform an administrative review
+and determine if Company will be allowed to proceed with current or future requests for Certification.
+Certification may be temporarily suspended during this time.
+Company shall cooperate and provide NSF with all necessary information to perform the review. Upon
+conclusion of the review, the company shall be provided in writing any nonconformances, impact to
+Certification, expectations and next steps. Certification of products may be reinstated upon the completion of
+the review.
+NSF reserves the right to notify impacted sports organizations of the outcome of the review.
+PP – 23 Non-compliance to testing schemes
+This policy applies to all clients participating in one or more of the Certified for Sport testing schemes
+(excluding lot-by-lot). All testing and policy requirements shall be met in a timely and accurate manner to avoid
+potential corrective action from NSF. In the event of a testing failure for products in a scheme (excluding lot-
+by- lot), public listings will be updated to remove “Allˮ designation and only reflect compliant lots.
+Failure to comply with any of the testing scheme requirements may result in but not limited to the following
+actions:
+• Public Notice;
+• Suspension or Withdrawal from the scheme;
+• Disqualification from the scheme requiring full re-qualification;
+• One-year suspension from the scheme;
+• Permanent withdrawal from the scheme; and/or
+• Additional testing or sampling outside of the scheme requirements.
+• Company is expected to:
+A25
+
+--- page 42 ---
+
+• Review and understand the testing requirements and which products are compliant and in scope of this
+program;
+• Ensure timely completion of all testing, sampling and documentation activities. Report issues of
+uncertainties to NSF immediately; and
+• Ensure that all facilities involved understand the requirements and how those requirements impact
+compliance.
+• Non-Compliance with this policy will be addressed promptly and corrective actions will be taken as
+deemed necessary by NSF.
+Marking
+PP – 24 NSF Certification Marks
+Products Certified to this Guideline shall bear the NSF Certified for Sport® Certification Mark ( Annex B ) and
+adhere to the requirements of this guideline:
+• The Mark shall be legible and permanent;
+• If the client uses marks that are not incorporated with the Finished Product label (i.e. stickers), the same
+requirements herein apply, and approval shall be obtained from NSF prior to applying Marks on Product;
+• Lots Certified to this Guideline shall not also bear NSF ʼ s Contents Tested and Certified Mark;
+• NSF Marks can be acquired through the program office or produced by the Client. Marks produced by
+the client shall adhere to all NSF requirements;
+• Except where exempted by these policies, products labeled for sale or distribution to end users shall
+bear the NSF Mark. A Product containing multiple single serving Product packs enclosed inside master
+packaging need not be individually marked if the master packaging bears the NSF Mark. The packaging
+of all Product samples must bear the NSF Mark including samples pulled from a master package;
+• Marks shall not be applied on any removable packaging including but not limited to; product lids and
+caps, and;
+• Product may be Marked as Certified in advance of Listing provided the Product remains within the
+Company ʼ s direct control and is not released to the marketplace until the Certified Product ʼ s Lot number
+is listed on the Official Listings page. NSF is not liable to reimburse any of the Company ʼ s costs
+associated with the application of the Mark before Certification is granted. The Company understands
+that it incurs these costs at its own risk.
+All alternate marking methods and implementation for NSF Certified for Sport® Products shall be reviewed and
+authorized in writing by NSF prior to use.
+PP – 25 Labeling and literature requirements
+The product labels shall also comply with the relevant regulatory requirements governing the sale or use of
+Functional Ingredient, Functional Food, Beverage, Medical Foods, Dietary Ingredient, Dietary Supplement, or
+Personal Care for each specific country that the Product is intended.
+Labels shall include the following:
+• Company name;
+A26
+
+--- page 43 ---
+
+• Production location (city, state, province/country, or other facility identification that is traceable to the
+production facility);
+• NPN Number where applicable products ( Annex E )
+• Trade name or Product designation as shown in NSFʼs Official Listing; and
+• Batch or lot designation.
+• NSF will review and may grant exceptions to the requirements of this program policy on a case-by-
+case basis.
+A27
+
+--- page 44 ---
+
+This page is intentionally left blank.
+
+--- page 45 ---
+
+Annex B
+NSF Certification Mark options
+The Certified Finished Product label shall bear the Certification Mark as detailed in this Annex.
+General usage guidelines
+In addition to Marking their Certified Products, Companies are encouraged to utilize the Mark in related
+literature, on packaging and on Company websites. NSF Mark usage specifies that the NSF Mark is always to
+appear near a photo of the Certified Product( s) when all Lots are Certified. Certified companies are also
+welcome to include a link on their website to their NSF Listing page, so their customers and associated
+regulatory bodies can quickly verify which products are NSF Certified.
+Usage guidelines include:
+• Colors – the NSF Mark shall appear in approved colors detailed in Table 1. No other colors are
+permitted.
+• The NSF Mark shall not be cropped or covered.
+• When referencing Certified for Sport® or NSF the registered trademark symbol, “®,ˮ shall be used
+regardless of where the Product is being sold.
+• No part of the Certification Mark shall be transparent (other than the transparent space already created
+on the white mark shown in Table 1 below).
+• The Mark shall not be modified in any way except for its size. The Markʼs proportions shall remain
+consistent with any increase or decrease in size.
+• The Mark shall be visibile and legible. For visibility and legibility, it is recommended that the NSF
+Certified for Sport® Mark be reproduced no smaller than 1/4 inches (.635 cm) in width for the vertical
+mark, and no smaller than 3/16 inches (.1875 cm) in height for the horizontal mark.
+• The Mark shall not be placed within another graphic element unless approved by NSF.
+For more information about proper usage of the NSF Mark, contact your NSF Account Representative.
+B1
+
+--- page 46 ---
+
+Options for Acceptable NSF Certification Marks
+Mark Description and use requirements
+Finished Product
+For use on product only that have
+been certified to the dietary
+supplement standard NSF/ANSI
+173, NSF 527 or to the Functional
+Food Guideline NSF 229 AND
+®
+certified to the Certified for Sport
+Guideline NSF 306. Product
+certified to NSF 306 shall not also
+be marked with the NSF/ANSI 173,
+527 or NSF 229 mark.
+Raw Ingredient
+Products that have been Certified
+as a raw ingredient shall only bear
+this mark on the Ingredient COA (or
+similar document). The use of any
+Certified for Sport® mark or
+statements on Finished Products or
+referenced in any marketing
+material about Finished Products is
+strictly prohibited.
+B2
+
+--- page 47 ---
+
+Annex C
+NSF Athletic Banned Substance Screen
+(normative)
+Prohibited Substances Included in Analytical Test Method
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Drugs of Abuse Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Codeine 10 200
+See
+delta-8-THC 100 1000 tetrahydrocannabinols
+See
+delta-10-THC 100 1000 tetrahydrocannabinols
+See
+delta-9-THC 100 1000
+tetrahydrocannabinols
+Note 3, 4
+Tetrahydrocannabinols 100 μg per day
+4-hydroxybutanoic acid (GHB) 20000 20000 5000
+JWH-018 5 100
+JWH-073 5 100
+HU-210 20 400
+LSD 10 200
+Morphine 100 1000
+Oxycodone 10 200
+Phencyclidine (PCP) 10 200
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Anabolic Agents Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Androstenediol 20 500 0.5
+5a-Androstan-3a,17a-diol 20 500 0.5
+5a-Androstan-3a,17b-diol 20 500 0.5
+5a-Androstan-3b,17a-diol 20 500 0.5
+5a-Androstan-3b,17b-diol 20 500 0.5
+Androstanedione 5 100
+1-Androstenediol 5 100
+1-Androstenedione 5 100
+1-Androsterone (Androst-1-ene-3b-
+ol-17-one) 5 100
+C1
+
+--- page 48 ---
+
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Anabolic Agents Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+1-Androsterone enanthate 5 100
+4-Androsten-3a, 17b-diol 20 500 0.5
+4-Androsten-3b, 17a-diol 20 500 0.5
+5-Androsten-3, 17-dione 20 500 0.5
+5-Androsten-3b, 17a-diol 20 500 0.5
+4-Androstenediol 20 500 0.5
+4-Androstenedione 20 500 0.5
+4-Androsten-3a-ol-17-one 5 100
+4-Androsten-3b-ol-17-one (4-DHEA) 5 100
+2-Androsten-17-one 5 100
+Androsterone 20 500 0.5
+Bolandiol (19-Norandrostenediol) 10 100
+Bolasterone 5 100
+Boldenone 10 100
+Boldione (Androstadienedione) 5 100 0.02
+Calusterone 5 100
+Clostebol 5 100
+Danazol 5 100
+Dehydroandrosterone 5 100
+Dehydroepiandrosterone (DHEA) 20 500 0.5
+Desoxymethyltestosterone (madol) 10 100
+Dihydrotestosterone (Stanolone) 20 500 0.5
+2a,17a-Dimethylandrost-1,4-dien-
+17b-ol- 3-one 5 100
+Drostanolone 5 100
+Epiandrosterone 20 500 0.5
+Epidihydrotestosterone 20 500 0.5
+Estra-4,9-diene-3,17-dione 5 100
+Estra-4,9,11-triene-3,17-dione 5 100
+Ethylestrenol 10 100
+Etiocholanolone 20 500 0.5
+Fluoxymesterone 10 100
+Formebolone 5 100
+Furazabol 5 100
+C2
+
+--- page 49 ---
+
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Anabolic Agents Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Gestrinone 5 100
+11a-Hydroxymethyltestosterone 5 100
+3b-Hydroxy-estr-4-en-17-one 5 100
+4-Hydroxytestosterone 5 100
+17-Hydroxyprogesterone 20 500 0.5
+7-keto-dehydroepiandrosterone 5 100
+7a-hydroxy-dehydroepiandrosterone 5 100
+7b-hydroxy-dehydroepiandrosterone 5 100
+Mestanolone 5 100
+Mesterolone 5 100
+Methandienone 2 40
+Methandriol 5 100
+Methasterone 5 100
+Methenolone 5 100
+17a-Methyl-1,4-androstadiene-
+3b,17b-diol 5 100
+17a-Methylclostebol 5 100
+Methylclostediol 5 100
+Methyldienolone 5 100
+Methylnortestosterone 5 100
+Methylstenbolone 5 100
+Methyltestosterone 2 40
+Methyl-1-testosterone 5 100
+Methyltrienolone (Metribolone) 5 100
+Mibolerone 5 100
+Nandrolone 5 100
+19-Nor-5-Androstenediol 5 100
+19-Norandrostenedione 5 100
+19-Norandrosterone 20 500 0.5
+19-noretiocholanolone 20 500 0.5
+Norbolethone 5 100
+Norclostebol 5 100
+Norethandrolone 5 100
+Oxabolone 5 100
+Oxandrolone 5 100
+C3
+
+--- page 50 ---
+
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Anabolic Agents Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Oxymesterone 5 100
+Oxymetholone 5 100
+Progesterone 100 1000 10
+Prostanozol 5 100
+Quinbolone 5 100
+Stanozolol 2 40
+Stenbolone 5 100
+1-Testosterone 5 100
+Testosterone 20 500 0.5
+Tetrahydrogestrinone 5 100
+Tibolone 5 100
+Trenbolone 5 100
+Turinabol-oral 2 40
+Turinadiol-a (4-chloro-17a-methyl-
+androst-1,4-diene-3a,17b-diol) 5 100
+Turinadiol-b (4-chloro-17a-methyl-
+androst-1,4-diene-3b,17b-diol) 5 100
+alpha-Zearalanol (Zeranol) 5 100
+Zilpaterol 5 100
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Diuretics Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Acetazolamide 20 1000
+Althiazide 20 1000
+Amiloride 20 1000
+Bendroflumethiazide 20 1000
+Benzthiazide 20 1000
+Bumetanide 20 1000
+Buthiazide 20 1000
+Canrenone 20 1000
+Chlorthalidone 40 1000
+Chlorthiazide 20 1000
+Cyclothiazide 20 1000
+Ethacrynic Acid 20 1000
+C4
+
+--- page 51 ---
+
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Diuretics Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Furosemide 20 1000
+Hydrochlorothiazide 20 1000
+Hydroflumethiazide 20 1000
+Indapamide 20 1000
+Methiazide 20 1000
+Methylclothiazide 20 1000
+Metolazone 20 1000
+Polythiazide 20 1000
+Quinethazone 20 1000
+Spironolactone 20 1000
+Triamterene 20 1000
+Tolvaptan 20 1000
+Trichlormethiazide 20 1000
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Beta-2 Agonists Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Bambuterol 20 1000
+Brombuterol 20 1000
+Clenbuterol 2 100
+Fenoterol 20 1000
+Formoterol 20 1000
+Higenamine 200 1000
+Procaterol 20 1000
+Ractopamine 20 1000
+Ritodrine 20 1000
+Salbutamol 20 1000
+Salmeterol 20 1000
+Terbutaline 20 1000
+Vilanterol 20 1000
+C5
+
+--- page 52 ---
+
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Masking agents Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Note 2
+Epitestosterone 20 400 0.4
+Dutasteride 20 200
+Finasteride 20 200
+Probenecid 20 200
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Hypoxia-inducible factor activators Threshold threshold (endogenous)
+BAY 87-2243 20 200
+Daprodustat 20 200
+Desidustat 20 200
+Enarodustat 20 200
+Roxadustat 20 200
+FG-2216 20 200
+KC7F2 20 200
+Vadadustat 20 200
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Hormone Antagonists Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Aminoglutethimide 20 200
+Anastrozole 20 200
+5a-androstan-17b-ol-3,6-dione 20 200
+5a-Androstan-3,6,17-trione 20 200
+6-alpha-bromoandrostadiendione 20 200
+6-alpha-bromoandrostenedione 20 200
+6-alpha-bromotestosterone 20 200
+Androsta-1,4,6-triene-17b-ol-3-one 20 200
+Androsta-1,4,6-trienedione
+(Androsta-1,4,6-triene-3,17-dione) 20 200
+4-Androsten-3,6,17-trione 20 200
+Androsta-3,5-diene-7,17-dione 20 200
+6-beta-bromoandrostadiendione 20 200
+6-beta-bromoandrostenedione 20 200
+6-beta-bromotestosterone 20 200
+Clomiphene 20 200
+C6
+
+--- page 53 ---
+
+Cyclofenil 20 200
+N-Desmethyltamoxifen 20 200
+Exemestane 20 200
+Formestane 20 500
+Fulvestrant 20 200
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Hormone Antagonists Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Letrozole 40 200
+Raloxifene 20 200
+Tamoxifen 20 200
+Toremifene 20 200
+Testolactone 20 200
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Hormone and Metabolic Modulators Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+AICAR 1000 10000 500 μ g per day
+GW501516 10 200
+GW0742 10 200
+Anamorelin 5 100
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+SARM Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Andarine 5 200
+C-6 5 200
+CAS#541497-95-4 5 200
+Ibutamoren 5 200
+LGD -2226 5 200
+LGD -4033 5 200
+Ostarine 5 200
+RAD140 5 200
+S-1 5 200
+C7
+
+--- page 54 ---
+
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Growth Hormone Releasing Peptides Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Alexamorelin 200 2000
+GHRP-1 200 2000
+GHRP-2 200 2000
+GHRP-4 200 2000
+GHRP-5 200 2000
+GHRP-6 200 2000
+Hexarelin 200 2000
+Ipamorelin 200 2000
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Stimulants Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Adrafinil 25 1000
+2-Aminoheptane 25 1000
+2-Amino-6-methylheptane 25 1000
+6-Amino-2-methyl-2-heptanol 25 1000
+2-Amino-5-methylhexane 25 1000
+Amiphenazole 40 1000
+Amphetamine 25 1000
+Benfluorex 25 1000
+Benzphetamine 25 1000
+Benzylpiperazine 25 1000
+Bromantan 25 1000
+Carphedone 25 1000
+Cathine 25 1000
+p-Chloroamphetamine 25 1000
+Chlorphentermine 25 1000
+Clobenzorex 25 1000
+Cocaine 25 1000
+Cropropamide 25 1000
+Crotethamide 25 1000
+Deprenyl (Selegiline) 25 1000
+N-Desmethylsibutramine 25 1000
+N-Desmethylselegiline 25 1000
+Deterenol 25 1000
+C8
+
+--- page 55 ---
+
+N,N-Didesmethylsibutramine 25 1000
+N,a-Diethylphenylethylamine 25 1000
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Stimulants Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+N,b-Diethylphenylethylamine 25 1000
+Diethylpropion (Amfepramone) 25 1000
+Dimethylamphetamine 25 1000
+1,3-Dimethylbutylamine 25 1000
+N,N-Dimethylphenylethylamine 600 1000 31
+N,N-Dimethyl-2-phenylpropan-1-
+amine 25 1000
+Ephedrine 10 1000
+Ethamivan 25 1000
+Ethylamphetamine 25 1000
+Etilefrine 25 1000
+Famprofazone 25 1000
+Fenbutrazate 25 1000
+Fencamine 25 1000
+Fencamfamine 25 1000
+Fenetylline 25 1000
+Fenfluramine 25 1000
+Fenproporex 25 1000
+Furfenorex 25 1000
+4-Hydroxyamphetamine 25 1000
+Isometheptene 25 1000
+Mazindol 25 1000
+Meclofenoxate 25 1000
+Mefenorex 25 1000
+Mephentermine 25 1000
+Methamphetamine 25 1000
+Mesocarb 25 1000
+2-Methoxyphenylethylamine 25 1000
+4-Methylamphetamine 25 1000
+3,4-MDA (3,4-
+Methylenedioxyamphetamine) 25 1000
+3,4-MDMA (3,4-
+Methylenedioxymethamphetamine) 25 1000
+C9
+
+--- page 56 ---
+
+Methylephedrine 10 1000
+Methylhexaneamine 25 1000
+beta-Methylphenethylamine 25 1000
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Stimulants Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+N-Methylphenethylamine 500 1000 28
+Methylphenidate 25 1000
+Methyl-(3-phenylpropyl)-amine 25 1000
+N-Methylpseudoephedrine 25 1000
+Methylsynephrine (Oxilofrine) 25 1000
+Modafinil 25 1000
+Nikethamide 25 1000
+Norfenefrine 25 1000
+Norfenfluramine 25 1000
+Octopamine 200 10000 10
+Oxethazaine 25 1000
+Pemoline 25 1000
+Pentylenetetrazole 25 1000
+Phenpentermine 25 1000
+Phenpromethamine 25 1000
+Phentermine 25 1000
+Phendimetrazine 25 1000
+Phenmetrazine 25 1000
+1-Phenyl-2-butanamine 25 1000
+1-Phenylpentan-2-amine 25 1000
+Phenylpropanolamine 25 1000
+Prenylamine 25 1000
+Prolintane 25 1000
+Propylhexadrine 25 1000
+Pseudoephedrine 10 1000
+Pyrovalerone 25 1000
+Sibutramine 25 1000
+Strychnine 25 1000
+Trimetazidine 25 1000
+C10
+
+--- page 57 ---
+
+Maximum Per serving
+Report report threshold
+Note 1 Note 2 Note 3
+Beta-Blockers Threshold threshold (endogenous)
+(ng/g) (ng/g) (μg/serving)
+Acebutolol 25 1000
+Alprenolol 25 1000
+Atenolol 25 1000
+Betaxolol 25 1000
+Bisoprolol 25 1000
+Carteolol 25 1000
+Clozapine 25 1000
+Esmolol 25 1000
+Labetalol 25 1000
+Levbunolol 25 1000
+Metoprolol 25 1000
+Nadolol 25 1000
+Oxprenolol 25 1000
+Pindolol 25 1000
+Propafenone 25 1000
+Propranolol 25 1000
+Sotalol 25 1000
+Timolol 25 1000
+Note 1
+The report threshold is set at a
+concentration above which the prohibited
+substance can be confirmed as present for
+the majority of supplements or functional
+foods.
+Note 2
+The maximum report threshold is used
+in cases when the test method(s) cannot
+achieve the report threshold due to product
+matrix effects, i.e. substances not detected
+in both the test product and the fortified test
+product. This represents the highest limit of
+detection that will be used for reporting.
+Note 3
+Except where a daily limit is explicitly
+noted (e.g. THC limits). A per serving
+threshold has been determined for these
+endogenous substances based on World
+Anti-Doping Agency (WADA) minimum
+required performance levels (MRPL) in
+urine, decision limits for threshold
+substances in urine and concentrations
+found in the food supply. The per serving
+threshold is used only when evaluating
+ingredients or products that naturally
+C11
+
+--- page 58 ---
+
+contain banned substances at trace levels
+(e.g., octopamine in citrus, progesterone in
+whey protein, and N-
+methylphenylethylamine in fermented
+products).
+Note 4
+The per serving threshold for delta-8-
+THC, delta-9-THC and delta-10-THC is
+evaluated as the sum of
+tetrahydrocannabinols (delta-8-THC, delta-
+9-THC and delta-10-THC).
+C12
+
+--- page 59 ---
+
+Annex D
+Health Canada – Canadian policy
+(These policies are normative to any Certified Products being sold in Canada)
+D.1 Canadian normative references equivalency
+The following documents contain provisions that, through reference in this text, constitute provisions of this
+document.
+6
+Food and Drugs Act (R.S.C. 1985, c. F-27)
+7
+Natural Health Products Regulations (SOR/2003-196)
+Error! Bookmark not defined.
+NSF/ANSI 173 Dietary Supplements
+Error! Bookmark not defined.
+NSF 229 Certification Guideline for Functional Foods
+8
+Council Directive 90/496/EEC of 24 September 1990 on nutrition labeling for foodstuffs
+9
+CAC/G12-1985- Nutrition Labeling : A Strategic Framework for Public Education
+D.2 Additional GMP requirements for Canadian health product companies
+The following constitute additional requirements that NSF shall verify as part of the certification process for
+Companies selling Certified for Sport® Program Products in Canada.
+D.2.1 Product license
+All-natural health products require a product license before they can be sold in Canada. Obtaining a license
+requires submitting detailed information on the product to Health Canada, including medicinal ingredients,
+source, potency, non-medicinal ingredients and recommended use. Once a product has been assessed and
+granted market authorization by Health Canada, the product label will bear an eight (8) digit product license
+number preceded by the distinct letters NPN, or, in the case of a homeopathic medicine, by the letters DIN-HM.
+This number on the label will inform consumers that the product has been reviewed and approved by Health
+Canada for safety and efficacy.
+D.2.2 Site license
+A system of site licensing requires that all manufacturers, packagers, labelers, and importers be licensed. Sites
+must have procedures in place respecting distribution records and product recalls and for the handling, storage
+and delivery of their products, and demonstrate that they meet good manufacturing practice requirements.
+6
+Health Canada, Legislative Services Branch, 284 Wellington Street, SAT -3, Ottawa, Ontario K1A 0H8. <http://laws-
+lois.justice.gc.ca/eng/acts/F-27/>
+7
+Health Canada, Legislative Services Branch, 284 Wellington Street, SAT -3, Ottawa, Ontario K1A 0H8. <http://laws-
+lois.justice.gc.ca/eng/regulations/SOR-2003-196/page-1.html>
+8
+European Union, <http://www.useu.be/agri/label.html>
+9
+Health Canada, Address Located 0900C2, Ottawa, Ontario K1A 0K9 <http://www.hc -sc.gc.ca/fn-an/label-
+etiquet/nutrition/educat/strat_framework-cadre_strat-int-eng.php>
+D1
+
+--- page 60 ---
+
+This page is intentionally left blank.
+
+--- page 61 ---
+
+Annex E
+Special Terms and Conditions for Services Relating to Cannabis Sativa L. Ingredients
+(“CSL Ingredientsˮ) or Products Containing CSL Ingredients (“CSL Productsˮ)
+a. Client shall ensure that the CSL Ingredients or CSL Products are provided to NSF (i) in adequate quantities,
+(ii) in a safe condition and (iii) in compliance with all applicable local, state, and federal laws and regulations.
+b. NSF may, at its discretion and at Clientʼs cost, undertake initial testing on the CSL Ingredients or CSL
+Products to ensure such CSL Ingredients or CSL Products are safe and appropriate for NSF to provide the
+Services, and NSF shall not be liable for any delay in providing the Services as a result of such initial testing.
+c. Client represents and warrants that the CSL Ingredients or CSL Products contain CSL Ingredients which
+either (i) were derived from those parts of the plant excluded from the federal Controlled Substances Act's
+definition of "marihuana" (21 USC 802(16)(B)(ii)) or (ii) qualify as "hemp" and were derived solely from "hemp"
+plants pursuant to 21 USC 802(16)(B)(i).
+d. Client hereby acknowledges and agrees that Client assumes sole responsibility for ensuring the CSL
+Ingredients or CSL Products comply with all applicable local, state, and federal laws and regulations, including
+but not limited to labelling, transportation, and allowable content (including but not limited to allowable delta-9-
+tetrahydrocannibinol content, which Client acknowledges may vary according by jurisdiction). Client further
+acknowledges and agrees that NSFʼs performance of the Services does not i nclude, indicate, or imply any
+statement, conclusion, guarantee, or promise by NSF that the CSL Ingredients or CSL Products are in
+compliance with any local, state, or federal law or regulation.
+e. Client hereby acknowledges and agrees that NSF will release (i) information required by law to be disclosed
+or (ii) information required to be disclosed by any applicable program guidelines governing the Services or (iii)
+information requested or required to be disclosed by to any governmental agency, including but not limited to
+communication of test reports results to local, state or federal agencies in the event of delta-9-
+tetrahydrocannibinol test results exceeding the legal limits established under applicable local, state or federal
+law.
+E1
+
+--- page 62 ---
+
+This page is intentionally left blank.
+
+--- page 63 ---
+
+Annex Z
+Certification agreement
+The company shall:
+• fulfill certification requirements at all times, including implementation of required changes that are
+communicated by NSF, within an agreed upon timeframe
+• assure that the certified product continue to fulfill certification requirement for ongoing production
+• make arrangements for:
+o the conduct of evaluation and surveillance as required by NSF, including but not limited to,
+arranging availability of documentation, records, relevant equipment, location(s), area(s)
+o personnel and subcontractors (if applicable)
+o investigation of complaints
+o participating by observers, if applicable.
+• assure that:
+o all claims made by the company are consistent with the scope of certification
+o the product certification is not used in a manner that would bring NSF into disrepute
+o no statements are made regarding the certified product that are misleading or unauthorized.
+• any certification certificate or report related to certification shall not be used in any misleading manner.
+• discontinue use of all advertising that contains any reference to NSF certification and take actions as
+required by the NSF requirements, or the contract, if certification has been suspended, withdrawn or
+terminated
+• upon the request of others, provide copies of the certification documents, in their entirety, or as
+specified by the NSF requirements of the contract
+• assure that references to its product certification in documents, brochures or advertising comply with
+NSF requirements
+• comply with any requirements contained in the scheme related to use of the NSF mark, and on
+information related to the product (i.e. marketing materials, websites)
+• maintain a record of all complaints made known to the client relating to compliance with certification
+requirements, and made these records available to NSF upon request
+• take appropriate action based on complaints received, and deficiencies found in certified product that
+affect compliance with certification requirements
+• document actions taken
+• inform NSF immediately of changes that may affect the clientʼs ability to conform to certification
+requirements as stated in the scheme or the contract
+• the company acknowledges that NSF holds various accreditations that require review, audit, and
+inspections by accreditation and oversight bodies, including advisory councils and similar boards or
+committees (“accreditation/oversight bodiesˮ). The company agrees that such accreditation/oversight
+bodies may review, witness, and analyze any services and the associated data, information, and
+Z1
+
+--- page 64 ---
+
+Reports for the Services, whether at the premises of the company, NSF, or elsewhere. To the extent
+required by such accreditation/oversight bodies with respect to the particular services provided to the
+company, the company expressly consents that NSF may disclose to third parties the information about
+the company or the companyʼs products or services as directed by such accreditation/oversight
+bodies.
+Z2
+
+--- page 65 ---
+
+
+--- page 66 ---
+
+Improving Human and Planet Health
+For more information, contact: 789 N. Dixboro Road Ann Arbor, MI 48105 USA
+standards@nsf.org nsf.org

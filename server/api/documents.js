@@ -489,6 +489,62 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// ── Wet signatures on controlled documents ──────────────────────────────────
+// Danny (or QA, or Document Control) draws their signature ONCE on a phone;
+// signing a document applies it. The signature row stamps name, capacity,
+// time AND a snapshot of the drawn image — self-contained history, so
+// re-drawing the stored signature never rewrites what a signed document
+// shows. Declared before the '/:id' routes ('signatures' is a perfectly good
+// :id — the org /meta trap).
+
+const canWetSign = (u) => u?.role === 'admin' || u?.role === 'supervisor'
+  || ['qa', 'quality', 'document_control'].includes((u?.department || '').toLowerCase());
+
+router.get('/:id/signatures', (req, res) => {
+  const db = getDb();
+  res.json(db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(req.params.id));
+});
+
+router.post('/:id/sign', (req, res) => {
+  if (!canWetSign(req.user)) return res.status(403).json({ error: 'Signing a controlled document is for QA, Document Control, supervisors and admins.' });
+  const db = getDb();
+  const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  // A withdrawn document is history — nobody signs history into effect.
+  if (doc.status === 'archived') return res.status(409).json({ error: 'This document is no longer in use — reinstate it before signing.' });
+  const capacity = String(req.body?.capacity || '').trim();
+  if (capacity.length < 2) return res.status(400).json({ error: 'Say in what capacity you are signing (e.g. CEO, Quality Assurance).' });
+  // The drawn image is what makes this a WET signature — without one on file,
+  // the button sends the person to draw it first rather than filing a
+  // signature with nothing behind it.
+  const sig = db.prepare('SELECT signature_image FROM users WHERE id = ?').get(req.user.id)?.signature_image;
+  if (!sig) return res.status(409).json({ error: 'Draw your signature first (Account menu → My signature), then sign.', needs_signature: true });
+  if (db.prepare('SELECT 1 FROM document_signatures WHERE document_id = ? AND user_id = ? AND capacity = ?')
+    .get(doc.id, req.user.id, capacity)) {
+    return res.status(409).json({ error: 'You have already signed this document in that capacity.' });
+  }
+  const id = uuid();
+  db.prepare(`INSERT INTO document_signatures (id, document_id, user_id, name, capacity, signature_image)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(id, doc.id, req.user.id, req.user.name, capacity, sig);
+  logAudit(req.user, 'document_signed', 'document', doc.id,
+    { capacity, doc_number: doc.doc_number }, null, null, `${doc.doc_number || ''} ${doc.title}`.trim());
+  res.status(201).json(db.prepare('SELECT * FROM document_signatures WHERE id = ?').get(id));
+});
+
+// The way back is revoke — the signer, or an admin. Audited like every revoke.
+router.delete('/signatures/:sigId', (req, res) => {
+  const db = getDb();
+  const sig = db.prepare('SELECT * FROM document_signatures WHERE id = ?').get(req.params.sigId);
+  if (!sig) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role !== 'admin' && sig.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Only the person who signed, or an admin, can revoke a signature.' });
+  }
+  db.prepare('DELETE FROM document_signatures WHERE id = ?').run(sig.id);
+  logAudit(req.user, 'document_signature_revoked', 'document', sig.document_id,
+    { signed_by: sig.name, capacity: sig.capacity }, sig, null);
+  res.json({ ok: true });
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
@@ -704,7 +760,8 @@ router.get('/:id/pdf', (req, res) => {
   const db = getDb();
   const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!doc) return res.status(404).json({ error: 'Not found' });
-  generatePDF(res, [doc]);
+  const sigs = db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(doc.id);
+  generatePDF(res, [doc], { [doc.id]: sigs });
 });
 
 router.post('/pdf', (req, res) => {
@@ -714,12 +771,14 @@ router.post('/pdf', (req, res) => {
   const placeholders = ids.map(() => '?').join(',');
   const docs = db.prepare(`SELECT * FROM sop_documents WHERE id IN (${placeholders}) ORDER BY category, doc_number`).all(...ids);
   if (!docs.length) return res.status(404).json({ error: 'No documents found' });
-  generatePDF(res, docs);
+  const sigsByDoc = {};
+  for (const d of docs) sigsByDoc[d.id] = db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(d.id);
+  generatePDF(res, docs, sigsByDoc);
 });
 
 const STATUS_LABEL = { draft: 'Draft', under_review: 'In Review', active: 'Approved / Effective', superseded: 'Superseded', archived: 'Archived' };
 
-function generatePDF(res, docs) {
+function generatePDF(res, docs, sigsByDoc = null) {
   const LEFT = 72;
   const RIGHT = 540;
   const BODY_W = RIGHT - LEFT;
@@ -793,6 +852,36 @@ function generatePDF(res, docs) {
       }
     } else {
       pdf.fillColor('#9ca3af').fontSize(10).font('Helvetica-Oblique').text('No content yet.', LEFT, pdf.y, { width: BODY_W });
+    }
+
+    // Wet signatures — the drawn image beside name, capacity and date, the way
+    // a signed paper original reads. Rendered from each signature's own stored
+    // snapshot, never the signer's current pad.
+    const sigs = (sigsByDoc && sigsByDoc[doc.id]) || [];
+    if (sigs.length) {
+      ensureSpace(60 + sigs.length * 58);
+      pdf.moveDown(1.5);
+      pdf.fillColor('#111827').fontSize(11).font('Helvetica-Bold').text('Signatures', LEFT, pdf.y, { width: BODY_W });
+      pdf.moveDown(0.4);
+      for (const s of sigs) {
+        ensureSpace(58);
+        const y = pdf.y;
+        let drew = false;
+        if (s.signature_image && s.signature_image.startsWith('data:image/')) {
+          try {
+            const buf = Buffer.from(s.signature_image.split(',')[1], 'base64');
+            pdf.image(buf, LEFT, y, { fit: [150, 40] });
+            drew = true;
+          } catch { /* fall through to text-only */ }
+        }
+        pdf.fillColor('#111827').fontSize(10).font('Helvetica-Bold')
+          .text(s.name, LEFT + (drew ? 165 : 0), y + 4, { width: BODY_W - (drew ? 165 : 0), lineBreak: false });
+        pdf.fillColor('#4b5563').fontSize(9).font('Helvetica')
+          .text(`${s.capacity} · ${String(s.signed_at).slice(0, 10)}`, LEFT + (drew ? 165 : 0), y + 18, { width: BODY_W - (drew ? 165 : 0), lineBreak: false });
+        pdf.moveTo(LEFT, y + 46).lineTo(RIGHT, y + 46).strokeColor('#e5e7eb').stroke();
+        pdf.y = y + 52;
+        pdf.x = LEFT;
+      }
     }
 
     pdf.save();
