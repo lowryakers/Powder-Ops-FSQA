@@ -1317,7 +1317,7 @@ function App() {
   // Jump from a module to a specific comms channel, remembering the origin.
   useEffect(() => {
     const handler = (e) => {
-      setCommsLink({ channel: e.detail?.channel || null, from: e.detail?.from || null, fromLabel: e.detail?.fromLabel || 'Back' });
+      setCommsLink({ channel: e.detail?.channel || null, nonce: Date.now(), from: e.detail?.from || null, fromLabel: e.detail?.fromLabel || 'Back' });
       setWorkspace('comms');
     };
     window.addEventListener('open-comms-channel', handler);
@@ -1333,7 +1333,12 @@ function App() {
   //  3. A postMessage from the SW when a window is already open.
   const openFromNotification = useCallback((channelId, messageId = null) => {
     if (!channelId) return;
-    setCommsLink({ channelId, messageId: messageId || null, from: null, fromLabel: 'Back' });
+    // `nonce` makes every TAP distinct. Channel and message ids are primitive
+    // props, so two taps carrying the same target were indistinguishable
+    // downstream and the second one did nothing — the "notification didn't
+    // take me to the message" bug. CommsView keys its deep-link effects on
+    // the nonce, so each tap acts even when the target hasn't changed.
+    setCommsLink({ channelId, messageId: messageId || null, nonce: Date.now(), from: null, fromLabel: 'Back' });
     setWorkspace('comms');
   }, []);
 
@@ -1653,6 +1658,7 @@ function App() {
         openChannelName={commsLink?.channel}
         openChannelId={commsLink?.channelId}
         openMessageId={commsLink?.messageId}
+        openNonce={commsLink?.nonce}
         backLabel={commsLink?.from ? commsLink.fromLabel : null}
         onBackToModule={commsLink?.from ? () => { setWorkspace('fsqa'); setActiveTab(commsLink.from); setCommsLink(null); } : null}
         homePref={homePref}

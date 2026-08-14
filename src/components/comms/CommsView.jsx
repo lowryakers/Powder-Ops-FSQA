@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
@@ -1739,7 +1739,7 @@ function ForwardModal({ m, onClose }) {
   );
 }
 
-function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, canTranslate, viewerLang, onTranslate, autoText, highlighted, mentionUsers }) {
+const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, canTranslate, viewerLang, onTranslate, autoText, highlighted, mentionUsers }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.body || '');
@@ -1958,9 +1958,9 @@ function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkU
       )}
     </div>
   );
-}
+});
 
-export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen, openChannelName, openChannelId, openMessageId, backLabel, onBackToModule, homePref, onSetHome, bottomNavPadding = false }) {
+export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen, openChannelName, openChannelId, openMessageId, openNonce, backLabel, onBackToModule, homePref, onSetHome, bottomNavPadding = false }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
@@ -2137,9 +2137,24 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       const target = list.find(c => norm(c.name) === t) || list.find(c => norm(c.name).includes(t));
       if (target) { linkedOpenedRef.current = openChannelName; openChannel(target.id); return; }
     }
-    // Restore where you were — the VIEW as well as the conversation. The
-    // channel is restored first in both cases so that closing Threads leaves
-    // you in the channel you had open rather than an empty pane.
+    // ON A PHONE, THE APP OPENS ON THE LIST. FULL STOP. Restoring the last
+    // conversation read as helpful and wasn't: you open Messages to see what
+    // is NEW, and landing inside Tuesday's conversation both hid the list you
+    // came for and — because a conversation on screen is a conversation
+    // marked read — cleared the very unread you tapped in to read. Deep links
+    // and notification taps still open their exact channel (the branches
+    // above); this only decides the unprompted landing. Touch capability is
+    // the test, same as the empty-restore rule below — width can't tell the
+    // docked split panel from a phone.
+    if (window.matchMedia?.('(hover: none)').matches) {
+      bootRestoredRef.current = true;
+      return;
+    }
+
+    // Wide layouts: restore where you were — the VIEW as well as the
+    // conversation. The channel is restored first in both cases so that
+    // closing Threads leaves you in the channel you had open rather than an
+    // empty pane.
     // BOTH values are read before anything is opened: openChannel() records
     // 'channel' as the view, so reading lastView() after it would always come
     // back 'channel' and the Threads restore could never fire.
@@ -2170,24 +2185,64 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
 
   // A push-notification deep-link can arrive while Comms is already open — open
   // the requested channel even if another one is active.
+  //
+  // KEYED ON THE TAP (openNonce), NOT THE TARGET. Two different notification
+  // taps can carry the identical channel — the second message in a busy
+  // channel, or a re-tap after the phone locked — and every value here is a
+  // primitive, so an effect keyed on the target saw nothing change and did
+  // nothing. That is most of "tapping the notification doesn't take me to the
+  // message": the app was already showing the right channel and refused to
+  // move within it. The nonce changes on every tap, so every tap acts.
   useEffect(() => {
-    if (!openChannelId || !list.length || linkedOpenedRef.current === openChannelId) return;
-    if (list.some(c => c.id === openChannelId)) { linkedOpenedRef.current = openChannelId; openChannel(openChannelId); }
+    if (!openChannelId || !list.length) return;
+    if (!list.some(c => c.id === openChannelId)) return;
+    linkedOpenedRef.current = openChannelId;
+    if (openChannelId !== activeId) {
+      openChannel(openChannelId);
+    } else {
+      // Already in the channel: surface the CONVERSATION — the tap may have
+      // landed on the thread inbox, the activity feed, or the channel list.
+      setThreadsOpen(false); setActivityOpen(false); setMobileThread(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openChannelId, list.length]);
+  }, [openChannelId, openNonce, list.length]);
 
 
+  // Per-channel message cache: switching channels shows the LAST-SEEN
+  // conversation instantly and refreshes it behind. Before this, every switch
+  // blanked the pane and waited on the network — which on a floor phone is
+  // the whole of "comms feels laggy". The cache is session-only (a ref), so
+  // nothing here changes what the server says is true; it only changes what
+  // is on screen while the truth is fetched.
+  const msgCacheRef = useRef(new Map());
+  // The active channel at the moment a response LANDS, not the one it was
+  // asked for: switch quickly from #general to a DM and #general's slower
+  // response used to arrive last and overwrite the DM's messages — the wrong
+  // conversation under the right header until the next refresh.
+  const activeIdRef = useRef(null);
   const loadMessages = useCallback(async (id) => {
     if (!id) return;
     try {
       const msgs = await apiFetch(`/comms/channels/${id}/messages`);
-      setMessages(msgs);
+      msgCacheRef.current.set(id, msgs);
+      if (activeIdRef.current === id) setMessages(msgs);
       // NOTE: loading messages does NOT mark the channel read. See the effect
       // below — a channel is only read once its conversation is on screen.
     } catch { /* channel may be inaccessible */ }
   }, []);
 
-  useEffect(() => { setMessages([]); setTypers([]); setPending([]); loadMessages(activeId); }, [activeId, loadMessages]);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+    setMessages(activeId ? (msgCacheRef.current.get(activeId) || []) : []);
+    setTypers([]); setPending([]);
+    loadMessages(activeId);
+  }, [activeId, loadMessages]);
+
+  // Socket events mutate `messages` in place — keep the cache carrying what
+  // the screen shows, so switching away and back doesn't rewind the channel.
+  useEffect(() => {
+    if (activeId && messages.length) msgCacheRef.current.set(activeId, messages);
+  }, [messages, activeId]);
 
   // A channel is marked read when its conversation is ACTUALLY ON SCREEN — not
   // when its messages happen to load.
@@ -2444,10 +2499,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     if (files.length) uploadFiles(files);
   };
   const removePending = (id) => setPending(p => p.filter(x => x.id !== id));
-  const react = async (m, emoji) => { const updated = await apiPost(`/comms/messages/${m.id}/reactions`, { emoji }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
-  const unreact = async (m, emoji) => { const updated = await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
-  const editMsg = async (m, text) => { if (!text.trim()) return; const updated = await apiPut(`/comms/messages/${m.id}`, { body: text }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); };
-  const delMsg = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); loadMessages(activeId); };
+  // STABLE handler identities (useCallback), so a memoized Message row doesn't
+  // re-render on every keystroke in the composer. On a busy channel — hundreds
+  // of rows — re-rendering all of them per character is the other half of "comms
+  // feels laggy on a phone". None of these close over changing state except
+  // delMsg, which reads the active channel from a ref.
+  const react = useCallback(async (m, emoji) => { const updated = await apiPost(`/comms/messages/${m.id}/reactions`, { emoji }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); }, []);
+  const unreact = useCallback(async (m, emoji) => { const updated = await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); }, []);
+  const editMsg = useCallback(async (m, text) => { if (!text.trim()) return; const updated = await apiPut(`/comms/messages/${m.id}`, { body: text }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); }, []);
+  const delMsg = useCallback(async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); loadMessages(activeIdRef.current); }, [loadMessages]);
 
   const onBodyChange = (e) => {
     const val = e.target.value;
@@ -2570,8 +2630,20 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
 
   // Deep link from a push notification: land on the exact message. If it's a
   // thread reply, open the thread drawer too. Highlight briefly either way.
+  //
+  // The ref alone cannot TRIGGER anything — writing a ref re-runs no effect,
+  // which is why a notification tapped while its channel was already on
+  // screen used to scroll nowhere: the resolve effect below only woke on
+  // messages/activeId changing, and neither had. `pendingTick` is the wake-up
+  // call; bump it every time a target message is queued.
   const pendingMsgRef = useRef(null);
-  useEffect(() => { if (openMessageId) pendingMsgRef.current = openMessageId; }, [openMessageId]);
+  const [pendingTick, setPendingTick] = useState(0);
+  const queueMessage = useCallback((mid) => {
+    if (!mid) return;
+    pendingMsgRef.current = mid;
+    setPendingTick(t => t + 1);
+  }, []);
+  useEffect(() => { queueMessage(openMessageId); }, [openMessageId, openNonce, queueMessage]);
 
   // Tapping a ReadyDoc link inside a message (ReadyBot reminders, cross-links)
   // jumps straight to that conversation/message instead of reloading the site.
@@ -2580,7 +2652,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       const { channelId, messageId } = e.detail || {};
       if (!channelId) return;
       openChannel(channelId);
-      if (messageId) pendingMsgRef.current = messageId;
+      queueMessage(messageId);
     };
     window.addEventListener('comms-open-channel', onOpen);
     return () => window.removeEventListener('comms-open-channel', onOpen);
@@ -2617,7 +2689,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         }
       } catch { pendingMsgRef.current = null; }
     })();
-  }, [messages, activeId]);  
+    // pendingTick is the wake-up for a target queued while messages/activeId
+    // were already settled — a notification tapped inside its own channel.
+  }, [messages, activeId, pendingTick]);
 
   const pushSupported = ('serviceWorker' in navigator) && ('PushManager' in window);
 
@@ -2695,11 +2769,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // Marking unread means "I'll come back to this" — so leave the conversation.
   // Staying in it would just re-mark it read the moment the screen settled,
   // which is exactly the behaviour that lost people's unread before.
-  const markUnread = async (m) => {
+  const markUnread = useCallback(async (m) => {
     try { await apiPost(`/comms/messages/${m.id}/unread`, {}); } catch { /* ignore */ }
     backToList();
     refreshChannels();
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshChannels]);
 
   const toggleDmPick = (id) => setDmSelected(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
   const startDm = async () => {
