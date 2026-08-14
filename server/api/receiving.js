@@ -202,7 +202,31 @@ const HEADER_COLS = ['po_number', 'truck_number', 'pallet_count', 'driver_name',
  * refuses a half-filled field on the dock is a form people stop using;
  * validation belongs at sign-off, which is where it is.
  */
-router.post('/checklist', (req, res) => {
+/**
+ * Send one escalation and write it onto the record. Shared by the manual
+ * Notify button and the automatic fire-on-answer path, so a notification is
+ * byte-for-byte the same record whichever way it was sent.
+ */
+async function fireEscalation(db, row, item, user, { detail = '', auto = false } = {}) {
+  const { sent, reason } = await sendEscalation(db, {
+    item: item.text, target: item.notify.target, inspectionNo: row.inspection_no, detail, from: user,
+  });
+  if (!sent.length) return { sent: [], reason };
+  // Re-read: the row in hand may predate another device's notification.
+  const fresh = db.prepare('SELECT notifications FROM receiving_checklists WHERE id = ?').get(row.id);
+  const log = parseJson(fresh?.notifications, []) || [];
+  log.push({
+    item: item.key, text: item.text, target: item.notify.target, to: sent,
+    at: new Date().toISOString(), by: user.name, ...(auto ? { auto: true } : {}),
+  });
+  db.prepare("UPDATE receiving_checklists SET notifications = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify(log), row.id);
+  logAudit(user, 'receiving_escalation_sent', 'receiving_checklist', row.id,
+    { inspection_no: row.inspection_no, item: item.key, target: item.notify.target, to: sent, auto }, null, null, row.inspection_no);
+  return { sent, log };
+}
+
+router.post('/checklist', async (req, res) => {
   if (!canLog(req.user)) return res.status(403).json({ error: 'Filing a receiving inspection needs the Receiving Log.' });
   const db = getDb();
   // Blank number = STARTING a new inspection, which is the first thing that
@@ -234,20 +258,46 @@ router.post('/checklist', (req, res) => {
     db.prepare(`UPDATE receiving_checklists SET ${Object.keys(patch).map(c => `${c} = ?`).join(', ')},
       updated_at = datetime('now') WHERE id = ?`).run(...Object.values(patch), row.id);
   }
-  const updated = db.prepare('SELECT * FROM receiving_checklists WHERE id = ?').get(row.id);
+  let updated = db.prepare('SELECT * FROM receiving_checklists WHERE id = ?').get(row.id);
   logAudit(req.user, 'receiving_checklist_updated', 'receiving_checklist', row.id,
     { inspection_no: no, fields: Object.keys(patch) }, row, updated, no);
+
+  // THE ANSWER IS THE TRIGGER (user decision 2026-08-14): the moment a tapped
+  // answer fires a rule, the app sends the escalation itself — the paper's
+  // "notify Adam" instruction performed rather than displayed. Three limits
+  // keep it sane:
+  //   - Only for items answered IN THIS REQUEST, so opening an old half-done
+  //     checklist to fix a header can't suddenly fire last week's answers.
+  //   - Idempotent per item: once told, flipping the answer back and forth
+  //     sends nothing more. Correcting a real mis-tap is visible on the record
+  //     (the notification names the answer it reported).
+  //   - Best-effort: a comms outage never fails the save. An unsent escalation
+  //     stays on the row as the amber prompt + manual button, and the sign-off
+  //     gate still refuses until it goes.
+  if (req.body?.answers !== undefined && !updated.reviewed_at) {
+    try {
+      const ans = parseJson(updated.answers, {}) || {};
+      const already = new Set((parseJson(updated.notifications, []) || []).map(n => n.item));
+      let fired = false;
+      for (const key of Object.keys(normalizeAnswers(req.body.answers))) {
+        const item = getItem(key);
+        if (!item?.notify || already.has(key)) continue;
+        if (ans[key] !== item.notify.answer) continue;
+        const out = await fireEscalation(db, updated, item, req.user, { auto: true });
+        if (out.sent.length) fired = true;
+      }
+      if (fired) updated = db.prepare('SELECT * FROM receiving_checklists WHERE id = ?').get(row.id);
+    } catch (e) {
+      console.warn('[receiving] auto-escalation failed (save is unaffected):', e.message);
+    }
+  }
   res.json(shapeChecklist(updated));
 });
 
 /**
- * Send the escalation the form asks for.
- *
- * A separate, deliberate act rather than an automatic side effect of ticking a
- * box: the receiver may be correcting a mis-tap, and an alert that fires on
- * every keystroke is one people learn to ignore. What IS automatic is the
- * prompt — the app puts the button in front of them the moment the answer
- * triggers it, which the paper never did.
+ * Send an escalation by hand — the fallback when the automatic send on the
+ * answer could not reach anyone (comms outage, nobody matching), and the
+ * button the sign-off gate points at. Same fireEscalation as the auto path.
  */
 router.post('/checklist/:inspectionNo/notify', async (req, res) => {
   if (!canLog(req.user)) return res.status(403).json({ error: 'Filing a receiving inspection needs the Receiving Log.' });
@@ -265,21 +315,9 @@ router.post('/checklist/:inspectionNo/notify', async (req, res) => {
     return res.status(409).json({ error: `"${item.text}" is not answered ${item.notify.answer.toUpperCase()}, so there is nothing to escalate.` });
   }
 
-  const { sent, reason } = await sendEscalation(db, {
-    item: item.text,
-    target: item.notify.target,
-    inspectionNo: no,
-    detail: String(req.body?.detail || '').slice(0, 500),
-    from: req.user,
-  });
+  const { sent, reason, log } = await fireEscalation(db, row, item, req.user,
+    { detail: String(req.body?.detail || '').slice(0, 500) });
   if (!sent.length) return res.status(503).json({ error: `Could not reach anyone — ${reason || 'no matching accounts'}. Tell them directly.` });
-
-  const log = parseJson(row.notifications, []) || [];
-  log.push({ item: item.key, text: item.text, target: item.notify.target, to: sent, at: new Date().toISOString(), by: req.user.name });
-  db.prepare("UPDATE receiving_checklists SET notifications = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(JSON.stringify(log), row.id);
-  logAudit(req.user, 'receiving_escalation_sent', 'receiving_checklist', row.id,
-    { inspection_no: no, item: item.key, target: item.notify.target, to: sent }, null, null, no);
   res.json({ ok: true, sent, notifications: log });
 });
 

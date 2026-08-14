@@ -31,7 +31,7 @@ export const CHECKLIST_TITLE = 'Receiving Inspection Checklist';
 // `receiving-notify.js`; named here so the form says who it goes to.
 export const NOTIFY_TARGETS = {
   qa_inspection: {
-    label: 'Maria and Adam',
+    label: 'Adam and Maria',
     // Both named on the form for this one — it is a QA inspection of incoming
     // packaging, and the form asks for both.
     names: ['Maria', 'Adam'],
@@ -39,23 +39,32 @@ export const NOTIFY_TARGETS = {
     subject: 'QA inspection needed on a receipt',
   },
   qa: {
-    label: 'Adam or QA',
-    names: ['Adam'],
+    label: 'Adam and Maria',
+    // The paper says "Adam or QA"; the user's routing decision (2026-08-14) is
+    // that every QA escalation reaches BOTH Adam and Maria.
+    names: ['Adam', 'Maria'],
     fallbackDepartments: ['qa'],
     subject: 'QA inspection needed on a receipt',
   },
   purchasing: {
-    label: 'purchasing',
-    // Purchasing is the office here; no single name is on the form.
-    names: [],
-    fallbackDepartments: ['office', 'purchasing', 'admin'],
+    label: 'Jake (Purchasing)',
+    // Jake Waits is the procurement manager (user's routing decision,
+    // 2026-08-14). The department fallback keeps the escalation alive if his
+    // account is renamed or he leaves.
+    names: ['Jake Waits', 'Jake'],
+    fallbackDepartments: ['purchasing', 'procurement', 'office', 'admin'],
     subject: 'Receiving paperwork problem',
   },
 };
 
 // `answer` is the response that fires the escalation. `note` is the form's own
-// wording, kept so the screen shows the operator what the paper told them.
-const N = (target, answer, note) => ({ target, answer, note });
+// wording — kept in the definition as the record of what FORM 204-01 says,
+// though the screen no longer renders it: the app performs the notification
+// itself, so an instruction telling the receiver to go do it is noise.
+// `target_label` rides along so every rendering of the item can name who the
+// escalation reaches without a second lookup (the missing label is exactly how
+// the button once read "Notify undefined").
+const N = (target, answer, note) => ({ target, answer, note, target_label: NOTIFY_TARGETS[target].label });
 
 export const CHECKLIST_SECTIONS = [
   {

@@ -46,17 +46,19 @@ function AnswerButtons({ value, onPick, disabled }) {
 }
 
 function Item({ item, value, sent, onAnswer, onNotify, notifying, locked }) {
-  // An escalation is live when the answer matches the rule and it has not been
-  // sent yet. Once sent, the row says who was told instead of asking again.
+  // The escalation now SENDS ITSELF when the answer that fires it is tapped —
+  // so the "*If YES, notify Adam…" instruction is no longer rendered (the app
+  // performs it), and the amber prompt only appears when the automatic send
+  // could not reach anyone. Plain instruction notes (seal, allergen placards,
+  // paperwork) still render: those tell the receiver to DO something the app
+  // can't do for them.
   const triggered = item.notify && value === item.notify.answer;
   return (
     <div className={`px-3 py-2.5 border-b border-gray-100 last:border-0 ${triggered && !sent ? 'bg-amber-50' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm text-gray-900">{item.text}</p>
-          {(item.note || item.notify?.note) && (
-            <p className="text-[11px] text-gray-500 mt-0.5">*{item.note || item.notify.note}</p>
-          )}
+          {item.note && <p className="text-[11px] text-gray-500 mt-0.5">*{item.note}</p>}
         </div>
         <AnswerButtons value={value} onPick={(a) => onAnswer(item.key, a)} disabled={locked} />
       </div>
@@ -64,18 +66,18 @@ function Item({ item, value, sent, onAnswer, onNotify, notifying, locked }) {
       {triggered && !sent && !locked && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-xs text-amber-900 font-medium flex items-center gap-1">
-            <AlertTriangle size={13} /> {item.notify.target_label || 'Someone'} needs to know.
+            <AlertTriangle size={13} /> {item.notify.target_label || 'Someone'} needs to know — the automatic message didn't go through.
           </span>
           <button type="button" onClick={() => onNotify(item)} disabled={notifying === item.key}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-50">
-            <BellRing size={13} /> {notifying === item.key ? 'Sending…' : `Notify ${item.notify.target_label}`}
+            <BellRing size={13} /> {notifying === item.key ? 'Sending…' : `Send to ${item.notify.target_label || 'them'}`}
           </button>
         </div>
       )}
 
       {sent && (
         <p className="mt-1.5 text-[11px] text-green-800 flex items-center gap-1">
-          <Check size={12} /> Told {sent.to.join(', ')} — {formatDateTime(sent.at)}
+          <Check size={12} /> Told {sent.to.join(', ')} — {formatDateTime(sent.at)}{sent.auto ? ' · sent automatically' : ''}
         </p>
       )}
     </div>
