@@ -1171,10 +1171,15 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   }, [parent.id]);
   useEffect(() => { load(); }, [load]);
   // Opening the thread clears it from Threads — reading it here and reading it
-  // in the inbox are the same act.
+  // in the inbox are the same act. AND re-mark when a reply lands while the
+  // drawer is open: keyed on the reply COUNT as well as parent.id, so a reply
+  // arriving while you're reading doesn't linger as unread until you close and
+  // reopen — the same "mark read while it's on screen, not just on open" rule
+  // the channel follows.
+  const replyCount = thread?.replies?.length ?? 0;
   useEffect(() => {
     apiPost(`/comms/threads/${parent.id}/read`, {}).then(() => onThreadRead?.()).catch(() => {});
-  }, [parent.id, onThreadRead]);
+  }, [parent.id, replyCount, onThreadRead]);
   // Live-refresh when a reply to this parent arrives.
   useEffect(() => {
     const s = socketRef?.current; if (!s) return;
@@ -2260,6 +2265,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     apiPost(`/comms/channels/${activeId}/read`, {}).then(refreshChannels).catch(() => {});
     clearChannelNotifications(activeId);
   }, [conversationOnScreen, activeId, refreshChannels]);
+
   // Restore this conversation's draft (typed text was saved as you navigated away).
   useEffect(() => { setBody(readDrafts()[activeId]?.text || ''); }, [activeId]);
   // Composer grows with its content (and shrinks back after send/clear).
@@ -2375,6 +2381,23 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight;
     setShowJump(false);
   };
+
+  // Re-mark read when a new message LANDS while you're looking at the channel.
+  // The on-screen effect above only fires on ENTER — a socket message arriving
+  // in the open channel changes neither activeId nor conversationOnScreen, so
+  // the badge kept counting messages you were actively watching until you left
+  // and came back. Only when pinned to the live bottom: if you've scrolled up
+  // reading history, a new arrival at the foot isn't "seen" yet. Keyed on the
+  // newest id so it fires once per message; it does NOT refreshChannels itself
+  // — the server marks read, and this same message's channels:changed refresh
+  // carries the zero, so there's no extra round trip on the hot path.
+  const lastMsgId = messages.length ? messages[messages.length - 1].id : null;
+  useEffect(() => {
+    if (!conversationOnScreen || !lastMsgId || !pinnedRef.current) return;
+    apiPost(`/comms/channels/${activeId}/read`, {}).catch(() => {});
+    clearChannelNotifications(activeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastMsgId, conversationOnScreen]);
   // Jump to a specific day: load the window starting there and land at its top.
   const jumpToDate = async (d) => {
     if (!activeId || !d) return;
