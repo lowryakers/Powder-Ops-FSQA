@@ -1939,6 +1939,13 @@ function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_certifications_person ON certifications(person_name);
   `);
+  // Search covers what's INSIDE the certificate, not just its metadata:
+  // extracted_text is populated on upload (and by the seed) and is searched,
+  // never shipped to the client. asset_file names a bundled PDF under
+  // server/assets/certifications for seeded certificates that predate any R2
+  // upload — served through an authenticated route, never from public/.
+  addColumnIfMissing('certifications', 'extracted_text', 'TEXT');
+  addColumnIfMissing('certifications', 'asset_file', 'TEXT');
 
   // ── Product management ────────────────────────────────────────────────────
   // The finished-goods catalogue: what we sell, its codes, and the film it

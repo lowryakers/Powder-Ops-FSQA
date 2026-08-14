@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApiGet, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -101,30 +101,37 @@ function CertForm({ initial, people, onClose, onSaved }) {
 export default function CertificationsPanel() {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'certifications');
-  const { data, refresh } = useApiGet('/certifications');
-  const { data: users } = useApiGet('/users');
   const [q, setQ] = useState('');
+  // The search runs SERVER-side so it can look inside the certificate files
+  // (extracted_text is searched there, never shipped here). Debounced so the
+  // list doesn't refetch on every keystroke.
+  const [qd, setQd] = useState('');
+  useEffect(() => { const t = setTimeout(() => setQd(q.trim()), 300); return () => clearTimeout(t); }, [q]);
+  const listPath = qd ? `/certifications?q=${encodeURIComponent(qd)}` : '/certifications';
+  const { data, refresh } = useApiGet(listPath, [listPath]);
+  const { data: users } = useApiGet('/users');
   const [form, setForm] = useState(null); // null | {} (new) | cert (edit)
   const [preview, setPreview] = useState(null); // { url, name }
 
-  const certs = data?.certifications || [];
+  const certs = useMemo(() => data?.certifications || [], [data]);
   const people = useMemo(() => [...new Set([...(users || []).map(u => u.name), ...certs.map(c => c.person_name)])].sort(), [users, certs]);
-  const filtered = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    if (!t) return certs;
-    return certs.filter(c => `${c.person_name} ${c.cert_type} ${c.issuer || ''} ${c.cert_number || ''}`.toLowerCase().includes(t));
-  }, [certs, q]);
   const byPerson = useMemo(() => {
     const m = new Map();
-    for (const c of filtered) { if (!m.has(c.person_name)) m.set(c.person_name, []); m.get(c.person_name).push(c); }
+    for (const c of certs) { if (!m.has(c.person_name)) m.set(c.person_name, []); m.get(c.person_name).push(c); }
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filtered]);
+  }, [certs]);
   const attention = certs.filter(c => c.status !== 'valid').length;
 
   const openFile = async (c) => {
     try {
-      const { url, filename } = await apiFetch(`/certifications/${c.id}/file`);
-      setPreview({ url, name: filename });
+      const r = await apiFetch(`/certifications/${c.id}/file`);
+      if (r.url) { setPreview({ url: r.url, name: r.filename }); return; }
+      // Seeded certificates stream from the server behind login — a plain URL
+      // carries no auth header, so fetch the bytes and preview the blob.
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api${r.raw}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error('Could not load the certificate file.');
+      setPreview({ url: URL.createObjectURL(await res.blob()), name: r.filename });
     } catch (e) { alert(e.message); }
   };
   const del = async (c) => {
@@ -155,7 +162,7 @@ export default function CertificationsPanel() {
 
       <div className="relative max-w-sm">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search person or certification…"
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search — person, certification, or text inside the certificate files…"
           className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm" />
       </div>
 
@@ -173,6 +180,11 @@ export default function CertificationsPanel() {
                       {[c.issuer, c.cert_number && `#${c.cert_number}`, c.expiry_date ? `expires ${c.expiry_date}` : 'no expiry'].filter(Boolean).join(' · ')}
                     </div>
                     {c.notes && <div className="text-[11px] text-gray-400 italic">{c.notes}</div>}
+                    {c.snippet && (
+                      <div className="text-[11px] text-powder-700 bg-powder-50 rounded px-1.5 py-0.5 mt-1">
+                        Found inside the certificate: “{c.snippet}”
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${STATUS_STYLE[c.status]}`}>{STATUS_LABEL[c.status]}</span>

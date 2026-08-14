@@ -144,6 +144,61 @@ export function readinessReview(db) {
       ccps ? null : 'A HACCP plan with no CCPs in the system has its monitoring evidence nowhere.', 'equipment')];
   });
 
+  // ── NSF GMP for Sport (from the Audit Guide on file, REF-NSF-GMP-AUDIT) ───
+  // The guide's Section 3 is the sport-specific half of the audit: 6.2.1 (no
+  // banned/prohibited substances in the facility — the MLB / NFL / WADA /
+  // Annex C lists), 6.2.2 (procedures reference those lists), 6.2.3.1
+  // (documented ANNUAL review of the lists, NSF notified of changes) and
+  // 6.2.3.2 (purchasing checks materials against them). Section 2's PP-5 asks
+  // for the facility's current GMP/food-safety certification up front.
+  // Everything here is derived from the registry and the certifications table
+  // — what an auditor following that guide would actually be handed.
+  add('NSF GMP for Sport (Audit Guide)', () => {
+    const like = (s) => `%${s}%`;
+    const bannedDocs = db.prepare(`SELECT doc_number, title,
+        COALESCE(NULLIF(effective_date, ''), substr(updated_at, 1, 10)) AS last_touched
+      FROM sop_documents
+      WHERE status = 'active' AND COALESCE(doc_type, '') != 'reference'
+        AND (title LIKE ? OR title LIKE ? OR description LIKE ? OR description LIKE ?
+             OR description LIKE ? OR description LIKE ? OR description LIKE ?)`)
+      .all(like('banned'), like('prohibited substance'), like('WADA'), like('NFL'),
+        like('MLB'), like('Annex C'), like('banned substance'));
+    const items = [];
+    if (bannedDocs.length === 0) {
+      items.push(item('No live procedure references the banned/prohibited-substance lists', 'critical',
+        'Guide §6.2.1–6.2.3: the auditor asks for procedures that name the MLB / NFL / WADA / Annex C lists, '
+        + 'prove an annual documented review of them, and check purchased materials against them. '
+        + 'No active document in the registry mentions any of these.', 'sops'));
+    } else {
+      const names = bannedDocs.slice(0, 3).map(d => d.doc_number || d.title).join(', ');
+      items.push(item(`${bannedDocs.length} live document(s) reference the banned-substance lists (${names})`, 'good', null, 'sops'));
+      // 6.2.3.1 wants the list review ANNUAL and documented — a procedure not
+      // touched in a year has no evidence this year's review happened.
+      const fresh = bannedDocs.some(d => d.last_touched
+        && (one("SELECT CAST(julianday('now') - julianday(?) AS INTEGER) d", d.last_touched)?.d ?? 9999) <= 366);
+      items.push(item(fresh
+        ? 'Banned-list procedure touched within the last year'
+        : 'No banned-list procedure updated or made effective within the last year', fresh ? 'good' : 'warning',
+        fresh ? null : '§6.2.3.1 asks for a documented annual review of the lists (and notifying NSF of changes) — '
+          + 'record this year\'s review against the procedure.', 'sops'));
+    }
+    // PP-5: the audit opens with the facility's current GMP/food-safety
+    // certification. A person's PCQI is not the facility's certificate.
+    const facility = n(`SELECT COUNT(*) c FROM certifications
+      WHERE cert_type LIKE '%GMP%' OR cert_type LIKE '%455%' OR cert_type LIKE '%SQF%' OR issuer LIKE '%NSF%'`);
+    items.push(item(facility
+      ? 'A facility GMP/food-safety certificate is on file in Certifications'
+      : 'No facility GMP/food-safety certificate filed in Certifications', facility ? 'good' : 'warning',
+      facility ? null : 'PP-5: the auditor asks for the facility\'s current registration certificate first — '
+        + 'file it in Certifications so it is producible on demand (GP-26: records provided in a timely manner).', 'certifications'));
+    const pcqi = n("SELECT COUNT(*) c FROM certifications WHERE cert_type LIKE '%PCQI%'");
+    const haccp = n("SELECT COUNT(*) c FROM certifications WHERE cert_type LIKE '%HACCP%'");
+    items.push(item(`${pcqi} PCQI and ${haccp} HACCP certificate(s) on file`,
+      pcqi && haccp ? 'good' : 'warning',
+      pcqi && haccp ? null : 'Qualified-individual evidence — file the team\'s PCQI/HACCP certificates.', 'certifications'));
+    return items;
+  });
+
   // ── Retention samples ─────────────────────────────────────────────────────
   add('Retention Samples', () => {
     const rows = n('SELECT COUNT(*) c FROM retention_samples');

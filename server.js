@@ -96,6 +96,7 @@ import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, s
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
 import { seedReferenceLibrary } from './server/reference-seed.js';
+import { seedCertifications } from './server/cert-seed.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath } from './server/middleware/auth.js';
 
@@ -1049,6 +1050,8 @@ try {
   seedWorkInstructionCourses(db);
   // The NSF standards the plant certifies against — Reference Library tab.
   seedReferenceLibrary(db);
+  // The team's real PCQI/HACCP/food-defense certificates (one-time).
+  seedCertifications(db);
 } catch (err) {
   console.error('[seed] Error seeding training courses (non-fatal):', err.message);
 }

@@ -61,7 +61,7 @@ const PATHS = [
   // documents + training
   '/documents', '/documents?doc_type=reference', '/doc-review', '/doc-review/consistency', '/controlled',
   '/training/courses', '/training', '/training/matrix', '/training/due',
-  '/certifications', '/policies', '/org', '/org/people',
+  '/certifications', '/certifications?q=pcqi', '/policies', '/org', '/org/people',
   // office
   '/office/time', '/office/supply/orders', '/finance/ap', '/finance/ar',
   '/partners/documents', '/banking/accounts', '/banking/transactions',
