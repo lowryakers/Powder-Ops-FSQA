@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { Plus, Lock, Unlock, ShieldCheck, AlertTriangle, Zap, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Lock, Unlock, ShieldCheck, AlertTriangle, Zap, Search, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { useRowExpand } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
@@ -27,12 +27,38 @@ const LOTO_EXEC_COLUMNS = [
 const ENERGY_TYPES =['Electrical', 'Pneumatic', 'Hydraulic', 'Mechanical', 'Thermal', 'Chemical', 'Gravitational', 'Stored Energy'];
 const STATUS_COLORS = { locked: 'bg-red-100 text-red-800', verified: 'bg-yellow-100 text-yellow-800', released: 'bg-green-100 text-green-800' };
 
-function ProcedureForm({ equipment, onSave, onCancel }) {
-  const [form, setForm] = useState({
-    equipment_id: '', title: '', description: '',
-    energy_sources: [{ type: 'Electrical', location: '', isolation_method: '' }],
-    steps: [{ order: 1, instruction: '' }],
-    required_locks: 1, required_tags: 1, verification_method: 'try_start',
+// `initial` (optional) is a source procedure to DUPLICATE: everything copies
+// except the equipment, which starts unpicked on purpose — the point of
+// copying is "same procedure, that identical machine over there", and
+// pre-selecting the source's machine is how an accidental second procedure
+// lands on the one machine that already has it. Stored rows carry
+// energy_sources/steps as JSON strings and steps in two shapes; both are
+// normalized here so the form always edits {order, instruction} rows.
+function ProcedureForm({ equipment, initial, onSave, onCancel }) {
+  const [form, setForm] = useState(() => {
+    if (!initial) {
+      return {
+        equipment_id: '', title: '', description: '',
+        energy_sources: [{ type: 'Electrical', location: '', isolation_method: '' }],
+        steps: [{ order: 1, instruction: '' }],
+        required_locks: 1, required_tags: 1, verification_method: 'try_start',
+      };
+    }
+    const parse = (v, fb) => { try { return typeof v === 'string' ? JSON.parse(v) : (v || fb); } catch { return fb; } };
+    const sources = parse(initial.energy_sources, []);
+    const steps = parse(initial.steps, []);
+    return {
+      equipment_id: '',
+      title: initial.title || '',
+      description: initial.description || '',
+      energy_sources: sources.length ? sources.map(s => ({ type: s.type || 'Electrical', location: s.location || '', isolation_method: s.isolation_method || '' }))
+        : [{ type: 'Electrical', location: '', isolation_method: '' }],
+      steps: steps.length ? steps.map((s, i) => ({ order: i + 1, instruction: stepText(s) }))
+        : [{ order: 1, instruction: '' }],
+      required_locks: initial.required_locks ?? 1,
+      required_tags: initial.required_tags ?? 1,
+      verification_method: initial.verification_method || 'try_start',
+    };
   });
   const [saving, setSaving] = useState(false);
 
@@ -66,7 +92,16 @@ function ProcedureForm({ equipment, onSave, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
-      <h3 className="font-semibold text-gray-900">New LOTO Procedure</h3>
+      <h3 className="font-semibold text-gray-900">
+        {initial ? <>Duplicate LOTO Procedure <span className="font-normal text-gray-500">— copied from {initial.equipment_name || initial.title}</span></> : 'New LOTO Procedure'}
+      </h3>
+      {initial && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 -mt-2">
+          Everything below is copied. Pick the equipment this copy is for — it starts unselected so a
+          second procedure can't land on the source machine by accident — and adjust anything that
+          differs before saving.
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Equipment *</label>
@@ -141,7 +176,7 @@ function ProcedureForm({ equipment, onSave, onCancel }) {
 
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
-          {saving ? 'Saving...' : 'Create Procedure'}
+          {saving ? 'Saving...' : initial ? 'Create Copy' : 'Create Procedure'}
         </button>
         <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
       </div>
@@ -200,21 +235,28 @@ function LockoutForm({ procedure, onSave, onCancel }) {
   );
 }
 
+// A step is either a plain string (the seeded procedures) or an
+// {order, instruction} object (the form). One reader for both — rendering the
+// object itself is a React crash, and it sat unnoticed only because every
+// existing procedure happened to be seeded strings.
+const stepText = (s) => (typeof s === 'string' ? s : (s?.instruction || ''));
+
 function StepsList({ steps }) {
   let currentSection = null;
   const sections = [];
 
   for (const s of steps) {
-    if (typeof s === 'string' && s.endsWith(':') && !s.startsWith('  ')) {
-      currentSection = { title: s.replace(/:$/, ''), items: [] };
+    const text = stepText(s);
+    if (text.endsWith(':') && !text.startsWith('  ')) {
+      currentSection = { title: text.replace(/:$/, ''), items: [] };
       sections.push(currentSection);
     } else if (currentSection) {
-      currentSection.items.push(typeof s === 'string' ? s.replace(/^\s+/, '') : s);
+      currentSection.items.push(text.replace(/^\s+/, ''));
     } else {
       if (!sections.length || sections[sections.length - 1].title !== 'Steps') {
         sections.push({ title: 'Steps', items: [] });
       }
-      sections[sections.length - 1].items.push(typeof s === 'string' ? s : s);
+      sections[sections.length - 1].items.push(text);
     }
   }
 
@@ -251,9 +293,10 @@ function StepsList({ steps }) {
   );
 }
 
-function ProcedureCard({ proc, onExecute, executing }) {
+function ProcedureCard({ proc, onExecute, onDuplicate, executing }) {
   const [expanded, setExpanded] = useState(false);
-  const steps = JSON.parse(proc.steps || '[]');
+  let steps = [];
+  try { steps = JSON.parse(proc.steps || '[]'); } catch { /* malformed row renders with no steps rather than white-screening the list */ }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -270,6 +313,10 @@ function ProcedureCard({ proc, onExecute, executing }) {
             className="px-2 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-gray-200 flex items-center gap-1">
             {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             {steps.length} steps
+          </button>
+          <button onClick={() => onDuplicate(proc)} data-tip="Duplicate this procedure for another machine"
+            className="px-2 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-gray-200 flex items-center gap-1">
+            <Copy size={12} /> Duplicate
           </button>
           <button onClick={() => onExecute(proc)}
             className="px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center gap-1">
@@ -296,6 +343,7 @@ export default function LOTOPanel() {
   const { data: equipment } = useApiGet('/equipment');
   const { data: uncovered, refresh: refreshUncovered } = useApiGet('/loto/uncovered-equipment');
   const [showForm, setShowForm] = useState(false);
+  const [dupSource, setDupSource] = useState(null); // procedure being copied, or null for a blank form
   const [executing, setExecuting] = useState(null);
   const LOTO_TABS = useMemo(() => [
     { id: 'procedures', label: 'Procedures', icon: Lock },
@@ -307,8 +355,18 @@ export default function LOTOPanel() {
   const handleCreate = async (form) => {
     await apiPost('/loto/procedures', form);
     setShowForm(false);
+    setDupSource(null);
     refreshProcs();
     refreshUncovered();
+  };
+
+  // The Duplicate button lives on a card that may be far down the list; the
+  // form renders above it, so opening without scrolling reads as nothing
+  // happening.
+  const handleDuplicate = (proc) => {
+    setDupSource(proc);
+    setShowForm(true);
+    requestAnimationFrame(() => document.getElementById('loto-procedure-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
   const handleExecute = async (formOrProc, isSubmit) => {
@@ -352,7 +410,7 @@ export default function LOTOPanel() {
           <h2 className="text-xl font-bold text-gray-900">Lockout/Tagout (LOTO)</h2>
           <p className="text-sm text-gray-500">{(procedures || []).length} procedures &middot; 7-step checklist per equipment</p>
         </div>
-        <button onClick={() => setShowForm(true)}
+        <button onClick={() => { setDupSource(null); setShowForm(true); }}
           className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
           <Plus size={16} /> New Procedure
         </button>
@@ -406,7 +464,7 @@ export default function LOTOPanel() {
                   <p className="text-sm font-medium text-gray-900">{eq.name}</p>
                   <p className="text-xs text-gray-500">{eq.room || eq.location || 'No location'}{eq.asset_id ? ` · ${eq.asset_id}` : ''}</p>
                 </div>
-                <button onClick={() => { setShowForm(true); }}
+                <button onClick={() => { setDupSource(null); setShowForm(true); }}
                   className="px-2.5 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-xs font-medium hover:bg-amber-200 flex items-center gap-1">
                   <Plus size={12} /> Add Procedure
                 </button>
@@ -420,7 +478,15 @@ export default function LOTOPanel() {
         tabs={lotoTabs.map(t => (t.id === 'procedures'
           ? { ...t, badge: (procedures || []).length } : t))} />
 
-      {showForm && <ProcedureForm equipment={equipment} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
+      {/* key remounts the form when the copied-from source changes — useState
+          initializers only run once, and Duplicate on a second card must not
+          keep editing the first card's copy. */}
+      {showForm && (
+        <div id="loto-procedure-form">
+          <ProcedureForm key={dupSource?.id || 'new'} equipment={equipment} initial={dupSource}
+            onSave={handleCreate} onCancel={() => { setShowForm(false); setDupSource(null); }} />
+        </div>
+      )}
 
       {tab === 'procedures' && (
         <>
@@ -431,7 +497,7 @@ export default function LOTOPanel() {
           </div>
           <div className="space-y-2">
             {filtered.map(proc => (
-              <ProcedureCard key={proc.id} proc={proc} executing={executing} onExecute={handleExecute} />
+              <ProcedureCard key={proc.id} proc={proc} executing={executing} onExecute={handleExecute} onDuplicate={handleDuplicate} />
             ))}
             {filtered.length === 0 && (
               <div className="text-center py-8 text-gray-500">
