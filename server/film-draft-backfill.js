@@ -28,44 +28,56 @@ import { parseJson } from './custom-fields.js';
 
 export async function backfillFilmDrafts(db) {
   try {
-    if (db.prepare("SELECT value FROM app_settings WHERE key = 'film_draft_backfill_v1'").get()) return 0;
-    db.prepare("INSERT INTO app_settings (key, value) VALUES ('film_draft_backfill_v1', ?)").run(new Date().toISOString());
+    // v2 — v1 missed production three ways, each fixed here:
+    //   1. It only looked at OPEN checklists. The real ones had been signed
+    //      off by the time it deployed, and a signed receiving packet does
+    //      not mean QA inspected the film — the film inspection is its own
+    //      record. v2 covers every packaging=yes checklist with no sheets.
+    //   2. It only DM'd where the is_packaging notification was already
+    //      recorded. On the real checklists that escalation was never sent
+    //      (the broken "Notify undefined" button era), so Maria got nothing.
+    //      v2 DMs the QA targets for every draft it creates.
+    //   3. It flagged itself DONE before doing the work, so a run that found
+    //      nothing never retried. v2 flags AFTER the work succeeds.
+    if (db.prepare("SELECT value FROM app_settings WHERE key = 'film_draft_backfill_v2'").get()) return 0;
 
-    const open = db.prepare('SELECT * FROM receiving_checklists WHERE reviewed_at IS NULL').all();
-    let drafts = 0, relinked = 0;
-    for (const row of open) {
+    const rows = db.prepare('SELECT * FROM receiving_checklists').all();
+    let drafts = 0, told = 0, candidates = 0;
+    for (const row of rows) {
       const answers = parseJson(row.answers, {}) || {};
       if (answers.is_packaging !== 'yes') continue;
+      candidates++;
       const had = db.prepare('SELECT 1 FROM film_pouch_inspections WHERE inspection_no = ?').get(row.inspection_no);
+      if (had) continue; // QA already has sheets on this delivery — nothing owed
       const draftId = ensureFilmDraft(db, row, { name: 'system (backfill)' });
       if (!draftId) continue;
-      if (!had) drafts++;
+      drafts++;
 
-      const alerted = (parseJson(row.notifications, []) || []).some(n => n.item === 'is_packaging');
-      if (!alerted) continue; // the live escalation path will carry the link when it fires
       const path = `/?tab=receiving-log&view=film&film=${encodeURIComponent(draftId)}`;
       const link = `${readyDocOrigin()}${path}`;
       for (const p of resolveTarget(db, 'qa_inspection')) {
         try {
           const { bot, dm } = botDm(db, p.id);
           await postMessageAs(db, dm, bot,
-            `📦 *Packaging inspection ready to work*\nInspection *${row.inspection_no}* — the draft QA sheet is set up`
-            + `${row.vendor ? ` (${row.vendor})` : ''}.\nThe earlier alert's link stopped at the front page — this one opens the sheet:\n${link}`);
+            `📦 *Packaging inspection needed*\nInspection *${row.inspection_no}*${row.vendor ? ` (${row.vendor})` : ''} `
+            + `was received as packaging, and no QA film/pouch inspection is on file.\n`
+            + `A draft sheet is set up — this link opens it:\n${link}`);
           pushToUser(p.id, {
-            title: 'Packaging inspection ready to work',
+            title: 'Packaging inspection needed',
             body: `${row.inspection_no}: draft QA sheet is set up`.slice(0, 120),
             tag: `receiving-${row.inspection_no}-qa_inspection`, renotify: true, url: path,
           }).catch(() => {});
-          relinked++;
+          told++;
         } catch { /* one recipient failing must not lose the rest */ }
       }
     }
-    if (drafts || relinked) {
-      console.log(`[backfill] film drafts: ${drafts} draft(s) created, corrected link sent to ${relinked} recipient(s)`);
-    }
+    // Flag LAST — a run that threw above retries on the next boot instead of
+    // marking a repair done that never happened.
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('film_draft_backfill_v2', ?)").run(new Date().toISOString());
+    console.log(`[backfill] film drafts v2: ${candidates} packaging checklist(s) found, ${drafts} draft(s) created, ${told} recipient DM(s) sent`);
     return drafts;
   } catch (e) {
-    console.warn('[backfill] film drafts failed:', e.message);
+    console.warn('[backfill] film drafts failed (will retry next boot):', e.message);
     return 0;
   }
 }
