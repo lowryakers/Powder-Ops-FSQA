@@ -212,7 +212,18 @@ router.get('/demand/parts', (req, res) => {
 // ── Purchase orders ──────────────────────────────────────────────────────────
 
 const PO_FIELDS = ['po_number', 'vendor', 'part_no', 'description', 'qty', 'uom', 'unit_price',
-  'order_date', 'expected_date', 'received_date', 'status', 'urgent', 'notes'];
+  'order_date', 'expected_date', 'received_date', 'status', 'urgent', 'notes',
+  // The Monday columns the grid now shows and edits. source_status stays
+  // read-only provenance (Monday's own word for the row) and is not here.
+  'customer', 'customer_po', 'bol', 'lead_time_days', 'quarter'];
+const QUARTER_RE = /^\d{4}-Q[1-4]$/;
+// '' clears the override (back to date-derived); anything else must be a real
+// quarter, normalized so "2026-q4" works from an inline cell.
+function normQuarter(v) {
+  const t = String(v ?? '').trim().toUpperCase().replace(/\s+/g, '');
+  if (!t) return { value: null };
+  return QUARTER_RE.test(t) ? { value: t } : { error: 'Quarter must look like 2026-Q4 (or blank to follow the expected date).' };
+}
 const PO_STATUSES = ['draft', 'open', 'confirmed', 'shipped', 'received', 'cancelled'];
 
 router.get('/pos', (req, res) => {
@@ -238,7 +249,9 @@ router.get('/pos', (req, res) => {
   rows = rows.map(r => ({
     ...r,
     total: Math.round((Number(r.qty) || 0) * (Number(r.unit_price) || 0) * 100) / 100,
-    quarter: quarterOf(r.expected_date || r.order_date),
+    // The stored quarter (set by hand or imported) wins; the date-derived one
+    // fills in everywhere else, so the column is never blank on a dated row.
+    quarter: r.quarter || quarterOf(r.expected_date || r.order_date),
     // Delayed = past its expected date and still not received.
     delayed: !!(r.expected_date && r.expected_date < new Date().toISOString().slice(0, 10)
       && !['received', 'cancelled'].includes(r.status)),
@@ -255,8 +268,10 @@ router.post('/pos', (req, res) => {
   const id = uuid();
   const values = PO_FIELDS.map(f => {
     if (f === 'qty' || f === 'unit_price') return num(body[f]);
+    if (f === 'lead_time_days') return body[f] === '' || body[f] == null ? null : Math.round(num(body[f]));
     if (f === 'urgent') return body.urgent ? 1 : 0;
     if (f === 'status') return PO_STATUSES.includes(body.status) ? body.status : 'open';
+    if (f === 'quarter') return normQuarter(body.quarter).value ?? null;
     return body[f] ?? null;
   });
   db.prepare(`INSERT INTO purchase_orders (id, scenario_id, ${PO_FIELDS.join(', ')}, created_by)
@@ -265,6 +280,50 @@ router.post('/pos', (req, res) => {
   const created = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'purchase_order', id, { vendor: created.vendor, qty: created.qty }, null, created, created.po_number || created.vendor);
   res.status(201).json(created);
+});
+
+// Mass update — the Monday habit the single-cell edit can't replace. One
+// transaction, but each row is audited individually plus one summary, the
+// same rule as Time Tracking's bulk edit. Declared before /pos/:id (route
+// order: 'bulk' is a perfectly good :id).
+router.put('/pos/bulk', (req, res) => {
+  if (!requireAccess(req, res, 'edit')) return;
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.slice(0, 500) : [];
+  if (!ids.length) return res.status(400).json({ error: 'Nothing selected.' });
+  const patch = {};
+  const b = req.body?.patch || {};
+  if (b.status !== undefined) {
+    if (!PO_STATUSES.includes(b.status)) return res.status(400).json({ error: 'Unknown status.' });
+    patch.status = b.status;
+  }
+  if (b.urgent !== undefined) patch.urgent = b.urgent ? 1 : 0;
+  if (b.quarter !== undefined) {
+    const q = normQuarter(b.quarter);
+    if (q.error) return res.status(400).json({ error: q.error });
+    patch.quarter = q.value;
+  }
+  if (b.expected_date !== undefined) patch.expected_date = b.expected_date || null;
+  if (b.vendor !== undefined && String(b.vendor).trim()) patch.vendor = String(b.vendor).trim();
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change.' });
+
+  const get = db.prepare('SELECT * FROM purchase_orders WHERE id = ?');
+  const upd = db.prepare(`UPDATE purchase_orders SET ${Object.keys(patch).map(k => `${k} = ?`).join(', ')},
+    updated_at = datetime('now') WHERE id = ?`);
+  let updated = 0;
+  db.transaction(() => {
+    for (const id of ids) {
+      const row = get.get(id);
+      if (!row) continue;
+      upd.run(...Object.values(patch), id);
+      logAudit(req.user, 'update', 'purchase_order', id, { bulk: true, ...patch }, row, get.get(id),
+        row.po_number || row.vendor);
+      updated++;
+    }
+  })();
+  logAudit(req.user, 'update', 'purchase_order', 'bulk', { count: updated, ...patch }, null, null,
+    `Bulk update (${updated} POs)`);
+  res.json({ updated });
 });
 
 router.put('/pos/:id', (req, res) => {
@@ -277,8 +336,14 @@ router.put('/pos/:id', (req, res) => {
   for (const f of PO_FIELDS) {
     if (body[f] === undefined) { next[f] = existing[f]; continue; }
     if (f === 'qty' || f === 'unit_price') next[f] = num(body[f]);
+    else if (f === 'lead_time_days') next[f] = body[f] === '' || body[f] === null ? null : Math.round(num(body[f]));
     else if (f === 'urgent') next[f] = body.urgent ? 1 : 0;
     else if (f === 'status') next[f] = PO_STATUSES.includes(body.status) ? body.status : existing.status;
+    else if (f === 'quarter') {
+      const q = normQuarter(body.quarter);
+      if (q.error) return res.status(400).json({ error: q.error });
+      next[f] = q.value;
+    }
     else next[f] = body[f] ?? null;
   }
   // Marking received without a date fills today's — the date is the point.
@@ -320,7 +385,9 @@ router.get('/summary', (req, res) => {
   const scheduledSpend = open.reduce((sum, r) => sum + (Number(r.qty) || 0) * (Number(r.unit_price) || 0), 0);
 
   // Quarters present in the data, so the filter offers only real options.
-  const quarters = [...new Set(rows.map(r => quarterOf(r.expected_date || r.order_date)).filter(Boolean))].sort().reverse();
+  // Stored overrides count too, or a quarter that only exists by hand
+  // assignment would be missing from its own filter dropdown.
+  const quarters = [...new Set(rows.map(r => r.quarter || quarterOf(r.expected_date || r.order_date)).filter(Boolean))].sort().reverse();
 
   res.json({
     open_count: open.length,

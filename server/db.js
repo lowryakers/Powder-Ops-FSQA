@@ -3838,6 +3838,9 @@ function runMigrations() {
     addColumnIfMissing('purchase_orders', 'source_status', 'TEXT');
     addColumnIfMissing('purchase_orders', 'source', 'TEXT');
     addColumnIfMissing('purchase_orders', 'external_id', 'TEXT');
+    // Jake plans by quarter, and rows without dates (inquiries) still belong
+    // to one. Stored value wins; blank falls back to the date-derived quarter.
+    addColumnIfMissing('purchase_orders', 'quarter', 'TEXT');
     db.exec('CREATE INDEX IF NOT EXISTS idx_po_external ON purchase_orders(external_id);');
   } catch (e) {
     console.warn('[db] procurement tables unavailable:', e.message);

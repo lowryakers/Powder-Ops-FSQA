@@ -190,8 +190,32 @@ export default function ProcurementPanel() {
     refreshPos(); refreshSummary();
   };
   const editPO = async (row, key, value) => {
-    await apiPut(`/procurement/pos/${row.id}`, { [key]: value });
+    try { await apiPut(`/procurement/pos/${row.id}`, { [key]: value }); }
+    catch (e) { alert(e.message); }
     refreshPos(); refreshSummary();
+  };
+
+  // Bulk selection + mass update — the Monday habit cell edits can't replace.
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const toggleRow = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAll = (visibleIds, on) => setSelected(prev => {
+    const next = new Set(prev);
+    for (const id of visibleIds) { if (on) next.add(id); else next.delete(id); }
+    return next;
+  });
+  const bulk = async (patch) => {
+    setBulkBusy(true);
+    try {
+      await apiPut('/procurement/pos/bulk', { ids: [...selected], patch });
+      setSelected(new Set());
+      refreshPos(); refreshSummary();
+    } catch (e) { alert(e.message); }
+    finally { setBulkBusy(false); }
   };
   const editDemand = async (row, key, value) => {
     await apiPut(`/procurement/demand/${row.id}`, { [key]: value });
@@ -210,10 +234,22 @@ export default function ProcurementPanel() {
     { key: 'part_no', label: 'Part #', edit: true },
     { key: 'description', label: 'Description', edit: true },
     { key: 'qty', label: 'Qty', type: 'number', align: 'right', edit: true },
+    { key: 'uom', label: 'UOM', edit: true, width: '4rem' },
     { key: 'unit_price', label: 'Unit', type: 'money', align: 'right', edit: true },
     { key: 'total', label: 'Total', type: 'money', align: 'right' },
+    { key: 'order_date', label: 'Ordered', edit: true },
     { key: 'expected_date', label: 'Expected', edit: true },
-    { key: 'quarter', label: 'Quarter', filter: true },
+    { key: 'received_date', label: 'Received', edit: true },
+    // Stored override wins; blank follows the expected date. Type 2026-Q4, or
+    // blank the cell to go back to date-derived.
+    { key: 'quarter', label: 'Quarter', filter: true, edit: true },
+    { key: 'lead_time_days', label: 'Lead (d)', type: 'number', align: 'right', edit: true, width: '4.5rem' },
+    { key: 'customer', label: 'Customer', filter: true, edit: true },
+    { key: 'customer_po', label: 'Customer PO', edit: true },
+    { key: 'bol', label: 'BOL', edit: true },
+    // Monday's own word for the row, kept verbatim — provenance, not editable.
+    { key: 'source_status', label: 'Board status', filter: true },
+    { key: 'notes', label: 'Notes', edit: true },
     {
       key: 'status', label: 'Status', filter: true, edit: true,
       render: (r) => (
@@ -227,7 +263,17 @@ export default function ProcurementPanel() {
     },
     {
       key: 'urgent', label: 'Urgent',
-      render: (r) => (r.urgent ? <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-bold">URGENT</span> : <span className="text-gray-300">—</span>),
+      // One click flips it — a flag is a toggle, not a value to type.
+      render: (r) => (
+        <button type="button" disabled={!canEdit}
+          onClick={(e) => { e.stopPropagation(); if (canEdit) editPO(r, 'urgent', r.urgent ? 0 : 1); }}
+          title={canEdit ? 'Click to toggle' : undefined}
+          className={r.urgent
+            ? 'px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-bold'
+            : `px-1.5 py-0.5 rounded text-[10px] font-bold ${canEdit ? 'text-gray-300 hover:bg-gray-100 hover:text-gray-500' : 'text-gray-300'}`}>
+          {r.urgent ? 'URGENT' : '—'}
+        </button>
+      ),
     },
     ...(canEdit ? [{
       key: 'id', label: '', align: 'right',
@@ -236,7 +282,7 @@ export default function ProcurementPanel() {
           className="p-1 text-gray-300 hover:text-red-500"><X size={13} /></button>
       ),
     }] : []),
-  ], [canEdit, refreshPos, refreshSummary]);
+  ], [canEdit, refreshPos, refreshSummary, editPO]);
 
   // `fields` drives the mapping step, so the target definition has to be in
   // hand before the panel mounts — it reads fields.length unguarded.
@@ -291,8 +337,35 @@ export default function ProcurementPanel() {
       {tab === 'pos' && (
         <>
           {adding && <POForm onSave={savePO} onCancel={() => setAdding(false)} />}
+          {canEdit && selected.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2 bg-powder-50 border border-powder-200 rounded-xl px-3 py-2 text-sm">
+              <span className="font-semibold text-powder-900">{selected.size} selected</span>
+              <select disabled={bulkBusy} defaultValue="" onChange={e => { if (e.target.value) { bulk({ status: e.target.value }); e.target.value = ''; } }}
+                className="px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white">
+                <option value="">Set status…</option>
+                {PO_STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+              </select>
+              <select disabled={bulkBusy} defaultValue="" onChange={e => { if (e.target.value) { bulk({ quarter: e.target.value === '(clear)' ? '' : e.target.value }); e.target.value = ''; } }}
+                className="px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white">
+                <option value="">Set quarter…</option>
+                {(summary?.quarters || []).map(qq => <option key={qq} value={qq}>{qq}</option>)}
+                <option value="(clear)">(follow expected date)</option>
+              </select>
+              <button disabled={bulkBusy} onClick={() => bulk({ urgent: true })}
+                className="px-2.5 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">Mark urgent</button>
+              <button disabled={bulkBusy} onClick={() => bulk({ urgent: false })}
+                className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium bg-white disabled:opacity-50">Not urgent</button>
+              <label className="flex items-center gap-1 text-xs text-gray-600">
+                Expected:
+                <input type="date" disabled={bulkBusy} onChange={e => { if (e.target.value) { bulk({ expected_date: e.target.value }); e.target.value = ''; } }}
+                  className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white" />
+              </label>
+              <button onClick={() => setSelected(new Set())} className="ml-auto text-xs text-gray-500 hover:text-gray-700">Clear selection</button>
+            </div>
+          )}
           <DataGrid
             columns={poColumns} rows={pos} loading={posLoading} canEdit={canEdit} onEdit={editPO}
+            selectable={canEdit} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAll}
             searchPlaceholder="Search PO #, vendor, part, notes…"
             empty="No purchase orders yet."
             rowClass={r => (r.delayed ? 'bg-red-50/40' : '')}

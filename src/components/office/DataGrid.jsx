@@ -15,6 +15,10 @@ export default function DataGrid({
   columns, rows, loading, empty = 'Nothing here yet.',
   onEdit, canEdit = false, searchPlaceholder = 'Search…', toolbar, rowClass,
   initialSort, detail, expandable = true,
+  // Bulk selection, owned HERE so "select all" can only ever mean the rows
+  // currently visible through the grid's own search and filters — a row
+  // hidden by a filter must never be changed by something you can't see.
+  selectable = false, selected = null, onToggleRow, onToggleAll,
 }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(initialSort || null);   // { key, dir }
@@ -81,7 +85,8 @@ export default function DataGrid({
   };
 
   const activeFilters = Object.entries(filters).filter(([, v]) => v);
-  const span = columns.length + (expandable ? 1 : 0);
+  const span = columns.length + (expandable ? 1 : 0) + (selectable ? 1 : 0);
+  const allVisibleSelected = selectable && view.length > 0 && view.every(r => selected?.has(r.id));
 
   return (
     <div className="space-y-2">
@@ -112,6 +117,12 @@ export default function DataGrid({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 sticky top-0 z-10">
             <tr>
+              {selectable && (
+                <th className="w-8 px-2 py-2">
+                  <input type="checkbox" checked={allVisibleSelected}
+                    onChange={() => onToggleAll?.(view.map(r => r.id), !allVisibleSelected)} />
+                </th>
+              )}
               {expandable && <th className="w-8 px-2 py-2" />}
               {columns.map(c => (
                 <th key={c.key} onClick={() => toggleSort(c.key)}
@@ -135,6 +146,11 @@ export default function DataGrid({
               <tr {...(expandable
                 ? expand.rowProps(row.id, `border-t border-gray-100 ${rowClass?.(row) || ''}`)
                 : { className: `border-t border-gray-100 hover:bg-gray-50 ${rowClass?.(row) || ''}` })}>
+                {selectable && (
+                  <td className="px-2 py-1.5" onClick={stopRowClick}>
+                    <input type="checkbox" checked={!!selected?.has(row.id)} onChange={() => onToggleRow?.(row.id)} />
+                  </td>
+                )}
                 {expandable && <td className="px-2 py-1.5"><ExpandCell open={expand.isExpanded(row.id)} /></td>}
                 {columns.map(c => {
                   const isEditing = editing && editing.id === row.id && editing.key === c.key;
@@ -187,7 +203,10 @@ export default function DataGrid({
           const [head, sub, ...rest] = columns.filter(c => c.label);
           return (
             <div key={row.id} className={`bg-white rounded-xl border border-gray-200 p-3 ${rowClass?.(row) || ''}`}>
-              <div className="font-medium text-gray-900 break-words">{fmt(row, head)}</div>
+              <div className="font-medium text-gray-900 break-words flex items-start gap-2">
+                {selectable && <input type="checkbox" className="mt-1 shrink-0" checked={!!selected?.has(row.id)} onChange={() => onToggleRow?.(row.id)} />}
+                <span className="min-w-0">{fmt(row, head)}</span>
+              </div>
               {sub && <div className="text-xs text-gray-500 break-words">{fmt(row, sub)}</div>}
               <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
                 {rest.map(c => {
