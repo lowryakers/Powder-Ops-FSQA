@@ -53,11 +53,15 @@ export function resolveTarget(db, targetKey, excludeUserId = null) {
  * Returns who it actually reached, which is what gets written onto the record —
  * "notified QA" with nobody behind it would be worse than no record at all.
  */
-export async function sendEscalation(db, { item, target, inspectionNo, detail, from }) {
+export async function sendEscalation(db, { item, target, inspectionNo, detail, from, path }) {
   const people = resolveTarget(db, target, from?.id);
   if (!people.length) return { sent: [], reason: 'nobody to notify' };
   const t = NOTIFY_TARGETS[target];
-  const link = `${readyDocOrigin()}/?tab=receiving-log`;
+  // `path` deep-links to the thing the recipient must ACT on — the draft film
+  // inspection, or the checklist itself. A link that lands on a module's front
+  // page hands the reader a search job; the alert already knows the record.
+  const appPath = path || '/?tab=receiving-log';
+  const link = `${readyDocOrigin()}${appPath}`;
   const sent = [];
   for (const p of people) {
     try {
@@ -66,11 +70,12 @@ export async function sendEscalation(db, { item, target, inspectionNo, detail, f
       await postMessageAs(db, dm, bot,
         `📦 *${t.subject}*\nInspection *${inspectionNo}* — ${item}\n`
         + `${detail ? `${detail}\n` : ''}`
-        + `Raised by ${from?.name || 'Receiving'} on the Receiving Inspection Checklist.\n${link}`);
+        + `Raised by ${from?.name || 'Receiving'} on the Receiving Inspection Checklist.\n`
+        + `Open it: ${link}`);
       pushToUser(p.id, {
         title: t.subject,
         body: `${inspectionNo}: ${item}`.slice(0, 120),
-        tag: `receiving-${inspectionNo}-${target}`, renotify: true, url: '/?tab=receiving-log',
+        tag: `receiving-${inspectionNo}-${target}`, renotify: true, url: appPath,
       }).catch(() => {});
       sent.push(p.name);
     } catch { /* one failure must not lose the others */ }

@@ -15,6 +15,7 @@ import {
   CHECKLIST, CHECKLIST_REVISION, getItem, normalizeAnswers, triggeredEscalations, unanswered,
 } from '../receiving-checklist.js';
 import { sendEscalation } from '../receiving-notify.js';
+import { FILM_REVISION } from '../film-pouch-checklist.js';
 import { nextInspectionNo } from '../inspection-no.js';
 
 const router = Router();
@@ -203,13 +204,53 @@ const HEADER_COLS = ['po_number', 'truck_number', 'pallet_count', 'driver_name',
  * validation belongs at sign-off, which is where it is.
  */
 /**
+ * The packaging escalation creates QA's DRAFT film inspection itself (user
+ * decision 2026-08-14). Two reasons this beats "Maria starts a new one":
+ * the draft carries the SAME inspection number — QA starting fresh from a DM
+ * would be handed the NEXT number and the two records would never join — and
+ * the header facts the checklist already knows (vendor, lot, date) arrive
+ * pre-filled instead of retyped at a pallet. One draft per inspection: if QA
+ * already has sheets on this number, nothing is added. Flavor starts blank —
+ * the receiver can't know it, and QA sets it on the sheet (or leaves it blank
+ * for unflavored stock).
+ */
+function ensureFilmDraft(db, checklistRow, user) {
+  try {
+    const existing = db.prepare(
+      'SELECT id, reviewed_at FROM film_pouch_inspections WHERE inspection_no = ? ORDER BY reviewed_at IS NOT NULL, created_at')
+      .get(checklistRow.inspection_no);
+    if (existing) return existing.id;
+    const id = uuid();
+    db.prepare(`INSERT INTO film_pouch_inspections
+      (id, inspection_no, flavor, checklist_revision, vendor, vendor_lot, inspection_date, created_by)
+      VALUES (?, ?, '', ?, ?, ?, COALESCE(?, date('now')), ?)`).run(
+      id, checklistRow.inspection_no, FILM_REVISION,
+      checklistRow.vendor || null, checklistRow.vendor_lot || null,
+      checklistRow.inspection_date || null, user.name);
+    logAudit(user, 'film_inspection_created', 'film_inspection', id,
+      { inspection_no: checklistRow.inspection_no, auto: true, source: 'FORM 204-01 packaging escalation' },
+      null, null, `${checklistRow.inspection_no} · (draft)`);
+    return id;
+  } catch (e) {
+    console.warn('[receiving] could not create the draft film inspection:', e.message);
+    return null;
+  }
+}
+
+/**
  * Send one escalation and write it onto the record. Shared by the manual
  * Notify button and the automatic fire-on-answer path, so a notification is
- * byte-for-byte the same record whichever way it was sent.
+ * byte-for-byte the same record whichever way it was sent. The link inside it
+ * lands on the record the recipient must act on, not a module front page.
  */
 async function fireEscalation(db, row, item, user, { detail = '', auto = false } = {}) {
+  let path = `/?tab=receiving-log&view=inspections&checklist=${encodeURIComponent(row.inspection_no)}`;
+  if (item.notify.target === 'qa_inspection') {
+    const draftId = ensureFilmDraft(db, row, user);
+    if (draftId) path = `/?tab=receiving-log&view=film&film=${encodeURIComponent(draftId)}`;
+  }
   const { sent, reason } = await sendEscalation(db, {
-    item: item.text, target: item.notify.target, inspectionNo: row.inspection_no, detail, from: user,
+    item: item.text, target: item.notify.target, inspectionNo: row.inspection_no, detail, from: user, path,
   });
   if (!sent.length) return { sent: [], reason };
   // Re-read: the row in hand may predate another device's notification.

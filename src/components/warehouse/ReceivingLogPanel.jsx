@@ -15,6 +15,7 @@ import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { canFilmInspect } from '../../utils/permissions';
+import { getParam, consumeParam } from '../../lib/deepLink';
 
 // Receiving Log — incoming raw material, labels and components (replaces the
 // Monday board). Both dropdowns are managed lists and the extra questions are
@@ -691,16 +692,25 @@ function InspectionsTab({ canLog, onOpen }) {
 export default function ReceivingLogPanel({ user }) {
   // Warehouse lands on Inspections — that is step one of a delivery, and it
   // used to be the step you could only reach after finishing the last one.
-  const [tab, setTab] = useState(() => (canFile(user) ? 'inspections' : 'log'));
+  // A ReadyBot escalation deep-links straight to the record it is about
+  // (?view=film&film=<id> for QA's draft sheet, ?view=inspections&checklist=<no>
+  // for FORM 204-01) — getParam is pure for the initializers, consumeParam in
+  // the effect below clears them so a later remount doesn't replay the link.
+  const [tab, setTab] = useState(() => {
+    const v = getParam('view');
+    if (v && ['inspections', 'film', 'log', 'form', 'import'].includes(v)) return v;
+    return canFile(user) ? 'inspections' : 'log';
+  });
   const [refreshKey, setRefreshKey] = useState(0);
   // FORM 204-01 for one inspection — opened from the form after filing, or
   // from any log row carrying that inspection number.
-  const [checklist, setChecklist] = useState(null);
+  const [checklist, setChecklist] = useState(() => getParam('checklist') || null);
   // Set when the checklist sends you to file a line, so the form opens against
   // that inspection instead of asking you to retype its number.
   const [prefillInspection, setPrefillInspection] = useState('');
   // FORM 418-01 for one flavour on one delivery.
-  const [filmId, setFilmId] = useState(null);
+  const [filmId, setFilmId] = useState(() => getParam('film') || null);
+  useEffect(() => { consumeParam('view'); consumeParam('checklist'); consumeParam('film'); }, []);
   const canLog = canFile(user);
   const canFilm = canFilmInspect(user);
   // Importing rewrites the log in bulk — thousands of compliance records in one

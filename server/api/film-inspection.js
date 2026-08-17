@@ -146,13 +146,24 @@ router.get('/:id', async (req, res) => {
 router.post('/', (req, res) => {
   if (!canInspect(req.user)) return res.status(403).json({ error: DENIED });
   const db = getDb();
+  // FLAVOR IS NO LONGER REQUIRED (user decision 2026-08-14): a coffee acid
+  // reducer has no flavor, and a form that demands one gets "N/A" typed into a
+  // field that then reads as a flavor called N/A. A blank flavor is a valid
+  // sheet — the whole-delivery or unflavored-item sheet — and stays one per
+  // inspection number, because '' participates in the same get-or-create
+  // identity any named flavor does.
   const flavor = String(req.body?.flavor || '').trim();
-  // ONE SHEET PER FLAVOR is the paper's own rule and the record's identity, so
-  // it is the single field this refuses to file without.
-  if (!flavor) return res.status(400).json({ error: 'Flavor is required — the form is one sheet per flavor.' });
-  const no = String(req.body?.inspection_no || '').trim() || nextInspectionNo(db);
+  let row = null;
+  if (req.body?.id) {
+    // Addressed by id: the sheet already exists (an auto-created draft, or an
+    // open editor) and this request may also SET its flavor — the one identity
+    // fact a draft born from the receiving escalation cannot know yet.
+    row = db.prepare('SELECT * FROM film_pouch_inspections WHERE id = ?').get(String(req.body.id));
+    if (!row) return res.status(404).json({ error: 'Not found' });
+  }
+  const no = row?.inspection_no || String(req.body?.inspection_no || '').trim() || nextInspectionNo(db);
 
-  let row = db.prepare('SELECT * FROM film_pouch_inspections WHERE inspection_no = ? AND flavor = ?').get(no, flavor);
+  if (!row) row = db.prepare('SELECT * FROM film_pouch_inspections WHERE inspection_no = ? AND flavor = ?').get(no, flavor);
   const created = !row;
   if (!row) {
     db.prepare(`INSERT INTO film_pouch_inspections
@@ -171,6 +182,16 @@ router.post('/', (req, res) => {
   if (row.reviewed_at) return res.status(409).json({ error: 'This inspection is signed off. Revoke the sign-off to correct it.' });
 
   const patch = {};
+  // Renaming the flavor of an UNSIGNED sheet is allowed (it is how a blank
+  // draft becomes "Blue Raz"), but never onto a pair that already exists —
+  // silently merging two flavors' sheets would lose one flavor's answers.
+  if (req.body?.id && req.body?.flavor !== undefined && flavor !== row.flavor) {
+    const clash = db.prepare(
+      'SELECT 1 FROM film_pouch_inspections WHERE inspection_no = ? AND flavor = ? AND id != ?')
+      .get(row.inspection_no, flavor, row.id);
+    if (clash) return res.status(409).json({ error: `A sheet for "${flavor || '(no flavor)'}" already exists on ${row.inspection_no} — open that one instead.` });
+    patch.flavor = flavor;
+  }
   for (const c of HEADER_COLS) {
     if (req.body?.[c] === undefined) continue;
     if (NUMS.has(c)) { const n = Number(req.body[c]); patch[c] = Number.isFinite(n) ? n : null; }
@@ -184,12 +205,13 @@ router.post('/', (req, res) => {
       updated_at = datetime('now') WHERE id = ?`).run(...Object.values(patch), row.id);
   }
   const updated = db.prepare('SELECT * FROM film_pouch_inspections WHERE id = ?').get(row.id);
+  const label = `${no} · ${updated.flavor || '(no flavor)'}`;
   if (created) {
     logAudit(req.user, 'film_inspection_created', 'film_inspection', row.id,
-      { inspection_no: no, flavor, fields: Object.keys(patch) }, null, updated, `${no} · ${flavor}`);
+      { inspection_no: no, flavor: updated.flavor, fields: Object.keys(patch) }, null, updated, label);
   } else {
     logAudit(req.user, 'film_inspection_updated', 'film_inspection', row.id,
-      { inspection_no: no, flavor, fields: Object.keys(patch) }, row, updated, `${no} · ${flavor}`);
+      { inspection_no: no, flavor: updated.flavor, fields: Object.keys(patch) }, row, updated, label);
   }
   res.status(created ? 201 : 200).json(shape(updated));
 });

@@ -90,8 +90,11 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
   const save = async (patch) => {
     setError('');
     try {
+      // Addressed by id: the sheet may be renaming its own flavor (a draft
+      // born from the receiving escalation starts blank), and addressing by
+      // (number, flavor) during a rename would create a second sheet.
       await apiPost('/film-inspection', {
-        inspection_no: rec?.inspection_no, flavor: rec?.flavor, ...patch,
+        id: rec?.id, inspection_no: rec?.inspection_no, flavor: rec?.flavor, ...patch,
       });
     } catch (e) { setError(e.message); }
   };
@@ -165,7 +168,7 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
               <ScanLine size={18} className="text-powder-600" /> {form?.title || 'Film/Pouch Inspection'}
             </h3>
             <p className="text-xs text-gray-500">
-              {rec?.inspection_no} · <span className="font-semibold text-gray-700">{rec?.flavor}</span>
+              {rec?.inspection_no} · <span className="font-semibold text-gray-700">{rec?.flavor || '(no flavor)'}</span>
               {form ? ` · ${form.form_code} ${rec?.checklist_revision || form.revision}` : ''}
             </p>
           </div>
@@ -194,17 +197,21 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
                 {(form?.header || []).map(h => (
                   <label key={h.key} className="block">
                     <span className="text-[11px] font-medium text-gray-600">{h.label}</span>
-                    {/* Inspection # and flavour ARE the record's identity — shown,
-                        never edited here, because changing either would move
-                        this sheet onto a different delivery. */}
+                    {/* The inspection # is the delivery's identity — shown, never
+                        edited, because changing it moves the sheet onto another
+                        delivery. FLAVOR is editable until sign-off: a draft
+                        created by the packaging escalation starts blank, and a
+                        flavorless item (a coffee acid reducer) legitimately
+                        stays blank. Renaming is guarded server-side against
+                        colliding with another flavor's sheet. */}
                     <input
                       type={h.type === 'number' ? 'number' : h.type === 'date' ? 'date' : 'text'}
                       step={h.type === 'number' ? 'any' : undefined}
-                      value={h.key === 'inspection_no' ? (rec?.inspection_no || '')
-                        : h.key === 'flavor' ? (rec?.flavor || '') : (header[h.key] ?? '')}
-                      disabled={locked || h.key === 'inspection_no' || h.key === 'flavor'}
+                      value={h.key === 'inspection_no' ? (rec?.inspection_no || '') : (header[h.key] ?? '')}
+                      disabled={locked || h.key === 'inspection_no'}
+                      placeholder={h.key === 'flavor' ? 'Blank if unflavored' : undefined}
                       onChange={e => setHeader(v => ({ ...v, [h.key]: e.target.value }))}
-                      onBlur={e => save({ [h.key]: e.target.value })}
+                      onBlur={e => { save({ [h.key]: e.target.value }); if (h.key === 'flavor') refresh(); }}
                       className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm disabled:bg-gray-50" />
                   </label>
                 ))}
@@ -371,7 +378,7 @@ export function FilmInspectionsTab({ canInspect, onOpen }) {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <p className="font-semibold text-gray-900 text-sm">
-              {r.flavor}
+              {r.flavor || '(no flavor)'}
               <span className="font-normal text-gray-500"> · {r.inspection_no}</span>
               {r.vendor ? <span className="font-normal text-gray-500"> · {r.vendor}</span> : ''}
             </p>
@@ -415,12 +422,12 @@ export function FilmInspectionsTab({ canInspect, onOpen }) {
         <div className="bg-white border border-gray-200 rounded-lg p-3">
           <p className="text-xs font-semibold text-gray-700 mb-2">Start an inspection</p>
           <div className="flex flex-wrap gap-2">
-            <input value={flavor} onChange={e => setFlavor(e.target.value)} placeholder="Flavor (required)"
+            <input value={flavor} onChange={e => setFlavor(e.target.value)} placeholder="Flavor — blank if unflavored"
               className="flex-1 min-w-[10rem] px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
             <input value={inspectionNo} onChange={e => setInspectionNo(e.target.value)}
               placeholder="Inspection # (blank = issue a new one)"
               className="flex-1 min-w-[10rem] px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
-            <button type="button" onClick={start} disabled={busy || !flavor.trim()}
+            <button type="button" onClick={start} disabled={busy}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-powder-600 text-white rounded-md text-sm font-medium disabled:opacity-50">
               <Plus size={14} /> Start
             </button>
