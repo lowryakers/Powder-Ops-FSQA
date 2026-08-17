@@ -168,6 +168,12 @@ router.put('/:id', (req, res) => {
   if (!perms.can_edit) return res.status(403).json({ error: perms.edit_block_reason || 'You cannot change this record.' });
 
   const body = readBody(req.body);
+  // A corrected date is a real edit (the paper was minuted under the wrong
+  // day); a BLANK date would leave an SQF record floating in time — refuse it
+  // rather than store it.
+  if (body.meeting_date !== undefined && !isDate(body.meeting_date)) {
+    return res.status(400).json({ error: 'The meeting date must be a real date (YYYY-MM-DD).' });
+  }
   if (req.body?.status !== undefined) {
     // Approved is reached by signing, never by setting a field.
     if (req.body.status === 'approved') return res.status(400).json({ error: 'Approve the minutes to set that status.' });

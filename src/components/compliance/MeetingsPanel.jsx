@@ -7,7 +7,7 @@ import { useFormatKeys } from '../../lib/useFormatKeys.js';
 import RichText from '../common/RichText';
 import {
   Users, Plus, X, CalendarClock, MapPin, Download, CheckCircle2, RotateCcw,
-  ArrowLeft, Trash2, CircleDot, ClipboardList, ChevronRight,
+  ArrowLeft, Trash2, CircleDot, ClipboardList, ChevronRight, Pencil,
 } from 'lucide-react';
 
 // Meetings — management review, food safety team, production, safety.
@@ -270,6 +270,7 @@ function MeetingDetail({ id, onBack, onChanged }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [nextDate, setNextDate] = useState('');
+  const [editDetails, setEditDetails] = useState(false);
   const minutesRef = useRef(null);
 
   const editable = !!meeting?.can_edit;
@@ -349,7 +350,7 @@ function MeetingDetail({ id, onBack, onChanged }) {
       </button>
 
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-xl font-bold text-gray-900">{meeting.title}</h2>
           <p className="text-sm text-gray-500 flex flex-wrap items-center gap-x-3">
             <span>{meeting.meeting_type}</span>
@@ -358,10 +359,57 @@ function MeetingDetail({ id, onBack, onChanged }) {
             {meeting.chair && <span>chaired by {meeting.chair}</span>}
           </p>
         </div>
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_CHIP[meeting.status]}`}>
-          {STATUS_LABEL[meeting.status]}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {editable && (
+            <button onClick={() => setEditDetails(v => !v)}
+              className="flex items-center gap-1 text-xs text-powder-600 hover:underline">
+              <Pencil size={12} /> {editDetails ? 'Hide details' : 'Edit details'}
+            </button>
+          )}
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_CHIP[meeting.status]}`}>
+            {STATUS_LABEL[meeting.status]}
+          </span>
+        </div>
       </div>
+
+      {/* The header facts were display-only even for editors — the server has
+          always accepted them (WRITABLE), the screen just never offered an
+          input, so a meeting minuted under the wrong day was stuck there.
+          Saved by the same Save button as the minutes, same audit trail. */}
+      {editable && editDetails && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
+          <label className="block col-span-2 sm:col-span-3">
+            <span className="text-[11px] font-medium text-gray-600">Title</span>
+            <input value={val('title') || ''} onChange={e => set('title', e.target.value)}
+              className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium text-gray-600">Meeting date</span>
+            <input type="date" value={val('meeting_date') || ''} onChange={e => set('meeting_date', e.target.value)}
+              className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium text-gray-600">Start time</span>
+            <input type="time" value={val('start_time') || ''} onChange={e => set('start_time', e.target.value)}
+              className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium text-gray-600">End time</span>
+            <input type="time" value={val('end_time') || ''} onChange={e => set('end_time', e.target.value)}
+              className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium text-gray-600">Location</span>
+            <input value={val('location') || ''} onChange={e => set('location', e.target.value)}
+              className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
+          </label>
+          <label className="block col-span-2">
+            <span className="text-[11px] font-medium text-gray-600">Chair</span>
+            <input value={val('chair') || ''} onChange={e => set('chair', e.target.value)}
+              className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
+          </label>
+        </div>
+      )}
 
       {meeting.status === 'approved' && (
         <p className="text-xs text-green-900 bg-green-50 border border-green-200 rounded-lg p-2.5">
