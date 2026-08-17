@@ -609,6 +609,236 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
 }
 
 // ── Group training modal ──────────────────────────────────────────────────────
+/**
+ * The whole Drive folder of group sign-in sheets, worked as a queue: pick all
+ * ~50 files once, then one screen per sheet — the scan on the left, the header
+ * prefilled from the filename on the right, tick the signers, file, next.
+ * Reading handwriting stays a human act; AI can READ the printed names off the
+ * sheet as suggestions (exact roster matches tick themselves, near-misses are
+ * offered as chips), but nothing files until a person confirms. Each filed
+ * sheet stores the scan once and references it from every attendee's record.
+ */
+function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
+  const [queue, setQueue] = useState(null); // null until files are picked
+  const [idx, setIdx] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const activeCourses = useMemo(() => (courses || []).filter(c => c.active), [courses]);
+
+  const pick = async (files) => {
+    if (!files?.length) return;
+    const q = files.map(f => ({
+      file: f, name: f.name, url: URL.createObjectURL(f), isImage: /^image\//.test(f.type),
+      date: '', courseIds: [], trainer: '', sel: {}, status: 'pending', readResult: null,
+    }));
+    setQueue(q); setIdx(0); setError('');
+    try {
+      const res = await apiPost('/training/sheets/analyze', { filenames: files.map(f => f.name) });
+      setQueue(cur => cur.map((item) => {
+        const a = res.files.find(x => x.filename === item.name);
+        return a ? { ...item, date: a.date || '', courseIds: a.suggested_course_ids || [] } : item;
+      }));
+    } catch { /* prefill is a convenience — the queue still works typed by hand */ }
+  };
+
+  const cur = queue?.[idx];
+  const patch = (p) => setQueue(q => q.map((item, i) => (i === idx ? { ...item, ...p } : item)));
+  const toggleUser = (u) => patch({ sel: { ...cur.sel, [u.id]: cur.sel[u.id] ? undefined : { name: u.name } } });
+  const chosen = cur ? Object.entries(cur.sel).filter(([, v]) => v) : [];
+  const advance = () => { setError(''); setSearch(''); setIdx(i => i + 1); };
+
+  const readNames = async () => {
+    setReading(true); setError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', cur.file);
+      const res = await apiUpload('/training/sheets/read-names', fd);
+      const sel = { ...cur.sel };
+      for (const n of res.names || []) if (n.user_id && !sel[n.user_id]) sel[n.user_id] = { name: n.user_name };
+      patch({ readResult: res.names || [], sel });
+    } catch (e) { setError(e.message); }
+    finally { setReading(false); }
+  };
+
+  const fileSheet = async () => {
+    if (!cur.courseIds.length) { setError('Pick at least one course.'); return; }
+    if (!cur.date) { setError('The sheet needs its training date.'); return; }
+    if (!chosen.length) { setError('Tick who signed the sheet.'); return; }
+    setBusy(true); setError('');
+    try {
+      const ids = [];
+      for (const courseId of cur.courseIds) {
+        const res = await apiPost('/training/bulk-complete', {
+          course_id: courseId, completion_date: cur.date, training_date: cur.date,
+          trainer: cur.trainer, method: 'read_and_sign',
+          attendees: chosen.map(([id, v]) => ({ employee_user_id: id, employee_name: v.name })),
+        });
+        ids.push(...(res.ids || []));
+      }
+      if (ids.length) {
+        const fd = new FormData();
+        fd.append('file', cur.file);
+        fd.append('record_ids', JSON.stringify(ids));
+        await apiUpload('/training/evidence/bulk', fd);
+      }
+      patch({ status: 'filed', created: ids.length });
+      advance();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const filed = (queue || []).filter(s => s.status === 'filed');
+  const list = useMemo(() => (users || []).filter(u => u.is_active !== 0 && (!search || u.name.toLowerCase().includes(search.toLowerCase()))), [users, search]);
+  const courseName = (id) => { const c = activeCourses.find(x => x.id === id); return c ? `${c.code ? `${c.code} — ` : ''}${c.title}` : id; };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-3" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[94vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <h3 className="font-semibold text-gray-900">File group sign-in sheets</h3>
+            {queue && <p className="text-xs text-gray-500">{filed.length} of {queue.length} filed · {(queue || []).filter(s => s.status === 'skipped').length} skipped</p>}
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+
+        {!queue && (
+          <div className="p-8 text-center space-y-3">
+            <p className="text-sm text-gray-600 max-w-lg mx-auto">
+              Select every sheet at once — PDFs and photos both work. Each file becomes one screen:
+              the date and course come off the filename, you tick who signed, and the scan attaches
+              to every record it creates. Files that turn out not to be group sheets can be skipped.
+            </p>
+            <label className="inline-flex items-center gap-2 px-4 py-2.5 bg-powder-600 text-white rounded-lg text-sm font-medium cursor-pointer hover:bg-powder-700">
+              <Upload size={15} /> Choose files
+              <input type="file" multiple accept=".pdf,image/*" className="hidden"
+                onChange={e => pick(Array.from(e.target.files || []))} />
+            </label>
+          </div>
+        )}
+
+        {queue && !cur && (
+          <div className="p-8 text-center space-y-3">
+            <CheckCircle size={32} className="mx-auto text-green-600" />
+            <p className="text-sm text-gray-700 font-medium">
+              Done — {filed.length} sheet{filed.length === 1 ? '' : 's'} filed,
+              {' '}{filed.reduce((n, s) => n + (s.created || 0), 0)} training records created with the paper attached.
+            </p>
+            {(queue.filter(s => s.status === 'skipped').length > 0) && (
+              <p className="text-xs text-gray-500">Skipped: {queue.filter(s => s.status === 'skipped').map(s => s.name).join(' · ')}</p>
+            )}
+            <button onClick={() => { onDone(filed.reduce((n, s) => n + (s.created || 0), 0)); }}
+              className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">Close</button>
+          </div>
+        )}
+
+        {cur && (
+          <div className="flex-1 min-h-0 grid md:grid-cols-2 gap-0">
+            {/* the scan — reading it is the job, so it gets half the screen */}
+            <div className="bg-gray-100 min-h-[260px] md:min-h-0 overflow-hidden flex flex-col">
+              <p className="px-3 py-1.5 text-[11px] text-gray-600 bg-gray-200/70 truncate shrink-0">{cur.name}</p>
+              {cur.isImage
+                ? <div className="flex-1 overflow-auto p-2"><img src={cur.url} alt={cur.name} className="max-w-full" /></div>
+                : <iframe src={cur.url} title={cur.name} className="flex-1 w-full bg-white" />}
+            </div>
+
+            <div className="p-4 space-y-3 overflow-y-auto">
+              <p className="text-xs font-semibold text-gray-500">Sheet {idx + 1} of {queue.length}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Training date *</label>
+                  <input type="date" value={cur.date} onChange={e => patch({ date: e.target.value })}
+                    className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
+                  <input value={cur.trainer} onChange={e => patch({ trainer: e.target.value })}
+                    className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Course(s) * <span className="font-normal text-gray-400">— a sheet naming several SOPs files one record per course per signer</span></label>
+                <div className="flex flex-wrap gap-1.5 mb-1.5">
+                  {cur.courseIds.map(id => (
+                    <span key={id} className="inline-flex items-center gap-1 bg-powder-50 text-powder-800 border border-powder-200 rounded-full px-2.5 py-1 text-xs">
+                      {courseName(id)}
+                      <button type="button" onClick={() => patch({ courseIds: cur.courseIds.filter(x => x !== id) })} className="text-powder-400 hover:text-red-500"><X size={11} /></button>
+                    </span>
+                  ))}
+                  {cur.courseIds.length === 0 && <span className="text-xs text-gray-400">None picked yet.</span>}
+                </div>
+                <select value="" onChange={e => { if (e.target.value && !cur.courseIds.includes(e.target.value)) patch({ courseIds: [...cur.courseIds, e.target.value] }); }}
+                  className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm">
+                  <option value="">+ Add a course…</option>
+                  {activeCourses.map(c => <option key={c.id} value={c.id}>{c.code ? `${c.code} — ` : ''}{c.title}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+                  <label className="text-xs font-medium text-gray-700">Signed ({chosen.length})</label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={readNames} disabled={reading}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[11px] font-medium hover:bg-purple-100 disabled:opacity-50">
+                      <Sparkles size={11} /> {reading ? 'Reading…' : 'Read names from the sheet'}
+                    </button>
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
+                      className="px-2 py-1 border border-gray-300 rounded-lg text-xs w-28" />
+                  </div>
+                </div>
+                {cur.readResult && (
+                  <div className="text-[11px] text-gray-600 bg-purple-50/60 border border-purple-100 rounded-lg px-2 py-1.5 mb-1.5 space-y-0.5">
+                    {cur.readResult.length === 0 && 'No names could be read — tick them by hand.'}
+                    {cur.readResult.map((n, i) => (
+                      <div key={i}>
+                        “{n.read}” {n.user_id
+                          ? <span className="text-green-700">→ {n.user_name} ✓</span>
+                          : (n.candidates?.length
+                            ? <>→ {n.candidates.map(c => (
+                              <button key={c.id} type="button" onClick={() => patch({ sel: { ...cur.sel, [c.id]: { name: c.name } } })}
+                                className={`underline mr-1.5 ${cur.sel[c.id] ? 'text-green-700 no-underline' : 'text-powder-700'}`}>{c.name}{cur.sel[c.id] ? ' ✓' : '?'}</button>
+                            ))}</>
+                            : <span className="text-gray-400">— no roster match</span>)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-44 overflow-y-auto">
+                  {list.map(u => (
+                    <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-50">
+                      <input type="checkbox" checked={!!cur.sel[u.id]} onChange={() => toggleUser(u)} />
+                      <span className="flex-1 text-sm text-gray-800">{u.name} <span className="text-[11px] text-gray-400 capitalize">{(u.department || '').replace(/_/g, ' ')}</span></span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {error && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{error}</p>}
+              <div className="flex items-center gap-2 pt-1">
+                <button type="button" onClick={fileSheet} disabled={busy}
+                  className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-50">
+                  {busy ? 'Filing…' : `File sheet & next`}
+                </button>
+                <button type="button" onClick={() => { patch({ status: 'skipped' }); advance(); }} disabled={busy}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50">
+                  Skip — not a group sheet
+                </button>
+                {idx > 0 && (
+                  <button type="button" onClick={() => setIdx(i => i - 1)} disabled={busy}
+                    className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50">Back</button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function GroupTrainingModal({ courses, users, onClose, onSaved }) {
   const today = new Date().toISOString().slice(0, 10);
   const [courseId, setCourseId] = useState('');
@@ -1152,6 +1382,7 @@ export default function TrainingPanel() {
   const [importingScans, setImportingScans] = useState(false);
   const [completion, setCompletion] = useState(null); // {} = new
   const [preview, setPreview] = useState(null); // { url, name } — the stored scan behind a record
+  const [bulkSheets, setBulkSheets] = useState(false);
   const openEvidence = async (r) => {
     try {
       const { url, filename } = await apiFetch(`/training/${r.id}/evidence`);
@@ -1203,6 +1434,8 @@ export default function TrainingPanel() {
             )}
             <button onClick={() => setCourse({})} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Plus size={15} /> Course</button>
             <button onClick={() => setGroupTraining(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Users size={15} /> Group Training</button>
+            <button onClick={() => setBulkSheets(true)} title="Work a folder of signed group sheets as a queue"
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Paperclip size={15} /> Group Sheets</button>
             <button onClick={() => setCompletion({})} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700"><Plus size={16} /> Log Completion</button>
           </div>
         )}
@@ -1386,6 +1619,8 @@ export default function TrainingPanel() {
       {testCourse && <TestEditor course={testCourse} aiEnabled={aiOn} onClose={() => setTestCourse(null)} onSaved={() => { setTestCourse(null); refreshCourses(); }} />}
       {groupTraining && <GroupTrainingModal courses={courses} users={users} onClose={() => setGroupTraining(false)} onSaved={(n, sheet) => { setGroupTraining(false); refreshAll(); setFlash(`Recorded ${n} completion${n === 1 ? '' : 's'}${sheet ? ' with the sign-in sheet attached' : ''}.`); setTimeout(() => setFlash(''), 5000); }} />}
       {preview && <FilePreview items={[preview]} index={0} onClose={() => setPreview(null)} />}
+      {bulkSheets && <GroupSheetBulkModal courses={courses} users={users} onClose={() => setBulkSheets(false)}
+        onDone={(n) => { setBulkSheets(false); refreshAll(); setFlash(`Filed ${n} training record${n === 1 ? '' : 's'} from the sign-in sheets.`); setTimeout(() => setFlash(''), 6000); }} />}
       {flash && <div className="fixed bottom-4 right-4 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">{flash}</div>}
     </div>
   );

@@ -130,6 +130,35 @@ export async function transcribeImage(buffer, mediaType) {
   return text || null;
 }
 
+/**
+ * Read the trainee names off a scanned group sign-in sheet (Form 409-02 —
+ * one paper, everyone signs). Returns the PRINTED names as written on the
+ * paper, misspellings included — matching them to the roster is the caller's
+ * job, and these are SUGGESTIONS for a person to confirm, never auto-filed:
+ * a name mis-read by a machine becomes a training record for the wrong
+ * person. PDFs go through the API's document block; photos as images.
+ */
+export async function readSheetNames(buffer, mediaType) {
+  const c = getClient();
+  if (!c) return null;
+  const isPdf = /pdf/i.test(mediaType || '');
+  const block = isPdf
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') } }
+    : { type: 'image', source: { type: 'base64', media_type: mediaType, data: buffer.toString('base64') } };
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 1500,
+    system: 'You read scanned training sign-in sheets from a food plant. Extract ONLY the trainee names from the sign-in table — prefer the "Printed Name" column over signatures; skip the trainer, blank rows, and crossed-out rows. Transcribe each name exactly as written, even if misspelled. Return ONLY a JSON array of the names, in row order.',
+    messages: [{ role: 'user', content: [block, { type: 'text', text: 'List the trainee names on this sign-in sheet.' }] }],
+    output_config: { format: { type: 'json_schema', schema: { type: 'array', items: { type: 'string' } } } },
+  });
+  const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+  try {
+    const arr = JSON.parse(text);
+    return Array.isArray(arr) ? arr.map(s => String(s).trim()).filter(Boolean).slice(0, 60) : null;
+  } catch { return null; }
+}
+
 export async function translateToSpanish(items) {
   const c = getClient();
   if (!c) throw new Error('AI is not configured');

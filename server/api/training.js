@@ -3,7 +3,7 @@ import { createReadStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { personKey } from '../person-key.js';
-import { aiEnabled, generateTestQuestions } from '../ai.js';
+import { aiEnabled, generateTestQuestions, readSheetNames } from '../ai.js';
 import { storageEnabled, putStream, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo } from '../media.js';
 import multer from 'multer';
@@ -218,13 +218,87 @@ router.post('/bulk-complete', (req, res) => {
   res.json({ created, ids });
 });
 
+// ── Bulk group sheets: parse ~50 filenames in one call ────────────────────────
+// The Drive folder's names carry the date and the topic ("Copy of November 25,
+// 2025 SOP 702 Preventive maintenance Program V2.jpg"); the SIGNERS are
+// handwriting inside the scan, which stays a human's call (with AI suggestions
+// below). This endpoint turns the filenames into prefilled headers so working
+// the pile is review, not data entry.
+const MONTHS = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+function parseSheetName(filename) {
+  let s = String(filename || '').replace(/\.[a-z0-9]+$/i, '').replace(/^(copy of\s+)+/i, '').trim();
+  let date = null;
+  // "November 25, 2025" / "November 25 2025" / "November 25-2025"
+  let m = s.match(/^([a-z]+)\s+(\d{1,2})[,\s-]+\s*(\d{4})\s*/i);
+  if (m && MONTHS[m[1].toLowerCase()]) {
+    date = `${m[3]}-${String(MONTHS[m[1].toLowerCase()]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+    s = s.slice(m[0].length);
+  } else {
+    // "06-01-2026" / "01-19-26" — month first, the same convention the
+    // scanned-tests parser proved on this plant's own files.
+    m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\s*/);
+    if (m) {
+      const yr = m[3].length === 2 ? `20${m[3]}` : m[3];
+      date = `${yr}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+      s = s.slice(m[0].length);
+    }
+  }
+  return { date, title: s.replace(/^[\s,·-]+/, '').trim() };
+}
+
+router.post('/sheets/analyze', (req, res) => {
+  const db = getDb();
+  const names = Array.isArray(req.body?.filenames) ? req.body.filenames.slice(0, 200) : [];
+  if (!names.length) return res.status(400).json({ error: 'filenames is required' });
+  const courses = db.prepare('SELECT id, title, code FROM training_courses WHERE active = 1 ORDER BY code, title').all();
+  const alnum = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const out = names.map(fn => {
+    const { date, title } = parseSheetName(fn);
+    // Courses whose CODE appears in the name (a "Crisis Managment,Protocol001,
+    // Polocy002" sheet names several documents at once) plus the word-score
+    // best guess. Suggestions, ranked; the person picks.
+    const t = alnum(title);
+    const codeHits = courses.filter(c => c.code && alnum(c.code).length >= 4 && t.includes(alnum(c.code))).map(c => c.id);
+    const best = suggestCourse(title, courses);
+    const suggested = [...new Set([...codeHits, ...(best ? [best] : [])])];
+    return { filename: fn, date, title, suggested_course_ids: suggested };
+  });
+  res.json({ files: out });
+});
+
+const sheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
+
+// AI reads the printed names off one sheet — SUGGESTIONS for the human to
+// confirm, exact roster matches and ranked candidates, never auto-filed.
+router.post('/sheets/read-names', sheetUpload.single('file'), async (req, res) => {
+  if (!aiEnabled()) return res.status(503).json({ error: 'AI is not configured — tick the names by hand.' });
+  if (!req.file?.buffer) return res.status(400).json({ error: 'A file is required.' });
+  const db = getDb();
+  let read;
+  try {
+    read = await readSheetNames(req.file.buffer, req.file.mimetype || 'application/pdf');
+  } catch (e) {
+    return res.status(502).json({ error: `Could not read the sheet: ${e.message}` });
+  }
+  if (!read?.length) return res.json({ names: [] });
+  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
+  const byKey = new Map(users.map(u => [personKey(u.name), u]));
+  const names = read.map(r => {
+    const exact = byKey.get(personKey(r));
+    if (exact) return { read: r, user_id: exact.id, user_name: exact.name };
+    const candidates = users.map(u => ({ id: u.id, name: u.name, score: similarity(r, u.name) }))
+      .filter(c => c.score >= 0.5).sort((a, b) => b.score - a.score).slice(0, 3);
+    return { read: r, candidates };
+  });
+  res.json({ names });
+});
+
 // ── One sheet, many records ───────────────────────────────────────────────────
 // A group sign-in sheet (Form 409-02 — one paper, everyone signs) is ONE stored
 // object referenced by EVERY attendee's record, the same refcount idea as one
 // equipment manual on eleven vacuums. Records that already carry evidence are
 // left alone — this attaches paper to records that have none, it never replaces
 // a record's existing evidence.
-const sheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 router.post('/evidence/bulk', sheetUpload.single('file'), async (req, res) => {
   if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured, so the sheet cannot be attached.' });
   if (!req.file?.buffer) return res.status(400).json({ error: 'A file is required.' });
