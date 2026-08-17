@@ -8,6 +8,7 @@ import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
+import FilePreview from '../FilePreview.jsx';
 
 // Columns as data for the Records tab. Evidence and the actions cell have no
 // key — a link is not a value to order by.
@@ -294,6 +295,7 @@ function ScannedTestsImportModal({ onClose, onDone }) {
               {result.skipped_unmapped_course > 0 && <li>{result.skipped_unmapped_course} skipped — topic left unmapped.</li>}
               {result.unreadable > 0 && <li>{result.unreadable} filenames couldn&apos;t be read.</li>}
               <li>{result.evidence_stored} scans attached as evidence{result.evidence_failed ? `, ${result.evidence_failed} failed to store` : ''}.</li>
+              {result.evidence_backfilled > 0 && <li>{result.evidence_backfilled} scans attached to records that already existed without their file.</li>}
             </ul>
             <button onClick={onClose} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">Done</button>
           </div>
@@ -615,6 +617,7 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
   const [method, setMethod] = useState('in_person');
   const [sel, setSel] = useState({}); // userId -> { checked, name, score }
   const [search, setSearch] = useState('');
+  const [sheet, setSheet] = useState(null); // the signed sign-in sheet (Form 409-02)
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -632,7 +635,21 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
         course_id: courseId, completion_date: date, training_date: date, trainer, method,
         attendees: chosen.map(([id, v]) => ({ employee_user_id: id, employee_name: v.name, score: v.score })),
       });
-      onSaved(res.created);
+      // One sheet, everyone's record: the scan is stored once and referenced
+      // by every completion this just created. Best-effort — the completions
+      // are already filed, and a storage failure must not look like they
+      // weren't; the sheet can be re-attached from the Edit modal.
+      let attached = false;
+      if (sheet && res.ids?.length) {
+        try {
+          const fd = new FormData();
+          fd.append('file', sheet);
+          fd.append('record_ids', JSON.stringify(res.ids));
+          await apiUpload('/training/evidence/bulk', fd);
+          attached = true;
+        } catch (e) { alert(`The completions are saved, but the sheet did not attach: ${e.message}`); }
+      }
+      onSaved(res.created, attached);
     } catch (e) { setError(e.message); setSaving(false); }
   };
 
@@ -665,6 +682,12 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
             <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
               <input value={trainer} onChange={e => setTrainer(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Signed sign-in sheet (photo or PDF)</label>
+              <input type="file" accept=".pdf,image/*" onChange={e => setSheet(e.target.files?.[0] || null)}
+                className="w-full text-sm text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:border-0 file:rounded-lg file:bg-powder-50 file:text-powder-700 file:text-xs file:font-medium" />
+              <p className="text-[11px] text-gray-400 mt-0.5">One sheet, everyone&apos;s record — it attaches as the evidence on every attendee selected below.</p>
             </div>
           </div>
 
@@ -1128,6 +1151,13 @@ export default function TrainingPanel() {
   const [importingLog, setImportingLog] = useState(false);
   const [importingScans, setImportingScans] = useState(false);
   const [completion, setCompletion] = useState(null); // {} = new
+  const [preview, setPreview] = useState(null); // { url, name } — the stored scan behind a record
+  const openEvidence = async (r) => {
+    try {
+      const { url, filename } = await apiFetch(`/training/${r.id}/evidence`);
+      setPreview({ url, name: filename });
+    } catch (e) { alert(e.message); }
+  };
   const [groupTraining, setGroupTraining] = useState(false);
   const [course, setCourse] = useState(null);
   const [testCourse, setTestCourse] = useState(null);
@@ -1324,11 +1354,17 @@ export default function TrainingPanel() {
                     <td className="px-4 py-2 text-gray-600">{r.completion_date || '—'}</td>
                     <td className="px-4 py-2 text-gray-600">{r.score != null ? `${r.score}%` : '—'}</td>
                     <td className="px-4 py-2">
-                      {r.document_url
-                        ? <a href={r.document_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> View</a>
-                        : r.gdrive_url
-                          ? <a href={r.gdrive_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> Drive</a>
-                          : <span className="text-gray-300 text-xs">—</span>}
+                      {/* Imported scans live in storage under evidence_key — a
+                          different field from the hand-attached document_url,
+                          and the reason this column used to read "—" on rows
+                          whose paper was stored all along. */}
+                      {r.evidence_key
+                        ? <button type="button" onClick={() => openEvidence(r)} className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><Paperclip size={12} /> View scan</button>
+                        : r.document_url
+                          ? <a href={r.document_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> View</a>
+                          : r.gdrive_url
+                            ? <a href={r.gdrive_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> Drive</a>
+                            : <span className="text-gray-300 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-2 text-right">
                       {canEdit && <button onClick={() => setCompletion(r)} className="p-1.5 text-gray-400 hover:text-powder-600 rounded-lg"><Edit2 size={14} /></button>}
@@ -1348,7 +1384,8 @@ export default function TrainingPanel() {
       {completion && <CompletionModal initial={completion.id ? completion : null} courses={courses} users={users} onClose={() => setCompletion(null)} onSaved={() => { setCompletion(null); refreshAll(); }} />}
       {course && <CourseModal initial={course.id ? course : null} onClose={() => setCourse(null)} onSaved={() => { setCourse(null); refreshCourses(); refreshMatrix(); }} />}
       {testCourse && <TestEditor course={testCourse} aiEnabled={aiOn} onClose={() => setTestCourse(null)} onSaved={() => { setTestCourse(null); refreshCourses(); }} />}
-      {groupTraining && <GroupTrainingModal courses={courses} users={users} onClose={() => setGroupTraining(false)} onSaved={(n) => { setGroupTraining(false); refreshAll(); setFlash(`Recorded ${n} completion${n === 1 ? '' : 's'}.`); setTimeout(() => setFlash(''), 5000); }} />}
+      {groupTraining && <GroupTrainingModal courses={courses} users={users} onClose={() => setGroupTraining(false)} onSaved={(n, sheet) => { setGroupTraining(false); refreshAll(); setFlash(`Recorded ${n} completion${n === 1 ? '' : 's'}${sheet ? ' with the sign-in sheet attached' : ''}.`); setTimeout(() => setFlash(''), 5000); }} />}
+      {preview && <FilePreview items={[preview]} index={0} onClose={() => setPreview(null)} />}
       {flash && <div className="fixed bottom-4 right-4 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">{flash}</div>}
     </div>
   );

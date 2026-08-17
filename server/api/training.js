@@ -194,24 +194,66 @@ router.post('/bulk-complete', (req, res) => {
   const completion = completion_date || training_date || new Date().toISOString().slice(0, 10);
 
   let created = 0;
+  const ids = [];
   const tx = db.transaction(() => {
     for (const a of attendees) {
       const name = (a.employee_name || '').trim();
       if (!name) continue;
       const score = a.score === '' || a.score === undefined || a.score === null ? null : Number(a.score);
-      insertCompletion(db, {
+      const rec = insertCompletion(db, {
         employee_name: name, employee_user_id: a.employee_user_id || null,
         course_id, course_title: course.title, status: 'completed',
         method: method || 'in_person', trainer: trainer || null,
         training_date: training_date || completion, completion_date: completion,
         score, passed: score == null ? true : score >= pass,
       });
+      ids.push(rec.id);
       created++;
     }
   });
   tx();
   logAudit(req.user, 'training_group_completed', 'training', null, { course_id, count: created }, null, null, course.title);
-  res.json({ created });
+  // ids are returned so the client can attach the signed sign-in sheet to
+  // every record it just created in one upload.
+  res.json({ created, ids });
+});
+
+// ── One sheet, many records ───────────────────────────────────────────────────
+// A group sign-in sheet (Form 409-02 — one paper, everyone signs) is ONE stored
+// object referenced by EVERY attendee's record, the same refcount idea as one
+// equipment manual on eleven vacuums. Records that already carry evidence are
+// left alone — this attaches paper to records that have none, it never replaces
+// a record's existing evidence.
+const sheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
+router.post('/evidence/bulk', sheetUpload.single('file'), async (req, res) => {
+  if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured, so the sheet cannot be attached.' });
+  if (!req.file?.buffer) return res.status(400).json({ error: 'A file is required.' });
+  const ids = parseJson(req.body?.record_ids, null);
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'record_ids is required.' });
+  const db = getDb();
+
+  const safe = (req.file.originalname || 'sign-in-sheet').replace(/[^\w.-]+/g, '_').slice(0, 120);
+  const key = `training/scans/sheet-${uuid()}-${safe}`;
+  const isPdf = /\.pdf$/i.test(req.file.originalname || '') || /pdf/i.test(req.file.mimetype || '');
+  await putObject(key, req.file.buffer, isPdf ? 'application/pdf' : (req.file.mimetype || 'application/octet-stream'));
+  let text = null, status = 'skipped_image';
+  if (isPdf) {
+    try {
+      text = await extractInvoiceText(req.file.buffer, 'application/pdf', req.file.originalname);
+      status = text && text.trim() ? 'ok' : 'empty';
+    } catch { status = 'failed'; }
+  }
+
+  const setEv = db.prepare(`UPDATE training_records SET evidence_key=?, evidence_filename=?, evidence_text=?, evidence_status=?,
+    updated_at=datetime('now') WHERE id=? AND (evidence_key IS NULL OR evidence_key = '')`);
+  let attached = 0, skipped = 0;
+  for (const id of ids.slice(0, 500)) {
+    const out = setEv.run(key, req.file.originalname, text || null, status, String(id));
+    if (out.changes) attached++; else skipped++;
+  }
+  logAudit(req.user, 'training_sheet_attached', 'training', null,
+    { filename: req.file.originalname, attached, skipped }, null, null, req.file.originalname);
+  res.json({ attached, skipped, filename: req.file.originalname });
 });
 
 router.put('/:id', (req, res) => {
@@ -902,9 +944,17 @@ function scanContext(db) {
 // "the same test scanned twice" — calling the second one 'already imported' on
 // an empty database is how an importer loses trust.
 function existingCompletionKeys(db) {
-  const rows = db.prepare(`SELECT tr.employee_name, tr.training_topic, tr.training_date, c.title AS course_title
+  const rows = db.prepare(`SELECT tr.id, tr.employee_name, tr.training_topic, tr.training_date, tr.evidence_key, c.title AS course_title
     FROM training_records tr LEFT JOIN training_courses c ON c.id = tr.course_id`).all();
-  return new Set(rows.map(r => `${personKey(r.employee_name)}|${normName(r.course_title || r.training_topic)}|${r.training_date}`));
+  // A Map, not a Set: the commit needs the existing record's id so a re-import
+  // can attach the scan to a record that was created WITHOUT its file — the
+  // "records exist but the paper isn't on them" state.
+  const m = new Map();
+  for (const r of rows) {
+    m.set(`${personKey(r.employee_name)}|${normName(r.course_title || r.training_topic)}|${r.training_date}`,
+      { id: r.id, hasEvidence: !!r.evidence_key });
+  }
+  return m;
 }
 
 router.post('/import/scans/analyze', requireRole('admin'), zipScanUpload.single('file'), (req, res) => {
@@ -981,7 +1031,7 @@ router.post('/import/scans/commit', requireRole('admin'), zipScanUpload.single('
   const summary = {
     created: 0, already_in_readydoc: 0, repeated_in_file: 0,
     skipped_unmapped_person: 0, skipped_unmapped_course: 0, unreadable: 0,
-    evidence_stored: 0, evidence_failed: 0, created_rows: [],
+    evidence_stored: 0, evidence_backfilled: 0, evidence_failed: 0, created_rows: [],
   };
 
   const insert = db.prepare(`INSERT INTO training_records
@@ -1010,7 +1060,16 @@ router.post('/import/scans/commit', requireRole('admin'), zipScanUpload.single('
       const personName = account.name;
       const key = `${personKey(personName)}|${normName(course.title)}|${f.date}`;
       if (inFile.has(key)) { summary.repeated_in_file++; continue; }
-      if (seen.has(key)) { summary.already_in_readydoc++; inFile.add(key); continue; }
+      const prior = seen.get(key);
+      if (prior) {
+        summary.already_in_readydoc++;
+        inFile.add(key);
+        // The record exists but its paper never made it on — an earlier run
+        // before evidence existed, or a storage hiccup. Re-importing the same
+        // zip is the repair: attach the scan to the record it belongs to.
+        if (!prior.hasEvidence) { pending.push({ id: prior.id, f, backfill: true }); }
+        continue;
+      }
       inFile.add(key);
 
       const id = uuid();
@@ -1028,7 +1087,7 @@ router.post('/import/scans/commit', requireRole('admin'), zipScanUpload.single('
   // behind them would be worse than one that says so.
   if (storageEnabled()) {
     const setEv = db.prepare("UPDATE training_records SET evidence_key=?, evidence_filename=?, evidence_text=?, evidence_status=?, updated_at=datetime('now') WHERE id=?");
-    for (const { id, f } of pending) {
+    for (const { id, f, backfill } of pending) {
       try {
         const buf = f.entry.getData();
         const safe = f.filename.replace(/[^\w.-]+/g, '_').slice(0, 120);
@@ -1046,7 +1105,7 @@ router.post('/import/scans/commit', requireRole('admin'), zipScanUpload.single('
           } catch { status = 'failed'; }
         }
         setEv.run(key, f.filename, text || null, status, id);
-        summary.evidence_stored++;
+        if (backfill) summary.evidence_backfilled++; else summary.evidence_stored++;
       } catch (e) {
         summary.evidence_failed++;
         console.warn('[training] scan evidence failed:', f.filename, e.message);
@@ -1080,6 +1139,17 @@ router.post('/:id/attach', (req, res) => {
   db.prepare("UPDATE training_records SET document_url = ?, updated_at = datetime('now') WHERE id = ?").run(req.body.document_url, req.params.id);
   logAudit(req.user, 'training_form_attached', 'training', req.params.id, { document_url: req.body.document_url }, null, null, existing.employee_name);
   res.json(db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id));
+});
+
+// The stored scan behind a record — a presigned URL, the same way every other
+// R2-backed file is served. Declared before /:id (route order).
+router.get('/:id/evidence', async (req, res) => {
+  const db = getDb();
+  const rec = db.prepare('SELECT evidence_key, evidence_filename FROM training_records WHERE id = ?').get(req.params.id);
+  if (!rec?.evidence_key) return res.status(404).json({ error: 'No scanned form on this record.' });
+  const url = await presignGet(rec.evidence_key, rec.evidence_filename);
+  if (!url) return res.status(503).json({ error: 'File storage unavailable' });
+  res.json({ url, filename: rec.evidence_filename });
 });
 
 router.get('/:id', (req, res) => {
