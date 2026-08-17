@@ -1947,6 +1947,40 @@ function runMigrations() {
   addColumnIfMissing('certifications', 'extracted_text', 'TEXT');
   addColumnIfMissing('certifications', 'asset_file', 'TEXT');
 
+  // New-hire onboarding, worked through a magic link (/welcome/<token>) the
+  // same way flavor approvals are. ssn/routing/account are AES-GCM ciphertext
+  // (onboarding-crypto.js) or absent entirely when no key is configured;
+  // *_last4 is what screens show. adp_* records the RUN submission when the
+  // Marketplace credentials exist (server/adp.js).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS onboarding_records (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT,
+      status TEXT NOT NULL DEFAULT 'invited'
+        CHECK (status IN ('invited','in_progress','ready','submitted_to_adp','completed','cancelled')),
+      language TEXT DEFAULT 'en',
+      first_name TEXT, middle_name TEXT, last_name TEXT, preferred_name TEXT,
+      email TEXT, phone TEXT,
+      address1 TEXT, address2 TEXT, city TEXT, state TEXT, zip TEXT, dob TEXT,
+      ssn_enc TEXT, ssn_last4 TEXT,
+      department TEXT, team TEXT, position TEXT, start_date TEXT,
+      pay_rate TEXT, pay_frequency TEXT,
+      emergency_name TEXT, emergency_phone TEXT, emergency_relationship TEXT,
+      dd_bank_name TEXT, dd_routing_enc TEXT, dd_account_enc TEXT,
+      dd_account_last4 TEXT, dd_account_type TEXT,
+      w4_filing_status TEXT, w4_multiple_jobs INTEGER DEFAULT 0,
+      w4_dependents_amount TEXT, w4_other_income TEXT, w4_deductions TEXT, w4_extra_withholding TEXT,
+      progress TEXT NOT NULL DEFAULT '{}',
+      notes TEXT,
+      user_id TEXT,
+      adp_submitted_at TEXT, adp_response TEXT,
+      created_by TEXT, invited_at TEXT, finished_at TEXT, completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_onboarding_status ON onboarding_records(status, created_at DESC);
+  `);
+
   // ── Product management ────────────────────────────────────────────────────
   // The finished-goods catalogue: what we sell, its codes, and the film it
   // prints on. Distinct from coa_specifications, which covers raw materials

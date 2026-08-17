@@ -81,6 +81,7 @@ import { syncAllKnifeStatuses } from './server/knife-state.js';
 import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
 import receivingRoutes from './server/api/receiving.js';
 import filmInspectionRoutes from './server/api/film-inspection.js';
+import onboardingRoutes, { portalRouter as onboardingPortalRoutes } from './server/api/onboarding.js';
 import safetyRoutes from './server/api/safety.js';
 import importRoutes from './server/api/imports.js';
 import coaRoutes from './server/api/coa.js';
@@ -1603,6 +1604,9 @@ app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRout
 app.use('/api/partners', requireModuleWrite('partner-reconciliation'), partnerRoutes);
 // Public: token-scoped partner access, guarded inside the router.
 app.use('/api/partner-portal', partnerPortalRoutes);
+// New-hire onboarding: admin router behind the module, portal public + token-gated.
+app.use('/api/onboarding', requireModuleWrite('onboarding'), onboardingRoutes);
+app.use('/api/onboarding-portal', onboardingPortalRoutes);
 // Filing is what View gets you here — anyone granted the module can claim
 // their own money back, and only ever sees their own claims. Approving and
 // PAYING are a second, narrower check inside the router (office or admin),

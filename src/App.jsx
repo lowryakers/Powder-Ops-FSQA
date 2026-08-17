@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine, UserPlus2 } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -86,6 +86,8 @@ const ReimbursementsPanel = lazy(() => import('./components/office/Reimbursement
 const BankingPanel = lazy(() => import('./components/office/BankingPanel.jsx'));
 const QuickBooksPanel = lazy(() => import('./components/office/QuickBooksPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
+const OnboardingWelcomePage = lazy(() => import('./components/OnboardingWelcomePage.jsx'));
+const OnboardingPanel = lazy(() => import('./components/office/OnboardingPanel.jsx'));
 
 const NAV_GROUPS = [
   {
@@ -224,6 +226,7 @@ const NAV_GROUPS = [
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
       { id: 'pay-tracking', label: 'Pay Tracking', icon: BadgeDollarSign, keywords: 'raise increase evaluation rubric wage rate salary review compensation' },
       { id: 'policies', label: 'Policies', icon: BookText, keywords: 'handbook PTO vacation grievance conduct attendance dress code company rules HR' },
+      { id: 'onboarding', label: 'Onboarding', icon: UserPlus2, keywords: 'new hire W4 I9 direct deposit ADP welcome' },
     ],
   },
   {
@@ -1458,6 +1461,18 @@ function App() {
   // ReadyDoc account and shouldn't need one to see the number we're both
   // settling against. Sits BEFORE the auth gate — a signed-in Powder Ops user
   // opening the link should still see what the partner sees.
+  // A new hire's onboarding wizard — public and token-gated; they have no
+  // account yet by definition. Same doctrine as the partner portal.
+  if (path.startsWith('/welcome/')) {
+    return (
+      <ModuleBoundary>
+        <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">Loading…</div>}>
+          <OnboardingWelcomePage token={decodeURIComponent(path.split('/')[2] || '')} />
+        </Suspense>
+      </ModuleBoundary>
+    );
+  }
+
   if (path.startsWith('/partner/')) {
     return (
       <ModuleBoundary>
@@ -1923,6 +1938,7 @@ function App() {
           {resolvedTab === 'procurement' && <ProcurementPanel />}
           {resolvedTab === 'newsletter' && <NewsletterPanel />}
           {resolvedTab === 'policies' && <PoliciesPanel />}
+          {resolvedTab === 'onboarding' && <OnboardingPanel />}
           {resolvedTab === 'pay-tracking' && <PayTrackingPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'controlled-changes' && <ControlledChangesPanel />}
