@@ -49,7 +49,8 @@ function AnswerButtons({ value, onPick, disabled }) {
 function CircleOne({ label, options, value, onPick, disabled }) {
   return (
     <div className="mt-1.5">
-      <p className="text-[11px] font-medium text-gray-600 mb-1">{label} — circle one</p>
+      {/* the paper says "circle one"; on a screen it's tap one */}
+      <p className="text-[11px] font-medium text-gray-600 mb-1">{label} — tap one</p>
       <div className="flex flex-wrap gap-1">
         {options.map(o => (
           <button key={o} type="button" disabled={disabled} onClick={() => onPick(o)}
@@ -81,7 +82,15 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
     if (!data) return;
     setAnswers(rec?.answers || {});
     setNotes(rec?.issue_notes || '');
-    setHeader(Object.fromEntries((form?.header || []).map(h => [h.key, rec?.[h.key] ?? ''])));
+    // wind_direction and film_width are NOT in form.header (they render as the
+    // pick-one rows), so seeding from header alone dropped them — a tapped
+    // value SAVED but the refresh wiped the highlight, which read as "you
+    // can't select one". Seed them explicitly.
+    setHeader({
+      ...Object.fromEntries((form?.header || []).map(h => [h.key, rec?.[h.key] ?? ''])),
+      wind_direction: rec?.wind_direction ?? '',
+      film_width: rec?.film_width ?? '',
+    });
   }, [data, rec, form]);
 
   // Not memoized: it is only ever called from event handlers, never from an
@@ -106,8 +115,10 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
   };
 
   const pickCircle = async (col, val) => {
-    setHeader(h => ({ ...h, [col]: val }));
-    await save({ [col]: val });
+    // Tap to pick, tap again to clear a mis-tap.
+    const next = header[col] === val ? '' : val;
+    setHeader(h => ({ ...h, [col]: next }));
+    await save({ [col]: next });
     refresh();
   };
 
