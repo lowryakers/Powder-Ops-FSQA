@@ -214,7 +214,7 @@ const HEADER_COLS = ['po_number', 'truck_number', 'pallet_count', 'driver_name',
  * the receiver can't know it, and QA sets it on the sheet (or leaves it blank
  * for unflavored stock).
  */
-function ensureFilmDraft(db, checklistRow, user) {
+export function ensureFilmDraft(db, checklistRow, user) {
   try {
     const existing = db.prepare(
       'SELECT id, reviewed_at FROM film_pouch_inspections WHERE inspection_no = ? ORDER BY reviewed_at IS NOT NULL, created_at')

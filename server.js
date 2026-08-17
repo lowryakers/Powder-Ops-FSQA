@@ -99,6 +99,7 @@ import { seedReferenceLibrary } from './server/reference-seed.js';
 import { seedCertifications } from './server/cert-seed.js';
 import { importPaperInternalAudits } from './server/internal-audit-import.js';
 import { seedBannedSubstanceSopDraft } from './server/banned-substance-sop-seed.js';
+import { backfillFilmDrafts } from './server/film-draft-backfill.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath } from './server/middleware/auth.js';
 
@@ -1058,6 +1059,10 @@ try {
   importPaperInternalAudits(db);
   // The Banned & Prohibited Substance Control SOP, as a DRAFT for review (one-time).
   seedBannedSubstanceSopDraft(db);
+  // Draft film inspections for packaging escalations that fired before the
+  // auto-draft existed, with corrected links DM'd where the alert already went
+  // out (one-time; async best-effort — a comms hiccup must not fail boot).
+  backfillFilmDrafts(db).catch((e) => console.warn('[backfill] film drafts:', e.message));
 } catch (err) {
   console.error('[seed] Error seeding training courses (non-fatal):', err.message);
 }
