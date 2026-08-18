@@ -18,6 +18,9 @@ import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { reconcile, applyCredit, dueDateFor, endOfMonth, round2 } from '../partner-recon.js';
 import { parseInvoice, parseLineItems, summarizeLineItems } from '../invoice-parse.js';
+import { botDm, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
+import { readyDocOrigin } from '../links.js';
 
 const router = Router();
 
@@ -978,6 +981,138 @@ router.get('/settlements/:settlementId', (req, res) => {
   const docs = listDocuments(db, s.partner_id, { settlement_id: s.id, limit: 2000 });
   res.json({ settlement: s, documents: docs });
 });
+
+/* ── Reminders ────────────────────────────────────────────────────────────── */
+//
+// "DM me on the last day of the month to close the period." Each reminder
+// belongs to ONE person — whoever wants the nudge makes their own, so pausing
+// yours never silences a colleague's. The DM carries the LIVE balance, because
+// "close the period" with no number is an errand; with the number it is the
+// start of the job.
+
+const REMINDER_DAYS = ['last', ...Array.from({ length: 28 }, (_, i) => String(i + 1))];
+
+router.get('/:id/reminders', (req, res) => {
+  const db = getDb();
+  res.json(db.prepare(`SELECT r.*, u.name AS user_name FROM partner_reminders r
+    LEFT JOIN users u ON u.id = r.user_id
+    WHERE r.partner_id = ? ORDER BY r.created_at`).all(req.params.id));
+});
+
+router.post('/:id/reminders', (req, res) => {
+  if (!canSettle(req.user)) return res.status(403).json({ error: 'Only the office or an admin can set a reconciliation reminder.' });
+  const db = getDb();
+  const partner = db.prepare('SELECT * FROM partner_accounts WHERE id = ?').get(req.params.id);
+  if (!partner) return res.status(404).json({ error: 'Partner not found' });
+  const message = clean(req.body?.message, 300);
+  if (!message) return res.status(400).json({ error: 'Say what the reminder should tell you.' });
+  const day = REMINDER_DAYS.includes(String(req.body?.day)) ? String(req.body.day) : 'last';
+  const hourRaw = Number(req.body?.hour);
+  const hour = Number.isInteger(hourRaw) && hourRaw >= 0 && hourRaw <= 23 ? hourRaw : 8;
+  const id = uuid();
+  db.prepare(`INSERT INTO partner_reminders (id, partner_id, user_id, message, day, hour, created_by)
+    VALUES (?,?,?,?,?,?,?)`)
+    .run(id, partner.id, req.user.id, message, day, hour, req.user?.name || null);
+  const created = db.prepare('SELECT * FROM partner_reminders WHERE id = ?').get(id);
+  logAudit(req.user, 'create', 'partner_reminder', id, { message, day, hour }, null, created, partner.name);
+  res.status(201).json(created);
+});
+
+router.put('/reminders/:rid', (req, res) => {
+  const db = getDb();
+  const before = db.prepare('SELECT * FROM partner_reminders WHERE id = ?').get(req.params.rid);
+  if (!before) return res.status(404).json({ error: 'Reminder not found' });
+  if (before.user_id !== req.user?.id && req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'This is someone else\'s reminder.' });
+  }
+  const message = req.body?.message !== undefined ? clean(req.body.message, 300) : before.message;
+  if (!message) return res.status(400).json({ error: 'A reminder needs its message.' });
+  const day = req.body?.day !== undefined && REMINDER_DAYS.includes(String(req.body.day)) ? String(req.body.day) : before.day;
+  const hourRaw = Number(req.body?.hour);
+  const hour = req.body?.hour !== undefined && Number.isInteger(hourRaw) && hourRaw >= 0 && hourRaw <= 23 ? hourRaw : before.hour;
+  const active = req.body?.active !== undefined ? (req.body.active ? 1 : 0) : before.active;
+  db.prepare(`UPDATE partner_reminders SET message = ?, day = ?, hour = ?, active = ?,
+      updated_at = datetime('now') WHERE id = ?`).run(message, day, hour, active, before.id);
+  const after = db.prepare('SELECT * FROM partner_reminders WHERE id = ?').get(before.id);
+  logAudit(req.user, 'update', 'partner_reminder', before.id, null, before, after, message);
+  res.json(after);
+});
+
+router.delete('/reminders/:rid', (req, res) => {
+  const db = getDb();
+  const r = db.prepare('SELECT * FROM partner_reminders WHERE id = ?').get(req.params.rid);
+  if (!r) return res.status(404).json({ error: 'Reminder not found' });
+  if (r.user_id !== req.user?.id && req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'This is someone else\'s reminder.' });
+  }
+  db.prepare('DELETE FROM partner_reminders WHERE id = ?').run(r.id);
+  logAudit(req.user, 'delete', 'partner_reminder', r.id, null, r, null, r.message);
+  res.json({ ok: true });
+});
+
+/** The plant's wall-clock date and hour, DST handled by the tz database. */
+function plantClock(now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Denver', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now).filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
+  return { y: Number(parts.year), m: Number(parts.month), d: Number(parts.day), h: Number(parts.hour) };
+}
+
+/**
+ * Fire any reminders that have come due. Called on the hourly jobs tick; the
+ * per-month stamp (`last_sent_period`) makes repeat ticks free, and the stamp
+ * is written ONLY after the DM posts — a comms hiccup retries next hour
+ * instead of silently costing someone their month-end nudge.
+ */
+export async function partnerReminderNudges(db) {
+  let reminders;
+  try { reminders = db.prepare('SELECT * FROM partner_reminders WHERE active = 1').all(); }
+  catch { return { sent: 0 }; }
+  if (!reminders.length) return { sent: 0 };
+
+  const { y, m, d, h } = plantClock();
+  const period = `${y}-${String(m).padStart(2, '0')}`;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  let sent = 0;
+
+  for (const r of reminders) {
+    const target = r.day === 'last' ? daysInMonth : Number(r.day);
+    if (d !== target || h < r.hour || r.last_sent_period === period) continue;
+    const partner = db.prepare('SELECT * FROM partner_accounts WHERE id = ?').get(r.partner_id);
+    if (!partner) continue;
+
+    // The live number, credit applied — same arithmetic as the Balance tab.
+    let balance = '';
+    try {
+      const rec = currentReconciliation(db, partner.id, endOfMonth());
+      const { credit, appliedToDate } = creditFor(db, partner.id);
+      const net = credit ? applyCredit(rec, credit, appliedToDate) : rec;
+      const docs = rec.counts ? (rec.counts.receivable + rec.counts.payable) : 0;
+      balance = net.net_amount > 0
+        ? `\nCurrent balance: ${net.owed_to === 'us' ? `${partner.name} owes Powder Ops` : `Powder Ops owes ${partner.name}`} $${Number(net.net_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} across ${docs} document${docs === 1 ? '' : 's'}.`
+        : '\nCurrent balance: nothing due to settle.';
+    } catch { /* the reminder still goes; the number is a courtesy */ }
+
+    const path = '/?tab=partner-reconciliation';
+    try {
+      const { bot, dm } = botDm(db, r.user_id);
+      await postMessageAs(db, dm, bot,
+        `⏰ *${partner.name} reconciliation reminder*\n${r.message}${balance}\nOpen it: ${readyDocOrigin()}${path}`);
+      db.prepare("UPDATE partner_reminders SET last_sent_period = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(period, r.id);
+      pushToUser(r.user_id, {
+        title: `${partner.name}: ${r.message}`.slice(0, 60),
+        body: balance.replace(/\n/g, ' ').trim().slice(0, 120) || 'Open the Partner Reconciliation tab.',
+        tag: `partner-reminder-${r.id}`, renotify: true, url: path,
+      }).catch(() => {});
+      sent++;
+    } catch (e) {
+      console.warn('[partners] reminder DM failed (will retry next hour):', e.message);
+    }
+  }
+  return { sent };
+}
 
 /* ── Partner portal links ─────────────────────────────────────────────────── */
 

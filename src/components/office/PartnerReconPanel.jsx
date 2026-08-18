@@ -5,7 +5,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import {
   Scale, Search, Check, FileText, Pencil, Plus, X, Link2,
-  ArrowUpRight, ArrowDownLeft, Ban, Trash2, Copy, ExternalLink, History, Upload, CheckCircle2,
+  ArrowUpRight, ArrowDownLeft, Ban, Trash2, Copy, ExternalLink, History, Upload, CheckCircle2, Bell,
 } from 'lucide-react';
 
 // X − Y = Z.
@@ -759,6 +759,7 @@ export default function PartnerReconPanel({ user }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [reminders, setReminders] = useState(false);
   const [busy, setBusy] = useState(false);
   const [newLink, setNewLink] = useState(null);
   const expand = useRowExpand();
@@ -840,6 +841,12 @@ export default function PartnerReconPanel({ user }) {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {canSettle && (
+            <button onClick={() => setReminders(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
+              <Bell size={15} /> Reminders
+            </button>
+          )}
           <button onClick={() => setImporting(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
             <Upload size={15} /> Import invoices
@@ -1183,6 +1190,125 @@ export default function PartnerReconPanel({ user }) {
       {importing && (
         <ImportInvoices partner={partner} onClose={() => setImporting(false)} onImported={reloadAll} />
       )}
+      {reminders && (
+        <RemindersModal partner={partner} user={user} onClose={() => setReminders(false)} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * ReadyBot reminders on this ledger — "DM me on the last day of the month to
+ * close the period."
+ *
+ * Each reminder belongs to ONE person: whoever wants the nudge makes their
+ * own, so pausing yours never silences a colleague's. The DM lands as a
+ * ReadyBot message plus a phone push, carries the live balance, and links
+ * straight back to this tab. Days above the 28th are not offered — a reminder
+ * set for the 30th would silently never fire in February, and "last day of
+ * the month" is what that request actually means.
+ */
+const REMINDER_DAY_OPTIONS = [
+  ['last', 'Last day of each month'],
+  ...Array.from({ length: 28 }, (_, i) => {
+    const n = i + 1;
+    const suffix = n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th';
+    return [String(n), `${n}${suffix} of each month`];
+  }),
+];
+const HOUR_OPTIONS = Array.from({ length: 13 }, (_, i) => {
+  const h = i + 6; // 6am – 6pm
+  return [h, h === 12 ? '12:00 pm' : h > 12 ? `${h - 12}:00 pm` : `${h}:00 am`];
+});
+const hourLabel = (h) => (HOUR_OPTIONS.find(([v]) => v === h)?.[1] || `${h}:00`);
+const dayLabel = (d) => (REMINDER_DAY_OPTIONS.find(([v]) => v === String(d))?.[1] || `Day ${d}`);
+
+function RemindersModal({ partner, user, onClose }) {
+  const { data: list, refresh } = useApiGet(`/partners/${partner.id}/reminders`, [partner.id]);
+  const [message, setMessage] = useState('Close the period — settle the month with ' + partner.name);
+  const [day, setDay] = useState('last');
+  const [hour, setHour] = useState(8);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const add = async () => {
+    setBusy(true); setErr('');
+    try {
+      await apiPost(`/partners/${partner.id}/reminders`, { message, day, hour: Number(hour) });
+      refresh();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const act = async (fn) => {
+    setBusy(true); setErr('');
+    try { await fn(); refresh(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-4 space-y-4"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+            <Bell size={15} className="text-powder-600" /> Reconciliation reminders
+          </h3>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={16} /></button>
+        </div>
+        <p className="text-xs text-gray-500">
+          ReadyBot DMs you (with a phone push) on the day you pick, with the live balance and a link to
+          this tab. Reminders are personal — each person sets their own.
+        </p>
+
+        {(list || []).length > 0 && (
+          <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+            {list.map(r => (
+              <li key={r.id} className={`p-2.5 flex items-start justify-between gap-2 ${r.active ? '' : 'opacity-60'}`}>
+                <div className="min-w-0">
+                  <p className="text-sm text-gray-900 break-words">{r.message}</p>
+                  <p className="text-[11px] text-gray-500">
+                    {dayLabel(r.day)} · {hourLabel(r.hour)} · for {r.user_id === user?.id ? 'you' : (r.user_name || 'someone else')}
+                    {!r.active && ' · paused'}
+                    {r.last_sent_period && ` · last sent ${r.last_sent_period}`}
+                  </p>
+                </div>
+                {(r.user_id === user?.id || user?.role === 'admin') && (
+                  <span className="flex items-center gap-1 shrink-0">
+                    <button type="button" disabled={busy}
+                      onClick={() => act(() => apiPut(`/partners/reminders/${r.id}`, { active: !r.active }))}
+                      className="px-2 py-1 rounded border border-gray-300 text-[11px] text-gray-600 hover:bg-gray-50">
+                      {r.active ? 'Pause' : 'Resume'}
+                    </button>
+                    <button type="button" disabled={busy}
+                      onClick={() => { if (window.confirm('Delete this reminder?')) act(() => apiDelete(`/partners/reminders/${r.id}`)); }}
+                      className="p-1 text-gray-300 hover:text-red-600"><Trash2 size={13} /></button>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="space-y-2 border-t border-gray-100 pt-3">
+          <p className="text-xs font-medium text-gray-700">New reminder</p>
+          <input value={message} onChange={e => setMessage(e.target.value)} maxLength={300}
+            placeholder="What should the reminder say?"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          <div className="flex flex-wrap gap-2">
+            <select value={day} onChange={e => setDay(e.target.value)}
+              className="px-2.5 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+              {REMINDER_DAY_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <select value={hour} onChange={e => setHour(Number(e.target.value))}
+              className="px-2.5 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+              {HOUR_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          <button type="button" onClick={add} disabled={busy || !message.trim()}
+            className="px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
+            {busy ? 'Saving…' : 'Set reminder'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

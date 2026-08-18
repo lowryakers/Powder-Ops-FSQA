@@ -150,6 +150,16 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] QA correction nudges failed:', e.message); }
   }
 
+  // Partner reconciliation reminders ("DM me on the last day of the month to
+  // close the period"). Runs every tick — the function itself knows which
+  // reminders are due and stamps each one per month, so repeat ticks are free.
+  if (deps.partnerReminderNudges) {
+    try {
+      const r = await deps.partnerReminderNudges(db);
+      if (r.sent) console.log(`[jobs] partner reconciliation reminders: ${r.sent} sent`);
+    } catch (e) { console.warn('[jobs] partner reminders failed:', e.message); }
+  }
+
   // Monday PM digest: each team's recurring work for the week, posted into the
   // team's own channel — where people already look — like the schedule publish.
   if (day === 1 && getFlag(db, 'last_pm_digest_week') !== week) {

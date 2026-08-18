@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment } from 'react';
-import { useApiGet, apiPut } from '../../hooks/useApi';
+import { useApiGet, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Search, CheckCircle2, XCircle, Lightbulb, ShieldAlert, Thermometer, FileText } from 'lucide-react';
@@ -48,6 +48,61 @@ const KINDS = [
 // the UTC clock as if it were local. formatDateTime does the conversion.
 const fmt = (ts) => formatDateTime(ts);
 
+// The compact correction form for an inspection record — the fields that
+// actually get mis-tapped on a phone at a zone. The full sanitation form
+// stays in the Sanitation module; these records rarely carry chemicals.
+function InspectionEdit({ record, onDone }) {
+  const [form, setForm] = useState({
+    performed_by: record.performed_by || '',
+    performed_at: String(record.performed_at || '').slice(0, 10),
+    result: record.result || 'pass',
+    notes: record.notes || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const initialDate = String(record.performed_at || '').slice(0, 10);
+
+  const save = async () => {
+    setSaving(true);
+    const payload = { ...form };
+    // Unchanged date is not sent — re-sending it would rewrite the stored time.
+    if (form.performed_at === initialDate) delete payload.performed_at;
+    try { await apiPut(`/sanitation/${record.id}`, payload); onDone(); }
+    catch (e) { window.alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="mt-2 p-3 bg-white rounded-lg border border-powder-200 space-y-2" onClick={stopRowClick}>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <label className="text-xs text-gray-600">Performed by
+          <input value={form.performed_by} onChange={e => setForm({ ...form, performed_by: e.target.value })}
+            className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded text-sm" />
+        </label>
+        <label className="text-xs text-gray-600">Date
+          <input type="date" max={new Date().toISOString().slice(0, 10)} value={form.performed_at}
+            onChange={e => setForm({ ...form, performed_at: e.target.value })}
+            className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded text-sm" />
+        </label>
+        <label className="text-xs text-gray-600">Result
+          <select value={form.result} onChange={e => setForm({ ...form, result: e.target.value })}
+            className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded text-sm bg-white">
+            <option value="pass">Pass</option>
+            <option value="fail">Fail</option>
+          </select>
+        </label>
+      </div>
+      <label className="block text-xs text-gray-600">Notes
+        <textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+          className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded text-sm" />
+      </label>
+      <button type="button" onClick={save} disabled={saving || !form.performed_by.trim()}
+        className="px-3 py-1.5 bg-powder-600 text-white text-xs font-semibold rounded-lg disabled:opacity-50">
+        {saving ? 'Saving…' : 'Save correction'}
+      </button>
+    </div>
+  );
+}
+
 export default function QAInspectionsPanel() {
   const { user } = useAuth();
   const canEdit = canEditModule(user, 'qa-inspections');
@@ -56,7 +111,16 @@ export default function QAInspectionsPanel() {
   const [q, setQ] = useState('');
   const [resultFilter, setResultFilter] = useState('all');
   const [verifying, setVerifying] = useState(null);
+  const [editingId, setEditingId] = useState(null);
   const expand = useRowExpand();
+
+  const revoke = async (r) => {
+    if (!window.confirm(`Revoke ${r.verified_by}'s verification so the record can be corrected?`)) return;
+    try {
+      await apiFetch(`/sanitation/${r.id}/verify`, { method: 'DELETE' });
+      refresh();
+    } catch (e) { window.alert(e.message); }
+  };
 
   const rows = useMemo(() => {
     const needle = q.toLowerCase().trim();
@@ -230,7 +294,28 @@ export default function QAInspectionsPanel() {
                             <FileText size={12} /> {referenceFor(r.area).label}
                           </a>
                         )}
+                        {/* The server said what this user may do; the client
+                            renders what it's told — same rule as qms.js. */}
+                        <span className="inline-flex items-center gap-2 ml-2" onClick={stopRowClick}>
+                          {r.can_edit && (
+                            <button onClick={() => setEditingId(editingId === r.id ? null : r.id)}
+                              className="text-xs text-powder-600 hover:underline">
+                              {editingId === r.id ? 'Cancel correction' : 'Correct this record'}
+                            </button>
+                          )}
+                          {r.can_revoke_verification && (
+                            <button onClick={() => revoke(r)} className="text-xs text-amber-700 hover:underline">
+                              Revoke verification
+                            </button>
+                          )}
+                          {!r.can_edit && r.edit_block_reason && (
+                            <span className="text-[11px] text-gray-400">{r.edit_block_reason}</span>
+                          )}
+                        </span>
                       </DetailFields>
+                      {editingId === r.id && (
+                        <InspectionEdit record={r} onDone={() => { setEditingId(null); refresh(); }} />
+                      )}
                     </DetailRow>
                   )}
                   </Fragment>

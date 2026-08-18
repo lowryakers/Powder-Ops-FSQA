@@ -6,6 +6,7 @@ import { activeChemicalNames } from '../chemicals.js';
 import { areaLabel } from '../../shared/rooms.js';
 import { canonicalArea, previewAreaNormalization, NON_PRODUCTION_AREAS } from '../sanitation-areas.js';
 import { canVerifySanitation } from '../qa-signing.js';
+import { recordEditPolicy, mayRevokeSignature } from '../record-permissions.js';
 
 const router = Router();
 
@@ -36,7 +37,14 @@ router.get('/', (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
   sql += ' ORDER BY sr.performed_at DESC LIMIT ?';
   params.push(limit);
-  res.json(db.prepare(sql).all(...params));
+  // The server says what this user may do to each record; the client renders
+  // what it's told (the qms.js rule). A verified record is closed to everyone
+  // but an admin — the way back is revoking the verification.
+  res.json(db.prepare(sql).all(...params).map(r => ({
+    ...r,
+    ...recordEditPolicy(req.user, { filedBy: r.performed_by, signedBy: r.verified_by }),
+    can_revoke_verification: !!r.verified_by && mayRevokeSignature(req.user, r.verified_by),
+  })));
 });
 
 // SQF/NSF 72-hour idle rule: a cleaned room whose clean is 72h+ old (with no
@@ -499,6 +507,84 @@ router.put('/:id/verify', (req, res) => {
   const { error, status, record } = verifySanitationRecord(getDb(), req.user, req.params.id);
   if (error) return res.status(status || 400).json({ error });
   res.json(record);
+});
+
+// The way back from a verification is REVOKE, not "find an admin": the
+// verifier who spots a wrong value revokes their own signature, corrects the
+// record, and verifies again — all three steps audited. Same rule as QMS
+// approvals.
+router.delete('/:id/verify', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Record not found' });
+  if (!row.verified_by) return res.status(400).json({ error: 'This record is not verified.' });
+  if (!mayRevokeSignature(req.user, row.verified_by)) {
+    return res.status(403).json({ error: `Only ${row.verified_by} or an admin can revoke this verification.` });
+  }
+  db.prepare('UPDATE sanitation_records SET verified_by = NULL, verified_at = NULL WHERE id = ?').run(row.id);
+  const updated = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(row.id);
+  logAudit(req.user, 'update', 'sanitation_record', row.id,
+    { verification_revoked: true, was_verified_by: row.verified_by }, row, updated, row.area);
+  res.json(updated);
+});
+
+// Correcting a filed record. This route did not exist AT ALL — a sanitation
+// record could be filed and verified but never corrected, by anyone, admin
+// included. The policy is the house rule (server/record-permissions.js): the
+// filer and the records roles while unsigned; once verified, admin only, with
+// revoke as the way back.
+router.put('/:id', (req, res) => {
+  const db = getDb();
+  const before = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(req.params.id);
+  if (!before) return res.status(404).json({ error: 'Record not found' });
+  const policy = recordEditPolicy(req.user, { filedBy: before.performed_by, signedBy: before.verified_by });
+  if (!policy.can_edit) return res.status(403).json({ error: policy.edit_block_reason });
+
+  const b = req.body || {};
+  const pick = (key, cur) => (b[key] === undefined ? cur : b[key]);
+  const area = b.area !== undefined
+    ? (canonicalArea(b.area) || String(b.area).trim())
+    : before.area;
+  if (!area || !String(pick('type', before.type)).trim() || !String(pick('performed_by', before.performed_by)).trim()
+    || !String(pick('result', before.result)).trim()) {
+    return res.status(400).json({ error: 'area, type, performed_by and result are required' });
+  }
+
+  let when = before.performed_at;
+  if (b.performed_at !== undefined && b.performed_at !== null && String(b.performed_at).trim()) {
+    const raw = /^\d{4}-\d{2}-\d{2}$/.test(b.performed_at) ? `${b.performed_at} 12:00:00` : String(b.performed_at);
+    const parsed = new Date(raw.replace(' ', 'T'));
+    if (Number.isNaN(parsed.getTime())) return res.status(400).json({ error: 'That date could not be read.' });
+    if (parsed.getTime() > Date.now() + 60000) {
+      return res.status(400).json({ error: 'A clean cannot be recorded for a future date.' });
+    }
+    when = raw;
+  }
+
+  db.prepare(`UPDATE sanitation_records SET area = ?, type = ?, equipment_id = ?, performed_by = ?,
+      chemicals_used = ?, concentration = ?, contact_time_minutes = ?, rinse_verified = ?, result = ?,
+      atp_reading = ?, notes = ?, chemical_id = ?, record_group = ?, performed_at = ?
+    WHERE id = ?`)
+    .run(area, pick('type', before.type), pick('equipment_id', before.equipment_id) || null,
+      pick('performed_by', before.performed_by),
+      pick('chemicals_used', before.chemicals_used) || null,
+      pick('concentration', before.concentration) || null,
+      b.contact_time_minutes === undefined ? before.contact_time_minutes : (b.contact_time_minutes ?? null),
+      b.rinse_verified === undefined ? before.rinse_verified : (b.rinse_verified ? 1 : 0),
+      pick('result', before.result),
+      b.atp_reading === undefined ? before.atp_reading : (b.atp_reading ?? null),
+      pick('notes', before.notes) || null,
+      pick('chemical_id', before.chemical_id) || null,
+      // The group follows the area — moving a record between the Sanitation
+      // and QA Inspections lists is a consequence of what it IS, not a field.
+      recordGroupFor(area), when, before.id);
+
+  const after = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(before.id);
+  logAudit(req.user, 'update', 'sanitation_record', before.id, null, before, after, area);
+  res.json({
+    ...after,
+    ...recordEditPolicy(req.user, { filedBy: after.performed_by, signedBy: after.verified_by }),
+  });
 });
 
 export default router;

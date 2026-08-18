@@ -1336,6 +1336,28 @@ function initSchema() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- A ReadyBot nudge someone asked for on the partner ledger — "DM me on
+    -- the last day of the month to close the period". Each reminder belongs
+    -- to ONE person (user_id is the recipient): whoever wants the nudge makes
+    -- their own, so pausing yours never silences a colleague's.
+    -- day is 'last' or '1'..'28' (29-31 would silently never fire in short
+    -- months, so they are not offered); hour is plant-local. last_sent_period
+    -- (YYYY-MM) is what makes the hourly job idempotent per month.
+    CREATE TABLE IF NOT EXISTS partner_reminders (
+      id TEXT PRIMARY KEY,
+      partner_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      day TEXT NOT NULL DEFAULT 'last',
+      hour INTEGER NOT NULL DEFAULT 8,
+      active INTEGER NOT NULL DEFAULT 1,
+      last_sent_period TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT,
+      FOREIGN KEY (partner_id) REFERENCES partner_accounts(id)
+    );
+
     CREATE TABLE IF NOT EXISTS partner_documents (
       id TEXT PRIMARY KEY,
       partner_id TEXT NOT NULL,

@@ -46,7 +46,7 @@ import internalAuditRoutes from './server/api/internal-audits.js';
 import docReviewRoutes from './server/api/doc-review.js';
 import facilityRoutes from './server/api/facility.js';
 import retentionRoutes from './server/api/retention.js';
-import partnerRoutes from './server/api/partners.js';
+import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
@@ -1603,7 +1603,9 @@ app.use('/api/pm', requireModuleWrite('pm', 'operator'), pmRoutes);
 app.use('/api/checklists', requireModuleWrite('pm', 'operator', 'sanitation'), checklistRoutes);
 app.use('/api/calibration', requireModuleWrite('calibration'), calibrationRoutes);
 app.use('/api/scale-verification', requireModuleWrite('calibration'), scaleVerificationRoutes);
-app.use('/api/sanitation', requireModuleWrite('sanitation'), sanitationRoutes);
+// Both the Sanitation log and QA Inspections read and write this mount — they
+// are two lists over one table, so an edit grant on either module opens it.
+app.use('/api/sanitation', requireModuleWrite('sanitation', 'qa-inspections'), sanitationRoutes);
 // QA Review Center spans several modules, so no single module guard fits — the
 // router checks the reviewer role itself and each source re-checks sign rights.
 app.use('/api/qa-review', qaReviewRoutes);
@@ -1757,7 +1759,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, partnerReminderNudges });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

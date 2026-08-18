@@ -170,7 +170,7 @@ const TYPE_LABELS = { pre_op: 'Pre-Op', post_op: 'Post-Op', mid_shift: 'Mid-Shif
 const TYPE_COLORS = { pre_op: 'bg-blue-100 text-blue-800', post_op: 'bg-purple-100 text-purple-800', mid_shift: 'bg-yellow-100 text-yellow-800', deep_clean: 'bg-teal-100 text-teal-800', emergency: 'bg-red-100 text-red-800' };
 const RESULT_COLORS = { pass: 'bg-green-100 text-green-800', fail: 'bg-red-100 text-red-800', reclean: 'bg-yellow-100 text-yellow-800' };
 
-function SanitationDetail({ record, onClose }) {
+function SanitationDetail({ record, onClose, onEdit, onRevoke }) {
   return (
     <tr>
       <td colSpan={10} className="p-0">
@@ -181,10 +181,32 @@ function SanitationDetail({ record, onClose }) {
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[record.type]}`}>{TYPE_LABELS[record.type]}</span>
               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${RESULT_COLORS[record.result]}`}>{record.result.toUpperCase()}</span>
             </div>
-            <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-400 hover:text-gray-600">
-              <X size={18} />
-            </button>
+            <div className="flex items-center gap-1.5">
+              {/* The server said what this user may do (can_edit /
+                  can_revoke_verification); the client renders what it's told.
+                  A verified record offers Revoke to its verifier — revoke,
+                  correct, verify again, all audited — rather than "find an
+                  admin". */}
+              {record.can_edit && onEdit && (
+                <button onClick={(e) => { e.stopPropagation(); onEdit(record); }}
+                  className="px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-100">
+                  Correct
+                </button>
+              )}
+              {record.can_revoke_verification && onRevoke && (
+                <button onClick={(e) => { e.stopPropagation(); onRevoke(record); }}
+                  className="px-2.5 py-1 rounded-lg border border-amber-300 bg-white text-xs font-medium text-amber-700 hover:bg-amber-50">
+                  Revoke verification
+                </button>
+              )}
+              <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
           </div>
+          {!record.can_edit && record.edit_block_reason && (
+            <p className="text-[11px] text-gray-500 -mt-2">{record.edit_block_reason}</p>
+          )}
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
@@ -283,20 +305,28 @@ function LateChip({ record }) {
   );
 }
 
-function RecordForm({ equipment, chemicals, onSave, onCancel }) {
+function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
   const { data: areas } = useApiGet('/structure/lists/sanitation_areas');
+  // Correcting keeps the record's own date unless it is deliberately changed —
+  // sending it back unedited would rewrite the stored time-of-day.
+  const initialDate = initial?.performed_at ? String(initial.performed_at).slice(0, 10) : '';
   const [form, setForm] = useState({
-    area: '', type: 'pre_op', equipment_id: '', performed_by: '',
-    chemical_id: '', chemicals_used: '', concentration: '', contact_time_minutes: '',
-    rinse_verified: false, result: 'pass', atp_reading: '', notes: '',
+    area: initial?.area || '', type: initial?.type || 'pre_op',
+    equipment_id: initial?.equipment_id || '', performed_by: initial?.performed_by || '',
+    chemical_id: initial?.chemical_id || '', chemicals_used: '',
+    concentration: initial?.concentration || '',
+    contact_time_minutes: initial?.contact_time_minutes ?? '',
+    rinse_verified: !!initial?.rinse_verified, result: initial?.result || 'pass',
+    atp_reading: initial?.atp_reading ?? '', notes: initial?.notes || '',
     // Blank = today. Set it to record work that was actually done earlier —
     // the server keeps both dates and asks why.
-    performed_at: '', late_entry_reason: '',
+    performed_at: initialDate, late_entry_reason: '',
   });
   const todayStr = new Date().toISOString().split('T')[0];
   // "Earlier" starts the day before, because same-day is just filing at the
-  // end of a shift and needs no explanation.
-  const isBackdated = !!form.performed_at && form.performed_at < todayStr;
+  // end of a shift and needs no explanation. A correction never re-asks — the
+  // record keeps its original entered/late facts.
+  const isBackdated = !initial && !!form.performed_at && form.performed_at < todayStr;
 
   // A clean routinely uses more than one chemical (degreaser, then sanitizer)
   // and the single dropdown forced the record to under-report — picks are a
@@ -306,9 +336,11 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   // dilution check reads). Concentration/contact-time defaults come from the
   // first pick too — they describe one chemical, and guessing a blend's
   // numbers would be worse than leaving them to the person filing.
+  // Editing prefills the existing chemicals as the free-text value — reverse-
+  // mapping a comma-joined string onto registry rows would guess.
   const [picked, setPicked] = useState([]); // [{id, name}]
-  const [otherChem, setOtherChem] = useState('');
-  const [showOther, setShowOther] = useState(false);
+  const [otherChem, setOtherChem] = useState(initial?.chemicals_used || '');
+  const [showOther, setShowOther] = useState(!!initial?.chemicals_used);
   const addChemical = (chemId) => {
     if (!chemId || chemId === '__other') return;
     const chem = (chemicals || []).find(c => String(c.id) === String(chemId));
@@ -333,7 +365,9 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, chemicals_used: chemicalsJoined, contact_time_minutes: form.contact_time_minutes ? parseInt(form.contact_time_minutes) : null, atp_reading: form.atp_reading ? parseFloat(form.atp_reading) : null }); } catch (saveErr) {
+    const payload = { ...form, chemicals_used: chemicalsJoined, contact_time_minutes: form.contact_time_minutes ? parseInt(form.contact_time_minutes) : null, atp_reading: form.atp_reading ? parseFloat(form.atp_reading) : null };
+    if (initial && form.performed_at === initialDate) delete payload.performed_at;
+    try { await onSave(payload); } catch (saveErr) {
       // A refused save must SAY so. This was try/finally with NO catch, so a
       // 403 or a validation 400 cleared the spinner and left the modal sitting
       // there — indistinguishable from a dead button, which is how a
@@ -344,7 +378,7 @@ function RecordForm({ equipment, chemicals, onSave, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-      <h3 className="font-semibold text-gray-900">New Sanitation Record</h3>
+      <h3 className="font-semibold text-gray-900">{initial ? `Correct record — ${areaLabel(initial.area)}` : 'New Sanitation Record'}</h3>
       {isBackdated && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
           <label className="block text-xs font-medium text-amber-900 mb-1">
@@ -587,6 +621,7 @@ export default function SanitationPanel() {
   const { data: equipment } = useApiGet('/equipment');
   const { data: chemicals } = useApiGet('/chemicals');
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
 
   const handleCreate = async (form) => {
@@ -594,6 +629,25 @@ export default function SanitationPanel() {
     setShowForm(false);
     refresh();
   };
+
+  const handleUpdate = async (form) => {
+    await apiPut(`/sanitation/${editing.id}`, form);
+    setEditing(null);
+    refresh();
+  };
+
+  // The way back from a verification: the verifier (or an admin) revokes,
+  // corrects, verifies again — all audited. The button only renders when the
+  // server said this user may (can_revoke_verification).
+  const handleRevoke = async (r) => {
+    if (!window.confirm(`Revoke ${r.verified_by}'s verification so the record can be corrected?`)) return;
+    try {
+      await apiFetch(`/sanitation/${r.id}/verify`, { method: 'DELETE' });
+      refresh();
+    } catch (e) { window.alert(e.message); }
+  };
+
+  const startEdit = (r) => { setEditing(r); setShowForm(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   // A counter-signature is a statement about WHO reviewed the record, so it is
   // the signed-in user — never a name typed into a prompt. This asked for the
@@ -626,6 +680,8 @@ export default function SanitationPanel() {
       <RecleanSection />
 
       {showForm && <RecordForm equipment={equipment} chemicals={chemicals} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
+      {editing && <RecordForm key={editing.id} initial={editing} equipment={equipment} chemicals={chemicals}
+        onSave={handleUpdate} onCancel={() => setEditing(null)} />}
 
       {/* Mobile: card view */}
       <div className="md:hidden space-y-2">
@@ -657,7 +713,7 @@ export default function SanitationPanel() {
               </div>
               {isExpanded && (
                 <div className="border-t border-gray-100">
-                  <table className="w-full"><tbody><SanitationDetail record={r} onClose={() => setExpandedId(null)} /></tbody></table>
+                  <table className="w-full"><tbody><SanitationDetail record={r} onClose={() => setExpandedId(null)} onEdit={startEdit} onRevoke={handleRevoke} /></tbody></table>
                 </div>
               )}
             </div>
@@ -712,7 +768,7 @@ export default function SanitationPanel() {
                         <Eye size={16} className={isExpanded ? 'text-powder-600' : ''} />
                       </td>
                     </tr>
-                    {isExpanded && <SanitationDetail record={r} onClose={() => setExpandedId(null)} />}
+                    {isExpanded && <SanitationDetail record={r} onClose={() => setExpandedId(null)} onEdit={startEdit} onRevoke={handleRevoke} />}
                   </Fragment>
                 );
               })}
