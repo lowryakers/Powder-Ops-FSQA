@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useKioskLang } from './useKioskLang.js';
 import KioskLangToggle from './KioskLangToggle.jsx';
 import { PackageCheck, CheckCircle, AlertTriangle, LogOut, LogIn } from 'lucide-react';
+import SearchSelect from '../common/SearchSelect.jsx';
 
 const EMPTY = { direction: 'Out', item_name: '', part_number: '', lot_number: '', mo_number: '', qty_pulled: '', person: '' };
 
@@ -98,17 +99,19 @@ export default function ComponentKiosk({ defaultName = '' }) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_item_name')}</label>
-            <input required list="ck-items" value={form.item_name} onChange={e => set('item_name', e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_eg_wand')} />
-            <datalist id="ck-items">{options.item_names.map(n => <option key={n} value={n} />)}</datalist>
+            {/* Type-ahead with a VISIBLE list — the old <datalist> suggestions
+                simply don't show on many phone browsers, and this kiosk lives
+                on a phone at the shelf. Free text stays legal: a first-time
+                item is a real answer. */}
+            <SearchSelect value={form.item_name} onChange={v => set('item_name', v)} big allowFree
+              options={options.item_names} placeholder={t('k_eg_wand')} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_part_number')}</label>
-              <input list="ck-parts" value={form.part_number} onChange={e => set('part_number', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_optional')} />
-              <datalist id="ck-parts">{options.part_numbers.map(n => <option key={n} value={n} />)}</datalist>
+              <SearchSelect value={form.part_number} onChange={v => set('part_number', v)} big allowFree
+                options={options.part_numbers} placeholder={t('k_optional')} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_qty')}</label>
@@ -125,9 +128,8 @@ export default function ComponentKiosk({ defaultName = '' }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('k_mo_number')}</label>
-              <input list="ck-mos" value={form.mo_number} onChange={e => set('mo_number', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder={t('k_job_for')} />
-              <datalist id="ck-mos">{(options.mo_numbers || []).map(n => <option key={n} value={n} />)}</datalist>
+              <SearchSelect value={form.mo_number} onChange={v => set('mo_number', v)} big allowFree
+                options={options.mo_numbers || []} placeholder={t('k_job_for')} />
             </div>
           </div>
 

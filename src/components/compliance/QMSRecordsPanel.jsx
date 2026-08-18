@@ -6,6 +6,7 @@ import { deptLabel } from '../../constants/departments';
 import FileUpload from '../FileUpload';
 import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square, Eye, QrCode, ListChecks } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
+import SearchSelect from '../common/SearchSelect.jsx';
 import RecordAttachments from './RecordAttachments';
 import RecordHistory from '../common/RecordHistory.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
@@ -125,7 +126,33 @@ function SortTh({ label, field, sortField, sortDir, onSort, align = 'left' }) {
 }
 
 /* ───────── Field editor ───────── */
-function FieldInput({ f, value, onChange }) {
+
+// Text fields that get type-ahead suggestions from what the log already
+// knows — the same history-built lists the kiosks use. CLIENT-SIDE on
+// purpose: adding keys to qms-config's field definitions would read as a
+// form-definition change and park the form as a pending Controlled Change,
+// and "the box now offers suggestions" is a UI affordance, not a change to
+// what the controlled form asks.
+const SUGGEST_SOURCES = {
+  'component_sign_out.item_name': { url: '/submit/component-options', key: 'item_names' },
+  'component_sign_out.part_number': { url: '/submit/component-options', key: 'part_numbers' },
+  'component_sign_out.mo_number': { url: '/submit/component-options', key: 'mo_numbers' },
+  'knife_accountability.tool_id': { url: '/submit/knife-list', key: 'tool_id' },
+};
+const pluckOptions = (data, key) => Array.isArray(data)
+  ? [...new Set(data.map(x => x?.[key]).filter(Boolean))]
+  : (Array.isArray(data?.[key]) ? data[key] : []);
+
+// Free text stays legal — a brand-new part or a first-time item is a real
+// answer — but what the log has seen before is offered as you type.
+function SuggestInput({ src, value, onChange }) {
+  const { data } = useApiGet(src.url);
+  const options = useMemo(() => pluckOptions(data, src.key), [data, src.key]);
+  return <SearchSelect value={value || ''} onChange={onChange} options={options}
+    allowFree placeholder="Type — suggestions come from this log…" />;
+}
+
+function FieldInput({ f, value, onChange, cfgKey }) {
   const base = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
   if (f.type === 'textarea') return <textarea value={value || ''} onChange={e => onChange(e.target.value)} rows={3} className={base} />;
   if (f.type === 'date') return <input type="date" value={value || ''} onChange={e => onChange(e.target.value)} className={base} />;
@@ -138,6 +165,17 @@ function FieldInput({ f, value, onChange }) {
   if (f.type === 'select') {
     // options can be a flat list of strings or grouped [{ group, items }] → optgroups
     const grouped = Array.isArray(f.options) && f.options.some(o => o && typeof o === 'object' && Array.isArray(o.items));
+    // A LONG list gets a type-ahead search instead of a scroll — the
+    // sign-out item catalogues run to dozens of entries and finding one by
+    // scrolling a native dropdown on a phone is how people give up and pick
+    // the nearest thing. A short list (conditions, use specs) keeps the
+    // native select: four options need no search box.
+    const count = grouped
+      ? f.options.reduce((t, g) => t + (g.items?.length || 0), 0)
+      : (f.options || []).length;
+    if (count > 8) {
+      return <SearchSelect value={value || ''} onChange={onChange} options={f.options} placeholder="Type to search…" />;
+    }
     return (
       <select value={value || ''} onChange={e => onChange(e.target.value)} className={base}>
         <option value="">—</option>
@@ -151,6 +189,11 @@ function FieldInput({ f, value, onChange }) {
       </select>
     );
   }
+  // A text field with a known suggestion source: free text stays legal (a
+  // brand-new part or item is legitimate), but what the log already knows
+  // is offered as you type — same lists the kiosks build from history.
+  const src = SUGGEST_SOURCES[`${cfgKey}.${f.key}`];
+  if (src) return <SuggestInput src={src} value={value} onChange={onChange} />;
   if (f.type === 'multiselect') {
     const arr = Array.isArray(value) ? value : [];
     const toggle = (o) => onChange(arr.includes(o) ? arr.filter(x => x !== o) : [...arr, o]);
@@ -309,7 +352,7 @@ function RecordForm({ cfg, initial, onSave, onCancel }) {
                 {f.key === multiItemKey
                   ? <MultiPickInput f={f} value={form[f.key]} onChange={v => set(f.key, v)}
                       useSpecOptions={cfg.fields.find(x => x.key === 'use_spec')?.options || []} />
-                  : <FieldInput f={f} value={form[f.key]} onChange={v => set(f.key, v)} />}
+                  : <FieldInput f={f} value={form[f.key]} onChange={v => set(f.key, v)} cfgKey={cfg.key} />}
               </div>
             );
           })}

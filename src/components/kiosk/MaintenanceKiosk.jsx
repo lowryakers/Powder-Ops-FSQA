@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useKioskLang } from './useKioskLang.js';
 import KioskLangToggle from './KioskLangToggle.jsx';
 import { Wrench, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import SearchSelect from '../common/SearchSelect.jsx';
 
 const EMPTY = { employee_name: '', tool_box: '', asset_tag: '', condition_out: 'Good' };
 
@@ -135,15 +136,13 @@ export default function MaintenanceKiosk({ defaultName = '' }) {
                 ))}
               </div>
             )}
-            <select value="" onChange={e => addItem(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base bg-white">
-              <option value="">{picked.length ? 'Add another item…' : 'Select an item…'}</option>
-              {catalog.groups.map(g => (
-                <optgroup key={g.group} label={g.group}>
-                  {g.items.filter(n => !pickedNames.includes(n)).map(n => <option key={n} value={n}>{n}</option>)}
-                </optgroup>
-              ))}
-            </select>
+            {/* Type-ahead instead of scrolling a dropdown the length of the
+                whole catalogue — this is filled in standing at a shelf on a
+                phone. Focusing still shows the full grouped list, so it works
+                as a plain dropdown for someone who doesn't type. */}
+            <SearchSelect value="" onChange={(n) => { if (n) addItem(n); }} big
+              options={catalog.groups} exclude={pickedNames}
+              placeholder={picked.length ? 'Search to add another item…' : 'Type to search items…'} />
           </div>
 
           {picked.length === 1 && (
