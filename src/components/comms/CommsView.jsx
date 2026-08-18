@@ -5,7 +5,7 @@ import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
 import { notifyDataChanged } from '../../lib/dataChanged';
-import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera } from 'lucide-react';
+import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera, CornerUpLeft } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { shareFile as shareAttachment, canNativeShare } from '../../lib/shareFile.js';
 import NotificationStatus from './NotificationStatus.jsx';
@@ -1444,7 +1444,7 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
   );
 }
 
-function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile, onRead, refreshKey }) {
+function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile, onRead, refreshKey, backButton }) {
   const { data: threads, loading, refresh } = useApiGet('/comms/threads', [refreshKey]);
   // Unread first, then most recently active — the point of the view is what
   // still needs an answer, not a chronological archive.
@@ -1471,6 +1471,7 @@ function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, 
     <>
       <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
         <button onClick={onCloseMobile} className="md:hidden -ml-1 p-1 text-gray-500 hover:text-gray-700" title="Back"><ArrowLeft size={18} /></button>
+        {backButton}
         <MessageSquare size={16} className="text-powder-600" />
         <span className="font-semibold text-gray-900">Threads</span>
         <span className="text-xs text-gray-400">{list.length ? `· ${list.length}` : ''}</span>
@@ -2012,6 +2013,37 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // already on screen at the bottom, so opening at the latest costs nothing.
   const OPEN_AT_FIRST_UNREAD_MIN = 5;
   const landOnNewRef = useRef(null); // channel id that should open at its New divider
+  // Declared HERE because openChannel below writes all three — state a
+  // function closes over must be declared before the function is.
+  const [chanFilter, setChanFilter] = useState(''); // sidebar quick-filter (type to filter, ↑/↓ + Enter)
+  const [threadsOpen, setThreadsOpen] = useState(false); // Threads inbox view
+  const [activityOpen, setActivityOpen] = useState(false); // Activity feed view
+
+  // ── Back one step, like a browser ─────────────────────────────────────────
+  // Jumping between channels (or off to Threads/Activity) loses your place,
+  // and on a wide screen the only way back was to find the old channel in the
+  // sidebar again. This keeps a within-session trail of where you WERE — a
+  // channel, Threads, or Activity — and the header button pops one step.
+  // In-memory on purpose: persisting it would replay stale hops days later,
+  // and `comms_last_channel` already handles "land where you left".
+  const navStackRef = useRef([]);           // [{view:'channel', id} | {view:'threads'} | {view:'activity'}]
+  const navHereRef = useRef(null);          // where you are now
+  const navSuppressRef = useRef(false);     // set while goBack() itself navigates
+  const [navPrev, setNavPrev] = useState(null); // top of stack — drives the button
+  const sameLoc = (a, b) => !!a && !!b && a.view === b.view && a.id === b.id;
+  const recordNav = (loc) => {
+    if (navSuppressRef.current) { navSuppressRef.current = false; navHereRef.current = loc; return; }
+    const here = navHereRef.current;
+    if (sameLoc(here, loc)) return;
+    if (here) {
+      const stack = navStackRef.current;
+      if (!sameLoc(stack[stack.length - 1], here)) stack.push(here);
+      if (stack.length > 30) stack.shift();
+      setNavPrev(stack[stack.length - 1] || null);
+    }
+    navHereRef.current = loc;
+  };
+
   const openChannel = (id) => {
     const ch = (channels || []).find(c => c.id === id);
     setNewMarkerTs(ch && ch.unread > 0 ? (ch.last_read_at || '0') : null);
@@ -2019,6 +2051,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     setDateView(null);
     setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false); setActivityOpen(false);
     rememberChannel(id); rememberView('channel');
+    recordNav({ view: 'channel', id });
   };
   // Going back to the list is a decision: come back to the list next time.
   // The compact, one-pane-at-a-time layout — the same `md` breakpoint the
@@ -2030,8 +2063,37 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // layout — on desktop the list is always beside you, so there's nothing to go
   // back to and a stray horizontal drag should do nothing.
   const swipeBack = useSwipeBack(backToList, { enabled: isCompactLayout && mobileThread });
-  // Sidebar channel quick-filter (type to filter, ↑/↓ + Enter to jump).
-  const [chanFilter, setChanFilter] = useState('');
+
+  // Pop one step off the trail recordNav (above openChannel) keeps.
+  const goBack = () => {
+    const stack = navStackRef.current;
+    let target = stack.pop();
+    // A channel that has since been deleted (or left) is skipped, not visited.
+    while (target && target.view === 'channel' && !(channels || []).some(c => c.id === target.id)) {
+      target = stack.pop();
+    }
+    setNavPrev(stack[stack.length - 1] || null);
+    if (!target) return;
+    navSuppressRef.current = true;
+    if (target.view === 'channel') { openChannel(target.id); return; }
+    setThreadsOpen(target.view === 'threads');
+    setActivityOpen(target.view === 'activity');
+    setMobileThread(false);
+    rememberView(target.view);
+  };
+  const navPrevLabel = !navPrev ? null
+    : navPrev.view === 'threads' ? 'Threads'
+    : navPrev.view === 'activity' ? 'Activity'
+    : (() => {
+        const ch = (channels || []).find(c => c.id === navPrev.id);
+        return ch ? (ch.kind === 'dm' ? ch.name : `#${ch.name}`) : 'previous channel';
+      })();
+  const backButton = navPrev ? (
+    <button onClick={goBack} className="p-1 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded shrink-0"
+      data-tip={`Back to ${navPrevLabel}`} aria-label={`Back to ${navPrevLabel}`}>
+      <CornerUpLeft size={16} />
+    </button>
+  ) : null;
   const [chanHi, setChanHi] = useState(0);
   // Admin-defined sidebar sections (channel groupings) + collapse state.
   const { data: sections, refresh: refreshSections } = useApiGet('/comms/sections');
@@ -2074,8 +2136,6 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const [showSettings, setShowSettings] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [replyTo, setReplyTo] = useState(null); // parent message whose thread is open
-  const [threadsOpen, setThreadsOpen] = useState(false); // Threads inbox view
-  const [activityOpen, setActivityOpen] = useState(false); // Activity feed view
   // A message being offered up as a task (null = no prompt showing).
   const [taskDraft, setTaskDraft] = useState(null);
   const canAssignTasks = user?.role === 'admin' || user?.role === 'supervisor';
@@ -2194,6 +2254,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       setActivityOpen(view === 'activity');
       setMobileThread(false);
       rememberView(view); // openChannel() above just overwrote it — put it back
+      recordNav({ view }); // and tell the back trail where the session started
       return;
     }
     if (savedIsReal) return;
@@ -3059,7 +3120,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         <div className={`w-full md:w-60 border-r border-gray-200 flex-col shrink-0 overflow-y-auto p-2 space-y-3 ${showMainMobile ? 'hidden md:flex' : 'flex'}`}>
           {/* Activity — everything that involved you, in one feed. Sits above
               Threads because Threads is a subset of it. */}
-          <button onClick={() => { setActivityOpen(true); setThreadsOpen(false); setMobileThread(false); clearSearch(); rememberView('activity'); }}
+          <button onClick={() => { recordNav({ view: 'activity' }); setActivityOpen(true); setThreadsOpen(false); setMobileThread(false); clearSearch(); rememberView('activity'); }}
             className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${activityOpen ? 'bg-powder-600 text-white font-medium' : `hover:bg-gray-100 ${activityUnread?.all ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium'}`}`}>
             <Bell size={15} className="opacity-80" /> Activity
             {!!activityUnread?.all && !activityOpen && (
@@ -3067,7 +3128,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
             )}
           </button>
           {/* Threads inbox shortcut (like Slack) */}
-          <button onClick={() => { setThreadsOpen(true); setActivityOpen(false); setMobileThread(false); clearSearch(); rememberView('threads'); }}
+          <button onClick={() => { recordNav({ view: 'threads' }); setThreadsOpen(true); setActivityOpen(false); setMobileThread(false); clearSearch(); rememberView('threads'); }}
             className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${threadsOpen ? 'bg-powder-600 text-white font-medium' : `hover:bg-gray-100 ${threadUnread?.total ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium'}`}`}>
             <MessageSquare size={15} className="opacity-80" /> Threads
             {/* Replies no longer inflate the channel's count, so this badge is
@@ -3205,7 +3266,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         {/* main pane — hidden on phones until a channel is opened */}
         <div className={`flex-1 flex-col min-w-0 ${showMainMobile ? 'flex' : 'hidden md:flex'}`}>
           {activityOpen ? (
-            <ActivityView counts={activityUnread} refreshKey={threadTick}
+            <ActivityView counts={activityUnread} refreshKey={threadTick} backButton={backButton}
               onRead={() => { refreshActivityUnread(); refreshThreadUnread?.(); }}
               onCloseMobile={() => setActivityOpen(false)}
               onOpenMessage={(it) => {
@@ -3221,7 +3282,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
           ) : threadsOpen ? (
             <ThreadsView me={user} mentionUsers={users} canTranslate={translateOn} viewerLang={viewerLang}
               onTranslate={translateMessage} onOpenChannel={openChannel} onCloseMobile={() => setThreadsOpen(false)}
-              onRead={refreshThreadUnread} refreshKey={threadTick} />
+              onRead={refreshThreadUnread} refreshKey={threadTick} backButton={backButton} />
           ) : (searchResults !== null || answer !== null || (searching && searchMode === 'ask')) ? (
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
@@ -3328,6 +3389,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
               {...swipeBack.handlers} style={swipeBack.style}>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
                 <button onClick={backToList} className="md:hidden -ml-1 p-1 text-gray-500 hover:text-gray-700" title="Back to channels"><ArrowLeft size={18} /></button>
+                {/* One step back through where you've been — the previous
+                    channel, or Threads/Activity. Distinct from the mobile
+                    arrow beside it, which goes to the channel LIST. */}
+                {backButton}
                 {active.kind === 'dm' ? <MessageSquare size={16} className="text-gray-400" /> : active.post_policy === 'admins' ? <Megaphone size={16} className="text-gray-400" /> : active.kind === 'private' ? <Lock size={16} className="text-gray-400" /> : <Hash size={16} className="text-gray-400" />}
                 {active.kind === 'dm' ? (
                   <span className="font-semibold text-gray-900 truncate shrink-0 max-w-[55%] sm:max-w-none">{active.name}</span>

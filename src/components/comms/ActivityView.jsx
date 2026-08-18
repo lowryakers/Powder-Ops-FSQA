@@ -47,7 +47,7 @@ const preview = (body) => {
   return t.length > 160 ? `${t.slice(0, 160)}…` : (t || '(attachment)');
 };
 
-export default function ActivityView({ counts, onOpenMessage, onCloseMobile, refreshKey, onRead }) {
+export default function ActivityView({ counts, onOpenMessage, onCloseMobile, refreshKey, onRead, backButton }) {
   const [tab, setTab] = useState('all');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [items, setItems] = useState([]);
@@ -117,6 +117,7 @@ export default function ActivityView({ counts, onOpenMessage, onCloseMobile, ref
     <>
       <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
         <button onClick={onCloseMobile} className="md:hidden p-1 -ml-1 text-gray-500" aria-label="Back"><ArrowLeft size={18} /></button>
+        {backButton}
         <Bell size={16} className="text-gray-400" />
         <span className="font-semibold text-gray-900">Activity</span>
         <div className="flex-1" />
