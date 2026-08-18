@@ -4005,6 +4005,20 @@ function runMigrations() {
   // review). Reported in the UI as a warning, resolved by a person.
   addColumnIfMissing('partner_documents', 'parsed_amount', 'REAL');
   addColumnIfMissing('partner_documents', 'parsed_amount_label', 'TEXT');
+  // Proof-of-payment columns. These were added to the CREATE TABLE only — which
+  // does nothing for a table that already exists — so every database created
+  // BEFORE that feature was missing all six, and the partner portal (which
+  // names proof_filename in an explicit column list) threw "no such column"
+  // on its main page. The internal Settled tab masked it by using SELECT *.
+  // A fresh DB gets these from the CREATE and these calls no-op. THE LESSON:
+  // a column added to a CREATE TABLE IF NOT EXISTS must always be added here
+  // too, or it exists only on databases that never saw the earlier release.
+  addColumnIfMissing('partner_settlements', 'proof_storage_key', 'TEXT');
+  addColumnIfMissing('partner_settlements', 'proof_filename', 'TEXT');
+  addColumnIfMissing('partner_settlements', 'proof_content_type', 'TEXT');
+  addColumnIfMissing('partner_settlements', 'proof_size', 'INTEGER');
+  addColumnIfMissing('partner_settlements', 'proof_uploaded_by', 'TEXT');
+  addColumnIfMissing('partner_settlements', 'proof_uploaded_at', 'TEXT');
   // WHAT THE DOCUMENT IS FOR, which is a different question from what kind of
   // document it is (`doc_type` is invoice / po / credit).
   //
