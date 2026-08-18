@@ -1,0 +1,2576 @@
+[
+ {
+  "common_name": "Milk Protein Isolate (85%)",
+  "vendor": "Idaho Milk Products",
+  "revision": "V1",
+  "source_file": " Milk Protein Isolate (85_)  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.1emi",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative/375g",
+    "unit": "/25g",
+    "method": "AOAC 2013.01",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "< 10",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 10
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 1,000",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 30,000",
+    "unit": "CFU/g",
+    "method": null,
+    "min": null,
+    "max": 30000
+   }
+  ],
+  "flags": [
+   "Cadmium: sheet writes \"NMT 0.1emi\" (stray characters after the figure) — number left for QA"
+  ]
+ },
+ {
+  "common_name": "Solar Sea AC",
+  "vendor": "MRI",
+  "revision": "V1",
+  "source_file": " Solar Sea AC RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 5.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 5
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.2",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.2
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 1,000",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 30,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 30000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Chloride",
+    "spec": "NMT 450",
+    "unit": "mg/g",
+    "method": "Anions by LC",
+    "min": null,
+    "max": 450
+   },
+   {
+    "test": "Magnesium",
+    "spec": "NMT 150",
+    "unit": "mg/g",
+    "method": "ICP-OES",
+    "min": null,
+    "max": 150
+   },
+   {
+    "test": "Sulfate",
+    "spec": "NTM 55",
+    "unit": "mg/g",
+    "method": "Anions by LC",
+    "min": null,
+    "max": 55
+   },
+   {
+    "test": "Sodium",
+    "spec": "NMT 20",
+    "unit": "mg/g",
+    "method": "ICP-OES",
+    "min": null,
+    "max": 20
+   },
+   {
+    "test": "Potassium",
+    "spec": "NMT 10",
+    "unit": "mg/g",
+    "method": "ICP-OES",
+    "min": null,
+    "max": 10
+   },
+   {
+    "test": "Appearance",
+    "spec": "Very fine powder; uniform",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Characteristic mineral odor; clean; no musty, sour, rancid or chemical odor",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Salty/mineral, characteristic of sea mineral concentrate; no objectionable off-taste",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "White to off-white, or light mineral beige typical of concentrated sea mineral powders",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine, smooth powder; reasonably free-flowing; free from excessive hard lumps or abnormal caking",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": [
+   "Sheet writes \"NTM\" once (typo for NMT) — transcribed verbatim, limit still derived."
+  ]
+ },
+ {
+  "common_name": "Sweet White Rice Flour",
+  "vendor": "Honeyville",
+  "revision": "V1",
+  "source_file": " Sweet White Rice Flour RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.1",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP<2022>",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 1000",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 5000",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 5000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Appearance",
+    "spec": "FIne, dry powder, uniform and free-flowing",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Mild,clean, slightly sweet/ nutty or neutral rice odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Mild, Clean, slightly sweet/nutty; not truly sweet like sugar.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "White to pale cream/ ivory",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine, smooth powder; reasonably free-flowing; free from excessive hard lumps or abnormal caking",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Zinc Gluconate Dihydrate (14%)",
+  "vendor": "Ingredients Online",
+  "revision": "V1",
+  "source_file": " Zinc Gluconate Dihydrate (14_) RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 3.0",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 3
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Potency",
+    "spec": "14.0",
+    "unit": "%",
+    "method": "ACOC or Equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Appearance",
+    "spec": "White almost white crystalline powder or fine granules",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Odorless or nearly odorless; no musty, sour, metallic, or chemical odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "White or nearly white.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Powder solubility, grittiness, smoothness in mouth",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": [
+   "Potency: \"14.0\" states no direction (NMT/NLT) — number left for QA"
+  ]
+ },
+ {
+  "common_name": "Ascorbic Acid Powder (Vitamin C)(96%)",
+  "vendor": "Xiamen Kingdomway Biotech",
+  "revision": "V1",
+  "source_file": "Ascorbic Acid Powder (Vitamin C)(96_)  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "Negative",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Potency",
+    "spec": "NMT 96",
+    "unit": "%",
+    "method": "ACOC or Equivelent",
+    "min": null,
+    "max": 96
+   },
+   {
+    "test": "Appearance",
+    "spec": "White to very pale yellow crystalline powder or fine powder.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Almost odorless/ slightly characteristic acidic odor; no mustyrancid, or chemical odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Sharp acidic taste, characteristic of ascorbic acid.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "White to very pale yellow;uniform.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine crystalline powder; free-flowing; free from excessive hard lumps or abnormal caking",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Beef Protein (HydroBEEF™)",
+  "vendor": "Honeyville",
+  "revision": "V1",
+  "source_file": "Beef Protein (HydroBEEF#U2122)   RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 0.8",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.8
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.1",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative/375g",
+    "unit": "/25g",
+    "method": "AOAC 2013.01",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "< 10",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 10
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 1000",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "<30.000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "<50",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 50
+   },
+   {
+    "test": "Appearance",
+    "spec": "Fine powder, uniform and free flowing or typical for protein hydrolysate.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Mild characteristic beef/ meaty odor; no rancid, sour, burnt, or putrid odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Neutral to mildly savory/meaty; no objectionable off-flavor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Mild characteristic beef/ meaty odor; no rancid, sour, burnt, or putrid odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine, smooth powder; free-flowing; free from excessive hard lumps or abnormal caking",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": [
+   "Sheet quirk: the Color row repeats the Odor wording — fix at approval. An older sheet dated Aug 10 with rice-flour organoleptics was set aside as stale.",
+   "Aerobic Plate Count: ambiguous figure \"<30.000\" — number left for QA"
+  ]
+ },
+ {
+  "common_name": "Brown Rice Flour",
+  "vendor": "Honeyville",
+  "revision": "V1",
+  "source_file": "Brown Rice Flour  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.1",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 10",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 10
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 5000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 5000
+   },
+   {
+    "test": "Gluten",
+    "spec": "NMT 20",
+    "unit": "ppm",
+    "method": "ELISA",
+    "min": null,
+    "max": 20
+   },
+   {
+    "test": "Appearance",
+    "spec": "Coarse, uniform powder or crystalline granules; free-flowing",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Typical rice aroma; clean; not musty, moldy, sour, or rancid.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Typical rice flavor, bland to slightly sweet",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Off-white to beige/ light cream",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine, dry, powdery; free-flowing; free from excessive lumps",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Calcium Bisglycinate Chelate (19%)",
+  "vendor": "Hebel LiWellso",
+  "revision": "V1",
+  "source_file": "Calcium Bisglycinate Chelate (19_)  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 0.1",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.1",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "NMT 10",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 10
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 1000",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Potency",
+    "spec": "19%",
+    "unit": "%",
+    "method": "N/",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Appearance",
+    "spec": "Coarse, uniform powder or crystalline granules; free-flowing",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Clean, neutral to characteristic sweetener odor; no musty, rancid,chemical,or foreign odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Clean, sweet taste;no bitter, metallic,sour,or lingering off-flavor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "White to off -white",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Coarse, dry, free-flowing powder; not excessively compacted or caked",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": [
+   "Potency: \"19%\" states no direction (NMT/NLT) — number left for QA"
+  ]
+ },
+ {
+  "common_name": "Coarse Sweetener (Powder)",
+  "vendor": "National Sugar Marketing",
+  "revision": "V1",
+  "source_file": "Coarse Sweetener (Powder)  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.1",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative/375g",
+    "unit": "/25g",
+    "method": "AOAC 2013.01",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP<2022>",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "< 10",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 10
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1000",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "<30.000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Appearance",
+    "spec": "Coarse, uniform powder or crystalline granules; free-flowing",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Clean, neutral to characteristic sweetener odor; no musty, rancid,chemical,or foreign odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Clean, sweet taste;no bitter, metallic,sour,or lingering off-flavor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "White to off -white",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Coarse, dry, free-flowing powder; not excessively compacted or caked",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": [
+   "Total Yeast & Mold Count: ambiguous figure \"<30.000\" — number left for QA"
+  ]
+ },
+ {
+  "common_name": "Color (EXBERRY® Shade Purple Plum)(18240041)(Powder)[Fruit & Vegetable Juice]",
+  "vendor": "Exberry",
+  "revision": "V1",
+  "source_file": "Color (EXBERRY#U00ae Shade Purple Plum)(18240041)(Powder)[Fruit & Vegetable Juice]  of RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Absent",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 1,000",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 30,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 30000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Appearance",
+    "spec": "Fine, uniform powder;free-flowing or typical for powder color concentrate",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Mild characteristic fruit/vegetable odor; no musty, sour,rancid or chemical odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Fine, uniform powder;free-flowing or typical for powder color concentrate",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Purple to plum-colored powder; uniform shade.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Dry, fine powder with no excessive caking or foreign material",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Color (Exberry Shade Intense Red)(15390003)(Powder)",
+  "vendor": "Exberry",
+  "revision": "V1",
+  "source_file": "Color (Exberry Shade Intense Red)(15390003)(Powder)  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Absent",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 1,000",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 100",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 100
+   },
+   {
+    "test": "Appearance",
+    "spec": "Fine, uniform powder;free-flowing or typical for micronized color powder",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Mild characteristic plant/color odor;no musty, sour,rancid,or chemical odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Neutral to very mild characteristic flavor; should not materially impact product flavor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Intense red to reddish-orange powder ;uniform shade.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Dry, fine powder with no excessive caking or foreign material",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Grassfed Instant Whey Protein Isolate with Sunflower Lecithin",
+  "vendor": "Mill Haven Foods",
+  "revision": "V1",
+  "source_file": "Grassfed Instant Whey Protein Isolate with Sunflower Lecithin   RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.1",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative/375g",
+    "unit": "/25g",
+    "method": "AOAC RI121501",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP<2022>",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "< 10",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 10
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1000",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "<30.000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Appearance",
+    "spec": "Free-flowing, uniform powder; no visible foreign material, insects, or other contamination",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Clean, mild dairy/whey odor; characteristic of whey protein; free from rancid, sour, musty, burnt, chemical, or other objectionable odors",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Clean, bland, mild dairy/whey flavor; free from rancid, sour, bitter, burnt, chemical, or other objectionable flavors",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "White to light cream",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine, smooth powder; free-flowing with no excessive hard lumps or agglomeration",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": [
+   "Total Yeast & Mold Count: ambiguous figure \"<30.000\" — number left for QA"
+  ]
+ },
+ {
+  "common_name": "Pisane™ C9 Pea Protein Isolate (85%)",
+  "vendor": "A & B Ingredients",
+  "revision": "V1",
+  "source_file": "Pisane#U2122 C9 Pea Protein Isolate (85_) of RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.1",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP<2022>",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 10",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 10
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1000",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 5000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 5000
+   },
+   {
+    "test": "Appearance",
+    "spec": "Fine, free-flowing powder; uniform in appearance; free from foreign material, insects, and other visible contaminants",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Characteristic of pea protein; mild, clean, and typical; free from rancid, sour, musty, fermented, chemical, or other objectionable odors",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Taste",
+    "spec": "Characteristic of pea protein; mild to moderately beany/pea-like; free from rancid, sour, bitter, fermented, chemical, or other objectionable flavors",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Light cream to pale yellow/beige powder",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine, smooth powder; free-flowing with no excessive hard lumps or caking",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Thiamine HCL (Vitamin B1)",
+  "vendor": "Huazhong Pharmaceuticals",
+  "revision": "V1",
+  "source_file": "Thiamine HCL (Vitamin B1)  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.3",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.3
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "Negative",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Appearance",
+    "spec": "White color, absence of visible foreign matter, clarity in solution.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Slight characteristic, free from off-notes.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "White to pale yellow; no pronounced darkening, spotting, or brownish color.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Vitamin A Palmitate (500,000 IU)",
+  "vendor": "Xiamen Kingdomway Biotech",
+  "revision": "V1",
+  "source_file": "Vitamin A Palmitate (500,000 IU) RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "Negative",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Potency",
+    "spec": "NMT 500,000",
+    "unit": "IU/g",
+    "method": "USP <571>",
+    "min": null,
+    "max": 500000
+   },
+   {
+    "test": "Appearance",
+    "spec": "Fine, free-flowing powder.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Assay",
+    "spec": "Vitamin A assay",
+    "unit": "<571>",
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Characteristic, mild",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Light yellow to yellow.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Dry, free-flowing, no hard lumps",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Vitamin B12 (Cyanocobalamin)(1%)",
+  "vendor": "Hebei Huarong Pharmaceutical",
+  "revision": "V1",
+  "source_file": "Vitamin B12 (Cyanocobalamin)(1_)  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "Negative",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Potency",
+    "spec": "NLT 1.0",
+    "unit": "%",
+    "method": "ACOC or equivalent",
+    "min": 1,
+    "max": null
+   },
+   {
+    "test": "Appearance",
+    "spec": "Free-flowing powder; uniform and free from visible foreign matter.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Mild characteristic odor or practically odorless; no musty, rancid, or chemical odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Off-white to light pink for premix grades, or dark red/red if pure active is being inspected.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine powder or agglomerates;free flowing, not hard-caked.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Vitamin B12 (Methylcobalamin)(Pure)",
+  "vendor": "Stryka",
+  "revision": "V1",
+  "source_file": "Vitamin B12 (Methylcobalamin)(Pure) RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "Negative",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Potency",
+    "spec": "NLT 98.0",
+    "unit": "%",
+    "method": "ACOC or Equivalent",
+    "min": 98,
+    "max": null
+   },
+   {
+    "test": "Appearance",
+    "spec": "Dark red crystalline powder or dark red crystals",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Odorless or very slight characteristic odor; no musty, rancid, or chemical odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Dark red to very dark red.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Crystalline powder; fine and uniform; no visible foreign matter of abnormal caking.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Vitamin B2 (Riboflavin 99%)",
+  "vendor": "Xingangshan, Dexing",
+  "revision": "V1",
+  "source_file": "Vitamin B2 (Riboflavin 99_) RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "Negative",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 100",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 100
+   },
+   {
+    "test": "Potency",
+    "spec": "NMT 99.0",
+    "unit": "%",
+    "method": "ACOC or Equivalent",
+    "min": null,
+    "max": 99
+   },
+   {
+    "test": "Appearance",
+    "spec": "Yellow to orange-yellow crystalline powder.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Assay",
+    "spec": "98.0-102.0",
+    "unit": "%",
+    "method": null,
+    "min": 98,
+    "max": 102
+   },
+   {
+    "test": "Odor",
+    "spec": "Slight odor or practically odorless; no musty, rancid, or chemical off-odors.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Uniform yellow to orange-yellow; no brown, grey, or black discoloration.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine crystalline, free- flowing powder, without hard lumps or abnormal caking.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Vitamin B6 (Pyridoxine HCl 98%)",
+  "vendor": "Anhui Tiger Vitamin Development",
+  "revision": "V1",
+  "source_file": "Vitamin B6 (Pyridoxine HCl 98_)  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 1,000",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 30,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 30000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Potency",
+    "spec": "NMT 98.0",
+    "unit": "%",
+    "method": "ACOC or Equivalent",
+    "min": null,
+    "max": 98
+   },
+   {
+    "test": "Appearance",
+    "spec": "White to near-white crystalline powder",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Odorless",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "White to off-white; no visible discoloration ( no yellow, brown, or gray tones)",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine crystalline powder; free-flowing, without hard lumps or abnormal caking.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Vitamin K1 (1%)",
+  "vendor": "Anhui Wanhe Pharmaceutical",
+  "revision": "V1",
+  "source_file": "Vitamin K1 (1_)  RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 3.0",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 3
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Potency",
+    "spec": "NMT 1.0",
+    "unit": "%",
+    "method": "ACOC or Equivalent",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Appearance",
+    "spec": "Free-flowing powder; uniform and free from visible foreign matter.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Odorless or very slight characteristic odor; no rancid,sour,or chemical odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Light yellow to yellow",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine powder or agglomerate; should be free-flowing and not excessively caked.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": []
+ },
+ {
+  "common_name": "Vitamin K2 (Menaquinone-7)(1%)",
+  "vendor": "Centian.",
+  "revision": "V1",
+  "source_file": "Vitamin K2 (Menaquinone-7)(1_) RAW MATERIAL TESTING FORM 607-01.docx",
+  "tests": [
+   {
+    "test": "Arsenic",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Cadmium",
+    "spec": "NMT 1.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233",
+    "min": null,
+    "max": 1
+   },
+   {
+    "test": "Lead",
+    "spec": "NMT 2.0",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 2
+   },
+   {
+    "test": "Mercury",
+    "spec": "NMT 0.5",
+    "unit": "ppm",
+    "method": "AOAC 2015.01 Mod<2232> or <USP 233>",
+    "min": null,
+    "max": 0.5
+   },
+   {
+    "test": "Salmonella Species",
+    "spec": "Negative",
+    "unit": "/25g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "E. coli",
+    "spec": "Negative",
+    "unit": "CFU/g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Coliforms",
+    "spec": "NMT 3.0",
+    "unit": "CFU /g",
+    "method": "USP <2023> or equivalent",
+    "min": null,
+    "max": 3
+   },
+   {
+    "test": "Aerobic Plate Count",
+    "spec": "NMT 1,000",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 1000
+   },
+   {
+    "test": "Total Yeast & Mold Count",
+    "spec": "NMT 500",
+    "unit": "CFU/g",
+    "method": "USP <2021> or equivalent",
+    "min": null,
+    "max": 500
+   },
+   {
+    "test": "Potency",
+    "spec": "1.00",
+    "unit": "%",
+    "method": "ACOC or Equivalent.",
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Appearance",
+    "spec": "Fine powder; uniform and free from visible foreign matter",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Odor",
+    "spec": "Odorless or very slight characteristic odor; no rancid, sour, or chemical odor.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Color",
+    "spec": "Pale yellow to white",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   },
+   {
+    "test": "Texture",
+    "spec": "Fine powder; smooth; no grit or abnormal caking.",
+    "unit": null,
+    "method": null,
+    "min": null,
+    "max": null
+   }
+  ],
+  "flags": [
+   "Potency: \"1.00\" states no direction (NMT/NLT) — number left for QA"
+  ]
+ }
+]

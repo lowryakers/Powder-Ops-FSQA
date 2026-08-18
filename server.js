@@ -76,6 +76,7 @@ import logBuilderRoutes from './server/api/log-builder.js';
 import { seedStructureLists } from './server/structure-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
+import { seedForm607Specs } from './server/spec-607-seed.js';
 import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-records.js';
 import { syncAllKnifeStatuses } from './server/knife-state.js';
 import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
@@ -1154,6 +1155,15 @@ try {
   seedGenericSpecifications(db);
 } catch (err) {
   console.error('[seed] Error seeding COA specifications (non-fatal):', err.message);
+}
+
+// The plant's own FORM 607-01 raw-material spec sheets, transcribed and filed
+// as drafts for QA. Runs after the generic seed for the same reason: item
+// numbers are resolved by name against coa_requests. Idempotent per row.
+try {
+  seedForm607Specs(db);
+} catch (err) {
+  console.error('[seed] Error seeding FORM 607-01 specifications (non-fatal):', err.message);
 }
 
 // Seed FORM 431-01 into the controlled registry.
