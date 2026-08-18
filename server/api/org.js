@@ -2,6 +2,30 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 
+// A position can carry SEVERAL job descriptions — a small plant's people wear
+// several hats, and the chart should say so rather than picking one. The full
+// set lives in job_description_ids (JSON array); job_description_id stays as
+// a MIRROR of the first entry so everything that reads the old column (the
+// chart chip, the JD auto-linker, exports) keeps working — the same line-0
+// mirroring rule as production_entries.mo_lines.
+function normalizeJdIds(body, existing = null) {
+  if (body.job_description_ids !== undefined) {
+    const arr = Array.isArray(body.job_description_ids) ? body.job_description_ids : [];
+    return [...new Set(arr.map(v => String(v || '').trim()).filter(Boolean))];
+  }
+  if (body.job_description_id !== undefined) {
+    return body.job_description_id ? [String(body.job_description_id)] : [];
+  }
+  return existing ? jdIdsOf(existing) : [];
+}
+function jdIdsOf(row) {
+  try {
+    const arr = JSON.parse(row.job_description_ids || 'null');
+    if (Array.isArray(arr) && arr.length) return arr;
+  } catch { /* fall through */ }
+  return row.job_description_id ? [row.job_description_id] : [];
+}
+
 const router = Router();
 
 /**
@@ -39,7 +63,7 @@ function withPeople(db, positions) {
 router.get('/', (_req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM org_positions ORDER BY sort_order, title').all();
-  const positions = withPeople(db, rows);
+  const positions = withPeople(db, rows).map(p => ({ ...p, job_description_ids: jdIdsOf(p) }));
   const meta = db.prepare('SELECT * FROM org_chart_meta WHERE id = 1').get() || null;
 
   // WHO IS NOT ON THE CHART. An org chart that is missing people is the one an
@@ -62,17 +86,19 @@ router.get('/people', (_req, res) => {
 
 router.post('/', (req, res) => {
   const db = getDb();
-  const { title, name, backup, department, parent_id, sort_order, job_description_id, user_id } = req.body;
+  const { title, name, backup, department, parent_id, sort_order, user_id } = req.body;
   if (!title) return res.status(400).json({ error: 'Title is required' });
   // The stored name is kept as the label for a vacancy or a contractor with no
   // account; when a person is linked, THEIR account is what the chart reads.
   const person = user_id ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(user_id) : null;
   if (user_id && !person) return res.status(400).json({ error: 'That person no longer has an account.' });
+  const jdIds = normalizeJdIds(req.body);
   const id = uuid();
-  db.prepare(`INSERT INTO org_positions (id, title, name, backup, department, parent_id, job_description_id, sort_order, user_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO org_positions (id, title, name, backup, department, parent_id, job_description_id, job_description_ids, sort_order, user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, title, person ? person.name : (name || null), backup || null, department || null,
-    parent_id || null, job_description_id || null, Number.isInteger(sort_order) ? sort_order : 0,
+    parent_id || null, jdIds[0] || null, jdIds.length ? JSON.stringify(jdIds) : null,
+    Number.isInteger(sort_order) ? sort_order : 0,
     person ? person.id : null
   );
   const created = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(id);
@@ -111,7 +137,8 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM org_positions WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { title, name, backup, department, parent_id, sort_order, job_description_id, user_id } = req.body;
+  const { title, name, backup, department, parent_id, sort_order, user_id } = req.body;
+  const jdIds = normalizeJdIds(req.body, existing);
   // An ABSENT user_id means "leave the link alone"; an explicit null unlinks,
   // which is how a position becomes vacant without losing its title.
   const changingPerson = user_id !== undefined;
@@ -128,14 +155,14 @@ router.put('/:id', (req, res) => {
     }
   }
 
-  db.prepare(`UPDATE org_positions SET title=?, name=?, backup=?, department=?, parent_id=?, job_description_id=?, sort_order=?, user_id=?, updated_at=datetime('now') WHERE id=?`).run(
+  db.prepare(`UPDATE org_positions SET title=?, name=?, backup=?, department=?, parent_id=?, job_description_id=?, job_description_ids=?, sort_order=?, user_id=?, updated_at=datetime('now') WHERE id=?`).run(
     title || existing.title,
     // Linking someone stamps their current name so an export or an old print
     // still reads; unlinking keeps whatever was there rather than blanking it.
     changingPerson && person ? person.name : (name ?? existing.name),
     backup ?? existing.backup,
     department ?? existing.department, parent_id !== undefined ? (parent_id || null) : existing.parent_id,
-    job_description_id !== undefined ? (job_description_id || null) : existing.job_description_id,
+    jdIds[0] || null, jdIds.length ? JSON.stringify(jdIds) : null,
     Number.isInteger(sort_order) ? sort_order : existing.sort_order,
     changingPerson ? (person ? person.id : null) : existing.user_id,
     req.params.id

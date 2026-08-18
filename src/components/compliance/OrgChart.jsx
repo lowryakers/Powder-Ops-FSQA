@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, Edit2, Trash2, X, Network, Settings2, FileText, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import './OrgChart.css';
+import SearchSelect from '../common/SearchSelect.jsx';
 
 const DEPARTMENTS = ['executive', 'quality', 'production', 'sanitation', 'maintenance', 'warehouse', 'admin', 'other'];
 const DEPT_CLASS = {
@@ -25,7 +26,9 @@ function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, pe
     backup: initial?.backup || '',
     department: initial?.department || 'production',
     parent_id: initial?.parent_id ?? (initial?._defaultParent ?? ''),
-    job_description_id: initial?.job_description_id || '',
+    job_description_ids: initial?.job_description_ids?.length
+      ? initial.job_description_ids
+      : (initial?.job_description_id ? [initial.job_description_id] : []),
     user_id: initial?.user_id || '',
   });
   const [saving, setSaving] = useState(false);
@@ -106,11 +109,32 @@ function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, pe
           </div>
         )}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Job Description</label>
-          <select value={form.job_description_id || ''} onChange={e => set('job_description_id', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">— None linked —</option>
-            {(jobDescriptions || []).map(d => <option key={d.id} value={d.id}>{d.doc_number ? `${d.doc_number} · ` : ''}{d.title}</option>)}
-          </select>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Job Descriptions</label>
+          {/* Several hats is the normal case in a plant this size, so this is
+              a multi-pick: chips for what's linked, a type-ahead to add the
+              next. The first pick is the primary (the chart's chip). */}
+          {form.job_description_ids.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {form.job_description_ids.map(id => {
+                const d = (jobDescriptions || []).find(x => x.id === id);
+                return (
+                  <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-powder-50 border border-powder-200 text-xs text-powder-900">
+                    {d ? `${d.doc_number ? `${d.doc_number} · ` : ''}${d.title}` : 'Unknown document'}
+                    <button type="button" onClick={() => set('job_description_ids', form.job_description_ids.filter(x => x !== id))}
+                      className="text-powder-400 hover:text-red-500"><X size={11} /></button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <SearchSelect value="" placeholder="Type to search job descriptions…"
+            options={(jobDescriptions || []).filter(d => !form.job_description_ids.includes(d.id))
+              .map(d => `${d.doc_number ? `${d.doc_number} · ` : ''}${d.title}`)}
+            onChange={(label) => {
+              if (!label) return;
+              const d = (jobDescriptions || []).find(x => `${x.doc_number ? `${x.doc_number} · ` : ''}${x.title}` === label);
+              if (d && !form.job_description_ids.includes(d.id)) set('job_description_ids', [...form.job_description_ids, d.id]);
+            }} />
         </div>
         <div className="flex items-center gap-2 pt-1">
           <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
@@ -161,7 +185,7 @@ function MetaModal({ meta, onSave, onCancel }) {
   );
 }
 
-function TreeNode({ node, canEdit, dnd, onAddChild, onEdit, onDelete }) {
+function TreeNode({ node, canEdit, dnd, onAddChild, onEdit, onDelete, jdById = {} }) {
   const deptClass = DEPT_CLASS[node.department] || DEPT_CLASS.other;
   const isDragging = dnd.draggingId === node.id;
   const isForbidden = dnd.forbidden.has(node.id);
@@ -199,14 +223,14 @@ function TreeNode({ node, canEdit, dnd, onAddChild, onEdit, onDelete }) {
           <div className="text-xs text-gray-400 mt-0.5 italic">Vacant</div>
         )}
         {node.backup && <div className="text-[10px] text-gray-400 mt-0.5">Back-up: {node.backup}</div>}
-        {node.job_description_id && (
-          <button
+        {(node.job_description_ids?.length ? node.job_description_ids : (node.job_description_id ? [node.job_description_id] : [])).map((jd, i, all) => (
+          <button key={jd}
             draggable={false}
-            onClick={(e) => { e.stopPropagation(); try { localStorage.setItem('doc_focus', node.job_description_id); } catch { /* ignore */ } window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'job-descriptions' } })); }}
-            className="mt-1 inline-flex items-center gap-1 text-[10px] text-powder-600 hover:underline">
-            <FileText size={10} /> Job Description
+            onClick={(e) => { e.stopPropagation(); try { localStorage.setItem('doc_focus', jd); } catch { /* ignore */ } window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'job-descriptions' } })); }}
+            className="mt-1 mr-1.5 inline-flex items-center gap-1 text-[10px] text-powder-600 hover:underline">
+            <FileText size={10} /> {all.length === 1 ? 'Job Description' : (jdById[jd]?.doc_number || jdById[jd]?.title || `JD ${i + 1}`)}
           </button>
-        )}
+        ))}
         {canEdit && (
           <div className="absolute -top-2.5 right-1 hidden group-hover/node:flex items-center gap-0.5 bg-white border border-gray-200 rounded-md shadow-sm px-0.5">
             <button onClick={() => onAddChild(node)} className="p-1 text-gray-400 hover:text-green-600" title="Add report"><Plus size={12} /></button>
@@ -218,7 +242,7 @@ function TreeNode({ node, canEdit, dnd, onAddChild, onEdit, onDelete }) {
       {node.children.length > 0 && (
         <ul>
           {node.children.map(c => (
-            <TreeNode key={c.id} node={c} canEdit={canEdit} dnd={dnd} onAddChild={onAddChild} onEdit={onEdit} onDelete={onDelete} />
+            <TreeNode key={c.id} node={c} canEdit={canEdit} dnd={dnd} onAddChild={onAddChild} onEdit={onEdit} onDelete={onDelete} jdById={jdById} />
           ))}
         </ul>
       )}
@@ -231,6 +255,7 @@ export default function OrgChart() {
   const canEdit = canEditModule(user, 'org-chart');
   const { data, loading, refresh } = useApiGet('/org');
   const { data: jobDescriptions } = useApiGet('/documents?doc_type=job_description');
+  const jdById = useMemo(() => Object.fromEntries((jobDescriptions || []).map(d => [d.id, d])), [jobDescriptions]);
   const { data: people } = useApiGet('/org/people');
   const [editing, setEditing] = useState(null);   // position being edited
   const [adding, setAdding] = useState(null);      // { _defaultParent, parentTitle } when adding
@@ -372,7 +397,7 @@ export default function OrgChart() {
           <div ref={chartRef} className="orgtree min-w-full" style={{ zoom }}>
             <ul>
               {roots.map(r => (
-                <TreeNode key={r.id} node={r} canEdit={canEdit} dnd={dnd}
+                <TreeNode key={r.id} node={r} canEdit={canEdit} dnd={dnd} jdById={jdById}
                   onAddChild={(n) => setAdding({ _defaultParent: n.id, parentTitle: n.title })}
                   onEdit={(n) => setEditing(n)} onDelete={handleDelete} />
               ))}

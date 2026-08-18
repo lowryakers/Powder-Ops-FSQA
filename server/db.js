@@ -2576,6 +2576,10 @@ function runMigrations() {
 
   // Link an org-chart position to its Job Description document
   addColumnIfMissing('org_positions', 'job_description_id', 'TEXT');
+  // The FULL set of job descriptions a position carries (JSON array) — a small
+  // plant's people wear several hats. job_description_id above stays as the
+  // mirror of the first entry so old readers keep working.
+  addColumnIfMissing('org_positions', 'job_description_ids', 'TEXT');
 
   // WHO HOLDS THE POSITION — the account, not a typed name.
   //
