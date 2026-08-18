@@ -112,8 +112,22 @@ function listDocuments(db, partnerId, q = {}) {
       lines_reconcile: items.length && d.amount != null
         ? Math.abs((d.lines_total ?? 0) - d.amount) < 0.02
         : null,
+      // The row's amount versus what the FILE prints as its total. A mismatch
+      // is the one discrepancy the other company will find first, so it is
+      // flagged rather than left for them to.
+      amount_mismatch: d.parsed_amount != null && d.amount != null
+        && Math.abs(d.parsed_amount - d.amount) >= 0.01,
     };
   });
+}
+
+/** What the file itself says its total is — stored beside the row, never as it. */
+function parsedTotalOf(text, partner) {
+  if (!text) return { amount: null, label: null };
+  try {
+    const p = parseInvoice(text, { usNames: OUR_NAMES, partnerNames: nameVariants(partner?.name) });
+    return { amount: p.amount ?? null, label: p.amount_label || null };
+  } catch { return { amount: null, label: null }; }
 }
 
 function safeLines(json) {
@@ -216,11 +230,13 @@ async function createDocument(db, { partnerId, body, files, user, source }) {
     if (!lines.length && text) {
       try { lines = normalizeLines(parseLineItems(text)); } catch { lines = []; }
     }
+    const parsedTotal = parsedTotalOf(text, partner);
     db.prepare(`INSERT INTO partner_documents
       (id, partner_id, direction, doc_type, doc_number, reference, description,
        issued_date, terms_days, due_date, amount, status, category,
-       storage_key, filename, content_type, size, extracted_text, line_items, lines_total, source, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,'draft',?,?,?,?,?,?,?,?,?,?)`)
+       storage_key, filename, content_type, size, extracted_text, line_items, lines_total,
+       parsed_amount, parsed_amount_label, source, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,'draft',?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(id, partnerId, direction, docType, clean(body?.doc_number, 80), clean(body?.reference, 120),
         clean(body?.description, 1000), issued, terms, due, amount,
         // Set at CREATION as well as on edit. A category that could only be
@@ -231,6 +247,7 @@ async function createDocument(db, { partnerId, body, files, user, source }) {
         key, f ? (f.originalname || 'file').slice(0, 255) : null, f?.mimetype || null, f?.size || null,
         text ? String(text).slice(0, 400000) : null,
         lines.length ? JSON.stringify(lines) : null, linesTotalOf(lines),
+        parsedTotal.amount, parsedTotal.label,
         source, user?.name || null);
     out.push(db.prepare('SELECT id, doc_number, direction, amount, due_date, filename, lines_total FROM partner_documents WHERE id = ?').get(id));
   }
@@ -457,8 +474,14 @@ router.post('/documents/:docId/read-lines', (req, res) => {
     return res.status(400).json({ error: 'No line items could be found in this document. They can be typed in instead.' });
   }
   const total = linesTotalOf(lines);
-  db.prepare("UPDATE partner_documents SET line_items = ?, lines_total = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?")
-    .run(JSON.stringify(lines), total, req.user?.name || null, doc.id);
+  // parsed_amount is refreshed here too: it is the same kind of fact — what
+  // the FILE says — and both derive from the same re-read. The row's amount
+  // is still never touched.
+  const partner = db.prepare('SELECT * FROM partner_accounts WHERE id = ?').get(doc.partner_id);
+  const parsedTotal = parsedTotalOf(doc.extracted_text, partner);
+  db.prepare(`UPDATE partner_documents SET line_items = ?, lines_total = ?,
+      parsed_amount = ?, parsed_amount_label = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?`)
+    .run(JSON.stringify(lines), total, parsedTotal.amount, parsedTotal.label, req.user?.name || null, doc.id);
   logAudit(req.user, 'update', 'partner_document', doc.id,
     { read_lines: lines.length, lines_total: total }, null, null, doc.doc_number);
   res.json({
@@ -587,10 +610,13 @@ router.post('/documents/:docId/file', uploadDocs, async (req, res) => {
     try { text = await extractInvoiceText(buf, f.mimetype, f.originalname); } catch { text = null; }
 
     const old = before.storage_key && before.storage_key !== key ? before.storage_key : null;
+    const partner = db.prepare('SELECT * FROM partner_accounts WHERE id = ?').get(before.partner_id);
+    const parsedTotal = parsedTotalOf(text, partner);
     db.prepare(`UPDATE partner_documents SET storage_key = ?, filename = ?, content_type = ?, size = ?,
-        extracted_text = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?`)
+        extracted_text = ?, parsed_amount = ?, parsed_amount_label = ?,
+        updated_at = datetime('now'), updated_by = ? WHERE id = ?`)
       .run(key, (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null,
-        text, req.user?.name || null, before.id);
+        text, parsedTotal.amount, parsedTotal.label, req.user?.name || null, before.id);
     if (old) { try { await deleteObject(old); } catch { /* the row is what matters */ } }
 
     const after = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(before.id);

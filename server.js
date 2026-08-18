@@ -101,6 +101,7 @@ import { seedCertifications } from './server/cert-seed.js';
 import { importPaperInternalAudits } from './server/internal-audit-import.js';
 import { seedBannedSubstanceSopDraft } from './server/banned-substance-sop-seed.js';
 import { backfillFilmDrafts } from './server/film-draft-backfill.js';
+import { backfillPartnerDocLines } from './server/partner-doc-backfill.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath } from './server/middleware/auth.js';
 
@@ -1064,6 +1065,23 @@ try {
   // auto-draft existed, with corrected links DM'd where the alert already went
   // out (one-time; async best-effort — a comms hiccup must not fail boot).
   backfillFilmDrafts(db).catch((e) => console.warn('[backfill] film drafts:', e.message));
+  // Re-read partner-ledger line summaries with the fixed parser — the old one
+  // filed address ZIP codes as $84k line items on every invoice (one-time).
+  backfillPartnerDocLines(db);
+  // Purge cached "translations" identical to the original message (one-time).
+  // A translator that returned the text unchanged got CACHED, and the cache is
+  // served before the API — so those messages could never translate again, no
+  // matter how many times someone tapped. Deleting the identity rows just
+  // means the next tap really asks; a message genuinely in the viewer's
+  // language re-caches at the cost of one call.
+  try {
+    if (!db.prepare("SELECT value FROM app_settings WHERE key = 'translation_cache_purge_v1'").get()) {
+      const purged = db.prepare(`DELETE FROM chat_message_translations
+        WHERE text = (SELECT body FROM chat_messages WHERE id = message_id)`).run().changes;
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('translation_cache_purge_v1', ?)").run(new Date().toISOString());
+      if (purged) console.log(`[backfill] purged ${purged} unchanged cached translation(s)`);
+    }
+  } catch (e) { console.warn('[backfill] translation cache purge failed:', e.message); }
 } catch (err) {
   console.error('[seed] Error seeding training courses (non-fatal):', err.message);
 }

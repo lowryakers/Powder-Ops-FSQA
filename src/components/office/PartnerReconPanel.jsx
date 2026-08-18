@@ -957,7 +957,24 @@ export default function PartnerReconPanel({ user }) {
                           {d.doc_type === 'credit' ? '−' : ''}{money(d.amount)}
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{d.due_date || '—'}</td>
-                        <td className="px-3 py-2.5"><StatusChip s={d.status} /></td>
+                        <td className="px-3 py-2.5">
+                          <StatusChip s={d.status} />
+                          {/* The category, editable RIGHT HERE — the "N with no
+                              category" banner filters to these rows, and a
+                              filter that lands on rows with no control is a
+                              dead end. Settled documents show it read-only:
+                              the category is what the credit was applied
+                              against. */}
+                          <span className="block mt-1" onClick={stopRowClick}>
+                            {canSettle && !d.settlement_id ? (
+                              <CategoryPicker documentId={d.id} value={d.category} onChanged={reloadAll} />
+                            ) : d.category ? (
+                              <span className="text-[11px] text-gray-500 capitalize">{d.category}</span>
+                            ) : (
+                              <span className="text-[11px] text-amber-600">no category</span>
+                            )}
+                          </span>
+                        </td>
                         <td className="px-3 py-2.5 whitespace-nowrap text-right" onClick={stopRowClick}>
                           {d.status === 'draft' && canSettle && (
                             <button onClick={() => act(() => apiPost(`/partners/documents/${d.id}/finalize`, {}))}
@@ -1003,6 +1020,33 @@ export default function PartnerReconPanel({ user }) {
                             { label: 'Approved final by', value: d.finalized_by },
                             { label: 'Dispute', value: d.disputed_reason ? `${d.disputed_reason} — ${d.disputed_by}` : null },
                           ]} />
+                          {/* The row's amount versus what the FILE prints as
+                              its total. This is the discrepancy the partner
+                              finds first, so it is said here — with the fix one
+                              click away — instead of waiting to be found. */}
+                          {d.amount_mismatch && (
+                            <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
+                              <p className="text-xs text-amber-900">
+                                The document itself prints {d.parsed_amount_label ? `“${d.parsed_amount_label}”` : 'a total of'} {money(d.parsed_amount)} —
+                                this row counts {money(d.amount)} toward the balance. A common cause: the file was
+                                read at its account &ldquo;Balance due&rdquo; (this invoice plus older unpaid ones)
+                                instead of its own total.
+                              </p>
+                              {canSettle && !d.settlement_id && (
+                                <button onClick={() => {
+                                  if (!window.confirm(`Change this row's amount to ${money(d.parsed_amount)}, the total printed on the document?`)) return;
+                                  act(() => apiPut(`/partners/documents/${d.id}`, {
+                                    doc_number: d.doc_number, reference: d.reference, description: d.description,
+                                    issued_date: d.issued_date, terms_days: d.terms_days, due_date: d.due_date,
+                                    direction: d.direction, doc_type: d.doc_type, category: d.category,
+                                    amount: d.parsed_amount,
+                                  }));
+                                }} className="mt-1 px-2 py-1 rounded bg-amber-600 text-white text-xs font-medium hover:bg-amber-700">
+                                  Use the document&rsquo;s figure ({money(d.parsed_amount)})
+                                </button>
+                              )}
+                            </div>
+                          )}
                           <LineItems doc={d} money={money} onRead={reloadAll} />
                           {d.filename ? (
                             <div className="mt-2 flex items-center gap-3 flex-wrap">

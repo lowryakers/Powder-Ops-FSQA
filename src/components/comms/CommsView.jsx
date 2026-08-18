@@ -1576,7 +1576,7 @@ function SheetRow({ icon: Icon, label, danger, act, onAction }) {
   );
 }
 
-function MessageActionSheet({ preview, mine, canReply, canTranslate, canMarkUnread, onClose, onReact, onAction }) {
+function MessageActionSheet({ preview, mine, canReply, canTranslate, translateLabel, canMarkUnread, onClose, onReact, onAction }) {
   const [showAll, setShowAll] = useState(false);
   return (
     <div className="fixed inset-0 z-[80] flex flex-col justify-end md:hidden" onClick={e => { e.stopPropagation(); onClose(); }}>
@@ -1609,7 +1609,7 @@ function MessageActionSheet({ preview, mine, canReply, canTranslate, canMarkUnre
           <SheetRow icon={Copy} label="Copy text" act="copy" onAction={onAction} />
           <SheetRow icon={Forward} label="Forward to channel…" act="forward" onAction={onAction} />
           <SheetRow icon={Clock} label="Remind me about this…" act="remind" onAction={onAction} />
-          {canTranslate && <SheetRow icon={Languages} label="Translate" act="translate" onAction={onAction} />}
+          {canTranslate && <SheetRow icon={Languages} label={translateLabel || 'Translate'} act="translate" onAction={onAction} />}
           {canMarkUnread && <SheetRow icon={null} label="Mark unread from here" act="unread" onAction={onAction} />}
           <SheetRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={onAction} />
           {mine && <SheetRow icon={Edit2} label="Edit message" act="edit" onAction={onAction} />}
@@ -1750,6 +1750,7 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
   const [draft, setDraft] = useState(m.body || '');
   const [translated, setTranslated] = useState(null);
   const [translating, setTranslating] = useState(false);
+  const [transError, setTransError] = useState(null);
   const [sheet, setSheet] = useState(false); // mobile long-press action sheet
   const [menuOpen, setMenuOpen] = useState(false); // desktop 3-dot menu
   const [menuStyle, setMenuStyle] = useState(null); // viewport coords, measured on open
@@ -1763,8 +1764,17 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
 
   const doTranslate = useCallback(async () => {
     if (translating || translated) return;
-    setTranslating(true);
-    try { setTranslated(await onTranslate(m, viewerLang)); } catch { /* ignore */ }
+    setTranslating(true); setTransError(null);
+    // A swallowed failure here is how "translation stopped working" went
+    // unreported for weeks — the tap did nothing and said nothing. Errors are
+    // shown; a result identical to the original is named too, because it
+    // usually means the message is already in the viewer's language (check
+    // which language the translate mode is set to).
+    try {
+      const t = await onTranslate(m, viewerLang);
+      if (t === m.body) setTransError(`Already in ${viewerLang === 'en' ? 'English' : 'Spanish'} — or the translator returned it unchanged.`);
+      else setTranslated(t);
+    } catch (e) { setTransError(e?.message || 'Translation failed — try again.'); }
     finally { setTranslating(false); }
   }, [translating, translated, onTranslate, m, viewerLang]);
 
@@ -1871,6 +1881,7 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
                   is a div, not a p — a p can't legally contain a ul/ol. */}
               <div className="text-sm text-gray-800 break-words space-y-0.5">{renderBody(displayBody, mentionUsers, me)}</div>
               {translating && <span className="text-[11px] text-gray-400 italic">Translating…</span>}
+              {transError && <span className="text-[11px] text-amber-700">{transError}</span>}
               {translated && (
                 <button onClick={() => setTranslated(null)} className="text-[11px] text-powder-600 hover:underline">
                   Translated to {viewerLang === 'en' ? 'English' : 'Spanish'} · Show original
@@ -1938,7 +1949,9 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
                 <MenuRow icon={Copy} label="Copy text" act="copy" onAction={handleSheetAction} />
                 <MenuRow icon={Forward} label="Forward to channel…" act="forward" onAction={handleSheetAction} />
                 <MenuRow icon={Clock} label="Remind me about this…" act="remind" onAction={handleSheetAction} />
-                {canTranslate && m.body && !translated && <MenuRow icon={Languages} label="Translate" act="translate" onAction={handleSheetAction} />}
+                {canTranslate && m.body && !translated && (
+                  <MenuRow icon={Languages} label={`Translate to ${viewerLang === 'en' ? 'English' : 'Spanish'}`} act="translate" onAction={handleSheetAction} />
+                )}
                 {onMarkUnread && <MenuRow icon={null} label="Mark unread from here" act="unread" onAction={handleSheetAction} />}
                 {m.body && <MenuRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={handleSheetAction} />}
                 {mine && <MenuRow icon={Edit2} label="Edit message" act="edit" onAction={handleSheetAction} />}
@@ -1955,7 +1968,8 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
       {sheet && !m.deleted && (
         <MessageActionSheet
           preview={`${m.user_name}: ${(displayBody || '').slice(0, 80)}`}
-          mine={mine} canReply={!!onReply} canTranslate={canTranslate && !!m.body && !translated} canMarkUnread={!!onMarkUnread}
+          mine={mine} canReply={!!onReply} canTranslate={canTranslate && !!m.body && !translated}
+          translateLabel={`Translate to ${viewerLang === 'en' ? 'English' : 'Spanish'}`} canMarkUnread={!!onMarkUnread}
           onClose={() => setSheet(false)}
           onReact={(e) => { setSheet(false); onReact(m, e); }}
           onAction={handleSheetAction}

@@ -87,15 +87,28 @@ const PO_LABELS = '\\bp\\.?o\\.?\\s*(?:no\\.?|number|#)|\\bpurchase\\s*order\\s*
 const DATE_LABELS = '\\binvoice\\s*date|\\bdate\\s*of\\s*invoice|\\bissue(?:d)?\\s*date|\\bbill\\s*date|\\border\\s*date|^date\\b';
 
 // The total, most specific first. A plain "Total" is LAST on purpose: an
-// invoice usually prints Subtotal, Tax and Total, and "Amount Due" / "Balance
-// Due" is the figure that actually settles. Reading Subtotal as the total is
-// how a ledger silently under-reports every invoice with tax on it.
+// invoice usually prints Subtotal, Tax and Total. Reading Subtotal as the
+// total is how a ledger silently under-reports every invoice with tax on it.
+//
+// THE DOCUMENT'S OWN TOTAL OUTRANKS "BALANCE DUE". An ERP invoice routinely
+// prints the customer's RUNNING account balance as "Balance due" — this
+// invoice plus everything still unpaid before it — and reading that as the
+// invoice's amount books one invoice for the value of three. The figure this
+// ledger wants is what THIS document is for, which is "Total including tax" /
+// "Invoice total" / "Grand total"; the due-balance labels are only trusted
+// when the document prints no total of its own.
 const TOTAL_LABELS = [
-  '\\bbalance\\s*due', '\\bamount\\s*due', '\\btotal\\s*due', '\\binvoice\\s*total',
-  '\\bgrand\\s*total', '\\btotal\\s*amount', '\\bamount\\s*payable', '\\btotal\\b',
+  '\\btotal\\s*including\\s*tax', '\\btotal\\s*incl\\s*tax', '\\binvoice\\s*total', '\\bgrand\\s*total',
+  '\\btotal\\s*amount', '\\bamount\\s*payable',
+  '\\bbalance\\s*due', '\\bamount\\s*due', '\\btotal\\s*due', '\\btotal\\b',
 ];
 
-const MONEY_RE = String.raw`\(?\$?\s?-?[\d,]+(?:\.\d{2})?\)?`;
+// The trailing (?!\S) is load-bearing: without it, a totals row reading
+// "Total:  103.8 kg  $5,379.17" captures "103" out of the quantity column —
+// `\.\d{2}` cannot consume ".8", so the regex happily stops mid-token — and
+// the invoice imports at one hundred and three dollars. A money figure is a
+// whole token or it is not money.
+const MONEY_RE = String.raw`\(?\$?\s?-?[\d,]+(?:\.\d{2})?\)?(?!\S)`;
 
 const readableLabel = (pattern) => String(pattern)
   .replace(/\\b/g, '').replace(/\\s\*/g, ' ').replace(/\\/g, '')
@@ -217,6 +230,15 @@ const LINE_HEADER = /^\s*(item|description|qty|quantity|unit|price|rate|amount|l
  */
 const MONEY_TOKEN = /^\(?\$?-?[\d,]+(?:\.\d+)?\)?%?$/;
 
+// Does at least one numeric token on the line actually look like MONEY —
+// cents, a $ sign, a thousands comma, or accounting parens? A row whose only
+// "number" is a bare integer is how an ADDRESS became a line item: the city
+// line "Vineyard, UT 84059" is exactly "text then a number", and the ZIP code
+// filed as an $84,059.00 line on every invoice from the same letterhead —
+// twice, once per address block. Real printed invoices write money with cents;
+// a line with no money-shaped token is a line with no money on it.
+const looksLikeMoney = (tokens) => tokens.some(t => /[.$,()]/.test(t));
+
 /**
  * A row's cells, when the extractor gave us a table.
  *
@@ -245,14 +267,21 @@ export function parseLineItems(text) {
   for (const line of lines) {
     const cells = pipeCells(line);
     if (cells) {
-      const description = (cells.find(c => c && !MONEY_TOKEN.test(c)) || '').replace(/\s{2,}/g, ' ').trim();
+      // The description is the first cell with real WORDS in it, not merely the
+      // first non-number: the extractor routinely merges the row number and the
+      // part number into one leading cell ("1 201429"), which is not a money
+      // token either — and taking it as the description got the whole row
+      // rejected for having no letters, which is how a parsed invoice showed
+      // none of the things actually on it.
+      const descIdx = cells.findIndex(c => c && !MONEY_TOKEN.test(c) && (c.match(/[A-Za-z]/g) || []).length >= 3);
+      const description = (descIdx >= 0 ? cells[descIdx] : '').replace(/\s{2,}/g, ' ').trim();
       if (!description || NOT_A_LINE.test(description) || LINE_HEADER.test(description)) continue;
-      if ((description.match(/[A-Za-z]/g) || []).length < 3 || /[:#]$/.test(description)) continue;
+      if (/[:#]$/.test(description)) continue;
       const nums = cells
-        .slice(cells.indexOf(cells.find(c => c && !MONEY_TOKEN.test(c))) + 1)
+        .slice(descIdx + 1)
         .flatMap(c => c.split(/\s+/))
-        .filter(t => t && MONEY_TOKEN.test(t));
-      if (!nums.length) continue;
+        .filter(t => t && /\d/.test(t) && MONEY_TOKEN.test(t));
+      if (!nums.length || !looksLikeMoney(nums)) continue;
       const amount = parseMoney(nums[nums.length - 1]);
       if (amount == null) continue;
       let quantity = null, unit_price = null;
@@ -281,7 +310,10 @@ export function parseLineItems(text) {
     // The prefix is lazy and the numeric run greedy, so the engine settles on
     // the SHORTEST description that leaves a valid column run — which is the
     // one that captures qty and unit price as columns rather than as words.
-    const m = line.match(/^(.+?)((?:\s+\(?\$?-?[\d,]+(?:\.\d+)?\)?%?){1,4})\s*$/);
+    // `\$?\s?` inside the token: this plant's invoices print "$ 1,822.45" with
+    // a space after the sign, and a run that cannot absorb the "$" stops one
+    // column early — the unit price ends up glued onto the description.
+    const m = line.match(/^(.+?)((?:\s+\(?\$?\s?-?[\d,]+(?:\.\d+)?\)?%?){1,4})\s*$/);
     if (!m) continue;
 
     const description = m[1].replace(/\s{2,}/g, ' ').trim();
@@ -293,7 +325,9 @@ export function parseLineItems(text) {
     // colon or a hash is a field name; the value after it is its value.
     if (/[:#]$/.test(description)) continue;
 
-    const nums = m[2].trim().split(/\s+/);
+    // A lone "$" split off its figure is a currency sign, not a column.
+    const nums = m[2].trim().split(/\s+/).filter(t => /\d/.test(t));
+    if (!nums.length || !looksLikeMoney(nums)) continue;
     const amount = parseMoney(nums[nums.length - 1]);
     if (amount == null) continue;
 

@@ -1704,6 +1704,9 @@ router.post('/messages/:id/translate', async (req, res) => {
     db.prepare('INSERT OR REPLACE INTO chat_message_translations (message_id, lang, text) VALUES (?, ?, ?)').run(ctx.m.id, lang, text);
     res.json({ lang, text });
   } catch (e) {
+    // Logged server-side because the client used to swallow this entirely —
+    // "translation stopped working" with nothing in any log is undiagnosable.
+    console.warn('[comms] translate failed:', e.message);
     res.status(502).json({ error: e.message || 'Translation failed' });
   }
 });
@@ -1729,11 +1732,32 @@ router.post('/channels/:id/translate', async (req, res) => {
     else misses.push(m);
   }
   if (misses.length) {
-    try {
-      const texts = await translateText(misses.map(m => m.body), lang);
-      const put = db.prepare('INSERT OR REPLACE INTO chat_message_translations (message_id, lang, text) VALUES (?, ?, ?)');
-      misses.forEach((m, i) => { const t = texts[i]; if (t) { out[m.id] = t; put.run(m.id, lang, t); } });
-    } catch { /* return what we have; client retries the rest next pass */ }
+    // CHUNKED, because one call for the whole screenful has a failure mode
+    // that looks exactly like "translation stopped working": the model's
+    // output is a single JSON array capped by max_tokens, and once a channel
+    // accumulates enough uncached messages the array TRUNCATES, the parse
+    // fails, the whole batch returns nothing — and the client retries the
+    // same doomed batch on every pass, forever. Small chunks keep each call
+    // far from the cap, and one chunk failing no longer takes out the rest.
+    const CHUNK = 20, CHUNK_CHARS = 6000;
+    const chunks = [];
+    let cur = [], chars = 0;
+    for (const m of misses) {
+      if (cur.length && (cur.length >= CHUNK || chars + m.body.length > CHUNK_CHARS)) { chunks.push(cur); cur = []; chars = 0; }
+      cur.push(m); chars += m.body.length;
+    }
+    if (cur.length) chunks.push(cur);
+    const put = db.prepare('INSERT OR REPLACE INTO chat_message_translations (message_id, lang, text) VALUES (?, ?, ?)');
+    for (const chunk of chunks) {
+      try {
+        const texts = await translateText(chunk.map(m => m.body), lang);
+        chunk.forEach((m, i) => { const t = texts[i]; if (t) { out[m.id] = t; put.run(m.id, lang, t); } });
+      } catch (e) {
+        // Log it — the silent version of this catch is why a broken batch
+        // looked like nothing at all. The client retries missing ids next pass.
+        console.warn('[comms] batch translate chunk failed:', e.message);
+      }
+    }
   }
   res.json({ lang, translations: out });
 });

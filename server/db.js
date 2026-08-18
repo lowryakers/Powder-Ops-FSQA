@@ -3975,6 +3975,14 @@ function runMigrations() {
   // summary that implies the invoice held less than it did.
   addColumnIfMissing('partner_documents', 'line_items', 'TEXT');
   addColumnIfMissing('partner_documents', 'lines_total', 'REAL');
+  // What the FILE ITSELF prints as its total, read at upload and kept beside
+  // the row's amount — never in place of it. The row's amount is what a person
+  // reviewed and what the balance sums; this is the cross-check that catches
+  // the case where those two disagree (an import that read the account's
+  // running "Balance due" instead of the invoice's own total, a typo at
+  // review). Reported in the UI as a warning, resolved by a person.
+  addColumnIfMissing('partner_documents', 'parsed_amount', 'REAL');
+  addColumnIfMissing('partner_documents', 'parsed_amount_label', 'TEXT');
   // WHAT THE DOCUMENT IS FOR, which is a different question from what kind of
   // document it is (`doc_type` is invoice / po / credit).
   //
