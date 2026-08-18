@@ -1737,6 +1737,19 @@ app.get('/{*splat}', (_req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
+// The last stop for an uncaught throw in any handler. Without this, Express
+// answered with its default HTML 500 — the client's `err.error ||` fallback
+// rendered a bare "API error 500", the message went only to a log nobody was
+// reading, and a report like "getting an Error 500 on X" was undiagnosable.
+// Now the route and the real message are logged together, and the same
+// message reaches the screen so the person can quote it.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error(`[error] ${req.method} ${req.originalUrl}:`, err.stack || err.message || err);
+  if (res.headersSent) return;
+  res.status(err.status || 500).json({ error: err.message || 'Something went wrong on the server.' });
+});
+
 // Purge expired sessions on startup and hourly so the table doesn't grow unbounded
 function purgeExpiredSessions() {
   try {
