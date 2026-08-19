@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApiGet } from '../../hooks/useApi';
-import { Shield, Wrench, Thermometer, Droplets, AlertTriangle, CheckCircle, Clock, FlaskConical, Flag, FileText, ScrollText, ChevronRight } from 'lucide-react';
+import { onDataChanged } from '../../lib/dataChanged';
+import { Shield, Wrench, Thermometer, Droplets, AlertTriangle, CheckCircle, Clock, FlaskConical, Flag, FileText, ScrollText, ChevronRight, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, LineChart, Line } from 'recharts';
 import { formatDateTime } from '../../lib/datetime.js';
 
@@ -33,7 +34,22 @@ function ReadinessItem({ label, status, detail, tab }) {
  * module that owns it.
  */
 function ReadinessReview() {
-  const { data, loading, error } = useApiGet('/compliance/readiness-review');
+  // IT IS COMPUTED LIVE, BUT IT WAS ONLY ASKED FOR ONCE. The server derives
+  // every gap from the records on each call — nothing is cached there — yet
+  // this fetched on mount and never again, so a review left open while the
+  // floor closed out tasks kept naming gaps that had since been filled, and
+  // it read as a scan that needed re-running. It now re-checks whenever
+  // anything in the app is written (the same signal the badges use), when
+  // the tab is brought back to the front, and on demand.
+  const [tick, setTick] = useState(0);
+  const recheck = () => setTick(t => t + 1);
+  useEffect(() => onDataChanged(() => setTick(t => t + 1)), []);
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible') setTick(t => t + 1); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+  const { data, loading, error } = useApiGet('/compliance/readiness-review', [tick]);
   if (loading) return <p className="text-sm text-gray-400 py-4 text-center">Checking every program…</p>;
   if (error) return <p className="text-sm text-red-600 py-2">{error}</p>;
   if (!data) return null;
@@ -42,8 +58,15 @@ function ReadinessReview() {
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
         <h3 className="font-semibold text-gray-900">Readiness review — is the binder complete?</h3>
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
           {data.gaps === 0 ? 'No gaps found' : `${data.gaps} gap${data.gaps === 1 ? '' : 's'} across ${data.sections.filter(s => s.status !== 'good').length} programs`}
+          {/* WHEN it was checked, so nobody has to wonder whether they are
+              looking at this morning's answer. */}
+          {data.generated_at && <span className="text-gray-400">· checked {formatDateTime(data.generated_at)}</span>}
+          <button type="button" onClick={recheck}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">
+            <RefreshCw size={11} /> Re-check
+          </button>
         </span>
       </div>
       <div className="grid md:grid-cols-2 gap-x-6 gap-y-4">

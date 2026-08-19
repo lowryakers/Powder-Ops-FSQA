@@ -252,8 +252,12 @@ function TreeNode({ node, canEdit, dnd, onAddChild, onEdit, onDelete, jdById = {
         const render = (c) => (
           <TreeNode key={c.id} node={c} canEdit={canEdit} dnd={dnd} onAddChild={onAddChild} onEdit={onEdit} onDelete={onDelete} jdById={jdById} />
         );
-        const isChain = (n) => (n.children?.length || 0) === 0
-          || (n.children.length === 1 && isChain(n.children[0]));
+        // Depth-guarded: a reporting line that somehow loops (bad legacy data,
+        // not something the API allows) would otherwise recurse until the
+        // page died. A chart is never 50 deep, so the cap only ever fires on
+        // data that is already wrong.
+        const isChain = (n, depth = 0) => depth > 50 || (n.children?.length || 0) === 0
+          || (n.children.length === 1 && isChain(n.children[0], depth + 1));
         const stackable = node.children.filter(isChain);
         const branching = node.children.filter(c => !isChain(c));
         if (stackable.length < 2) return <ul>{node.children.map(render)}</ul>;

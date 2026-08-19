@@ -999,19 +999,36 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
  * saw is kept rather than dropped, because a missing result on a compliance
  * record is the failure that matters here.
  */
+// Only the METHOD text may hang off the end of a name for the two to be the
+// same test. A bare prefix rule is not safe here and the vitamin panel proves
+// it: "Vitamin B1" is a prefix of "Vitamin B12", and "Lead" of "Lead
+// (dietary)" — dropping the longer one would lose a real result, which is the
+// failure this merge exists to prevent. So the remainder has to look like the
+// lab's method/specification cell, not like more test name.
+// The tail must BEGIN with a method word. A tail that starts with a digit is
+// part of the test's name, not the lab's method — "Vitamin B1" vs "Vitamin
+// B12", "Zone 1" vs "Zone 12" — and merging those loses a real result.
+const METHOD_WORD = '(?:report|result|spec|specification|usp|bam|ch|mod|aoac|iso|icpms|icp|hplc|gcms|lcms|gc|ms|elisa|method|limit)';
+const METHOD_TAIL_ONLY = new RegExp(`^${METHOD_WORD}(?:${METHOD_WORD}|[0-9<>.]|ppm|ppb|cfu|g|ml|na)*$`);
+
 function mergeTestRows(primary = [], secondary = []) {
   const key = (t) => String(t?.test_type || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const sameTest = (a, b) => {
+    if (a === b) return true;
+    const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+    if (!long.startsWith(short)) return false;
+    return METHOD_TAIL_ONLY.test(long.slice(short.length));
+  };
   const out = [];
   const seen = [];
   for (const row of [...primary, ...secondary]) {
     const k = key(row);
     if (!k) continue;
-    // PREFIX-aware, not exact. The crude reader keeps the method text glued
-    // to the name ("Total Aerobic Microbial Count (USP) Report USP <"), so an
-    // exact-match dedupe would file it as a SECOND test with the method
-    // number as its result — the same row twice, once right and once wrong.
-    // One name containing the other is the same test.
-    if (seen.some(s => s === k || s.startsWith(k) || k.startsWith(s))) continue;
+    // The crude reader keeps the method text glued to the name ("Total
+    // Aerobic Microbial Count (USP) Report USP <"), so an exact-match dedupe
+    // would file it as a SECOND test carrying the method number as its
+    // result — the same row twice, once right and once wrong.
+    if (seen.some(s => sameTest(s, k))) continue;
     seen.push(k);
     out.push(row);
   }

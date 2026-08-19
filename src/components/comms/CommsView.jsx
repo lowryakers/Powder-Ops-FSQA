@@ -2133,6 +2133,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const linkedOpenedRef = useRef(null); // guards the module→channel deep-link
   const bootRestoredRef = useRef(false); // the launch view has been decided
   const composerRef = useRef(null);
+  const sendBtnRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [replyTo, setReplyTo] = useState(null); // parent message whose thread is open
@@ -2713,6 +2714,18 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     // The mention menu gets first refusal on every key above; only then do the
     // formatting shortcuts see it.
     if (composerKeys(e)) return;
+    // TAB REACHES SEND FIRST. Tab-then-Enter is how this gets sent all day,
+    // and it had started walking the paperclip, camera, voice-note and emoji
+    // buttons first. Focus is moved explicitly rather than by reordering the
+    // markup, because the icon row sits before the textarea in one composer
+    // layout and after it in the other — only an explicit jump behaves the
+    // same in both. Shift+Tab is left alone (that is "go back"), and tabbing
+    // on from Send still reaches the icons, so nothing becomes unreachable.
+    if (e.key === 'Tab' && !e.shiftKey && sendBtnRef.current && !sendBtnRef.current.disabled) {
+      e.preventDefault();
+      sendBtnRef.current.focus();
+      return;
+    }
     // Enter makes a new line; Tab moves to the Send button (then Enter/click sends).
   };
   const translateMessage = useCallback(async (m, lang) => {
@@ -3537,17 +3550,6 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                     </div>
                   )}
                   <div className={isCompactLayout ? 'flex items-end gap-1' : 'contents'}>
-                  {/* SEND IS FIRST IN THE DOM, LAST ON SCREEN. Tab out of the
-                      textarea used to walk the paperclip, camera, mic and
-                      emoji before reaching Send, so the Tab-then-Enter habit
-                      stopped working — the thread reply box has always had
-                      the icons before the textarea, which is why it behaved.
-                      `order-last` keeps the button where it looks right
-                      while the keyboard reaches it first; the icons still
-                      follow on subsequent tabs rather than being skipped. */}
-                  <button onClick={send} disabled={!body.trim() && pending.length === 0}
-                    className="order-last p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"
-                    title="Send"><Send size={16} /></button>
                   {storageOn && (
                     <>
                       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onPickFiles} />
@@ -3610,6 +3612,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                     </div>
                   )}
                   {isCompactLayout && <div className="flex-1" />}
+                  {/* Tab from the composer jumps STRAIGHT here (see the Tab
+                      handler on the textarea) — the icon row's position in the
+                      DOM differs between the plain and overlay composers, so
+                      an explicit jump is the only thing that behaves the same
+                      in both. Tabbing on from Send reaches the icons. */}
+                  <button ref={sendBtnRef} onClick={send} disabled={!body.trim() && pending.length === 0}
+                    className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"
+                    title="Send"><Send size={16} /></button>
                   </div>
                 </div>
               </div>
