@@ -125,6 +125,28 @@ const normalizeLabel = (s) => String(s || '').replace(/[:\s]+$/, '').trim().toLo
 function pairLabelBlocks(lines) {
   const out = {};
   let i = 0;
+  // A resolved table puts the label and its value in the SAME row
+  // (`| Lot Number: | 202656 | | |`), so the block-pairing walk below never
+  // sees them — the whole header came back empty on a report whose test
+  // table read perfectly. Read those first; the walk still handles the
+  // separated-blocks shape.
+  // "Lot Number: 202656" — label and value on one plain line, the third
+  // header shape. Cheap to read and it is what the scan extractor produces.
+  for (const raw of lines) {
+    const m = raw.trim().match(/^([A-Za-z][A-Za-z #/()'-]{1,40}):\s*(\S.*)$/);
+    if (!m) continue;
+    const key = LABELS[normalizeLabel(m[1])];
+    if (key && !out[key]) out[key] = m[2].trim();
+  }
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!/^\|.*\|$/.test(line)) continue;
+    const cells = line.slice(1, -1).split('|').map(c => c.trim());
+    if (cells.length < 2 || !/:\s*$/.test(cells[0])) continue;
+    const key = LABELS[normalizeLabel(cells[0])];
+    const val = cells.slice(1).find(Boolean);
+    if (key && val && !out[key]) out[key] = val;
+  }
   while (i < lines.length) {
     if (!/:\s*$/.test(lines[i])) { i++; continue; }
     const labels = [];
@@ -142,6 +164,143 @@ function pairLabelBlocks(lines) {
     }
   }
   return out;
+}
+
+/**
+ * The same table as PLAIN SPACE-SEPARATED ROWS — the shape the CoA scan
+ * endpoint's extractor actually produces:
+ *
+ *     Analysis Specification Method Result MDL Units
+ *     Total Aerobic Microbial Count (USP) Report USP <2021> <100 100 cfu/g
+ *     Arsenic Report ICP-MS 0.008 0.005 ppm
+ *
+ * The legacy pattern reader matches these lines (the test name starts the
+ * line) and then takes the FIRST number anywhere on it — which is the
+ * method's "<2021>" or the "4" in "BAM CH. 4". That is how Gluten came back
+ * as "5" (out of "R5 ELISA") and a coliform count was graded a pass against
+ * the method number. Inventing a result is far worse than missing one.
+ *
+ * Read from the RIGHT instead, because the trailing columns are short and
+ * unambiguous: units, then the detection limit, then the result. And only
+ * ever after a HEADER ROW has said this is a results table — without one,
+ * any sentence ending in a number would parse as a test.
+ */
+const UNIT_RE = /^(?:cfu\/g|cfu\/ml|ppm|ppb|ppt|%|mg\/kg|mg\/g|ug\/g|µg\/g|g\/100g|iu\/g|mpn\/g|kcal)$/i;
+const SPACED_HEADER_RE = /\b(analysis|test|analyte|parameter)\b.*\bresults?\b/i;
+const METHOD_CUT_RE = /\s+(?:Report|Result|Spec(?:ification)?)\b.*$/i;
+const METHOD_TAIL_RE = /\s+(?:USP\s*<[^>]*>|BAM\s*CH\.?\s*[\d.]*(?:\s*\(MOD\))?|AOAC[\w\s.-]*|ISO[\w\s.-]*|ICP-?MS|HPLC|GC-?MS|R5\s*ELISA|ELISA|LC-?MS(?:\/MS)?)\s*$/i;
+
+function parseSpacedRows(lines) {
+  const results = [];
+  const seen = new Set();
+  let armed = false;
+  const isResult = (t) => new RegExp(`^${RESULT}$`, 'i').test(t);
+  const isNumber = (t) => new RegExp(`^${NUMBER}$`).test(t);
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || /^\|/.test(line)) continue;
+    if (SPACED_HEADER_RE.test(line) && line.length < 90) { armed = true; continue; }
+    if (!armed || NOISE_RE.test(line)) continue;
+
+    const tokens = line.split(/\s+/);
+    if (tokens.length < 2) continue;
+    let unit = null;
+    if (UNIT_RE.test(tokens[tokens.length - 1])) unit = tokens.pop();
+
+    // At most two result-shaped tokens sit at the end: the result and its
+    // detection limit. A WORD result ("Absent") is never a limit, so it ends
+    // the scan by itself — otherwise "BAM CH. 4 Absent" would read the 4.
+    const trailing = [];
+    while (tokens.length && trailing.length < 2 && isResult(tokens[tokens.length - 1])) {
+      trailing.push(tokens.pop());
+      if (!isNumber(trailing[trailing.length - 1])) break;
+    }
+    if (!trailing.length) continue;
+    let result_value, mdl = null;
+    if (!isNumber(trailing[0])) result_value = trailing[0];
+    else if (trailing.length === 2) { result_value = trailing[1]; mdl = trailing[0]; }
+    else result_value = trailing[0];
+
+    let test_type = tokens.join(' ').replace(METHOD_CUT_RE, '').replace(METHOD_TAIL_RE, '').trim();
+    test_type = test_type.replace(/\s+/g, ' ').trim();
+    if (test_type.length < 3 || !/[A-Za-z]{3}/.test(test_type)) continue;
+    const key = test_type.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push({ test_type, result_value, unit, mdl, section: null, pass_fail: null });
+  }
+  return results;
+}
+
+/**
+ * The same table when the extractor DID resolve its columns.
+ *
+ * `extractPdfText` renders a well-formed PDF table as markdown pipe rows
+ * (`| Arsenic | Report | ICP-MS | 0.008 | 0.005 | ppm |`). That is a third
+ * shape, and neither reader saw it: the seam pattern needs the result glued
+ * to the name, and the legacy one needs the test name at the START of the
+ * line — a pipe row begins with a pipe. A report in this shape extracted
+ * nothing at all.
+ *
+ * The row's own HEADER decides which cell is which. Guessing by position, or
+ * taking the first number on the line, would read the Specification column as
+ * the result on any lab that prints a limit there — and a heavy-metal limit
+ * filed as the measured value is the worst possible way to be wrong. No
+ * header row, no read.
+ */
+const HEADER_CELL = {
+  analysis: 'test', test: 'test', parameter: 'test', 'test name': 'test', analyte: 'test',
+  result: 'result', results: 'result', value: 'result', 'result(s)': 'result',
+  unit: 'unit', units: 'unit',
+  mdl: 'mdl', 'detection limit': 'mdl', loq: 'mdl',
+  method: 'method',
+  specification: 'spec', spec: 'spec', limit: 'spec', 'specification limit': 'spec',
+};
+
+function parsePipeRows(lines) {
+  const cellsOf = (l) => (/^\|.*\|$/.test(l) ? l.slice(1, -1).split('|').map(c => c.trim()) : null);
+  const results = [];
+  const seen = new Set();
+  let cols = null;
+
+  for (const raw of lines) {
+    const cells = cellsOf(raw.trim());
+    if (!cells) continue;
+    if (cells.every(c => c === '' || /^:?-{2,}:?$/.test(c))) continue;
+
+    // A header row re-arms the mapping — a report can carry several tables.
+    const mapped = cells.map(c => HEADER_CELL[c.toLowerCase().replace(/\s+/g, ' ')]);
+    if (mapped.filter(Boolean).length >= 2 && mapped.includes('test') && mapped.includes('result')) {
+      cols = {};
+      mapped.forEach((role, i) => { if (role && cols[role] === undefined) cols[role] = i; });
+      continue;
+    }
+    if (!cols) continue;
+
+    // A cell can hold two merged columns ("Total Aerobic Count Report"), so
+    // the trailing role word is trimmed off the name rather than kept.
+    const test_type = String(cells[cols.test] || '')
+      .replace(/\s+(Report|Result|Spec(?:ification)?)\s*$/i, '').replace(/\s+/g, ' ').trim();
+    const result_value = String(cells[cols.result] ?? '').replace(/\s+/g, '');
+    if (!test_type || test_type.length < 3 || !/[A-Za-z]{3}/.test(test_type)) continue;
+    if (NOISE_RE.test(test_type)) continue;
+    if (!result_value || !new RegExp(`^${RESULT}$`, 'i').test(result_value)) continue;
+
+    const key = test_type.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push({
+      test_type,
+      result_value,
+      unit: cols.unit !== undefined ? (cells[cols.unit] || null) : null,
+      mdl: cols.mdl !== undefined ? (cells[cols.mdl] || null) : null,
+      section: null,
+      // Same rule as the seam reader: the lab reports, the plant grades.
+      pass_fail: null,
+    });
+  }
+  return results;
 }
 
 /**
@@ -213,7 +372,18 @@ export function parseColumnarCoa(text) {
   const header = pairLabelBlocks(lines);
   for (const k of DATE_KEYS) if (header[k]) header[k] = toIso(header[k]);
 
-  const test_results = parseRows(lines);
+  // Both shapes, merged — a report can carry a resolved table and a glued
+  // seam row (a wrapped line the extractor could not column up), and taking
+  // one reader's answer wholesale drops the other's rows.
+  const pipeRows = parsePipeRows(lines);
+  const spacedRows = parseSpacedRows(lines);
+  const seamRows = parseRows(lines);
+  const byName = new Map();
+  for (const r of [...pipeRows, ...spacedRows, ...seamRows]) {
+    const k = r.test_type.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (k && !byName.has(k)) byName.set(k, r);
+  }
+  const test_results = [...byName.values()];
 
   // The report's own date, printed under the signature rather than labelled.
   if (!header.date_of_results) {

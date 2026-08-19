@@ -794,17 +794,44 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
    * gives the same answer every time, which is what you want reading something
    * that ends up on a compliance record.
    */
-  if (!extracted.test_results?.length) {
+  //
+  // IT ALWAYS RUNS, and the RICHER read wins. This used to be gated on the
+  // pattern reader finding NOTHING — so one lucky row disabled it, and that
+  // is exactly what happened: `parseCTLACoa`'s test list contains "Gluten",
+  // the finished-good report has a line starting with that word, and a single
+  // matched row made a twelve-test report look successfully read. Micro,
+  // heavy metals and everything else were never looked for at all. A reader
+  // that found 1 of 12 has not succeeded; "found something" is not the same
+  // question as "found what was on the report".
+  const columnarRows = (() => {
     try {
       const columnar = parseColumnarCoa(text);
-      if (foundSomething(columnar)) {
-        extracted = { ...extracted, ...Object.fromEntries(Object.entries(columnar).filter(([k, v]) => k !== 'test_results' && v)) };
-        extracted.test_results = columnar.test_results;
-        read_by = 'columns';
-      }
+      return foundSomething(columnar) ? columnar : null;
     } catch (e) {
       console.warn('[coa] columnar read failed:', e.message);
+      return null;
     }
+  })();
+  if (columnarRows) {
+    // Columnar header values WIN. It read the report's actual layout, while
+    // the pattern reader guesses from one line at a time — and its guesses
+    // were wrong in a way that mattered: it maps "Customer:" to supplier, so
+    // a CoA offered "Powder Ops" as the material's supplier (the lab's
+    // customer is US), pre-ticked, on a compliance record. It also leaves
+    // dates as printed where the columnar reader stores ISO.
+    extracted = { ...extracted, ...Object.fromEntries(Object.entries(columnarRows).filter(([k, v]) => k !== 'test_results' && v)) };
+    // Same reason, stated once: our own name is never the supplier.
+    if (columnarRows.lab_customer && extracted.supplier
+      && String(extracted.supplier).trim().toLowerCase() === String(columnarRows.lab_customer).trim().toLowerCase()) {
+      delete extracted.supplier;
+    }
+    // MERGED, not replaced. The two readers see different row shapes — the
+    // columnar one reads the glued "0.008Arsenic" seam, the pattern one reads
+    // a plain "Gluten <5 ppm" line — so on a report carrying both, taking
+    // either wholesale drops real results. Union by test name, richer reader
+    // wins a genuine collision.
+    extracted.test_results = mergeTestRows(columnarRows.test_results, extracted.test_results);
+    if (columnarRows.test_results.length) read_by = extracted.test_results.length > columnarRows.test_results.length ? 'columns+patterns' : 'columns';
   }
 
   /**
@@ -822,27 +849,43 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
    * It is also only a FALLBACK — when the patterns do find the fields, they win,
    * because a deterministic reader gives the same answer every time.
    */
-  if (aiEnabled() && !extracted.test_results?.length) {
+  //
+  // FIRED ON AN INCOMPLETE READ, not only an empty one — same lesson as the
+  // columnar gate above. The request says which tests were asked for, so
+  // "did the readers find them" is an answerable question rather than a
+  // guess: fewer rows than tests requested means something was missed, and a
+  // missed heavy-metal result on a compliance record is the failure this
+  // exists to prevent. The model's answer is still only taken when it is
+  // RICHER than the deterministic read, which keeps the deterministic reader
+  // in charge whenever it did the job.
+  const requestedCount = splitRequestedTests(request.tests_requested).length;
+  const foundCount = extracted.test_results?.length || 0;
+  const looksIncomplete = foundCount === 0 || (requestedCount > 0 && foundCount < requestedCount);
+  if (aiEnabled() && looksIncomplete) {
     try {
       const ai = await readLabReport({
         text: text.slice(0, 60000),
         itemHint: [request.item_number, request.item_description].filter(Boolean).join(' — '),
         expectedTests: splitRequestedTests(request.tests_requested),
       });
-      // Keep anything the patterns did get; the model fills the gaps.
+      // Keep anything the patterns did get; the model fills the gaps. Its
+      // ROWS are taken only when there are more of them than the
+      // deterministic read produced — a model that read fewer tests than the
+      // columns did must not overwrite the better answer.
+      const aiRows = (ai.test_results || []).length;
       extracted = {
         ...extracted,
         ...Object.fromEntries(Object.entries(ai).filter(([k, v]) => k !== 'test_results' && v && !extracted[k])),
-        test_results: (ai.test_results || []).map(t => ({
+        test_results: mergeTestRows(extracted.test_results || [], (ai.test_results || []).map(t => ({
           test_type: t.test_type,
           result_value: t.result_value,
           unit: t.unit || null,
           pass_fail: t.pass_fail || null,
           method: t.method || null,
           spec_on_report: t.spec_on_report || null,
-        })),
+        }))),
       };
-      read_by = 'ai';
+      if (aiRows > foundCount) read_by = read_by === 'patterns' ? 'ai' : `${read_by}+ai`;
     } catch (e) {
       // Never fails the scan — the pattern result and the raw text still stand.
       ai_error = e.message;
@@ -933,6 +976,34 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
 });
 
 /** The requested-tests string as a list, for the reader's benefit only. */
+/**
+ * One list of test rows from two readers.
+ *
+ * Keyed on a normalized test name so "E.Coli BAM (MOD)" and "E. coli BAM
+ * (MOD)" are one row, not two. `primary` wins a collision — it is the reader
+ * that understood the report's layout — and anything only the other reader
+ * saw is kept rather than dropped, because a missing result on a compliance
+ * record is the failure that matters here.
+ */
+function mergeTestRows(primary = [], secondary = []) {
+  const key = (t) => String(t?.test_type || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const out = [];
+  const seen = [];
+  for (const row of [...primary, ...secondary]) {
+    const k = key(row);
+    if (!k) continue;
+    // PREFIX-aware, not exact. The crude reader keeps the method text glued
+    // to the name ("Total Aerobic Microbial Count (USP) Report USP <"), so an
+    // exact-match dedupe would file it as a SECOND test with the method
+    // number as its result — the same row twice, once right and once wrong.
+    // One name containing the other is the same test.
+    if (seen.some(s => s === k || s.startsWith(k) || k.startsWith(s))) continue;
+    seen.push(k);
+    out.push(row);
+  }
+  return out;
+}
+
 function splitRequestedTests(s) {
   return String(s || '').split(/[,;\n]+/).map(t => t.trim()).filter(Boolean).slice(0, 40);
 }
