@@ -24,7 +24,10 @@
 
 import { v4 as uuid } from 'uuid';
 import { logAudit } from './db.js';
-import { qaInspectionAreaFor, recordGroupFor } from './qa-records.js';
+import { recordAreaForTask, recordGroupFor } from './qa-records.js';
+import { postMessageAs, botDm } from './api/comms.js';
+import { pushToUser } from './push.js';
+import { readyDocOrigin } from './links.js';
 
 const REASON = 'Filed from the completed task by the QA inspection record backfill — '
   + 'the check was completed in ReadyDoc but the record was not created at the time.';
@@ -60,8 +63,12 @@ export function planQaRecordBackfill(db) {
     FROM work_orders w
     WHERE w.status = 'completed'
       AND w.completed_at IS NOT NULL
+      -- A coarse prefilter only; recordAreaForTask below is the authority and
+      -- discards anything it does not recognise. It must stay WIDER than the
+      -- map, or a title the map handles is dropped before it is ever asked.
       AND (w.title LIKE 'Temp %' OR w.title LIKE 'Temperature %'
-           OR w.title LIKE 'Brittle Plastic%' OR w.title LIKE 'Light Inspection%')
+           OR w.title LIKE 'Brittle Plastic%' OR w.title LIKE 'Light Inspection%'
+           OR w.title LIKE '%Cleaning%' OR w.title LIKE '%Clean%')
     ORDER BY w.completed_at
   `).all();
 
@@ -69,7 +76,7 @@ export function planQaRecordBackfill(db) {
   const skipped = { not_an_inspection: 0, already_filed: 0 };
 
   for (const w of rows) {
-    const area = qaInspectionAreaFor(w.title);
+    const area = recordAreaForTask(w.title);
     // Belt and braces over the SQL prefilter: the map is the authority on what
     // is an inspection, and it returns null rather than guessing.
     if (!area) { skipped.not_an_inspection += 1; continue; }
@@ -144,4 +151,61 @@ export function runQaRecordBackfill(db, { by = 'system' } = {}) {
   console.log(`[qa-backfill] Filed ${created} QA inspection record(s) from completed tasks`);
 
   return { created, skipped, by_area, by_month };
+}
+
+/**
+ * Tell somebody there is a pile waiting, with a link that lands on it.
+ *
+ * An amber strip only works on the person who happens to open that screen —
+ * the same failure as the 72-hour re-clean badge the cleaner could not see, and
+ * as the QA correction flag that sat on a banner nobody visited. So the ask
+ * goes to the people who can act on it, in ReadyBot and on their phone, with a
+ * deep link straight to the screen rather than a description of where it is.
+ *
+ * Sent to QA leadership and admins — the same people the endpoint allows. It
+ * re-sends while the pile is still there (the scheduler throttles the cadence),
+ * because an outstanding pile is exactly the state worth interrupting; when it
+ * is cleared the function finds nothing and goes quiet on its own.
+ *
+ * Best-effort throughout: a comms outage must never throw out of a scheduled
+ * job, and this reports rather than repairs.
+ */
+export async function recordBackfillNudge(db) {
+  const { total, by_month } = planQaRecordBackfill(db);
+  if (!total) return { sent: 0, total: 0 };
+
+  let people;
+  try {
+    people = db.prepare(`
+      SELECT id, name FROM users
+      WHERE is_active = 1 AND name != 'ReadyBot'
+        AND (role = 'admin'
+             OR (role IN ('supervisor', 'manager') AND LOWER(COALESCE(department, '')) IN ('qa', 'quality')))
+    `).all();
+  } catch (e) {
+    console.warn('[qa-backfill] could not resolve recipients:', e.message);
+    return { sent: 0, total };
+  }
+  if (!people.length) return { sent: 0, total };
+
+  const months = Object.entries(by_month).sort(([a], [b]) => a.localeCompare(b))
+    .map(([m, n]) => `${m} (${n})`).join(', ');
+  const link = `${readyDocOrigin()}/?tab=qa-inspections`;
+  const body = `*${total} completed check${total === 1 ? '' : 's'} still ${total === 1 ? 'has' : 'have'} no record filed.*\n`
+    + `These were completed in ReadyDoc but never produced their controlled record: ${months}.\n`
+    + `Open QA Inspections and use *File ${total} record${total === 1 ? '' : 's'}* at the top of the page — each one is filed with the date and person from the original completion.\n${link}`;
+
+  let sent = 0;
+  for (const p of people) {
+    try {
+      const { bot, dm } = botDm(db, p.id);
+      if (dm) { await postMessageAs(db, dm, bot, body); sent += 1; }
+    } catch (e) { console.warn('[qa-backfill] DM failed:', e.message); }
+    pushToUser(p.id, {
+      title: `${total} check${total === 1 ? '' : 's'} need${total === 1 ? 's' : ''} a record filed`,
+      body: 'Completed in ReadyDoc with no record behind them. Tap to file them.',
+      url: '/?tab=qa-inspections',
+    }).catch(() => {});
+  }
+  return { sent, total };
 }

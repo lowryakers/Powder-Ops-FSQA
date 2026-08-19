@@ -10,7 +10,7 @@ import { periodically, resetHousekeeping } from '../housekeeping.js';
 import { pushToUser } from '../push.js';
 import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
 import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
-import { recordGroupFor, qaInspectionAreaFor } from '../qa-records.js';
+import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
 //
@@ -752,7 +752,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
       // comment above gives: the task and the record are one event, and a
       // completion whose record failed to write is the state QA has been
       // looking at since June.
-      const qaArea = qaInspectionAreaFor(existing.title);
+      const qaArea = recordAreaForTask(existing.title);
       if (qaArea) {
         filedRecordId = fileQaInspectionRecord(db, {
           area: qaArea, wo: existing, readings, stepResults: step_results,

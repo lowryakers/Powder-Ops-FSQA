@@ -103,6 +103,7 @@ import { importPaperInternalAudits } from './server/internal-audit-import.js';
 import { seedBannedSubstanceSopDraft } from './server/banned-substance-sop-seed.js';
 import { backfillFilmDrafts } from './server/film-draft-backfill.js';
 import { backfillPartnerDocLines } from './server/partner-doc-backfill.js';
+import { recordBackfillNudge } from './server/qa-record-backfill.js';
 import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath, optionalAuth } from './server/middleware/auth.js';
@@ -1823,7 +1824,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, partnerReminderNudges });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, partnerReminderNudges, recordBackfillNudge });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

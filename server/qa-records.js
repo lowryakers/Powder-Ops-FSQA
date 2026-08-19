@@ -92,25 +92,42 @@ const TASK_TITLE_SQL = `(title LIKE 'Brittle Plastic%' OR title LIKE 'Light Insp
 // Light Inspection is deliberately absent from this table: its task title and
 // its record area are already identical ("Light Inspection — Zone 1 — Room 1"),
 // so it needs no rewrite, only recognising.
+// THE CLEANING LOGS HAVE THE SAME GAP, for the same reason: completing
+// "Warehouse/Grounds Daily Cleaning" closed the task and filed no cleaning
+// record, so FORM 202-01 (and 108-2, and 108-03) went as empty as the QA
+// inspections did. These map to the areas the Sanitation log already files
+// under — `Warehouse & Grounds`, `Breakroom, Lobby & Office`, `Restroom` —
+// which is what `canonicalArea()` and the 72-hour re-clean rule read, so a
+// task-filed record is indistinguishable from a hand-filed one.
+//
+// A cleaning record lands on the SANITATION list, not QA's: `recordGroupFor()`
+// decides that from the area, so nothing here has to know which list it is.
 const AREA_FROM_TITLE = [
   [/^Temp(?:erature)?\s*(?:&|and|\/)?\s*Humidity(?:\s+Check)?\s*—\s*(.+)$/i, loc => `Temp/Humidity — ${loc}`],
   [/^Brittle Plastic\s*(?:&|and)\s*Glass(?:\s+Inspection)?\s*—\s*(.+)$/i, zone => `Brittle Plastic/Glass — ${zone}`],
   [/^(Light Inspection\s*—\s*.+)$/i, whole => whole],
+  [/^Break\s?room\s*[,/].*cleaning/i, () => 'Breakroom, Lobby & Office'],
+  [/^Warehouse\s*[&/]\s*Grounds.*cleaning/i, () => 'Warehouse & Grounds'],
+  [/^Restroom.*cleaning/i, () => 'Restroom'],
+  [/^Production Line Pre-?Op|^.*Changeover Clean/i, () => 'Production'],
 ];
 
 /**
- * The sanitation_records area a completed QA inspection task should file under,
- * or null when the task is not one of these inspections.
+ * The sanitation_records area a completed task should file under, or null when
+ * the task does not answer to one of these logs.
  *
- * Returns null rather than guessing: a maintenance PM must never file a QA
- * inspection record, and an unrecognised title is not an inspection.
+ * Returns null rather than guessing: a maintenance PM must never file an
+ * inspection or cleaning record, and an unrecognised title is not either.
  */
-export function qaInspectionAreaFor(title) {
+export function recordAreaForTask(title) {
   const t = String(title || '').trim();
   if (!t) return null;
   for (const [re, build] of AREA_FROM_TITLE) {
     const m = re.exec(t);
-    if (m) return build(m[1].trim());
+    // The cleaning patterns match a whole title and capture nothing — their
+    // builder ignores the argument and returns a fixed area — so m[1] may be
+    // undefined. Passing the full match keeps every builder callable.
+    if (m) return build((m[1] ?? m[0]).trim());
   }
   return null;
 }

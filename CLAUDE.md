@@ -824,6 +824,19 @@ the top of QA Inspections that names the count and the months.
   one filed on the day would be the dishonest version of this.
 - Idempotent on the `Filed from task <id>` marker the live path also writes; preview writes nothing;
   audited per record plus a summary.
+- **THE CLEANING LOGS HAD THE SAME GAP** and are covered by the same map and the same backfill: completing
+  Breakroom/Lobby/Office, Warehouse/Grounds, Restroom or Production Line Pre-Op filed no cleaning record
+  either, so FORM 108-2 / 202-01 / 108-03 went as empty as the QA inspections. `recordAreaForTask()` (the
+  renamed `qaInspectionAreaFor`) maps those titles to the areas the Sanitation log already uses, and
+  `recordGroupFor()` puts them on the Sanitation list rather than QA's. **The negative case is the one to
+  keep testing:** `Daily PM Checklist — Production (Cleaning)` is a maintenance PM that merely says
+  "Cleaning" and must map to nothing.
+- **`recordBackfillNudge()` DMs QA leadership and admins every third day while a pile is outstanding**, with
+  a `?tab=qa-inspections` deep link — an amber strip only ever reaches whoever opens that screen, which is
+  the re-clean-badge failure again. It goes quiet by itself once the pile is cleared, because the function
+  finds nothing to say.
+- The SQL prefilter in `planQaRecordBackfill` must stay **wider** than the map, or a title the map handles
+  is dropped before the map is ever asked.
 
 ### A check done Monday and ticked off Thursday is a MONDAY record
 `performed_on` + `late_entry_reason` on `complete-and-recur` (`resolveBackdate` in api/pm.js), and a

@@ -150,6 +150,20 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] QA correction nudges failed:', e.message); }
   }
 
+  // Checks that were completed but never produced their controlled record.
+  // The amber strip on QA Inspections only reaches whoever opens that screen,
+  // which is the same gap the re-clean badge had — so the pile is announced.
+  // Every third day: it re-sends while the pile stands, and goes quiet by
+  // itself once it is cleared, because the function finds nothing to say.
+  const lastBackfill = getFlag(db, 'last_record_backfill_nudge_at');
+  if (deps.recordBackfillNudge && (!lastBackfill || (now - new Date(lastBackfill)) >= 3 * 86400000)) {
+    try {
+      const r = await deps.recordBackfillNudge(db);
+      setFlag(db, 'last_record_backfill_nudge_at', now.toISOString());
+      if (r.sent) console.log(`[jobs] record-backfill nudge: ${r.total} waiting, told ${r.sent} person(s)`);
+    } catch (e) { console.warn('[jobs] record backfill nudge failed:', e.message); }
+  }
+
   // Partner reconciliation reminders ("DM me on the last day of the month to
   // close the period"). Runs every tick — the function itself knows which
   // reminders are due and stamps each one per month, so repeat ticks are free.
