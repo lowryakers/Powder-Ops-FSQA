@@ -411,7 +411,10 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
 // last approved hard copy, so it's marked as its own kind rather than being one
 // more file in a pile.
 function DocumentAttachments({ docId, canEdit }) {
-  const { data: files, refresh } = useApiGet(`/documents/${docId}/attachments`, [docId]);
+  // `listError` matters: this list silently rendered empty whenever the fetch
+  // failed, so an upload that worked looked like it had vanished. A list that
+  // cannot load must say so.
+  const { data: files, refresh, error: listError } = useApiGet(`/documents/${docId}/attachments`, [docId]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [kind, setKind] = useState('signed_original');
@@ -439,16 +442,25 @@ function DocumentAttachments({ docId, canEdit }) {
     catch (e) { setError(e.message); }
   };
 
+  const loadFailed = listError && !files;
   const signed = (files || []).filter(f => f.kind === 'signed_original');
   const other = (files || []).filter(f => f.kind !== 'signed_original');
 
   const Row = ({ f }) => (
     <div className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
       <FileText size={14} className="text-powder-600 shrink-0" />
-      <a href={f.url || undefined} target="_blank" rel="noreferrer"
-        className="text-xs text-gray-800 hover:text-powder-700 hover:underline truncate flex-1">
-        {f.filename}
-      </a>
+      {f.url ? (
+        <a href={f.url} target="_blank" rel="noreferrer"
+          className="text-xs text-gray-800 hover:text-powder-700 hover:underline truncate flex-1">
+          {f.filename}
+        </a>
+      ) : (
+        // Stored and recorded, but storage would not hand back a link. Saying
+        // that is the honest state; rendering a dead link is not.
+        <span className="text-xs text-gray-800 truncate flex-1" title={f.link_error || 'No link available'}>
+          {f.filename} <span className="text-amber-700">— can&rsquo;t open right now</span>
+        </span>
+      )}
       {f.revision && <span className="text-[10px] text-gray-400 shrink-0">Rev {f.revision}</span>}
       <span className="text-[10px] text-gray-400 shrink-0 hidden sm:inline">
         {f.uploaded_by} · {formatDate(f.created_at)}
@@ -463,6 +475,14 @@ function DocumentAttachments({ docId, canEdit }) {
     <div className="px-5 py-3 border-t border-gray-100">
       <p className="text-xs font-semibold text-gray-700 mb-1.5">Attachments</p>
 
+      {/* The list itself failed to load. Without this the box rendered empty
+          and a successful upload looked like it had disappeared. */}
+      {loadFailed && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-1.5">
+          The attachment list could not be loaded ({listError}). Any file you uploaded is still saved —
+          reopen this document to try again.
+        </p>
+      )}
       {signed.length > 0 && (
         <div className="mb-2">
           <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Signed paper original</p>

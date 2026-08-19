@@ -254,7 +254,7 @@ function SanitationDetail({ record, onClose, onEdit, onRevoke }) {
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Rinse Verified</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">QA Verified</p>
               <p className="text-sm font-semibold text-gray-900 flex items-center gap-1">
                 {record.rinse_verified ? (
                   <><Check size={14} className="text-green-600" /> Yes</>
@@ -499,7 +499,7 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
       </div>
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={form.rinse_verified} onChange={e => setForm({ ...form, rinse_verified: e.target.checked })} />
-        <span className="text-sm text-gray-700">Rinse Verified</span>
+        <span className="text-sm text-gray-700">QA Verified</span>
       </label>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>

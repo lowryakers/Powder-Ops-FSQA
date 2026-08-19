@@ -410,6 +410,17 @@ const TEST_GROUPS = [
   { label: 'Microbiological', short: 'Micro', tests: ['Total Aerobic Microbial Count (USP)', 'Total Coliforms (BAM) (MOD)', 'E. Coli BAM (MOD)', 'Salmonella', 'Staphylococcus aureus <2022>', 'Rapid Yeast and Mold', 'Bacillus Subtilis'] },
   { label: 'Heavy Metals', short: 'HM', tests: ['Arsenic', 'Cadmium', 'Mercury', 'Lead'] },
   { label: 'Composition & Identity', short: '', tests: ['Gluten', 'FTIR ID', 'Potency', 'Allergens', 'Moisture', 'Minerals Test', 'Organoleptic Test'] },
+  // Vitamins are their own panel: a lab quotes and reports them separately
+  // from potency, and the plant's blends carry several at once. Named
+  // individually rather than as one "Vitamins" line so a result can be
+  // graded against the vitamin it belongs to — a single row cannot say which
+  // vitamin was low.
+  { label: 'Vitamins', short: 'Vitamins', tests: [
+    'Vitamin A', 'Vitamin B1 (Thiamine)', 'Vitamin B2 (Riboflavin)', 'Vitamin B3 (Niacin)',
+    'Vitamin B5 (Pantothenic Acid)', 'Vitamin B6 (Pyridoxine)', 'Vitamin B7 (Biotin)',
+    'Vitamin B9 (Folate)', 'Vitamin B12 (Cobalamin)', 'Vitamin C (Ascorbic Acid)',
+    'Vitamin D', 'Vitamin E', 'Vitamin K1', 'Vitamin K2 (MK-7)',
+  ] },
 ];
 const KNOWN_TESTS = TEST_GROUPS.flatMap(g => g.tests);
 
@@ -439,6 +450,10 @@ function splitTests(value) {
 const PANEL_ALIASES = {
   hm: 'Heavy Metals', 'heavy metal': 'Heavy Metals', 'heavy metals': 'Heavy Metals',
   micro: 'Microbiological', microbiological: 'Microbiological', 'micro combo': 'Microbiological',
+  // Requests written before the panel existed say "Vitamins" or "Vits", so
+  // opening one offers to expand it to the named vitamins rather than
+  // leaving the shorthand stranded in the free-text box.
+  vitamins: 'Vitamins', vitamin: 'Vitamins', vits: 'Vitamins', 'vitamin panel': 'Vitamins',
 };
 const panelFor = (token) => TEST_GROUPS.find(g => g.label === PANEL_ALIASES[String(token).trim().toLowerCase()]);
 

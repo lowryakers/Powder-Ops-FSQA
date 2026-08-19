@@ -909,12 +909,26 @@ const uploadDocFiles = (req, res, next) => docFileUpload(req, res, (err) => {
 router.get('/:id/attachments', async (req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM document_attachments WHERE document_id = ? ORDER BY created_at DESC').all(req.params.id);
-  res.json(await Promise.all(rows.map(async a => ({
-    id: a.id, kind: a.kind, title: a.title, filename: a.filename,
-    content_type: a.content_type, size: a.size, revision: a.revision,
-    uploaded_by: a.uploaded_by, created_at: a.created_at,
-    url: await presignGet(a.storage_key, a.filename),
-  }))));
+  // ONE UNREADABLE FILE MUST NOT HIDE THE REST. Every row was presigned in a
+  // single Promise.all, so a storage hiccup on one object rejected the whole
+  // request and the attachments list came back empty — the file was uploaded,
+  // recorded and stored, and the screen said there was nothing there. The row
+  // is what proves the attachment exists; the link is a convenience, and a
+  // missing one now says so instead of taking the list down with it.
+  res.json(await Promise.all(rows.map(async a => {
+    let url = null, link_error = null;
+    try { url = await presignGet(a.storage_key, a.filename); }
+    catch (e) {
+      link_error = e.message || 'The file could not be opened from storage.';
+      console.warn('[documents] presign failed for attachment', a.id, e.message);
+    }
+    return {
+      id: a.id, kind: a.kind, title: a.title, filename: a.filename,
+      content_type: a.content_type, size: a.size, revision: a.revision,
+      uploaded_by: a.uploaded_by, created_at: a.created_at,
+      url, link_error,
+    };
+  })));
 });
 
 router.post('/:id/attachments', uploadDocFiles, async (req, res) => {

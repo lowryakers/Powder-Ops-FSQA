@@ -3537,6 +3537,17 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                     </div>
                   )}
                   <div className={isCompactLayout ? 'flex items-end gap-1' : 'contents'}>
+                  {/* SEND IS FIRST IN THE DOM, LAST ON SCREEN. Tab out of the
+                      textarea used to walk the paperclip, camera, mic and
+                      emoji before reaching Send, so the Tab-then-Enter habit
+                      stopped working — the thread reply box has always had
+                      the icons before the textarea, which is why it behaved.
+                      `order-last` keeps the button where it looks right
+                      while the keyboard reaches it first; the icons still
+                      follow on subsequent tabs rather than being skipped. */}
+                  <button onClick={send} disabled={!body.trim() && pending.length === 0}
+                    className="order-last p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"
+                    title="Send"><Send size={16} /></button>
                   {storageOn && (
                     <>
                       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onPickFiles} />
@@ -3599,7 +3610,6 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                     </div>
                   )}
                   {isCompactLayout && <div className="flex-1" />}
-                  <button onClick={send} disabled={!body.trim() && pending.length === 0} className="p-2.5 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={16} /></button>
                   </div>
                 </div>
               </div>

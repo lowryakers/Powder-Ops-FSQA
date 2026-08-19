@@ -19,6 +19,14 @@ import { ChevronDown, X } from 'lucide-react';
  * `big` bumps the paddings to kiosk size — these get used standing at a
  * shelf with gloves on.
  */
+// HIGH ENOUGH TO REACH THE LAST GROUP. At 60 the sign-out catalogue cut off
+// at exactly the boundary where the Chemicals group begins (40 tool-box + 8
+// equipment + 11 weights = 59), so opening the picker and scrolling showed no
+// chemicals at all and it read as the feature being removed. A cap exists only
+// to keep the menu from rendering thousands of rows; it must never be low
+// enough to hide a whole category behind knowing what to type.
+const LIST_CAP = 300;
+
 export default function SearchSelect({
   value, onChange, options, placeholder = 'Type to search…',
   allowFree = false, big = false, disabled = false, exclude = [],
@@ -88,7 +96,7 @@ export default function SearchSelect({
       )}
       {open && matches.length > 0 && (
         <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-          {matches.slice(0, 60).map((o, i, arr2) => (
+          {matches.slice(0, LIST_CAP).map((o, i, arr2) => (
             <div key={`${o.group}|${o.name}`}>
               {grouped && o.group !== arr2[i - 1]?.group && (
                 <div className="px-3 pt-2 pb-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-400">{o.group}</div>
@@ -99,7 +107,7 @@ export default function SearchSelect({
               </button>
             </div>
           ))}
-          {matches.length > 60 && <div className="px-3 py-1.5 text-[11px] text-gray-400">Keep typing to narrow down…</div>}
+          {matches.length > LIST_CAP && <div className="px-3 py-1.5 text-[11px] text-gray-400">Keep typing to narrow down…</div>}
         </div>
       )}
     </div>
