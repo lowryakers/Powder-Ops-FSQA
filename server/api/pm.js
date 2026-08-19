@@ -201,13 +201,19 @@ function markMissedWorkOrders(db) {
     AND e.status = 'active'
     AND NOT EXISTS (
       SELECT 1 FROM work_orders wo
-      WHERE wo.pm_schedule_id = ps.id AND wo.status IN ('open', 'in_progress')
+      WHERE wo.pm_schedule_id = ps.id AND wo.status IN ('open', 'in_progress', 'overdue', 'missed')
     )
   `).all();
 
   if (orphaned.length > 0) {
     const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')`);
-    const checkExisting = db.prepare(`SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open', 'in_progress') LIMIT 1`);
+    // OVERDUE AND MISSED COUNT AS OUTSTANDING. They did not, so the moment a
+    // task slipped past its due date the schedule looked unserviced and
+    // generated another — then that one went overdue too. That is the engine
+    // behind six identical "Temp & Humidity Check — Warehouse" cards, all
+    // overdue on the same date: one per housekeeping cycle. A second copy of
+    // work nobody has done yet helps no one and hides which card to complete.
+    const checkExisting = db.prepare(`SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open', 'in_progress', 'overdue', 'missed') LIMIT 1`);
     // The SAME JOB must not appear twice on the floor.
     //
     // The guard above is per SCHEDULE, which is right until two schedules
@@ -223,7 +229,7 @@ function markMissedWorkOrders(db) {
     // still there and still visible in the PM list — this only stops it
     // multiplying the work; cleaning it up is a decision for whoever owns it.
     const checkSameJob = db.prepare(
-      `SELECT 1 FROM work_orders WHERE title = ? AND status IN ('open', 'in_progress')
+      `SELECT 1 FROM work_orders WHERE title = ? AND status IN ('open', 'in_progress', 'overdue', 'missed')
        AND (equipment_id = ? OR (equipment_id IS NULL AND ? IS NULL)) LIMIT 1`);
     const tx = db.transaction(() => {
       for (const sched of orphaned) {
@@ -1144,7 +1150,8 @@ router.post('/generate', (_req, res) => {
   `).all();
   const generated = [];
 
-  const checkOpen = db.prepare("SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open','in_progress') LIMIT 1");
+  // Same rule as the generator above: overdue and missed work is still work.
+  const checkOpen = db.prepare("SELECT 1 FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue','missed') LIMIT 1");
   for (const sched of schedules) {
     if (checkOpen.get(sched.id)) continue;
     const lastWO = db.prepare(

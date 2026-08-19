@@ -53,7 +53,9 @@ export function generateQualityScheduleTasks(db) {
       WHERE is_active = 1 AND date(next_due) <= date('now')`).all();
   } catch { return 0; }
   if (!due.length) return 0;
-  const hasOpen = db.prepare("SELECT 1 FROM work_orders WHERE quality_schedule_id = ? AND status IN ('open','in_progress','overdue') LIMIT 1");
+  // 'missed' belongs here too — housekeeping flips a past-due task to missed,
+  // and without it the schedule reads as unserviced and files another copy.
+  const hasOpen = db.prepare("SELECT 1 FROM work_orders WHERE quality_schedule_id = ? AND status IN ('open','in_progress','overdue','missed') LIMIT 1");
   const ins = db.prepare(`INSERT INTO work_orders
     (id, title, description, priority, due_date, procedure_steps, task_group, quality_schedule_id, status)
     VALUES (?, ?, ?, 'normal', date('now'), ?, 'qa', ?, 'open')`);

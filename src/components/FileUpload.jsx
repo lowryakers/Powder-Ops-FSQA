@@ -3,6 +3,11 @@ import { Camera, Paperclip, X, Loader2 } from 'lucide-react';
 
 export default function FileUpload({ files, onChange, maxFiles = 5 }) {
   const [uploading, setUploading] = useState(false);
+  // A FAILED UPLOAD USED TO BE INVISIBLE. The catch below only wrote to the
+  // console, so a refused upload looked exactly like a successful one that
+  // attached nothing — which is how a rate-limited bulk session was reported
+  // as "I attach the file and it isn't there".
+  const [error, setError] = useState(null);
   const inputRef = useRef(null);
 
   const handleFiles = async (selected) => {
@@ -12,15 +17,26 @@ export default function FileUpload({ files, onChange, maxFiles = 5 }) {
     const toUpload = Array.from(selected).slice(0, remaining);
 
     setUploading(true);
+    setError(null);
     try {
       const formData = new FormData();
       toUpload.forEach(f => formData.append('files', f));
-      const res = await fetch('/api/uploads', { method: 'POST', body: formData });
-      if (!res.ok) throw new Error('Upload failed');
+      // The token identifies the person, which is what the upload allowance is
+      // counted against — without it a whole office shares one anonymous cap.
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/uploads', {
+        method: 'POST',
+        body: formData,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Upload failed (${res.status})`);
+      }
       const uploaded = await res.json();
       onChange([...files, ...uploaded]);
     } catch (err) {
-      console.error('Upload error:', err);
+      setError(err.message || 'Upload failed.');
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -59,6 +75,8 @@ export default function FileUpload({ files, onChange, maxFiles = 5 }) {
           ))}
         </div>
       )}
+
+      {error && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2 py-1 mb-2">{error}</p>}
 
       {files.length < maxFiles && (
         <div className="flex gap-2">

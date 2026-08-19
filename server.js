@@ -102,8 +102,9 @@ import { importPaperInternalAudits } from './server/internal-audit-import.js';
 import { seedBannedSubstanceSopDraft } from './server/banned-substance-sop-seed.js';
 import { backfillFilmDrafts } from './server/film-draft-backfill.js';
 import { backfillPartnerDocLines } from './server/partner-doc-backfill.js';
+import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
-import { authenticate, isPublicPath } from './server/middleware/auth.js';
+import { authenticate, isPublicPath, optionalAuth } from './server/middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1068,6 +1069,8 @@ try {
   // Re-read partner-ledger line summaries with the fixed parser — the old one
   // filed address ZIP codes as $84k line items on every invoice (one-time).
   backfillPartnerDocLines(db);
+  // Collapse duplicate tasks the old generator guards let through (one-time).
+  cleanupDuplicateTasks(db);
   // Purge cached "translations" identical to the original message (one-time).
   // A translator that returned the text unchanged got CACHED, and the cache is
   // served before the API — so those messages could never translate again, no
@@ -1575,28 +1578,45 @@ const upload = multer({
   },
 });
 
-// This endpoint stays public (the QR-code submit form uses it pre-login),
-// so cap upload volume per IP to prevent disk-fill abuse.
-const uploadCounts = new Map(); // ip -> { count, windowStart }
-const UPLOAD_LIMIT = 30;
+// This endpoint stays public (the QR-code submit form uses it pre-login), so
+// upload volume is capped to prevent disk-fill abuse.
+//
+// BUT THE CAP WAS PER IP, AND THE WHOLE OFFICE IS ONE IP. Thirty uploads per
+// quarter-hour is nothing when somebody sits down to attach a folder of
+// scanned disposal forms — which is exactly what Document Control was doing.
+// Upload thirty-one and the rest silently 429'd, so the file picker worked,
+// the save worked, and no attachment appeared: reported as "I attach the file
+// and it isn't there". A signed-in person is not the threat this guards
+// against, so they get a working allowance, counted per PERSON rather than
+// per office; anonymous kiosk callers keep the tight per-IP cap.
+const uploadCounts = new Map(); // key -> { count, windowStart }
+const UPLOAD_LIMIT = 30;          // anonymous, per IP
+const UPLOAD_LIMIT_SIGNED_IN = 400; // signed in, per person
 const UPLOAD_WINDOW_MS = 15 * 60 * 1000;
 
 function uploadRateLimit(req, res, next) {
   const ip = req.ip || 'unknown';
   const now = Date.now();
-  const entry = uploadCounts.get(ip);
+  const key = req.user?.id ? `u:${req.user.id}` : `ip:${ip}`;
+  const limit = req.user?.id ? UPLOAD_LIMIT_SIGNED_IN : UPLOAD_LIMIT;
+  const entry = uploadCounts.get(key);
   if (!entry || now - entry.windowStart > UPLOAD_WINDOW_MS) {
-    uploadCounts.set(ip, { count: 1, windowStart: now });
+    uploadCounts.set(key, { count: 1, windowStart: now });
     return next();
   }
-  if (entry.count >= UPLOAD_LIMIT) {
-    return res.status(429).json({ error: 'Too many uploads. Try again later.' });
+  if (entry.count >= limit) {
+    // Say what actually happened and when it clears — "try again later" gave
+    // no way to tell a rate limit from a broken upload.
+    const mins = Math.max(1, Math.ceil((UPLOAD_WINDOW_MS - (now - entry.windowStart)) / 60000));
+    return res.status(429).json({
+      error: `Upload limit reached (${limit} files per 15 minutes). Try again in about ${mins} minute${mins === 1 ? '' : 's'}.`,
+    });
   }
   entry.count++;
   next();
 }
 
-app.post('/api/uploads', uploadRateLimit, upload.array('files', 5), (req, res) => {
+app.post('/api/uploads', optionalAuth, uploadRateLimit, upload.array('files', 5), (req, res) => {
   if (!req.files?.length) return res.status(400).json({ error: 'No files uploaded' });
   const results = req.files.map(f => ({
     filename: f.filename,
