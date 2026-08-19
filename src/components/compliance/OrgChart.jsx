@@ -239,13 +239,33 @@ function TreeNode({ node, canEdit, dnd, onAddChild, onEdit, onDelete, jdById = {
           </div>
         )}
       </div>
-      {node.children.length > 0 && (
-        <ul>
-          {node.children.map(c => (
-            <TreeNode key={c.id} node={c} canEdit={canEdit} dnd={dnd} onAddChild={onAddChild} onEdit={onEdit} onDelete={onDelete} jdById={jdById} />
-          ))}
-        </ul>
-      )}
+      {node.children.length > 0 && (() => {
+        // ANYTHING THAT DOESN'T BRANCH STACKS; BRANCHING STRUCTURES SPREAD.
+        // The sideways scrolling came from every report taking a column of
+        // its own: five department heads beside two real subtrees, and five
+        // supervisor→worker chains side by side. A leaf or a pure chain
+        // carries no structure that needs width, so those gather into ONE
+        // vertical column (the idiom printed org charts use), while children
+        // that genuinely branch keep the classic spread — the management
+        // structure still reads as a tree. Fewer than two stackable children
+        // stay inline: a single column of one is just a longer wire.
+        const render = (c) => (
+          <TreeNode key={c.id} node={c} canEdit={canEdit} dnd={dnd} onAddChild={onAddChild} onEdit={onEdit} onDelete={onDelete} jdById={jdById} />
+        );
+        const isChain = (n) => (n.children?.length || 0) === 0
+          || (n.children.length === 1 && isChain(n.children[0]));
+        const stackable = node.children.filter(isChain);
+        const branching = node.children.filter(c => !isChain(c));
+        if (stackable.length < 2) return <ul>{node.children.map(render)}</ul>;
+        return (
+          <ul>
+            {branching.map(render)}
+            <li className="orgstack-cell">
+              <ul className="orgstack">{stackable.map(render)}</ul>
+            </li>
+          </ul>
+        );
+      })()}
     </li>
   );
 }

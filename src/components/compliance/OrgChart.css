@@ -58,3 +58,57 @@
 .orgtree > ul > li { padding-top: 0; }
 .orgtree > ul > li::before,
 .orgtree > ul > li::after { display: none; }
+
+/* ── Stacked leaf teams ────────────────────────────────────────────────────
+   A supervisor's row of operators was the whole width problem: every team
+   spread side by side, so the chart grew by a card-width per PERSON and
+   needed a screen of sideways scrolling. When every report under a node is
+   a leaf, they stack VERTICALLY — the idiom printed org charts use — and
+   the chart's width becomes the number of teams. Connectors: the parent's
+   centre drop shortens, runs across to a left spine, and the spine elbows
+   into each card. */
+.orgtree ul.orgstack {
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: 12px;
+}
+.orgtree ul ul.orgstack::before {
+  height: 12px; /* the centre drop stops where the cross-bar takes over */
+}
+.orgtree ul ul.orgstack::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 18px;
+  width: calc(50% - 18px);
+  border-top: 2px solid #cbd5e1;
+}
+.orgtree ul.orgstack > li {
+  align-items: flex-start;
+  padding: 12px 0 0 40px;
+}
+/* the elbow: down the spine, then across into the card */
+.orgtree ul.orgstack > li::before,
+.orgtree ul.orgstack > li:first-child::before,
+.orgtree ul.orgstack > li:last-child::before {
+  content: '';
+  position: absolute;
+  left: 18px; right: auto; top: 0;
+  width: 16px; height: 34px;
+  border: 0;
+  border-left: 2px solid #cbd5e1;
+  border-bottom: 2px solid #cbd5e1;
+  border-radius: 0 0 0 6px;
+}
+/* the spine runs on past every elbow except the last */
+.orgtree ul.orgstack > li::after,
+.orgtree ul.orgstack > li:first-child::after {
+  content: '';
+  position: absolute;
+  left: 18px; right: auto; top: 0; bottom: 0;
+  width: 0; height: auto;
+  border: 0;
+  border-left: 2px solid #cbd5e1;
+  border-radius: 0;
+}
+.orgtree ul.orgstack > li:last-child::after { display: none; }
