@@ -39,7 +39,7 @@ const KINDS = [
     // The controlled diagram the inspection is run against. Served as a static
     // file so it opens with no storage backend configured — it's a reference
     // sheet, not an uploaded record.
-    reference: { href: '/forms/FORM-431-01-V4-Brittle-Plastic-and-Glass-Diagram.pdf', label: 'FORM 431-01 V4 — Brittle Plastic & Glass Diagram' },
+    reference: { href: '/forms/FORM-431-01-V5-Brittle-Plastic-and-Glass-Diagram.pdf', label: 'FORM 431-01 V5 — Brittle Plastic & Glass Diagram' },
   },
   { value: 'temp', label: 'Temperature & Humidity', icon: Thermometer, match: /^temp(erature)?\s*[/&]?\s*(and\s*)?humidity/i },
 ];

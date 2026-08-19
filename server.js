@@ -1197,20 +1197,46 @@ try {
     try {
       db.prepare(`INSERT INTO sop_documents (id, doc_number, title, category, revision, effective_date, review_due, owner, description, source_file)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(uuid(), 'FORM 431-01', 'Brittle Plastic and Glass Diagram', 'quality', 'V4',
-          '2026-08-04', '2027-08-04', 'Daniela Servin',
+        .run(uuid(), 'FORM 431-01', 'Brittle Plastic and Glass Diagram', 'quality', 'V5',
+          '2026-08-19', '2027-08-19', 'Daniela Servin',
           `Facility diagram identifying every zone covered by the monthly Brittle Plastic & Glass inspection (Form 431-02), with the items in each zone and their material.
 
-The diagram itself is at /forms/FORM-431-01-V4-Brittle-Plastic-and-Glass-Diagram.pdf and is linked from the QA Inspections BPG filter and from every BPG inspection record.
+The diagram itself is at /forms/FORM-431-01-V5-Brittle-Plastic-and-Glass-Diagram.pdf and is linked from the QA Inspections BPG filter and from every BPG inspection record.
 
 The ITEM LISTS this diagram documents are maintained in the app, one schedule per zone (QA Inspections → Brittle Plastic & Glass), in the form item | qty | material. The zone names come from the "bpg_zones" managed list in Settings → Log Structure. Changing an item list there is what keeps this document and the inspections in step; re-issue the diagram through Document Control when the drawing itself changes.
 
-Page 2 covers the Room 11 sub-zones (11.0 through 11.7, 11.B1–11.B3 and 11.QA). Plastic pallet quantities vary with shipments and are used interchangeably between Room 11 and Room 17.`,
-          '/forms/FORM-431-01-V4-Brittle-Plastic-and-Glass-Diagram.pdf');
+V5 renumbers the floor: production rooms are 1–8 and batching rooms 1–3, and Room 0 no longer exists. Plastic pallet quantities vary with shipments and are used interchangeably between the production and warehouse zones.`,
+          '/forms/FORM-431-01-V5-Brittle-Plastic-and-Glass-Diagram.pdf');
       console.log('[seed] Created FORM 431-01 — Brittle Plastic and Glass Diagram');
     } catch (e) {
       console.error('[seed] Error seeding FORM 431-01 (non-fatal):', e.message);
     }
+  }
+  // ISSUE V5 ON A DATABASE THAT ALREADY HAS V4. The seed above is insert-only
+  // (rightly — it must never overwrite an edit somebody made), so on every
+  // deployed instance the registry would keep pointing at the V4 drawing and
+  // the superseded file. Document Control re-issued the diagram and the log at
+  // V5 with the floor renumbered (production 1–8, batching 1–3, no Room 0), so
+  // the row is advanced once, and the PREVIOUS revision is snapshotted into
+  // sop_versions first — a revision that replaces its predecessor without
+  // recording it is how a controlled document loses its history.
+  try {
+    const cur = db.prepare("SELECT * FROM sop_documents WHERE doc_number = 'FORM 431-01'").get();
+    if (cur && cur.revision !== 'V5') {
+      // The whole previous row is the snapshot — sop_versions stores the
+      // record as it stood, not a set of columns to keep in step.
+      db.prepare(`INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot)
+                  VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(uuid(), cur.id, cur.revision, 'system',
+          'Superseded by V5 — floor renumbered: production rooms 1–8, batching rooms 1–3, Room 0 removed.',
+          JSON.stringify(cur));
+      db.prepare(`UPDATE sop_documents SET revision = 'V5', effective_date = '2026-08-19', review_due = '2027-08-19',
+                    source_file = '/forms/FORM-431-01-V5-Brittle-Plastic-and-Glass-Diagram.pdf',
+                    updated_at = datetime('now') WHERE id = ?`).run(cur.id);
+      console.log(`[seed] FORM 431-01 advanced ${cur.revision} → V5 (previous revision archived)`);
+    }
+  } catch (e) {
+    console.error('[seed] Error advancing FORM 431-01 to V5 (non-fatal):', e.message);
   }
 }
 

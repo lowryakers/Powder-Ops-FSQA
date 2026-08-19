@@ -30,7 +30,9 @@ export function roomLabel(room) {
  * filed against Room 8 still has to read as "Room 8" forever.
  */
 const ROOM_TOKENS = new Set([
-  '1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7', '8', '15',
+  // '0' is retired (FORM 431-01 V5 has no Room 0) but stays here: the entry
+  // filed against it must still read "Room 0", not a bare 0, forever.
+  '0', '1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7', '8', '15',
   'Batching 1', 'Batching 2', 'Batching 3',
 ]);
 

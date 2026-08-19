@@ -48,7 +48,7 @@ export const PRODUCTION_TEAMS = [
  * which both keep already-filed work reachable.
  */
 export const ROOM_GROUPS = [
-  { id: 'production', label: 'Production Rooms', rooms: ['1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7'] },
+  { id: 'production', label: 'Production Rooms', rooms: ['1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7', '8'] },
   { id: 'kitting', label: 'Kitting', rooms: ['15'] },
   { id: 'batching', label: 'Batching Rooms', rooms: ['Batching 1', 'Batching 2', 'Batching 3'] },
 ];
@@ -65,9 +65,17 @@ export const PRODUCTION_ROOMS = ROOM_GROUPS.flatMap(g => g.rooms);
  * it worked and quietly fail: the log fetches a date window, so a shift run in
  * Room 8 last spring simply isn't in the data the filter is built from.
  *
- * Room 8 isn't on the facility map; what ran there is Batching Room 3.
+ * ROOM 8 IS BACK, and Room 0 is gone. FORM 431-01 V5 numbers the production
+ * rooms 1–8 and the batching rooms 1–3, and there is no Room 0 — so the
+ * earlier reading, that Room 8 was off the map and what ran there was Batching
+ * Room 3, was wrong. It was never a dead room: 81 filed production entries name
+ * it, more than any room except Kitting and Batching 1. Retiring it had been
+ * hiding the second-busiest room on the floor from every new entry.
+ *
+ * Room 0 keeps exactly one filed entry, so it retires rather than vanishing —
+ * a filed record you cannot filter to is indistinguishable from a deleted one.
  */
-export const RETIRED_ROOMS = ['8'];
+export const RETIRED_ROOMS = ['0'];
 
 // Old team name → the line tag it becomes. Used by the migration and by any
 // import that still speaks the pre-merge vocabulary (e.g. a schedule sheet
