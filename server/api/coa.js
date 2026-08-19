@@ -456,6 +456,12 @@ router.get('/requests', (req, res) => {
   // which expands to one bound parameter per request — unbounded, that query
   // grew a placeholder list as long as the whole table.
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
+  // THE HONEST TOTAL, counted with the same filters and no limit. The bound
+  // above is right — 1,391 imported requests is megabytes to a phone — but a
+  // list that silently stops at 500 reads as data that was never imported,
+  // which is exactly how it was reported ("were some left out of the Monday
+  // export?"). Nothing was: the screen only ever asked for the first 500.
+  const total = db.prepare(sql.replace('SELECT *', 'SELECT COUNT(*) c')).get(...params).c;
   sql += ' ORDER BY date_sent DESC, created_at DESC LIMIT ?';
   params.push(limit);
   const requests = db.prepare(sql).all(...params);
@@ -468,7 +474,15 @@ router.get('/requests', (req, res) => {
     fileMap[fc.request_id][fc.file_type] = fc.count;
   }
 
-  res.json(requests.map(r => ({ ...r, file_counts: fileMap[r.id] || {} })));
+  // `{ requests, total, shown }` rather than a bare array, the same shape the
+  // draft-specifications endpoint uses, so the screen can say what it is
+  // showing you out of what exists.
+  res.json({
+    requests: requests.map(r => ({ ...r, file_counts: fileMap[r.id] || {} })),
+    total,
+    shown: requests.length,
+    limit,
+  });
 });
 
 router.get('/requests/:id', (req, res) => {

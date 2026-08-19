@@ -1792,7 +1792,22 @@ export default function COAPanel() {
   const [msg, setMsg] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
-  const { data: requests, loading: loadingReqs, refresh: refreshReqs } = useApiGet('/coa/requests' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''), [statusFilter]);
+  // The log is bounded server-side (1,391 imported requests is megabytes to a
+  // phone). `showAll` raises the bound on demand; the strip below says what is
+  // being shown out of what exists, so a capped list never reads as missing
+  // data — which is how it was reported.
+  const [showAll, setShowAll] = useState(false);
+  const reqQuery = [
+    statusFilter !== 'all' ? `status=${statusFilter}` : '',
+    showAll ? 'limit=5000' : '',
+  ].filter(Boolean).join('&');
+  const { data: reqPayload, loading: loadingReqs, refresh: refreshReqs } =
+    useApiGet('/coa/requests' + (reqQuery ? `?${reqQuery}` : ''), [statusFilter, showAll]);
+  // Tolerates both shapes so a client running against an older server (or
+  // mid-deploy) still lists its requests instead of rendering nothing.
+  const requests = Array.isArray(reqPayload) ? reqPayload : (reqPayload?.requests || null);
+  const reqTotal = Array.isArray(reqPayload) ? reqPayload.length : (reqPayload?.total ?? null);
+  const reqShown = Array.isArray(reqPayload) ? reqPayload.length : (reqPayload?.shown ?? null);
   const { data: labs, refresh: refreshLabs } = useApiGet('/coa/labs');
   const { data: specs, refresh: refreshSpecs } = useApiGet('/coa/specifications');
   const { data: summary, refresh: refreshSummary } = useApiGet('/coa/summary');
@@ -1977,6 +1992,27 @@ export default function COAPanel() {
           )}
 
           {showForm && <RequestForm labs={labs} onSave={handleCreateRequest} onCancel={() => setShowForm(false)} />}
+
+          {/* WHAT YOU ARE LOOKING AT, OUT OF WHAT EXISTS. The list is bounded
+              server-side, and a capped list with nothing saying so reads as
+              rows that were never imported. Search and the status filter run
+              server-side on the whole table, so narrowing finds the rest
+              without loading everything. */}
+          {reqTotal != null && reqShown != null && reqShown < reqTotal && (
+            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span>
+                Showing the {reqShown.toLocaleString()} most recent of {reqTotal.toLocaleString()} lab requests.
+                Search or filter to reach an older one — nothing is missing.
+              </span>
+              <button type="button" onClick={() => setShowAll(true)}
+                className="ml-auto px-2.5 py-1 rounded-lg border border-amber-300 bg-white font-medium hover:bg-amber-100">
+                Load all {reqTotal.toLocaleString()}
+              </button>
+            </div>
+          )}
+          {showAll && reqTotal != null && (
+            <p className="mb-2 text-xs text-gray-400">Showing all {reqTotal.toLocaleString()} lab requests.</p>
+          )}
 
           {loadingReqs ? (
             <div className="text-center py-8 text-gray-400">Loading...</div>

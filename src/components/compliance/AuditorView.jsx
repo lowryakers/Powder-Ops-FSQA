@@ -412,7 +412,10 @@ function DisposalsSection() {
 
 // ── COA / lab testing ────────────────────────────────────────────────────────
 function CoaSection() {
-  const { data } = useApiGet('/coa/requests');
+  // Tolerates the array shape too — the endpoint now answers
+  // { requests, total, shown } so a capped list can say so.
+  const { data: coaPayload } = useApiGet('/coa/requests');
+  const data = Array.isArray(coaPayload) ? coaPayload : (coaPayload?.requests || null);
   const rows = data || [];
   const doExport = () => {
     if (!rows.length) return;
