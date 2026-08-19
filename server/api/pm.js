@@ -10,7 +10,7 @@ import { periodically, resetHousekeeping } from '../housekeeping.js';
 import { pushToUser } from '../push.js';
 import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
 import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
-import { recordGroupFor } from '../qa-records.js';
+import { recordGroupFor, qaInspectionAreaFor } from '../qa-records.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
 //
@@ -56,6 +56,53 @@ function fileDilutionRecord(db, { form, grade, readings, notes, by, workOrderId 
     isMeasured(form) && r.ppm_reading ? `${r.ppm_reading} ${form.unit}` : form.target,
     grade.result,
     recordGroupFor(DILUTION_AREA), detail);
+  return id;
+}
+
+// The OTHER three QA inspections file their record the same way.
+//
+// This was the "checks aren't logging" bug, and both people reporting it were
+// right at once: the operator completed Temp & Humidity in ReadyDoc every day
+// and the readings landed in `work_orders.readings`, while QA's Inspections log
+// — which reads sanitation_records, and is the controlled record an auditor
+// asks for — had nothing after June. Completing the task closed the task and
+// filed no record, for Temperature & Humidity (FORM 110-03), Brittle Plastic &
+// Glass (FORM 431-02) and Light Inspection (FORM 110-01/02) alike. Only the
+// chemical dilution check had ever been wired up.
+//
+// THE READINGS ARE THE RECORD, so they are written into it rather than left
+// behind on the work order: a temperature and humidity record that does not
+// carry the numbers is not evidence of anything.
+function fileQaInspectionRecord(db, { area, wo, readings, stepResults, result, notes, by, workOrderId }) {
+  const r = readings || {};
+  const ticks = Array.isArray(stepResults) ? stepResults.filter(s => s && (s.done ?? s.checked ?? s === true)).length : 0;
+  const detail = [
+    // Temp/humidity readings first — they are the substance of that form.
+    r.temperature != null && r.temperature !== '' ? `Temperature ${r.temperature}.` : null,
+    r.humidity != null && r.humidity !== '' ? `Humidity ${r.humidity}.` : null,
+    Array.isArray(stepResults) && stepResults.length ? `${ticks} of ${stepResults.length} items checked.` : null,
+    String(notes || '').trim() || null,
+    `Filed from task ${workOrderId}.`,
+  ].filter(Boolean).join(' ');
+
+  const id = uuid();
+  db.prepare(`
+    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, performed_at, entered_at,
+      result, record_group, notes)
+    VALUES (?, ?, 'pre_op', ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
+  `).run(id, area, wo?.equipment_id || null, by,
+    // BOTH of these columns carry a CHECK constraint, and this INSERT runs
+    // inside the completion transaction — an unlisted value would not merely
+    // skip the record, it would throw and make the task impossible to
+    // complete at all. That is a worse failure than the one being fixed here.
+    //   type:   'pre_op' is what every existing row and the dilution path use.
+    //           'inspection' is not in the constraint and would throw.
+    //   result: pass / fail / reclean only. An inspection completed without
+    //           anyone marking it failed passed — that is what completing it
+    //           means — and anything unrecognised is read as a pass rather
+    //           than blocking the operator over a value the client sent.
+    result === 'fail' || result === 'reclean' ? result : 'pass',
+    recordGroupFor(area), detail);
   return id;
 }
 
@@ -656,11 +703,30 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
       filedRecordId = fileDilutionRecord(db, {
         form: dilution, grade: graded, readings, notes, by: completedBy, workOrderId: req.params.id,
       });
+    } else {
+      // Temperature & Humidity, Brittle Plastic & Glass and Light Inspection.
+      // Inside the same transaction as the completion for the reason the
+      // comment above gives: the task and the record are one event, and a
+      // completion whose record failed to write is the state QA has been
+      // looking at since June.
+      const qaArea = qaInspectionAreaFor(existing.title);
+      if (qaArea) {
+        filedRecordId = fileQaInspectionRecord(db, {
+          area: qaArea, wo: existing, readings, stepResults: step_results,
+          result: finalResult, notes, by: completedBy, workOrderId: req.params.id,
+        });
+      }
     }
   })();
 
   logAudit(completedBy, 'complete', 'work_order', req.params.id,
-    { notes, readings, reading_result: finalResult, ...(filedRecordId ? { sanitation_record_id: filedRecordId, graded: graded.reason } : {}) },
+    // `graded` is null for the QA inspections — only a dilution is graded
+    // against a range — so it must not be dereferenced just because a record
+    // was filed. That read `graded.reason` and would have thrown on the first
+    // temp & humidity completion.
+    { notes, readings, reading_result: finalResult,
+      ...(filedRecordId ? { sanitation_record_id: filedRecordId } : {}),
+      ...(graded ? { graded: graded.reason } : {}) },
     null, null);
   if (isEnvironmentalCheck(existing.title)) {
     const eqName = db.prepare('SELECT name, room FROM equipment WHERE id = ?').get(existing.equipment_id);

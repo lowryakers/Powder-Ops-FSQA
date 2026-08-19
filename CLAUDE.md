@@ -785,6 +785,31 @@ suggestion list, and the kiosk input itself. Records filed before the field exis
 Kiosk suggestion lists are built from **that log's own history**, never from the schedule or another module:
 the kiosk is a public unauthenticated path and must not widen what it exposes.
 
+## Completing a QA inspection must FILE its record (the "checks aren't logging" bug)
+Daniela reported Light Inspection missing July–August and Brittle Plastic & Glass and Temp & Humidity
+missing June–August; Diana said she had been doing the temp & humidity checks in ReadyDoc. **Both were
+right.** Completing the task wrote the readings to `work_orders.readings` and stopped there, so QA
+Inspections — which reads `sanitation_records`, and is the controlled record an auditor asks for — got
+nothing. Only the chemical dilution check had ever been wired to file a record (`fileDilutionRecord`);
+**Temperature & Humidity (110-03), Brittle Plastic & Glass (431-02) and Light Inspection (110-01/02) fell
+straight through.** Evidence: every QA work order in the DB was `open`, none ever completed, and QA records
+stopped the month the paper import ended.
+- `fileQaInspectionRecord()` in api/pm.js files inside the SAME transaction as the completion — the task and
+  the record are one event.
+- **`qaInspectionAreaFor()` (qa-records.js) is the task→record vocabulary map**, and it had to exist because
+  the two were never the same string: the schedule says `Temp & Humidity Check — Production 1`, the record
+  says `Temp/Humidity — Production 1`. Light Inspection is deliberately absent from the table — its title and
+  area are already identical. An unrecognised title returns **null**, so a maintenance PM can never file a QA
+  inspection record.
+- **`sanitation_records.type` and `.result` both carry CHECK constraints** (`pre_op/post_op/mid_shift/
+  deep_clean/emergency` and `pass/fail/reclean`). The first cut used `type='inspection'`, which would have
+  thrown *inside the completion transaction* and made QA tasks impossible to complete — a worse failure than
+  the bug. Use `pre_op` (what every existing row and the dilution path use) and coerce the result.
+- **The readings go INTO the record**, not just onto the work order: a temp/humidity record without the
+  numbers is not evidence of anything.
+- Verified end to end on the production-scale DB: 21 assertions — all three types file, land on QA's list
+  with the right area, keep their readings, and a maintenance PM files nothing.
+
 ## A task must name the controlled form it satisfies (`shared/form-registry.js`)
 The plant's tasks came off numbered paper forms, and an auditor holding the Forms Master Index looking at
 "Brittle Plastic & Glass Inspection — Gown Room" had no way to tell which numbered form it answers. The

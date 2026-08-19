@@ -81,6 +81,40 @@ const TASK_TITLE_SQL = `(title LIKE 'Brittle Plastic%' OR title LIKE 'Light Insp
  *
  * Idempotent — a second run changes nothing.
  */
+/* ── Completing the task must FILE the record ─────────────────────────────── */
+
+// The task title a schedule carries, turned into the area its record is filed
+// under. The two vocabularies were never the same — the seeders write
+// "Temp & Humidity Check — Production 1" as the task and
+// "Temp/Humidity — Production 1" as the record — and nothing joined them, so
+// completing the check closed the task and filed nothing.
+//
+// Light Inspection is deliberately absent from this table: its task title and
+// its record area are already identical ("Light Inspection — Zone 1 — Room 1"),
+// so it needs no rewrite, only recognising.
+const AREA_FROM_TITLE = [
+  [/^Temp(?:erature)?\s*(?:&|and|\/)?\s*Humidity(?:\s+Check)?\s*—\s*(.+)$/i, loc => `Temp/Humidity — ${loc}`],
+  [/^Brittle Plastic\s*(?:&|and)\s*Glass(?:\s+Inspection)?\s*—\s*(.+)$/i, zone => `Brittle Plastic/Glass — ${zone}`],
+  [/^(Light Inspection\s*—\s*.+)$/i, whole => whole],
+];
+
+/**
+ * The sanitation_records area a completed QA inspection task should file under,
+ * or null when the task is not one of these inspections.
+ *
+ * Returns null rather than guessing: a maintenance PM must never file a QA
+ * inspection record, and an unrecognised title is not an inspection.
+ */
+export function qaInspectionAreaFor(title) {
+  const t = String(title || '').trim();
+  if (!t) return null;
+  for (const [re, build] of AREA_FROM_TITLE) {
+    const m = re.exec(t);
+    if (m) return build(m[1].trim());
+  }
+  return null;
+}
+
 export function tagQaInspectionTasks(db) {
   try {
     const sched = db.prepare(`UPDATE pm_schedules SET task_group = 'qa'

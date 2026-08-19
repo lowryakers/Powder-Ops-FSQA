@@ -8,6 +8,7 @@ import RecordHistory from '../common/RecordHistory.jsx';
 import RevisionUploadModal from '../settings/RevisionUploadModal.jsx';
 import { SignaturePad } from '../common/SignatureCanvas.jsx';
 import { formatDate } from '../../lib/datetime.js';
+import { pdfViewerUrl } from '../../lib/pdfUrl';
 
 /**
  * Wet signatures on a controlled document — the drawn image beside name,
@@ -837,7 +838,7 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
                                   <div>
                                     <p className="text-[10px] font-medium text-gray-500 mb-1">Original file</p>
                                     {r.blobUrl && /\.pdf$/i.test(r.filename || '')
-                                      ? <iframe src={r.blobUrl} title={r.filename} className="w-full h-[440px] border border-gray-200 rounded bg-white" />
+                                      ? <iframe src={pdfViewerUrl(r.blobUrl)} title={r.filename} className="w-full h-[440px] border border-gray-200 rounded bg-white" />
                                       : <div className="w-full h-[440px] border border-gray-200 rounded bg-white flex items-center justify-center text-center px-4">
                                           <p className="text-xs text-gray-400">In-browser preview is available for PDFs only.<br />Review the extracted content on the right for {r.filename}.</p>
                                         </div>}

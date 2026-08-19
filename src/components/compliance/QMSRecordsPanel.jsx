@@ -11,6 +11,7 @@ import RecordAttachments from './RecordAttachments';
 import RecordHistory from '../common/RecordHistory.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
 import TextCell from '../common/TextCell.jsx';
+import { pdfViewerUrl } from '../../lib/pdfUrl';
 
 // Mirror of server canSignApproval — admin always; else role/department match.
 //
@@ -891,7 +892,7 @@ function AttachFormsModal({ cfg, records, onDone, onClose }) {
                     <tr>
                       <td colSpan={3} className="px-3 pb-3 bg-gray-50">
                         {/\.pdf$/i.test(r.name)
-                          ? <iframe src={preview.url} title={r.name} className="w-full h-[460px] border border-gray-200 rounded bg-white" />
+                          ? <iframe src={pdfViewerUrl(preview.url)} title={r.name} className="w-full h-[460px] border border-gray-200 rounded bg-white" />
                           : <img src={preview.url} alt={r.name} className="max-h-[460px] rounded border border-gray-200 bg-white" />}
                       </td>
                     </tr>

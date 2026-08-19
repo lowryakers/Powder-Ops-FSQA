@@ -19,6 +19,7 @@ import { useFormatKeys } from '../../lib/useFormatKeys.js';
 import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 import { looksLikeTask, suggestTitle, mentionedUsers, teamForChannel } from '../../lib/taskIntent.js';
+import { pdfViewerUrl } from '../../lib/pdfUrl';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
 // The reverse trip: a live subscription reports its applicationServerKey as an
@@ -488,7 +489,7 @@ function Lightbox({ atts, index, onNav, onClose }) {
           <video src={a.url} controls playsInline autoPlay className="max-w-[92vw] max-h-[84vh] bg-black rounded-lg" />
         ) : isPdf(a) && a.url ? (
           <div className="relative w-full h-full">
-            <iframe src={a.url} title={a.filename} className="w-full h-full bg-white rounded-lg" />
+            <iframe src={pdfViewerUrl(a.url)} title={a.filename} className="w-full h-full bg-white rounded-lg" />
             <a href={a.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
               className="absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-900/85 text-white text-xs font-medium shadow-lg hover:bg-gray-900">
               <ExternalLink size={13} /> Open full size

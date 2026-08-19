@@ -197,14 +197,12 @@ const NAV_GROUPS = [
       // where it belongs — it IS a controlled register. Read-only for everyone
       // (numbers are issued by change request), so it is not gated on a module
       // grant: anyone holding a task should be able to look up its form number.
-      { id: 'form-registry', label: 'Form Registry', icon: ListChecks, keywords: 'forms master index form numbers revisions 431 417 703 traceability',
-        // Not gated on a `form-registry` grant, or it would be a screen nobody
-        // has — the whole point is that anyone holding a numbered task can look
-        // the number up. It is a read-only list of form numbers: no records, no
-        // names, nothing confidential. An account with NOTHING assigned still
-        // sees nothing, which is the standing rule.
-        visible: (u) => u?.role === 'admin' || u?.role === 'auditor'
-          || (u?.module_access && (Array.isArray(u.module_access) ? u.module_access.length > 0 : Object.keys(u.module_access).length > 0)) },
+      // An ordinary grantable module, so it appears in Settings → Module Access
+      // like everything else. It was briefly a `visible()` bypass, which read as
+      // missing: the register was on screen but there was no checkbox to assign
+      // it to anybody. Nobody needs the PANEL to read a form number — the chip
+      // on the task carries that for everyone.
+      { id: 'form-registry', label: 'Form Registry', icon: ListChecks, keywords: 'forms master index form numbers revisions 431 417 703 traceability' },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'certifications', label: 'Certifications', icon: BadgeCheck },
       { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },

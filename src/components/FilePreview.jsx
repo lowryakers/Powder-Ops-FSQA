@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { pdfViewerUrl } from '../lib/pdfUrl';
 import { X, Download, ExternalLink, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 
 // Shared in-app file preview overlay: PDFs and images render inline (dimmed
@@ -52,7 +53,7 @@ export default function FilePreview({ items, index = 0, onClose, onNav }) {
             <img src={item.url} alt={item.name || ''} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
           </div>
         ) : isPdf ? (
-          <iframe src={item.url} title={item.name || 'PDF'} className="w-full h-full bg-white rounded-lg" />
+          <iframe src={pdfViewerUrl(item.url)} title={item.name || 'PDF'} className="w-full h-full bg-white rounded-lg" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <div className="bg-white rounded-xl p-6 text-center max-w-xs">

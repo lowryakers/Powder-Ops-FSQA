@@ -9,6 +9,7 @@ import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 import FilePreview from '../FilePreview.jsx';
+import { pdfViewerUrl } from '../../lib/pdfUrl';
 
 // Columns as data for the Records tab. Evidence and the actions cell have no
 // key — a link is not a value to order by.
@@ -741,7 +742,7 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
               <p className="px-3 py-1.5 text-[11px] text-gray-600 bg-gray-200/70 truncate shrink-0">{cur.name}</p>
               {cur.isImage
                 ? <div className="flex-1 overflow-auto p-2"><img src={cur.url} alt={cur.name} className="max-w-full" /></div>
-                : <iframe src={cur.url} title={cur.name} className="flex-1 w-full bg-white" />}
+                : <iframe src={pdfViewerUrl(cur.url)} title={cur.name} className="flex-1 w-full bg-white" />}
             </div>
 
             <div className="p-4 space-y-3 overflow-y-auto">
