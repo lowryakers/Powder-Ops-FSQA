@@ -835,6 +835,30 @@ remembering a specific morning. Default is today, so nothing changes for the nor
 - Seed the date from **`localDateStr()`, never `toISOString()`** — the latter is UTC and renders as
   yesterday all evening west of Greenwich. `daysAgoStr(30)` gives the `min` bound.
 
+## The "small double pane" PDF view (`src/lib/pdfUrl.js`)
+An `<iframe>` pointed at a PDF gets the browser's own viewer, and **Chrome opens its THUMBNAIL PANE by
+default at moderate widths** — so in Split Screen (~900px) the sidebar ate a third of the pane and the
+document rendered at 73%. `pdfViewerUrl()` appends `#navpanes=0&pagemode=none&view=FitH`; measured
+before/after at 900px, the sidebar goes and the page goes 73% → 109%.
+- **The fragment goes after the query string**, so a presigned R2 URL (which is nothing but query string)
+  is untouched, and a URL that already has a `#` is left alone — a caller asking for a specific page wins.
+- **Call it only inside an `isPdf` branch — it does no extension sniffing.** A blob: URL carries no `.pdf`,
+  and re-testing for one is the trap that made every blob-fetched PDF fall through to the download card.
+- Wired into all five PDF iframes: FilePreview, QMS record attachments, Training materials, the document
+  importer's side-by-side review, and comms attachments.
+- **This only reproduces at moderate widths.** Chrome auto-hides the sidebar on a narrow iframe, so a 420px
+  test shows no difference at all — test this at ~900px or it looks like nothing is wrong.
+
+## Partner Reconciliation on a phone
+The Documents tab is a seven-column table of `whitespace-nowrap` (~700px), so a 390px screen had to be
+dragged left and right to read one row and the action buttons on the far right were unreachable. Below `md`
+it renders as **cards** (`md:hidden` / `hidden md:block`), the same rule the Settings roster follows.
+- **`DocActions` is defined once** and rendered by both the row and the card, so the two layouts cannot
+  start offering different buttons on the same document. Same for `StatusChip` and `CategoryPicker`.
+- The header action row (Reminders / Import invoices / Add document) was `shrink-0` and couldn't wrap, so it
+  ran off the edge and panned the whole page — `flex-wrap` below `sm`, `sm:flex-nowrap sm:shrink-0` above.
+- Verified at 390 and 360: no page overflow on either tab, cards below `md`, table still there on desktop.
+
 ## A task must name the controlled form it satisfies (`shared/form-registry.js`)
 The plant's tasks came off numbered paper forms, and an auditor holding the Forms Master Index looking at
 "Brittle Plastic & Glass Inspection — Gown Room" had no way to tell which numbered form it answers. The

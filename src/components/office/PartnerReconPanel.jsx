@@ -800,6 +800,45 @@ export default function PartnerReconPanel({ user }) {
     try { await fn(); reloadAll(); } catch (e) { window.alert(e.message); } finally { setBusy(false); }
   };
 
+  // What may be DONE to a document, defined once and rendered by both the
+  // desktop row and the phone card. A second copy is how the two layouts start
+  // offering different buttons on the same record.
+  const DocActions = ({ d }) => (
+    <>
+      {d.status === 'draft' && canSettle && (
+        <button onClick={() => act(() => apiPost(`/partners/documents/${d.id}/finalize`, {}))}
+          className="px-2 py-1 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700">
+          Approve as final
+        </button>
+      )}
+      {d.status === 'final' && (
+        <button onClick={() => {
+          const reason = window.prompt('What\'s the disagreement? It goes in the report both sides read.');
+          if (reason?.trim()) act(() => apiPost(`/partners/documents/${d.id}/dispute`, { reason }));
+        }} className="px-2 py-1 rounded-lg border border-red-300 text-red-700 text-xs font-medium hover:bg-red-50">
+          Dispute
+        </button>
+      )}
+      {d.status === 'disputed' && canSettle && (
+        <button onClick={() => act(() => apiPost(`/partners/documents/${d.id}/finalize`, {}))}
+          className="px-2 py-1 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700">
+          Resolve as final
+        </button>
+      )}
+      {d.status === 'draft' && (
+        <button onClick={() => setEditing(d)} className="ml-1 p-1 text-gray-400 hover:text-powder-600" data-tip="Edit"><Pencil size={13} /></button>
+      )}
+      {canSettle && d.status !== 'void' && (
+        <button onClick={() => act(() => apiPost(`/partners/documents/${d.id}/void`, {}))}
+          className="ml-1 p-1 text-gray-300 hover:text-red-600" data-tip="Void"><Ban size={13} /></button>
+      )}
+      {user?.role === 'admin' && (
+        <button onClick={() => { if (window.confirm('Delete this document?')) act(() => apiDelete(`/partners/documents/${d.id}`)); }}
+          className="ml-1 p-1 text-gray-300 hover:text-red-600" data-tip="Delete"><Trash2 size={13} /></button>
+      )}
+    </>
+  );
+
   const settle = async () => {
     if (!recon) return;
     // AFTER the credit — that is what is actually being paid, and it is what
@@ -840,7 +879,10 @@ export default function PartnerReconPanel({ user }) {
             the documents behind it and Net {partner.terms_days} applied so nothing is claimed early.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Wraps below `sm`, and only then keeps `shrink-0`. An unwrappable
+            shrink-0 row ran off the right edge at 390px and panned the whole
+            page sideways, with Add document the button you could not reach. */}
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:shrink-0">
           {canSettle && (
             <button onClick={() => setReminders(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
@@ -912,7 +954,54 @@ export default function PartnerReconPanel({ user }) {
             </select>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {/* A PHONE GETS CARDS, NOT A SIDEWAYS TABLE.
+              Seven columns of whitespace-nowrap is ~700px, so on a 390px screen
+              the whole ledger had to be dragged left and right to read one row,
+              and the actions on the far right were the part you never reached.
+              The card and the row render the SAME pieces — `DocActions`,
+              `StatusChip`, `CategoryPicker` — so the two layouts cannot start
+              disagreeing about what a document says or what may be done to it. */}
+          <div className="md:hidden space-y-2">
+            {docs.map(d => (
+              <div key={d.id} className="bg-white rounded-xl border border-gray-200 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{d.doc_number || '—'}</p>
+                    <p className="text-xs text-gray-500 capitalize">
+                      {d.doc_type === 'po' ? 'Purchase order' : d.doc_type}
+                      {d.source === 'partner-portal' && <span className="ml-1 text-powder-600">· from {partner.name}</span>}
+                    </p>
+                  </div>
+                  <p className={`text-sm font-semibold whitespace-nowrap ${d.doc_type === 'credit' ? 'text-red-600' : 'text-gray-900'}`}>
+                    {d.doc_type === 'credit' ? '−' : ''}{money(d.amount)}
+                  </p>
+                </div>
+                {(d.line_summary || d.description) && (
+                  <p className="text-xs text-gray-700 mt-1 line-clamp-2">{d.line_summary || d.description}</p>
+                )}
+                <p className="text-xs text-gray-500 mt-1.5">
+                  {d.direction === 'receivable' ? 'They owe us' : 'We owe them'}
+                  {d.due_date ? ` · due ${d.due_date}` : ''}
+                </p>
+                <div className="flex items-center gap-2 flex-wrap mt-2">
+                  <StatusChip s={d.status} />
+                  {canSettle && !d.settlement_id
+                    ? <CategoryPicker documentId={d.id} value={d.category} onChanged={reloadAll} />
+                    : d.category
+                      ? <span className="text-[11px] text-gray-500 capitalize">{d.category}</span>
+                      : <span className="text-[11px] text-amber-600">no category</span>}
+                </div>
+                <div className="mt-2 flex items-center gap-1 flex-wrap">
+                  <DocActions d={d} />
+                </div>
+              </div>
+            ))}
+            {docs.length === 0 && (
+              <p className="bg-white rounded-xl border border-gray-200 px-3 py-8 text-center text-sm text-gray-400">Nothing outstanding.</p>
+            )}
+          </div>
+
+          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
@@ -983,37 +1072,7 @@ export default function PartnerReconPanel({ user }) {
                           </span>
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap text-right" onClick={stopRowClick}>
-                          {d.status === 'draft' && canSettle && (
-                            <button onClick={() => act(() => apiPost(`/partners/documents/${d.id}/finalize`, {}))}
-                              className="px-2 py-1 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700">
-                              Approve as final
-                            </button>
-                          )}
-                          {d.status === 'final' && (
-                            <button onClick={() => {
-                              const reason = window.prompt('What\'s the disagreement? It goes in the report both sides read.');
-                              if (reason?.trim()) act(() => apiPost(`/partners/documents/${d.id}/dispute`, { reason }));
-                            }} className="px-2 py-1 rounded-lg border border-red-300 text-red-700 text-xs font-medium hover:bg-red-50">
-                              Dispute
-                            </button>
-                          )}
-                          {d.status === 'disputed' && canSettle && (
-                            <button onClick={() => act(() => apiPost(`/partners/documents/${d.id}/finalize`, {}))}
-                              className="px-2 py-1 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700">
-                              Resolve as final
-                            </button>
-                          )}
-                          {d.status === 'draft' && (
-                            <button onClick={() => setEditing(d)} className="ml-1 p-1 text-gray-400 hover:text-powder-600" data-tip="Edit"><Pencil size={13} /></button>
-                          )}
-                          {canSettle && d.status !== 'void' && (
-                            <button onClick={() => act(() => apiPost(`/partners/documents/${d.id}/void`, {}))}
-                              className="ml-1 p-1 text-gray-300 hover:text-red-600" data-tip="Void"><Ban size={13} /></button>
-                          )}
-                          {user?.role === 'admin' && (
-                            <button onClick={() => { if (window.confirm('Delete this document?')) act(() => apiDelete(`/partners/documents/${d.id}`)); }}
-                              className="ml-1 p-1 text-gray-300 hover:text-red-600" data-tip="Delete"><Trash2 size={13} /></button>
-                          )}
+                          <DocActions d={d} />
                         </td>
                       </tr>
                       {expand.isExpanded(d.id) && (
