@@ -8,6 +8,7 @@ import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings
 import { canSeeQaReview } from '../../utils/permissions';
 import { formatDateTime } from '../../lib/datetime.js';
 import { formFromTitle, gradeDilution, isMeasured } from '../../../shared/dilution-forms.js';
+import FormChip from '../common/FormChip';
 
 function detectTaskType(task) {
   const t = (task.title || '').toLowerCase();
@@ -234,6 +235,10 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
           <div className="flex-1 min-w-0">
             {/* Title row */}
             <h3 className="text-base font-semibold text-gray-900 leading-snug">{tc(task.title)}</h3>
+            {/* The form number is not translated and must not be: FORM 431-02
+                is the same string on the Spanish shift, on the paper form and
+                in Document Control's index. */}
+            <FormChip subject={{ taskTitle: task.schedule_title || task.title }} className="mt-1" />
 
             {/* Equipment + location */}
             <p className="text-sm text-gray-500 mt-0.5">

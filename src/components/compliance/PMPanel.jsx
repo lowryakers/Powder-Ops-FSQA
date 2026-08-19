@@ -9,6 +9,7 @@ import { deptLabel } from '../../constants/departments';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
 import { exportToCsv } from '../../utils/exportCsv';
 import { formatDateTime } from '../../lib/datetime.js';
+import FormChip from '../common/FormChip';
 
 const FREQ_TABS = [
   { value: 'all', label: 'All' },
@@ -643,6 +644,9 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
           </div>
           <h4 className="font-semibold text-gray-900 text-lg">{wo.title || wo.pm_title}</h4>
           <p className="text-sm text-gray-600">{wo.equipment_name} — {wo.location || 'No location'}</p>
+          {/* This is the completed record an auditor is shown, so it is the
+              one place the form number matters most. */}
+          <FormChip subject={{ taskTitle: wo.pm_title || wo.title }} className="mt-1" />
         </div>
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
           <X size={18} />
@@ -780,6 +784,11 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             {wo.priority === 'high' && !wo.issue_flagged && <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full text-xs">High</span>}
             {attachments.length > 0 && <span className="flex items-center gap-0.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs"><Paperclip size={10} />{attachments.length}</span>}
             {wo.task_group && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${GROUP_BADGE[wo.task_group] || 'bg-gray-100 text-gray-600'}`}>{{ maintenance: 'MNT', warehouse: 'WH', qa: 'QA', cleaning: 'CLN', batching: 'BAT', kitting: 'KIT', filling: 'FIL', document_control: 'DC' }[wo.task_group] || String(wo.task_group).slice(0, 3).toUpperCase()}</span>}
+            {/* The controlled form this task satisfies, when it answers one.
+                Matched off the SCHEDULE title in preference to the work
+                order's, since that is the title the seeders control; a one-off
+                task somebody typed usually maps to nothing and shows nothing. */}
+            <FormChip subject={{ taskTitle: wo.pm_title || wo.title }} />
           </div>
           <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
@@ -980,6 +989,7 @@ function ClearanceCard({ wo, onClear, user }) {
               <ShieldCheck size={12} /> Food-Contact Equipment
             </span>
             <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">Assigned to: QA</span>
+            <FormChip subject={{ taskTitle: wo.pm_title || wo.title }} />
           </div>
           <h4 className="font-medium text-gray-900">{wo.title}</h4>
           <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
@@ -1568,6 +1578,7 @@ export default function PMPanel() {
                               {wo.reading_result.toUpperCase()}
                             </span>
                           )}
+                          <FormChip subject={{ taskTitle: wo.pm_title || wo.title }} />
                         </div>
                         <h4 className={`font-medium ${isMissed ? 'text-gray-600' : 'text-gray-800'}`}>{wo.title || wo.pm_title}</h4>
                         <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location}</p>

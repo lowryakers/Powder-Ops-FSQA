@@ -10,6 +10,8 @@ import SortHeader from '../common/SortHeader.jsx';
 import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { formatDateTime } from '../../lib/datetime.js';
+import FormChip from '../common/FormChip';
+import { formLabel } from '../../../shared/form-registry.js';
 
 // Columns as data, so the header and the sort cannot disagree. The first entry
 // has no key — it is the expand chevron, which is not a value to order by.
@@ -221,6 +223,7 @@ export default function QAInspectionsPanel() {
                     {(r.result || '').toUpperCase()}
                   </span>
                 </div>
+                <FormChip subject={{ sanitationArea: r.area }} className="mt-1" />
                 <p className="text-[11px] text-gray-500 mt-1">{fmt(r.performed_at)} · {r.performed_by}</p>
                 <p className="text-[11px] text-gray-400">
                   {r.verified_by ? `Verified by ${r.verified_by}` : 'Not verified'}
@@ -281,6 +284,10 @@ export default function QAInspectionsPanel() {
                     <DetailRow colSpan={canEdit ? 8 : 7}>
                       <DetailFields fields={[
                         { label: 'Zone / area', value: r.area },
+                        // Absent rather than blank when the area maps to no
+                        // form — a "Controlled form: —" row reads as though
+                        // the record answers to nothing, which is a claim.
+                        ...(formLabel({ sanitationArea: r.area }) ? [{ label: 'Controlled form', value: formLabel({ sanitationArea: r.area }) }] : []),
                         { label: 'Inspection', value: r.inspection_type || r.title },
                         { label: 'Performed', value: fmt(r.performed_at) },
                         { label: 'Performed by', value: r.performed_by },

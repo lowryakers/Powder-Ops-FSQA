@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine, ListChecks } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -58,6 +58,7 @@ const MeetingsPanel = lazy(() => import('./components/compliance/MeetingsPanel.j
 const SafetyPanel = lazy(() => import('./components/compliance/SafetyPanel.jsx'));
 const InternalAuditsPanel = lazy(() => import('./components/compliance/InternalAuditsPanel.jsx'));
 const DocReviewPanel = lazy(() => import('./components/compliance/DocReviewPanel.jsx'));
+const FormRegistryPanel = lazy(() => import('./components/compliance/FormRegistryPanel.jsx'));
 const FacilityMapPanel = lazy(() => import('./components/compliance/FacilityMapPanel.jsx'));
 const RetentionSamplesPanel = lazy(() => import('./components/compliance/RetentionSamplesPanel.jsx'));
 const ProductionLog = lazy(() => import('./components/compliance/ProductionLog.jsx'));
@@ -192,6 +193,18 @@ const NAV_GROUPS = [
       // access by department, not by a module grant.
       { id: 'doc-review', label: 'Doc Control Review', icon: FileCheck2, keywords: 'review due documents change requests controlled changes drafts queue', visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control' || (u?.role === 'supervisor' && ['qa', 'document_control'].includes((u?.department || '').toLowerCase())) },
       { id: 'document-control', label: 'Controlled Documents', icon: FileText, anyOf: ['sops', 'work-instructions', 'job-descriptions'], keywords: 'sop work instructions job descriptions' },
+      // The Forms Master Index, beside the controlled documents because that is
+      // where it belongs — it IS a controlled register. Read-only for everyone
+      // (numbers are issued by change request), so it is not gated on a module
+      // grant: anyone holding a task should be able to look up its form number.
+      { id: 'form-registry', label: 'Form Registry', icon: ListChecks, keywords: 'forms master index form numbers revisions 431 417 703 traceability',
+        // Not gated on a `form-registry` grant, or it would be a screen nobody
+        // has — the whole point is that anyone holding a numbered task can look
+        // the number up. It is a read-only list of form numbers: no records, no
+        // names, nothing confidential. An account with NOTHING assigned still
+        // sees nothing, which is the standing rule.
+        visible: (u) => u?.role === 'admin' || u?.role === 'auditor'
+          || (u?.module_access && (Array.isArray(u.module_access) ? u.module_access.length > 0 : Object.keys(u.module_access).length > 0)) },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'certifications', label: 'Certifications', icon: BadgeCheck },
       { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
@@ -822,6 +835,12 @@ function accessibleNavItems(user, aiOn) {
       if (i.adminOnly && user.role !== 'admin') continue;
       if (i.roles && !i.roles.includes(user.role)) continue;
       if (i.aiOnly && !aiOn) continue;
+      // An item carrying its own `visible` predicate decides for itself, the
+      // same way the sidebar does. Without this the two filters disagreed:
+      // Doc Control Review, Controlled Changes, Log Builder and the Form
+      // Registry all showed in the sidebar for Document Control and then could
+      // not be found by searching for them.
+      if (i.visible) { if (i.visible(user)) flat.push({ ...i, group: g.label }); continue; }
       // Hub entries (anyOf) are visible when any of their sub-modules is.
       if (i.anyOf ? !i.anyOf.some(id => canViewModule(user, id)) : !canViewModule(user, i.id)) continue;
       flat.push({ ...i, group: g.label });
@@ -1965,6 +1984,7 @@ function App() {
           {resolvedTab === 'safety' && <SafetyPanel user={user} />}
           {resolvedTab === 'internal-audits' && <InternalAuditsPanel />}
           {resolvedTab === 'doc-review' && <DocReviewPanel />}
+          {resolvedTab === 'form-registry' && <FormRegistryPanel />}
           {resolvedTab === 'facility-map' && <FacilityMapPanel user={user} />}
           {resolvedTab === 'retention-samples' && <RetentionSamplesPanel user={user} />}
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}

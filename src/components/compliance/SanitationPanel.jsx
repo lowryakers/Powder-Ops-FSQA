@@ -8,6 +8,7 @@ import SortHeader from '../common/SortHeader.jsx';
 import ShowMore from '../common/ShowMore.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
 import { areaLabel } from '../../../shared/rooms.js';
+import FormChip from '../common/FormChip';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
 const RECLEAN_ACTION_META = {
@@ -180,6 +181,10 @@ function SanitationDetail({ record, onClose, onEdit, onRevoke }) {
               <h4 className="font-semibold text-gray-900 text-base">{areaLabel(record.area)}</h4>
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[record.type]}`}>{TYPE_LABELS[record.type]}</span>
               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${RESULT_COLORS[record.result]}`}>{record.result.toUpperCase()}</span>
+              {/* Matched on the RAW stored area, not areaLabel()'s display
+                  string — the label is written for a reader and can change
+                  without the record changing. */}
+              <FormChip subject={{ sanitationArea: record.area }} />
             </div>
             <div className="flex items-center gap-1.5">
               {/* The server said what this user may do (can_edit /

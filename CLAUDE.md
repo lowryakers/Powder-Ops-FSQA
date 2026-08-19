@@ -785,6 +785,40 @@ suggestion list, and the kiosk input itself. Records filed before the field exis
 Kiosk suggestion lists are built from **that log's own history**, never from the schedule or another module:
 the kiosk is a public unauthenticated path and must not widen what it exposes.
 
+## A task must name the controlled form it satisfies (`shared/form-registry.js`)
+The plant's tasks came off numbered paper forms, and an auditor holding the Forms Master Index looking at
+"Brittle Plastic & Glass Inspection — Gown Room" had no way to tell which numbered form it answers. The
+registry is that index as data, `<FormChip>` prints it, and Document Control gets it as a screen
+(`FormRegistryPanel`, nav entry beside Controlled Documents — the consultant's ask was that the register live
+with the controlled documents).
+- **Display only. Derived, never stored.** No workflow changes, no button is gated, nothing is stamped on a
+  record. The number is matched at read time from what the task already is, so there is no second copy to
+  fall out of step with Document Control.
+- **Where a record stores its OWN revision, that wins** (`checklist_revision` and friends), so a record filed
+  under V4 goes on saying V4 after V5 is issued. The five **scale forms keep their revisions in
+  `scale-forms.js`** and the registry reads them from there — they are five numbers, not one, because each
+  defines its own weights and tolerances and 417-02 uses a different placement.
+- **An unmapped task shows NOTHING — never a guess.** Two bugs found by testing against the production DB
+  rather than reading the code, both of which would have put a wrong number on a compliance record:
+  `module: 'sanitation'` on FORM 108-03 claimed the whole module and would have printed "Production Cleaning
+  Log" on 464 chemical-dilution checks and every restroom clean; and unanchored room names meant
+  `/break\s?room|lobby|office/` swallowed "Brittle Plastic/Glass — Break Room" and all three Office zones.
+  **Anchor area/title patterns (`^`)** — a room name appears in several forms' areas.
+- **Specificity decides, not array order** (`MATCH_PASSES` in `formFor`). A record knows several things about
+  itself at once; a single pass returning the first entry that matched on anything let a module-wide entry
+  listed higher beat the specific zone forms below it.
+- **`GET /api/forms` also reports what the registry does NOT cover** — active schedules and record areas that
+  map to nothing, and where a `qms-config.js` `formCode` disagrees with the index. Neither side is silently
+  rewritten: `formCode` is gated by `controlled.js`, and only Document Control can say which number is right.
+  Currently flagged: Non-Conformance (`Form 408-01` vs `FORM 408-1`), Knife (`Form 440-01 / 440-02` vs
+  `FORM 440-01`), Restroom cleaning (no number in the index we could read), and Temperature & Humidity, which
+  the index numbers **110-03** where ReadyDoc showed 110-04.
+- Modules that ALREADY print a form code (film inspection, receiving checklist, quality schedules, scale
+  verification, safety, mock recall, QMS record forms) were left completely alone — the gap was PM tasks and
+  the inspection/cleaning records, and touching working screens two weeks before an audit buys nothing.
+- Rows of the Master Index that were not legible in the screenshots supplied (Series 300, rows past 62) are
+  simply absent. Send the index as a file and they can be added.
+
 ## Sign In/Out: one place, two controlled forms
 Forms **440-02** (knives/blades) and **703-01** (equipment/tools/chemicals) record the same transaction —
 a person takes an item, brings it back, condition checked both ways. They were separate modules only

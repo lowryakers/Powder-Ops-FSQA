@@ -44,6 +44,7 @@ import qualityScheduleRoutes, { generateQualityScheduleTasks } from './server/ap
 import meetingRoutes from './server/api/meetings.js';
 import internalAuditRoutes from './server/api/internal-audits.js';
 import docReviewRoutes from './server/api/doc-review.js';
+import formRoutes from './server/api/forms.js';
 import facilityRoutes from './server/api/facility.js';
 import retentionRoutes from './server/api/retention.js';
 import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
@@ -1673,6 +1674,10 @@ app.use('/api/quality-schedules', requireModuleWrite('pm', 'coa', 'sanitation', 
 app.use('/api/meetings', requireModuleWrite('meetings'), meetingRoutes);
 app.use('/api/internal-audits', requireModuleWrite('internal-audits'), internalAuditRoutes);
 app.use('/api/doc-review', docReviewRoutes);
+// Read-only and unguarded by a module grant on purpose: a form number is the
+// answer to "which controlled form does this task satisfy", and anyone holding
+// a task should be able to see it. There is no write path to guard.
+app.use('/api/forms', formRoutes);
 // Read-only: the map shows facts from records the caller can already see.
 app.use('/api/facility', facilityRoutes);
 app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRoutes);
