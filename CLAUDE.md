@@ -810,6 +810,31 @@ stopped the month the paper import ended.
 - Verified end to end on the production-scale DB: 21 assertions — all three types file, land on QA's list
   with the right area, keep their readings, and a maintenance PM files nothing.
 
+### Backfilling the checks that were done and never recorded (`server/qa-record-backfill.js`)
+The work happened — the completions are in `work_orders` with their date, person and readings — so asking
+the plant to redo months of checks would be absurd. `GET|POST /sanitation/qa-backfill[/preview]` (QA/
+supervisor/admin) rebuilds the missing records **from those completions**, surfaced as an amber strip at
+the top of QA Inspections that names the count and the months.
+- **It invents nothing.** Every record is built from a completion that already exists and carries that
+  completion's own `completed_at`, `completed_by` and readings. **There is no "assume it was done" branch
+  and there must never be one** — a task nobody completed produces nothing (verified: 43 still-open QA
+  tasks produced 0 records).
+- **Every backfilled record is `entered_late = 1` with a reason**, so an auditor sees the work's real date,
+  the date the record reached the system, and why they differ. A backfilled record that looked identical to
+  one filed on the day would be the dishonest version of this.
+- Idempotent on the `Filed from task <id>` marker the live path also writes; preview writes nothing;
+  audited per record plus a summary.
+
+### A check done Monday and ticked off Thursday is a MONDAY record
+`performed_on` + `late_entry_reason` on `complete-and-recur` (`resolveBackdate` in api/pm.js), and a
+"When was this done?" date on the Operator View completion form (EN + ES). Same rules as the Sanitation
+form, deliberately: never in the future, more than a day back needs a reason, both dates stored. Beyond
+**30 days** the task path refuses and names the Sanitation form, which takes any date with a reason — a
+month-old check closed off a task card is far more likely to be someone clearing a backlog than someone
+remembering a specific morning. Default is today, so nothing changes for the normal case.
+- Seed the date from **`localDateStr()`, never `toISOString()`** — the latter is UTC and renders as
+  yesterday all evening west of Greenwich. `daysAgoStr(30)` gives the `min` bound.
+
 ## A task must name the controlled form it satisfies (`shared/form-registry.js`)
 The plant's tasks came off numbered paper forms, and an auditor holding the Forms Master Index looking at
 "Brittle Plastic & Glass Inspection — Gown Room" had no way to tell which numbered form it answers. The

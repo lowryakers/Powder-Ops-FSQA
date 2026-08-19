@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
-import { localDateStr } from '../../utils/dates';
+import { localDateStr, daysAgoStr } from '../../utils/dates';
 import FileUpload from '../FileUpload';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 import { canSeeQaReview } from '../../utils/permissions';
@@ -44,6 +44,15 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
   const [editingItems, setEditingItems] = useState(false);
   const [editItems, setEditItems] = useState([]);
   const [notes, setNotes] = useState('');
+  // "When was this actually done?" — a check done Monday and ticked off
+  // Thursday used to file a Thursday record and leave Monday empty.
+  // Seeded from localDateStr(), never toISOString(): the latter is UTC, and
+  // west of Greenwich that renders as yesterday for most of the evening.
+  const [doneOn, setDoneOn] = useState(() => localDateStr());
+  const [lateReason, setLateReason] = useState('');
+  // Computed once, not in render: Date.now() during render is impure and the
+  // compiler is right to refuse it.
+  const [earliestDoneOn] = useState(() => daysAgoStr(30));
   const [readings, setReadings] = useState({});
   const [stepChecks, setStepChecks] = useState([]);
   const [issueNotes, setIssueNotes] = useState('');
@@ -151,11 +160,16 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
         step_results: (stepsRequired || stepChecks.length > 0)
           ? steps.map((_, i) => !!stepChecks[i]) : undefined,
         reading_result: getReadingResult(),
+        // Only sent when the work was done on an earlier day. Left off, the
+        // record is dated now, exactly as before.
+        ...(doneOn && doneOn !== today ? { performed_on: doneOn, late_entry_reason: lateReason || null } : {}),
       });
       setCompleting(false);
       setNotes('');
       setReadings({});
       setStepChecks([]);
+      setDoneOn(localDateStr());
+      setLateReason('');
     } finally { setSaving(false); }
   };
 
@@ -807,6 +821,26 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 )}
               </>
             )}
+
+            {/* WHEN THE WORK WAS ACTUALLY DONE.
+                A check done on the day but ticked off later is still a record
+                for the day it was done — that is the whole point of this
+                field. It defaults to today, so nothing changes for the normal
+                case; picking an earlier day asks why, and the record then
+                carries both dates rather than pretending it was filed on the
+                day. Bounded to the last 30 days by `max`/`min`, matching the
+                server's grace window. */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t('done_on')}</label>
+              <input type="date" value={doneOn} max={today} min={earliestDoneOn}
+                onChange={e => setDoneOn(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              {doneOn !== today && (
+                <input value={lateReason} onChange={e => setLateReason(e.target.value)}
+                  className="mt-2 w-full px-3 py-2 border border-amber-300 bg-amber-50 rounded-lg text-sm"
+                  placeholder={t('late_reason_placeholder')} />
+              )}
+            </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">{t('notes')} {(taskType === 'cleaning' || taskType === 'equipment_pm') ? t('notes_optional') : ''}</label>

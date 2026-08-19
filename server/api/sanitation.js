@@ -7,6 +7,7 @@ import { areaLabel } from '../../shared/rooms.js';
 import { canonicalArea, previewAreaNormalization, NON_PRODUCTION_AREAS } from '../sanitation-areas.js';
 import { canVerifySanitation } from '../qa-signing.js';
 import { recordEditPolicy, mayRevokeSignature } from '../record-permissions.js';
+import { planQaRecordBackfill, runQaRecordBackfill } from '../qa-record-backfill.js';
 
 const router = Router();
 
@@ -313,6 +314,31 @@ router.put('/reclean-rooms', (req, res) => {
     .run(room, applicable ? 1 : 0, req.user.name);
   logAudit(req.user, 'update', 'sanitation_reclean', room, { applicable: !!applicable }, null, null, room);
   res.json({ ok: true, rooms: recleanRooms(db) });
+});
+
+/* ── Filing the records for inspections that were done and never recorded ─── */
+
+// Preview writes NOTHING: it reports which completed QA inspection tasks have
+// no record behind them, grouped by area and by month, so the months Daniela
+// reported missing can be checked against what the backfill would actually
+// file. Declared before `/:id`, or Express reads "qa-backfill" as an id.
+router.get('/qa-backfill/preview', (req, res) => {
+  if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can review the inspection backfill.' });
+  res.json(planQaRecordBackfill(getDb()));
+});
+
+// File them. Every record is built from a completion that already exists and
+// carries that completion's own date and person; a task nobody completed
+// produces nothing. Idempotent, so running it twice files nothing the second
+// time.
+router.post('/qa-backfill', (req, res) => {
+  if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can run the inspection backfill.' });
+  try {
+    res.json({ ok: true, ...runQaRecordBackfill(getDb(), { by: req.user?.name || 'system' }) });
+  } catch (e) {
+    console.error('[qa-backfill]', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /* ── Folding the free-text history onto the canonical areas ──────────────── */

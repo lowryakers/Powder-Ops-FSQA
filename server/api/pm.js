@@ -73,7 +73,41 @@ function fileDilutionRecord(db, { form, grade, readings, notes, by, workOrderId 
 // THE READINGS ARE THE RECORD, so they are written into it rather than left
 // behind on the work order: a temperature and humidity record that does not
 // carry the numbers is not evidence of anything.
-function fileQaInspectionRecord(db, { area, wo, readings, stepResults, result, notes, by, workOrderId }) {
+// A CHECK DONE ON MONDAY AND CLOSED ON THURSDAY IS A MONDAY RECORD.
+//
+// The completion path used to stamp the record with "now", so a task ticked off
+// a few days late filed a record for the wrong day — and the day it was
+// actually done stayed empty. That is the same gap `performed_at` closed on the
+// Sanitation form, and the rules here are deliberately the same ones:
+//
+//   * never in the future — that is a record of something that hasn't happened;
+//   * more than a day back needs a REASON, and the record carries both dates,
+//     so it reads "checked the 10th, entered the 13th" instead of pretending;
+//   * beyond the grace window the task path stops accepting it, and the answer
+//     is the Sanitation form, which takes any date with a reason. A month-old
+//     check being closed off a task card is much more likely to be someone
+//     clearing a backlog than someone remembering a specific morning.
+const BACKDATE_GRACE_DAYS = 30;
+
+export function resolveBackdate(performedOn, reason) {
+  if (!performedOn) return { when: null, late: 0, reason: null };
+  const raw = /^\d{4}-\d{2}-\d{2}$/.test(performedOn) ? `${performedOn} 12:00:00` : String(performedOn);
+  const parsed = new Date(raw.replace(' ', 'T'));
+  if (Number.isNaN(parsed.getTime())) return { error: 'That date could not be read.' };
+  if (parsed.getTime() > Date.now() + 60000) {
+    return { error: 'A check cannot be recorded for a future date.' };
+  }
+  const daysBack = (Date.now() - parsed.getTime()) / 86400000;
+  if (daysBack > BACKDATE_GRACE_DAYS) {
+    return { error: `That date is more than ${BACKDATE_GRACE_DAYS} days ago. File it from the Sanitation form, which takes any date with a reason.` };
+  }
+  if (daysBack > 1 && !String(reason || '').trim()) {
+    return { error: 'Recording a check from a previous day needs a reason — say why it is being entered now.' };
+  }
+  return { when: raw, late: daysBack > 1 ? 1 : 0, reason: daysBack > 1 ? String(reason).trim() : null };
+}
+
+function fileQaInspectionRecord(db, { area, wo, readings, stepResults, result, notes, by, workOrderId, backdate }) {
   const r = readings || {};
   const ticks = Array.isArray(stepResults) ? stepResults.filter(s => s && (s.done ?? s.checked ?? s === true)).length : 0;
   const detail = [
@@ -85,12 +119,15 @@ function fileQaInspectionRecord(db, { area, wo, readings, stepResults, result, n
     `Filed from task ${workOrderId}.`,
   ].filter(Boolean).join(' ');
 
+  const bd = backdate || {};
   const id = uuid();
   db.prepare(`
     INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, performed_at, entered_at,
-      result, record_group, notes)
-    VALUES (?, ?, 'pre_op', ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
+      entered_late, late_entry_reason, result, record_group, notes)
+    VALUES (?, ?, 'pre_op', ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?, ?, ?, ?)
   `).run(id, area, wo?.equipment_id || null, by,
+    // The day the CHECK happened, which is only "now" when it wasn't back-dated.
+    bd.when || null, bd.late ? 1 : 0, bd.reason || null,
     // BOTH of these columns carry a CHECK constraint, and this INSERT runs
     // inside the completion transaction — an unlisted value would not merely
     // skip the record, it would throw and make the task impossible to
@@ -636,7 +673,8 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     return res.status(409).json({ error: 'Work order is already completed' });
   }
 
-  const { notes, lubricant_used, lubricant_is_food_grade, readings, step_results, reading_result } = req.body;
+  const { notes, lubricant_used, lubricant_is_food_grade, readings, step_results, reading_result,
+    performed_on, late_entry_reason } = req.body;
   const completedAt = new Date().toISOString();
   const completedBy = req.user.name;
 
@@ -678,6 +716,11 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
 
   const finalResult = graded ? graded.result : (reading_result || null);
 
+  // Validated BEFORE the transaction: a bad date must refuse the completion
+  // outright rather than close the task and then fail to file its record.
+  const backdate = resolveBackdate(performed_on, late_entry_reason);
+  if (backdate.error) return res.status(400).json({ error: backdate.error, requires_backdate_reason: /reason/.test(backdate.error) });
+
   // The task and the RECORD are written together. A completion that files no
   // record is what sent QA back to typing Form 106-01 in by hand, and a record
   // that exists without its completion (or the other way round) is two
@@ -714,6 +757,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
         filedRecordId = fileQaInspectionRecord(db, {
           area: qaArea, wo: existing, readings, stepResults: step_results,
           result: finalResult, notes, by: completedBy, workOrderId: req.params.id,
+          backdate,
         });
       }
     }

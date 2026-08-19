@@ -56,6 +56,11 @@ const strings = {
   cancel: { en: 'Cancel', es: 'Cancelar' },
   notes: { en: 'Notes', es: 'Notas' },
   notes_optional: { en: '(optional)', es: '(opcional)' },
+  done_on: { en: 'When was this done?', es: '¿Cuándo se hizo?' },
+  late_reason_placeholder: {
+    en: 'Why is it being entered now? (required for an earlier day)',
+    es: '¿Por qué se registra ahora? (obligatorio para un día anterior)',
+  },
   assign_to: { en: 'Assign to', es: 'Asignar a' },
   leave_unassigned: { en: 'Leave unassigned', es: 'Sin asignar' },
 
