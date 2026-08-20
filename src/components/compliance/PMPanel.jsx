@@ -1214,7 +1214,11 @@ export default function PMPanel() {
   // Flat, urgency-sorted worklist of every incomplete task (overdue first, then soonest due)
   const incompleteList = (() => {
     let items = grouped ? Object.values(grouped).flat() : [];
-    if (freqFilter !== 'all') items = items.filter(wo => wo.frequency_type === freqFilter);
+    // Same rule as the server: "Submitted" means the task has NO schedule, so
+    // frequency_type is null rather than the string 'unscheduled'. Comparing
+    // the two hid every kiosk-reported problem from this list.
+    if (freqFilter === 'unscheduled') items = items.filter(wo => !wo.frequency_type);
+    else if (freqFilter !== 'all') items = items.filter(wo => wo.frequency_type === freqFilter);
     if (q) items = items.filter(wo => [wo.title, wo.equipment_name, wo.location, wo.assigned_to].some(v => v && v.toLowerCase().includes(q)));
     return items.slice().sort((a, b) => {
       const ao = a.due_date < today ? 0 : 1;

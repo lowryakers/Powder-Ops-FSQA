@@ -1186,7 +1186,14 @@ router.get('/by-frequency', (req, res) => {
     WHERE wo.status IN ('open', 'in_progress', 'overdue', 'missed')`;
   const params = [];
 
-  if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
+  // 'unscheduled' is not a value in the column — it is the ABSENCE of a
+  // schedule. A work order submitted from the kiosk, or raised from a chat
+  // message, has no pm_schedule_id at all, so `ps.frequency_type` is NULL.
+  // Comparing NULL to the string returned nothing, which is why picking the
+  // "Submitted" filter showed an empty Task Center and the maintenance team
+  // could not see a single reported problem.
+  if (frequency === 'unscheduled') { sql += ' AND ps.frequency_type IS NULL'; }
+  else if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
   if (equipment_id) { sql += ' AND wo.equipment_id = ?'; params.push(equipment_id); }
   if (group) { sql += ' AND wo.task_group = ?'; params.push(group); }
 
@@ -1228,7 +1235,14 @@ router.get('/completed-history', (req, res) => {
     WHERE ${statusFilter}`;
   const params = [];
 
-  if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
+  // 'unscheduled' is not a value in the column — it is the ABSENCE of a
+  // schedule. A work order submitted from the kiosk, or raised from a chat
+  // message, has no pm_schedule_id at all, so `ps.frequency_type` is NULL.
+  // Comparing NULL to the string returned nothing, which is why picking the
+  // "Submitted" filter showed an empty Task Center and the maintenance team
+  // could not see a single reported problem.
+  if (frequency === 'unscheduled') { sql += ' AND ps.frequency_type IS NULL'; }
+  else if (frequency) { sql += ' AND ps.frequency_type = ?'; params.push(frequency); }
   if (group) { sql += ' AND wo.task_group = ?'; params.push(group); }
   if (from) { sql += ` AND ${dateCol} >= ?`; params.push(from); }
   if (to) { sql += ` AND ${dateCol} <= ?`; params.push(to + 'T23:59:59'); }
