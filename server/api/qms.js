@@ -3,8 +3,9 @@ import { v4 as uuid } from 'uuid';
 import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
-import { smsEnabled, sendSms, approverPhone } from '../sms.js';
+import { smsEnabled, sendSms, approverPhone, smsStatus } from '../sms.js';
 import { readyDocOrigin } from '../links.js';
+import { requireRole } from '../middleware/auth.js';
 import { nextDisposalNumber } from './disposals.js';
 import { QMS_TYPES, getType, canSignApproval, RETURN_REASONS, USED_UP_REASON } from '../qms-config.js';
 import { syncKnifeStatus, syncAllKnifeStatuses } from '../knife-state.js';
@@ -310,6 +311,31 @@ router.post('/mine/checked-out/:id/return', (req, res) => {
 // Generates (or reuses) the record's magic approval token and, when Twilio is
 // configured, texts the link to the flavor approver (Danny). Always returns
 // the link so it can be sent manually from any phone when SMS is off.
+// IS TEXTING ACTUALLY WORKING? Admin-only, and it never returns a secret.
+//
+// "Nothing sent and nothing said why" is the state this ends. A missing
+// variable, a typo'd variable NAME and a carrier rejection all looked the same
+// from the app, so this reports which of the three it is — and the test send
+// surfaces Twilio's own error code, which is the part that actually says what
+// to change.
+router.get('/sms-status', requireRole('admin'), (req, res) => {
+  res.json(smsStatus());
+});
+
+router.post('/sms-test', requireRole('admin'), async (req, res) => {
+  const digits = String(req.body?.to || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return res.status(400).json({ error: 'Enter a 10-digit number to test with.' });
+  if (!smsEnabled()) return res.status(400).json({ error: smsStatus().missing.length ? `Not configured — missing ${smsStatus().missing.join(', ')}.` : 'SMS is not configured.' });
+  try {
+    const r = await sendSms(`+1${digits}`, 'ReadyDoc test message — texting is configured correctly.');
+    logAudit(req.user, 'create', 'sms_test', r?.sid || null, `Test text to …${digits.slice(-4)}`);
+    // 'queued'/'accepted' is Twilio taking it, not the carrier delivering it.
+    res.json({ ok: true, sid: r?.sid || null, status: r?.status || null });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // The three or four numbers a flavour approval is ever texted to. Not all of
 // them are ReadyDoc accounts (a co-packer contact, a partner), which is why
 // this is its own list rather than a filter over `users`.

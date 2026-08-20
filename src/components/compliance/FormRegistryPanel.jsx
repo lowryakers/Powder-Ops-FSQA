@@ -11,7 +11,7 @@
 // is the opposite of what it knows.
 
 import { useState, useMemo } from 'react';
-import { FileText, AlertTriangle, Search, CheckCircle2, Plus, Pencil, Paperclip, Trash2, Archive, ExternalLink } from 'lucide-react';
+import { FileText, AlertTriangle, Search, CheckCircle2, Plus, Pencil, Paperclip, Trash2, Archive, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
@@ -188,6 +188,140 @@ function FileCell({ form, canEdit, storageOn, onChanged }) {
   );
 }
 
+// The coverage gaps, as something you can work rather than read.
+//
+// It listed ninety-seven lines and offered nothing to do about them, which is
+// how a useful report becomes wallpaper. Most of those are equipment PMs —
+// servicing a scale answers to no controlled form — so the list starts
+// COLLAPSED with a count, groups by what the items are, and every row can be
+// marked as needing no number (with a reason) or handed a form number.
+function GapsPanel({ schedules, areas, canEdit, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+  const [busy, setBusy] = useState(null);
+
+  const items = [
+    ...schedules.map(s => ({ kind: 'schedule', subject: s.title, label: s.title, meta: s.task_group, ...s })),
+    ...areas.map(a => ({ kind: 'record_area', subject: a.area, label: a.area, meta: `${a.count} filed`, ...a })),
+  ];
+  const live = items.filter(i => !i.dismissed);
+  const done = items.filter(i => i.dismissed);
+
+  // Equipment PMs are the bulk of it and are one decision, not ninety — so they
+  // are grouped and can be cleared together.
+  const isPM = (i) => i.kind === 'schedule' && /\bPM\b/i.test(i.label);
+  const pms = live.filter(isPM);
+  const rest = live.filter(i => !isPM(i));
+
+  const act = async (path, body) => {
+    setBusy(body.subject || 'bulk');
+    try { await apiPost(path, body); onChanged(); }
+    catch (e) { window.alert(e.message); }
+    finally { setBusy(null); }
+  };
+
+  const dismiss = async (item) => {
+    const reason = window.prompt(`Why does "${item.label}" need no form number?`,
+      isPM(item) ? 'Equipment servicing — not a numbered controlled form.' : '');
+    if (!reason?.trim()) return;
+    await act('/forms/gaps/dismiss', { kind: item.kind, subject: item.subject, reason: reason.trim() });
+  };
+
+  const dismissAllPms = async () => {
+    const reason = window.prompt(
+      `Mark all ${pms.length} equipment PM schedules as needing no form number?\n\nWhy:`,
+      'Equipment servicing — not a numbered controlled form.');
+    if (!reason?.trim()) return;
+    setBusy('bulk');
+    try {
+      // Sequential rather than parallel: this writes a decision per row and a
+      // half-applied burst is worse than a slightly slower one.
+      for (const p of pms) await apiPost('/forms/gaps/dismiss', { kind: p.kind, subject: p.subject, reason: reason.trim() });
+      onChanged();
+    } catch (e) { window.alert(e.message); }
+    finally { setBusy(null); }
+  };
+
+  const Row = ({ i }) => (
+    <li className="flex items-start justify-between gap-3 py-1.5 border-b border-amber-100 last:border-0">
+      <span className="text-xs text-amber-900 min-w-0">
+        <span className="font-medium">{i.kind === 'schedule' ? 'Schedule' : 'Records'}</span> · {i.label}
+        <span className="text-amber-700"> ({i.meta})</span>
+        {i.dismissed && <span className="block text-[11px] text-gray-500 mt-0.5">No form needed — {i.reason} · {i.dismissed_by}</span>}
+      </span>
+      {canEdit && (
+        i.dismissed ? (
+          <button type="button" disabled={busy === i.subject}
+            onClick={() => act('/forms/gaps/restore', { kind: i.kind, subject: i.subject })}
+            className="shrink-0 text-[11px] text-gray-500 hover:text-powder-600">Put back</button>
+        ) : (
+          <button type="button" disabled={busy === i.subject} onClick={() => dismiss(i)}
+            className="shrink-0 text-[11px] text-amber-700 hover:text-amber-900 underline">Needs no form</button>
+        )
+      )}
+    </li>
+  );
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+      <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 text-left">
+        <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+        <span className="font-semibold text-amber-900 text-sm flex-1">
+          {live.length
+            ? `${live.length} live ${live.length === 1 ? 'item carries' : 'items carry'} no form number`
+            : 'Every live item is either numbered or marked as needing no number'}
+        </span>
+        {open ? <ChevronUp size={16} className="text-amber-600" /> : <ChevronDown size={16} className="text-amber-600" />}
+      </button>
+
+      {open && (
+        <div className="mt-2">
+          <p className="text-xs text-amber-800">
+            Running in ReadyDoc but mapping to nothing in the index, so their records show no form number.
+            {' '}<RuleTip id="form.no-guess" label="Why no number?" />
+          </p>
+
+          {pms.length > 0 && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-xs font-semibold text-amber-900">
+                  Equipment PM schedules ({pms.length})
+                </p>
+                {canEdit && (
+                  <button type="button" onClick={dismissAllPms} disabled={busy === 'bulk'}
+                    className="px-2.5 py-1 rounded-lg bg-amber-600 text-white text-[11px] font-medium hover:bg-amber-700 disabled:opacity-60">
+                    {busy === 'bulk' ? 'Clearing…' : `Mark all ${pms.length} as needing no form`}
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                Servicing a machine is maintenance, not a numbered inspection — these usually answer to no form.
+              </p>
+              <ul className="mt-1.5 max-h-56 overflow-y-auto">{pms.map(i => <Row key={i.subject} i={i} />)}</ul>
+            </div>
+          )}
+
+          {rest.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-amber-900">Everything else ({rest.length})</p>
+              <ul className="mt-1.5">{rest.map(i => <Row key={i.subject} i={i} />)}</ul>
+            </div>
+          )}
+
+          {done.length > 0 && (
+            <div className="mt-3">
+              <button type="button" onClick={() => setShowDone(v => !v)} className="text-[11px] text-gray-600 hover:text-gray-800 underline">
+                {showDone ? 'Hide' : 'Show'} {done.length} marked as needing no form
+              </button>
+              {showDone && <ul className="mt-1.5">{done.map(i => <Row key={i.subject} i={i} />)}</ul>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FormRegistryPanel() {
   const { data, loading, error, refresh } = useApiGet('/forms');
   const [where, setWhere] = useState('all');
@@ -216,7 +350,11 @@ export default function FormRegistryPanel() {
   const unmappedSchedules = data?.unmapped?.schedules || [];
   const unmappedAreas = data?.unmapped?.record_areas || [];
   const disagreements = data?.disagreements || [];
-  const gaps = unmappedSchedules.length + unmappedAreas.length;
+  // Dismissed gaps are not "outstanding" — they are decided. Counting them
+  // would keep the header shouting about work somebody has already dealt with.
+  const live = (rows) => rows.filter(r => !r.dismissed);
+  const gaps = live(unmappedSchedules).length + live(unmappedAreas).length;
+  const dismissedCount = (unmappedSchedules.length + unmappedAreas.length) - gaps;
 
   return (
     <div className="p-4 sm:p-6 space-y-5">
@@ -255,28 +393,8 @@ export default function FormRegistryPanel() {
         ))}
       </div>
 
-      {gaps > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <h3 className="font-semibold text-amber-900 flex items-center gap-2 text-sm">
-            <AlertTriangle size={16} /> {gaps} live {gaps === 1 ? 'item carries' : 'items carry'} no form number
-          </h3>
-          <p className="text-xs text-amber-800 mt-1">
-            Running in ReadyDoc but mapping to nothing in the index, so their records show no form number.
-            {' '}<RuleTip id="form.no-guess" label="Why no number?" />
-          </p>
-          <ul className="mt-2 space-y-1">
-            {unmappedSchedules.map(s => (
-              <li key={`s-${s.title}`} className="text-xs text-amber-900">
-                <span className="font-medium">Schedule</span> · {s.title} <span className="text-amber-700">({s.task_group})</span>
-              </li>
-            ))}
-            {unmappedAreas.map(a => (
-              <li key={`a-${a.area}`} className="text-xs text-amber-900">
-                <span className="font-medium">Records</span> · {a.area} <span className="text-amber-700">({a.count} filed)</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {(gaps > 0 || dismissedCount > 0) && (
+        <GapsPanel schedules={unmappedSchedules} areas={unmappedAreas} canEdit={canEdit} onChanged={refresh} />
       )}
 
       {disagreements.length > 0 && (

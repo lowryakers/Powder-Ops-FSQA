@@ -676,6 +676,24 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_controlled_forms_where ON controlled_forms(where_used);
 
+    -- Coverage gaps somebody has looked at and decided are fine.
+    --
+    -- Most equipment PMs answer to no controlled form at all — servicing a
+    -- scale is not a numbered inspection — so without this the register lists
+    -- ninety of them forever and becomes a list nobody reads. A row with a
+    -- REASON and a name, not a hidden flag: dismissing is a decision, and six
+    -- months later a decision with nobody's name on it is indistinguishable
+    -- from an oversight. Deleting the row puts the gap straight back.
+    CREATE TABLE IF NOT EXISTS form_gap_dismissals (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL CHECK (kind IN ('schedule','record_area')),
+      subject TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      UNIQUE (kind, subject)
+    );
+
     -- Versioned assessment for a course. Editing publishes a new version so past
     -- attempts stay tied to the exact test the employee took (is_current = latest).
     CREATE TABLE IF NOT EXISTS training_tests (

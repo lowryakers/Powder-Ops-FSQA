@@ -46,8 +46,91 @@ export default function IntegrationsSection() {
       )}
 
       <div className="pt-2 border-t border-gray-200">
+        <SmsCard />
+      </div>
+
+      <div className="pt-2 border-t border-gray-200">
         <QuickBooksSetupCard />
       </div>
+    </div>
+  );
+}
+
+// TEXTING: what is configured, and a test that shows Twilio's real answer.
+//
+// A flavour approval that texted nobody looked identical whether a variable was
+// missing, its NAME was typed wrong, or the carrier rejected the message — the
+// banner just said "link ready". This says which, and the test send surfaces
+// Twilio's own error code, which is the part that tells you what to change.
+function SmsCard() {
+  const { data, loading, refresh } = useApiGet('/qms/sms-status');
+  const [to, setTo] = useState('');
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const send = async () => {
+    setBusy(true); setResult(null);
+    try {
+      const r = await apiFetch('/qms/sms-test', { method: 'POST', body: JSON.stringify({ to }) });
+      setResult({ ok: true, ...r });
+    } catch (e) { setResult({ ok: false, error: e.message }); }
+    finally { setBusy(false); refresh(); }
+  };
+
+  if (loading || !data) return null;
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        {data.enabled ? <CheckCircle2 size={16} className="text-green-600" /> : <Circle size={16} className="text-gray-300" />}
+        <h3 className="font-semibold text-gray-900">Texting (Twilio)</h3>
+      </div>
+      <p className="text-sm text-gray-600 mt-1 max-w-2xl">
+        Flavour approval links and the text-in AI assistant.
+      </p>
+
+      {!data.enabled && (
+        <p className="mt-2 text-sm text-amber-700">
+          Not configured — missing <span className="font-mono text-xs">{data.missing.join(', ')}</span>.
+        </p>
+      )}
+
+      {data.enabled && (
+        <dl className="mt-2 text-xs text-gray-600 space-y-0.5">
+          <div>Account <span className="font-mono">{data.account_sid_tail}</span></div>
+          <div>
+            Sender{' '}
+            <span className="font-mono">
+              {data.sender?.kind === 'messaging_service' ? `Messaging Service ${data.sender.value}` : data.sender?.value}
+            </span>
+          </div>
+          {data.default_recipient && <div>Default recipient <span className="font-mono">{data.default_recipient}</span></div>}
+        </dl>
+      )}
+
+      {data.warning && (
+        <div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+          <AlertTriangle size={14} className="text-amber-600 mt-0.5 shrink-0" />
+          <p className="text-xs text-amber-900">{data.warning}</p>
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input value={to} onChange={e => setTo(e.target.value)} placeholder="Your mobile, e.g. 801 555 0142"
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-56" />
+        <button type="button" onClick={send} disabled={busy || to.replace(/\D/g, '').length < 10}
+          className="px-3 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+          {busy ? 'Sending…' : 'Send a test text'}
+        </button>
+      </div>
+
+      {result?.ok && (
+        <p className="mt-2 text-sm text-green-700">
+          Twilio accepted it ({result.status || 'queued'}). If it does not arrive, the carrier rejected it —
+          check the message in Twilio&rsquo;s Monitor → Logs.
+        </p>
+      )}
+      {result && !result.ok && <p className="mt-2 text-sm text-red-600">{result.error}</p>}
     </div>
   );
 }

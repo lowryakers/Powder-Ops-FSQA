@@ -113,6 +113,16 @@ function qmsDisagreements() {
   return out;
 }
 
+// A gap someone has looked at and decided is fine. Most equipment PMs answer to
+// no controlled form at all — servicing a scale is not a numbered inspection —
+// so a register that lists ninety of them forever is one nobody reads. Kept as
+// a row with a REASON and a name rather than a hidden flag: dismissing is a
+// decision, and a decision with nobody's name on it is indistinguishable from
+// an oversight six months later. Undismissing puts it straight back.
+function dismissals(db) {
+  try { return db.prepare('SELECT * FROM form_gap_dismissals').all(); } catch { return []; }
+}
+
 /** Live work that maps to no form number. Grouped, so it is bounded by shape. */
 function coverage(db) {
   const unmapped = { schedules: [], record_areas: [] };
@@ -123,9 +133,14 @@ function coverage(db) {
     WHERE task_group IN ('qa','cleaning') AND is_active = 1
     GROUP BY title, task_group ORDER BY title
   `).all();
+  const dismissed = new Map(dismissals(db).map(d => [`${d.kind}:${d.subject}`, d]));
   for (const s of scheds) {
-    if (formFor({ taskTitle: s.title })) mapped.schedules += 1;
-    else unmapped.schedules.push({ title: s.title, task_group: s.task_group, count: s.n });
+    if (formFor({ taskTitle: s.title })) { mapped.schedules += 1; continue; }
+    const d = dismissed.get(`schedule:${s.title}`);
+    unmapped.schedules.push({
+      title: s.title, task_group: s.task_group, count: s.n,
+      dismissed: !!d, reason: d?.reason || null, dismissed_by: d?.created_by || null,
+    });
   }
 
   const areas = db.prepare(`
@@ -133,8 +148,12 @@ function coverage(db) {
     GROUP BY area, record_group ORDER BY n DESC
   `).all();
   for (const a of areas) {
-    if (formFor({ sanitationArea: a.area })) mapped.record_areas += 1;
-    else unmapped.record_areas.push({ area: a.area, record_group: a.record_group, count: a.n });
+    if (formFor({ sanitationArea: a.area })) { mapped.record_areas += 1; continue; }
+    const d = dismissed.get(`record_area:${a.area}`);
+    unmapped.record_areas.push({
+      area: a.area, record_group: a.record_group, count: a.n,
+      dismissed: !!d, reason: d?.reason || null, dismissed_by: d?.created_by || null,
+    });
   }
   return { mapped, unmapped };
 }
@@ -165,6 +184,34 @@ router.get('/', (req, res) => {
     });
   }
   res.json(payload);
+});
+
+// Mark a gap as deliberate, or put it back. A reason is required, because
+// "we looked and it doesn't answer to a form" is the answer an auditor wants
+// and a silently hidden row cannot give it.
+router.post('/gaps/dismiss', (req, res) => {
+  if (!requireEdit(req, res)) return;
+  const kind = ['schedule', 'record_area'].includes(req.body?.kind) ? req.body.kind : null;
+  const subject = String(req.body?.subject || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+  if (!kind || !subject) return res.status(400).json({ error: 'kind and subject are required.' });
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why this needs no form number.' });
+  const db = getDb();
+  db.prepare(`INSERT INTO form_gap_dismissals (id, kind, subject, reason, created_by)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(kind, subject) DO UPDATE SET reason = excluded.reason,
+      created_by = excluded.created_by, created_at = datetime('now')`)
+    .run(uuid(), kind, subject, reason, req.user?.name || 'system');
+  logAudit(req.user, 'update', 'form_gap', subject, `Marked as needing no form number: ${reason}`);
+  res.json({ ok: true });
+});
+
+router.post('/gaps/restore', (req, res) => {
+  if (!requireEdit(req, res)) return;
+  const { kind, subject } = req.body || {};
+  getDb().prepare('DELETE FROM form_gap_dismissals WHERE kind = ? AND subject = ?').run(kind, String(subject || ''));
+  logAudit(req.user, 'update', 'form_gap', String(subject || ''), 'Restored to the unmapped list');
+  res.json({ ok: true });
 });
 
 function normalize(body) {
