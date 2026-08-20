@@ -1212,12 +1212,38 @@ router.get('/requests/:id/pdf', (req, res) => {
   const halfW = pageW / 2;
   const labW = 105;
   doc.fontSize(8.5);
+
+  // EACH ROW IS AS TALL AS ITS TALLEST CELL, measured — not a fixed 16pt.
+  //
+  // A long product name ("Raspberry Cheesecake Whey Protein Stick") wraps to two
+  // lines in the value column, but the row advanced by a constant, so the second
+  // line was drawn on top of the next row's label and the rule was struck
+  // through the middle of it. The results table below has always measured with
+  // heightOfString; the header block simply never did. This is a Certificate of
+  // Analysis that goes to a customer, so overlapping text is not cosmetic — it
+  // makes the product name unreadable on the document that identifies the lot.
+  const valW1 = halfW - labW - 10;
+  const valW2 = halfW - labW;
   for (const [l1, v1, l2, v2] of info) {
+    // Labels are short and never wrap, but they are measured too — a label that
+    // grows later must not reintroduce this.
+    doc.font('Helvetica-Bold');
+    const labH = Math.max(
+      doc.heightOfString(l1.toUpperCase(), { width: labW }),
+      doc.heightOfString(l2.toUpperCase(), { width: labW }),
+    );
+    doc.font('Helvetica');
+    const valH = Math.max(
+      doc.heightOfString(v1 || ' ', { width: valW1 }),
+      doc.heightOfString(v2 || ' ', { width: valW2 }),
+    );
+    const rowH = Math.max(16, Math.max(labH, valH) + 5);
+
     doc.font('Helvetica-Bold').fillColor('#777').text(l1.toUpperCase(), lm, y, { width: labW });
-    doc.font('Helvetica').fillColor('#111').text(v1, lm + labW, y, { width: halfW - labW - 10 });
+    doc.font('Helvetica').fillColor('#111').text(v1, lm + labW, y, { width: valW1 });
     doc.font('Helvetica-Bold').fillColor('#777').text(l2.toUpperCase(), lm + halfW, y, { width: labW });
-    doc.font('Helvetica').fillColor('#111').text(v2, lm + halfW + labW, y, { width: halfW - labW });
-    y += 16;
+    doc.font('Helvetica').fillColor('#111').text(v2, lm + halfW + labW, y, { width: valW2 });
+    y += rowH;
     doc.moveTo(lm, y - 4).lineTo(lm + pageW, y - 4).lineWidth(0.4).strokeColor(RULE).stroke();
   }
   y += 8;
