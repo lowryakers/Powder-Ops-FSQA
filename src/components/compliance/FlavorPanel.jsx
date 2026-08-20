@@ -1,22 +1,179 @@
-import { useState } from 'react';
-import { apiPost } from '../../hooks/useApi';
-import { Send, Copy, Check, MessageSquare } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { apiPost, apiDelete, useApiGet } from '../../hooks/useApi';
+import { Send, Copy, Check, MessageSquare, X, Trash2, Star } from 'lucide-react';
 import QMSRecordsPanel from './QMSRecordsPanel.jsx';
 
-// Flavor Approvals: the log (generic QMS panel) plus a "text it to Danny"
-// action on freshly created pending requests. When Twilio is configured the
-// link is texted automatically; otherwise it's copyable to send from any phone.
+// Flavor Approvals: the log (generic QMS panel) plus "text it for approval".
+//
+// WHO IT GOES TO IS CHOSEN AT SEND TIME. It used to be one number in an env
+// var, so texting a second approver meant a redeploy — and in practice the link
+// got copied into a personal text, which leaves no record of who was asked.
+// The number is picked here and recorded in the audit trail with the decision.
+//
+// Three boxes rather than one, because a phone number is read and dictated in
+// three groups and typing it as ten unbroken digits is where a transposition
+// hides. Numbers used more than once are saved, since there are only ever three
+// or four of them.
+
+const digitsOnly = (v) => String(v || '').replace(/\D/g, '');
+const prettyPhone = (p) => {
+  const d = digitsOnly(p).slice(-10);
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : p;
+};
+
+function PhoneBoxes({ value, onChange }) {
+  // [area, prefix, line] — kept as three strings so each box owns its own
+  // length and the caret never jumps mid-group.
+  const refs = [useRef(null), useRef(null), useRef(null)];
+  const lens = [3, 3, 4];
+
+  const setPart = (i, raw) => {
+    const v = digitsOnly(raw).slice(0, lens[i]);
+    const next = [...value];
+    next[i] = v;
+    onChange(next);
+    // Advance only when this group is full — never on every keystroke, or a
+    // correction in the middle of a group throws focus forward.
+    if (v.length === lens[i] && i < 2) refs[i + 1].current?.focus();
+  };
+
+  // Backspace at the start of an empty box steps back, which is what every
+  // phone-entry field people have used does.
+  const onKeyDown = (i, e) => {
+    if (e.key === 'Backspace' && !value[i] && i > 0) { e.preventDefault(); refs[i - 1].current?.focus(); }
+  };
+
+  // Pasting a whole number into the first box should just work.
+  const onPaste = (e) => {
+    const d = digitsOnly(e.clipboardData.getData('text')).slice(-10);
+    if (d.length < 4) return;
+    e.preventDefault();
+    onChange([d.slice(0, 3), d.slice(3, 6), d.slice(6, 10)]);
+    refs[2].current?.focus();
+  };
+
+  return (
+    <div className="flex items-center gap-1.5" onPaste={onPaste}>
+      <span className="text-sm text-gray-400">(</span>
+      {[0, 1, 2].map(i => (
+        <span key={i} className="flex items-center gap-1.5">
+          <input ref={refs[i]} value={value[i]} onChange={e => setPart(i, e.target.value)}
+            onKeyDown={e => onKeyDown(i, e)}
+            inputMode="numeric" autoComplete="off"
+            // type=text, not number: a number input strips leading zeros and
+            // offers a spinner nobody wants on a phone number.
+            type="text" maxLength={lens[i]}
+            aria-label={['Area code', 'Prefix', 'Line number'][i]}
+            className={`px-2 py-2 border border-gray-300 rounded-lg text-sm text-center tracking-wider ${i === 2 ? 'w-16' : 'w-12'}`} />
+          {i === 0 && <span className="text-sm text-gray-400">)</span>}
+          {i === 1 && <span className="text-sm text-gray-400">–</span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SendModal({ onClose, onSend, sending }) {
+  const { data: contacts, refresh } = useApiGet('/qms/sms-contacts');
+  const [parts, setParts] = useState(['', '', '']);
+  const [save, setSave] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [error, setError] = useState(null);
+  const phone = parts.join('');
+  const complete = phone.length === 10;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    if (!complete) { setError('Enter all ten digits.'); return; }
+    if (save && !saveName.trim()) { setError('Give the number a name to save it.'); return; }
+    if (save) {
+      // Saving must never block the send — a duplicate or a hiccup here is not
+      // a reason to fail texting the approval.
+      try { await apiPost('/qms/sms-contacts', { name: saveName.trim(), phone }); refresh(); }
+      catch { /* the send is what matters */ }
+    }
+    onSend(phone);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()}
+        className="bg-white rounded-xl w-full max-w-sm max-h-[92vh] overflow-y-auto p-5 space-y-4">
+        <div className="flex items-start justify-between">
+          <h3 className="font-semibold text-gray-900">Text this for approval</h3>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={16} /></button>
+        </div>
+
+        {!!contacts?.length && (
+          <div>
+            <p className="text-xs font-medium text-gray-600 mb-1.5">Saved numbers</p>
+            <div className="space-y-1">
+              {contacts.map(c => (
+                <div key={c.id} className="flex items-center gap-2">
+                  <button type="button"
+                    onClick={() => setParts([c.phone.slice(0, 3), c.phone.slice(3, 6), c.phone.slice(6, 10)])}
+                    className={`flex-1 text-left px-3 py-2 rounded-lg border text-sm ${phone === c.phone ? 'border-powder-500 bg-powder-50 text-powder-800' : 'border-gray-200 hover:bg-gray-50'}`}>
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-gray-500"> · {prettyPhone(c.phone)}</span>
+                  </button>
+                  <button type="button" title={`Remove ${c.name}`}
+                    onClick={async () => { if (window.confirm(`Remove ${c.name}?`)) { await apiDelete(`/qms/sms-contacts/${c.id}`); refresh(); } }}
+                    className="p-1.5 text-gray-300 hover:text-red-600"><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">
+            {contacts?.length ? 'Or a different number' : 'Phone number'}
+          </label>
+          <PhoneBoxes value={parts} onChange={setParts} />
+        </div>
+
+        {complete && !contacts?.some(c => c.phone === phone) && (
+          <label className="flex items-start gap-2 text-xs text-gray-600">
+            <input type="checkbox" checked={save} onChange={e => setSave(e.target.checked)} className="mt-0.5" />
+            <span className="flex-1">
+              <span className="inline-flex items-center gap-1"><Star size={11} /> Save this number for next time</span>
+              {save && (
+                <input value={saveName} onChange={e => setSaveName(e.target.value)} placeholder="Name (e.g. Danny)"
+                  className="mt-1.5 w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+              )}
+            </span>
+          </label>
+        )}
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <div className="flex gap-2">
+          <button type="submit" disabled={!complete || sending}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            <Send size={14} /> {sending ? 'Sending…' : 'Send'}
+          </button>
+          <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm">Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function FlavorPanel() {
-  const [sendResult, setSendResult] = useState(null); // { link, texted, sms_configured }
+  const [sendResult, setSendResult] = useState(null);
   const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pending, setPending] = useState(null); // the record awaiting a number
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const sendForApproval = async (recordId) => {
-    setSending(true); setSendResult(null); setCopied(false);
-    try { setSendResult(await apiPost(`/qms/flavor_approval/${recordId}/send`, {})); }
+  useEffect(() => { setCopied(false); }, [sendResult]);
+
+  const sendForApproval = async (recordId, to) => {
+    setSending(true); setSendResult(null);
+    try { setSendResult(await apiPost(`/qms/flavor_approval/${recordId}/send`, to ? { to } : {})); }
     catch (e) { setSendResult({ error: e.message }); }
-    finally { setSending(false); }
+    finally { setSending(false); setPending(null); setRefreshKey(k => k + 1); }
   };
 
   const copy = () => {
@@ -25,12 +182,19 @@ export default function FlavorPanel() {
 
   return (
     <div className="space-y-3">
+      {pending && (
+        <SendModal onClose={() => setPending(null)} sending={sending}
+          onSend={(to) => sendForApproval(pending, to)} />
+      )}
+
       {sendResult && !sendResult.error && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-3.5 text-sm space-y-2">
           {sendResult.texted ? (
-            <p className="text-green-800 font-medium flex items-center gap-1.5"><MessageSquare size={15} /> Texted to Danny — he can approve or deny with one tap, no login.</p>
+            <p className="text-green-800 font-medium flex items-center gap-1.5">
+              <MessageSquare size={15} /> Texted to {prettyPhone(sendResult.sent_to)} — one tap approves or denies, no login.
+            </p>
           ) : (
-            <p className="text-green-800 font-medium">Approval link ready — text it to Danny from any phone. One tap approves or denies, no login needed.</p>
+            <p className="text-green-800 font-medium">Approval link ready — send it from any phone. One tap approves or denies, no login needed.</p>
           )}
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-white border border-green-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 break-all">{sendResult.link}</code>
@@ -39,7 +203,7 @@ export default function FlavorPanel() {
             </button>
           </div>
           {!sendResult.sms_configured && (
-            <p className="text-[11px] text-green-700/70">Auto-texting turns on once Twilio is configured (TWILIO_* + FLAVOR_APPROVER_PHONE env vars).</p>
+            <p className="text-[11px] text-green-700/70">Auto-texting turns on once Twilio is configured (the TWILIO_* env vars).</p>
           )}
           {sendResult.sms_error && <p className="text-[11px] text-amber-700">Text failed ({sendResult.sms_error}) — copy the link and send it manually.</p>}
         </div>
@@ -48,10 +212,12 @@ export default function FlavorPanel() {
 
       <QMSRecordsPanel key={refreshKey} recordType="flavor_approval" moduleId="flavor-approvals"
         rowAction={{
-          label: sending ? 'Sending…' : 'Text for approval',
+          label: 'Text for approval',
           icon: Send,
           show: (r) => r.status === 'pending',
-          run: (r) => sendForApproval(r.id).then(() => setRefreshKey(k => k)),
+          // Opens the picker rather than sending blind — the whole point is
+          // that the approver is chosen, and recorded, per request.
+          run: (r) => { setSendResult(null); setPending(r.id); },
         }} />
     </div>
   );

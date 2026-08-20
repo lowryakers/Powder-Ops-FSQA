@@ -310,6 +310,36 @@ router.post('/mine/checked-out/:id/return', (req, res) => {
 // Generates (or reuses) the record's magic approval token and, when Twilio is
 // configured, texts the link to the flavor approver (Danny). Always returns
 // the link so it can be sent manually from any phone when SMS is off.
+// The three or four numbers a flavour approval is ever texted to. Not all of
+// them are ReadyDoc accounts (a co-packer contact, a partner), which is why
+// this is its own list rather than a filter over `users`.
+router.get('/sms-contacts', (req, res) => {
+  res.json(getDb().prepare('SELECT id, name, phone FROM sms_contacts ORDER BY name').all());
+});
+
+router.post('/sms-contacts', (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  const digits = String(req.body?.phone || '').replace(/\D/g, '').slice(-10);
+  if (!name || digits.length !== 10) return res.status(400).json({ error: 'A name and a 10-digit phone number are both required.' });
+  const db = getDb();
+  const existing = db.prepare('SELECT id FROM sms_contacts WHERE phone = ?').get(digits);
+  if (existing) return res.status(409).json({ error: 'That number is already saved.' });
+  const id = crypto.randomUUID();
+  db.prepare('INSERT INTO sms_contacts (id, name, phone, created_by) VALUES (?, ?, ?, ?)')
+    .run(id, name, digits, req.user?.name || 'system');
+  logAudit(req.user, 'create', 'sms_contact', id, `Saved ${name} for approval texts`);
+  res.status(201).json({ id, name, phone: digits });
+});
+
+router.delete('/sms-contacts/:id', (req, res) => {
+  const db = getDb();
+  const c = db.prepare('SELECT * FROM sms_contacts WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Not found.' });
+  db.prepare('DELETE FROM sms_contacts WHERE id = ?').run(req.params.id);
+  logAudit(req.user, 'delete', 'sms_contact', req.params.id, `Removed ${c.name}`);
+  res.json({ ok: true });
+});
+
 router.post('/flavor_approval/:id/send', async (req, res) => {
   const db = getDb();
   const row = db.prepare("SELECT * FROM qms_records WHERE id = ? AND record_type = 'flavor_approval'").get(req.params.id);
@@ -322,15 +352,31 @@ router.post('/flavor_approval/:id/send', async (req, res) => {
   }
   const link = `${readyDocOrigin()}/approve/${data.approval_token}`;
   const summary = [data.product_name, data.lot_number && `Lot ${data.lot_number}`, data.work_order && `WO ${data.work_order}`].filter(Boolean).join(' · ');
+  // WHO IT GOES TO IS CHOSEN AT SEND TIME.
+  //
+  // It used to be one number in an env var, so the only way to text a second
+  // approver was a redeploy — and in practice the link was copied out and
+  // pasted into a personal text, which leaves no record of who was asked.
+  // A number passed here wins; FLAVOR_APPROVER_PHONE stays the default so
+  // nothing changes for the ordinary case.
+  const digits = String(req.body?.to || '').replace(/\D/g, '').slice(-10);
+  if (req.body?.to && digits.length !== 10) {
+    return res.status(400).json({ error: 'That does not look like a 10-digit phone number.' });
+  }
+  const to = digits ? `+1${digits}` : approverPhone();
+
   let texted = false, smsError = null;
-  if (smsEnabled() && approverPhone()) {
+  if (smsEnabled() && to) {
     try {
-      await sendSms(approverPhone(), `Powder Ops — flavor approval needed: ${summary}. Tap to approve or deny: ${link}`);
+      await sendSms(to, `Powder Ops — flavor approval needed: ${summary}. Tap to approve or deny: ${link}`);
       texted = true;
-      logAudit(req.user, 'qms_updated', 'flavor_approval', row.id, { record_number: row.record_number, texted_to_approver: true });
+      // The number is recorded, because "who was asked to approve this" is a
+      // question about a decision on product.
+      logAudit(req.user, 'qms_updated', 'flavor_approval', row.id,
+        { record_number: row.record_number, texted_to: to });
     } catch (e) { smsError = e.message; }
   }
-  res.json({ ok: true, link, texted, sms_configured: smsEnabled() && !!approverPhone(), sms_error: smsError });
+  res.json({ ok: true, link, texted, sent_to: texted ? to : null, sms_configured: smsEnabled() && !!to, sms_error: smsError });
 });
 
 // ── list + summary ──────────────────────────────────────────────────────────

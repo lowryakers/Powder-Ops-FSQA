@@ -100,6 +100,11 @@ const MODULE_GROUPS = [
       { id: 'internal-audits', label: 'Internal Audits (Form 403-01)' },
       { id: 'safety', label: 'Safety (crisis contacts, evacuations, first aid)' },
       { id: 'retention-samples', label: 'Retention Samples (retains, lab pulls, boxes)' },
+      // These three are ordinary nav modules with no special gating, and they
+      // simply had no checkbox — so there was no way to grant them to anybody
+      // and they read as missing. Quality Schedules is the one that surfaced it.
+      { id: 'quality-schedules', label: 'Quality Schedules (EMP swabs, water & air testing)', note: 'The recurring quality checks from FORM 604-01 — they generate QA tasks in the Task Center.' },
+      { id: 'facility-map', label: 'Facility Map (floor plan, cleaning status, pest, BP&G zones)' },
     ],
   },
   {
@@ -119,6 +124,7 @@ const MODULE_GROUPS = [
       { id: 'certifications', label: 'Certifications' },
       { id: 'dcr', label: 'Document Change Requests' },
       { id: 'org-chart', label: 'Org Chart' },
+      { id: 'audit', label: 'Audit Log', note: 'Read-only history of every change: who did what, when, and what the value was before. What an auditor asks to see.' },
     ],
   },
   {
@@ -490,6 +496,8 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
     name: '', role: 'operator', department: 'warehouse',
     ...initial,
     home_workspace: initial?.home_workspace || 'fsqa',
+    phone: initial?.phone || '',
+    sms_access: initial?.sms_access ? 1 : 0,
     module_access: parseModuleAccess(initial?.module_access),
     quick_tabs: parseQuickTabs(initial?.quick_tabs),
   }));
@@ -566,6 +574,30 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
             <option value="messages">Messages</option>
           </select>
           <p className="text-[11px] text-gray-400 mt-1">Where this user lands after signing in.</p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Mobile number</label>
+          <input value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })}
+            type="text" inputMode="numeric" placeholder="(801) 555-0100"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          <p className="text-[11px] text-gray-400 mt-1">Used for approval texts. Stored as ten digits.</p>
+        </div>
+        <div className="sm:col-span-2">
+          {/* A GRANT, NOT A CONSEQUENCE OF HAVING A NUMBER.
+              This is what lets an incoming text be answered with plant data, so
+              it is deliberately its own checkbox and defaults to off: recording
+              somebody's mobile must never quietly open that door. */}
+          <label className="flex items-start gap-2 p-3 rounded-lg border border-gray-200 bg-gray-50">
+            <input type="checkbox" checked={!!form.sms_access} disabled={!String(form.phone || '').trim()}
+              onChange={e => setForm({ ...form, sms_access: e.target.checked ? 1 : 0 })} className="mt-0.5" />
+            <span className="text-xs text-gray-700">
+              <span className="font-medium">Can text ReadyDoc questions</span>
+              <span className="block text-gray-500 mt-0.5">
+                Texts from this number are answered by the AI assistant with plant data (read-only).
+                {!String(form.phone || '').trim() && ' Add a mobile number first.'}
+              </span>
+            </span>
+          </label>
         </div>
       </div>
 

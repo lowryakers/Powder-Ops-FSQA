@@ -3,8 +3,18 @@
 ## Flavor approvals via SMS (Danny)
 `flavor_approval` QMS type + FlavorPanel ("Text for approval" row action) → magic link `/approve/<token>`
 (public, single-use, ApprovePage.jsx) → decision updates the record + announces in #batching.
-**SMS auto-send needs env:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `FLAVOR_APPROVER_PHONE`
-(optional `APP_BASE_URL`, default start.powder-ops.com). Without them the link is shown for manual texting.
+**SMS auto-send needs env:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`
+(optional `FLAVOR_APPROVER_PHONE` as the default recipient, `APP_BASE_URL` default start.powder-ops.com).
+Without them the link is shown for manual texting.
+**The recipient is chosen at SEND time** (`POST /qms/flavor_approval/:id/send` takes `to`): a three-box
+number entry with saved contacts (`sms_contacts`), because texting a second approver used to need a
+redeploy and in practice the link got pasted into a personal text, leaving no record of who was asked.
+The number is audited with the decision. `FLAVOR_APPROVER_PHONE` remains the fallback.
+**Texting IN is a per-user grant, not a phone number.** `users.phone` (stored as ten digits) is a contact
+detail; `users.sms_access` is the allowlist that lets an inbound text be answered with plant data, and it
+defaults to 0 — recording somebody's mobile must never quietly open that door. `knownSender()` matches the
+roster on the last 10 digits and falls back to `FLAVOR_APPROVER_PHONE`. An unknown number is acked and
+dropped in SILENCE: telling a stranger "you are not authorised" confirms the number reaches something.
 **Text-to-AI (BUILT, awaiting Twilio compliance approval):** `server/api/sms-inbound.js` →
 `POST /api/sms/inbound` (public path, X-Twilio-Signature validated against the exact APP_BASE_URL webhook
 URL; allowlist = FLAVOR_APPROVER_PHONE matched on last 10 digits; acks with empty TwiML, answers async via

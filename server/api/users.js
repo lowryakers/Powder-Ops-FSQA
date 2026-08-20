@@ -48,7 +48,7 @@ function issueSession(db, user) {
 router.get('/', (req, res) => {
   const db = getDb();
   const { role, active } = req.query;
-  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, created_at FROM users WHERE 1=1';
+  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access, created_at FROM users WHERE 1=1';
   const params = [];
   if (role) { sql += ' AND role = ?'; params.push(role); }
   if (active !== undefined) { sql += ' AND is_active = ?'; params.push(active === 'true' ? 1 : 0); }
@@ -232,7 +232,7 @@ router.post('/', requireRole('admin'), (req, res) => {
     .run(id, name, signIn, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr);
 
   joinDefaultChannels(db, id);
-  const created = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(id);
+  const created = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'user', id, { name, role: role || 'operator', department: department || 'warehouse' }, null, null, name);
   res.status(201).json(created);
 });
@@ -328,7 +328,7 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'User not found' });
 
-  const { name, username, email, pin, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs } = req.body;
+  const { name, username, email, pin, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access } = req.body;
 
   // An admin-set username wins. Otherwise, if the full name changed and the
   // current username is still the one we derived from the old name, follow the
@@ -343,21 +343,27 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   }
   if (!signIn) signIn = uniqueUsername(db, name || existing.name, req.params.id);
   const moduleAccessStr = module_access !== undefined ? (module_access ? JSON.stringify(module_access) : null) : existing.module_access;
+  // Stored as the ten digits and nothing else, so what Settings holds and what
+  // Twilio sends compare cleanly however either was typed.
+  const phoneVal = phone !== undefined ? (String(phone).replace(/\D/g, '').slice(-10) || null) : existing.phone;
+  // Texting the system is a GRANT, never a side effect of recording a number:
+  // it lets an inbound text be answered with plant data.
+  const smsVal = sms_access !== undefined ? (sms_access ? 1 : 0) : (existing.sms_access || 0);
   const homeWorkspace = home_workspace !== undefined ? (home_workspace === 'messages' ? 'messages' : 'fsqa') : existing.home_workspace;
   const quickTabsStr = quick_tabs !== undefined
     ? (Array.isArray(quick_tabs) && quick_tabs.length ? JSON.stringify(quick_tabs.slice(0, 4).map(String)) : null)
     : existing.quick_tabs;
-  db.prepare(`UPDATE users SET name=?, username=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, updated_at=datetime('now') WHERE id=?`)
+  db.prepare(`UPDATE users SET name=?, username=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, phone=?, sms_access=?, updated_at=datetime('now') WHERE id=?`)
     .run(name || existing.name, signIn, email ?? existing.email, pin || null, role || existing.role,
       department || existing.department || 'warehouse',
       is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
       is_contractor !== undefined ? (is_contractor ? 1 : 0) : (existing.is_contractor || 0),
       contractor_company ?? existing.contractor_company, contractor_license ?? existing.contractor_license,
       contractor_insurance_expiry ?? existing.contractor_insurance_expiry, contractor_scope ?? existing.contractor_scope,
-      moduleAccessStr, homeWorkspace, quickTabsStr,
+      moduleAccessStr, homeWorkspace, quickTabsStr, phoneVal, smsVal,
       req.params.id);
 
-  const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, created_at FROM users WHERE id = ?').get(req.params.id);
+  const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(req.params.id);
 
   // Surface security-relevant changes (role, active status, module permissions)
   // as their own explicit audit actions so they're easy to filter for.

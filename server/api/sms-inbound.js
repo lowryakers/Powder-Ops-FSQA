@@ -6,8 +6,12 @@
 //  - Every request must carry a valid X-Twilio-Signature (HMAC of the exact
 //    public webhook URL + params with our auth token), so only Twilio can
 //    invoke this endpoint.
-//  - Only allowlisted senders get answers (FLAVOR_APPROVER_PHONE for now);
-//    texts from unknown numbers are acknowledged and silently dropped.
+//  - Only allowlisted senders get answers. The allowlist is the USER ROSTER:
+//    an account with a phone number AND `sms_access = 1`, granted in Settings.
+//    FLAVOR_APPROVER_PHONE still works so Danny keeps answering before anyone
+//    is set up. Texts from unknown numbers are acknowledged and dropped in
+//    silence — telling an unknown caller "you are not authorised" confirms the
+//    number reaches something worth probing.
 //  - Answers go through answerQuestion(), which is restricted to read-only
 //    SELECTs with sensitive tables/columns filtered.
 //
@@ -21,7 +25,7 @@ import crypto from 'crypto';
 import { aiEnabled, answerQuestion } from '../ai.js';
 import { smsEnabled, sendSms, approverPhone } from '../sms.js';
 import { appBaseUrl } from '../links.js';
-import { logAudit } from '../db.js';
+import { getDb, logAudit } from '../db.js';
 
 const router = Router();
 
@@ -42,9 +46,30 @@ function validSignature(req) {
 // Compare numbers by their last 10 digits so +1 / formatting differences
 // between the env var and Twilio's E.164 don't break the allowlist.
 const last10 = (p) => String(p || '').replace(/\D/g, '').slice(-10);
+// Who is texting, or null. Matching is on the last 10 digits so +1 and
+// formatting differences between what someone typed in Settings and Twilio's
+// E.164 don't quietly break the allowlist.
+//
+// `sms_access` is what authorises an answer — NOT merely having a phone number
+// on the account. A number is a contact detail; being able to ask the system
+// questions by text is a grant, and it defaults to off.
 function knownSender(from) {
+  const digits = last10(from);
+  if (!digits) return null;
+  try {
+    const rows = getDb().prepare(
+      "SELECT name, phone FROM users WHERE is_active = 1 AND sms_access = 1 AND phone IS NOT NULL AND phone != ''"
+    ).all();
+    const hit = rows.find(u => last10(u.phone) === digits);
+    if (hit) return hit.name;
+  } catch (e) {
+    // A schema problem must not take the webhook down; fall through to the env.
+    console.warn('[sms] sender lookup failed:', e.message);
+  }
+  // The original single-number allowlist, kept so texting works before anybody
+  // has been given access in Settings.
   const danny = approverPhone();
-  if (danny && last10(danny) && last10(danny) === last10(from)) return 'Danny';
+  if (danny && last10(danny) && last10(danny) === digits) return 'Danny';
   return null;
 }
 

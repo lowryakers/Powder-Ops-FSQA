@@ -3524,6 +3524,31 @@ function runMigrations() {
   // non-working time — which is the number payroll actually argues about.
   // The roster is the users table, so nobody maintains a second list.
   addColumnIfMissing('users', 'weekly_hours_target', 'REAL');
+
+  // TEXTING READYDOC. Two columns, and they are deliberately separate.
+  //
+  // `phone` is a contact detail — useful for a flavour approval link whether or
+  // not the person ever texts the system. `sms_access` is the ALLOWLIST: it is
+  // what lets an incoming text be answered with plant data, and it defaults to
+  // 0 so adding somebody's number never quietly opens that door. A phone is
+  // something you know about a person; texting in is something an admin grants.
+  addColumnIfMissing('users', 'phone', 'TEXT');
+  addColumnIfMissing('users', 'sms_access', 'INTEGER NOT NULL DEFAULT 0');
+
+  // Numbers a flavour approval can be texted to. There are only ever three or
+  // four, they are not all ReadyDoc accounts (a co-packer contact, a partner),
+  // and re-typing ten digits at the moment of sending is how a link goes to the
+  // wrong person. Kept as its own tiny table rather than on `users` for exactly
+  // that reason.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sms_contacts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT
+    );
+  `);
   try {
     db.exec(`
       CREATE TABLE IF NOT EXISTS employee_hours (
