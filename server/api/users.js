@@ -6,6 +6,7 @@ import { requireRole } from '../middleware/auth.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
 import { ALL_MODULE_IDS } from '../module-access.js';
 import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
+import { smsEnabled, sendOptIn } from '../sms.js';
 
 const router = Router();
 
@@ -323,7 +324,7 @@ router.put('/access-templates', requireRole('admin'), (req, res) => {
   res.json({ templates });
 });
 
-router.put('/:id', requireRole('admin'), (req, res) => {
+router.put('/:id', requireRole('admin'), async (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'User not found' });
@@ -383,7 +384,28 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   const securityChange = changes.role || changes.is_active || permsChanged;
   logAudit(req.user, securityChange ? 'permission_change' : 'update', 'user', req.params.id,
     Object.keys(changes).length ? changes : null, existing, updated, updated.name);
-  res.json(updated);
+
+  // THE FIRST TEXT A NEWLY CONSENTED NUMBER GETS IS THE CONFIRMATION, not an
+  // approval link. Consent here is verbal, given to an administrator, so this
+  // is what puts it in writing on the recipient's own phone along with the way
+  // out of it. Sent once, on the transition — re-saving the record later must
+  // not re-text somebody who has been on the list for months.
+  //
+  // The row is ALREADY WRITTEN by this point, so a Twilio outage cannot undo a
+  // recorded consent; it is awaited only so the admin is told which happened.
+  // Silence after pressing Save is the exact failure this whole SMS path keeps
+  // running into.
+  let optinSent = false, optinError = null;
+  if (!hadConsent && consentAt && phoneVal && smsEnabled()) {
+    try {
+      const r = await sendOptIn(phoneVal);
+      optinSent = true;
+      logAudit(req.user, 'create', 'sms_optin', req.params.id,
+        { to: `…${phoneVal.slice(-4)}`, sid: r?.sid || null, consent_recorded_by: consentBy },
+        null, null, updated.name);
+    } catch (e) { optinError = e.message; }
+  }
+  res.json({ ...updated, optin_sent: optinSent, optin_error: optinError });
 });
 
 // --- Auth ---

@@ -28,6 +28,29 @@ export function approverPhone() {
 }
 
 /**
+ * The confirmation a newly consented number receives — and the SAME wording
+ * registered with Twilio as the campaign's opt-in message.
+ *
+ * IT IS DEFINED ONCE, HERE, AND SHOWN IN SETTINGS. Consent here is given in
+ * person and recorded by an administrator, so the carrier expects the first
+ * message a number ever receives to be this: it closes the loop in writing and
+ * carries the STOP instructions. Registering one wording with the carrier and
+ * sending another is the kind of drift nobody notices until a campaign audit.
+ */
+export const OPTIN_MESSAGE = 'Powder Ops ReadyDoc: you are now set up for quality approval requests and operational replies. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out.';
+
+/**
+ * Send that confirmation to a ten-digit US number. Returns Twilio's payload;
+ * THROWS like any other send, so the caller decides whether that matters —
+ * for the consent tick it does not, because the consent is already recorded.
+ */
+export async function sendOptIn(phone) {
+  const digits = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) throw new Error('A ten-digit mobile number is needed to send the confirmation.');
+  return sendSms(`+1${digits}`, OPTIN_MESSAGE);
+}
+
+/**
  * What is and is not configured — WITHOUT ever returning a secret.
  *
  * "Nothing was sent and nothing said why" is the failure this exists to end:
@@ -55,6 +78,9 @@ export function smsStatus() {
       ? 'Sending from a number directly. Once A2P 10DLC is approved, set TWILIO_MESSAGING_SERVICE_SID to the Messaging Service that holds your campaign — carriers reject unregistered senders (error 30034).'
       : null,
     default_recipient: approverPhone() ? `…${approverPhone().slice(-4)}` : null,
+    // Returned so the wording registered with the carrier can be read (and
+    // copied) from Settings rather than from a chat message six weeks old.
+    optin_message: OPTIN_MESSAGE,
   };
 }
 
@@ -71,7 +97,10 @@ export async function sendSms(to, body) {
   if (svc) params.MessagingServiceSid = svc;
   else params.From = val('TWILIO_FROM');
 
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+  // TWILIO_API_BASE exists only to point the tests at a stand-in, the same way
+  // QBO_API_BASE does. It is never set in production.
+  const base = val('TWILIO_API_BASE') || 'https://api.twilio.com';
+  const res = await fetch(`${base}/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: 'POST',
     headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(params).toString(),

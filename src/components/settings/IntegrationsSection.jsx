@@ -131,6 +131,25 @@ function SmsCard() {
         </p>
       )}
       {result && !result.ok && <p className="mt-2 text-sm text-red-600">{result.error}</p>}
+
+      {/* THE REGISTERED WORDING, READ FROM THE CODE THAT SENDS IT.
+          This is both what a newly consented number receives and what the A2P
+          campaign registration declares as the opt-in message. Showing the
+          server's own constant means the two cannot quietly diverge — a
+          transcription into the carrier's form is the only copy, and it is made
+          from here. */}
+      {data.optin_message && (
+        <div className="mt-4 pt-3 border-t border-gray-100">
+          <p className="text-xs font-medium text-gray-700">Opt-in confirmation</p>
+          <p className="text-xs text-gray-500 mt-0.5 max-w-2xl">
+            Sent automatically the first time an administrator records someone&rsquo;s consent in
+            Settings → Users. Register this exact wording as the campaign&rsquo;s opt-in message.
+          </p>
+          <p className="mt-1.5 text-xs text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 whitespace-pre-line">
+            {data.optin_message}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

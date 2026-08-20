@@ -605,6 +605,12 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
                 time. Consent is not a condition of employment.
                 {!String(form.phone || '').trim() && ' Add a mobile number first.'}
               </span>
+              {!initial?.sms_consent_at && (
+                <span className="block text-gray-500 mt-1">
+                  Saving sends them a one-off confirmation text, so the agreement and the way to
+                  stop it are on their own phone in writing.
+                </span>
+              )}
               {initial?.sms_consent_at && (
                 <span className="block text-gray-400 mt-1">
                   Recorded {String(initial.sms_consent_at).slice(0, 10)}
@@ -1080,9 +1086,17 @@ export default function UsersSection({ user: currentUser }) {
   };
 
   const handleUpdate = async (form) => {
-    await apiPut(`/users/${editing.id}`, form);
+    const saved = await apiPut(`/users/${editing.id}`, form);
     setEditing(null);
     refresh();
+    // Ticking the consent box texts a confirmation. Say which happened —
+    // "nothing was sent and nothing said why" is the failure this SMS path has
+    // hit at every other step.
+    if (saved?.optin_sent) {
+      window.alert(`Consent recorded, and a confirmation text has been sent to ${form.name || 'that number'}. They can reply STOP at any time.`);
+    } else if (saved?.optin_error) {
+      window.alert(`Consent was recorded, but the confirmation text did not send:\n\n${saved.optin_error}`);
+    }
   };
 
   const handleToggleActive = async (u) => {
