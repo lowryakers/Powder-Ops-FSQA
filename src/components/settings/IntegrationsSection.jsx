@@ -115,6 +115,23 @@ function SmsCard() {
         </div>
       )}
 
+      {/* The domain an approval link carries is set by an env var and is
+          otherwise invisible from the app — but it is the part the carriers
+          read. Shown so it can be checked, and checked again after it moves. */}
+      {data.link_origin && (
+        <div className="mt-2">
+          <p className="text-xs text-gray-600">
+            Texted links point at <span className="font-mono">{data.link_origin}</span>
+          </p>
+          {data.link_warning && (
+            <div className="mt-1 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+              <AlertTriangle size={14} className="text-amber-600 mt-0.5 shrink-0" />
+              <p className="text-xs text-amber-900">{data.link_warning}</p>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input value={to} onChange={e => setTo(e.target.value)} placeholder="Your mobile, e.g. 801 555 0142"
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-56" />

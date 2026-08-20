@@ -319,7 +319,23 @@ router.post('/mine/checked-out/:id/return', (req, res) => {
 // surfaces Twilio's own error code, which is the part that actually says what
 // to change.
 router.get('/sms-status', requireRole('admin'), (req, res) => {
-  res.json(smsStatus());
+  // THE DOMAIN IN THE TEXT IS PART OF THE CONFIGURATION, and it is set by an
+  // env var nobody can see from the app. Carriers scan the links in A2P
+  // traffic, and a shared free-hosting subdomain is indistinguishable from
+  // anyone else's traffic on that host — which is how approval texts start
+  // being filtered with nothing anywhere saying so. Reported here so the
+  // domain can be checked, and re-checked after it is changed.
+  const origin = readyDocOrigin();
+  let host = null;
+  try { host = new URL(origin).hostname; } catch { /* a malformed value is its own answer */ }
+  const shared = !!host && /\.(up\.railway\.app|onrender\.com|herokuapp\.com|vercel\.app)$/i.test(host);
+  res.json({
+    ...smsStatus(),
+    link_origin: origin,
+    link_warning: shared
+      ? `Texted links point at ${host}, a shared hosting domain. Carriers cannot tell it apart from anyone else's traffic on that host, which is a common cause of approval texts being filtered. Point a branded domain at the app and set READYDOC_ORIGIN to it.`
+      : (!host ? `READYDOC_ORIGIN does not look like a URL (${origin}). Texted links will be broken.` : null),
+  });
 });
 
 router.post('/sms-test', requireRole('admin'), async (req, res) => {
