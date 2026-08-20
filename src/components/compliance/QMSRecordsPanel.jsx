@@ -1090,7 +1090,16 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-xl font-bold text-gray-900">{cfg.label}</h2>
-          <p className="text-sm text-gray-500">{filtered.length} record{filtered.length === 1 ? '' : 's'}</p>
+          {/* The controlled form this log IS. It was only on the new/edit
+              modal, so someone reading the Knife or Component log — the two
+              the consultant named — saw no number anywhere on screen. Comes
+              from qms-config, which is the value Document Control gates; the
+              Form Registry reports where the two disagree rather than either
+              silently rewriting the other. */}
+          <p className="text-sm text-gray-500">
+            {cfg.formCode && <span className="font-medium text-gray-600">{cfg.formCode} · </span>}
+            {filtered.length} record{filtered.length === 1 ? '' : 's'}
+          </p>
         </div>
         {canEdit && (
           <div className="flex items-center gap-2 flex-wrap">

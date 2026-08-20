@@ -254,9 +254,17 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 in Document Control's index. */}
             <FormChip subject={{ taskTitle: task.schedule_title || task.title }} className="mt-1" />
 
-            {/* Equipment + location */}
+            {/* Equipment + ASSET NUMBER + location.
+                Six separate scales are all called "Kitchen Tour Scale" and two
+                are called "Counting Scale", so the floor saw five identical
+                cards and could not tell which machine each one meant — and a
+                completion record that cannot identify its equipment is not
+                much of a record. The number was already on the payload and
+                simply wasn't rendered. Not translated: an asset number is the
+                same string in both languages. */}
             <p className="text-sm text-gray-500 mt-0.5">
               {tc(task.equipment_name)}
+              {task.asset_id && <span className="text-gray-600 font-medium"> #{task.asset_id}</span>}
               {task.location && <span className="text-gray-400"> &middot; {task.location}</span>}
             </p>
 

@@ -643,7 +643,7 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
             )}
           </div>
           <h4 className="font-semibold text-gray-900 text-lg">{wo.title || wo.pm_title}</h4>
-          <p className="text-sm text-gray-600">{wo.equipment_name} — {wo.location || 'No location'}</p>
+          <p className="text-sm text-gray-600">{wo.equipment_name}{wo.asset_id ? ` #${wo.asset_id}` : ''} — {wo.location || 'No location'}</p>
           {/* This is the completed record an auditor is shown, so it is the
               one place the form number matters most. */}
           <FormChip subject={{ taskTitle: wo.pm_title || wo.title }} className="mt-1" />
@@ -791,7 +791,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
             <FormChip subject={{ taskTitle: wo.pm_title || wo.title }} />
           </div>
           <h4 className="font-medium text-gray-900 truncate">{wo.title}</h4>
-          <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
+          <p className="text-sm text-gray-500">{wo.equipment_name}{wo.asset_id ? ` #${wo.asset_id}` : ''} — {wo.location || 'No location'}</p>
           <p className="text-xs text-gray-400 mt-0.5">
             Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}
             {/* Covering an absence means handing this task to somebody else
@@ -992,7 +992,7 @@ function ClearanceCard({ wo, onClear, user }) {
             <FormChip subject={{ taskTitle: wo.pm_title || wo.title }} />
           </div>
           <h4 className="font-medium text-gray-900">{wo.title}</h4>
-          <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location || 'No location'}</p>
+          <p className="text-sm text-gray-500">{wo.equipment_name}{wo.asset_id ? ` #${wo.asset_id}` : ''} — {wo.location || 'No location'}</p>
           {/* Which procedure this was and how often it runs. QA should not have
               to know the daily and weekly schedules by heart, or open the
               Equipment list, to know what they are clearing. */}
@@ -1581,7 +1581,7 @@ export default function PMPanel() {
                           <FormChip subject={{ taskTitle: wo.pm_title || wo.title }} />
                         </div>
                         <h4 className={`font-medium ${isMissed ? 'text-gray-600' : 'text-gray-800'}`}>{wo.title || wo.pm_title}</h4>
-                        <p className="text-sm text-gray-500">{wo.equipment_name} — {wo.location}</p>
+                        <p className="text-sm text-gray-500">{wo.equipment_name}{wo.asset_id ? ` #${wo.asset_id}` : ''} — {wo.location}</p>
                         {isMissed ? (
                           <p className="text-xs text-gray-500 mt-1">Due: {wo.due_date}{wo.assigned_to ? ` · Assigned: ${wo.assigned_to}` : ''}</p>
                         ) : (

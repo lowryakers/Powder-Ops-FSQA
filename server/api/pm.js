@@ -425,7 +425,7 @@ router.get('/work-orders', (req, res) => {
   const db = getDb();
   runPmHousekeeping(db);
   const { status, equipment_id, from, to, assigned_to } = req.query;
-  let sql = `SELECT wo.*, e.name as equipment_name, e.room, e.is_food_contact,
+  let sql = `SELECT wo.*, e.name as equipment_name, e.asset_id, e.room, e.is_food_contact,
     ps.title as pm_title, ps.frequency_type
     FROM work_orders wo
     LEFT JOIN equipment e ON wo.equipment_id = e.id
@@ -451,7 +451,7 @@ router.get('/work-orders', (req, res) => {
 
 router.get('/work-orders/:id', (req, res) => {
   const db = getDb();
-  const wo = db.prepare(`SELECT wo.*, e.name as equipment_name, e.room, e.is_food_contact,
+  const wo = db.prepare(`SELECT wo.*, e.name as equipment_name, e.asset_id, e.room, e.is_food_contact,
     ps.title as pm_title
     FROM work_orders wo LEFT JOIN equipment e ON wo.equipment_id = e.id
     LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id WHERE wo.id = ?`).get(req.params.id);
