@@ -11,6 +11,7 @@ import { pushToUser } from '../push.js';
 import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
 import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
+import { planStepSplit } from '../../shared/pm-step-split.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
 //
@@ -348,6 +349,141 @@ router.get('/schedules', (req, res) => {
 
   sql += ' ORDER BY e.name, ps.title';
   res.json(db.prepare(sql).all(...params));
+});
+
+/**
+ * Schedules whose checklist merges several cadences into one, and what
+ * splitting them would do.
+ *
+ * The weekly scissor-lift task asked its technician for twelve steps — the
+ * weekly two, the daily two, and the monthly, quarterly and annual sections
+ * underneath — because the machine's whole written procedure had been pasted
+ * into one schedule. Preview first, commit second, like every other repair
+ * that rewrites a maintenance procedure: nothing moves until somebody has read
+ * the before and the after.
+ *
+ * BEFORE '/schedules/:id', or Express reads "step-split" as a schedule id.
+ */
+router.get('/schedules/step-split/preview', (_req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`SELECT ps.*, e.name as equipment_name, e.status as equipment_status
+    FROM pm_schedules ps JOIN equipment e ON ps.equipment_id = e.id
+    WHERE ps.is_active = 1 AND e.status = 'active' ORDER BY e.name, ps.title`).all();
+  const byEquipment = new Map();
+  for (const r of rows) {
+    if (!byEquipment.has(r.equipment_id)) byEquipment.set(r.equipment_id, []);
+    byEquipment.get(r.equipment_id).push({ id: r.id, frequency_type: r.frequency_type });
+  }
+
+  const schedules = [];
+  for (const s of rows) {
+    // Every OTHER active schedule on this machine. Its own row is excluded by
+    // id, not by cadence — a schedule is never an obstacle to keeping its own
+    // steps.
+    const others = (byEquipment.get(s.equipment_id) || [])
+      .filter(x => x.id !== s.id).map(x => x.frequency_type);
+    const plan = planStepSplit(s, [...new Set(others)]);
+    if (!plan) continue;
+    schedules.push({
+      id: s.id, title: s.title, equipment_id: s.equipment_id, equipment_name: s.equipment_name,
+      frequency_type: s.frequency_type, task_group: s.task_group,
+      refuse: plan.refuse || null,
+      before: plan.before ?? null,
+      keep: plan.keep || null,
+      move: plan.move || null,
+      creates: plan.creates ?? 0,
+      // Open work orders are already carrying the merged list, so the count is
+      // shown: this is how many technicians are looking at the wrong checklist.
+      open_work_orders: db.prepare("SELECT COUNT(*) c FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open','in_progress','missed')").get(s.id).c,
+    });
+  }
+  const actionable = schedules.filter(s => !s.refuse);
+  res.json({
+    schedules,
+    total: schedules.length,
+    actionable: actionable.length,
+    needs_a_look: schedules.length - actionable.length,
+    total_new_schedules: actionable.reduce((t, s) => t + s.creates, 0),
+    total_steps_removed: actionable.reduce((t, s) => t + Math.max(0, s.before - s.keep.length), 0),
+  });
+});
+
+router.post('/schedules/step-split', (req, res) => {
+  const db = getDb();
+  // Rewriting a maintenance procedure is not a floor action. Same ladder as
+  // snoozing a task, one rung up: whoever owns the machines or the records.
+  const maySplit = req.user?.role === 'admin' || req.user?.role === 'supervisor'
+    || ['maintenance', 'qa'].includes(req.user?.department);
+  if (!maySplit) return res.status(403).json({ error: 'Splitting a PM checklist is for maintenance, QA, supervisors and admins.' });
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+  if (!ids?.length) return res.status(400).json({ error: 'ids are required — nothing is split for schedules you did not pick.' });
+
+  const results = [];
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      const s = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(id);
+      if (!s) { results.push({ id, error: 'not found' }); continue; }
+      const eq = db.prepare('SELECT id, name, task_group FROM equipment WHERE id = ?').get(s.equipment_id);
+      // Re-read the machine's cadences inside the transaction: an earlier id in
+      // this same batch may just have created the monthly schedule this one was
+      // about to create.
+      const others = db.prepare('SELECT frequency_type FROM pm_schedules WHERE equipment_id = ? AND id != ? AND is_active = 1')
+        .all(s.equipment_id, s.id).map(r => r.frequency_type);
+      const plan = planStepSplit(s, [...new Set(others)]);
+      if (!plan) { results.push({ id, title: s.title, error: 'nothing merged' }); continue; }
+      if (plan.refuse) { results.push({ id, title: s.title, error: plan.refuse }); continue; }
+
+      db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(JSON.stringify(plan.keep), s.id);
+
+      // The work orders already generated carry their own COPY of the steps, so
+      // trimming the schedule alone leaves the technician looking at the annual
+      // load test all the same. Completed ones are history and are left exactly
+      // as they were filed.
+      const refreshed = db.prepare(`UPDATE work_orders SET procedure_steps = ?
+        WHERE pm_schedule_id = ? AND status IN ('open','in_progress','missed')`)
+        .run(JSON.stringify(plan.keep), s.id).changes;
+
+      const created = [];
+      for (const m of plan.move) {
+        if (m.disposition !== 'create') continue;
+        const newId = uuid();
+        db.prepare(`INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group)
+          VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`)
+          .run(newId, s.equipment_id, `${eq?.name || 'Equipment'} — ${m.label} PM`,
+            `Split out of "${s.title}", which was carrying several cadences in one checklist.`,
+            m.frequency_type, JSON.stringify(m.steps), s.lubricant_type || null,
+            s.is_food_grade_lubricant ? 1 : 0, s.estimated_minutes ?? null, s.haccp_ccp_id || null,
+            s.task_group || eq?.task_group || 'maintenance');
+        created.push({ id: newId, frequency_type: m.frequency_type, label: m.label, steps: m.steps.length });
+      }
+
+      // The whole before and after goes into the trail, so the change is
+      // reversible by reading the log rather than by memory.
+      logAudit(req.user, 'update', 'pm_schedule', s.id,
+        {
+          action: 'pm_step_split', before_steps: plan.before, after_steps: plan.keep.length,
+          created: created.map(c => c.label),
+          dropped: plan.move.filter(m => m.disposition === 'drop').map(m => ({ frequency: m.label, steps: m.steps.length, reason: m.reason })),
+          work_orders_refreshed: refreshed,
+        },
+        { procedure_steps: s.procedure_steps },
+        { procedure_steps: JSON.stringify(plan.keep) }, s.title);
+
+      results.push({
+        id, title: s.title, equipment: eq?.name || null,
+        before: plan.before, after: plan.keep.length,
+        created, work_orders_refreshed: refreshed,
+        dropped: plan.move.filter(m => m.disposition === 'drop').map(m => ({ frequency: m.label, steps: m.steps.length })),
+      });
+    }
+  });
+  tx();
+
+  const createdTotal = results.reduce((t, r) => t + (r.created?.length || 0), 0);
+  logAudit(req.user, 'bulk_update', 'pm_schedule', null,
+    { action: 'pm_step_split', schedules: results.length, schedules_created: createdTotal }, null, null);
+  res.json({ results, schedules: results.length, schedules_created: createdTotal });
 });
 
 router.get('/schedules/:id', (req, res) => {

@@ -5,7 +5,7 @@ import { canEditModule } from '../../utils/permissions';
 import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 import EquipmentSetupChecklist from './EquipmentSetupChecklist.jsx';
-import SchedulesFromTasksModal, { RepairTaskTextModal } from './SchedulesFromTasksModal.jsx';
+import SchedulesFromTasksModal, { RepairTaskTextModal, SplitMergedStepsModal } from './SchedulesFromTasksModal.jsx';
 import EquipmentFiles, { ManualSearch } from './EquipmentFiles.jsx';
 import { MACHINE_TYPES, ZONE_TYPES, defaultAssetKind } from '../../../shared/equipment-types.js';
 import { keepCurrent } from '../../lib/selectOptions.js';
@@ -646,6 +646,7 @@ export default function EquipmentPanel() {
   const { data: readiness } = useApiGet('/equipment/readiness');
   const { data: fromTasks, refresh: refreshFromTasks } = useApiGet('/equipment/schedules-from-tasks/preview');
   const { data: textRepair, refresh: refreshTextRepair } = useApiGet('/equipment/maintenance-tasks/repair/preview');
+  const { data: stepSplit, refresh: refreshStepSplit } = useApiGet('/pm/schedules/step-split/preview');
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'equipment');
   const canCcp = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
@@ -657,6 +658,7 @@ export default function EquipmentPanel() {
   const [buildSchedules, setBuildSchedules] = useState(false);
   const [manualSearch, setManualSearch] = useState(false);
   const [repairText, setRepairText] = useState(false);
+  const [splitSteps, setSplitSteps] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
   const [search, setSearch] = useState('');
@@ -895,6 +897,34 @@ export default function EquipmentPanel() {
 
       {repairText && (
         <RepairTaskTextModal onClose={() => setRepairText(false)} onDone={() => { refresh(); refreshTextRepair(); refreshFromTasks(); }} />
+      )}
+
+      {/* A whole written procedure pasted into one schedule: the weekly task
+          asks for the annual load test too. The count that matters is the open
+          tasks, because those are the checklists people are working from now. */}
+      {!!stepSplit?.total && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 flex-wrap">
+          <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-red-900">
+              {stepSplit.total} PM checklist{stepSplit.total === 1 ? '' : 's'} ask for several frequencies at once
+            </h3>
+            <p className="text-xs text-red-800">
+              A weekly task is handing the technician the monthly, quarterly and annual steps as well — so most
+              of the list is work that isn&apos;t due, and the ticks stop meaning anything.
+              {stepSplit.actionable > 0 && ` Splitting ${stepSplit.actionable} would remove ${stepSplit.total_steps_removed} steps that don't belong and create ${stepSplit.total_new_schedules} schedule${stepSplit.total_new_schedules === 1 ? '' : 's'} at the right cadence.`}
+              {stepSplit.needs_a_look > 0 && ` ${stepSplit.needs_a_look} need a person to decide.`}
+            </p>
+          </div>
+          <button onClick={() => setSplitSteps(true)}
+            className="shrink-0 px-3 py-2 bg-white border border-red-300 text-red-900 rounded-lg text-sm font-medium hover:bg-red-100">
+            Review and split
+          </button>
+        </div>
+      )}
+
+      {splitSteps && (
+        <SplitMergedStepsModal onClose={() => setSplitSteps(false)} onDone={() => { refresh(); refreshStepSplit(); refreshFromTasks(); }} />
       )}
 
       {/* The plant wrote maintenance tasks expecting them to BE the PM schedule.

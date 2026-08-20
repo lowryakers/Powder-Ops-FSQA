@@ -174,6 +174,192 @@ export default function SchedulesFromTasksModal({ onClose, onDone }) {
 }
 
 /**
+ * Split a PM checklist that is carrying several cadences at once.
+ *
+ * The weekly scissor-lift task asked for twelve steps — the weekly two, and the
+ * monthly, quarterly and annual sections underneath — because the machine's
+ * whole written procedure had been pasted into one schedule. What that costs is
+ * not the scrolling: a checklist that is mostly work you are not doing today is
+ * one people learn to tick through, and on a food-contact machine those ticks
+ * are what QA reads when clearing it to run.
+ *
+ * REVIEWED, and the kept and moved steps are both shown, because this rewrites
+ * a maintenance procedure. A schedule the app cannot split confidently is
+ * listed with the reason and no checkbox — it needs a person, not a default.
+ */
+export function SplitMergedStepsModal({ onClose, onDone }) {
+  const { data, loading, refresh } = useApiGet('/pm/schedules/step-split/preview');
+  const [picked, setPicked] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const all = data?.schedules || [];
+  const actionable = useMemo(() => all.filter(s => !s.refuse), [all]);
+  const blocked = useMemo(() => all.filter(s => s.refuse), [all]);
+  const selected = useMemo(
+    () => (picked === null ? new Set(actionable.map(s => s.id)) : picked),
+    [picked, actionable],
+  );
+  const toggle = (id) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setPicked(next);
+  };
+  const allOn = actionable.length > 0 && selected.size === actionable.length;
+  const newSchedules = actionable.filter(s => selected.has(s.id)).reduce((t, s) => t + s.creates, 0);
+
+  const commit = async () => {
+    setSaving(true); setError('');
+    try {
+      const r = await apiPost('/pm/schedules/step-split', { ids: [...selected] });
+      setResult(r); onDone?.(); refresh();
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-gray-900">Split checklists that mix several frequencies</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              These schedules carry a whole written procedure — Weekly, Monthly, Quarterly and Annual — in one
+              checklist, so the technician is asked for all of it every time. Each schedule keeps its own
+              section; the others become schedules at their own frequency. Nothing is reworded.
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 shrink-0"><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          {loading && <p className="text-sm text-gray-400 py-6 text-center">Reading the checklists…</p>}
+          {result && (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-3">
+              <p className="text-sm font-medium text-green-900 flex items-center gap-1.5">
+                <Check size={15} /> Split {result.schedules} checklist{result.schedules === 1 ? '' : 's'} and created {result.schedules_created} schedule{result.schedules_created === 1 ? '' : 's'}.
+              </p>
+              <p className="text-xs text-green-800 mt-1">
+                Open work orders were refreshed, so the task on the floor is already shorter. Completed ones
+                are untouched — they are the record of what was ticked. The full before and after is in the
+                audit log.
+              </p>
+            </div>
+          )}
+          {!loading && !all.length && !result && (
+            <p className="text-sm text-gray-500 py-6 text-center">
+              No checklist is mixing frequencies. Every schedule asks only for its own work.
+            </p>
+          )}
+
+          {actionable.length > 0 && (
+            <>
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={allOn}
+                    onChange={() => setPicked(allOn ? new Set() : new Set(actionable.map(s => s.id)))}
+                    className="rounded border-gray-300" />
+                  Select all {actionable.length}
+                </label>
+                <span className="text-xs text-gray-500">
+                  {selected.size} to split · {newSchedules} new schedule{newSchedules === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              {actionable.map(s => {
+                const on = selected.has(s.id);
+                const open = expanded === s.id;
+                return (
+                  <div key={s.id} className={`rounded-lg border ${on ? 'border-powder-200 bg-powder-50/40' : 'border-gray-200 bg-white'}`}>
+                    <div className="flex items-start gap-2 px-3 py-2">
+                      <input type="checkbox" checked={on} onChange={() => toggle(s.id)} className="rounded border-gray-300 mt-1 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-gray-900">{s.title}</span>
+                          <span className="text-[11px] text-gray-500">{s.equipment_name}</span>
+                          {s.open_work_orders > 0 && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                              <AlertTriangle size={10} /> {s.open_work_orders} open task{s.open_work_orders === 1 ? '' : 's'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-gray-600">
+                          {s.before} steps → {s.keep.length} · moves {s.move.map(m => `${m.label} (${m.steps.length})`).join(', ')}
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => setExpanded(open ? null : s.id)}
+                        className="shrink-0 text-[11px] text-powder-600 hover:underline">
+                        {open ? 'Hide' : 'Before / after'}
+                      </button>
+                    </div>
+                    {open && (
+                      <div className="px-3 pb-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="rounded border border-green-200 bg-green-50/50 p-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-green-700">
+                            Stays on this schedule
+                          </p>
+                          <ul className="mt-1 space-y-0.5">
+                            {s.keep.map((st, i) => <li key={i} className="text-[11px] text-gray-800">· {st}</li>)}
+                          </ul>
+                        </div>
+                        <div className="space-y-2">
+                          {s.move.map(m => (
+                            <div key={m.frequency_type} className="rounded border border-gray-200 bg-white p-2">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                                {m.label} — {m.disposition === 'create' ? 'becomes its own schedule' : 'removed from here'}
+                              </p>
+                              {m.reason && <p className="text-[10px] text-amber-700 mt-0.5">{m.reason}</p>}
+                              <ul className="mt-1 space-y-0.5">
+                                {m.steps.map((st, i) => <li key={i} className="text-[11px] text-gray-700">· {st}</li>)}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* Listed, never silently skipped, and with no checkbox: the app
+              cannot tell which cadence these were meant to run at, and guessing
+              would put maintenance on a schedule nobody chose. */}
+          {blocked.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-semibold text-amber-900 mb-1">
+                {blocked.length} need{blocked.length === 1 ? 's' : ''} a person
+              </p>
+              {blocked.map(s => (
+                <p key={s.id} className="text-[11px] text-amber-800">
+                  <span className="font-medium">{s.title}</span> ({s.equipment_name}) — {s.refuse}
+                </p>
+              ))}
+            </div>
+          )}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+            {result ? 'Close' : 'Cancel'}
+          </button>
+          {!result && (
+            <button onClick={commit} disabled={saving || selected.size === 0}
+              className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+              {saving ? 'Splitting…' : `Split ${selected.size} checklist${selected.size === 1 ? '' : 's'}`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Repair maintenance task text an import split at its commas.
  *
  * One sentence became eight "tasks", six of them single words — which reads to
