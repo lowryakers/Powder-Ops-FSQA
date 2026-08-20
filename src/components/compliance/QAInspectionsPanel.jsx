@@ -11,6 +11,7 @@ import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { formatDateTime } from '../../lib/datetime.js';
 import FormChip from '../common/FormChip';
+import RuleTip from '../common/RuleTip.jsx';
 import { formLabel } from '../../../shared/form-registry.js';
 
 // Columns as data, so the header and the sort cannot disagree. The first entry
@@ -158,8 +159,7 @@ function BackfillStrip({ onDone }) {
       </h3>
       <p className="text-xs text-amber-800 mt-1">
         These inspections were completed in ReadyDoc, but at the time completing the task did not file its
-        record. Filing them uses each check&rsquo;s own date, person and readings — nothing is invented, and a
-        task nobody completed produces nothing.
+        record. <RuleTip id="backfill.invents-nothing" label="What exactly gets filed?" />
       </p>
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
         {months.map(([m, n]) => (

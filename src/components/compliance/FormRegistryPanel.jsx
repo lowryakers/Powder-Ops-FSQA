@@ -15,6 +15,7 @@ import { FileText, AlertTriangle, Search, CheckCircle2, Plus, Pencil, Paperclip,
 import { useApiGet, apiPost, apiPut, apiDelete, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
+import RuleTip from '../common/RuleTip.jsx';
 
 const WHERE = {
   readydoc: { label: 'In ReadyDoc', cls: 'bg-green-100 text-green-800' },
@@ -75,7 +76,9 @@ function FormModal({ form, onClose, onSaved }) {
             {!isNew && (
               // Renaming the identity would orphan every record filed under the
               // old number. Document Control issues the new one and retires this.
-              <p className="text-[11px] text-gray-400 mt-1">A number can&rsquo;t be changed — issue the new one and retire this.</p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                A number can&rsquo;t be changed. <RuleTip id="form.number-immutable" label="Why?" />
+              </p>
             )}
           </div>
           <div>
@@ -84,7 +87,9 @@ function FormModal({ form, onClose, onSaved }) {
               disabled={form?.revision_locked} placeholder="V4"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-500" />
             {form?.revision_locked && (
-              <p className="text-[11px] text-gray-400 mt-1">Set by this scale&rsquo;s weights and tolerances — a controlled change.</p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Set by this scale&rsquo;s weights. <RuleTip id="form.scale-revision-locked" label="Why?" />
+              </p>
             )}
           </div>
         </div>
@@ -222,8 +227,7 @@ export default function FormRegistryPanel() {
           </h2>
           <p className="text-sm text-gray-500 mt-1 max-w-2xl">
             The Forms Master Index. Revisions, where each form is worked and the finalised paper copy are
-            maintained here; how a form is matched to a task stays in the code, so a number can never be
-            mis-printed on a record by an edit made on this screen.
+            maintained here. <RuleTip id="form.matching-in-code" label="Where do form numbers come from?" />
           </p>
         </div>
         {canEdit && (
@@ -258,6 +262,7 @@ export default function FormRegistryPanel() {
           </h3>
           <p className="text-xs text-amber-800 mt-1">
             Running in ReadyDoc but mapping to nothing in the index, so their records show no form number.
+            {' '}<RuleTip id="form.no-guess" label="Why no number?" />
           </p>
           <ul className="mt-2 space-y-1">
             {unmappedSchedules.map(s => (
@@ -380,7 +385,7 @@ export default function FormRegistryPanel() {
                         {f.where !== 'retired' && (
                           <button title="Retire this form"
                             onClick={async () => {
-                              if (!window.confirm(`Retire ${f.code}? It stays in the index — a number is never reissued — but drops out of the active list.`)) return;
+                              if (!window.confirm(`Retire ${f.code}?\n\nIt stays in the index and its number is never reissued, so records filed under it still resolve. It drops out of the active list.`)) return;
                               try { await apiDelete(`/forms/${f.id}`); refresh(); } catch (e) { window.alert(e.message); }
                             }}
                             className="ml-1 p-1 text-gray-300 hover:text-amber-600"><Archive size={13} /></button>

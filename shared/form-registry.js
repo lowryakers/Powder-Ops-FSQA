@@ -28,9 +28,12 @@
 //     no revision of their own.
 //
 //  4. AN UNMAPPED TASK SHOWS NOTHING. Never a guess. A wrong form number on a
-//     compliance record is worse than an absent one, and several rows of the
-//     Master Index are not legible in what we have (Series 300 and the rows
-//     past 62), so those are simply absent until somebody supplies them.
+//     compliance record is worse than an absent one, so anything the index does
+//     not cover is simply absent.
+//
+// Transcribed in full from MASTER_SOP_LOG_AND_INDICES_V2.xlsx (the FORMS tab,
+// rows 4–61). Series 300 is a heading with no forms under it, which is why
+// nothing here carries a 3xx number — it was never missing.
 //
 // `where` says what is true of the form today, and is what makes the registry
 // honest about the parts of the plant ReadyDoc does not run:
@@ -48,10 +51,21 @@ const DILUTION_REVISION = FORM_REVISION.replace(FORM_CODE, '').trim();
 
 export const FORM_REGISTRY = [
   /* ── Series 00X — cleaning, inspections, environment ─────────────────── */
+  // Series 100, straight off the Master Index. Not wired to any task or record
+  // yet, so it carries no `match` — it is listed, not claimed.
+  { code: 'FORM 100-01', revision: 'V1', title: 'Material Verification Checklist', where: 'paper' },
   {
     code: FORM_CODE, revision: DILUTION_REVISION, title: 'Chemical Dilution Logbook',
     where: 'readydoc',
     match: { sanitationArea: /^chemical (verification|dilution)/i, taskTitle: /^chemical dilution/i },
+  },
+  {
+    // The gap the coverage report kept naming, closed off the Master Index at
+    // last: the restroom cleaning log IS a numbered form, 108-1, so the 106
+    // records filed under "Restroom" resolve to it now instead of to nothing.
+    code: 'FORM 108-1', revision: 'V2', title: 'Restroom Cleaning Log',
+    where: 'readydoc',
+    match: { sanitationArea: /^restroom/i, taskTitle: /^restroom.*clean/i },
   },
   {
     // ANCHORED, and that is the whole point. Unanchored, `/break\s?room|
@@ -120,6 +134,10 @@ export const FORM_REGISTRY = [
   },
 
   /* ── Series 400 — quality system ─────────────────────────────────────── */
+  // Read off the Master Index (V2, 2026-08). Marked "WHY IS THIS STILL NOT IN
+  // USE" on the sheet, so it is listed as paper rather than claimed for
+  // ReadyDoc — the register should say what is true, not what is intended.
+  { code: 'FORM 402', revision: 'V2', title: 'Quality Assurance Incoming Raw Materials, Labels and Component Sampling', where: 'paper', note: 'Master Index queries whether this is still in use.' },
   { code: 'FORM 403-01', revision: 'V1', title: 'Internal Audit Checklist', where: 'readydoc', match: { module: 'internal-audits' }, revisionFrom: 'checklist_revision' },
   { code: 'FORM 404-1', revision: 'V2', title: 'Supplier Qualification Questionnaire', where: 'keychain' },
   { code: 'FORM 404-2', revision: 'V1', title: 'Raw Material Questionnaire Form', where: 'keychain' },
@@ -129,6 +147,7 @@ export const FORM_REGISTRY = [
   { code: 'FORM 408-1', revision: 'V1', title: 'Non-Conformance Report', where: 'readydoc', match: { qmsType: 'non_conformance' } },
   { code: 'FORM 408-2', revision: 'V2', title: 'CAPA Report', where: 'readydoc', match: { module: 'capa' } },
   { code: 'FORM 409-1', revision: 'V2', title: 'Annual (cGMP) Training Quiz', where: 'readydoc', match: { module: 'training' } },
+  { code: 'FORM 409-02', revision: 'V4', title: 'Training Form', where: 'readydoc', match: { module: 'training' } },
   { code: 'FORM 411-1', revision: 'V4', title: 'Disposal Form', where: 'readydoc', match: { module: 'disposals' } },
   { code: 'FORM 413-1', revision: 'V1', title: 'Manufacturing (Batch Production Record)', where: 'keychain' },
   { code: 'FORM 413-1 (X-Ray)', revision: 'V2', title: 'X-Ray Operation Record', where: 'keychain' },

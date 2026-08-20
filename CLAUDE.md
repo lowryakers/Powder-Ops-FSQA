@@ -872,6 +872,21 @@ it renders as **cards** (`md:hidden` / `hidden md:block`), the same rule the Set
   ran off the edge and panned the whole page — `flex-wrap` below `sm`, `sm:flex-nowrap sm:shrink-0` above.
 - Verified at 390 and 360: no page overflow on either tab, cards below `md`, table still there on desktop.
 
+## The app explains its own rules (`src/lib/platformRules.js` + `common/RuleTip.jsx`)
+ReadyDoc is full of deliberate refusals — a form number that cannot be edited, a signed record that is
+closed, a back-dated clean that needs a reason, a number retired rather than deleted. The reasoning lived
+in the code and in one person's head; to everyone else it read as the app being awkward.
+- **Rules are DATA** in `platformRules.js`, rendered by `<RuleTip id="…" />` (a quiet "Why?" that opens) or
+  `<RuleNote id="…" />` (always open, for the top of a panel). Adding one is an entry plus a mount.
+- **This is the EXPLANATION, never a second copy of the rule.** The server still enforces it in exactly one
+  place and nothing here gates anything; if the two ever disagree the server is right.
+- **Not a tooltip on every field.** A hint that appears everywhere is wallpaper. These go only where the app
+  does something a reasonable person would not predict.
+- The popover is portalled to `<body>` for the same reason the message menu is — a rounded card or a
+  scrolling list would clip it — and any scroll closes it, since a fixed popover cannot follow its button.
+- Wired so far: the form-number and scale-revision locks, where form numbers come from, why a task shows no
+  number, what the QA record backfill does, and the "when was this done?" back-dating field.
+
 ## The form register is maintained in the app (`controlled_forms`)
 The Forms Master Index moved out of the code file into a table Document Control keeps, and it is the
 **Forms tab inside Controlled Documents** — not a separate nav entry. SOPs, WIs, JDs and forms are one

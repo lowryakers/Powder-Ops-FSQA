@@ -9,6 +9,7 @@ import { canSeeQaReview } from '../../utils/permissions';
 import { formatDateTime } from '../../lib/datetime.js';
 import { formFromTitle, gradeDilution, isMeasured } from '../../../shared/dilution-forms.js';
 import FormChip from '../common/FormChip';
+import RuleTip from '../common/RuleTip.jsx';
 
 function detectTaskType(task) {
   const t = (task.title || '').toLowerCase();
@@ -839,7 +840,9 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 day. Bounded to the last 30 days by `max`/`min`, matching the
                 server's grace window. */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t('done_on')}</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                {t('done_on')} <RuleTip id="record.back-date-needs-reason" label="?" />
+              </label>
               <input type="date" value={doneOn} max={today} min={earliestDoneOn}
                 onChange={e => setDoneOn(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
