@@ -3552,6 +3552,16 @@ function runMigrations() {
   // something you know about a person; texting in is something an admin grants.
   addColumnIfMissing('users', 'phone', 'TEXT');
   addColumnIfMissing('users', 'sms_access', 'INTEGER NOT NULL DEFAULT 0');
+  // WHEN THE PERSON AGREED, AND WHO RECORDED IT.
+  //
+  // A2P 10DLC registration asks how recipients consent, and the honest answer
+  // has to be a fact the system holds rather than a sentence on a form. An
+  // admin ticks the consent box only after the person has agreed; these two
+  // columns are that record. Without them "they consented" is an assertion
+  // with nothing behind it — the same reasoning as an NFP approval needing a
+  // name against it.
+  addColumnIfMissing('users', 'sms_consent_at', 'TEXT');
+  addColumnIfMissing('users', 'sms_consent_by', 'TEXT');
 
   // Numbers a flavour approval can be texted to. There are only ever three or
   // four, they are not all ReadyDoc accounts (a co-packer contact, a partner),

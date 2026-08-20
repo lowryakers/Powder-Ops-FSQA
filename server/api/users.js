@@ -48,7 +48,7 @@ function issueSession(db, user) {
 router.get('/', (req, res) => {
   const db = getDb();
   const { role, active } = req.query;
-  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access, created_at FROM users WHERE 1=1';
+  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access, sms_consent_at, sms_consent_by, created_at FROM users WHERE 1=1';
   const params = [];
   if (role) { sql += ' AND role = ?'; params.push(role); }
   if (active !== undefined) { sql += ' AND is_active = ?'; params.push(active === 'true' ? 1 : 0); }
@@ -349,18 +349,25 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   // Texting the system is a GRANT, never a side effect of recording a number:
   // it lets an inbound text be answered with plant data.
   const smsVal = sms_access !== undefined ? (sms_access ? 1 : 0) : (existing.sms_access || 0);
+  // Consent is stamped the moment it is first given and is NOT re-stamped on
+  // every later edit — the date it was obtained is the fact that matters. It is
+  // cleared if the grant is withdrawn, so a stale consent date can never sit
+  // against somebody who has opted out.
+  const hadConsent = !!existing.sms_consent_at;
+  const consentAt = smsVal ? (existing.sms_consent_at || new Date().toISOString()) : null;
+  const consentBy = smsVal ? (hadConsent ? existing.sms_consent_by : (req.user?.name || 'system')) : null;
   const homeWorkspace = home_workspace !== undefined ? (home_workspace === 'messages' ? 'messages' : 'fsqa') : existing.home_workspace;
   const quickTabsStr = quick_tabs !== undefined
     ? (Array.isArray(quick_tabs) && quick_tabs.length ? JSON.stringify(quick_tabs.slice(0, 4).map(String)) : null)
     : existing.quick_tabs;
-  db.prepare(`UPDATE users SET name=?, username=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, phone=?, sms_access=?, updated_at=datetime('now') WHERE id=?`)
+  db.prepare(`UPDATE users SET name=?, username=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, phone=?, sms_access=?, sms_consent_at=?, sms_consent_by=?, updated_at=datetime('now') WHERE id=?`)
     .run(name || existing.name, signIn, email ?? existing.email, pin || null, role || existing.role,
       department || existing.department || 'warehouse',
       is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
       is_contractor !== undefined ? (is_contractor ? 1 : 0) : (existing.is_contractor || 0),
       contractor_company ?? existing.contractor_company, contractor_license ?? existing.contractor_license,
       contractor_insurance_expiry ?? existing.contractor_insurance_expiry, contractor_scope ?? existing.contractor_scope,
-      moduleAccessStr, homeWorkspace, quickTabsStr, phoneVal, smsVal,
+      moduleAccessStr, homeWorkspace, quickTabsStr, phoneVal, smsVal, consentAt, consentBy,
       req.params.id);
 
   const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(req.params.id);

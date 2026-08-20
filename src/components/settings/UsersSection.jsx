@@ -591,11 +591,26 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
             <input type="checkbox" checked={!!form.sms_access} disabled={!String(form.phone || '').trim()}
               onChange={e => setForm({ ...form, sms_access: e.target.checked ? 1 : 0 })} className="mt-0.5" />
             <span className="text-xs text-gray-700">
-              <span className="font-medium">Can text ReadyDoc questions</span>
+              <span className="font-medium">This person has agreed to receive ReadyDoc texts</span>
+              {/* THE WORDING IS THE CONSENT RECORD, not a label.
+                  A2P 10DLC registration asks how recipients consent, and the
+                  answer has to be something the system actually holds. Ticking
+                  this stamps the date and who recorded it; untucking clears
+                  both, so a stale consent date can never sit against someone
+                  who has opted out. */}
               <span className="block text-gray-500 mt-0.5">
-                Texts from this number are answered by the AI assistant with plant data (read-only).
+                Tick only after they have agreed. They will receive approval links and can text
+                questions to the ReadyDoc number; replies are answered with plant data (read-only).
+                Message and data rates may apply, frequency varies, and they can reply STOP at any
+                time. Consent is not a condition of employment.
                 {!String(form.phone || '').trim() && ' Add a mobile number first.'}
               </span>
+              {initial?.sms_consent_at && (
+                <span className="block text-gray-400 mt-1">
+                  Recorded {String(initial.sms_consent_at).slice(0, 10)}
+                  {initial.sms_consent_by ? ` by ${initial.sms_consent_by}` : ''}
+                </span>
+              )}
             </span>
           </label>
         </div>
