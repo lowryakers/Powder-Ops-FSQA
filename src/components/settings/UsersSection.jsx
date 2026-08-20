@@ -118,7 +118,6 @@ const MODULE_GROUPS = [
       { id: 'training', label: 'Training Records' },
       { id: 'certifications', label: 'Certifications' },
       { id: 'dcr', label: 'Document Change Requests' },
-      { id: 'form-registry', label: 'Form Registry (Forms Master Index)', note: 'Read-only: every controlled form number, its revision, and whether it is worked in ReadyDoc, Keychain or on paper — plus which live tasks and records carry no form number. Numbers are issued by Document Control through a change request, never here.' },
       { id: 'org-chart', label: 'Org Chart' },
     ],
   },

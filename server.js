@@ -104,6 +104,7 @@ import { seedBannedSubstanceSopDraft } from './server/banned-substance-sop-seed.
 import { backfillFilmDrafts } from './server/film-draft-backfill.js';
 import { backfillPartnerDocLines } from './server/partner-doc-backfill.js';
 import { recordBackfillNudge } from './server/qa-record-backfill.js';
+import { seedControlledForms } from './server/form-registry-seed.js';
 import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath, optionalAuth } from './server/middleware/auth.js';
@@ -1071,6 +1072,9 @@ try {
   // Re-read partner-ledger line summaries with the fixed parser — the old one
   // filed address ZIP codes as $84k line items on every invoice (one-time).
   backfillPartnerDocLines(db);
+  // The shipped Forms Master Index, planted once. Insert-only per code, so a
+  // revision Document Control corrected by hand survives every redeploy.
+  seedControlledForms(db);
   // Collapse duplicate tasks the old generator guards let through (one-time).
   cleanupDuplicateTasks(db);
   // Purge cached "translations" identical to the original message (one-time).

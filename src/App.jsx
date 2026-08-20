@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine, ListChecks } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -192,17 +192,11 @@ const NAV_GROUPS = [
       // spans the modules below it. Same visibility rule as Controlled Changes —
       // access by department, not by a module grant.
       { id: 'doc-review', label: 'Doc Control Review', icon: FileCheck2, keywords: 'review due documents change requests controlled changes drafts queue', visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control' || (u?.role === 'supervisor' && ['qa', 'document_control'].includes((u?.department || '').toLowerCase())) },
-      { id: 'document-control', label: 'Controlled Documents', icon: FileText, anyOf: ['sops', 'work-instructions', 'job-descriptions'], keywords: 'sop work instructions job descriptions' },
+      { id: 'document-control', label: 'Controlled Documents', icon: FileText, anyOf: ['sops', 'work-instructions', 'job-descriptions'], keywords: 'sop work instructions job descriptions forms master index form numbers revisions traceability' },
       // The Forms Master Index, beside the controlled documents because that is
       // where it belongs — it IS a controlled register. Read-only for everyone
       // (numbers are issued by change request), so it is not gated on a module
       // grant: anyone holding a task should be able to look up its form number.
-      // An ordinary grantable module, so it appears in Settings → Module Access
-      // like everything else. It was briefly a `visible()` bypass, which read as
-      // missing: the register was on screen but there was no checkbox to assign
-      // it to anybody. Nobody needs the PANEL to read a form number — the chip
-      // on the task carries that for everyone.
-      { id: 'form-registry', label: 'Form Registry', icon: ListChecks, keywords: 'forms master index form numbers revisions 431 417 703 traceability' },
       { id: 'training', label: 'Training Records', icon: GraduationCap },
       { id: 'certifications', label: 'Certifications', icon: BadgeCheck },
       { id: 'dcr', label: 'Document Change Requests', icon: ClipboardCheck },
@@ -991,6 +985,12 @@ const HUB_TABS = {
     // the GMP audit guide) — its own tab so they never read as the plant's own
     // SOPs, seeded from server/assets/reference. Rides the sops grant.
     { id: 'reference-library', label: 'Reference Library', render: () => <DocumentRegistry docType="reference" moduleId="sops" title="Reference Library" typeLabel="Reference" /> },
+    // The Forms Master Index sits WITH the controlled documents, not beside
+    // them: SOPs, WIs, JDs and forms are one register family kept by one
+    // person, and a separate nav entry made the forms look like a different
+    // system. Rides the `sops` grant for the same reason the Reference Library
+    // does — anyone who can see the registry can look up a form number.
+    { id: 'form-registry', label: 'Forms', render: () => <FormRegistryPanel /> },
   ],
   // Forms 440-02 (knives/blades) and 703-01 (equipment/tools/chemicals) record
   // the same transaction — a person takes an item, brings it back, condition
@@ -1713,6 +1713,15 @@ function App() {
   for (const hub of NAV_GROUPS.flatMap(g => g.items).filter(i => i.anyOf)) {
     if (hub.anyOf.some(id => effectiveModules.includes(id)) && !effectiveModules.includes(hub.id)) effectiveModules = [...effectiveModules, hub.id];
   }
+  // A hub TAB is reachable whenever its hub is. Tab ids that are not themselves
+  // nav items (Reference Library, Forms) are absent from `allModuleIds`, so a
+  // `?tab=reference-library` or `?tab=form-registry` link resolved to nothing
+  // and silently fell back to the first module the person could see — a dead
+  // deep link that looks like the app ignoring you. HUB_OF already knows which
+  // hub owns each tab.
+  for (const [tabId, hubId] of Object.entries(HUB_OF)) {
+    if (effectiveModules.includes(hubId) && !effectiveModules.includes(tabId)) effectiveModules = [...effectiveModules, tabId];
+  }
   // "Checked Out" follows its own opt-in rule rather than plain module access.
   effectiveModules = canSeeCheckedOut(user)
     ? (effectiveModules.includes('currently-out') ? effectiveModules : [...effectiveModules, 'currently-out'])
@@ -1982,7 +1991,6 @@ function App() {
           {resolvedTab === 'safety' && <SafetyPanel user={user} />}
           {resolvedTab === 'internal-audits' && <InternalAuditsPanel />}
           {resolvedTab === 'doc-review' && <DocReviewPanel />}
-          {resolvedTab === 'form-registry' && <FormRegistryPanel />}
           {resolvedTab === 'facility-map' && <FacilityMapPanel user={user} />}
           {resolvedTab === 'retention-samples' && <RetentionSamplesPanel user={user} />}
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}

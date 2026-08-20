@@ -637,6 +637,45 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_training_materials_course ON training_materials(course_id);
 
+    -- THE FORMS MASTER INDEX, as a maintained register rather than a code file.
+    --
+    -- What is editable here is what Document Control actually maintains: the
+    -- revision, the title, where the form is worked, the note, and the
+    -- finalised paper copy attached to it.
+    --
+    -- WHAT IS NOT HERE, AND MUST NOT BE, is how a form is MATCHED to a task or
+    -- a record. Those patterns live in shared/form-registry.js because they
+    -- decide which number is printed on a compliance record: a mistyped regex
+    -- in a settings screen would silently put the wrong form number on every
+    -- brittle-plastic inspection, and nobody would see it happen. The code
+    -- supplies the matching; this table supplies the facts about the form.
+    --
+    -- The code column is the identity and is UNIQUE. A form is RETIRED, never
+    -- deleted, so a number is never reissued and a record filed under it still
+    -- resolves.
+    CREATE TABLE IF NOT EXISTS controlled_forms (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      revision TEXT,
+      title TEXT NOT NULL,
+      where_used TEXT NOT NULL DEFAULT 'readydoc'
+        CHECK (where_used IN ('readydoc','keychain','paper','retired')),
+      note TEXT,
+      owner TEXT,
+      effective_date TEXT,
+      -- The finalised paper copy. Same R2 path as manuals and course material.
+      storage_key TEXT,
+      filename TEXT,
+      content_type TEXT,
+      size INTEGER,
+      is_seeded INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      updated_at TEXT,
+      updated_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_controlled_forms_where ON controlled_forms(where_used);
+
     -- Versioned assessment for a course. Editing publishes a new version so past
     -- attempts stay tied to the exact test the employee took (is_current = latest).
     CREATE TABLE IF NOT EXISTS training_tests (

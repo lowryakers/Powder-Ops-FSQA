@@ -1,19 +1,20 @@
-// The Forms Master Index, in the app — and what it does and does not cover.
+// The Forms Master Index, maintained in the app.
 //
-// Document Control keeps this index in a spreadsheet, and the consultant's ask
-// was that it live with the controlled documents. But re-typing a spreadsheet
-// into a screen adds nothing: they already have the spreadsheet. What the app
-// can say that the spreadsheet cannot is WHERE EACH FORM IS WORKED and WHICH
-// LIVE WORK ANSWERS TO NO FORM AT ALL — the second one being exactly what an
-// auditor finds by pointing at a task.
+// Document Control issues revisions, retires numbers and holds the finalised
+// paper. All of that is editable here. What is NOT editable is how a form is
+// matched to a task or a record — that decides which number is printed on a
+// compliance record, and it stays in code where a typo cannot silently
+// mis-number every brittle-plastic inspection.
 //
-// Read-only, deliberately and completely. A form number is issued by Document
-// Control through a change request; a screen that let someone retype one would
-// be a second register competing with the controlled one.
+// The gaps come first on the screen, above the list. A register that opens on a
+// tidy table and buries the unmapped work underneath reads as "all good", which
+// is the opposite of what it knows.
 
-import { useState } from 'react';
-import { FileText, AlertTriangle, Search, CheckCircle2 } from 'lucide-react';
-import { useApiGet } from '../../hooks/useApi';
+import { useState, useMemo } from 'react';
+import { FileText, AlertTriangle, Search, CheckCircle2, Plus, Pencil, Paperclip, Trash2, Archive, ExternalLink } from 'lucide-react';
+import { useApiGet, apiPost, apiPut, apiDelete, apiFetch, apiUpload } from '../../hooks/useApi';
+import { useTableSort } from '../../lib/useTableSort';
+import SortHeader from '../common/SortHeader.jsx';
 
 const WHERE = {
   readydoc: { label: 'In ReadyDoc', cls: 'bg-green-100 text-green-800' },
@@ -30,21 +31,182 @@ const FILTERS = [
   { id: 'retired', label: 'Retired' },
 ];
 
+const COLUMNS = [
+  { key: 'code', label: 'Form', type: 'text' },
+  { key: 'revision', label: 'Rev', type: 'text' },
+  { key: 'title', label: 'Title', type: 'text' },
+  { key: 'where', label: 'Where', type: 'text' },
+  { key: 'filename', label: 'Paper copy', type: 'text' },
+  { label: '' },
+];
+
+function FormModal({ form, onClose, onSaved }) {
+  const isNew = !form?.id;
+  const [f, setF] = useState({
+    code: form?.code || '', revision: form?.revision || '', title: form?.title || '',
+    where: form?.where || 'readydoc', note: form?.note || '', owner: form?.owner || '',
+    effective_date: form?.effective_date || '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      const r = isNew ? await apiPost('/forms', f) : await apiPut(`/forms/${form.id}`, f);
+      onSaved(r?.warning || null);
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={save} onClick={e => e.stopPropagation()}
+        className="bg-white rounded-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-5 space-y-3">
+        <h3 className="font-semibold text-gray-900">{isNew ? 'Issue a form number' : `Edit ${form.code}`}</h3>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Form number</label>
+            <input required value={f.code} onChange={e => setF({ ...f, code: e.target.value })}
+              disabled={!isNew} placeholder="FORM 431-02"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-500" />
+            {!isNew && (
+              // Renaming the identity would orphan every record filed under the
+              // old number. Document Control issues the new one and retires this.
+              <p className="text-[11px] text-gray-400 mt-1">A number can&rsquo;t be changed — issue the new one and retire this.</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Revision</label>
+            <input value={f.revision} onChange={e => setF({ ...f, revision: e.target.value })}
+              disabled={form?.revision_locked} placeholder="V4"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-500" />
+            {form?.revision_locked && (
+              <p className="text-[11px] text-gray-400 mt-1">Set by this scale&rsquo;s weights and tolerances — a controlled change.</p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Title</label>
+          <input required value={f.title} onChange={e => setF({ ...f, title: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Where it&rsquo;s worked</label>
+            <select value={f.where} onChange={e => setF({ ...f, where: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              {FILTERS.slice(1).map(w => <option key={w.id} value={w.id}>{w.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Effective date</label>
+            <input type="date" value={f.effective_date} onChange={e => setF({ ...f, effective_date: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Owner</label>
+          <input value={f.owner} onChange={e => setF({ ...f, owner: e.target.value })}
+            placeholder="Document Control" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Note</label>
+          <textarea rows={2} value={f.note} onChange={e => setF({ ...f, note: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex gap-2 pt-1">
+          <button type="submit" disabled={busy}
+            className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-60">
+            {busy ? 'Saving…' : isNew ? 'Issue form' : 'Save'}
+          </button>
+          <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm">Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function FileCell({ form, canEdit, storageOn, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const open = async () => {
+    try {
+      const { url } = await apiFetch(`/forms/${form.id}/file`);
+      if (url) window.open(url, '_blank');
+    } catch (e) { window.alert(e.message); }
+  };
+  const upload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('files', file);
+      await apiUpload(`/forms/${form.id}/file`, fd);
+      onChanged();
+    } catch (err) { window.alert(err.message); }
+    finally { setBusy(false); e.target.value = ''; }
+  };
+
+  if (form.has_file) {
+    return (
+      <span className="flex items-center gap-1.5">
+        <button type="button" onClick={open} className="inline-flex items-center gap-1 text-xs text-powder-600 hover:underline max-w-[12rem] truncate">
+          <ExternalLink size={11} className="shrink-0" /> {form.filename}
+        </button>
+        {canEdit && (
+          <button type="button" title="Remove the file"
+            onClick={async () => {
+              if (!window.confirm(`Remove ${form.filename} from ${form.code}?`)) return;
+              try { await apiDelete(`/forms/${form.id}/file`); onChanged(); } catch (err) { window.alert(err.message); }
+            }}
+            className="p-1 text-gray-300 hover:text-red-600"><Trash2 size={12} /></button>
+        )}
+      </span>
+    );
+  }
+  if (!canEdit) return <span className="text-xs text-gray-400">—</span>;
+  if (!storageOn) return <span className="text-xs text-gray-400" title="File storage is not configured">—</span>;
+  return (
+    <label className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-powder-600 cursor-pointer">
+      <Paperclip size={11} /> {busy ? 'Uploading…' : 'Attach'}
+      <input type="file" className="hidden" onChange={upload} disabled={busy} />
+    </label>
+  );
+}
+
 export default function FormRegistryPanel() {
-  const { data, loading, error } = useApiGet('/forms');
+  const { data, loading, error, refresh } = useApiGet('/forms');
   const [where, setWhere] = useState('all');
   const [q, setQ] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [notice, setNotice] = useState(null);
 
-  if (loading) return <div className="p-6 text-sm text-gray-500">Loading the form registry…</div>;
-  if (error) return <div className="p-6 text-sm text-red-600">Could not load the form registry: {String(error.message || error)}</div>;
+  const forms = useMemo(() => data?.forms || [], [data]);
+  const canEdit = !!data?.can_edit;
 
-  const forms = data?.forms || [];
-  const needle = q.trim().toLowerCase();
-  const shown = forms.filter(f => {
-    if (where !== 'all' && f.where !== where) return false;
-    if (!needle) return true;
-    return [f.code, f.title, f.revision].some(v => v && String(v).toLowerCase().includes(needle));
-  });
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return forms.filter(f => {
+      if (where !== 'all' && f.where !== where) return false;
+      if (!needle) return true;
+      return [f.code, f.title, f.revision, f.note, f.owner, f.filename]
+        .some(v => v && String(v).toLowerCase().includes(needle));
+    });
+  }, [forms, where, q]);
+
+  const { sorted, sortCol, sortDir, toggleSort } = useTableSort(filtered, COLUMNS, 'code');
+
+  if (loading) return <div className="p-6 text-sm text-gray-500">Loading the form register…</div>;
+  if (error) return <div className="p-6 text-sm text-red-600">Could not load the form register: {String(error.message || error)}</div>;
 
   const unmappedSchedules = data?.unmapped?.schedules || [];
   const unmappedAreas = data?.unmapped?.record_areas || [];
@@ -53,60 +215,65 @@ export default function FormRegistryPanel() {
 
   return (
     <div className="p-4 sm:p-6 space-y-5">
-      <div>
-        <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-          <FileText size={20} className="text-powder-600" /> Form Registry
-        </h2>
-        <p className="text-sm text-gray-500 mt-1">
-          The Forms Master Index, and where each form is worked today. Numbers are issued by
-          Document Control through a change request — this screen reports, it never edits.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <FileText size={20} className="text-powder-600" /> Form Registry
+          </h2>
+          <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+            The Forms Master Index. Revisions, where each form is worked and the finalised paper copy are
+            maintained here; how a form is matched to a task stays in the code, so a number can never be
+            mis-printed on a record by an edit made on this screen.
+          </p>
+        </div>
+        {canEdit && (
+          <button onClick={() => setEditing({})}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 sm:shrink-0">
+            <Plus size={15} /> Issue a form
+          </button>
+        )}
       </div>
 
-      {/* The counts by where, as the first thing on the screen: "how much of
-          the index is actually in the app" is the question this answers. */}
+      {notice && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900 flex items-start justify-between gap-2">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="text-amber-700 shrink-0">Dismiss</button>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {FILTERS.slice(1).map(f => (
-          <div key={f.id} className="bg-white rounded-xl border border-gray-200 p-3">
+          <button key={f.id} type="button" onClick={() => setWhere(f.id)}
+            className={`text-left bg-white rounded-xl border p-3 ${where === f.id ? 'border-powder-500 ring-1 ring-powder-200' : 'border-gray-200'}`}>
             <p className="text-2xl font-bold text-gray-900">{data?.counts?.[f.id] || 0}</p>
             <p className="text-xs text-gray-500">{f.label}</p>
-          </div>
+          </button>
         ))}
       </div>
 
-      {/* GAPS FIRST, above the list. A registry screen that opens on a tidy
-          list of forms and buries the unmapped work below it is a screen that
-          reads as "all good" — which is the opposite of what it knows. */}
       {gaps > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <h3 className="font-semibold text-amber-900 flex items-center gap-2 text-sm">
             <AlertTriangle size={16} /> {gaps} live {gaps === 1 ? 'item carries' : 'items carry'} no form number
           </h3>
           <p className="text-xs text-amber-800 mt-1">
-            These are running in ReadyDoc but map to nothing in the index, so their records show no
-            form number. Either the index has a number for them that we could not read, or they are
-            genuinely unnumbered — both are Document Control's call.
+            Running in ReadyDoc but mapping to nothing in the index, so their records show no form number.
           </p>
           <ul className="mt-2 space-y-1">
             {unmappedSchedules.map(s => (
               <li key={`s-${s.title}`} className="text-xs text-amber-900">
-                <span className="font-medium">Schedule</span> · {s.title}
-                <span className="text-amber-700"> ({s.task_group})</span>
+                <span className="font-medium">Schedule</span> · {s.title} <span className="text-amber-700">({s.task_group})</span>
               </li>
             ))}
             {unmappedAreas.map(a => (
               <li key={`a-${a.area}`} className="text-xs text-amber-900">
-                <span className="font-medium">Records</span> · {a.area}
-                <span className="text-amber-700"> ({a.count} filed)</span>
+                <span className="font-medium">Records</span> · {a.area} <span className="text-amber-700">({a.count} filed)</span>
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* Neither side is silently rewritten to match the other: the in-app
-          value is gated by Controlled Changes, and only Document Control can
-          say which number is right. */}
       {disagreements.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <h3 className="font-semibold text-red-900 flex items-center gap-2 text-sm">
@@ -116,13 +283,12 @@ export default function FormRegistryPanel() {
             {disagreements.map(d => (
               <li key={d.record_type} className="text-xs text-red-900">
                 <span className="font-medium">{d.label}</span> — the record form says
-                <span className="font-mono"> {d.in_app}</span>, the index says
-                <span className="font-mono"> {d.in_registry}</span>
+                <span className="font-mono"> {d.in_app}</span>, the index says<span className="font-mono"> {d.in_registry}</span>
               </li>
             ))}
           </ul>
           <p className="text-xs text-red-800 mt-2">
-            Changing the number on a record form is a controlled change, so neither has been altered.
+            The number on a record form is a controlled change, so neither has been altered.
           </p>
         </div>
       )}
@@ -130,16 +296,14 @@ export default function FormRegistryPanel() {
       {gaps === 0 && disagreements.length === 0 && data?.mapped && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
           <CheckCircle2 size={16} className="text-green-700" />
-          <p className="text-sm text-green-900">
-            Every active schedule and record area maps to a form in the index.
-          </p>
+          <p className="text-sm text-green-900">Every active schedule and record area maps to a form in the index.</p>
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px]">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search number or title…"
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search number, title, owner, file…"
             className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm" />
         </div>
         <div className="flex gap-1 overflow-x-auto">
@@ -152,45 +316,94 @@ export default function FormRegistryPanel() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* Cards below md, table above — the same rule the roster and Partner
+          Reconciliation follow, so a seven-column table never has to be
+          dragged sideways on a phone. */}
+      <div className="md:hidden space-y-2">
+        {sorted.map(f => (
+          <div key={f.id} className="bg-white rounded-xl border border-gray-200 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-mono text-xs font-semibold text-gray-900">{f.code} {f.revision || ''}</p>
+                <p className="text-sm text-gray-800 mt-0.5">{f.title}</p>
+              </div>
+              <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium ${WHERE[f.where]?.cls}`}>
+                {WHERE[f.where]?.label || f.where}
+              </span>
+            </div>
+            {f.note && <p className="text-xs text-gray-500 mt-1">{f.note}</p>}
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              <FileCell form={f} canEdit={canEdit} storageOn={data?.storage_enabled} onChanged={refresh} />
+              {canEdit && (
+                <button onClick={() => setEditing(f)} className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-powder-600">
+                  <Pencil size={11} /> Edit
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {!sorted.length && <p className="bg-white rounded-xl border border-gray-200 px-3 py-8 text-center text-sm text-gray-500">No forms match.</p>}
+      </div>
+
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[560px]">
+          <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
-                <th className="text-left px-4 py-2">Form</th>
-                <th className="text-left px-4 py-2">Rev</th>
-                <th className="text-left px-4 py-2">Title</th>
-                <th className="text-left px-4 py-2">Where</th>
+                {COLUMNS.map((c, i) => (
+                  <SortHeader key={c.key || `x${i}`} col={c} sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {shown.map(f => (
-                <tr key={f.code} className="align-top">
+              {sorted.map(f => (
+                <tr key={f.id} className="align-top">
                   <td className="px-4 py-2 font-mono text-xs font-medium text-gray-900 whitespace-nowrap">{f.code}</td>
-                  <td className="px-4 py-2 text-xs text-gray-500">{f.revision || '—'}</td>
+                  <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{f.revision || '—'}</td>
                   <td className="px-4 py-2">
                     <p className="text-gray-900">{f.title}</p>
                     {f.note && <p className="text-xs text-gray-500 mt-0.5">{f.note}</p>}
+                    {f.owner && <p className="text-[11px] text-gray-400 mt-0.5">Owner: {f.owner}</p>}
                   </td>
                   <td className="px-4 py-2">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${WHERE[f.where]?.cls || 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${WHERE[f.where]?.cls}`}>
                       {WHERE[f.where]?.label || f.where}
                     </span>
                   </td>
+                  <td className="px-4 py-2">
+                    <FileCell form={f} canEdit={canEdit} storageOn={data?.storage_enabled} onChanged={refresh} />
+                  </td>
+                  <td className="px-4 py-2 whitespace-nowrap text-right">
+                    {canEdit && (
+                      <>
+                        <button onClick={() => setEditing(f)} className="p-1 text-gray-400 hover:text-powder-600" title="Edit"><Pencil size={13} /></button>
+                        {f.where !== 'retired' && (
+                          <button title="Retire this form"
+                            onClick={async () => {
+                              if (!window.confirm(`Retire ${f.code}? It stays in the index — a number is never reissued — but drops out of the active list.`)) return;
+                              try { await apiDelete(`/forms/${f.id}`); refresh(); } catch (e) { window.alert(e.message); }
+                            }}
+                            className="ml-1 p-1 text-gray-300 hover:text-amber-600"><Archive size={13} /></button>
+                        )}
+                      </>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {!shown.length && (
-                <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No forms match.</td></tr>
+              {!sorted.length && (
+                <tr><td colSpan={COLUMNS.length} className="px-4 py-6 text-center text-sm text-gray-500">No forms match.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      <p className="text-xs text-gray-400">
-        Showing {shown.length} of {forms.length}. Rows the Master Index carries that are not listed
-        here could not be read from the copies supplied — send the index as a file and they can be added.
-      </p>
+      <p className="text-xs text-gray-400">Showing {sorted.length} of {forms.length}.</p>
+
+      {editing && (
+        <FormModal form={editing} onClose={() => setEditing(null)}
+          onSaved={(warning) => { setEditing(null); setNotice(warning); refresh(); }} />
+      )}
     </div>
   );
 }

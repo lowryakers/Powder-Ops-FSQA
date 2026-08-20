@@ -872,6 +872,30 @@ it renders as **cards** (`md:hidden` / `hidden md:block`), the same rule the Set
   ran off the edge and panned the whole page — `flex-wrap` below `sm`, `sm:flex-nowrap sm:shrink-0` above.
 - Verified at 390 and 360: no page overflow on either tab, cards below `md`, table still there on desktop.
 
+## The form register is maintained in the app (`controlled_forms`)
+The Forms Master Index moved out of the code file into a table Document Control keeps, and it is the
+**Forms tab inside Controlled Documents** — not a separate nav entry. SOPs, WIs, JDs and forms are one
+register family kept by one person; a separate entry made forms look like a different system.
+- **The split that matters:** revision, title, where the form is worked, note, owner, effective date and the
+  attached paper copy are EDITABLE. **How a form is MATCHED to a task or record stays in
+  `shared/form-registry.js`** — those patterns decide which number is printed on a compliance record, and a
+  typo in a settings screen would silently mis-number every BPG inspection with no one seeing it happen.
+- **`seedControlledForms` is insert-only, keyed on the form code.** A redeploy must never overwrite a
+  revision Document Control corrected by hand. New codes added to the shipped list ARE picked up, because
+  the check is per code rather than "does the table have rows". Verified by hand-editing a row and
+  rebooting.
+- **A number is retired, never deleted, and never reissued** — a record filed under it must still resolve.
+  `DELETE` sets `where_used = 'retired'`; re-issuing a retired code 409s.
+- **The form NUMBER cannot be edited**, only its facts. Renaming the identity would orphan every record
+  filed under the old number; the answer is to issue the new number and retire the old one, which is what
+  Document Control does on paper.
+- **The five scale forms' revision is read from `scale-forms.js` and is not editable here** (the field is
+  disabled and the row says why) — that is what a check is graded against, and a second copy is how the
+  register starts quoting a revision the grader moved past. Editing it is reported, not applied.
+- **Hub TAB ids must be added to `effectiveModules`** (the loop over `HUB_OF`): a tab that is not itself a
+  nav item — Reference Library, Forms — was absent from `allModuleIds`, so `?tab=reference-library` resolved
+  to nothing and fell back to the first module. A dead deep link reads as the app ignoring you.
+
 ## A task must name the controlled form it satisfies (`shared/form-registry.js`)
 The plant's tasks came off numbered paper forms, and an auditor holding the Forms Master Index looking at
 "Brittle Plastic & Glass Inspection — Gown Room" had no way to tell which numbered form it answers. The
