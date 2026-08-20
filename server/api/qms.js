@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
-import { smsEnabled, sendSms, approverPhone, smsStatus } from '../sms.js';
+import { smsEnabled, sendSms, approverPhone, smsStatus, OPT_OUT_LINE } from '../sms.js';
 import { readyDocOrigin } from '../links.js';
 import { requireRole } from '../middleware/auth.js';
 import { nextDisposalNumber } from './disposals.js';
@@ -327,7 +327,7 @@ router.post('/sms-test', requireRole('admin'), async (req, res) => {
   if (digits.length !== 10) return res.status(400).json({ error: 'Enter a 10-digit number to test with.' });
   if (!smsEnabled()) return res.status(400).json({ error: smsStatus().missing.length ? `Not configured — missing ${smsStatus().missing.join(', ')}.` : 'SMS is not configured.' });
   try {
-    const r = await sendSms(`+1${digits}`, 'ReadyDoc test message — texting is configured correctly.');
+    const r = await sendSms(`+1${digits}`, `ReadyDoc test message — texting is configured correctly. ${OPT_OUT_LINE}`);
     logAudit(req.user, 'create', 'sms_test', r?.sid || null, `Test text to …${digits.slice(-4)}`);
     // 'queued'/'accepted' is Twilio taking it, not the carrier delivering it.
     res.json({ ok: true, sid: r?.sid || null, status: r?.status || null });
@@ -394,7 +394,9 @@ router.post('/flavor_approval/:id/send', async (req, res) => {
   let texted = false, smsError = null;
   if (smsEnabled() && to) {
     try {
-      await sendSms(to, `Powder Ops — flavor approval needed: ${summary}. Tap to approve or deny: ${link}`);
+      // The opt-out line rides on every message WE start. Carriers ask for it
+      // on recurring traffic, and it costs the reader nothing.
+      await sendSms(to, `Powder Ops — flavor approval needed: ${summary}. Tap to approve or deny: ${link} ${OPT_OUT_LINE}`);
       texted = true;
       // The number is recorded, because "who was asked to approve this" is a
       // question about a decision on product.

@@ -40,6 +40,17 @@ export function approverPhone() {
 export const OPTIN_MESSAGE = 'Powder Ops ReadyDoc: you are now set up for quality approval requests and operational replies. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out.';
 
 /**
+ * The opt-out line carried by every message ReadyDoc STARTS.
+ *
+ * It goes on messages we initiate — an approval request, a test — and NOT on a
+ * reply to somebody who has just texted us a question: an answer that ends in
+ * boilerplate reads as a robot, and the person is plainly not looking for the
+ * way out at the moment they asked. One constant, so the wording in the
+ * campaign registration and the wording on a phone stay the same sentence.
+ */
+export const OPT_OUT_LINE = 'Reply STOP to opt out.';
+
+/**
  * Send that confirmation to a ten-digit US number. Returns Twilio's payload;
  * THROWS like any other send, so the caller decides whether that matters —
  * for the consent tick it does not, because the consent is already recorded.
