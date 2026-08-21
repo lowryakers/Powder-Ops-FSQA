@@ -4,6 +4,7 @@ import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import PDFDocument from 'pdfkit';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { tableAt, drawTable } from '../pdf-table.js';
 import mammoth from 'mammoth';
 import { createReadStream } from 'fs';
 import { getDb, logAudit } from '../db.js';
@@ -830,9 +831,21 @@ function generatePDF(res, docs, sigsByDoc = null) {
 
     if (doc.description) {
       pdf.fillColor('#111827').fontSize(10).font('Helvetica');
-      for (const raw of doc.description.split('\n')) {
+      const bodyLines = doc.description.split('\n');
+      for (let li = 0; li < bodyLines.length; li++) {
+        const raw = bodyLines[li];
         const trimmed = raw.trim();
         if (!trimmed) { pdf.y += 6; continue; }
+        // A TABLE IS DRAWN AS A TABLE. Without this branch a pipe row fell
+        // through to plain text, which is why an SOP full of tables printed as
+        // a page of pipe characters.
+        const table = tableAt(bodyLines, li);
+        if (table) {
+          pdf.y += 4;
+          drawTable(pdf, table, { left: LEFT, width: BODY_W, pageBottom: PAGE_BOTTOM });
+          li = table.next - 1;
+          continue;
+        }
         ensureSpace(30);
         // Strip inline markdown emphasis markers for print
         const clean = (s) => s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/(?<!\*)\*(?!\*)(.+?)\*/g, '$1');

@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Search, Edit2, Download, History, X, Eye, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square, Sparkles, Paperclip } from 'lucide-react';
+import { Plus, Search, Edit2, Download, History, X, Archive, ChevronUp, ChevronDown, FileText, Upload, Trash2, CheckSquare, Square, Sparkles, Paperclip } from 'lucide-react';
 import MarkdownView from '../common/MarkdownView.jsx';
+import DocumentBodyEditor from './DocumentBodyEditor.jsx';
 import RecordHistory from '../common/RecordHistory.jsx';
 import RevisionUploadModal from '../settings/RevisionUploadModal.jsx';
 import { SignaturePad } from '../common/SignatureCanvas.jsx';
@@ -188,7 +189,6 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
     _change_summary: '',
     _minor: false,
   }));
-  const [preview, setPreview] = useState(false);
   const [saving, setSaving] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [proofing, setProofing] = useState(false);
@@ -312,27 +312,22 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
           <div className="flex items-center justify-between mb-1">
             <label className="block text-xs font-medium text-gray-700">Content</label>
             <div className="flex items-center gap-3">
-              {aiOn && !preview && (
+              {aiOn && (
                 <button type="button" onClick={proofread} disabled={proofing || !form.content.trim()}
                   className="text-xs font-medium text-violet-600 hover:underline flex items-center gap-1 disabled:opacity-50 disabled:no-underline"
                   title="Fix spelling, grammar, and clarity without changing meaning">
                   <Sparkles size={12} /> {proofing ? 'Checking…' : 'Proofread'}
                 </button>
               )}
-              <button type="button" onClick={() => setPreview(p => !p)} className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1">
-                <Eye size={12} /> {preview ? 'Edit' : 'Preview'}
-              </button>
             </div>
           </div>
-          {preview ? (
-            <div className="w-full min-h-[16rem] px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 prose-sm">
-              <MarkdownView text={form.content} />
-            </div>
-          ) : (
-            <textarea value={form.content} onChange={e => set('content', e.target.value)} rows={14} spellCheck="true"
-              placeholder={'# Purpose\nDescribe the purpose...\n\n## Procedure\n1. First step\n2. Second step\n\n- Bullet point\n- **Bold** and *italic* supported'}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" />
-          )}
+          {/* Sections, lists and TABLES as real controls. Editing a controlled
+              document used to mean repairing pipe characters in a monospace
+              box, which is why Document Control was doing this work in Word.
+              The stored value is still Markdown — the editor's Markdown tab is
+              the same string, and everything downstream reads it unchanged. */}
+          <DocumentBodyEditor value={form.content} onChange={(v) => set('content', v)}
+            placeholder={'# Purpose\nDescribe the purpose...\n\n## Procedure\n1. First step\n2. Second step'} />
           {proofNotes && (
             <div className="mt-1 text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded px-2 py-1">
               <span className="font-semibold">Proofread:</span> {proofNotes.join(' · ')}
