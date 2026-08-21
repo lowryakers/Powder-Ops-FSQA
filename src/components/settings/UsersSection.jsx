@@ -24,6 +24,8 @@ const ROLES = [
 // `sub: true` indents an entry under the one above it. That is how the kiosk
 // forms are shown: each sits under the log it files into, because they are
 // separate grants and the difference is easy to miss when they are apart.
+import { OPT_IN_MODULES, OPT_IN_SET } from '../../../shared/opt-in-modules.js';
+
 const MODULE_GROUPS = [
   {
     label: 'Overview',
@@ -173,7 +175,13 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
   // scrolling to reach the bottom group. A filter is the fastest way to one
   // module; the column flow below is what makes the whole list visible at once.
   const [q, setQ] = useState('');
-  const allAccess = !additive && map == null; // null = full access to everything
+  // OPT-IN MODULES LIVE OUTSIDE "full access". A map holding nothing but
+  // opt-in grants is still full access — otherwise granting an admin Danny's
+  // List would silently strip their whole nav — and the collapse-to-null
+  // below must never swallow an opt-in grant as "all edit anyway".
+  const ORDINARY_IDS = ALL_MODULE_IDS.filter(id => !OPT_IN_SET.has(id));
+  const optInEntries = (m) => Object.fromEntries(Object.entries(m || {}).filter(([k]) => OPT_IN_SET.has(k)));
+  const allAccess = !additive && (map == null || Object.keys(map).every(k => OPT_IN_SET.has(k)));
 
   const levelOf = (id) => {
     if (additive) return map[id] || 'keep';
@@ -190,17 +198,28 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
       onChange(base);
       return;
     }
-    const base = allAccess ? Object.fromEntries(ALL_MODULE_IDS.map(m => [m, 'edit'])) : { ...map };
+    const base = allAccess ? { ...Object.fromEntries(ORDINARY_IDS.map(m => [m, 'edit'])), ...optInEntries(map) } : { ...map };
     if (level === 'none') delete base[id];
     else base[id] = level;
-    // Collapse back to "all access" if every module is set to Edit
-    const isAllEdit = ALL_MODULE_IDS.every(m => base[m] === 'edit');
-    onChange(isAllEdit ? null : base);
+    // Collapse back to "all access" if every ORDINARY module is Edit — the
+    // opt-in grants ride along untouched.
+    const isAllEdit = ORDINARY_IDS.every(m => base[m] === 'edit');
+    onChange(isAllEdit ? (Object.keys(optInEntries(base)).length ? optInEntries(base) : null) : base);
   };
 
   const toggleAll = () => {
     if (disabled) return;
-    onChange(allAccess ? {} : null); // {} = no access to anything
+    const grants = optInEntries(map);
+    onChange(allAccess ? { ...grants } : (Object.keys(grants).length ? grants : null));
+  };
+
+  const toggleOptIn = (id) => {
+    if (disabled) return;
+    const base = map == null ? {} : { ...map };
+    if (base[id]) delete base[id]; else base[id] = 'edit';
+    // Under full access the map holds only the grants; otherwise it is the map.
+    if (allAccess) onChange(Object.keys(optInEntries(base)).length ? optInEntries(base) : null);
+    else onChange(base);
   };
 
   // Set every module in a group to one level at once — the main simplification.
@@ -212,20 +231,25 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
       onChange(base);
       return;
     }
-    const base = allAccess ? Object.fromEntries(ALL_MODULE_IDS.map(m => [m, 'edit'])) : { ...map };
+    const base = allAccess ? { ...Object.fromEntries(ORDINARY_IDS.map(m => [m, 'edit'])), ...optInEntries(map) } : { ...map };
     ids.forEach(id => { if (level === 'none') delete base[id]; else base[id] = level; });
-    const isAllEdit = ALL_MODULE_IDS.every(m => base[m] === 'edit');
-    onChange(isAllEdit ? null : base);
+    const isAllEdit = ORDINARY_IDS.every(m => base[m] === 'edit');
+    onChange(isAllEdit ? (Object.keys(optInEntries(base)).length ? optInEntries(base) : null) : base);
   };
 
   // Filtering hides a group entirely once nothing in it matches, so the
   // remaining columns stay short rather than leaving empty headings behind.
   const needle = q.trim().toLowerCase();
+  const withoutOptIns = MODULE_GROUPS
+    .map(g => ({ ...g, modules: g.modules.filter(m => !OPT_IN_SET.has(m.id)) }))
+    .filter(g => g.modules.length);
   const visibleGroups = needle
-    ? MODULE_GROUPS
+    ? withoutOptIns
       .map(g => ({ ...g, modules: g.modules.filter(m => `${m.label} ${m.id} ${m.note || ''}`.toLowerCase().includes(needle)) }))
       .filter(g => g.modules.length)
-    : MODULE_GROUPS;
+    : withoutOptIns;
+  const optInDefs = OPT_IN_MODULES.map(id =>
+    MODULE_GROUPS.flatMap(g => g.modules).find(m => m.id === id) || { id, label: id });
 
   const LEVELS = additive ? [
     { value: 'keep', label: 'Keep' },
@@ -250,8 +274,26 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
           </label>
         </div>
       )}
+      {/* Grants that "Full access" deliberately does NOT include — one person's
+          private queue is opted into by name, admins included. Shown even when
+          everything else is on, so granting it never means ticking 54 boxes. */}
+      {!additive && optInDefs.length > 0 && (
+        <div className="p-2.5 bg-amber-50/60 border border-amber-200 rounded-lg space-y-1">
+          <p className="text-[11px] font-semibold text-amber-900">Private modules (never included in full access)</p>
+          {optInDefs.map(m => (
+            <label key={m.id} className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={!!(map && map[m.id])} onChange={() => toggleOptIn(m.id)} disabled={disabled}
+                className="mt-0.5 rounded border-gray-300 text-powder-600" />
+              <span>
+                <span className="font-medium">{m.label}</span>
+                {m.note && <span className="block text-gray-500">{m.note}</span>}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
       {!allAccess && (
-        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-[26rem] lg:max-h-[60vh] overflow-y-auto">
+        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
             <p className="text-[11px] text-gray-500 max-w-lg">
               {additive

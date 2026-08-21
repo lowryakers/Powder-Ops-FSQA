@@ -30,6 +30,9 @@ const PUBLIC_ROUTES = [
   // Returns at most 10 active users and needs 2+ characters to match.
   { method: 'GET', path: '/users/lookup' },
   { method: 'POST', path: '/sms/inbound' },   // Twilio — signature-checked in the handler
+  // The Danny's List iOS Shortcut. Token compared as a SHA-256 hash in the
+  // handler; it can log one reply body and do nothing else.
+  { method: 'POST', path: '/danny-shortcut/reply' },
   { prefix: '/submit/' },                     // public kiosk forms (QR codes)
   // The partner reconciliation portal. Authenticated by a hashed token in the
   // URL and scoped to one partner account inside the handler — read, upload and

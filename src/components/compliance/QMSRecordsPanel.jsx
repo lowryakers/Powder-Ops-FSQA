@@ -7,6 +7,7 @@ import FileUpload from '../FileUpload';
 import { Plus, Search, Edit2, Trash2, Download, Upload, X, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square, Eye, QrCode, ListChecks } from 'lucide-react';
 import KioskQrModal from '../kiosk/KioskQrModal';
 import SearchSelect from '../common/SearchSelect.jsx';
+import PortalDropdown from '../common/PortalDropdown.jsx';
 import RecordAttachments from './RecordAttachments';
 import RecordHistory from '../common/RecordHistory.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
@@ -219,6 +220,7 @@ function MultiPickInput({ f, value, onChange, useSpecOptions = [] }) {
   // replaces scrolling a giant dropdown. Matches on item name or group.
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
+  const pickerRef = useRef(null);
   const flat = useMemo(() => grouped
     ? f.options.flatMap(g => (g.items || []).map(o => ({ group: g.group, name: o })))
     : (f.options || []).map(o => ({ group: null, name: o })), [f.options, grouped]);
@@ -263,25 +265,25 @@ function MultiPickInput({ f, value, onChange, useSpecOptions = [] }) {
         const pick = (name) => { add(name); setQ(''); };
         return (
           <div className="relative">
-            <input value={q} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+            <input ref={pickerRef} value={q} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
               onChange={e => { setQ(e.target.value); setOpen(true); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (matches.length) pick(matches[0].name); } }}
               placeholder={arr.length ? 'Search to add another item…' : 'Start typing to search items…'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
-            {open && matches.length > 0 && (
-              <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                {matches.slice(0, 60).map((o, i, arr) => (
-                  <div key={`${o.group}|${o.name}`}>
-                    {grouped && o.group !== arr[i - 1]?.group && (
-                      <div className="px-3 pt-2 pb-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-400">{o.group}</div>
-                    )}
-                    <button type="button" onMouseDown={e => { e.preventDefault(); pick(o.name); }}
-                      className="w-full text-left px-3 py-1.5 text-sm text-gray-800 hover:bg-powder-50">{o.name}</button>
-                  </div>
-                ))}
-                {matches.length > 60 && <div className="px-3 py-1.5 text-[11px] text-gray-400">Keep typing to narrow down…</div>}
-              </div>
-            )}
+            {/* Portalled: this picker lives inside the record modal, whose
+                overflow clipped the old absolute menu at the card's edge. */}
+            <PortalDropdown anchorRef={pickerRef} open={open && matches.length > 0} onRequestClose={() => setOpen(false)}>
+              {matches.slice(0, 60).map((o, i, arr) => (
+                <div key={`${o.group}|${o.name}`}>
+                  {grouped && o.group !== arr[i - 1]?.group && (
+                    <div className="px-3 pt-2 pb-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-400">{o.group}</div>
+                  )}
+                  <button type="button" onMouseDown={e => { e.preventDefault(); pick(o.name); }}
+                    className="w-full text-left px-3 py-1.5 text-sm text-gray-800 hover:bg-powder-50">{o.name}</button>
+                </div>
+              ))}
+              {matches.length > 60 && <div className="px-3 py-1.5 text-[11px] text-gray-400">Keep typing to narrow down…</div>}
+            </PortalDropdown>
           </div>
         );
       })()}

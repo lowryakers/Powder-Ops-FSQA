@@ -202,30 +202,25 @@ router.get('/flavor-approval/:token', (req, res) => {
   });
 });
 
-router.post('/flavor-approval/:token', async (req, res) => {
-  const db = getDb();
-  const row = flavorByToken(db, req.params.token);
-  if (!row) return res.status(404).json({ error: 'This approval link is invalid or already used.' });
-  const decision = req.body?.decision === 'denied' ? 'denied' : req.body?.decision === 'approved' ? 'approved' : null;
-  if (!decision) return res.status(400).json({ error: 'Decision must be approved or denied.' });
+/**
+ * Apply a flavour decision to a pending record — shared by the magic link and
+ * the reply-by-text path, so a decision is byte-for-byte the same record
+ * whichever door it came through (the qms.js decide() doctrine).
+ */
+export async function applyFlavorDecision(db, row, { decision, name, comments, via = 'sms-link' }) {
   const d = parseJson(row.data, {});
-  // THE APPROVER TYPES THEIR OWN NAME, AND IT IS REQUIRED.
-  //
-  // This used to default to Danny whoever the link was texted to — which
-  // silently undid the whole point of choosing the recipient at send time, and
-  // put one man's name on a decision about product he may never have tasted.
-  // The link cannot know who is holding it; the NFP approval page has asked
-  // this from the start and this is the same act.
-  const decidedBy = String(req.body?.name || '').trim();
-  if (decidedBy.length < 2) return res.status(400).json({ error: 'Please type your name — an approval has to say who made it.' });
+  // THE APPROVER'S NAME IS REQUIRED, whichever door — the link page asks for
+  // it, the text path resolves it from the sender's number.
+  const decidedBy = String(name || '').trim();
+  if (decidedBy.length < 2) return { error: 'Please type your name — an approval has to say who made it.', status: 400 };
   d.decided_by = decidedBy;
   d.decision_date = today();
-  if (req.body?.comments) d.comments = String(req.body.comments).slice(0, 500);
+  if (comments) d.comments = String(comments).slice(0, 500);
   delete d.approval_token; // single use
   db.prepare("UPDATE qms_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?")
     .run(decision, JSON.stringify(d), row.id);
   logAudit(d.decided_by, decision === 'approved' ? 'flavor_approved' : 'flavor_denied', 'flavor_approval', row.id,
-    { record_number: row.record_number, product: d.product_name, lot: d.lot_number, via: 'sms-link' }, null, null, d.product_name);
+    { record_number: row.record_number, product: d.product_name, lot: d.lot_number, via }, null, null, d.product_name);
 
   // ONE TASTING, TWO RECORDS — WHICHEVER DOOR THE DECISION CAME THROUGH.
   //
@@ -274,8 +269,51 @@ router.post('/flavor-approval/:token', async (req, res) => {
       await postMessageAs(db, channel, author, lines.filter(Boolean).join('\n'));
     }
   } catch { /* best-effort */ }
-  res.json({ ok: true, decision, record_number: row.record_number });
+  return { ok: true, decision, record_number: row.record_number, product: d.product_name };
+}
+
+router.post('/flavor-approval/:token', async (req, res) => {
+  const db = getDb();
+  const row = flavorByToken(db, req.params.token);
+  if (!row) return res.status(404).json({ error: 'This approval link is invalid or already used.' });
+  const decision = req.body?.decision === 'denied' ? 'denied' : req.body?.decision === 'approved' ? 'approved' : null;
+  if (!decision) return res.status(400).json({ error: 'Decision must be approved or denied.' });
+  const out = await applyFlavorDecision(db, row, {
+    decision, name: req.body?.name, comments: req.body?.comments, via: 'sms-link',
+  });
+  if (out.error) return res.status(out.status || 400).json({ error: out.error });
+  res.json(out);
 });
+
+/**
+ * "Approve FA-12" texted back to the number that sent the link. The link
+ * stays for anyone who prefers it; the reply keeps Danny in the one place he
+ * works. Guarded three ways: the record must still be pending, the reply must
+ * come FROM the number the link was TEXTED TO, and the decider's name is
+ * resolved from that number — an approval still says who made it.
+ */
+export async function applyFlavorReplyText(db, fromDigits, text, senderName) {
+  const m = String(text || '').trim().match(/^\s*(approve|approved|deny|denied|decline|declined)\s*[-–—:,]?\s*(FA[- ]?\d+)\s*$/i);
+  if (!m) return null; // not a flavour decision — let the AI path have it
+  const decision = /^app/i.test(m[1]) ? 'approved' : 'denied';
+  const recordNumber = m[2].toUpperCase().replace(/[- ]/g, '').replace(/^FA/, 'FA-');
+  const row = db.prepare("SELECT * FROM qms_records WHERE record_type = 'flavor_approval' AND status = 'pending' AND UPPER(REPLACE(record_number,'-','')) = ?")
+    .get(recordNumber.replace(/-/g, ''));
+  if (!row) return { reply: `I couldn't find a pending flavor approval ${recordNumber} — it may already be decided.` };
+  const d = parseJson(row.data, {});
+  const sentTo = String(d.last_texted_to || '').replace(/\D/g, '').slice(-10);
+  if (!sentTo || sentTo !== fromDigits) {
+    // The decision is a decision about product; a number the link was never
+    // sent to does not get to make it by guessing a record number.
+    return { reply: `That approval wasn't sent to this number, so I can't take the decision from here. Use the link, or ask for it to be re-sent.` };
+  }
+  if (!senderName) {
+    return { reply: `I need to know who is deciding — this number isn't on the roster. Use the link instead, and type your name there.` };
+  }
+  const out = await applyFlavorDecision(db, row, { decision, name: senderName, via: 'sms-reply' });
+  if (out.error) return { reply: `Couldn't record that: ${out.error}` };
+  return { reply: `Got it — ${out.product || out.record_number} ${decision}. It's on the record as ${senderName}.` };
+}
 
 // ── Component Sign In/Out kiosk ───────────────────────────────────────────────
 // Suggestion lists (item names / part numbers seen before) for quick entry.

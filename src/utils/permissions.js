@@ -20,6 +20,14 @@
 // an admin can never lock themselves out of Settings.
 
 const ADMIN_ALWAYS = new Set(['settings']);
+import { OPT_IN_SET } from '../../shared/opt-in-modules.js';
+
+// An admin's map is a RESTRICTION only when it narrows the ordinary modules.
+// A map that holds nothing but opt-in grants ({'dannys-list':'edit'}) is an
+// admin with full access plus one private module — treating it as a
+// restriction would strip their whole nav the moment they were granted one.
+const isRestrictionMap = (ma) =>
+  !!ma && !Array.isArray(ma) && Object.keys(ma).some(k => !OPT_IN_SET.has(k));
 
 function roleDefault(role) {
   return role === 'admin' || role === 'supervisor' ? 'edit' : 'view';
@@ -28,8 +36,14 @@ function roleDefault(role) {
 export function moduleLevel(user, moduleId) {
   if (!user) return null;
   const ma = user.module_access;
+  // Opt-in modules need the explicit grant from EVERYONE, admins included.
+  if (OPT_IN_SET.has(moduleId)) {
+    if (!ma) return null;
+    if (Array.isArray(ma)) return ma.includes(moduleId) ? 'edit' : null;
+    return ma[moduleId] ? 'edit' : null;
+  }
   if (user.role === 'admin') {
-    if (ma && !Array.isArray(ma) && !ADMIN_ALWAYS.has(moduleId)) return ma[moduleId] ? 'edit' : null;
+    if (isRestrictionMap(ma) && !ADMIN_ALWAYS.has(moduleId)) return ma[moduleId] ? 'edit' : null;
     return 'edit';
   }
   if (user.role === 'auditor') return 'view';
@@ -55,9 +69,10 @@ export function hasExplicitGrant(user, moduleId) {
 export function visibleModuleIds(user, allIds) {
   if (!user) return [];
   const ma = user.module_access;
+  const optInVisible = (id) => !OPT_IN_SET.has(id) || hasExplicitGrant(user, id);
   if (user.role === 'admin') {
-    if (ma && !Array.isArray(ma)) return allIds.filter(id => ADMIN_ALWAYS.has(id) || ma[id]);
-    return allIds;
+    if (isRestrictionMap(ma)) return allIds.filter(id => (ADMIN_ALWAYS.has(id) || ma[id]) && optInVisible(id));
+    return allIds.filter(optInVisible);
   }
   // Auditors never see this nav — they land in the Auditor View — but the
   // answer stays consistent with moduleLevel if anything else asks.

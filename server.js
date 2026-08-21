@@ -65,7 +65,7 @@ import aiRoutes from './server/api/ai.js';
 import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser, startReminderLoop, botDm } from './server/api/comms.js';
 import { pushToUser } from './server/push.js';
 import smsInboundRoutes from './server/api/sms-inbound.js';
-import dannyRoutes from './server/api/danny.js';
+import dannyRoutes, { handleShortcutReply } from './server/api/danny.js';
 import { initRealtime } from './server/realtime.js';
 import { aiEnabled } from './server/ai.js';
 import { storageEnabled, putObject, deleteObject } from './server/storage.js';
@@ -1673,6 +1673,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/submit', submitRoutes);
 app.use('/api/sms', smsInboundRoutes);
 app.use('/api/dannys-list', requireModuleWrite('dannys-list'), dannyRoutes);
+// Public, token-authorised, one write and nothing else — see handleShortcutReply.
+app.post('/api/danny-shortcut/reply', handleShortcutReply);
 app.use('/api/chemicals', requireModuleWrite('chemicals'), chemicalRoutes);
 app.use('/api/hygienic-design', requireModuleWrite('hygienic'), hygienicDesignRoutes);
 app.use('/api/complaints', requireModuleWrite('capa'), complaintRoutes);

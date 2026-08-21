@@ -25,6 +25,41 @@ import { hasExplicitGrant } from '../module-access.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import { createReadStream } from 'fs';
+import crypto from 'crypto';
+import { smsEnabled, sendSms, approverPhone } from '../sms.js';
+
+const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+const cryptoRandom = () => crypto.randomBytes(24).toString('base64url');
+
+/**
+ * The PUBLIC shortcut endpoint — mounted separately in server.js, before the
+ * auth middleware, because the caller is the iOS Shortcuts app holding a
+ * token, not a browser holding a session. iOS never routes a URL into an
+ * installed PWA, so "open ReadyDoc to log this" always meant a Safari tab and
+ * a login screen; a direct POST means the Shortcut never leaves Messages at
+ * all — it logs the reply and shows "Logged ✓" as a notification.
+ *
+ * The token authorises exactly this one insert. It cannot read the list.
+ */
+export function handleShortcutReply(req, res) {
+  const db = getDb();
+  const token = String(req.body?.token || req.query?.token || '').trim();
+  const body = String(req.body?.body || req.body?.text || '').trim();
+  if (!token) return res.status(401).json({ error: 'Missing token.' });
+  const hash = sha256(token);
+  const user = db.prepare("SELECT id, name FROM users WHERE shortcut_token_hash = ? AND is_active = 1").get(hash);
+  // A wrong token and a right token read the same from outside bar the status;
+  // no hint about whether the endpoint is live for probing.
+  if (!user) return res.status(401).json({ error: 'Not authorised.' });
+  if (!body) return res.status(400).json({ error: 'Nothing to log — the clipboard was empty.' });
+  const dup = db.prepare("SELECT id FROM danny_replies WHERE body = ? AND created_at > datetime('now', '-1 hour')").get(body);
+  if (dup) return res.json({ ok: true, duplicate: true, message: 'Already logged.' });
+  const id = uuid();
+  db.prepare('INSERT INTO danny_replies (id, body, received_via, created_by) VALUES (?, ?, ?, ?)')
+    .run(id, body, 'shortcut', user.name);
+  logAudit(user.name, 'create', 'danny_reply', id, { via: 'shortcut', chars: body.length });
+  res.status(201).json({ ok: true, duplicate: false, message: 'Logged — file it in ReadyDoc when you\'re back at a screen.' });
+}
 
 const router = Router();
 
@@ -34,9 +69,12 @@ const router = Router();
 // different in kind: it is one person's private queue of the owner's payments
 // and decisions, and "the warehouse can see what Danny is being asked to pay"
 // is a leak, not a feature. The grant (or admin) is required to see anything.
+// ADMINS INCLUDED. The first cut let role==='admin' straight through, which is
+// the house rule everywhere else — and it meant every admin got the owner's
+// payment queue on deploy day without anyone granting it. Opt-in means opt-in.
 router.use((req, res, next) => {
-  if (req.user?.role === 'admin' || hasExplicitGrant(req.user, 'dannys-list')) return next();
-  return res.status(403).json({ error: "Danny's List is granted per person in Settings — this account does not have it." });
+  if (hasExplicitGrant(req.user, 'dannys-list')) return next();
+  return res.status(403).json({ error: "Danny's List is granted per person in Settings — this account does not have it (admins included)." });
 });
 
 export const KINDS = ['approval', 'payment', 'action', 'fyi', 'assigned_to_me'];
@@ -62,7 +100,8 @@ const money = (n) => (n == null || n === '' ? null : `$${Number(n).toLocaleStrin
 // One line of the "Your list:" text — the title as captured, with the facts a
 // payment travels with tacked on compactly. Nothing is rephrased.
 export function composeLine(it) {
-  const bits = [it.title.trim()];
+  // Titles can be typed multi-line now; a list line is still one line.
+  const bits = [String(it.title).replace(/\s*\n+\s*/g, ' ').trim()];
   if (it.amount != null && it.amount !== '') bits.push(`— ${money(it.amount)}`);
   if (it.reference) bits.push(`(${it.reference})`);
   if (it.due_date) bits.push(`— need by ${it.due_date}`);
@@ -77,7 +116,7 @@ export function composeList(items) {
 // and editable client-side — the module suggests, the sender decides.
 export function composeChase(it) {
   const facts = [money(it.amount), it.reference && `(${it.reference})`].filter(Boolean).join(' ');
-  const tail = [it.title.trim(), facts].filter(Boolean).join(' — ');
+  const tail = [String(it.title).replace(/\s*\n+\s*/g, ' ').trim(), facts].filter(Boolean).join(' — ');
   const due = it.due_date ? ` It's needed by ${it.due_date}.` : '';
   if (it.kind === 'payment') return `Did you pay this? ${tail}.${due}`;
   if (it.kind === 'approval') return `Any word on this one? ${tail}.${due}`;
@@ -219,10 +258,16 @@ router.post('/:id/chase', (req, res) => {
 
 /* ── His replies ──────────────────────────────────────────────────────────── */
 
-router.get('/replies', (req, res) => {
+router.get('/replies', async (req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM danny_replies WHERE filed = 0 ORDER BY created_at ASC LIMIT 100').all();
-  res.json(rows);
+  res.json(await Promise.all(rows.map(async r => ({
+    ...r,
+    media: storageEnabled()
+      ? await Promise.all(db.prepare('SELECT * FROM danny_reply_media WHERE reply_id = ?').all(r.id)
+          .map(async m => ({ id: m.id, content_type: m.content_type, url: await presignGet(m.storage_key) })))
+      : [],
+  }))));
 });
 
 router.post('/replies', (req, res) => {
@@ -262,6 +307,13 @@ router.post('/replies/:id/file', (req, res) => {
         .run(outcome, it.id);
     }
     addEvent(db, it, outcome === 'feedback' ? 'danny_feedback' : `danny_${outcome}`, 'Danny (filed by ' + req.user.name + ')', excerpt);
+    // A screenshot that arrived WITH the reply (his payment confirmation)
+    // belongs on the item it answers. Filing transfers it.
+    for (const m of db.prepare('SELECT * FROM danny_reply_media WHERE reply_id = ?').all(reply.id)) {
+      db.prepare('INSERT INTO danny_attachments (id, item_id, storage_key, filename, content_type, size, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(uuid(), it.id, m.storage_key, 'texted-by-danny.' + (String(m.content_type || '').includes('png') ? 'png' : String(m.content_type || '').includes('pdf') ? 'pdf' : 'jpg'), m.content_type, m.size, 'Danny (SMS)');
+      db.prepare('DELETE FROM danny_reply_media WHERE id = ?').run(m.id);
+    }
   });
   tx();
   logAudit(req.user, 'update', 'danny_item', it.id,
@@ -278,6 +330,109 @@ router.post('/replies/:id/handled', (req, res) => {
   db.prepare('UPDATE danny_replies SET filed = 1 WHERE id = ?').run(reply.id);
   logAudit(req.user, 'update', 'danny_reply', reply.id, { handled: true });
   res.json({ ok: true });
+});
+
+/* ── The Twilio pipe (optional, per send) ─────────────────────────────────── */
+
+// A SECOND number, dedicated to this list — never the AI/flavour number, so
+// Danny's task thread and his question thread stay separate conversations.
+// Off entirely until DANNY_SMS_FROM is set; the copy-paste pipe keeps working
+// regardless, because the log never cares how a message travelled.
+//
+// Env: DANNY_SMS_FROM (E.164, a number in the approved A2P campaign) and
+// optionally DANNY_SMS_TO (Danny's mobile; falls back to FLAVOR_APPROVER_PHONE).
+export function dannySmsConfigured() {
+  return smsEnabled() && !!(process.env.DANNY_SMS_FROM || '').trim();
+}
+const dannyTo = () => (process.env.DANNY_SMS_TO || '').trim() || approverPhone();
+
+router.get('/sms-config', (req, res) => {
+  res.json({ enabled: dannySmsConfigured(), to: dannyTo() ? `…${String(dannyTo()).slice(-4)}` : null });
+});
+
+// Send the composed list (or a chase) down the Twilio pipe instead of copying.
+// Same composition, same events — only the transport differs.
+router.post('/send', async (req, res) => {
+  if (!dannySmsConfigured()) return res.status(503).json({ error: 'Direct texting is not configured (DANNY_SMS_FROM). Use Copy — it is the same message.' });
+  const to = dannyTo();
+  if (!to) return res.status(503).json({ error: 'No recipient configured (DANNY_SMS_TO or FLAVOR_APPROVER_PHONE).' });
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'Pick at least one item.' });
+  const items = ids.map(id => db.prepare('SELECT * FROM danny_items WHERE id = ?').get(id)).filter(Boolean);
+  if (!items.length) return res.status(404).json({ error: 'No such items.' });
+  const text = items.length === 1 ? composeLine(items[0]).replace(/^- /, '') : composeList(items);
+  try {
+    // From the dedicated number, deliberately NOT the Messaging Service — the
+    // service would pick any number in its pool and split Danny's thread.
+    const r = await sendSms(to, text, { from: (process.env.DANNY_SMS_FROM || '').trim() });
+    const tx = db.transaction(() => {
+      for (const it of items) {
+        db.prepare(`UPDATE danny_items SET status = CASE WHEN status = 'open' THEN 'waiting' ELSE status END,
+          last_sent_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`).run(it.id);
+        addEvent(db, it, 'texted_direct', req.user.name, null);
+      }
+    });
+    tx();
+    logAudit(req.user, 'update', 'danny_item', null, { action: 'texted_direct', items: items.length, sid: r?.sid || null }, null, null);
+    res.json({ ok: true, sent: items.length, status: r?.status || null });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+/**
+ * Inbound from the dedicated number — called by sms-inbound.js AFTER the
+ * Twilio signature check, only for messages arriving on DANNY_SMS_FROM. His
+ * reply lands VERBATIM in the same inbox the paste and the Shortcut feed;
+ * nothing here decides anything. MMS media (the payment-confirmation
+ * screenshot) is fetched from Twilio and parked in R2 against the reply, and
+ * filing the reply carries it onto the item.
+ */
+export async function handleDannyInboundSms(db, from, body, mediaUrls = []) {
+  const text = String(body || '').trim();
+  const id = uuid();
+  const finalBody = text || (mediaUrls.length ? '(photo)' : '');
+  if (!finalBody) return null;
+  const dup = db.prepare("SELECT id FROM danny_replies WHERE body = ? AND created_at > datetime('now', '-1 hour')").get(finalBody);
+  if (dup && !mediaUrls.length) return dup.id;
+  db.prepare('INSERT INTO danny_replies (id, body, received_via, created_by) VALUES (?, ?, ?, ?)')
+    .run(id, finalBody, 'sms', 'Danny');
+  logAudit('sms:Danny', 'create', 'danny_reply', id, { via: 'sms', chars: finalBody.length, media: mediaUrls.length });
+
+  if (mediaUrls.length && storageEnabled()) {
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const auth = 'Basic ' + Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
+    for (const [i, url] of mediaUrls.entries()) {
+      try {
+        const resp = await fetch(url, { headers: { Authorization: auth } });
+        if (!resp.ok) continue;
+        const contentType = resp.headers.get('content-type') || 'application/octet-stream';
+        const ext = contentType.includes('png') ? 'png' : contentType.includes('pdf') ? 'pdf' : 'jpg';
+        const key = `danny/replies/${id}/${i}.${ext}`;
+        const buf = Buffer.from(await resp.arrayBuffer());
+        await putStream(key, buf, contentType);
+        db.prepare('INSERT INTO danny_reply_media (id, reply_id, storage_key, content_type, size) VALUES (?, ?, ?, ?, ?)')
+          .run(uuid(), id, key, contentType, buf.length);
+      } catch (e) { console.warn('[danny] media fetch failed:', e.message); }
+    }
+  }
+  return id;
+}
+
+/* ── The iOS Shortcut's key ───────────────────────────────────────────────── */
+
+// Generate (or replace) the caller's shortcut token. Returned in clear exactly
+// once and stored as SHA-256 — the same rule as every magic link here. The
+// token authorises precisely one act (logging a reply body), so a leaked one
+// cannot read the list, decide anything, or touch any other module.
+router.post('/shortcut-token', (req, res) => {
+  const db = getDb();
+  const token = cryptoRandom();
+  db.prepare("UPDATE users SET shortcut_token_hash = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(sha256(token), req.user.id);
+  logAudit(req.user, 'update', 'user', req.user.id, { action: 'danny_shortcut_token_issued' }, null, null, req.user.name);
+  res.json({ token });
 });
 
 /* ── Attachments (payment confirmations, the invoice a request travels with) ─ */

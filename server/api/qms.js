@@ -411,11 +411,16 @@ router.post('/flavor_approval/:id/send', async (req, res) => {
   if (smsEnabled() && to) {
     try {
       // The opt-out line rides on every message WE start. Carriers ask for it
-      // on recurring traffic, and it costs the reader nothing.
-      await sendSms(to, `Powder Ops — flavor approval needed: ${summary}. Tap to approve or deny: ${link} ${OPT_OUT_LINE}`);
+      // on recurring traffic, and it costs the reader nothing. The reply
+      // keywords keep the approver in Messages — the link stays for anyone
+      // who prefers a screen with the batch details on it.
+      await sendSms(to, `Powder Ops — flavor approval needed: ${summary}. Tap to approve or deny: ${link} Or just reply "Approve ${row.record_number}" or "Deny ${row.record_number}". ${OPT_OUT_LINE}`);
       texted = true;
-      // The number is recorded, because "who was asked to approve this" is a
-      // question about a decision on product.
+      // The number is recorded ON THE RECORD, not only in the audit log: the
+      // reply-by-text path must verify the decision comes from the number the
+      // link was sent to, and an audit row is not addressable by token.
+      data.last_texted_to = to;
+      db.prepare("UPDATE qms_records SET data = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(data), row.id);
       logAudit(req.user, 'qms_updated', 'flavor_approval', row.id,
         { record_number: row.record_number, texted_to: to });
     } catch (e) { smsError = e.message; }

@@ -24,6 +24,8 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { aiEnabled, answerQuestion } from '../ai.js';
 import { smsEnabled, sendSms, approverPhone } from '../sms.js';
+import { handleDannyInboundSms } from './danny.js';
+import { applyFlavorReplyText } from './submit.js';
 import { appBaseUrl } from '../links.js';
 import { getDb, logAudit } from '../db.js';
 
@@ -76,15 +78,48 @@ function knownSender(from) {
 router.post('/inbound', (req, res) => {
   if (!validSignature(req)) return res.status(403).type('text/xml').send('<Response></Response>');
   const from = req.body?.From || '';
+  const to = req.body?.To || '';
   const body = String(req.body?.Body || '').trim();
   // Ack immediately (empty TwiML) — the answer can take longer than Twilio's
   // webhook timeout, so it goes back via the REST API instead of the reply.
   res.type('text/xml').send('<Response></Response>');
 
+  // ── The Danny's List number is its own conversation ──
+  // A second dedicated number keeps his task thread apart from his question
+  // thread. Anything arriving ON that number is a task reply: stored verbatim
+  // (MMS payment screenshots included) and filed by a person — never parsed
+  // into a decision, never routed to the AI. Only his own number is heard;
+  // anything else is acked and dropped in the usual silence.
+  const dannyFrom = (process.env.DANNY_SMS_FROM || '').replace(/\D/g, '').slice(-10);
+  if (dannyFrom && last10(to) === dannyFrom) {
+    const expected = last10((process.env.DANNY_SMS_TO || '').trim() || approverPhone());
+    if (!expected || last10(from) !== expected) return;
+    (async () => {
+      try {
+        const media = [];
+        const n = parseInt(req.body?.NumMedia || '0', 10) || 0;
+        for (let i = 0; i < n; i++) if (req.body[`MediaUrl${i}`]) media.push(req.body[`MediaUrl${i}`]);
+        const id = await handleDannyInboundSms(getDb(), last10(from), body, media);
+        // The robot number must not be a void — with no human on this thread,
+        // silence after a reply reads as "it didn't work".
+        if (id && smsEnabled()) await sendSms(from, 'Got it — on the list.', { from: (process.env.DANNY_SMS_FROM || '').trim() });
+      } catch (e) { console.warn('[sms] danny inbound failed:', e.message); }
+    })();
+    return;
+  }
+
   const who = knownSender(from);
   if (!who || !body || !smsEnabled()) return;
   (async () => {
     try {
+      // "Approve FA-12" texted back to the link's own thread is a decision,
+      // not a question — tried FIRST, and only the exact pattern matches, so
+      // every ordinary question still reaches the assistant.
+      const flavorOut = await applyFlavorReplyText(getDb(), last10(from), body, who === 'Danny' ? 'Danny Augustyn' : who);
+      if (flavorOut) {
+        if (flavorOut.reply) await sendSms(from, flavorOut.reply);
+        return;
+      }
       logAudit(`sms:${who}`, 'create', 'sms_query', null, { question: body.slice(0, 300) });
       if (!aiEnabled()) {
         await sendSms(from, 'ReadyDoc: the AI assistant is not configured right now — ask Lowry.');

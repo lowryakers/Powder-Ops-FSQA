@@ -416,7 +416,7 @@ export default function OrgChart() {
           <p className="text-sm">No positions yet.{canEdit ? ' Click "Add Position" to start building the chart.' : ''}</p>
         </div>
       ) : (
-        <div ref={chartWrapRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <div ref={chartWrapRef} className="bg-white rounded-xl border border-gray-200 overflow-auto overscroll-contain max-h-[75vh]">
           {canEdit && <p className="text-[11px] text-gray-400 px-4 pt-3">Tip: drag a position onto another to change its reporting line. Hover a box for add/edit/remove.</p>}
           <div ref={chartRef} className="orgtree min-w-full" style={{ zoom }}>
             <ul>

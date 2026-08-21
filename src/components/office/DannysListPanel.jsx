@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApiGet, apiPost, apiFetch, apiUpload } from '../../hooks/useApi';
-import { useAuth } from '../../hooks/useAuth';
 import { consumeParam } from '../../lib/deepLink.js';
 import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import {
@@ -38,6 +37,11 @@ const STATUS_META = {
   done: { label: 'Done', chip: 'bg-green-100 text-green-800' },
   dropped: { label: 'Dropped', chip: 'bg-gray-100 text-gray-500' },
 };
+// The house convention from comms: Enter is a new line, Shift+Enter submits.
+const submitOnShiftEnter = (fn) => (e) => {
+  if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); fn(); }
+};
+
 const PRIORITY_DOT = { urgent: 'bg-red-500', high: 'bg-amber-500', normal: 'bg-gray-300', low: 'bg-gray-200' };
 const money = (n) => (n == null ? null : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
 
@@ -102,10 +106,11 @@ function CaptureBar({ onCreated }) {
         ))}
       </div>
       <div className="flex gap-2">
-        <input ref={inputRef} value={title} onChange={e => setTitle(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') save(); }}
-          placeholder={kind === 'assigned_to_me' ? 'What Danny asked you to do…' : 'Write it the way you would text it…'}
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        <textarea ref={inputRef} value={title} onChange={e => setTitle(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); save(); } }} rows={1}
+          onInput={e => { e.target.style.height = 'auto'; e.target.style.height = `${Math.min(120, e.target.scrollHeight)}px`; }}
+          placeholder={kind === 'assigned_to_me' ? 'What Danny asked you to do…' : 'Write it the way you would text it… (Shift+Enter to add)'}
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none" />
         <button type="button" onClick={() => setMore(v => !v)}
           className="px-2.5 py-2 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50" title="Amount, reference, due date">
           <DollarSign size={14} />
@@ -210,6 +215,7 @@ function ReplyTriage({ reply, items, onDone, refresh }) {
 
 function ItemRow({ it, selected, onToggle, refresh }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [note, setNote] = useState('');
   const [chase, setChase] = useState(null);
   const [attachments, setAttachments] = useState(null);
@@ -269,7 +275,11 @@ function ItemRow({ it, selected, onToggle, refresh }) {
 
       {open && (
         <div className="border-t border-gray-100 px-3 py-2.5 space-y-2.5">
-          {it.details && <p className="text-xs text-gray-600 whitespace-pre-wrap">{it.details}</p>}
+          {editing ? (
+            <ItemEditForm it={it} onDone={() => { setEditing(false); refresh(); }} onCancel={() => setEditing(false)} />
+          ) : (
+            it.details && <p className="text-xs text-gray-600 whitespace-pre-wrap">{it.details}</p>
+          )}
 
           <div className="flex flex-wrap items-center gap-1.5">
             {outstanding && (
@@ -295,6 +305,12 @@ function ItemRow({ it, selected, onToggle, refresh }) {
             )}
             {!outstanding && (
               <button type="button" onClick={() => setStatus('open')} className="px-2.5 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50">Reopen</button>
+            )}
+            {!editing && (
+              <button type="button" onClick={() => setEditing(true)}
+                className="px-2.5 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50">
+                Edit
+              </button>
             )}
             <button type="button" onClick={() => fileRef.current?.click()}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50">
@@ -351,16 +367,74 @@ function ItemRow({ it, selected, onToggle, refresh }) {
   );
 }
 
+/* ── Editing an item ──────────────────────────────────────────────────────── */
+
+// Same keyboard as the capture bar and comms: Enter is a new line,
+// Shift+Enter saves. The edit is audited server-side like any other change;
+// what he was SENT is already fixed in the events, so editing a title after
+// sending changes the next text, never the record of the last one.
+function ItemEditForm({ it, onDone, onCancel }) {
+  const [f, setF] = useState({
+    title: it.title || '', details: it.details || '',
+    amount: it.amount ?? '', reference: it.reference || '',
+    due_date: it.due_date || '', priority: it.priority || 'normal',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const save = async () => {
+    if (!f.title.trim() || busy) return;
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/dannys-list/${it.id}`, { method: 'PUT', body: f });
+      onDone();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-2 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+      <textarea value={f.title} onChange={e => setF({ ...f, title: e.target.value })}
+        onKeyDown={submitOnShiftEnter(save)} rows={2} autoFocus
+        className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+      <textarea value={f.details} onChange={e => setF({ ...f, details: e.target.value })}
+        onKeyDown={submitOnShiftEnter(save)} rows={2} placeholder="Details (kept here, not texted)"
+        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <input value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })}
+          type="text" inputMode="decimal" placeholder="$ amount"
+          className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs" />
+        <input value={f.reference} onChange={e => setF({ ...f, reference: e.target.value })}
+          placeholder="Invoice / PO #" className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs" />
+        <input value={f.due_date} onChange={e => setF({ ...f, due_date: e.target.value })}
+          type="date" className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs" />
+        <select value={f.priority} onChange={e => setF({ ...f, priority: e.target.value })}
+          className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs">
+          <option value="low">Low</option><option value="normal">Normal</option>
+          <option value="high">High</option><option value="urgent">Urgent</option>
+        </select>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+        <button type="button" onClick={save} disabled={!f.title.trim() || busy}
+          className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 disabled:opacity-40">
+          Save (Shift+Enter)
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── The panel ────────────────────────────────────────────────────────────── */
 
 export default function DannysListPanel() {
-  const { user } = useAuth() || {};
   const { data, loading, refresh } = useApiGet('/dannys-list');
   const [tab, setTab] = useState('needs_danny');
   const [selected, setSelected] = useState(new Set());
   const [replies, setReplies] = useState([]);
   const [showPaste, setShowPaste] = useState(false);
   const [pasteText, setPasteText] = useState('');
+  const [sending, setSending] = useState(false);
+  const { data: smsConfig } = useApiGet('/dannys-list/sms-config');
 
   const items = useMemo(() => data?.items || [], [data]);
   const loadReplies = async () => {
@@ -471,10 +545,26 @@ export default function DannysListPanel() {
       </div>
 
       {selectedVisible.length > 0 && (
-        <div className="sticky top-2 z-10 flex items-center gap-2 bg-powder-600 text-white rounded-xl px-3 py-2 shadow-lg">
+        <div className="sticky top-2 z-10 flex items-center gap-2 flex-wrap bg-powder-600 text-white rounded-xl px-3 py-2 shadow-lg">
           <span className="text-sm font-medium flex-1">
             {selectedVisible.length} item{selectedVisible.length === 1 ? '' : 's'} → one text
           </span>
+          {/* Direct send appears only when the dedicated number is configured;
+              Copy is always there and is the same message. */}
+          {smsConfig?.enabled && (
+            <button type="button" disabled={sending}
+              onClick={async () => {
+                setSending(true);
+                try {
+                  await apiPost('/dannys-list/send', { ids: selectedVisible.map(i => i.id) });
+                  setSelected(new Set()); refresh();
+                } catch (e) { alert(e.message); }
+                finally { setSending(false); }
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-powder-800 text-white rounded-lg text-sm font-semibold hover:bg-powder-900 disabled:opacity-50">
+              <Send size={13} /> {sending ? 'Sending…' : `Text Danny ${smsConfig.to || ''}`}
+            </button>
+          )}
           <CopyButton getText={composeAndCopy} label="Copy list for Danny"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-powder-700 rounded-lg text-sm font-semibold hover:bg-powder-50" />
         </div>
@@ -491,12 +581,72 @@ export default function DannysListPanel() {
         ))}
       </div>
 
-      {user?.role === 'admin' && (
-        <p className="text-[11px] text-gray-400">
-          Tip: an iOS Shortcut with “Get clipboard → Open URL
-          {' '}<span className="font-mono">https://app.powder-ops.com/?tab=dannys-list&amp;reply=[Clipboard]</span>”
-          logs his reply in one tap from the Messages thread.
-        </p>
+      <ShortcutSetup />
+    </div>
+  );
+}
+
+/* ── iOS Shortcut setup ───────────────────────────────────────────────────── */
+
+// The Shortcut POSTs straight to the API and never opens a browser: iOS does
+// not route URLs into an installed PWA, so the deep-link version always meant
+// a Safari tab and a login screen. This stays entirely inside Messages —
+// copy his reply, run the Shortcut, see "Logged ✓".
+function ShortcutSetup() {
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const endpoint = `${window.location.origin}/api/danny-shortcut/reply`;
+
+  const generate = async () => {
+    setBusy(true);
+    try { setToken((await apiPost('/dannys-list/shortcut-token', {})).token); }
+    catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-xl">
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-gray-600">
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        Set up the one-tap “Log Danny” Shortcut (no browser, stays in Messages)
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2 text-xs text-gray-600">
+          <p>
+            The Shortcut sends his copied reply straight here and shows “Logged ✓” — you never leave the
+            thread. File it from the inbox above next time you&apos;re in ReadyDoc.
+          </p>
+          {token ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 space-y-1.5">
+              <p className="font-medium text-amber-900">
+                Your key — shown once, copy it now. Generating again replaces it.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-2 py-1 bg-white border border-amber-200 rounded text-[11px] break-all">{token}</code>
+                <CopyButton getText={token} label="Copy"
+                  className="shrink-0 inline-flex items-center gap-1 px-2 py-1 bg-powder-600 text-white rounded text-[11px] font-medium" />
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={generate} disabled={busy}
+              className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 disabled:opacity-50">
+              {busy ? 'Generating…' : 'Generate my Shortcut key'}
+            </button>
+          )}
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Shortcuts app → new Shortcut → add <strong>Get Clipboard</strong>.</li>
+            <li>Add <strong>Get Contents of URL</strong> → URL <code className="bg-gray-100 px-1 rounded">{endpoint}</code>
+              {' '}→ Method <strong>POST</strong> → Request Body <strong>JSON</strong> with two fields:
+              {' '}<code className="bg-gray-100 px-1 rounded">token</code> = your key,
+              {' '}<code className="bg-gray-100 px-1 rounded">body</code> = the <strong>Clipboard</strong> variable.</li>
+            <li>Add <strong>Show Notification</strong> → “Logged ✓”. Name it <strong>Log Danny</strong>, add to Home Screen.</li>
+          </ol>
+          <p className="text-gray-400">
+            Copy his message in the thread → tap Log Danny → done. Running it twice logs one reply, not two.
+          </p>
+        </div>
       )}
     </div>
   );

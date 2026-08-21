@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { ChevronDown, X } from 'lucide-react';
+import PortalDropdown from './PortalDropdown.jsx';
 
 /**
  * A dropdown you can TYPE INTO — for the lists too long to scroll on a phone.
@@ -94,8 +95,9 @@ export default function SearchSelect({
       ) : (
         <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
       )}
+      {/* Portalled so a modal's overflow can never clip it — see PortalDropdown. */}
       {open && matches.length > 0 && (
-        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+        <PortalDropdown anchorRef={inputRef} open={open} onRequestClose={close}>
           {matches.slice(0, LIST_CAP).map((o, i, arr2) => (
             <div key={`${o.group}|${o.name}`}>
               {grouped && o.group !== arr2[i - 1]?.group && (
@@ -108,7 +110,7 @@ export default function SearchSelect({
             </div>
           ))}
           {matches.length > LIST_CAP && <div className="px-3 py-1.5 text-[11px] text-gray-400">Keep typing to narrow down…</div>}
-        </div>
+        </PortalDropdown>
       )}
     </div>
   );

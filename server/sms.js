@@ -95,7 +95,7 @@ export function smsStatus() {
   };
 }
 
-export async function sendSms(to, body) {
+export async function sendSms(to, body, opts = {}) {
   if (!smsEnabled()) {
     const { missing } = smsStatus();
     throw new Error(`SMS is not configured on this server — missing ${missing.join(', ')}.`);
@@ -105,7 +105,11 @@ export async function sendSms(to, body) {
   const svc = val('TWILIO_MESSAGING_SERVICE_SID');
 
   const params = { To: to, Body: body };
-  if (svc) params.MessagingServiceSid = svc;
+  // An explicit From wins over the Messaging Service: Danny's List uses a
+  // DEDICATED number so his task thread stays one conversation — the service
+  // would send from any number in its pool and split it.
+  if (opts.from) params.From = opts.from;
+  else if (svc) params.MessagingServiceSid = svc;
   else params.From = val('TWILIO_FROM');
 
   // TWILIO_API_BASE exists only to point the tests at a stand-in, the same way

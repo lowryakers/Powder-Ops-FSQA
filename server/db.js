@@ -3562,6 +3562,11 @@ function runMigrations() {
   // name against it.
   addColumnIfMissing('users', 'sms_consent_at', 'TEXT');
   addColumnIfMissing('users', 'sms_consent_by', 'TEXT');
+  // The iOS Shortcut's key for logging Danny replies without a browser: a
+  // per-user long-lived token, stored as SHA-256 (partner-portal precedent),
+  // shown in clear exactly once. Regenerating replaces it; sessions expire,
+  // this deliberately does not — it can post ONE kind of record and nothing else.
+  addColumnIfMissing('users', 'shortcut_token_hash', 'TEXT');
 
   // Numbers a flavour approval can be texted to. There are only ever three or
   // four, they are not all ReadyDoc accounts (a co-packer contact, a partner),
@@ -3800,6 +3805,18 @@ function runMigrations() {
         created_at   TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE INDEX IF NOT EXISTS idx_danny_replies_filed ON danny_replies(filed, created_at);
+
+      -- MMS media on an inbound reply (his payment-confirmation screenshot),
+      -- parked against the reply until filing carries it onto the item.
+      CREATE TABLE IF NOT EXISTS danny_reply_media (
+        id           TEXT PRIMARY KEY,
+        reply_id     TEXT NOT NULL REFERENCES danny_replies(id),
+        storage_key  TEXT NOT NULL,
+        content_type TEXT,
+        size         INTEGER,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_danny_reply_media ON danny_reply_media(reply_id);
 
       -- Payment confirmations and the invoices requests travel with. R2 via
       -- the shared media path, same as equipment manuals and comms files.
