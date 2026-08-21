@@ -7,6 +7,10 @@ export default function ApprovePage({ token }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState('');
   const [comments, setComments] = useState('');
+  // THE LINK CANNOT KNOW WHO IS HOLDING IT. It may have been texted to a second
+  // approver, or handed to a colleague — and the decision used to be filed
+  // under Danny's name whoever tapped it. Same rule as the NFP approval page.
+  const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null); // 'approved' | 'denied'
   const [confirming, setConfirming] = useState(null);
@@ -22,7 +26,7 @@ export default function ApprovePage({ token }) {
     try {
       const r = await fetch(`/api/submit/flavor-approval/${encodeURIComponent(token)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, comments }),
+        body: JSON.stringify({ decision, comments, name }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Something went wrong');
@@ -77,6 +81,9 @@ export default function ApprovePage({ token }) {
                 </div>
               ))}
             </dl>
+            <input value={name} onChange={e => setName(e.target.value)} type="text"
+              autoComplete="name" placeholder="Your name"
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl text-base" />
             <textarea value={comments} onChange={e => setComments(e.target.value)} rows={2}
               placeholder="Comments (optional)" className="w-full px-3 py-2 border border-gray-300 rounded-xl text-base" />
             {error && <p className="text-sm text-red-600">{error}</p>}
@@ -94,14 +101,21 @@ export default function ApprovePage({ token }) {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setConfirming('approved')} className="py-4 rounded-xl bg-green-600 hover:bg-green-700 text-white text-lg font-bold active:scale-[0.98]">
-                  ✓ Approve
-                </button>
-                <button onClick={() => setConfirming('denied')} className="py-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-lg font-bold active:scale-[0.98]">
-                  ✕ Deny
-                </button>
-              </div>
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setConfirming('approved')} disabled={name.trim().length < 2}
+                    className="py-4 rounded-xl bg-green-600 hover:bg-green-700 text-white text-lg font-bold active:scale-[0.98] disabled:opacity-40">
+                    ✓ Approve
+                  </button>
+                  <button onClick={() => setConfirming('denied')} disabled={name.trim().length < 2}
+                    className="py-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-lg font-bold active:scale-[0.98] disabled:opacity-40">
+                    ✕ Deny
+                  </button>
+                </div>
+                {name.trim().length < 2 && (
+                  <p className="text-xs text-center text-gray-500">Type your name above — the record has to say who decided.</p>
+                )}
+              </>
             )}
           </div>
         )}

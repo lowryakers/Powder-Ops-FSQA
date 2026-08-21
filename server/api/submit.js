@@ -5,7 +5,7 @@ import { getType, CHEMICAL_USE_SPECS } from '../qms-config.js';
 import { getChannelByName, postMessageAs } from './comms.js';
 import { SCALE_FORMS, SCALE_PROCEDURE, procedureFor } from '../scale-forms.js';
 import { recordScaleVerification } from './scale-verification.js';
-import { activeChemicalNames } from './qms.js';
+import { activeChemicalNames, syncFlavorOrganoleptic } from './qms.js';
 import { openSignOuts, syncKnifeStatus, toolIdOf } from '../knife-state.js';
 
 const router = Router();
@@ -208,7 +208,16 @@ router.post('/flavor-approval/:token', async (req, res) => {
   const decision = req.body?.decision === 'denied' ? 'denied' : req.body?.decision === 'approved' ? 'approved' : null;
   if (!decision) return res.status(400).json({ error: 'Decision must be approved or denied.' });
   const d = parseJson(row.data, {});
-  d.decided_by = (req.body?.name || '').trim() || 'Danny Augustyn';
+  // THE APPROVER TYPES THEIR OWN NAME, AND IT IS REQUIRED.
+  //
+  // This used to default to Danny whoever the link was texted to — which
+  // silently undid the whole point of choosing the recipient at send time, and
+  // put one man's name on a decision about product he may never have tasted.
+  // The link cannot know who is holding it; the NFP approval page has asked
+  // this from the start and this is the same act.
+  const decidedBy = String(req.body?.name || '').trim();
+  if (decidedBy.length < 2) return res.status(400).json({ error: 'Please type your name — an approval has to say who made it.' });
+  d.decided_by = decidedBy;
   d.decision_date = today();
   if (req.body?.comments) d.comments = String(req.body.comments).slice(0, 500);
   delete d.approval_token; // single use
@@ -216,6 +225,21 @@ router.post('/flavor-approval/:token', async (req, res) => {
     .run(decision, JSON.stringify(d), row.id);
   logAudit(d.decided_by, decision === 'approved' ? 'flavor_approved' : 'flavor_denied', 'flavor_approval', row.id,
     { record_number: row.record_number, product: d.product_name, lot: d.lot_number, via: 'sms-link' }, null, null, d.product_name);
+
+  // ONE TASTING, TWO RECORDS — WHICHEVER DOOR THE DECISION CAME THROUGH.
+  //
+  // The in-app decision has filed the paired Organoleptic record since it was
+  // built, and this path — the magic link, which is the way the plant actually
+  // decides a flavour — wrote its own UPDATE and called nothing. So a flavour
+  // approved by text left the Organoleptic log empty, and a denied one raised
+  // no draft disposal: exactly the two-doors-disagreeing gap that left QA's
+  // inspection records unfiled for three months.
+  try {
+    const cfg = getType('flavor_approval');
+    const fresh = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(row.id);
+    const rec = { ...fresh, ...parseJson(fresh.data, {}) };
+    if (cfg) syncFlavorOrganoleptic(db, cfg, rec, { name: d.decided_by });
+  } catch (e) { console.error('[flavor→organoleptic]', e.message); }
   // Announce in #batching so the floor knows immediately.
   try {
     const channel = getChannelByName(db, 'batching') || getChannelByName(db, 'general');

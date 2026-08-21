@@ -621,7 +621,7 @@ function syncKnifeMaster(db, cfg, rec) {
 
 const SENSORY_KEYS = ['appearance', 'texture', 'aroma', 'flavor', 'overall'];
 
-function syncFlavorOrganoleptic(db, cfg, rec, user) {
+export function syncFlavorOrganoleptic(db, cfg, rec, user) {
   if (cfg.key !== 'flavor_approval') return null;
   // Only once a decision has been made — a pending approval is a batch waiting
   // to be tasted, and there is no sensory evaluation to record yet.
