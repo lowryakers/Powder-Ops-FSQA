@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { getType, CHEMICAL_USE_SPECS } from '../qms-config.js';
-import { getChannelByName, postMessageAs } from './comms.js';
+import { getChannelByName, postMessageAs, getBotUser } from './comms.js';
 import { SCALE_FORMS, SCALE_PROCEDURE, procedureFor } from '../scale-forms.js';
 import { recordScaleVerification } from './scale-verification.js';
 import { activeChemicalNames, syncFlavorOrganoleptic } from './qms.js';
 import { openSignOuts, syncKnifeStatus, toolIdOf } from '../knife-state.js';
+import { readyDocOrigin } from '../links.js';
 
 const router = Router();
 
@@ -241,14 +242,36 @@ router.post('/flavor-approval/:token', async (req, res) => {
     if (cfg) syncFlavorOrganoleptic(db, cfg, rec, { name: d.decided_by });
   } catch (e) { console.error('[flavor→organoleptic]', e.message); }
   // Announce in #batching so the floor knows immediately.
+  //
+  // POSTED BY READYBOT, NOT BY A PERSON. It used to be authored by whichever
+  // account matched `name LIKE 'Danny%'`, so every decision appeared in the
+  // channel as "Danny Augustyn: Flavor approved" — under his name and his
+  // avatar — no matter who actually tasted the batch and tapped the link. The
+  // decision names its approver in the text, where it belongs; the messenger is
+  // the system.
   try {
     const channel = getChannelByName(db, 'batching') || getChannelByName(db, 'general');
-    const author = db.prepare("SELECT id, name FROM users WHERE name LIKE 'Danny%' AND is_active = 1 LIMIT 1").get()
-      || db.prepare("SELECT id, name FROM users WHERE role = 'admin' LIMIT 1").get();
+    const author = getBotUser(db);
     if (channel && author) {
       const emoji = decision === 'approved' ? '✅' : '❌';
-      await postMessageAs(db, channel, author,
-        `${emoji} Flavor ${decision}: ${d.product_name || row.record_number}${d.lot_number ? ` (Lot ${d.lot_number})` : ''} — ${d.decided_by} via text${d.comments ? ` — "${d.comments}"` : ''}`);
+      // Bot bold is *text*, never **text** — the chat renderer is not markdown.
+      const facts = [
+        d.lot_number && `Lot ${d.lot_number}`,
+        d.mo_number && `MO ${d.mo_number}`,
+        d.work_order && !d.mo_number && `WO ${d.work_order}`,
+        row.record_number,
+      ].filter(Boolean).join(' · ');
+      const lines = [
+        `${emoji} *Flavor ${decision}* — ${d.product_name || row.record_number}`,
+        facts,
+        `Decided by ${d.decided_by} by text${d.decision_date ? ` on ${d.decision_date}` : ''}`,
+      ];
+      if (d.comments) lines.push(`"${d.comments}"`);
+      // A denial is not just news — it leaves product needing a disposition,
+      // and the draft disposal the sync raises is where that happens.
+      if (decision === 'denied') lines.push('This batch needs a disposition — a draft disposal has been raised.');
+      lines.push(`${readyDocOrigin()}/?tab=flavor-approvals`);
+      await postMessageAs(db, channel, author, lines.filter(Boolean).join('\n'));
     }
   } catch { /* best-effort */ }
   res.json({ ok: true, decision, record_number: row.record_number });
