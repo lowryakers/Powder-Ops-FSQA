@@ -69,14 +69,26 @@ export function drawTable(pdf, table, opts = {}) {
   const cols = table.header.length;
   const widths = columnWidths(table, total, cols);
 
+  // MEASURE WITH THE OPTIONS YOU DRAW WITH.
+  //
+  // heightOfString was called without the lineGap that text() was given, so
+  // every line of a cell was measured one point short. On a short cell nobody
+  // notices; on a twenty-line preventive-control justification the row box came
+  // out twenty points too small and the text ran on into the row beneath it.
+  // One options object now serves both, so they cannot drift again.
+  const cellOpts = (i) => ({ width: widths[i] - padX * 2, lineGap: 1 });
+
   const rowHeight = (cells, bold) => {
     pdf.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize);
     let h = 0;
     cells.forEach((c, i) => {
-      const ch = pdf.heightOfString(String(c || ''), { width: widths[i] - padX * 2 });
+      const ch = pdf.heightOfString(String(c || ''), cellOpts(i));
       if (ch > h) h = ch;
     });
-    return Math.max(14, h + padY * 2);
+    // A point of slack. Rounding between measuring and drawing is the whole
+    // reason this bug existed, and a hair of extra white space costs nothing
+    // next to two rows printed on top of each other.
+    return Math.max(14, Math.ceil(h) + padY * 2 + 1);
   };
 
   const drawRow = (cells, y, bold, fill) => {
@@ -86,9 +98,22 @@ export function drawTable(pdf, table, opts = {}) {
       if (fill) pdf.save().rect(x, y, widths[i], h).fill(fill).restore();
       pdf.save().rect(x, y, widths[i], h).lineWidth(0.5).strokeColor('#9ca3af').stroke().restore();
       pdf.fillColor('#111827').font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize)
-        .text(String(c || ''), x + padX, y + padY, { width: widths[i] - padX * 2, lineGap: 1 });
+        // Deliberately NOT clipped to the box. If a measurement is ever wrong
+        // again, a point of overlap is a blemish — a truncated preventive
+        // control is a hazard analysis missing its control, which is the kind
+        // of quiet loss this codebase exists to avoid.
+        .text(String(c || ''), x + padX, y + padY, cellOpts(i));
       x += widths[i];
     });
+    return h;
+  };
+
+  // The boxes actually drawn, so a test can check that no two overlap rather
+  // than reading the rendered page and guessing.
+  const boxes = [];
+  const place = (cells, y, bold, fill) => {
+    const h = drawRow(cells, y, bold, fill);
+    boxes.push({ page: pdf.bufferedPageRange ? pdf.bufferedPageRange().count : 0, y, h, cells });
     return h;
   };
 
@@ -96,19 +121,20 @@ export function drawTable(pdf, table, opts = {}) {
   const headerH = rowHeight(table.header, true);
   // A header alone at the foot of a page is worse than a page break before it.
   if (y + headerH + 20 > pageBottom) { pdf.addPage(); y = pdf.y; }
-  y += drawRow(table.header, y, true, '#f3f4f6');
+  y += place(table.header, y, true, '#f3f4f6');
 
   for (const row of table.rows) {
     const h = rowHeight(row, false);
     if (y + h > pageBottom) {
       pdf.addPage();
       y = pdf.y;
-      y += drawRow(table.header, y, true, '#f3f4f6');
+      y += place(table.header, y, true, '#f3f4f6');
     }
-    y += drawRow(row, y, false, null);
+    y += place(row, y, false, null);
   }
 
   pdf.x = left;
   pdf.y = y + 8;
   pdf.font('Helvetica').fillColor('#111827');
+  return { boxes, widths, bottom: y };
 }
