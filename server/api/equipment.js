@@ -6,6 +6,7 @@ import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '..
 import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { repairTasks, repairConfidence } from '../task-text-repair.js';
+import { trueDuplicates, sameNameDifferentAsset, crossRegistryMatches } from '../registry-dupes.js';
 import { aiEnabled, compareManualToTasks } from '../ai.js';
 import { equipmentReadiness, readinessSummary, READINESS_STEPS } from '../equipment-readiness.js';
 import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
@@ -72,6 +73,61 @@ router.get('/:id/readiness', (req, res) => {
   const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
   if (!eq) return res.status(404).json({ error: 'Equipment not found' });
   res.json(equipmentReadiness(db, eq));
+});
+
+/**
+ * Duplicates in the equipment list, and the overlap with the instrument list.
+ *
+ * Read-only. Answers a question that was previously guesswork with three
+ * distinct numbers, because they mean three different things — see
+ * server/registry-dupes.js for why a repeated NAME is usually ten real
+ * machines and only a repeated name AND asset number is one row twice.
+ *
+ * BEFORE '/:id'.
+ */
+router.get('/registry-review', (_req, res) => {
+  const db = getDb();
+  const equipment = db.prepare('SELECT id, name, asset_id, type, status, asset_kind, location FROM equipment ORDER BY name').all();
+  let instruments = [];
+  try {
+    instruments = db.prepare('SELECT id, name, asset_number, type, equipment_id, status FROM calibration_instruments ORDER BY name').all();
+  } catch { /* module may not be provisioned */ }
+  const cross = crossRegistryMatches(instruments, equipment);
+  res.json({
+    equipment_count: equipment.length,
+    instrument_count: instruments.length,
+    duplicates: trueDuplicates(equipment),
+    same_name: sameNameDifferentAsset(equipment),
+    instrument_duplicates: trueDuplicates(instruments, { assetField: 'asset_number' }),
+    cross: cross.linked,
+    cross_unmatched: cross.unmatched,
+    linkable: cross.linked.filter(m => !m.already_linked).length,
+  });
+});
+
+// Attach an instrument to the equipment row that IS the same object. A link,
+// never a merge: the instrument keeps its tolerance, capacity and due date,
+// the machine keeps its PM schedules, and the two stop describing the same
+// scale as if they were strangers.
+router.post('/registry-review/link', (req, res) => {
+  const db = getDb();
+  const pairs = Array.isArray(req.body?.pairs) ? req.body.pairs : [];
+  if (!pairs.length) return res.status(400).json({ error: 'Nothing selected to link.' });
+  let linked = 0;
+  const tx = db.transaction(() => {
+    for (const p of pairs) {
+      const inst = db.prepare('SELECT id, name FROM calibration_instruments WHERE id = ?').get(p.instrument_id);
+      const eq = db.prepare('SELECT id, name FROM equipment WHERE id = ?').get(p.equipment_id);
+      if (!inst || !eq) continue;
+      db.prepare("UPDATE calibration_instruments SET equipment_id = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(eq.id, inst.id);
+      logAudit(req.user, 'update', 'calibration_instrument', inst.id,
+        { action: 'linked_to_equipment', equipment: eq.name }, null, null, inst.name);
+      linked++;
+    }
+  });
+  tx();
+  res.json({ linked });
 });
 
 router.get('/:id', (req, res) => {
@@ -389,6 +445,51 @@ router.post('/maintenance-tasks/repair', (req, res) => {
   logAudit(req.user, 'bulk_update', 'equipment', null,
     { action: 'maintenance_task_text_repair', machines: results.length, fragments_rejoined: joined }, null, null);
   res.json({ results, machines: results.length, fragments_rejoined: joined });
+});
+
+
+/**
+ * Remove an equipment row.
+ *
+ * REFUSED ONCE ANYTHING HAS HAPPENED TO IT. Completed work orders, calibration
+ * records and inspections are compliance history, and deleting the machine
+ * they name would leave those records pointing at nothing — the auditor's
+ * question "what is this task about" would have no answer. In that case the
+ * machine is set OUT OF SERVICE instead, which already stops it generating
+ * work while keeping its past.
+ *
+ * What this IS for: the row added twice, the typo, the import artefact. Those
+ * have no history by definition, which is exactly why the guard is safe.
+ */
+router.delete('/:id', (req, res) => {
+  const db = getDb();
+  const eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
+  if (!eq) return res.status(404).json({ error: 'Not found' });
+
+  const count = (sql, ...args) => { try { return db.prepare(sql).get(...args).c; } catch { return 0; } };
+  const history = {
+    completed_work_orders: count("SELECT COUNT(*) c FROM work_orders WHERE equipment_id = ? AND status = 'completed'", eq.id),
+    open_work_orders: count("SELECT COUNT(*) c FROM work_orders WHERE equipment_id = ? AND status IN ('open','in_progress','missed','overdue')", eq.id),
+    schedules: count('SELECT COUNT(*) c FROM pm_schedules WHERE equipment_id = ?', eq.id),
+    calibration_records: count('SELECT COUNT(*) c FROM calibration_records WHERE instrument_id IN (SELECT id FROM calibration_instruments WHERE equipment_id = ?)', eq.id),
+  };
+  if (history.completed_work_orders || history.calibration_records) {
+    return res.status(409).json({
+      error: `This machine has ${history.completed_work_orders} completed task${history.completed_work_orders === 1 ? '' : 's'}${history.calibration_records ? ` and ${history.calibration_records} calibration record${history.calibration_records === 1 ? '' : 's'}` : ''} against it. Deleting it would leave that history naming nothing — set it Out of service instead, which stops it generating work and keeps the record.`,
+      history,
+    });
+  }
+  // No history: the open work orders and schedules are things this row would
+  // have produced, so they go with it rather than being orphaned.
+  db.transaction(() => {
+    db.prepare("DELETE FROM work_orders WHERE equipment_id = ? AND status != 'completed'").run(eq.id);
+    db.prepare('DELETE FROM pm_schedules WHERE equipment_id = ?').run(eq.id);
+    db.prepare('UPDATE calibration_instruments SET equipment_id = NULL WHERE equipment_id = ?').run(eq.id);
+    db.prepare('DELETE FROM equipment WHERE id = ?').run(eq.id);
+  })();
+  logAudit(req.user, 'delete', 'equipment', eq.id,
+    { name: eq.name, asset_id: eq.asset_id, removed_with: history }, eq, null, eq.name);
+  res.json({ ok: true, removed: history });
 });
 
 /* ── Equipment documents (manuals, spec sheets, parts lists) ─────────────── */

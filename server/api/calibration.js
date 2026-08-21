@@ -131,6 +131,44 @@ router.put('/instruments/:id', (req, res) => {
   res.json(updated);
 });
 
+/**
+ * Remove an instrument row.
+ *
+ * REFUSED ONCE IT HAS BEEN CALIBRATED. A calibration record is the evidence a
+ * scale was fit to weigh product, and deleting the instrument it names would
+ * leave that evidence pointing at nothing. An instrument that is genuinely out
+ * of use is set to `out_of_service`, which already drops it from every due /
+ * overdue count while keeping its history.
+ *
+ * This is for the row entered twice or typed wrong — which by definition has
+ * no records against it, so the guard is exactly the right shape.
+ */
+router.delete('/instruments/:id', (req, res) => {
+  const db = getDb();
+  const inst = db.prepare('SELECT * FROM calibration_instruments WHERE id = ?').get(req.params.id);
+  if (!inst) return res.status(404).json({ error: 'Instrument not found' });
+  // BOTH the log and the mirror. `last_calibrated` is a column ON the
+  // instrument, and an instrument imported with its last date carries one
+  // without any `calibration_records` rows yet — counting only the rows let a
+  // scale that has demonstrably been calibrated be deleted. Same mirror-versus-
+  // log trap as knife status and the NFP version fields.
+  const records = db.prepare('SELECT COUNT(*) c FROM calibration_records WHERE instrument_id = ?').get(inst.id).c;
+  if (records || inst.last_calibrated) {
+    const why = records
+      ? `${records} calibration record${records === 1 ? '' : 's'} against it`
+      : `a last-calibrated date of ${inst.last_calibrated}`;
+    return res.status(409).json({
+      error: `This instrument has ${why}. Deleting it would leave that evidence naming nothing — set it Out of service instead, which removes it from the due and overdue counts and keeps the history.`,
+      records,
+      last_calibrated: inst.last_calibrated || null,
+    });
+  }
+  db.prepare('DELETE FROM calibration_instruments WHERE id = ?').run(inst.id);
+  logAudit(req.user, 'delete', 'calibration_instrument', inst.id,
+    { name: inst.name, asset_number: inst.asset_number }, inst, null, inst.name);
+  res.json({ ok: true });
+});
+
 // --- Calibration Records ---
 
 router.get('/records', (req, res) => {

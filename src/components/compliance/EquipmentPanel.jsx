@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
-import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, ChevronUp, ChevronDown, ChevronRight, Search, X, ClipboardList, Download, ArrowLeft, CheckSquare, Square, ShieldCheck, AlertTriangle, Trash2, Link2 } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 import EquipmentSetupChecklist from './EquipmentSetupChecklist.jsx';
 import SchedulesFromTasksModal, { RepairTaskTextModal, SplitMergedStepsModal } from './SchedulesFromTasksModal.jsx';
@@ -659,6 +659,19 @@ export default function EquipmentPanel() {
   const [manualSearch, setManualSearch] = useState(false);
   const [repairText, setRepairText] = useState(false);
   const [splitSteps, setSplitSteps] = useState(false);
+  const [showReview, setShowReview] = useState(false);
+  const { data: review, refresh: refreshReview } = useApiGet('/equipment/registry-review');
+
+  // The server refuses a machine with compliance history and says why; the
+  // dialog relays that rather than a generic failure, because "set it Out of
+  // service instead" is the actual next step.
+  const handleDeleteEquipment = async (eq) => {
+    if (!window.confirm(`Delete "${eq.name}"${eq.asset_id ? ` (asset ${eq.asset_id})` : ''}? This is for rows added twice or typed wrong.`)) return;
+    try {
+      await apiFetch(`/equipment/${eq.id}`, { method: 'DELETE' });
+      refresh(); refreshReview();
+    } catch (e) { alert(e.message); }
+  };
   const [selected, setSelected] = useState(new Set());
 
   const [search, setSearch] = useState('');
@@ -927,6 +940,34 @@ export default function EquipmentPanel() {
         <SplitMergedStepsModal onClose={() => setSplitSteps(false)} onDone={() => { refresh(); refreshStepSplit(); refreshFromTasks(); }} />
       )}
 
+      {/* Duplicates and the instrument overlap. Shown only when there is
+          something to act on — a banner that is always there is wallpaper. */}
+      {!!(review?.duplicates?.length || review?.linkable) && (
+        <div className="bg-sky-50 border border-sky-200 rounded-xl p-4 flex items-start gap-3 flex-wrap">
+          <Link2 size={18} className="text-sky-600 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-sky-900">
+              {review.duplicates.length > 0 && `${review.duplicates.length} duplicate row${review.duplicates.length === 1 ? '' : 's'}`}
+              {review.duplicates.length > 0 && review.linkable > 0 && ' · '}
+              {review.linkable > 0 && `${review.linkable} instrument${review.linkable === 1 ? '' : 's'} are the same object as a machine here`}
+            </h3>
+            <p className="text-xs text-sky-800">
+              A repeated name is usually several real machines; a repeated name AND asset number is one row twice.
+              Calibration instruments match this list by asset number, not by name.
+            </p>
+          </div>
+          <button onClick={() => setShowReview(true)}
+            className="shrink-0 px-3 py-2 bg-white border border-sky-300 text-sky-900 rounded-lg text-sm font-medium hover:bg-sky-100">
+            Review
+          </button>
+        </div>
+      )}
+
+      {showReview && review && (
+        <RegistryReviewModal review={review} onClose={() => setShowReview(false)}
+          onDone={() => { refresh(); refreshReview(); }} />
+      )}
+
       {/* The plant wrote maintenance tasks expecting them to BE the PM schedule.
           They never were, so this offers the one-pass fix — reviewed, never
           automatic. Only shown while there is actually something to create. */}
@@ -1078,9 +1119,17 @@ export default function EquipmentPanel() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => { setEditing(eq); setShowForm(false); }} className="text-gray-400 hover:text-powder-600">
-                        <Edit2 size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => { setEditing(eq); setShowForm(false); }} className="text-gray-400 hover:text-powder-600">
+                          <Edit2 size={14} />
+                        </button>
+                        {canEdit && (
+                          <button onClick={() => handleDeleteEquipment(eq)}
+                            className="text-gray-300 hover:text-red-600" data-tip="Delete this row">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                   {isExpanded && (
@@ -1107,6 +1156,128 @@ export default function EquipmentPanel() {
           onCancel={() => setSelected(new Set())}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * What the two registries actually contain — the three numbers kept apart.
+ *
+ * The temptation is to call every repeated name a duplicate and offer to merge.
+ * On this plant's data that would have proposed collapsing ten A/C units into
+ * one. So: true duplicates (name AND asset) get a delete, same-name-different-
+ * asset is reported as information only, and the instrument overlap gets a
+ * LINK — never a merge, because an instrument row holds tolerance, capacity
+ * and a due date that no equipment row has anywhere to put.
+ */
+function RegistryReviewModal({ review, onClose, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState(null);
+  const linkable = (review.cross || []).filter(m => !m.already_linked);
+  const selected = picked === null ? new Set(linkable.map(m => m.instrument.id)) : picked;
+
+  const linkNow = async () => {
+    setBusy(true);
+    try {
+      await apiPost('/equipment/registry-review/link', {
+        pairs: linkable.filter(m => selected.has(m.instrument.id))
+          .map(m => ({ instrument_id: m.instrument.id, equipment_id: m.equipment.id })),
+      });
+      onDone(); onClose();
+    } catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">Equipment &amp; instruments — what is actually duplicated</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {review.equipment_count} equipment rows · {review.instrument_count} calibration instruments
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 shrink-0"><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <section>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-red-700">
+              Same row twice ({review.duplicates.length})
+            </h4>
+            <p className="text-[11px] text-gray-500 mb-1.5">Same name AND same asset number — delete the extras from the list below.</p>
+            {review.duplicates.length === 0
+              ? <p className="text-xs text-gray-400">None.</p>
+              : review.duplicates.map(d => (
+                <p key={`${d.name}|${d.asset}`} className="text-xs text-gray-800">
+                  • <span className="font-medium">{d.name}</span> — asset {d.asset} × {d.rows.length}
+                </p>
+              ))}
+          </section>
+
+          <section>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-gray-600">
+              Same name, different machines ({review.same_name.length})
+            </h4>
+            <p className="text-[11px] text-gray-500 mb-1.5">
+              Not duplicates — each has its own asset number. Worth renaming only if a task list reads ambiguously.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {review.same_name.map(g => (
+                <span key={g.name} className="px-2 py-0.5 rounded bg-gray-100 text-[11px] text-gray-700">
+                  {g.name} ×{g.count}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-sky-700">
+              The same object in both lists ({review.cross.length})
+            </h4>
+            <p className="text-[11px] text-gray-500 mb-1.5">
+              Matched by asset number — the names differ, which is why nothing ever connected them.
+              Linking keeps both rows: the instrument keeps its tolerance and due date, the machine keeps its schedules.
+            </p>
+            {review.cross.map(m => (
+              <label key={m.instrument.id} className="flex items-center gap-2 text-xs text-gray-800 py-0.5">
+                <input type="checkbox" disabled={m.already_linked}
+                  checked={m.already_linked || selected.has(m.instrument.id)}
+                  onChange={() => {
+                    const next = new Set(selected);
+                    if (next.has(m.instrument.id)) next.delete(m.instrument.id); else next.add(m.instrument.id);
+                    setPicked(next);
+                  }}
+                  className="rounded border-gray-300" />
+                <span className="flex-1 min-w-0">
+                  <span className="font-medium">{m.instrument.name}</span>
+                  <span className="text-gray-400"> ↔ </span>
+                  <span>{m.equipment.name}</span>
+                  <span className="text-gray-400"> · asset {m.equipment.asset}</span>
+                  {m.already_linked && <span className="text-green-700 font-medium"> · linked</span>}
+                </span>
+              </label>
+            ))}
+            {review.cross_unmatched.length > 0 && (
+              <p className="text-[11px] text-gray-500 mt-2">
+                {review.cross_unmatched.length} instrument{review.cross_unmatched.length === 1 ? ' is' : 's are'} not
+                in the equipment list at all — reference weights and hand-held gauges live only in Calibration, which is correct.
+              </p>
+            )}
+          </section>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Close</button>
+          {linkable.length > 0 && (
+            <button onClick={linkNow} disabled={busy || selected.size === 0}
+              className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+              {busy ? 'Linking…' : `Link ${selected.size}`}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

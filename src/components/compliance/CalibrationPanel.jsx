@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useMemo, Fragment } from 'react';
-import { useApiGet, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiUpload, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search, FileText, Upload } from 'lucide-react';
+import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search, FileText, Upload, Trash2 } from 'lucide-react';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ScaleVerificationTab from './ScaleVerificationTab.jsx';
@@ -512,6 +512,17 @@ export default function CalibrationPanel() {
                           <button onClick={() => { setEditing(inst); setShowForm(false); }}
                             className="text-gray-400 hover:text-powder-600 p-1">
                             <Edit2 size={13} />
+                          </button>
+                          {/* For a row entered twice or typed wrong. The server
+                              refuses one that has been calibrated and says to
+                              set it Out of service instead — that message is
+                              relayed rather than a generic failure. */}
+                          <button onClick={async () => {
+                            if (!window.confirm(`Delete "${inst.name}"? This is for rows added twice or typed wrong.`)) return;
+                            try { await apiFetch(`/calibration/instruments/${inst.id}`, { method: 'DELETE' }); refresh(); }
+                            catch (e) { alert(e.message); }
+                          }} className="text-gray-300 hover:text-red-600 p-1" data-tip="Delete this row">
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </td>

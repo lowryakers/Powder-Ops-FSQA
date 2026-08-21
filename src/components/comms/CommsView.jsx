@@ -2298,16 +2298,22 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       const target = list.find(c => norm(c.name) === t) || list.find(c => norm(c.name).includes(t));
       if (target) { linkedOpenedRef.current = openChannelName; openChannel(target.id); return; }
     }
-    // ON A PHONE, THE APP OPENS ON THE LIST. FULL STOP. Restoring the last
+    // A ONE-PANE LAYOUT OPENS ON THE LIST. FULL STOP. Restoring the last
     // conversation read as helpful and wasn't: you open Messages to see what
     // is NEW, and landing inside Tuesday's conversation both hid the list you
     // came for and — because a conversation on screen is a conversation
-    // marked read — cleared the very unread you tapped in to read. Deep links
-    // and notification taps still open their exact channel (the branches
-    // above); this only decides the unprompted landing. Touch capability is
-    // the test, same as the empty-restore rule below — width can't tell the
-    // docked split panel from a phone.
-    if (window.matchMedia?.('(hover: none)').matches) {
+    // marked read — cleared the very unread you came to read. Deep links and
+    // notification taps still open their exact channel (the branches above);
+    // this only decides the unprompted landing.
+    //
+    // THE TEST IS THE LAYOUT, NOT THE INPUT DEVICE. It used to ask "(hover:
+    // none)" — a phone — which is false in the docked split-screen panel
+    // because that is a desktop browser with a mouse. So the dock fell all the
+    // way through to #general on every refresh. The reason the original rule
+    // reached for touch was a worry about an empty pane, and that worry does
+    // not apply here: in the compact layout, no active channel renders the
+    // channel LIST, which is a complete screen and exactly what was wanted.
+    if (isCompactLayout) {
       bootRestoredRef.current = true;
       return;
     }
@@ -2334,16 +2340,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     }
     if (savedIsReal) return;
 
-    // Nothing to restore. On a phone that means the channel LIST — picking a
-    // channel for someone is what made the landing feel arbitrary, and it used
-    // to mark that channel read without ever showing it. The desktop
-    // split-screen dock is also narrow enough to hit the compact layout, and
-    // there an empty pane reads as "messages aren't loading"; width can't tell
-    // the dock from a phone, but touch capability can.
-    if (window.matchMedia?.('(hover: none)').matches) return;
+    // Nothing to restore. In a one-pane layout that means the channel LIST —
+    // picking a channel for someone is what made the landing feel arbitrary,
+    // and it used to mark that channel read without ever showing it. Only a
+    // WIDE two-pane layout falls through to #general, where an empty right
+    // pane really would read as "messages aren't loading".
+    if (isCompactLayout) return;
     const target = publicCh.find(c => c.name === 'general') || list[0];
     openChannel(target.id);
-  }, [list, activeId, openChannelName, openChannelId]); // eslint-disable-line
+  }, [list, activeId, openChannelName, openChannelId, isCompactLayout]); // eslint-disable-line
 
   // A push-notification deep-link can arrive while Comms is already open — open
   // the requested channel even if another one is active.
