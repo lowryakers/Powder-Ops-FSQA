@@ -25,10 +25,24 @@ export function cleanFilename(filename) {
  * renames it again. A title that genuinely ends in a number ("Allergen Control
  * Program 2") has no v/rev token and is left alone.
  */
+// What a filename says about the COPY rather than the document. Uploading the
+// signed scan of PROTOCOL 001 — which is exactly what the process asks for —
+// proposed renaming the document to "Food Defense Plan V3 SIGNED", because the
+// revision suffix was stripped and the word after it was not.
+const COPY_WORDS = /[\s_-]*\b(?:signed|executed|final|approved|scan(?:ned)?|copy|draft)\b\.?$/i;
+
 export function stripRevisionSuffix(title) {
-  return String(title || '')
-    .replace(/[\s_-]*\b(?:rev(?:ision)?|ver(?:sion)?|v)\.?\s*\d+(?:\.\d+)?$/i, '')
-    .trim() || String(title || '').trim();
+  let out = String(title || '').trim();
+  // Applied repeatedly, so "…_V3_SIGNED_FINAL" reduces the whole way down.
+  for (let i = 0; i < 4; i++) {
+    const next = out
+      .replace(COPY_WORDS, '')
+      .replace(/[\s_-]*\b(?:rev(?:ision)?|ver(?:sion)?|v)\.?\s*\d+(?:\.\d+)?$/i, '')
+      .trim();
+    if (next === out) break;
+    out = next;
+  }
+  return out || String(title || '').trim();
 }
 
 /** The revision a filename claims, if it names one ("…_V4" → "4"). */

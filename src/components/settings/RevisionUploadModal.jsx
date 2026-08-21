@@ -82,6 +82,15 @@ function FileResult({ file, onApplied }) {
           )}
       </div>
 
+      {/* What the file could not give us. A scan holds no text and a PDF table
+          is rebuilt from geometry — both used to fail silently, and both are
+          exactly what Document Control uploads. */}
+      {file.warnings?.map((w, i) => (
+        <p key={i} className={`text-[11px] rounded px-2 py-1.5 border ${w.level === 'error' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+          {w.message}
+        </p>
+      ))}
+
       {file.changes.length === 0 ? (
         <p className="text-xs text-gray-500">Nothing to change — what's on file already matches this upload.</p>
       ) : (

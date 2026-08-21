@@ -370,6 +370,39 @@ function proposeChanges(doc, extracted) {
   return changes;
 }
 
+/**
+ * What this file could NOT give us, said out loud.
+ *
+ * Both of these failed silently before, and both are the case the process
+ * actually asks for. A scanned signature copy has no text layer at all, so it
+ * proposed no body change and looked like it had simply agreed with what was on
+ * file. And a table pulled out of a PDF is rebuilt from where the words sit on
+ * the page: a cell that wraps splits its row, which is what turned the Food
+ * Defense Plan's vulnerability assessment into three broken tables that
+ * somebody then had to repair by hand.
+ */
+function extractWarnings(file, content, pages, isMarkdown) {
+  const warnings = [];
+  const isPdf = /\.pdf$/i.test(file.originalname || '') || file.mimetype === 'application/pdf';
+  if (!isPdf) return warnings;
+
+  const text = String(content || '').trim();
+  if (pages && text.length < 40) {
+    warnings.push({
+      level: 'error',
+      message: `No text could be read from this PDF (${pages} page${pages === 1 ? '' : 's'}). It is almost certainly a scan — a picture of a page holds no text. Attach it to the document as the signed copy, and take the body from the Word original.`,
+    });
+    return warnings;
+  }
+  if (!isMarkdown && /^\s*\|.*\|/m.test(text)) {
+    warnings.push({
+      level: 'warn',
+      message: 'This document has tables, and a table in a PDF is rebuilt from where the words sit on the page — any cell that wraps onto a second line splits its row. Check them, or upload the Word (.docx) file instead, where the tables come through exactly.',
+    });
+  }
+  return warnings;
+}
+
 // POST /propose-revisions — upload one or more finalised documents, get back
 // what each one WOULD change. Writes nothing.
 router.post('/propose-revisions', receiveImportFiles, async (req, res) => {
@@ -389,6 +422,7 @@ router.post('/propose-revisions', receiveImportFiles, async (req, res) => {
         document: doc ? { id: doc.id, doc_number: doc.doc_number, title: doc.title, revision: doc.revision, status: doc.status } : null,
         matched_on,
         changes: doc ? proposeChanges(doc, extracted) : [],
+        warnings: extractWarnings(f, content, pages, isMarkdown),
       });
     } catch (err) {
       out.push({ filename: f.originalname, ok: false, error: err.message });

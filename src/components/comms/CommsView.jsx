@@ -1148,6 +1148,9 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   };
 
 
+  const threadCameraRef = useRef(null);
+  const compactThread = useCompactLayout();
+
   const uploadFiles = async (files) => {
     if (!files.length || !storageOn) return;
     setUploading(true); setProgress(0);
@@ -1262,6 +1265,17 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onPickFiles} />
                 <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
                   className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Attach files"><Paperclip size={16} /></button>
+                {/* The channel composer has had one-tap capture on a phone all
+                    along and the thread reply had not, so photographing
+                    something into the thread you were already reading meant
+                    backing out to the channel. */}
+                {compactThread && (
+                  <>
+                    <input ref={threadCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickFiles} />
+                    <button onClick={() => threadCameraRef.current?.click()} disabled={uploading}
+                      className="p-2.5 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Take a photo"><Camera size={16} /></button>
+                  </>
+                )}
                 <VoiceNoteButton disabled={uploading} onReady={(f) => uploadFiles([f])} />
               </>
             )}
@@ -1290,8 +1304,9 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
 }
 
 // One thread in the Threads inbox: channel label, parent, replies, reply box.
-function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onMarkRead, onMarkUnread }) {
+function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onMarkRead, onMarkUnread, storageOn }) {
   const [body, setBody] = useState('');
+  const compact = useCompactLayout();
   const cardReplyRef = useRef(null);
   const cardKeys = useFormatKeys({ getEl: () => cardReplyRef.current, value: body, onChange: setBody });
   // @mention autocomplete — the inbox reply is a real reply into a real
@@ -1314,10 +1329,37 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
   const unreact = async (m, e) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(e)}`, { method: 'DELETE' }); refresh(); };
   const del = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); refresh(); };
   const edit = async (m, text) => { await apiPut(`/comms/messages/${m.id}`, { body: text }); refresh(); };
+  // A REPLY FROM THE INBOX IS A REPLY. This composer had no paperclip, no
+  // camera and no paste handler, so "here's the photo" was a sentence you
+  // could only finish by leaving, opening the channel and finding the thread
+  // again — while the thread drawer, which posts to the same endpoint, could
+  // attach all along.
+  const [pending, setPending] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const cardFileRef = useRef(null);
+  const cardCameraRef = useRef(null);
+  const uploadFiles = async (files) => {
+    if (!files.length || !storageOn) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      const uploaded = await apiUpload(`/comms/channels/${thread.channel_id}/attachments`, fd, 'POST');
+      setPending(p => [...p, ...uploaded]);
+    } catch (err) { alert(err.message || 'Upload failed'); }
+    finally { setUploading(false); }
+  };
+  const onPickFiles = (e) => { const files = Array.from(e.target.files || []); e.target.value = ''; uploadFiles(files); };
+  const onCardPaste = (e) => {
+    const files = Array.from(e.clipboardData?.files || []);
+    if (files.length && storageOn) { e.preventDefault(); uploadFiles(files); }
+  };
   const send = async () => {
-    const t = body.trim(); if (!t) return;
-    await apiPost(`/comms/channels/${thread.channel_id}/messages`, { body: t, parent_id: thread.parent.id });
-    setBody(''); setMQuery(null); onMarkRead?.(thread.parent.id); refresh();
+    const t = body.trim();
+    const attachment_ids = pending.map(p => p.id);
+    if (!t && !attachment_ids.length) return;
+    await apiPost(`/comms/channels/${thread.channel_id}/messages`, { body: t, parent_id: thread.parent.id, attachment_ids });
+    setBody(''); setPending([]); setMQuery(null); onMarkRead?.(thread.parent.id); refresh();
   };
   const Icon = thread.channel_kind === 'dm' ? MessageSquare : thread.channel_kind === 'private' ? Lock : Hash;
   const unread = thread.unread || 0;
@@ -1421,9 +1463,40 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
       {expanded && (
       <div className="relative p-2 border-t border-gray-100 rounded-b-xl">
         <MentionDropdown matches={mMatches} hi={mHi} onHover={setMHi} onPick={insertCardMention} />
+        {pending.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-1">
+            {pending.map(p => (
+              <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-100 text-[11px] text-gray-700">
+                {isAudio(p) ? <Mic size={11} className="text-powder-600" /> : p.is_video ? <Film size={11} className="text-powder-600" /> : p.is_image ? <Paperclip size={11} className="text-powder-600" /> : <FileText size={11} className="text-powder-600" />}
+                <span className="max-w-[10rem] truncate">{p.filename}</span>
+                <button type="button" onClick={() => setPending(x => x.filter(a => a.id !== p.id))}
+                  className="text-gray-400 hover:text-red-600"><X size={11} /></button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="mb-1"><FormatBar getEl={() => cardReplyRef.current} value={body} onChange={setBody} /></div>
         <div className="flex items-end gap-2">
+          {storageOn && (
+            <>
+              <input ref={cardFileRef} type="file" multiple className="hidden" onChange={onPickFiles} />
+              <button type="button" onClick={() => cardFileRef.current?.click()} disabled={uploading}
+                className="p-2 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Attach files"><Paperclip size={15} /></button>
+              {/* Camera-first on a phone, the same one-tap capture the channel
+                  composer has. Never put capture on the paperclip — on iOS it
+                  forces the camera and blocks picking an existing file. */}
+              {compact && (
+                <>
+                  <input ref={cardCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickFiles} />
+                  <button type="button" onClick={() => cardCameraRef.current?.click()} disabled={uploading}
+                    className="p-2 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Take a photo"><Camera size={15} /></button>
+                </>
+              )}
+              <VoiceNoteButton disabled={uploading} onReady={(f) => uploadFiles([f])} />
+            </>
+          )}
           <textarea ref={cardReplyRef} value={body} rows={1} onInput={e => sizeTextarea(e.target, 160)}
+            onPaste={onCardPaste}
             onChange={e => { setBody(e.target.value); setMQuery(detectMentionQuery(e)); setMHi(0); }}
             onKeyDown={e => {
               // While the @ menu is open: arrows move, Enter/Tab picks, Esc closes.
@@ -1437,7 +1510,7 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
               if (cardKeys(e)) return;
             }}
             placeholder="Reply…" className="flex-1 px-3 py-1.5 border border-gray-300 rounded-xl text-sm resize-none max-h-40 overflow-y-auto" />
-          <button onClick={send} disabled={!body.trim()} className="p-2 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={15} /></button>
+          <button onClick={send} disabled={!body.trim() && !pending.length} className="p-2 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={15} /></button>
         </div>
       </div>
       )}
@@ -1445,7 +1518,7 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
   );
 }
 
-function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile, onRead, refreshKey, backButton }) {
+function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile, onRead, refreshKey, backButton, storageOn }) {
   const { data: threads, loading, refresh } = useApiGet('/comms/threads', [refreshKey]);
   // Unread first, then most recently active — the point of the view is what
   // still needs an answer, not a chronological archive.
@@ -1488,7 +1561,7 @@ function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, 
       <div className="flex-1 overflow-y-auto">
         {loading ? <p className="text-center text-sm text-gray-400 py-8">Loading threads…</p>
           : list.length === 0 ? <p className="text-center text-sm text-gray-400 py-8">No threads yet. Reply to a message to start one.</p>
-          : list.map(t => <ThreadInboxCard key={t.parent.id} thread={t} me={me} refresh={refresh} mentionUsers={mentionUsers}
+          : list.map(t => <ThreadInboxCard key={t.parent.id} thread={t} me={me} refresh={refresh} mentionUsers={mentionUsers} storageOn={storageOn}
               canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} onOpenChannel={onOpenChannel}
               onMarkRead={markRead} onMarkUnread={markUnread} />)}
       </div>
@@ -3296,7 +3369,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
           ) : threadsOpen ? (
             <ThreadsView me={user} mentionUsers={users} canTranslate={translateOn} viewerLang={viewerLang}
               onTranslate={translateMessage} onOpenChannel={openChannel} onCloseMobile={() => setThreadsOpen(false)}
-              onRead={refreshThreadUnread} refreshKey={threadTick} backButton={backButton} />
+              onRead={refreshThreadUnread} refreshKey={threadTick} backButton={backButton} storageOn={storageOn} />
           ) : (searchResults !== null || answer !== null || (searching && searchMode === 'ask')) ? (
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
