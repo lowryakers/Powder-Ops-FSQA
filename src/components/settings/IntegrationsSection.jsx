@@ -71,7 +71,11 @@ function SmsCard() {
   const send = async () => {
     setBusy(true); setResult(null);
     try {
-      const r = await apiFetch('/qms/sms-test', { method: 'POST', body: JSON.stringify({ to }) });
+      // `apiFetch` stringifies the body itself. Passing an already-stringified
+      // one double-encoded it into a bare JSON string, which Express's parser
+      // refuses outright ("…is not valid JSON") — so the one button whose whole
+      // job is to prove texting works failed before the request left the browser.
+      const r = await apiFetch('/qms/sms-test', { method: 'POST', body: { to } });
       setResult({ ok: true, ...r });
     } catch (e) { setResult({ ok: false, error: e.message }); }
     finally { setBusy(false); refresh(); }
