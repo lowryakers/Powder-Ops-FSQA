@@ -42,6 +42,9 @@ export const ALL_MODULE_IDS = [
   'procurement', 'newsletter', 'pay-tracking',
   // Company policies (the handbook), separate from the controlled-document registry.
   'policies',
+  // Danny's List — the text-message request log for the owner. Granted, never
+  // a role default: it is one person's working queue, not a plant module.
+  'dannys-list',
   'dcr', 'deviations', 'non-conformance', 'on-hold',
   'component-signout', 'maintenance-signout', 'currently-out', 'organoleptic',
   'knife-accountability', 'flavor-approvals',

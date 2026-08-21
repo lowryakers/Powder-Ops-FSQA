@@ -143,6 +143,7 @@ const MODULE_GROUPS = [
       { id: 'procurement', label: 'Procurement & Demand Planning' },
       { id: 'newsletter', label: 'Newsletter' },
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
+      { id: 'dannys-list', label: "Danny's List (the owner's text-message request log)", note: 'One person\'s working queue — grant it to whoever tracks what Danny owes and is owed, not by role.' },
       { id: 'policies', label: 'Policies (handbook; edit = upload and publish)' },
     ],
   },

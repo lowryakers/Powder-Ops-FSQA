@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine, ListTodo } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -78,6 +78,7 @@ const LedgerPanel = lazy(() => import('./components/office/LedgerPanel.jsx'));
 const ProcurementPanel = lazy(() => import('./components/office/ProcurementPanel.jsx'));
 const NewsletterPanel = lazy(() => import('./components/office/NewsletterPanel.jsx'));
 const PoliciesPanel = lazy(() => import('./components/office/PoliciesPanel.jsx'));
+const DannysListPanel = lazy(() => import('./components/office/DannysListPanel.jsx'));
 const NewsletterReader = lazy(() => import('./components/office/NewsletterReader.jsx'));
 const ControlledChangesPanel = lazy(() => import('./components/compliance/ControlledChangesPanel.jsx'));
 const LogBuilderStudio = lazy(() => import('./components/compliance/LogBuilderStudio.jsx'));
@@ -229,6 +230,8 @@ const NAV_GROUPS = [
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
       { id: 'pay-tracking', label: 'Pay Tracking', icon: BadgeDollarSign, keywords: 'raise increase evaluation rubric wage rate salary review compensation' },
       { id: 'policies', label: 'Policies', icon: BookText, keywords: 'handbook PTO vacation grievance conduct attendance dress code company rules HR' },
+      // Granted, never a role default — it is one person's working queue.
+      { id: 'dannys-list', label: "Danny's List", icon: ListTodo, keywords: 'danny owner approvals payments text sms requests chase' },
     ],
   },
   {
@@ -1949,6 +1952,7 @@ function App() {
           {resolvedTab === 'procurement' && <ProcurementPanel />}
           {resolvedTab === 'newsletter' && <NewsletterPanel />}
           {resolvedTab === 'policies' && <PoliciesPanel />}
+          {resolvedTab === 'dannys-list' && <DannysListPanel />}
           {resolvedTab === 'pay-tracking' && <PayTrackingPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'controlled-changes' && <ControlledChangesPanel />}

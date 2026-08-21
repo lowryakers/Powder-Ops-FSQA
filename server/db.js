@@ -3749,6 +3749,72 @@ function runMigrations() {
       );
       CREATE INDEX IF NOT EXISTS idx_policies_status ON policies(status, visible_to_staff);
 
+      -- ── Danny's List ──────────────────────────────────────────────────
+      -- The request log for the one person the whole org routes through, who
+      -- works exclusively by text message and will never open ReadyDoc. The
+      -- module owns the MEMORY, not the pipe: items are captured here, the
+      -- outgoing text is composed here in his own "Your list:" format, and his
+      -- verbatim replies are filed back against the items — but the messages
+      -- themselves travel down whichever pipe fits (copy-paste into the real
+      -- iMessage thread today, a dedicated Twilio number later).
+      --
+      -- No CHECK constraints on kind/status ON PURPOSE: a CHECK throws inside
+      -- whatever transaction adds the next kind, and the single write path in
+      -- api/danny.js validates instead — adding "expense" later is one array
+      -- entry, not a table migration.
+      --
+      -- Column names are chosen to read well to the SQL assistant too: Danny
+      -- texts in "what's outstanding on Lowry's list" and answerQuestion()
+      -- queries this table like any other.
+      CREATE TABLE IF NOT EXISTS danny_items (
+        id           TEXT PRIMARY KEY,
+        kind         TEXT NOT NULL,             -- approval | payment | action | fyi | assigned_to_me
+        title        TEXT NOT NULL,
+        details      TEXT,
+        amount       REAL,                      -- payments: what he is being asked to pay
+        reference    TEXT,                      -- invoice / PO / SO number
+        due_date     TEXT,
+        priority     TEXT NOT NULL DEFAULT 'normal',  -- low | normal | high | urgent
+        status       TEXT NOT NULL DEFAULT 'open',    -- open | waiting | approved | declined | scheduled | done | dropped
+        created_by   TEXT NOT NULL,             -- who captured it (whose "list" it is on)
+        decided_at   TEXT,
+        last_sent_at TEXT,                      -- when it last went out in a composed list
+        chase_count  INTEGER NOT NULL DEFAULT 0,
+        events       TEXT NOT NULL DEFAULT '[]',
+        created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_danny_items_status ON danny_items(status, kind);
+
+      -- His replies land VERBATIM and are filed by a person, not a parser.
+      -- Danny answers five items in one talk-to-text message and approves
+      -- things with a thumbs-up; a keyword parser would guess, and a wrongly
+      -- recorded approval is worse than ten seconds of filing. filed=1 marks
+      -- the reply triaged; the filings themselves are events on the items.
+      CREATE TABLE IF NOT EXISTS danny_replies (
+        id           TEXT PRIMARY KEY,
+        body         TEXT NOT NULL,
+        received_via TEXT NOT NULL DEFAULT 'manual', -- manual | shortcut | sms
+        filed        INTEGER NOT NULL DEFAULT 0,
+        created_by   TEXT,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_danny_replies_filed ON danny_replies(filed, created_at);
+
+      -- Payment confirmations and the invoices requests travel with. R2 via
+      -- the shared media path, same as equipment manuals and comms files.
+      CREATE TABLE IF NOT EXISTS danny_attachments (
+        id           TEXT PRIMARY KEY,
+        item_id      TEXT NOT NULL REFERENCES danny_items(id),
+        storage_key  TEXT NOT NULL,
+        filename     TEXT,
+        content_type TEXT,
+        size         INTEGER,
+        uploaded_by  TEXT,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_danny_attachments_item ON danny_attachments(item_id);
+
       CREATE TABLE IF NOT EXISTS pay_employees (
         id               TEXT PRIMARY KEY,
         user_id          TEXT,
