@@ -90,12 +90,21 @@ router.post('/inbound', (req, res) => {
         await sendSms(from, 'ReadyDoc: the AI assistant is not configured right now — ask Lowry.');
         return;
       }
-      const { answer } = await answerQuestion({ question: body });
+      const { answer, used } = await answerQuestion({ question: body });
       const text = (answer || '').trim().slice(0, 1200) || 'I could not find an answer to that.';
       await sendSms(from, text);
+      logAudit(`sms:${who}`, 'update', 'sms_query', null, { answered: true, queries: used?.length ?? 0 });
     } catch (e) {
-      console.warn('[sms] inbound answer failed:', e.message);
-      try { await sendSms(from, 'ReadyDoc: sorry, I hit an error answering that. Try rephrasing.'); } catch { /* give up */ }
+      // SAY WHAT WENT WRONG. "Try rephrasing" was a guess dressed as advice: it
+      // is the right answer for a question the assistant could not parse and
+      // the wrong one for an expired API key, and the two are indistinguishable
+      // from the phone. The reason goes to the sender — who is allowlisted
+      // staff, not the public — and into the audit log, so it is answerable
+      // without shell access to the server.
+      const reason = String(e?.message || 'unknown error').replace(/\s+/g, ' ').slice(0, 140);
+      console.warn('[sms] inbound answer failed:', reason);
+      logAudit(`sms:${who}`, 'update', 'sms_query', null, { answered: false, error: reason });
+      try { await sendSms(from, `ReadyDoc: couldn't answer that — ${reason}`); } catch { /* give up */ }
     }
   })();
 });
