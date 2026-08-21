@@ -176,10 +176,21 @@ function ReplyTriage({ reply, items, onDone, refresh }) {
             {reply.body}
           </p>
         </div>
-        <button type="button" onClick={finish}
-          className="shrink-0 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700">
-          Done filing
-        </button>
+        <div className="shrink-0 flex items-center gap-1.5">
+          <button type="button"
+            onClick={async () => {
+              if (!window.confirm('Discard this reply without filing it? (For mis-copies and tests.)')) return;
+              try { await apiFetch(`/dannys-list/replies/${reply.id}`, { method: 'DELETE' }); onDone(); }
+              catch (e) { alert(e.message); }
+            }}
+            className="px-2.5 py-1.5 border border-red-200 text-red-600 rounded-lg text-xs font-medium hover:bg-red-50">
+            Discard
+          </button>
+          <button type="button" onClick={finish}
+            className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700">
+            Done filing
+          </button>
+        </div>
       </div>
       {outstanding.length === 0 ? (
         <p className="text-xs text-amber-800">Nothing outstanding to file it against — add a note on an item if it needs keeping.</p>
@@ -306,6 +317,18 @@ function ItemRow({ it, selected, onToggle, refresh }) {
             {!outstanding && (
               <button type="button" onClick={() => setStatus('open')} className="px-2.5 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50">Reopen</button>
             )}
+            {/* Delete is for mistakes and tests; Drop is for real asks that
+                died. Both exist because a queue where the only exit is a
+                status becomes unreadable. Fully audited server-side. */}
+            <button type="button"
+              onClick={async () => {
+                if (!window.confirm(`Delete "${it.title.slice(0, 60)}" completely? Its history goes to the audit log.`)) return;
+                try { await apiFetch(`/dannys-list/${it.id}`, { method: 'DELETE' }); refresh(); }
+                catch (e) { alert(e.message); }
+              }}
+              className="px-2.5 py-1.5 border border-red-200 text-red-600 rounded-lg text-xs font-medium hover:bg-red-50">
+              Delete
+            </button>
             {!editing && (
               <button type="button" onClick={() => setEditing(true)}
                 className="px-2.5 py-1.5 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50">

@@ -208,6 +208,46 @@ router.post('/:id/status', (req, res) => {
   res.json({ ...row, events: parseEvents(row.events) });
 });
 
+// A real delete, not a status. This list is one person's working queue, not a
+// compliance record — a typo'd capture or a test item deserves to be GONE, and
+// forcing it to live forever as "dropped" is what makes a queue unreadable.
+// The full item, events and all, goes into the audit trail, so nothing is
+// erasable without trace; attachments' objects are removed with their rows.
+router.delete('/:id', async (req, res) => {
+  const db = getDb();
+  const it = db.prepare('SELECT * FROM danny_items WHERE id = ?').get(req.params.id);
+  if (!it) return res.status(404).json({ error: 'Not found' });
+  const files = db.prepare('SELECT * FROM danny_attachments WHERE item_id = ?').all(it.id);
+  db.transaction(() => {
+    db.prepare('DELETE FROM danny_attachments WHERE item_id = ?').run(it.id);
+    db.prepare('DELETE FROM danny_items WHERE id = ?').run(it.id);
+  })();
+  for (const f of files) {
+    try { if (storageEnabled()) await deleteObject(f.storage_key); } catch { /* row is gone; orphaned, not leaked */ }
+  }
+  logAudit(req.user, 'delete', 'danny_item', it.id,
+    { kind: it.kind, status: it.status, attachments: files.length }, it, null, it.title);
+  res.json({ ok: true });
+});
+
+// An unfiled junk reply (a mis-copy, a test) can be discarded outright —
+// distinct from "Done filing", which says the reply was READ and handled.
+router.delete('/replies/:id', async (req, res) => {
+  const db = getDb();
+  const r = db.prepare('SELECT * FROM danny_replies WHERE id = ?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'Not found' });
+  const media = db.prepare('SELECT * FROM danny_reply_media WHERE reply_id = ?').all(r.id);
+  db.transaction(() => {
+    db.prepare('DELETE FROM danny_reply_media WHERE reply_id = ?').run(r.id);
+    db.prepare('DELETE FROM danny_replies WHERE id = ?').run(r.id);
+  })();
+  for (const m of media) {
+    try { if (storageEnabled()) await deleteObject(m.storage_key); } catch { /* orphaned, not leaked */ }
+  }
+  logAudit(req.user, 'delete', 'danny_reply', r.id, { via: r.received_via, chars: r.body.length }, r, null);
+  res.json({ ok: true });
+});
+
 router.post('/:id/note', (req, res) => {
   const db = getDb();
   const it = db.prepare('SELECT * FROM danny_items WHERE id = ?').get(req.params.id);
