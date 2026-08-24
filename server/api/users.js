@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
-import { getDb, logAudit } from '../db.js';
+import { getDb, logAudit, newSetupCode } from '../db.js';
 import crypto from 'crypto';
 import { requireRole } from '../middleware/auth.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
@@ -138,7 +138,12 @@ router.get('/lookup', (req, res) => {
   const db = getDb();
   const { q } = req.query;
   if (!q || q.length < 2) return res.json([]);
-  const users = db.prepare(`SELECT id, name, COALESCE(username, name) AS username, department FROM users
+  // NO `id`. This endpoint is public — it is the login screen's type-ahead —
+  // and the account id was the first half of a takeover: look a colleague up,
+  // then POST their id to /set-password. The login form needs a name to put in
+  // the box and nothing else. Defence in depth: /set-password is fixed too, and
+  // neither fix relies on the other.
+  const users = db.prepare(`SELECT name, COALESCE(username, name) AS username, department FROM users
      WHERE is_active = 1 AND (LOWER(name) LIKE LOWER(?) OR LOWER(username) LIKE LOWER(?))
      ORDER BY username LIMIT 10`).all(`%${q}%`, `%${q}%`);
   res.json(users);
@@ -432,7 +437,14 @@ router.post('/login', (req, res) => {
   // No password yet → first-login set-password flow. has_pin means an existing
   // staffer transitioning from PIN (they must confirm their current PIN).
   if (!user.password_hash) {
-    return res.status(200).json({ needs_password_setup: true, user_id: user.id, user_name: user.username || user.name, has_pin: !!user.pin });
+    return res.status(200).json({
+      needs_password_setup: true, user_id: user.id, user_name: user.username || user.name,
+      has_pin: !!user.pin,
+      // Which proof the screen should ask for. `false` for both means an admin
+      // has to issue a code before this account can be set up at all.
+      needs_setup_code: !user.pin && !!user.setup_code,
+      no_route: !user.pin && !user.setup_code,
+    });
   }
 
   if (!password) return res.status(400).json({ error: 'Password is required' });
@@ -461,10 +473,42 @@ router.post('/set-password', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(user_id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.password_hash) return res.status(400).json({ error: 'Password already set. Sign in with your password.' });
-  if (user.pin && current_pin !== user.pin) return res.status(401).json({ error: 'Your current PIN is incorrect.' });
 
-  // Set the password and retire the PIN.
-  db.prepare("UPDATE users SET password_hash = ?, pin = NULL, password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(hashPassword(password), user_id);
+  // SETTING A FIRST PASSWORD REQUIRES PROOF THAT SOMEBODY INVITED YOU.
+  //
+  // One of two things, never neither:
+  //   * the PIN, for staff crossing over from the old sign-in; or
+  //   * a setup code an admin issued and handed over.
+  //
+  // Before this, an account with no PIN needed nothing at all, and the public
+  // login type-ahead supplied the id. An unauthenticated caller could take over
+  // any account that had been created and not yet signed into — including the
+  // ones the training-log and Slack importers create.
+  if (user.pin) {
+    if (current_pin !== user.pin) return res.status(401).json({ error: 'Your current PIN is incorrect.' });
+  } else {
+    const code = String(req.body.setup_code || '').trim().toUpperCase();
+    if (!user.setup_code) {
+      // No PIN and no code issued: there is nothing to prove, so nothing is
+      // accepted. An admin issues a code from Settings.
+      logAudit(user.name, 'login_failed', 'user', user.id, { reason: 'no_setup_code_issued' }, null, null, user.name);
+      return res.status(403).json({ error: 'This account has no setup code yet. Ask an admin to issue one for you.' });
+    }
+    if (user.setup_code_expires_at && user.setup_code_expires_at <= new Date().toISOString()) {
+      return res.status(403).json({ error: 'That setup code has expired. Ask an admin for a new one.' });
+    }
+    if (code !== String(user.setup_code).toUpperCase()) {
+      // Logged as a failed sign-in because that is what it is — somebody trying
+      // to get into an account they have not been let into.
+      logAudit(user.name, 'login_failed', 'user', user.id, { reason: 'bad_setup_code' }, null, null, user.name);
+      return res.status(401).json({ error: 'That setup code is not right. Check it with your admin.' });
+    }
+  }
+
+  // Set the password, retire the PIN, and SPEND THE CODE — a setup code is
+  // single-use, or it is a standing second password.
+  db.prepare(`UPDATE users SET password_hash = ?, pin = NULL, setup_code = NULL, setup_code_expires_at = NULL,
+              password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`).run(hashPassword(password), user_id);
   logAudit(user, 'set_password', 'user', user.id, null, null, null, user.name);
   res.json(issueSession(db, { ...user, password_hash: '1' }));
 });
@@ -477,10 +521,15 @@ router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  db.prepare("UPDATE users SET password_hash = NULL, pin = NULL, password_changed_at = NULL, updated_at = datetime('now') WHERE id = ?").run(user.id);
+  // The reset hands back a code rather than leaving the account claimable by
+  // anyone who knows the name. Shown to the admin, given to the person.
+  const setupCode = newSetupCode();
+  db.prepare(`UPDATE users SET password_hash = NULL, pin = NULL, password_changed_at = NULL,
+              setup_code = ?, setup_code_expires_at = datetime('now', '+14 day'),
+              updated_at = datetime('now') WHERE id = ?`).run(setupCode, user.id);
   db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id); // force re-auth
   logAudit(req.user, 'password_reset', 'user', user.id, { by_admin: true, mode: 'send_to_setup' }, null, null, user.name);
-  res.json({ ok: true });
+  res.json({ ok: true, setup_code: setupCode, expires_in_days: 14 });
 });
 
 // ── Duplicate detection + merge (post-import cleanup) ─────────────────────────

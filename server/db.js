@@ -4,6 +4,18 @@ import { tagQaInspectionRecords } from './qa-records.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync } from 'fs';
+import { randomInt } from 'crypto';
+
+// A first-sign-in code, read aloud or written on a slip. Eight characters from
+// an alphabet with no 0/O/1/I/L, because it is transcribed by hand and a code
+// somebody keys in wrong twice is a code they stop using. randomInt, not
+// Math.random — this is a credential.
+const SETUP_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export function newSetupCode() {
+  let out = '';
+  for (let i = 0; i < 8; i++) out += SETUP_ALPHABET[randomInt(SETUP_ALPHABET.length)];
+  return `${out.slice(0, 4)}-${out.slice(4)}`;
+}
 import { backfillUsernames } from './usernames.js';
 import { ZONE_TYPES } from '../shared/equipment-types.js';
 
@@ -3704,6 +3716,44 @@ function runMigrations() {
   // shown in clear exactly once. Regenerating replaces it; sessions expire,
   // this deliberately does not — it can post ONE kind of record and nothing else.
   addColumnIfMissing('users', 'shortcut_token_hash', 'TEXT');
+
+  // ── First sign-in must be INVITED, not merely known about ──────────────────
+  //
+  // Until this existed, an account created but never signed into could be taken
+  // over by anyone: `GET /users/lookup` is public (the login type-ahead) and
+  // returned the account id, and `POST /users/set-password` asked for nothing
+  // else when the account had no PIN to confirm. Demonstrated end to end
+  // against a running server — an unauthenticated caller took over a seeded
+  // supervisor account in two requests. The training-log and Slack importers
+  // both create accounts in exactly that state, so this was not hypothetical.
+  //
+  // The fix is a setup code the admin issues and hands over out of band. It
+  // does not change who sets the password — the person still chooses their own,
+  // which is the point of self-service — it only requires that somebody with
+  // authority invited them.
+  addColumnIfMissing('users', 'setup_code', 'TEXT');
+  addColumnIfMissing('users', 'setup_code_expires_at', 'TEXT');
+  // NOBODY IS STRANDED BY THE CHANGE. Every account that was claimable the
+  // moment before this shipped gets a code, once, so an admin can read it out
+  // of Settings and hand it over. Without this the fix would lock out everyone
+  // who had not yet signed in — which on a plant mid-rollout is most of a
+  // shift. One-time, marked, so a later deliberate clearing is never undone.
+  try {
+    const done = db.prepare("SELECT value FROM app_settings WHERE key = 'setup_codes_backfilled'").get();
+    if (!done) {
+      const claimable = db.prepare(
+        "SELECT id FROM users WHERE is_active = 1 AND password_hash IS NULL AND (pin IS NULL OR pin = '')").all();
+      const set = db.prepare("UPDATE users SET setup_code = ?, setup_code_expires_at = datetime('now', '+30 day') WHERE id = ?");
+      for (const u of claimable) set.run(newSetupCode(), u.id);
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('setup_codes_backfilled', ?)")
+        .run(new Date().toISOString());
+      if (claimable.length) {
+        console.log(`[migrate] Issued a first-sign-in code to ${claimable.length} account(s) that had none`);
+      }
+    }
+  } catch (e) {
+    console.warn('[migrate] Setup-code backfill skipped:', e.message);
+  }
 
   // Numbers a flavour approval can be texted to. There are only ever three or
   // four, they are not all ReadyDoc accounts (a co-packer contact, a partner),

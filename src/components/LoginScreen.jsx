@@ -10,6 +10,7 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [setupMode, setSetupMode] = useState(null); // { user_id, user_name, has_pin }
   const [currentPin, setCurrentPin] = useState('');
+  const [setupCode, setSetupCode] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const nameRef = useRef(null);
   const suggestionsRef = useRef(null);
@@ -52,8 +53,11 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
       const data = await res.json();
 
       if (data.needs_password_setup) {
-        setSetupMode({ user_id: data.user_id, user_name: data.user_name, has_pin: data.has_pin });
-        setPassword(''); setConfirmPassword(''); setCurrentPin('');
+        setSetupMode({
+          user_id: data.user_id, user_name: data.user_name, has_pin: data.has_pin,
+          needs_setup_code: data.needs_setup_code, no_route: data.no_route,
+        });
+        setPassword(''); setConfirmPassword(''); setCurrentPin(''); setSetupCode('');
         setLoading(false);
         setTimeout(() => setupRef.current?.focus(), 100);
         return;
@@ -75,13 +79,18 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
     if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match'); return; }
     if (setupMode.has_pin && !currentPin) { setError('Enter your current PIN to continue'); return; }
+    if (setupMode.needs_setup_code && !setupCode.trim()) { setError('Enter the setup code your admin gave you'); return; }
 
     setLoading(true);
     try {
       const res = await fetch('/api/users/set-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: setupMode.user_id, password, current_pin: currentPin || undefined }),
+        body: JSON.stringify({
+          user_id: setupMode.user_id, password,
+          current_pin: currentPin || undefined,
+          setup_code: setupCode.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -108,10 +117,28 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
           </div>
 
           <form onSubmit={handleSetPassword} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">
+            {setupMode.no_route && (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                This account has not been set up for a password yet. Ask an admin to issue you a
+                setup code from Settings, then come back here.
+              </p>
+            )}
+            {setupMode.needs_setup_code && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Setup code</label>
+                <input ref={setupRef} type="text" required value={setupCode}
+                  onChange={e => setSetupCode(e.target.value.toUpperCase())}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base tracking-widest text-center font-mono"
+                  placeholder="XXXX-XXXX" autoCapitalize="characters" autoComplete="off" maxLength={9} />
+                <p className="text-[11px] text-gray-400 mt-1 text-center">
+                  Your admin gives you this. It proves the account is yours and can only be used once.
+                </p>
+              </div>
+            )}
             {setupMode.has_pin && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Current PIN</label>
-                <input ref={setupRef} type="password" required value={currentPin} onChange={e => setCurrentPin(e.target.value.replace(/\D/g, ''))}
+                <input type="password" required value={currentPin} onChange={e => setCurrentPin(e.target.value.replace(/\D/g, ''))}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base tracking-widest text-center"
                   placeholder="Your existing PIN" inputMode="numeric" maxLength={8} />
                 <p className="text-[11px] text-gray-400 mt-1 text-center">Confirm your identity with your old PIN. We'll switch you to a password.</p>
@@ -119,7 +146,7 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
             )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
-              <input ref={setupMode.has_pin ? undefined : setupRef} type="password" required value={password} onChange={e => setPassword(e.target.value)}
+              <input ref={(setupMode.has_pin || setupMode.needs_setup_code) ? undefined : setupRef} type="password" required value={password} onChange={e => setPassword(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="At least 8 characters" minLength={8} autoComplete="new-password" />
             </div>
             <div>
@@ -170,7 +197,7 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
             {showSuggestions && suggestions.length > 0 && (
               <div ref={suggestionsRef} className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
                 {suggestions.map(u => (
-                  <button key={u.id} type="button" onClick={() => selectUser(u)}
+                  <button key={u.username || u.name} type="button" onClick={() => selectUser(u)}
                     className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between border-b border-gray-100 last:border-0">
                     <span className="min-w-0">
                       <span className="block font-medium text-gray-900 truncate">{u.username || u.name}</span>

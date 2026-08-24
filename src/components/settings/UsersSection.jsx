@@ -365,14 +365,20 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
   );
 }
 
-// Admin password reset — one click. It clears the user's password so their next
-// sign-in runs the same first-time "create your password" flow. No temporary
-// password to generate or hand off. A small inline confirm guards misclicks.
+// Admin password reset — one click. It clears the user's password and issues a
+// SETUP CODE, which the admin reads out to them. The person still chooses their
+// own password; the code only proves somebody with authority invited them.
+//
+// Clearing the password alone used to be enough, which meant anyone who knew a
+// colleague's name could set a password on their account. The code closes that,
+// so this control has to SHOW it — a reset that issues a credential the admin
+// never sees is a reset that strands the person.
 function ResetPasswordControl({ userId, userName }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(null); // { setup_code, expires_in_days }
   const [err, setErr] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   const submit = async () => {
     setErr(null); setBusy(true);
@@ -385,15 +391,35 @@ function ResetPasswordControl({ userId, userName }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setErr(data.error || 'Could not reset password.'); return; }
-      setDone(true); setConfirming(false);
+      setDone(data); setConfirming(false);
     } finally { setBusy(false); }
   };
 
   if (done) {
     return (
-      <div className="mt-1.5 bg-green-50 border border-green-200 rounded-lg p-2.5">
+      <div className="mt-1.5 bg-green-50 border border-green-200 rounded-lg p-2.5 space-y-2">
         <p className="text-[11px] text-green-800 leading-relaxed">
-          Password cleared for <span className="font-medium">{userName || 'this user'}</span>. Next time they sign in, they’ll enter their name, click <span className="font-medium">Sign In</span>, and be prompted to create a new password — just like their first time.
+          Password cleared for <span className="font-medium">{userName || 'this user'}</span>. Give them this
+          setup code — they’ll enter their name, click <span className="font-medium">Sign In</span>, type the
+          code and then choose their own password.
+        </p>
+        {done.setup_code && (
+          <div className="flex items-center gap-2">
+            <code className="px-2 py-1 bg-white border border-green-300 rounded font-mono text-sm tracking-widest text-green-900">
+              {done.setup_code}
+            </code>
+            <button type="button"
+              onClick={() => { navigator.clipboard?.writeText(done.setup_code); setCopied(true); }}
+              className="text-[11px] font-medium text-green-800 hover:text-green-900 underline">
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        )}
+        {/* Said plainly, because this is the one thing that goes wrong: the code
+            is shown here once and is not recoverable from the roster. */}
+        <p className="text-[10px] text-green-700">
+          Single use, expires in {done.expires_in_days ?? 14} days, and it is not shown again — reset
+          again if it gets lost.
         </p>
       </div>
     );
@@ -403,7 +429,7 @@ function ResetPasswordControl({ userId, userName }) {
     return (
       <div className="mt-1.5 bg-gray-50 border border-gray-200 rounded-lg p-2.5 space-y-2">
         <p className="text-[11px] text-gray-600 leading-relaxed">
-          Reset <span className="font-medium">{userName || 'this user'}</span>’s password? They’ll be signed out and asked to create a new password the next time they sign in.
+          Reset <span className="font-medium">{userName || 'this user'}</span>’s password? They’ll be signed out, and you’ll get a one-time setup code to give them so they can create a new password.
         </p>
         {err && <p className="text-[11px] text-red-600">{err}</p>}
         <div className="flex items-center gap-2">

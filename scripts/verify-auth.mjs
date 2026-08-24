@@ -10,13 +10,29 @@ function check(id, title, expected, actual, ok) {
   results.push({ id, title, expected, actual, verdict: ok ? 'PASS' : 'FAIL' });
 }
 
-// ── Setup: give Alba a password of her own ─────────────────────────────────
+// ── Setup: two ordinary staff accounts, each with a password of their own ──
+// Fixture accounts, created here rather than borrowed from the roster, so the
+// protocol runs the same way on any copy of the database and never sets a
+// password on somebody real. The setup codes are written straight in because
+// that is what an admin does from Settings; issuing them is not under test.
+{
+  const { default: Database } = await import('better-sqlite3');
+  const { v4: uuid4 } = await import('uuid');
+  const db = new Database(DB);
+  db.prepare("DELETE FROM users WHERE name IN ('Alba Reyes','Marco Diaz','Nina Fresh')").run();
+  const ins = db.prepare(`INSERT INTO users (id, name, username, role, department, is_active,
+      setup_code, setup_code_expires_at)
+    VALUES (?, ?, ?, ?, ?, 1, 'SEED-CODE', datetime('now','+7 day'))`);
+  ins.run(uuid4(), 'Alba Reyes', 'Alba Reyes', 'operator', 'qa');
+  ins.run(uuid4(), 'Marco Diaz', 'Marco Diaz', 'operator', 'warehouse');
+  db.close();
+}
 let d = await J(await req('/users/login', { method: 'POST', body: JSON.stringify({ name: 'Alba Reyes' }) }));
 const albaId = d.user_id;
-await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: albaId, password: 'AlbaSecret2026' }) });
+await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: albaId, password: 'AlbaSecret2026', setup_code: 'SEED-CODE' }) });
 d = await J(await req('/users/login', { method: 'POST', body: JSON.stringify({ name: 'Marco Diaz' }) }));
 const marcoId = d.user_id;
-await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: marcoId, password: 'MarcoSecret2026' }) });
+await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: marcoId, password: 'MarcoSecret2026', setup_code: 'SEED-CODE' }) });
 
 // ── AC-01 correct credentials are accepted ─────────────────────────────────
 let r = await req('/users/login', { method: 'POST', body: JSON.stringify({ name: 'Alba Reyes', password: 'AlbaSecret2026' }) });
@@ -109,7 +125,7 @@ let attributed = null;
 if (DB && r.ok) {
   const { default: Database } = await import('better-sqlite3');
   const db = new Database(DB, { readonly: true });
-  const a = db.prepare("SELECT actor, actor_id FROM audit_log WHERE entity_type='qms_record' ORDER BY timestamp DESC LIMIT 1").get();
+  const a = db.prepare("SELECT actor, actor_id FROM audit_log WHERE entity_type='deviation' ORDER BY timestamp DESC LIMIT 1").get();
   attributed = a; db.close();
 }
 check('AC-11', 'A record is attributed to the signed-in user even if the request claims someone else',
@@ -144,10 +160,71 @@ dbw.prepare("INSERT INTO users (id,name,username,role,department,is_active) VALU
   .run(freshId, 'Nina Fresh', 'Nina Fresh');
 dbw.close();
 r = await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: freshId, password: 'StrangerSetsIt1' }) });
-check('AC-14', 'An account created but never signed into can be claimed by anyone who learns its id',
-  'Should be refused without proof of identity',
-  `HTTP ${r.status} — ${r.ok ? 'a session was issued to an unauthenticated caller' : (await J(r))?.error}`,
+check('AC-14', 'An account that has never been signed into cannot be claimed without an invitation',
+  'Refused — a first password needs a PIN or an admin-issued setup code',
+  `HTTP ${r.status} — ${r.ok ? 'A SESSION WAS ISSUED TO AN UNAUTHENTICATED CALLER' : (await J(r))?.error}`,
   !r.ok);
+
+// ── AC-14b the public type-ahead does not hand out account ids ─────────────
+r = await req('/users/lookup?q=nina'); const look = await J(r);
+check('AC-14b', 'The public login type-ahead does not expose account identifiers',
+  'Names only, no id',
+  look?.length ? `fields returned: ${Object.keys(look[0]).join(', ')}` : 'no match returned',
+  Array.isArray(look) && look.length > 0 && !('id' in look[0]));
+
+// ── AC-14c a wrong setup code is refused, the right one works once ─────────
+const dbc = new DB2(DB);
+const issued = 'TEST-CODE';
+dbc.prepare("UPDATE users SET setup_code = ?, setup_code_expires_at = datetime('now','+7 day') WHERE id = ?").run(issued, freshId);
+dbc.close();
+r = await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: freshId, password: 'StrangerSetsIt1', setup_code: 'WRONG-ONE' }) });
+check('AC-14c', 'A guessed setup code is refused',
+  'HTTP 401', `HTTP ${r.status}`, r.status === 401);
+r = await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: freshId, password: 'NinaOwnPass2026', setup_code: issued }) });
+const claimed = await J(r);
+check('AC-14d', 'The person the code was issued to can set their own password with it',
+  'HTTP 200 and a session for that account', `HTTP ${r.status}; session = ${claimed?.user?.name}`,
+  r.ok && claimed?.user?.name === 'Nina Fresh');
+r = await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: freshId, password: 'SomeoneElse1', setup_code: issued }) });
+const reuse = await J(r);
+let codeAfter = null;
+{ const dbr = new DB2(DB, { readonly: true });
+  codeAfter = dbr.prepare('SELECT setup_code FROM users WHERE id = ?').get(freshId)?.setup_code; dbr.close(); }
+check('AC-14e', 'A setup code cannot be used twice',
+  'Refused once spent, and the code is cleared from the account',
+  `HTTP ${r.status}; ${reuse?.error || ''}; stored code afterwards = ${codeAfter === null ? 'none' : codeAfter}`,
+  !r.ok && codeAfter === null);
+
+// ── AC-17 every failed attempt leaves a record ─────────────────────────────
+// A control nobody can review after the fact is not a control.
+let attempts = null;
+{
+  const dba = new DB2(DB, { readonly: true });
+  attempts = dba.prepare(`SELECT actor, json_extract(details,'$.reason') reason FROM audit_log
+      WHERE action = 'login_failed' ORDER BY timestamp DESC LIMIT 40`).all();
+  dba.close();
+}
+const reasons = [...new Set(attempts.map(a => a.reason))];
+check('AC-17', 'Every refused sign-in is written to the audit log, named and reasoned',
+  'Refusals appear with the name tried and why it failed',
+  `${attempts.length} refusal(s) recorded; reasons seen: ${reasons.join(', ')}`,
+  attempts.length > 0 && reasons.includes('bad_password') && reasons.includes('unknown_user')
+    && reasons.includes('no_setup_code_issued') && reasons.includes('bad_setup_code'));
+
+// ── AC-18 an expired password stops working ────────────────────────────────
+// Backdate Nina's password change beyond the 365-day policy and confirm the
+// session can do nothing but change it.
+const ninaTok = claimed?.token;
+{ const dbe = new DB2(DB);
+  dbe.prepare("UPDATE users SET password_changed_at = datetime('now','-400 day') WHERE id = ?").run(freshId);
+  dbe.close(); }
+r = await req('/pm/work-orders', { headers: { Authorization: 'Bearer ' + ninaTok } });
+const blocked = r.status; const blockedBody = await J(r);
+r = await req('/users/me', { headers: { Authorization: 'Bearer ' + ninaTok } });
+check('AC-18', 'A password past its one-year life stops working until it is changed',
+  'Plant data refused with password_expired; only the change-password path stays open',
+  `plant data → HTTP ${blocked} (password_expired = ${!!blockedBody?.password_expired}); own account → HTTP ${r.status}`,
+  blocked === 403 && blockedBody?.password_expired === true && r.ok);
 
 // ── AC-15 a deactivated account cannot sign in ─────────────────────────────
 const dbw2 = new DB2(DB);
