@@ -24,13 +24,20 @@ This is that walk, done against the plant's own two documents:
 All four name their record as the batch production record or a document attached to it — "Cleaning log
 Checklist in batch production record" (PC #1, PC #2), "Observations on batch record" (PC #3), "X-ray
 Operation Record" (PC #4). In the Forms Master Index those are FORM 111-01, FORM 413-1 and FORM 413-1
-(X-Ray), and **all three are marked `where: keychain`**. FORM 111-01 carries the note "Number
-terminated; attaches to the BPR (FORM 413-1) in Keychain."
+(X-Ray), and **all three are marked `where: keychain`**.
 
-So the evidence for every preventive control in the plan sits in a system that is mid-migration
-(D-004), and ReadyDoc — the system that holds 7,662 FSQA records and is what an auditor will be shown
-— holds none of it. That is not a defect in either system. It is a decision nobody has written down,
-and it is the whole of item 1 of the punch list.
+**Read that field correctly — see D-013.** `where` says which system *produces* the record today. It
+says nothing about who owns the number. **FORM 413-1 is the plant's own form number for the MMR /
+Manufacturing Record / Batch Production Record, and it predates Keychain**, as every number in the
+index does. The plant is not borrowing Keychain's paperwork; Keychain is currently generating the
+plant's form.
+
+So the finding is narrower than it first looks, and more actionable. The form leg is **not** missing —
+it has been answered since before the migration started. What is true is that **ReadyDoc holds none of
+the evidence for any preventive control in the plan**, and that is a migration state with exactly two
+named exits (§5, item 1): build the function into ReadyDoc, or connect to Keychain by API. Until one of
+those lands, Keychain generates any record for work Keychain handles, and the live question is which
+of the seven are producing today.
 
 **And one limit is worse than absent — it is contradicted.** PC #1's critical limit is **35 RLU**.
 `sanitation_records.atp_reading` exists as a REAL, the Sanitation form asks for it and the Operator
@@ -69,8 +76,9 @@ the first as superseding the cadence reading implied by D-002:
 
 **Wired** — all three legs, and completing the work writes the record.
 **Running, unrecorded** — the work happens and closes; nothing accumulates in a log.
-**Elsewhere** — resolved outside ReadyDoc by decision (Keychain, or paper). Owes an answer to *how is
-this retrieved on a date the auditor picks*.
+**Elsewhere** — the record is *produced* in another system today (Keychain, or paper). The form number
+stays the plant's either way (D-013). Owes an answer to *how is this retrieved on a date the auditor
+picks*, not to who owns the form.
 **Absent** — no control object at all.
 
 ---
@@ -190,11 +198,14 @@ on the list: it is `mock_recalls` with a different checklist.
 
 Ranked by audit exposure per unit of work. Items 1–4 need a decision, not a build.
 
-1. **Decide, in writing, where each preventive control's record lives.** All four name the BPR or a
-   document attached to it; all three form numbers are `keychain`; Keychain is mid-migration. Until
-   this is settled the plant has four preventive controls whose evidence has no confirmed home. Then
-   confirm **which of the seven Keychain forms are live today** — a form no longer on paper and not
-   yet in Keychain is a control with no record at all in the interval.
+1. **Confirm which of the seven Keychain forms are producing records today**, and pick the exit. The
+   form numbers are settled and always were (D-013); what is open is which system produces each one
+   right now, and where it produces it a year from now. Two exits, and they are not exclusive —
+   **(a)** build the function into ReadyDoc so it produces FORM 413-1 directly, or **(b)** connect to
+   Keychain by API so ReadyDoc can retrieve what Keychain generated. Until either lands, Keychain
+   generates the record for work Keychain handles, which is a legitimate answer — the exposure is a
+   form no longer on paper and not yet producing in Keychain, which is a control with no record at all
+   in the interval. That is a list of seven to check, not a decision to agonise over.
 2. **Grade the ATP reading against 35 RLU, or move the limit.** The reading has a home, the home is
    empty, and nothing enforces the number. This is `gradeReadings()` in `scale-forms.js` applied to a
    second control — the precedent, the doctrine ("a reading outside tolerance can never be filed as a
@@ -228,9 +239,9 @@ Ranked by audit exposure per unit of work. Items 1–4 need a decision, not a bu
 
 ### 6.1 The Forms Master Index
 
-52 forms: **40 readydoc** (every one carries a match rule), **7 keychain** (111-01 · 404-1 · 404-2 ·
-405-1 · 405-02 · 413-1 · 413-1 X-Ray), **4 paper** (100-01 · 402 · 413-2 · 438-01), **1 retired**
-(111-02).
+52 forms, all of them the plant's own numbers regardless of which system produces the record (D-013):
+**40 readydoc** (every one carries a match rule), **7 keychain** (111-01 · 404-1 · 404-2 · 405-1 ·
+405-02 · 413-1 · 413-1 X-Ray), **4 paper** (100-01 · 402 · 413-2 · 438-01), **1 retired** (111-02).
 
 ### 6.2 The existing coverage report is already clean
 
@@ -327,4 +338,7 @@ Recorded because vocabulary flips at once (D-003) and these will bite when it do
 - **D-010** — whether verification is a fourth leg of the test. The plan makes this concrete rather
   than theoretical: every one of its four preventive controls names a verification distinct from its
   monitoring, and PC #1 names the same activity as both (§3.3).
-- Which of the seven Keychain forms are live today. Not knowable from this repository.
+- Which of the seven Keychain forms are producing records today. Not knowable from this repository.
+- Which exit is taken for the BPR — absorb into ReadyDoc, or API-connect to Keychain (D-013). D-004
+  says decide the ERP question on counts after the migration lands; this is the narrower version of
+  the same question and can be answered for FORM 413-1 alone, ahead of it.

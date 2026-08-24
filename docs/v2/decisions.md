@@ -466,3 +466,107 @@ through the conflict.
 
 Current Track B branch: `claude/food-safety-preventive-controls-8y6mu2`. The beat is weekly, or
 immediately after any Track A change to `shared/`, `server/db.js` or the form registry.
+
+---
+
+## D-013 · 2026-08-24 · decided — A form number is the PLANT's; `where` says which system produces the record
+
+Corrects a misreading in the first pass of the preventive control walk, which treated the seven forms
+marked `where: keychain` as *assigned to* Keychain — as though the migration had taken the paperwork
+with it, and as though somebody still owed a decision about who owns those numbers.
+
+**Not so, and the distinction is load-bearing.** Every number in the Forms Master Index existed before
+Keychain and belongs to Powder Ops. **FORM 413-1 is the plant's own number for the MMR / Manufacturing
+Record / Batch Production Record.** The plant is not borrowing Keychain's paperwork; Keychain is
+currently generating the plant's form. `shared/form-registry.js` already says this in its own comment —
+"`where` says what is true of the form *today*" — and the walk over-read it.
+
+So the form leg of the D-002 test is satisfied by a number in the index, full stop. **Which system
+produces the record is a separate fact, and it is allowed to change without the number changing.** That
+is the same doctrine the codebase already applies to a SKU (`legacy_sku` is never cleared, because a
+code that changes must still resolve on a two-year-old PO) and to a retired form number (retired, never
+reissued, so a record filed under it still resolves).
+
+**The two exits, and they are not exclusive.** Until either lands, Keychain generates any record for
+work Keychain handles, and that is a legitimate answer to the record leg:
+
+1. **Absorb** — build the function into ReadyDoc so it produces FORM 413-1 directly.
+2. **Connect** — an API into Keychain so ReadyDoc can retrieve what Keychain generated.
+
+**What is actually open is narrower than "where do the records live":** which of the seven are
+producing records *today*. A form no longer on paper and not yet producing in Keychain is a control
+with no record at all in the interval, and that is the only real exposure here. It is a list of seven
+to check.
+
+Relation to D-004, which holds the ERP question open pending counts: this is the same question scoped
+to one form. FORM 413-1 can be answered ahead of the whole-ERP decision, and answering it is cheap
+evidence for that larger one.
+
+---
+
+## D-014 · 2026-08-24 · decided — Work is QUEUED before it is pushed; `docs/v2/queued/` is where it waits
+
+Stated directly while reviewing the walk's punch list: *no updates yet — let's have things like this
+queued, so we can explore, improve, and have it in a great state before we push anything.*
+
+That is a working rule, not a one-off, and it fits the two tracks rather than fighting them:
+
+- **`docs/v2/queued/` holds a change that is designed and reviewed but deliberately not landed.** Each
+  file states the scope, what is already built and where, what is *not* built and why, the exact diff
+  for the parts that touch live code, and how to verify before landing.
+- **The split follows D-005 exactly.** New construction is built on the Track B branch and can sit
+  there safely. Anything touching live shared code is **written out, not half-applied**, and lands on
+  `main` in one pass when the plant is ready.
+- A queued item is not a backlog ticket. It is finished thinking with an unfinished deploy, and the
+  test is whether somebody could land it in one sitting from the file alone.
+
+First two entries: `atp-35-rlu.md` (punch-list item 2, with `server/atp-limits.js` already built and
+tested on Track B) and `dcr-protocol-003.md` (item 4, for Document Control — no code at all).
+
+---
+
+## D-015 · 2026-08-24 · decided — PC #1: do the record and the limit now, the per-run trigger later
+
+The walk found PC #1 failing two legs at once: no per-run **program**, and a **record** whose critical
+limit nothing enforces. Both were on the punch list. They are now deliberately split.
+
+**Now — the record and the limit.** `sanitation_records.atp_reading` gets graded against the 35 RLU
+that Protocol 003 V4 states, and the limit it was graded against is stamped on the record. Contained,
+reviewable, and it closes the finding an auditor can reach on their own: *a stated critical limit that
+nothing enforces.*
+
+**Later — the trigger.** Nothing in the platform fires at the beginning of a production run, because
+there is no object for "a run" to hang an obligation off (D-011). That is architecture move 05, which
+`architecture.md` defers until after the audit, and this entry does not move it up. The clean stays on
+its daily cadence in the meantime.
+
+**Why the split is honest rather than convenient.** The record leg is what an auditor asks for — *show
+me the reading, and show me the limit the system used*. The trigger leg changes when the obligation
+appears, which is a scheduling improvement, not evidence. Shipping the second without the first would
+produce a task nobody could fail; shipping the first without the second produces a graded record on a
+slightly loose cadence, which is the better half to have.
+
+Recorded because a future session finding a graded ATP reading on a daily schedule should read it as a
+deliberate half-step, not an oversight.
+
+---
+
+## D-016 · 2026-08-24 · decided — PC #1's 35 RLU is the pilot for architecture move 03
+
+Move 03 — *limits out of code and into documents* — was written as a project without a first case.
+It has one now, and it is unusually clean: **the limit was never in code to begin with.** It lives in
+Protocol 003 V4 and nowhere else, so the pilot is not a migration, it is a first connection.
+
+Everything it needs already exists: `gradeReadings()` in `scale-forms.js` as the working precedent,
+`controlled.js` as the gate that parks an unapproved change to an acceptance criterion, and the
+written doctrine that a reading outside tolerance can never be filed as a pass.
+
+**One rule this pilot adds that the scale case did not need.** A scale verification is *wholly*
+defined by its readings, so the grade decides the result outright. A clean is not — it can fail visual
+inspection while its swab reads 12 RLU. So the ATP grade is **asymmetric: it can fail a record, never
+pass one.** An over-limit reading forces `fail`; an in-limit reading leaves the filer's own answer
+alone. Any future limit attached to a record that has independent reasons to fail should follow the
+same rule, and any limit attached to a record fully defined by its readings should follow the scale's.
+
+`architecture.md` Revision 2 names this pilot under move 03. The build is queued in
+`docs/v2/queued/atp-35-rlu.md`.

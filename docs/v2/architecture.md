@@ -1,13 +1,23 @@
 # Foundation to Spire — ARCH-001
 
-**Revision 1 · 21 August 2026 · Scope: FSQA (office excluded) · Status: exploration, not a change request**
+**Revision 2 · 24 August 2026 · Scope: FSQA (office excluded) · Status: exploration, not a change request**
+
+*What changed in Revision 2.* The Food Safety Plan (Protocol 003 V4) and Food Defense Plan (Protocol
+001 V2) have now been walked against the test in §1 — `docs/v2/preventive-control-walk.md`. Four
+changes follow, all of them evidence rather than opinion: L2's load-bearing rule now admits a
+**trigger** as well as a cadence (§2, D-011); §5 gains the preventive-control reading; §6 gains the
+sharpest instance of the recurring defect the whole document is about; and moves **03** and **05**
+in §7 gain the concrete cases the walk supplied. Revision 1's argument is unchanged — the walk
+supported it rather than moved it.
 
 What a food-safety and quality system should look like if it were built from the ground up, and an
 honest reading of where Powder Ops FSQA already stands against it.
 
 There is a styled reading copy of this document as an artifact. **This file is the authority** — the
 artifact is a rendering of it. If they disagree, this file is right, and the artifact should be
-re-published from it.
+re-published from it. Its HTML source is kept beside this file as `foundation-to-spire.artifact.html`,
+so a cold session can update the published page without re-reading it; republish that file to the
+existing artifact URL rather than creating a second one.
 
 ---
 
@@ -65,6 +75,12 @@ effective-dated, withdrawn — never edited in place.
 > not a constant in code. Changing a tolerance is a document change, and the system must make that
 > literally true.
 
+> **Corollary, added in Revision 2.** A **form number belongs to the plant, not to the system that
+> produces the record.** FORM 413-1 is the plant's number for the batch production record and predates
+> Keychain; which system generates it today is a separate fact, allowed to change without the number
+> changing. Same doctrine as a renamed SKU keeping `legacy_sku`, and a retired form number never being
+> reissued. See D-013.
+
 ### L2 — Program: what must happen, and how often
 
 Cadence bound to a controlled procedure and a responsible team. PM, sanitation, QA checks, calibration,
@@ -74,6 +90,13 @@ EMP, internal audit, recall drills.
 
 > **Load-bearing rule.** A schedule carries no wording of its own. It **references** the document that
 > defines the work, so re-issuing the document changes the work everywhere at once.
+
+> **Load-bearing rule, added in Revision 2.** A program may be a **trigger** rather than a cadence.
+> Three of the Food Safety Plan's four preventive controls fire per production run — "at the beginning
+> of every run", "at the end of every run", "at the beginning of every machine start up" — and every
+> generator in the platform today is a calendar. A control that fires per run and one that fires per
+> week are the same obligation. What fails this layer is a control that depends on somebody *deciding*
+> to start it. See D-011.
 
 ### L3 — Execution: work
 
@@ -228,6 +251,25 @@ The layer-by-layer reading is genuinely mixed, and more of it is strong than the
 | **L5** Assurance | Strong | QA Review is exactly the right shape — one queue, seven sources, and signing calls each module's own function rather than writing columns itself. | Counts are computed per source; badge and queue have already disagreed once. Trending is thin. |
 | **L6** Presentation | Partial | Auditor view with process maps, form numbers derived at read time, drill-downs that reconcile to their headline figures. | No single retrieval surface across record types — "show me everything for lot L-101692" means visiting several modules. |
 
+### The preventive controls, specifically  *(added in Revision 2)*
+
+The table above reads the platform by layer. The plan walk reads it by **control**, which is the
+reading an auditor actually takes, and it is harder.
+
+| | Control | Program | Form | Record |
+|---|---|---|---|---|
+| **PC #1** | ATP / pathogens · limit **35 RLU** | Daily clean, not per run | 111-01 → Keychain; 108-03 in app | Column exists, **never graded, empty in every seeded row** |
+| **PC #2** | Allergen swab · no residual | Nothing fires at end of run | 111-01 → Keychain | Boolean only |
+| **PC #3** | Screens · 50/70 mesh | Nothing fires at machine start-up | Observations on BPR → Keychain | None |
+| **PC #4** | X-ray · NFe 2 mm, Fe 2 mm, SS 4 mm | Nothing generates the challenge or the 2–3 hourly check | 413-1 (X-Ray) → Keychain | None |
+
+**`haccp_ccps` holds zero rows**, and neither X-ray machine is linked to a CCP, though both are in the
+equipment registry. The table is modelled almost field-for-field for the plan's own chart.
+
+The form leg is fine — those are the plant's numbers and always were (D-013). It is the **record** leg
+that is empty in ReadyDoc for all four, and the **program** leg that has nothing to hang a per-run
+obligation off. That is the state of L2 and L4 stated at the altitude the audit asks about.
+
 ---
 
 ## 6. The diagnosis
@@ -239,6 +281,13 @@ record areas using different vocabularies for one check. A knife's status column
 sign-out log. Badge counts disagreeing with the queue they summarise. Two screens disagreeing about
 whether a task exists. A weekly checklist carrying the annual work. A cancelled task counted as a missed
 one, so tidying up lowered the completion rate.
+
+**And the sharpest instance of all, found by the plan walk in Revision 2:** the cleanliness of a
+food-contact line before a run is recorded in two places — `sanitation_records.atp_reading`, a number
+nothing grades, and `production_entries.cleaning_events[].atp_swab`, a boolean. The plan states the
+control as **≤ 35 RLU**. Neither mechanism carries that limit, so a 60 RLU reading files as a pass and
+a swab that was never read files as a tick. One fact, two homes, and the number that decides it lives
+in neither — a preventive control, not a badge count.
 
 Every one is **a fact that exists in more than one place**. Not carelessness — the predictable
 consequence of a module-shaped architecture, where each module reasonably implements the parts it needs
@@ -275,6 +324,17 @@ revision, read at grading time. Change control already exists for a subset — e
 duplicating it. The audit question this answers is the sharpest there is: *show me the approved document
 that says 78°F, and show me that the system used it.*
 
+> **The pilot, named in Revision 2: PC #1's 35 RLU.** It is the ideal first case because the limit is
+> *already* owned by an approved document revision — Protocol 003 V4 — so nothing has to be moved out
+> of code. It was never in code. `gradeReadings()` in `scale-forms.js` is the working precedent, the
+> doctrine is written down ("a reading outside tolerance can never be filed as a pass"), and
+> `controlled.js` is the gate that already parks an unapproved change to an acceptance criterion. The
+> same pass collapses the boolean `cleaning_events.atp_swab` into the graded reading, so move 06 gets
+> a mirror column retired for free.
+>
+> **It lands on `main`, not on the V2 branch.** It changes `server/api/sanitation.js`, which is live
+> shared code, and D-005 puts that on Track A in one pass.
+
 ### 04 — One retrieval surface  ·  *follows 02 · auditor-facing*
 
 A single query across every record type by date, lot, equipment, person and form number — one screen
@@ -286,6 +346,16 @@ free once move 02 lands, and turns the mock recall from an exercise into a looku
 PM, quality schedules, document review and sanitation re-cleans each generate work their own way. One
 generator, one cadence model, schedules referencing documents rather than carrying their own step text.
 Worth real planning — this one moves live data.
+
+> **What the walk added, and it does not move this up the list.** One cadence model is not enough. All
+> four generators are calendars, and three of the plan's four preventive controls fire **per production
+> run** — so the one generator has to grow a second kind of trigger, and there is currently no object
+> in the system for "a run" to hang one off. The nearest thing, a `production_entries` row, is filed at
+> the *end* of the shift, after both run-boundary controls should already have fired.
+>
+> This is the platform's highest-consequence work sitting behind its most-deferred move, which is worth
+> knowing and is not an argument for doing it sooner. The record leg of those controls (move 03, above)
+> is what an auditor asks for and is contained; the trigger leg is the refinement, and it waits.
 
 ### 06 — Audit every mirror column, then delete or derive it  ·  *ongoing · low risk*
 
@@ -319,3 +389,9 @@ Three further cautions, each learned here rather than imported:
 > **The order that actually matters.** Signatures, then a record interface, then limits into documents.
 > Everything else can wait, and moves 05 and 06 should wait. If only one thing happens this quarter,
 > make it the first.
+>
+> *Revision 2 qualifies this in one place only.* The walk found a preventive control whose limit is
+> unenforced today, and move 03's pilot for it is small, contained and already has its document. If
+> the audit lands before the signature service does, do that pilot first — not because the ordering is
+> wrong, but because a stated critical limit that nothing enforces is the one finding on this list an
+> auditor can reach on their own.

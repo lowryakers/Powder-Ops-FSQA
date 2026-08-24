@@ -1,0 +1,956 @@
+<title>Foundation to Spire</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+
+<style>
+  /* ── Tokens ────────────────────────────────────────────────────────────
+     Light is the base. Dark redefines only these, twice: once for the
+     un-stamped system default, once for an explicit toggle. Nothing below
+     declares a colour outside this block. */
+  :root {
+    --paper:      #F4F6F4;
+    --surface:    #FFFFFF;
+    --surface-2:  #EDF1EF;
+    --ink:        #121817;
+    --ink-2:      #3F4A48;
+    --ink-3:      #6E7A78;
+    --rule:       #D6DDDA;
+    --rule-2:     #BFC9C6;
+
+    --teal:       #1E4A4B;
+    --teal-ink:   #15393A;
+    --teal-soft:  #E2EDEB;
+
+    --amber:      #A2610F;
+    --amber-soft: #F7EADA;
+    --brick:      #98352A;
+    --brick-soft: #F7E3DF;
+    --moss:       #47693B;
+    --moss-soft:  #E6EFE1;
+
+    --shadow: 0 1px 2px rgba(18,24,23,.05), 0 8px 24px -16px rgba(18,24,23,.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E1413;
+      --surface:    #151C1B;
+      --surface-2:  #1B2423;
+      --ink:        #E7EDEA;
+      --ink-2:      #AAB6B3;
+      --ink-3:      #7D8A87;
+      --rule:       #283231;
+      --rule-2:     #3A4544;
+
+      --teal:       #79BCB7;
+      --teal-ink:   #A6D6D2;
+      --teal-soft:  #16292A;
+
+      --amber:      #DBA361;
+      --amber-soft: #2A2015;
+      --brick:      #D97C6C;
+      --brick-soft: #2B1917;
+      --moss:       #97BD80;
+      --moss-soft:  #1A2418;
+
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0E1413;
+    --surface:    #151C1B;
+    --surface-2:  #1B2423;
+    --ink:        #E7EDEA;
+    --ink-2:      #AAB6B3;
+    --ink-3:      #7D8A87;
+    --rule:       #283231;
+    --rule-2:     #3A4544;
+
+    --teal:       #79BCB7;
+    --teal-ink:   #A6D6D2;
+    --teal-soft:  #16292A;
+
+    --amber:      #DBA361;
+    --amber-soft: #2A2015;
+    --brick:      #D97C6C;
+    --brick-soft: #2B1917;
+    --moss:       #97BD80;
+    --moss-soft:  #1A2418;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 clamp(18px, 4vw, 48px) 96px; }
+  .prose { max-width: 68ch; }
+
+  /* ── Document header ─────────────────────────────────────────────────── */
+  .masthead {
+    border-bottom: 2px solid var(--ink);
+    padding: clamp(40px, 7vw, 84px) 0 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .docline {
+    display: flex; flex-wrap: wrap; gap: 8px 22px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .docline b { color: var(--ink-2); font-weight: 500; }
+  h1 {
+    font-family: Archivo, "IBM Plex Sans", sans-serif;
+    font-weight: 700;
+    font-size: clamp(38px, 7.5vw, 76px);
+    line-height: .98;
+    letter-spacing: -.028em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .standfirst {
+    font-size: clamp(17px, 2vw, 20.5px);
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0;
+  }
+
+  /* ── Sections ────────────────────────────────────────────────────────── */
+  .sec { padding-top: clamp(52px, 7vw, 88px); }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--rule); padding-bottom: 10px; margin-bottom: 26px; }
+  .sec-num {
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; font-weight: 600;
+    color: var(--teal); letter-spacing: .06em; flex: none;
+  }
+  h2 {
+    font-family: Archivo, sans-serif; font-weight: 600;
+    font-size: clamp(23px, 3.2vw, 31px); line-height: 1.12; letter-spacing: -.018em;
+    margin: 0; text-wrap: balance;
+  }
+  h3 {
+    font-family: Archivo, sans-serif; font-weight: 600;
+    font-size: 17.5px; letter-spacing: -.006em; margin: 34px 0 8px;
+  }
+  p { margin: 0 0 16px; }
+  .prose p:last-child { margin-bottom: 0; }
+  strong { font-weight: 600; color: var(--ink); }
+  em { font-style: italic; }
+
+  .lede { font-size: 18px; color: var(--ink-2); }
+
+  .callout {
+    border-left: 3px solid var(--teal);
+    background: var(--teal-soft);
+    padding: 16px 20px;
+    margin: 26px 0;
+    max-width: 68ch;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout p { margin: 0; }
+  .callout .tag {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--teal); display: block; margin-bottom: 6px; font-weight: 600;
+  }
+
+  /* ── The tower ───────────────────────────────────────────────────────── */
+  .tower { margin: 30px 0 8px; display: flex; flex-direction: column-reverse; gap: 7px; }
+  .layer {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 15px 18px;
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    gap: 4px 16px;
+    box-shadow: var(--shadow);
+  }
+  .layer-id {
+    font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px;
+    color: var(--teal); padding-top: 2px;
+  }
+  .layer-name { font-family: Archivo, sans-serif; font-weight: 600; font-size: 17px; letter-spacing: -.008em; }
+  .layer-why { grid-column: 2; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; }
+  .layer-holds { grid-column: 2; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .chip {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .01em;
+    background: var(--surface-2); color: var(--ink-2);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 2.5px 7px;
+    white-space: nowrap;
+  }
+  .layer-rule {
+    grid-column: 2; margin-top: 11px; padding-top: 10px; border-top: 1px dashed var(--rule-2);
+    font-size: 13.5px; color: var(--ink); line-height: 1.5;
+  }
+  .layer-rule b { color: var(--teal); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; display: block; margin-bottom: 3px; font-weight: 600; }
+  /* The taper: each course above the base sits a little narrower. */
+  .t0 { width: 100%; }
+  .t1 { width: 98.2%; }
+  .t2 { width: 96.4%; }
+  .t3 { width: 94.6%; }
+  .t4 { width: 92.8%; }
+  .t5 { width: 91%; }
+  .t6 { width: 89.2%; }
+  .tower .layer { margin: 0 auto; }
+  @media (max-width: 720px) {
+    .tower .layer { width: 100%; }
+    .layer { grid-template-columns: 44px 1fr; }
+  }
+
+  .services {
+    margin-top: 14px; border: 1px dashed var(--rule-2); border-radius: 5px;
+    padding: 13px 18px; background: transparent;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+  }
+  .services .lbl {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-3); font-weight: 600; margin-right: 4px;
+  }
+
+  /* ── Spine flow ──────────────────────────────────────────────────────── */
+  .flow { display: flex; flex-wrap: wrap; gap: 0; margin: 26px 0 10px; align-items: stretch; }
+  .node {
+    flex: 1 1 130px; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 5px; padding: 12px 13px; display: flex; flex-direction: column; gap: 4px;
+    box-shadow: var(--shadow);
+  }
+  .node-i { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--teal); font-weight: 600; letter-spacing: .08em; }
+  .node-t { font-family: Archivo, sans-serif; font-weight: 600; font-size: 14.5px; line-height: 1.2; }
+  .node-d { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
+  .arrow {
+    flex: 0 0 26px; display: flex; align-items: center; justify-content: center;
+    color: var(--rule-2); font-family: "IBM Plex Mono", monospace; font-size: 15px;
+  }
+  @media (max-width: 780px) {
+    .flow { flex-direction: column; }
+    .arrow { flex: 0 0 22px; transform: rotate(90deg); }
+  }
+  .branch {
+    margin: 4px 0 0; border-left: 2px dashed var(--brick); padding: 4px 0 4px 18px;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  }
+  .branch .blabel {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--brick); font-weight: 600;
+  }
+  .bnode {
+    background: var(--brick-soft); border: 1px solid var(--brick); color: var(--ink);
+    border-radius: 4px; padding: 5px 10px; font-size: 13px;
+  }
+
+  /* ── Requirement cards ───────────────────────────────────────────────── */
+  .jobs { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 16px; margin-top: 26px; }
+  .job { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 20px; box-shadow: var(--shadow); }
+  .job-h { font-family: Archivo, sans-serif; font-weight: 700; font-size: 19px; margin: 0 0 3px; }
+  .job-who { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 13px; }
+  .reqs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .reqs li { display: grid; grid-template-columns: 40px 1fr; gap: 10px; font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+  .reqs code {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--teal);
+    background: var(--teal-soft); border-radius: 3px; padding: 2px 4px; height: fit-content;
+    text-align: center; letter-spacing: .02em;
+  }
+
+  /* ── Tables ──────────────────────────────────────────────────────────── */
+  .tbl-wrap { overflow-x: auto; margin: 24px 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 660px; font-size: 14px; }
+  th, td { text-align: left; padding: 11px 15px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-3); font-weight: 600;
+    background: var(--surface-2); border-bottom: 1px solid var(--rule-2);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; font-family: "IBM Plex Mono", monospace; }
+  .st { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; font-weight: 600; padding: 3px 7px; border-radius: 3px; white-space: nowrap; display: inline-block; }
+  .st-y { background: var(--moss-soft); color: var(--moss); border: 1px solid var(--moss); }
+  .st-p { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber); }
+  .st-n { background: var(--brick-soft); color: var(--brick); border: 1px solid var(--brick); }
+
+  /* ── Metric strip ────────────────────────────────────────────────────── */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(146px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; margin: 26px 0; }
+  .metric { background: var(--surface); padding: 16px 17px; }
+  .metric .v { font-family: Archivo, sans-serif; font-weight: 700; font-size: 27px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .metric .k { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); margin-top: 4px; line-height: 1.35; }
+  .metric.flag .v { color: var(--brick); }
+
+  /* ── Ranked moves ────────────────────────────────────────────────────── */
+  .move { display: grid; grid-template-columns: 46px 1fr; gap: 18px; padding: 20px 0; border-top: 1px solid var(--rule); }
+  .move-n { font-family: Archivo, sans-serif; font-weight: 700; font-size: 25px; color: var(--rule-2); line-height: 1; font-variant-numeric: tabular-nums; }
+  .move-t { font-family: Archivo, sans-serif; font-weight: 600; font-size: 17.5px; margin: 0 0 6px; letter-spacing: -.008em; }
+  .move-b { color: var(--ink-2); font-size: 14.5px; margin: 0 0 10px; max-width: 66ch; }
+  .move-m { display: flex; flex-wrap: wrap; gap: 6px; }
+  .meta { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; border: 1px solid var(--rule-2); color: var(--ink-3); border-radius: 3px; padding: 3px 7px; }
+  .meta.hot { border-color: var(--brick); color: var(--brick); }
+
+  ul.plain { padding-left: 20px; margin: 0 0 16px; max-width: 68ch; }
+  ul.plain li { margin-bottom: 7px; color: var(--ink-2); }
+  ul.plain li strong { color: var(--ink); }
+
+  footer.end { margin-top: 78px; padding-top: 22px; border-top: 2px solid var(--ink); font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 6px 20px; }
+
+  a { color: var(--teal); }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .layer, .node, .job { transition: border-color .18s ease; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="docline">
+      <span><b>ARCH-001</b></span>
+      <span>Revision 2</span>
+      <span>24 August 2026</span>
+      <span>Scope: <b>FSQA</b> — office excluded</span>
+      <span>Status: <b>Exploration</b></span>
+    </div>
+    <h1>Foundation<br>to Spire</h1>
+    <p class="standfirst">
+      What a food-safety and quality system should look like if it were built from the ground up — and an
+      honest reading of where Powder Ops FSQA already stands against it.
+    </p>
+    <div class="callout" style="margin:8px 0 0">
+      <span class="tag">What changed in Revision 2</span>
+      <p>
+        The Food Safety Plan (Protocol&nbsp;003&nbsp;V4) and Food Defense Plan (Protocol&nbsp;001&nbsp;V2) have
+        now been <strong>walked against the test in §1</strong>. Four changes follow, all evidence rather than
+        opinion: <strong>L2</strong> admits a <em>trigger</em> as well as a cadence; <strong>L1</strong> gains a
+        corollary about who owns a form number; <strong>§5</strong> gains the preventive-control reading;
+        <strong>§6</strong> gains the sharpest instance of the recurring defect this document is about; and
+        moves <strong>03</strong> and <strong>05</strong> gain the concrete cases the walk supplied. Revision 1's
+        argument is unchanged — the walk supported it rather than moved it.
+      </p>
+    </div>
+  </header>
+
+  <section class="sec">
+    <div class="sec-head"><span class="sec-num">1.0</span><h2>The thesis</h2></div>
+    <div class="prose">
+      <p class="lede">
+        Almost every compliance platform is built as a <em>collection of logs</em>. That is the wrong primitive,
+        and it is the source of nearly every recurring defect in this codebase.
+      </p>
+      <p>
+        A plant does not run on logs. It runs on a claim — <em>this is how we make food safely</em> — and on
+        evidence that the claim was honoured, every shift, by named people, on dated equipment, against written
+        limits. A log is just one view of that evidence. When logs are the primitive, each one grows its own
+        table, its own signature column, its own idea of what "done" means, and the system's job quietly becomes
+        keeping dozens of near-identical mechanisms in agreement with each other.
+      </p>
+      <p>
+        The right primitive is <strong>a single spine</strong>: a controlled statement of how the plant works,
+        an obligation generated from it, work performed against that obligation, a record produced <em>by</em>
+        that work, and a signature that closes it. Everything a user sees — a log, a queue, a dashboard, an
+        auditor's binder — is a lens onto that one spine.
+      </p>
+      <div class="callout">
+        <span class="tag">The test that decides the architecture</span>
+        <p>
+          Ask of any fact in the system: <strong>how many places could disagree about it?</strong> If the answer
+          is more than one, that is not a bug waiting to happen — it is a bug that has already happened and
+          simply hasn't been noticed yet.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><span class="sec-num">2.0</span><h2>Foundation to spire</h2></div>
+    <div class="prose">
+      <p>
+        Seven courses, each resting on the one below. A layer may only depend downward — the reason the tower
+        stands. Read it from the bottom.
+      </p>
+    </div>
+
+    <div class="tower">
+      <div class="layer t6">
+        <div class="layer-id">L6</div>
+        <div class="layer-name">Presentation — the spire</div>
+        <div class="layer-why">What an auditor, a customer or a certification body is shown. Retrieval, process maps, printable controlled copies, the traceability walk.</div>
+        <div class="layer-holds">
+          <span class="chip">auditor view</span><span class="chip">record retrieval</span>
+          <span class="chip">process maps</span><span class="chip">mock recall walk</span>
+          <span class="chip">controlled printing</span>
+        </div>
+        <div class="layer-rule"><b>Load-bearing rule</b>
+          The auditor view is the same records under a different lens — never a report assembled for the audit.
+          If it needs preparing, the layers beneath it failed.
+        </div>
+      </div>
+
+      <div class="layer t5">
+        <div class="layer-id">L5</div>
+        <div class="layer-name">Assurance — verification &amp; review</div>
+        <div class="layer-why">The second pair of eyes. Counter-signature, trending, internal audit, management review, effectiveness checks.</div>
+        <div class="layer-holds">
+          <span class="chip">QA counter-signature</span><span class="chip">review cadence</span>
+          <span class="chip">trending</span><span class="chip">internal audit</span>
+          <span class="chip">management review</span>
+        </div>
+        <div class="layer-rule"><b>Load-bearing rule</b>
+          Verification is a <em>state on the record</em>. Every queue is a query over that state — never a
+          separate list that can drift from it.
+        </div>
+      </div>
+
+      <div class="layer t4">
+        <div class="layer-id">L4</div>
+        <div class="layer-name">Evidence — the record</div>
+        <div class="layer-why">What survives the shift. One record shape: form number and revision, actor, event time, entry time, readings, attachments, signatures, exceptions.</div>
+        <div class="layer-holds">
+          <span class="chip">record spine</span><span class="chip">signature service</span>
+          <span class="chip">attachments</span><span class="chip">deviation → CAPA</span>
+          <span class="chip">late-entry honesty</span>
+        </div>
+        <div class="layer-rule"><b>Load-bearing rule</b>
+          A record is created by <em>completing work</em>, never by typing into a log. Direct entry exists only
+          as a named exception — back-dated, reasoned, and visibly marked.
+        </div>
+      </div>
+
+      <div class="layer t3">
+        <div class="layer-id">L3</div>
+        <div class="layer-name">Execution — work</div>
+        <div class="layer-why">The obligation reaches a person. One task object for every kind of work: scheduled, ad-hoc, corrective, or raised from a conversation.</div>
+        <div class="layer-holds">
+          <span class="chip">one task object</span><span class="chip">assignment &amp; routing</span>
+          <span class="chip">offline capture</span><span class="chip">evidence requirements</span>
+          <span class="chip">EN / ES</span>
+        </div>
+        <div class="layer-rule"><b>Load-bearing rule</b>
+          One completion path. Three ways to finish a task is three chances for the record it should have
+          produced to go unwritten.
+        </div>
+      </div>
+
+      <div class="layer t2">
+        <div class="layer-id">L2</div>
+        <div class="layer-name">Program — what must happen, and how often</div>
+        <div class="layer-why">Cadence bound to a controlled procedure and a responsible team. PM, sanitation, QA checks, calibration, EMP, internal audit, recall drills.</div>
+        <div class="layer-holds">
+          <span class="chip">schedules</span><span class="chip">obligation generator</span>
+          <span class="chip">ownership</span><span class="chip">missed-work rules</span>
+        </div>
+        <div class="layer-rule"><b>Load-bearing rule</b>
+          A schedule carries no wording of its own. It <em>references</em> the document that defines the work,
+          so re-issuing the document changes the work everywhere at once.
+        </div>
+        <div class="layer-rule"><b>Load-bearing rule · added in Revision 2</b>
+          A program may be a <em>trigger</em> rather than a cadence. Three of the Food Safety Plan's four
+          preventive controls fire per production run — "at the beginning of every run", "at the end of every
+          run", "at the beginning of every machine start up" — and every generator in the platform today is a
+          calendar. What fails this layer is a control that depends on somebody <em>deciding</em> to start it.
+        </div>
+      </div>
+
+      <div class="layer t1">
+        <div class="layer-id">L1</div>
+        <div class="layer-name">The controlled word — document control</div>
+        <div class="layer-why">SOPs, work instructions, forms, specifications, tolerances, limits, cadences. Versioned, approved, effective-dated, withdrawn — never edited in place.</div>
+        <div class="layer-holds">
+          <span class="chip">document registry</span><span class="chip">revisions</span>
+          <span class="chip">form register</span><span class="chip">acceptance criteria</span>
+          <span class="chip">change control</span><span class="chip">training linkage</span>
+        </div>
+        <div class="layer-rule"><b>Load-bearing rule</b>
+          Every limit the software enforces is a <em>value owned by a document revision</em>, not a constant in
+          code. Changing a tolerance is a document change, and the system must make that literally true.
+        </div>
+        <div class="layer-rule"><b>Corollary · added in Revision 2</b>
+          A form number belongs to <em>the plant</em>, not to the system that produces the record. FORM 413-1 is
+          Powder Ops' number for the batch production record and predates Keychain; which system generates it
+          today is a separate fact, free to change without the number changing.
+        </div>
+      </div>
+
+      <div class="layer t0">
+        <div class="layer-id">L0</div>
+        <div class="layer-name">Foundation — identity, subject, time</div>
+        <div class="layer-why">Who did it, what it was done to, and when. The bedrock every record above stands on, and the only layer with no upstream dependency.</div>
+        <div class="layer-holds">
+          <span class="chip">people &amp; grants</span><span class="chip">equipment / area / room</span>
+          <span class="chip">product / lot / MO</span><span class="chip">event time vs entry time</span>
+          <span class="chip">append-only audit</span>
+        </div>
+        <div class="layer-rule"><b>Load-bearing rule</b>
+          Event time and entry time are two different facts and both are always stored. A check done Monday and
+          recorded Thursday is a Monday record that says it was written on Thursday.
+        </div>
+      </div>
+    </div>
+
+    <div class="services">
+      <span class="lbl">Cross-cutting, every layer</span>
+      <span class="chip">identity &amp; access</span>
+      <span class="chip">audit trail</span>
+      <span class="chip">notification &amp; routing</span>
+      <span class="chip">offline / edge capture</span>
+      <span class="chip">bilingual surface</span>
+      <span class="chip">search &amp; retrieval</span>
+    </div>
+    <div class="prose" style="margin-top:18px">
+      <p style="font-size:14.5px;color:var(--ink-3)">
+        These six are not modules. They are services every layer calls, and each one is a place where a second
+        implementation quietly appears if nobody owns it.
+      </p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><span class="sec-num">3.0</span><h2>The spine, end to end</h2></div>
+    <div class="prose">
+      <p>
+        One path from a written procedure to an auditor's question. Every module in the plant is a specialisation
+        of this — not a parallel version of it.
+      </p>
+    </div>
+
+    <div class="flow">
+      <div class="node"><span class="node-i">01</span><span class="node-t">Controlled document</span><span class="node-d">Defines the work, the limits and the form it is recorded on.</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="node-i">02</span><span class="node-t">Program</span><span class="node-d">Binds that document to a cadence and an owning team.</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="node-i">03</span><span class="node-t">Obligation</span><span class="node-d">A dated instance: this, by this team, by this date.</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="node-i">04</span><span class="node-t">Work</span><span class="node-d">A person does it and captures what the form asks for.</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="node-i">05</span><span class="node-t">Record</span><span class="node-d">Written by the completion itself, stamped with form and revision.</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="node-i">06</span><span class="node-t">Verification</span><span class="node-d">A second pair of eyes signs, or sends it back.</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="node-i">07</span><span class="node-t">Retrieval</span><span class="node-d">Found by date, lot, equipment, person or form number.</span></div>
+    </div>
+
+    <div class="branch">
+      <span class="blabel">Out of spec, at any step</span>
+      <span class="bnode">Exception raised</span>
+      <span class="arrow" style="flex:0 0 20px">→</span>
+      <span class="bnode">Investigation</span>
+      <span class="arrow" style="flex:0 0 20px">→</span>
+      <span class="bnode">Product disposition</span>
+      <span class="arrow" style="flex:0 0 20px">→</span>
+      <span class="bnode">Corrective action</span>
+      <span class="arrow" style="flex:0 0 20px">→</span>
+      <span class="bnode">Effectiveness check</span>
+    </div>
+
+    <div class="prose" style="margin-top:26px">
+      <div class="callout">
+        <span class="tag">One exception spine, not one per module</span>
+        <p>
+          A failed tasting, an out-of-tolerance scale, a temperature excursion, a rejected receipt and a
+          contaminated line are the same shape of event: something was outside the written limit, product may be
+          affected, and somebody must decide. Building that path five times produces five subtly different
+          definitions of "closed".
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><span class="sec-num">4.0</span><h2>Requirements, by the three jobs it has to do</h2></div>
+    <div class="prose">
+      <p>
+        A compliance system serves three audiences who want opposite things. The requirements below are written
+        as tests — each one either passes or it doesn't.
+      </p>
+    </div>
+
+    <div class="jobs">
+      <div class="job">
+        <div class="job-h">Train</div>
+        <div class="job-who">New hire · cross-training · retrain on revision</div>
+        <ul class="reqs">
+          <li><code>T1</code>Every task links to the document that teaches it, in one tap, in the reader's language.</li>
+          <li><code>T2</code>Competency is a record, not a spreadsheet: person × document revision × date × evidence.</li>
+          <li><code>T3</code>Re-issuing a document raises retraining for everyone qualified on the old revision — automatically.</li>
+          <li><code>T4</code>The system knows when work is assigned to somebody untrained on it, and says so before the shift, not after the audit.</li>
+          <li><code>T5</code>A new hire can be productive on day one from the task list alone, without a person beside them.</li>
+        </ul>
+      </div>
+
+      <div class="job">
+        <div class="job-h">Operate</div>
+        <div class="job-who">Floor, supervisors, QA — every shift</div>
+        <ul class="reqs">
+          <li><code>O1</code>One screen answers "what do I owe today", per person, on a phone.</li>
+          <li><code>O2</code>A routine record takes under sixty seconds, gloves on, and never asks twice for the same fact.</li>
+          <li><code>O3</code>Capture works with no signal; approvals deliberately do not queue.</li>
+          <li><code>O4</code>Reporting an exception is faster than hiding one.</li>
+          <li><code>O5</code>Every refusal explains itself and names the way forward.</li>
+          <li><code>O6</code>Nothing that needs a human's attention lives only on a screen that human never opens.</li>
+        </ul>
+      </div>
+
+      <div class="job">
+        <div class="job-h">Present</div>
+        <div class="job-who">SQF / NSF auditor, customer, regulator</div>
+        <ul class="reqs">
+          <li><code>P1</code>Any record retrievable in under thirty seconds by date, lot, equipment, person or form number.</li>
+          <li><code>P2</code>Every figure on a dashboard opens the rows behind it, and they reconcile exactly.</li>
+          <li><code>P3</code>A gap is visible as a gap — never silently absent, never quietly back-filled.</li>
+          <li><code>P4</code>Each record names the form and revision it was made against, and keeps it when the form moves on.</li>
+          <li><code>P5</code>A mock recall runs end to end from live data inside the drill's own time limit.</li>
+          <li><code>P6</code>Nothing is prepared for the audit. The preparation is the operating discipline.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><span class="sec-num">5.0</span><h2>Where the platform stands today</h2></div>
+    <div class="prose">
+      <p>
+        Measured, not estimated — counted from the running schema and the source tree, FSQA scope only.
+      </p>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><div class="v">57</div><div class="k">FSQA tables</div></div>
+      <div class="metric"><div class="v">7,662</div><div class="k">FSQA records held</div></div>
+      <div class="metric"><div class="v">~50</div><div class="k">FSQA modules in nav</div></div>
+      <div class="metric"><div class="v">764</div><div class="k">API routes</div></div>
+      <div class="metric flag"><div class="v">34</div><div class="k">files that write a signature</div></div>
+    </div>
+
+    <div class="prose">
+      <p>
+        That last figure is the architecture, stated as a number. A signature is the most consequential write in
+        a compliance system — it is a person asserting they reviewed something — and today it is implemented in
+        thirty-four places. Each is defensible on its own. Together they are the reason "two mechanisms
+        disagreeing" keeps appearing in the defect history.
+      </p>
+      <p>
+        The layer-by-layer reading is genuinely mixed, and more of it is strong than the raw counts suggest:
+      </p>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Today</th><th>What is already right</th><th>What is missing</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>L0</strong> Foundation</td>
+            <td><span class="st st-y">Strong</span></td>
+            <td>One identity per person, granular module grants, append-only audit with actor/role/department, event-time vs entry-time honoured with reasons.</td>
+            <td>Subject identity is split — equipment, instruments, rooms and areas are four vocabularies for overlapping things.</td>
+          </tr>
+          <tr>
+            <td><strong>L1</strong> Controlled word</td>
+            <td><span class="st st-p">Partial</span></td>
+            <td>Registry, revisions, withdrawal with reason, form register, and a real change-control gate that parks unapproved definition changes.</td>
+            <td>Most limits still live in code (tolerances, temperature/humidity, cadences). Change control covers some, not all. Documents don't yet own the values the software enforces.</td>
+          </tr>
+          <tr>
+            <td><strong>L2</strong> Program</td>
+            <td><span class="st st-p">Partial</span></td>
+            <td>PM, sanitation, quality and document-review schedules all generate work; missed-work handling is thought through.</td>
+            <td>Four independent generators with four cadence models. A schedule holds its own step text rather than referencing a document.</td>
+          </tr>
+          <tr>
+            <td><strong>L3</strong> Execution</td>
+            <td><span class="st st-y">Strong</span></td>
+            <td><code>work_orders</code> is genuinely one task object — 2,230 rows covering PM, cleaning, QA checks, document review and chat-raised work. Offline capture, bilingual floor strings, one operator screen.</td>
+            <td>Three completion paths, one of which cannot satisfy the evidence gate. Quality schedules sit outside the task object.</td>
+          </tr>
+          <tr>
+            <td><strong>L4</strong> Evidence</td>
+            <td><span class="st st-n">Fragmented</span></td>
+            <td>The QMS spine is the proof the pattern works: ten record types, one table, one config, one editor, one permission rule.</td>
+            <td>Everything outside it has its own shape — sanitation, production, COA, scale, receiving, audit items. Signatures in 34 files. Completion writing a record was retrofitted, and had to be back-filled once already.</td>
+          </tr>
+          <tr>
+            <td><strong>L5</strong> Assurance</td>
+            <td><span class="st st-y">Strong</span></td>
+            <td>QA Review is exactly the right shape — one queue, seven sources, and signing calls each module's own function rather than writing columns itself.</td>
+            <td>Counts are computed per source; badge and queue have already disagreed once. Trending is thin.</td>
+          </tr>
+          <tr>
+            <td><strong>L6</strong> Presentation</td>
+            <td><span class="st st-p">Partial</span></td>
+            <td>Auditor view with process maps, form numbers derived at read time, drill-downs that reconcile to their headline figures.</td>
+            <td>No single retrieval surface across record types — "show me everything for lot L-101692" means visiting several modules.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <h3 class="move-t">The preventive controls, specifically <span style="font-weight:500;color:var(--ink-3)">— added in Revision 2</span></h3>
+      <p>
+        The table above reads the platform <strong>by layer</strong>. The plan walk reads it
+        <strong>by control</strong>, which is the reading an auditor actually takes — and it is harder.
+      </p>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>PC</th><th>Control</th><th>Program</th><th>Form</th><th>Record</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>#1</strong></td>
+            <td>ATP / pathogens — limit <strong>35 RLU</strong></td>
+            <td><span class="st st-p">Daily clean, not per run</span></td>
+            <td>111-01 → Keychain; 108-03 in app</td>
+            <td><span class="st st-n">Column exists, never graded, empty in every seeded row</span></td>
+          </tr>
+          <tr>
+            <td><strong>#2</strong></td>
+            <td>Allergen swab — no residual</td>
+            <td><span class="st st-n">Nothing fires at end of run</span></td>
+            <td>111-01 → Keychain</td>
+            <td><span class="st st-n">Boolean only</span></td>
+          </tr>
+          <tr>
+            <td><strong>#3</strong></td>
+            <td>Screens — 50 / 70 mesh</td>
+            <td><span class="st st-n">Nothing fires at machine start-up</span></td>
+            <td>Observations on BPR → Keychain</td>
+            <td><span class="st st-n">None</span></td>
+          </tr>
+          <tr>
+            <td><strong>#4</strong></td>
+            <td>X-ray — NFe 2&nbsp;mm, Fe 2&nbsp;mm, SS 4&nbsp;mm</td>
+            <td><span class="st st-n">Nothing generates the challenge or the 2–3 hourly check</span></td>
+            <td>413-1 (X-Ray) → Keychain</td>
+            <td><span class="st st-n">None</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>
+        <code>haccp_ccps</code> holds <strong>zero rows</strong>, and neither X-ray machine is linked to a CCP
+        though both sit in the equipment registry. The table is modelled almost field-for-field for the plan's
+        own chart.
+      </p>
+      <p>
+        The <strong>form</strong> leg is fine — those are the plant's numbers and always were. It is the
+        <strong>record</strong> leg that is empty in ReadyDoc for all four, and the <strong>program</strong> leg
+        that has nothing to hang a per-run obligation off. That is the state of L2 and L4, stated at the
+        altitude the audit asks about.
+      </p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><span class="sec-num">6.0</span><h2>The diagnosis</h2></div>
+    <div class="prose">
+      <p class="lede">
+        The defect history is the architecture review. Read the recurring bugs together and they are one bug.
+      </p>
+      <p>
+        QA inspections completing without filing their record. Cleaning logs with the same gap. Task titles and
+        record areas using different vocabularies for one check. A knife's status column disagreeing with its
+        sign-out log. Badge counts disagreeing with the queue they summarise. Two screens disagreeing about
+        whether a task exists. A weekly checklist carrying the annual work.
+      </p>
+      <p>
+        <strong>And the sharpest instance of all, found by the plan walk:</strong> the cleanliness of a
+        food-contact line before a run is recorded in two places — <code>sanitation_records.atp_reading</code>,
+        a number nothing grades, and <code>cleaning_events[].atp_swab</code>, a boolean. The plan states the
+        control as <strong>≤ 35 RLU</strong>. Neither mechanism carries that limit, so a 60 RLU reading files
+        as a pass and a swab that was never read files as a tick. One fact, two homes, and the number that
+        decides it lives in neither — a preventive control, not a badge count.
+      </p>
+      <p>
+        Every one is <strong>a fact that exists in more than one place</strong>. Not carelessness — the
+        predictable consequence of a module-shaped architecture, where each module reasonably implements the
+        parts it needs and the seams between them are where the truth splits in two.
+      </p>
+      <div class="callout">
+        <span class="tag">What follows from that</span>
+        <p>
+          The valuable refactors are not features. They are <em>consolidations</em>: take a fact that is
+          currently written in many places and give it exactly one owner. The codebase already does this well
+          in four places — the QMS spine, QA Review, the form registry, and derived readiness. Those are the
+          pattern to extend, not a new pattern to invent.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><span class="sec-num">7.0</span><h2>Recommended moves, in order</h2></div>
+    <div class="prose">
+      <p>
+        Ranked by value per unit of risk. The first three are worth doing regardless of anything else; the last
+        two only once the audit is behind you.
+      </p>
+    </div>
+
+    <div class="move">
+      <div class="move-n">01</div>
+      <div>
+        <h3 class="move-t" style="margin-top:0">One signature service</h3>
+        <p class="move-b">
+          A single module owns "person P asserts S about record R at time T", including revocation and the rule
+          about who may sign what. The thirty-four call sites become one. Do this first: it is contained, it
+          touches no schema, and every future consolidation gets easier once signatures have one shape.
+        </p>
+        <div class="move-m"><span class="meta">contained</span><span class="meta">no migration</span><span class="meta hot">highest value</span></div>
+      </div>
+    </div>
+
+    <div class="move">
+      <div class="move-n">02</div>
+      <div>
+        <h3 class="move-t">A record interface, before a record table</h3>
+        <p class="move-b">
+          Don't merge the tables — define what every record module must implement: <em>file, sign, revoke,
+          retrieve, describe</em>. Adopt it module by module. This buys the cross-cutting retrieval surface and
+          the honest counts without a single migration, and it is what makes a shared table optional later
+          rather than urgent.
+        </p>
+        <div class="move-m"><span class="meta">incremental</span><span class="meta">no migration</span><span class="meta">unblocks L6</span></div>
+      </div>
+    </div>
+
+    <div class="move">
+      <div class="move-n">03</div>
+      <div>
+        <h3 class="move-t">Move limits out of code and into documents</h3>
+        <p class="move-b">
+          Every tolerance, temperature limit, humidity threshold and cadence becomes a value owned by a document
+          revision, read at grading time. Change control already exists for a subset — extend it rather than
+          duplicating it. The audit question this answers is the sharpest one there is: <em>show me the approved
+          document that says 78°F, and show me that the system used it.</em>
+        </p>
+        <div class="move-m"><span class="meta">medium</span><span class="meta">extends change control</span><span class="meta hot">audit-facing</span></div>
+        <div class="callout" style="margin:18px 0 0">
+          <span class="tag">The pilot, named in Revision 2 — PC #1's 35 RLU</span>
+          <p>
+            The ideal first case, because the limit is <em>already</em> owned by an approved document revision
+            (Protocol&nbsp;003&nbsp;V4) — nothing has to be moved out of code. It was never in code.
+            <code>gradeReadings()</code> is the working precedent, the doctrine is written down ("a reading
+            outside tolerance can never be filed as a pass"), and <code>controlled.js</code> already parks an
+            unapproved change to an acceptance criterion. The same pass collapses the boolean
+            <code>atp_swab</code> into the graded reading, so move 06 gets a mirror column retired for free.
+            It lands on <strong>main</strong>, not the V2 branch: it changes live shared code.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="move">
+      <div class="move-n">04</div>
+      <div>
+        <h3 class="move-t">One retrieval surface</h3>
+        <p class="move-b">
+          A single query across every record type by date, lot, equipment, person and form number — one screen
+          that answers "everything about lot L-101692" without knowing which module holds it. Falls out almost
+          free once move 02 lands, and turns the mock recall from an exercise into a lookup.
+        </p>
+        <div class="move-m"><span class="meta">follows 02</span><span class="meta">auditor-facing</span></div>
+      </div>
+    </div>
+
+    <div class="move">
+      <div class="move-n">05</div>
+      <div>
+        <h3 class="move-t">Collapse the four schedule generators into one</h3>
+        <p class="move-b">
+          PM, quality schedules, document review and sanitation re-cleans each generate work their own way. One
+          generator, one cadence model, schedules referencing documents rather than carrying their own step
+          text. Worth real planning — this one moves live data.
+        </p>
+        <div class="move-m"><span class="meta">larger</span><span class="meta">touches live schedules</span><span class="meta">after the audit</span></div>
+        <div class="callout" style="margin:18px 0 0">
+          <span class="tag">What the walk added — and it does not move this up the list</span>
+          <p>
+            One cadence model is not enough. All four generators are calendars, and three of the plan's four
+            preventive controls fire <strong>per production run</strong> — so the one generator has to grow a
+            second kind of trigger, and there is currently no object in the system for "a run" to hang one off.
+            The nearest thing, a production entry, is filed at the <em>end</em> of the shift, after both
+            run-boundary controls should already have fired. This is the platform's highest-consequence work
+            sitting behind its most-deferred move, which is worth knowing and is not an argument for doing it
+            sooner. The record leg (move 03) is what an auditor asks for and is contained; the trigger leg is
+            the refinement, and it waits.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="move">
+      <div class="move-n">06</div>
+      <div>
+        <h3 class="move-t">Audit every mirror column, then delete or derive it</h3>
+        <p class="move-b">
+          A standing sweep rather than a project: find each column that duplicates a fact held elsewhere, and
+          either derive it at read time or make one writer own it. Knife status, NFP version and the product
+          readiness fields have each already produced this bug once, and the pattern for fixing it is
+          established.
+        </p>
+        <div class="move-m"><span class="meta">ongoing</span><span class="meta">low risk</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><span class="sec-num">8.0</span><h2>What not to do</h2></div>
+    <div class="prose">
+      <p><strong>Do not rebuild.</strong> That is the most important sentence in this document.</p>
+      <p>
+        This blueprint describes a target to refactor toward, not a system to start over on. The platform holds
+        7,662 live FSQA records, encodes several years of the plant's own vocabulary, and is two weeks from a
+        certification audit. A rewrite would trade a working system with known seams for a clean architecture
+        with unknown ones — and would lose the single most valuable asset in the codebase, which is not the code
+        at all but the accumulated record of <em>why</em> each rule is shaped the way it is.
+      </p>
+      <p>
+        Three further cautions, each learned here rather than imported:
+      </p>
+      <ul class="plain">
+        <li><strong>Don't generalise a module that only has one instance.</strong> A record interface earns its
+          keep across eight record types; a framework for one is a second thing to maintain.</li>
+        <li><strong>Don't consolidate a screen that is working.</strong> Modules that already print their form
+          number, or already reconcile their counts, are finished. Touching them before an audit buys nothing.</li>
+        <li><strong>Don't let the architecture erase the exceptions.</strong> Half the rules in this system exist
+          because the plant genuinely works that way — one tasting producing two records, a knife's state living
+          in the log and not the row, a clean recorded per event rather than per shift. A cleaner model that
+          cannot express those is a worse model.</li>
+      </ul>
+      <div class="callout">
+        <span class="tag">The order that actually matters</span>
+        <p>
+          Signatures, then a record interface, then limits into documents. Everything else can wait, and moves
+          05 and 06 should wait. If only one thing happens this quarter, make it the first.
+        </p>
+        <p style="margin-top:12px">
+          <em>Revision 2 qualifies this in one place only.</em> The walk found a preventive control whose limit
+          is unenforced today, and move 03's pilot for it is small, contained, and already has its document. If
+          the audit lands before the signature service does, do that pilot first — not because the ordering is
+          wrong, but because a stated critical limit that nothing enforces is the one finding on this list an
+          auditor can reach on their own.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="end">
+    <span>ARCH-001 Rev 2</span>
+    <span>Exploration — not a change request</span>
+    <span>Scope: FSQA only</span>
+    <span>Counts measured 21 Aug 2026 · plans walked 24 Aug 2026</span>
+  </footer>
+
+</div>
