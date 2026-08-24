@@ -618,7 +618,23 @@ const SANITATION_COLUMNS = [
 
 export default function SanitationPanel() {
   const { user } = useAuth() || {};
-  const { data: records, loading, refresh } = useApiGet('/sanitation');
+  // FILTER ON THE SERVER, NOT INSIDE THE CAP.
+  //
+  // This fetched a bare /sanitation — the newest 500 records — and rendered the
+  // first 100 of them. On the plant's real log that meant 106 restroom cleans
+  // existed, 70 reached the page, and TEN were on screen. "Where are all the
+  // others going?" is the question that produced, and the honest answer was
+  // that they were never asked for. The endpoint has always supported area and
+  // date filters; the panel simply never used them, so there was no way to ask
+  // for one area's history at all.
+  const [filters, setFilters] = useState({ area: '', from: '', to: '' });
+  const query = new URLSearchParams(
+    Object.entries(filters).filter(([, v]) => v)).toString();
+  // A filtered view raises the bound: somebody asking for one area wants that
+  // area's history, not the newest few hundred rows of it.
+  const { data: records, loading, refresh } = useApiGet(
+    `/sanitation${query ? `?${query}&limit=2000` : ''}`, [query]);
+  const { data: areaList } = useApiGet('/structure/lists/sanitation_areas');
   // Newest first by default — a cleaning log is read from today backwards.
   const { sorted, sortCol, sortDir, toggleSort } = useTableSort(records, SANITATION_COLUMNS, 'performed_at', 'desc');
   // SORT BEFORE THE CAP. useCappedList renders the first 100; sorting after it
@@ -679,6 +695,45 @@ export default function SanitationPanel() {
           className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
           <Plus size={16} /> New Record
         </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-wrap items-end gap-2">
+        <div className="min-w-[12rem] flex-1">
+          <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Area</label>
+          <select value={filters.area} onChange={e => setFilters(f => ({ ...f, area: e.target.value }))}
+            className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">All areas</option>
+            {/* Whatever the log actually holds, not only what the managed list
+                currently offers — a retired area's history must stay findable,
+                the same rule the Production Log's retired rooms follow. */}
+            {[...new Set([
+              ...((areaList?.options || []).map(o => o.label || o.value)),
+              ...((records || []).map(r => r.area)),
+            ].filter(Boolean))].sort().map(a => <option key={a} value={a}>{areaLabel(a)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-gray-500 mb-0.5">From</label>
+          <input type="date" value={filters.from} onChange={e => setFilters(f => ({ ...f, from: e.target.value }))}
+            className="px-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-gray-500 mb-0.5">To</label>
+          <input type="date" value={filters.to} onChange={e => setFilters(f => ({ ...f, to: e.target.value }))}
+            className="px-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        {query && (
+          <button type="button" onClick={() => setFilters({ area: '', from: '', to: '' })}
+            className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900">Clear</button>
+        )}
+        <p className="w-full text-[11px] text-gray-500">
+          {(records || []).length} record{(records || []).length === 1 ? '' : 's'}
+          {query ? ' matching' : ' — most recent first'}
+          {/* Say when the view is bounded. A list silently showing its newest
+              500 of 3,000 reads as the whole log. */}
+          {(records || []).length >= (query ? 2000 : 500)
+            ? ' · showing the most recent only — narrow the dates to see further back' : ''}
+        </p>
       </div>
 
       <AreaNormalizeStrip onDone={refresh} />
