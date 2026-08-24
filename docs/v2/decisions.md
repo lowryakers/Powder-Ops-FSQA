@@ -167,3 +167,70 @@ for some, not for others — and a good thing to settle while the plans are bein
 The standing single point of failure is that one person owns the software. No architecture fixes that;
 the mitigations are the boring ones — the CI that exists, written-down decisions (this file and
 `CLAUDE.md`), and eventually a second person who can deploy.
+
+---
+
+## D-008 · 2026-08-24 · decided — Promote move 06 (mirror columns) above move 05, and widen it
+
+`architecture.md` ranks the six moves with "collapse the four schedule generators" at 05 and "audit every
+mirror column" at 06, both deferred until after certification. **Move 06 comes first, and it is bigger than
+the file describes.**
+
+Three instances of the same defect surfaced in one week of maintenance, all found by measurement rather
+than by reading code, and none of them a *column*:
+
+1. **`batch-complete` filed no record.** Completing tasks in bulk closed the work order and never wrote
+   the sanitation or QA inspection record. The fix for "completing a QA inspection must file its record"
+   had been applied to `complete-and-recur` and never carried across. Restroom, breakroom, light
+   inspection and temp/humidity checks ticked off in bulk left their logs empty.
+2. **The backfill strip was on the wrong screen.** A missing *cleaning* record was reported on QA
+   Inspections, which the cleaning team never opens, while the Sanitation log showed nothing.
+3. **The 72-hour re-clean rule read the wrong table.** `lastCleanByArea` read `sanitation_records` only,
+   while the production floor records room cleans as `cleaning_events` on the production entry — the
+   deliberate "a clean is an EVENT, not a shift attribute" decision. So every production room read
+   `no_clean_on_record` forever and the rule had **never fired**: eighteen rooms tracked, zero flagged,
+   zero tasks ever generated.
+
+**What this changes about the move.** "Audit every mirror column" is too narrow a name for the problem.
+The unit is not a column, it is **a fact with more than one writer or more than one reader**:
+
+- a fact written in two places (`sanitation_records` vs `production_entries.cleaning_events`);
+- a fact read by a rule that knows only one of its sources (the 72-hour clock);
+- a fact acted on by two code paths where only one was fixed (the two completion paths);
+- a fact reported on a screen the people who own it never open (the backfill strip).
+
+So the move becomes: **for every derived fact, enumerate its writers and its readers, and make the set
+complete.** That is a survey, not a refactor, and it can begin immediately — it needs no migration and no
+branch. Its output is a list, which is exactly what Track B can produce without touching live code.
+
+**Why above 05.** The schedule-generator collapse is a large change to live scheduling that moves data.
+This one finds defects that are already costing compliance records today, and each fix is small and local.
+Value per unit of risk is not close.
+
+**Method that worked, worth repeating.** Every one of the three was found by querying the
+production-scale copy and comparing what a screen shows to what the tables hold — never by reading the
+code and reasoning about it. Two of them looked like configuration problems (a missing module grant, a
+paused schedule) until measured. **Measure before asserting a cause**; the first plausible explanation was
+wrong in both cases.
+
+## D-009 · 2026-08-24 · decided — A program may be a trigger, not a cadence
+
+Raised by Track B while walking the preventive controls: D-002's test assumes every control resolves to a
+**cadence** ("a program that generates dated work"). That is wrong for a whole class of them. Receiving,
+sign-outs, film inspection and disposal are **event-driven** — they happen when a truck arrives, when
+somebody takes a knife, when a pallet is rejected — and no schedule should be inventing dated work for
+them.
+
+So the D-002 test reads, corrected:
+
+> Every preventive control named in the Food Safety Plan should resolve to a program — a **cadence** or a
+> **trigger** — that produces dated work or a dated record, and a numbered form that catches it.
+
+This also refines `architecture.md` L2, which currently says "cadence bound to a controlled procedure".
+A program binds a controlled procedure to **an obligation-raising rule**, and a cadence is only one kind.
+The 72-hour re-clean is the worked example of the other kind, and D-008 is what happens when a trigger's
+inputs are incomplete: the obligation is simply never raised, silently, forever.
+
+**Do not "fix" this by giving event-driven controls a fake cadence.** A monthly schedule for "receiving
+inspection" would generate work nobody owes and mask the real question, which is whether every arrival
+produced a record.
