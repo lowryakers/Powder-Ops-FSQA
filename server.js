@@ -103,6 +103,7 @@ import { seedReferenceLibrary } from './server/reference-seed.js';
 import { seedCertifications } from './server/cert-seed.js';
 import { importPaperInternalAudits } from './server/internal-audit-import.js';
 import { importPaperEvacuations } from './server/evacuation-import.js';
+import { importDrillTraining } from './server/drill-training-import.js';
 import { seedBannedSubstanceSopDraft } from './server/banned-substance-sop-seed.js';
 import { backfillFilmDrafts } from './server/film-draft-backfill.js';
 import { backfillPartnerDocLines } from './server/partner-doc-backfill.js';
@@ -1069,6 +1070,10 @@ try {
   // The four signed Form 501-02 evacuation headcount sheets (one-time, keyed on
   // the event date so a hand-corrected record is never overwritten).
   importPaperEvacuations(db);
+  // The signed FORM 500-03 acknowledgement sheets from the 10/15/2025 fire
+  // drill — the training half of the same event (one-time, idempotent on
+  // person + topic + date).
+  importDrillTraining(db);
   // Controlled documents and the DCR log start hidden in the auditor binder —
   // the plant is presenting those on paper. One-time; the toggle is in
   // Settings → Shareable Links and whatever is set there wins from then on.
