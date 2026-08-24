@@ -157,6 +157,22 @@ for (const [route, file] of [
   app.get(route, (_req, res) => res.sendFile(path.join(LEGAL_DIR, file)));
 }
 
+// THE BRAND MARK HAS ONE FILE, AND THE PDFs ALREADY OWN IT.
+//
+// server/assets/powder-ops-logo.jpg is what the COA and every other pdfkit
+// export prints. The sign-in screen and the visitor kiosk were drawing a
+// hand-built SVG approximation of it instead, so a certificate going to a
+// customer and the screen an employee signs in on carried two different logos —
+// and correcting one left the other wrong. Serving the same bytes to the
+// browser means there is nothing to keep in step.
+//
+// Public and ahead of the auth middleware: it is on the sign-in screen and on
+// the lobby tablet, both of which are seen before anybody has a session.
+app.get('/brand/logo.jpg', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(__dirname, 'server', 'assets', 'powder-ops-logo.jpg'));
+});
+
 // Intranet launcher: the bare landing page on the launcher hostname
 // (start.powder-ops.com by default) is the workspace picker, not the ReadyDoc
 // app. Only that one bare request gets the launcher — everything else on the

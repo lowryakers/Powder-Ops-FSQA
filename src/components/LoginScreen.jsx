@@ -175,10 +175,12 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          {/* The plant's own mark, not a generic shield. `public/logo.svg` is the
-              single copy — the visitor kiosk reads the same file, so replacing
-              it changes both and neither can drift. */}
-          <img src="/logo.svg" alt="Powder Ops" className="h-24 mx-auto mb-4"
+          {/* THE SAME FILE THE COA PRINTS. `/brand/logo.jpg` serves
+              server/assets/powder-ops-logo.jpg, which is the mark on every
+              exported certificate — so the logo a customer receives and the one
+              an employee signs in under cannot be two different pictures. This
+              used to point at a hand-drawn SVG approximation. */}
+          <img src="/brand/logo.jpg" alt="Powder Ops" className="h-28 sm:h-32 mx-auto mb-4"
             onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           <h1 className="text-2xl font-bold text-gray-900">ReadyDoc</h1>
           <p className="text-sm text-gray-500 mt-1">Powder Ops · FSQA &amp; Compliance</p>
