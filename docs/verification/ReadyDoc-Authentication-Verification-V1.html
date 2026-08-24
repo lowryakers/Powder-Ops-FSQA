@@ -1,0 +1,199 @@
+<title>Authentication Verification</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#5b6470; --faint:#8b939e; --rule:#dfe3e8;
+    --ground:#fbfaf8; --card:#ffffff; --band:#f2f0ec;
+    --met:#1c6b45; --unmet:#a52222; --accent:#1c4f6b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#e8eaed; --muted:#a3acb8; --faint:#7c8794; --rule:#333a42;
+      --ground:#15181c; --card:#1c2026; --band:#242a31;
+      --met:#5fca97; --unmet:#f08a8a; --accent:#7fb8d6;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e8eaed; --muted:#a3acb8; --faint:#7c8794; --rule:#333a42;
+    --ground:#15181c; --card:#1c2026; --band:#242a31;
+    --met:#5fca97; --unmet:#f08a8a; --accent:#7fb8d6;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--ground);color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+    font-size:16px;line-height:1.6;margin:0;padding:0 1.25rem 5rem;-webkit-text-size-adjust:100%}
+  .sheet{max-width:52rem;margin:0 auto;background:var(--card);border:1px solid var(--rule);
+    padding:clamp(1.5rem,4vw,3.25rem);margin-top:2rem;border-radius:2px}
+  .eyebrow{font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);
+    font-weight:600;margin:0 0 .5rem}
+  h1{font-family:Newsreader,Georgia,serif;font-weight:600;font-size:clamp(1.7rem,4.4vw,2.4rem);
+    line-height:1.2;margin:0 0 1.5rem;text-wrap:balance;letter-spacing:-.01em}
+  h2{font-family:Newsreader,Georgia,serif;font-weight:600;font-size:1.3rem;line-height:1.3;
+    margin:2.4rem 0 .7rem;padding-top:1.1rem;border-top:1px solid var(--rule);text-wrap:balance}
+  h3{font-size:.8rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--muted);margin:1.5rem 0 .5rem}
+  p{margin:0 0 .95rem;max-width:64ch}
+  ul{margin:0 0 1.1rem;padding-left:1.15rem;max-width:64ch}
+  li{margin-bottom:.5rem}
+  li::marker{color:var(--faint)}
+  .note{font-size:.9rem;color:var(--muted);border-left:2px solid var(--rule);
+    padding-left:.9rem;margin:1.2rem 0}
+  table{border-collapse:collapse;width:100%;font-size:.85rem}
+  .meta{margin-bottom:1.5rem}
+  .meta th{text-align:left;font-weight:600;width:34%;background:var(--band);color:var(--muted);
+    font-size:.78rem}
+  .meta th,.meta td{border:1px solid var(--rule);padding:.42rem .6rem;vertical-align:top}
+  .meta td{font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto;margin-bottom:.4rem}
+  .results{min-width:36rem}
+  .results th{background:var(--band);color:var(--muted);text-align:left;font-size:.74rem;
+    letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+  .results th,.results td{border:1px solid var(--rule);padding:.42rem .6rem;vertical-align:top}
+  .results .ref{font-family:'IBM Plex Mono',ui-monospace,monospace;font-weight:500;
+    white-space:nowrap;color:var(--accent)}
+  .results .obs{color:var(--muted);font-size:.8rem}
+  .results .met,.results .unmet{font-weight:600;white-space:nowrap}
+  .results .met{color:var(--met)} .results .unmet{color:var(--unmet)}
+  .sig{margin-top:.5rem}
+  .sig th{background:var(--band);color:var(--muted);text-align:left;font-size:.74rem;
+    letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+  .sig th,.sig td{border:1px solid var(--rule);padding:.5rem .6rem}
+  .sig tbody th{text-transform:none;letter-spacing:0;font-size:.85rem;color:var(--ink);width:30%}
+  .sig tbody td{height:2.9rem}
+  .foot{margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--rule);
+    font-size:.75rem;color:var(--faint)}
+  @media print{
+    body{background:#fff;padding:0}
+    .sheet{border:0;margin:0;padding:0;max-width:none}
+    h2{break-after:avoid} tr{break-inside:avoid}
+  }
+</style>
+<div class="sheet">
+  <p class="eyebrow">Powder Ops · ReadyDoc</p>
+  <h1>Authentication and Access Control Verification</h1>
+  <table class="meta"><tbody>
+    <tr><th scope="row">Document</th><td>Authentication and Access Control Verification</td></tr>
+    <tr><th scope="row">Revision</th><td>V1</td></tr>
+    <tr><th scope="row">Document number</th><td>To be assigned by Document Control</td></tr>
+    <tr><th scope="row">System verified</th><td>ReadyDoc — Powder Ops FSQA platform</td></tr>
+    <tr><th scope="row">Software version</th><td>Build c0561ce (24 August 2026)</td></tr>
+    <tr><th scope="row">Date of verification</th><td>24 August 2026</td></tr>
+    <tr><th scope="row">Result</th><td>22 acceptance criteria executed — 22 met, 0 not met</td></tr>
+    <tr><th scope="row">Verified by</th><td>&nbsp;</td></tr>
+    <tr><th scope="row">Reviewed and approved by</th><td>&nbsp;</td></tr>
+  </tbody></table>
+  <h2>1. Purpose</h2>
+<p>SQF and NSF both require that a record be attributable — that a signature, a sign-off or a completed check means the named person did it. That requirement holds only if a person’s account admits that person and nobody else.</p>
+<p>This document is the record that the requirement was verified rather than assumed. It states how sign-in works in ReadyDoc, sets out the criteria that had to be met, and reports what was measured when each one was tested against running software.</p>
+<h2>2. Scope</h2>
+<h3>Verified here</h3>
+<ul><li>Signing in with a password, and being refused without one.</li><li>Setting a password for the first time, including on an account nobody has ever signed into.</li><li>Changing a password, and the one-year expiry.</li><li>Sessions: what a signed-in session is, what it can be pointed at, and when it ends.</li><li>Lockout after repeated wrong passwords.</li><li>Attribution — that a record carries the name of whoever was actually signed in.</li><li>Deactivating an account.</li></ul>
+<h3>Deliberately not verified here</h3>
+<p>Named so the boundary of this record is clear, not because these are unexamined:</p>
+<ul><li>Transport encryption (HTTPS). Provided by the hosting platform, not by this application.</li><li>Module permissions — who may do what once signed in. That is a separate question from who you are, and it has its own controls and its own records.</li><li>The public kiosk and link paths: the QR-code forms, the visitor tablet, the flavour-approval and nutrition-panel approval links, the auditor pass, and the partner portal. Each is unauthenticated on purpose — they sit in front of people who have no account — and each is narrowed inside its own handler to the one thing it may do. They are listed in a single place in the software so the set cannot grow unnoticed.</li></ul>
+<h2>3. How sign-in works</h2>
+<p>The design being verified, stated plainly:</p>
+<ul><li>Every person has their own account and chooses their own password, minimum eight characters. There are no shared accounts and no shared sign-in code.</li><li>Passwords are never stored. What is stored is a scrypt hash with a 16-byte random salt generated per password. There is no path through the software that can return a password, to an administrator or to anyone else — a forgotten password is replaced, never looked up.</li><li>The previous PIN sign-in has been retired. A PIN now survives only as a one-time proof of identity for staff who had one before the change.</li><li>Setting a first password requires an invitation: either that PIN, or a setup code an administrator issues and hands over. The code is single use and expires. The person still chooses their own password — the code establishes only that somebody with authority invited them.</li><li>Signing in issues a random 256-bit session token, valid for 30 days, held server-side and revocable. Deactivating an account destroys the sessions it already had.</li><li>Every entry, signature and edit is attributed to the account behind the token — never to a name supplied in the request.</li><li>Five wrong passwords lock that name out for fifteen minutes, correct password included.</li><li>A password must be changed at least once a year. This is enforced by the server on every request, not by the sign-in screen, so a browser tab left open since before the lapse is caught too.</li><li>Every refused sign-in is written to the audit log with the name that was tried and the reason it failed.</li></ul>
+<h2>4. Method</h2>
+<p>Executed, not inspected. The verification drives a running copy of the software over the same interface a browser uses, and reads the database directly where the question is about how something is stored. Nothing in the results below is an opinion about the code; each line is what the system actually returned.</p>
+<p>The protocol is held in the repository as scripts/verify-auth.mjs so that it can be repeated, unchanged, against any future release. It was run against a copy of the production database. Two fixture accounts are created by the protocol itself and used for the sign-in tests, so no real employee’s password is touched by running it.</p>
+<p>The raw output of the run reported here is retained beside this document as auth-verification-2026-08-24.json.</p>
+<h2>5. Acceptance criteria and results</h2>
+<p>22 criteria were executed on 24 August 2026. 22 were met; none failed.</p>
+<div class="scroll"><table class="results">
+<thead><tr><th>Ref</th><th>What was tested</th><th>What happened</th><th>Result</th></tr></thead>
+<tbody><tr>
+<td class="ref">AC-01</td><td>A user signing in with their own password is admitted</td><td class="obs">HTTP 200; session user = Alba Reyes</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-02</td><td>Marco's password does not sign anyone in as Alba</td><td class="obs">HTTP 401; Invalid password</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-03</td><td>A guessed password is refused</td><td class="obs">HTTP 401</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-04</td><td>Knowing a colleague’s name is not enough to sign in as them</td><td class="obs">HTTP 400; needs_password_setup = false; token issued = false</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-05</td><td>An account that does not exist cannot be signed into</td><td class="obs">HTTP 401</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-06</td><td>Repeated wrong passwords lock the account against further attempts</td><td class="obs">Locked on attempt 6 (HTTP 429)</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-07</td><td>A locked account stays locked even for the right password</td><td class="obs">HTTP 429</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-08</td><td>The password is stored only as a salted hash, never readable</td><td class="obs">plaintext matches in DB = 0; stored form = 5b709036dba13cd0513faf19… (2 parts, 161 chars)</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-09</td><td>Plant data cannot be read without a valid session token</td><td class="obs">no token → HTTP 401; forged token → HTTP 401</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-10</td><td>A session resolves to the person who signed in, and cannot be pointed at another</td><td class="obs">/users/me returned Alba Reyes (operator)</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-11</td><td>A record is attributed to the signed-in user even if the request claims someone else</td><td class="obs">audit actor = Alba Reyes; actor_id = Alba's id</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-12</td><td>A password cannot be changed without proving the current one</td><td class="obs">HTTP 401</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-13</td><td>One user cannot claim a colleague's account that already has a password</td><td class="obs">HTTP 400; Password already set. Sign in with your password.</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-14</td><td>An account that has never been signed into cannot be claimed without an invitation</td><td class="obs">HTTP 403 — This account has no setup code yet. Ask an admin to issue one for you.</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-14b</td><td>The public login type-ahead does not expose account identifiers</td><td class="obs">fields returned: name, username, department</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-14c</td><td>A guessed setup code is refused</td><td class="obs">HTTP 401</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-14d</td><td>The person the code was issued to can set their own password with it</td><td class="obs">HTTP 200; session = Nina Fresh</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-14e</td><td>A setup code cannot be used twice</td><td class="obs">HTTP 400; Password already set. Sign in with your password.; stored code afterwards = none</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-17</td><td>Every refused sign-in is written to the audit log, named and reasoned</td><td class="obs">9 refusal(s) recorded; reasons seen: bad_password, no_setup_code_issued, bad_setup_code, unknown_user</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-18</td><td>A password past its one-year life stops working until it is changed</td><td class="obs">plant data → HTTP 403 (password_expired = true); own account → HTTP 200</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-15</td><td>A deactivated account cannot sign in</td><td class="obs">HTTP 401</td>
+<td class="met">Met</td>
+</tr><tr>
+<td class="ref">AC-16</td><td>Deactivating an account ends the sessions it already had</td><td class="obs">HTTP 401</td>
+<td class="met">Met</td>
+</tr></tbody></table></div>
+<p class="note">AC-14b through AC-14e cover the first-sign-in path in detail. That is deliberate: it is the one place where somebody who is not yet a user has to be let in, and it is where this verification found a defect.</p>
+<h2>6. Finding raised during this verification</h2>
+<p>AC-14 did not pass when it was first executed. It is recorded here in full, because a verification that found something and corrected it is better evidence than one that found nothing.</p>
+<h3>What was found</h3>
+<p>An account that had been created but never signed into could be taken over by anybody who knew the person’s name — without signing in, and without any credential at all. Two requests did it: the sign-in screen’s name look-up, which is necessarily public, returned the account identifier; and the set-a-first-password step asked for nothing further when the account had no PIN to confirm. It was demonstrated end to end against a running server, and a working session was issued for a supervisor account to a caller who had proved nothing.</p>
+<p>This was not theoretical. Accounts created by the training-log import and by the message-history import land in exactly that state — real, active, and never yet signed into.</p>
+<h3>What was changed</h3>
+<ul><li>Setting a first password now requires one of two proofs and never neither: the person’s PIN, or a setup code an administrator issued. A wrong or missing code is refused and recorded in the audit log as a failed sign-in.</li><li>The setup code is single use and expires. It is cleared the moment it is spent.</li><li>The public name look-up no longer returns account identifiers. Either change alone closes the route; both were made, so neither depends on the other.</li><li>Every account that was claimable the moment before the change was issued a code, once, so that nobody mid-rollout was locked out by the fix. An administrator reads it from Settings and hands it over.</li><li>The administrator password reset now issues and displays a setup code, rather than leaving the account open to whoever asks for it first.</li></ul>
+<h3>Re-test</h3>
+<p>The full protocol was re-executed after the correction. The attempt that had previously succeeded was refused, and recorded in the audit log as a failed sign-in with the reason given. All 22 criteria were then met (AC-14, AC-14b, AC-14c, AC-14d and AC-14e in section 5).</p>
+<h2>7. Conclusion</h2>
+<p>On the evidence of the run reported in section 5, ReadyDoc’s sign-in controls meet the 22 acceptance criteria set out for them. Specifically:</p>
+<ul><li>A person cannot sign in as a colleague. Knowing a name is not enough; another person’s password is not enough; and repeated guessing locks the account rather than eventually succeeding.</li><li>Passwords are not held in a form anyone can read, and cannot be retrieved by anybody, administrators included.</li><li>A record is attributed to whoever was actually signed in, even when the request that created it claims a different name.</li><li>An account that has never been used cannot be claimed by a stranger — the defect that allowed this was found by this verification and corrected before it was closed.</li></ul>
+<p>Records created in ReadyDoc can therefore be relied upon as attributable to the person named on them.</p>
+<h2>8. Limitations</h2>
+<p>Stated so that the record does not claim more than was shown:</p>
+<ul><li>Sign-in is a single factor. A password that a person writes down, shares or re-uses elsewhere is outside anything the software can verify. That risk is managed by policy and training, not by this control.</li><li>The lockout counter is held in the running application rather than in the database, so it is reset if the application restarts. It raises the cost of guessing; it is not a defence against a patient attacker, and it is not relied on as one. Every attempt is logged either way.</li><li>A session lasts thirty days on the device it was issued to. A lost or shared device is a physical control, not a software one; the answer is to deactivate the account, which this verification confirms ends existing sessions immediately (AC-16).</li><li>This verification covers the software. It does not cover the hosting platform, the network, or the devices the software is used on.</li></ul>
+<h2>9. When this must be repeated</h2>
+<ul><li>Before an external audit, so the record on file describes the software in use.</li><li>After any change to sign-in, password handling or session handling.</li><li>Annually, whether or not anything changed.</li></ul>
+<p>Repeating it is running one command. The protocol is versioned with the software, so the criteria cannot quietly drift away from what is being tested.</p>
+<h2>10. Approval</h2>
+<p>This verification is complete and its result accepted:</p>
+<table class="sig">
+<thead><tr><th>Role</th><th>Name and signature</th><th>Date</th></tr></thead>
+<tbody><tr><th scope="row">Verified by</th><td></td><td></td></tr><tr><th scope="row">Quality Assurance</th><td></td><td></td></tr><tr><th scope="row">Document Control</th><td></td><td></td></tr></tbody></table>
+  <p class="foot">Uncontrolled when printed — verify the revision against the registry.
+    Generated from the recorded run auth-verification-2026-08-24.json.</p>
+</div>

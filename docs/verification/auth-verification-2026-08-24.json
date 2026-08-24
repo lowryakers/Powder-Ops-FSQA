@@ -1,0 +1,156 @@
+[
+ {
+  "id": "AC-01",
+  "title": "A user signing in with their own password is admitted",
+  "expected": "HTTP 200 and a session issued for that user",
+  "actual": "HTTP 200; session user = Alba Reyes",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-02",
+  "title": "Marco's password does not sign anyone in as Alba",
+  "expected": "HTTP 401, no session",
+  "actual": "HTTP 401; Invalid password",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-03",
+  "title": "A guessed password is refused",
+  "expected": "HTTP 401, no session",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-04",
+  "title": "Knowing a colleague’s name is not enough to sign in as them",
+  "expected": "Refused, and NOT offered a password-setup route for an account that already has one",
+  "actual": "HTTP 400; needs_password_setup = false; token issued = false",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-05",
+  "title": "An account that does not exist cannot be signed into",
+  "expected": "HTTP 401",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-06",
+  "title": "Repeated wrong passwords lock the account against further attempts",
+  "expected": "Locked out after a small number of attempts (HTTP 429)",
+  "actual": "Locked on attempt 6 (HTTP 429)",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-07",
+  "title": "A locked account stays locked even for the right password",
+  "expected": "HTTP 429 while the lockout is in force",
+  "actual": "HTTP 429",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-08",
+  "title": "The password is stored only as a salted hash, never readable",
+  "expected": "No plaintext anywhere in the users table; stored value is salt:hash",
+  "actual": "plaintext matches in DB = 0; stored form = 5b709036dba13cd0513faf19… (2 parts, 161 chars)",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-09",
+  "title": "Plant data cannot be read without a valid session token",
+  "expected": "HTTP 401 with no token and with a forged token",
+  "actual": "no token → HTTP 401; forged token → HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-10",
+  "title": "A session resolves to the person who signed in, and cannot be pointed at another",
+  "expected": "The session returns Alba, regardless of what the caller claims",
+  "actual": "/users/me returned Alba Reyes (operator)",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-11",
+  "title": "A record is attributed to the signed-in user even if the request claims someone else",
+  "expected": "Audit trail names Alba, not the 'Marco Diaz' sent in the body",
+  "actual": "audit actor = Alba Reyes; actor_id = Alba's id",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-12",
+  "title": "A password cannot be changed without proving the current one",
+  "expected": "HTTP 401",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-13",
+  "title": "One user cannot claim a colleague's account that already has a password",
+  "expected": "Refused",
+  "actual": "HTTP 400; Password already set. Sign in with your password.",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-14",
+  "title": "An account that has never been signed into cannot be claimed without an invitation",
+  "expected": "Refused — a first password needs a PIN or an admin-issued setup code",
+  "actual": "HTTP 403 — This account has no setup code yet. Ask an admin to issue one for you.",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-14b",
+  "title": "The public login type-ahead does not expose account identifiers",
+  "expected": "Names only, no id",
+  "actual": "fields returned: name, username, department",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-14c",
+  "title": "A guessed setup code is refused",
+  "expected": "HTTP 401",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-14d",
+  "title": "The person the code was issued to can set their own password with it",
+  "expected": "HTTP 200 and a session for that account",
+  "actual": "HTTP 200; session = Nina Fresh",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-14e",
+  "title": "A setup code cannot be used twice",
+  "expected": "Refused once spent, and the code is cleared from the account",
+  "actual": "HTTP 400; Password already set. Sign in with your password.; stored code afterwards = none",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-17",
+  "title": "Every refused sign-in is written to the audit log, named and reasoned",
+  "expected": "Refusals appear with the name tried and why it failed",
+  "actual": "9 refusal(s) recorded; reasons seen: bad_password, no_setup_code_issued, bad_setup_code, unknown_user",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-18",
+  "title": "A password past its one-year life stops working until it is changed",
+  "expected": "Plant data refused with password_expired; only the change-password path stays open",
+  "actual": "plant data → HTTP 403 (password_expired = true); own account → HTTP 200",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-15",
+  "title": "A deactivated account cannot sign in",
+  "expected": "HTTP 401",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "AC-16",
+  "title": "Deactivating an account ends the sessions it already had",
+  "expected": "HTTP 401 on a token issued before deactivation",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ }
+]
