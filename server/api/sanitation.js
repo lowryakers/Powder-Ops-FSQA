@@ -120,12 +120,52 @@ function recleanFlagKey(room, clean, used) {
 // both the room count and the history. That cost was paid by /notifications,
 // /compliance/critical AND /sanitation/reclean-status, i.e. three times on
 // every page load. Grouped, it's ~4ms and flat.
+// WHEN WAS THIS ROOM LAST CLEANED — from every place the plant records it.
+//
+// This read `sanitation_records` alone, and the production floor does not
+// record its room cleans there. Batching logs them as `cleaning_events` on the
+// production entry — that was a deliberate decision ("a clean is an EVENT, not
+// a shift attribute", so a room and its blender can be cleaned to different
+// levels in one shift) — and the 72-hour rule was looking somewhere else
+// entirely. So every production room read `no_clean_on_record` forever, no
+// matter how often it was actually cleaned.
+//
+// One fact, two places to write it, and a rule that only read one of them. The
+// fix is to ask both, not to move the data: both are legitimate records of a
+// clean, and the entry-level one carries detail (ATP swab, allergen swab, which
+// blender) the sanitation form does not.
 function lastCleanByArea(db) {
+  const latest = new Map();
+  const note = (area, at) => {
+    if (!area || !at) return;
+    const prev = latest.get(area);
+    if (!prev || String(at) > String(prev)) latest.set(area, at);
+  };
   try {
-    return new Map(db.prepare(
-      "SELECT area, MAX(performed_at) t FROM sanitation_records WHERE result = 'pass' GROUP BY area"
-    ).all().map(r => [r.area, r.t]));
-  } catch { return new Map(); }
+    for (const r of db.prepare(
+      "SELECT area, MAX(performed_at) t FROM sanitation_records WHERE result = 'pass' GROUP BY area").all()) {
+      note(r.area, r.t);
+    }
+  } catch { /* optional */ }
+  try {
+    // A cleaning event names its own room; blank means "the shift's room", the
+    // same fallback the Production Log itself applies.
+    for (const e of db.prepare(
+      "SELECT date, room, cleaning_events FROM production_entries WHERE cleaning_events IS NOT NULL AND cleaning_events != '[]'").all()) {
+      let events;
+      try { events = JSON.parse(e.cleaning_events); } catch { continue; }
+      if (!Array.isArray(events)) continue;
+      for (const ev of events) {
+        // Only a room-level clean counts as cleaning the ROOM. Wiping the
+        // sifter does not reset the room's 72-hour clock, and treating it as
+        // though it did would be the rule quietly excusing work nobody did.
+        const scope = Array.isArray(ev?.scope) ? ev.scope.map(x => String(x).toLowerCase()) : [];
+        if (scope.length && !scope.some(x => x.includes('room'))) continue;
+        note(ev?.room || e.room, `${e.date} 23:59:00`);
+      }
+    }
+  } catch { /* optional — older databases have no cleaning_events column */ }
+  return latest;
 }
 function lastUseByRoom(db) {
   try {
@@ -177,7 +217,13 @@ export function recleanRooms(db) {
       ? overrides.get(room)
       : !(NON_PRODUCTION_AREAS.has(room) || NONFOOD_DEFAULT.test(room) || isChemical(room));
     const flagKey = recleanFlagKey(room, clean, used);
-    const flagged = status === 'expired_72h' || status === 'dirty';
+    // A ROOM THAT HAS BEEN USED AND HAS NO CLEAN ON RECORD IS THE WORST CASE,
+    // and it was the one case the rule ignored. `flagged` covered a clean that
+    // had expired and a room used since its clean, but not a room used with no
+    // passing clean at all — so the state that most needs somebody's attention
+    // produced nothing. `unknown` (no clean, no use either) is still not
+    // flagged: a room nobody has worked in owes nothing.
+    const flagged = status === 'expired_72h' || status === 'dirty' || status === 'no_clean_on_record';
     const action = flagged && latestAction ? (latestAction.get(room, flagKey) || null) : null;
     out.push({
       room, status, last_clean: clean, last_use: used, hours_since_clean: hoursIdle,
@@ -221,7 +267,11 @@ export function generateRecleanTasks(db) {
       if (already.get(entry.room, entry.flag_key)) continue;
       const why = entry.status === 'dirty'
         ? 'used after its last passed clean'
-        : `idle ${entry.hours_since_clean}h since last clean (72h rule)`;
+        : entry.status === 'no_clean_on_record'
+          // Said plainly rather than dressed as a 72-hour lapse: these are
+          // different problems and the second is worse.
+          ? 'the room has been used in production and there is no passing clean on record'
+          : `idle ${entry.hours_since_clean}h since last clean (72h rule)`;
       const woId = uuid();
       const eq = findEq.get(entry.room, entry.room);
       // The stored area is the Production Log's token ("7"), which is right for
