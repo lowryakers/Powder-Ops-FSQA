@@ -15,8 +15,27 @@ import { ArrowLeft, RotateCcw, Check, LogIn, LogOut, AlertTriangle } from 'lucid
 // after a few seconds, and any half-finished form is abandoned after a minute
 // of no input.
 
+// IT FOLLOWS THE STAND, THE STAND DOES NOT FOLLOW IT.
+//
+// The lobby tablet sits in a landscape cradle, and every screen here was built
+// as a tall column. Two separate things made that a portrait app:
+//   * the web manifest declared `orientation: portrait-primary`, so an
+//     installed tablet was LOCKED upright however it was physically mounted.
+//     That is now `any` — the page follows the device, which is also what
+//     someone turning a phone sideways to read a wide table wanted all along.
+//   * the layouts themselves. Below, `landscape:` reclaims vertical space
+//     everywhere, and `lg:landscape:` splits the tall screens into two columns
+//     once there is genuinely width for it (a tablet in a cradle, ~1024px+ —
+//     not a phone turned sideways, which is landscape but still narrow).
+// Nothing is hard-coded to landscape: a tablet re-mounted upright, and the
+// same URL opened on a phone, both still work.
+
 const IDLE_ABANDON_MS = 60_000;   // half-finished form, nobody there
 const DONE_RETURN_MS = 6_000;     // after a successful sign-in / sign-out
+
+// 100dvh, not 100vh: on a tablet browser the collapsing address bar makes vh
+// taller than what you can actually see, which pushes the button under it.
+const FULL = 'min-h-[100dvh]';
 
 const api = async (path, opts = {}) => {
   const res = await fetch(`/api/visitor-kiosk${path}`, {
@@ -30,9 +49,9 @@ const api = async (path, opts = {}) => {
 
 function Shell({ children, onBack, onStartOver }) {
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className={`${FULL} bg-white flex flex-col`}>
       {(onBack || onStartOver) && (
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-2 sm:py-3 border-b border-gray-100">
           {onBack
             ? <button onClick={onBack} className="h-11 w-11 rounded-full bg-gray-100 flex items-center justify-center text-gray-600" aria-label="Back">
               <ArrowLeft size={22} />
@@ -45,7 +64,9 @@ function Shell({ children, onBack, onStartOver }) {
           )}
         </div>
       )}
-      <div className="flex-1 flex flex-col px-5 sm:px-8 py-6 max-w-2xl w-full mx-auto">{children}</div>
+      <div className="flex-1 flex flex-col px-5 sm:px-8 py-6 landscape:py-4 max-w-2xl lg:landscape:max-w-6xl w-full mx-auto">
+        {children}
+      </div>
     </div>
   );
 }
@@ -88,41 +109,49 @@ function AgreementStep({ agreement, defaultName, onSigned, onBack, onStartOver }
 
   return (
     <Shell onBack={onBack} onStartOver={onStartOver}>
-      <h1 className="text-4xl font-extrabold text-powder-800">{agreement.title}</h1>
+      <h1 className="text-4xl landscape:text-3xl lg:landscape:text-4xl font-extrabold text-powder-800">{agreement.title}</h1>
       <p className="text-lg text-gray-500 mt-1">
         Please read and sign. Revision {agreement.revision}.
       </p>
 
-      <div ref={boxRef} onScroll={check}
-        className="mt-4 flex-1 min-h-[14rem] max-h-[42vh] overflow-y-auto border border-gray-200 rounded-xl p-4 bg-gray-50">
-        <p className="whitespace-pre-line text-[15px] leading-relaxed text-gray-800">{agreement.body}</p>
-      </div>
-      {!read && (
-        <p className="text-sm text-gray-500 mt-2 text-center">Scroll to the end to continue.</p>
-      )}
-
-      <div className={read ? 'mt-5' : 'mt-5 opacity-40 pointer-events-none'}>
-        <Field label="Your full name" required>
-          <input value={name} onChange={e => setName(e.target.value)} className={INPUT}
-            autoComplete="off" autoCapitalize="words" />
-        </Field>
-        <span className="block text-xl font-bold text-gray-900 mb-2">Sign below <span className="text-orange-500">*</span></span>
-        {image ? (
-          <div className="border border-gray-300 rounded-xl p-3 bg-white">
-            <img src={image} alt="Your signature" className="h-28 mx-auto" />
-            <button type="button" onClick={() => setImage(null)}
-              className="mt-2 mx-auto flex items-center gap-1.5 text-base text-gray-500">
-              <RotateCcw size={16} /> Sign again
-            </button>
+      {/* The two halves sit SIDE BY SIDE on a landscape tablet, which is the
+          screen this most needed: stacked, the text box and the signature pad
+          fight over the same short height, so the pad is off-screen while you
+          are reading and the text is off-screen while you are signing. */}
+      <div className="flex-1 flex flex-col lg:landscape:flex-row lg:landscape:gap-8 lg:landscape:items-start min-h-0">
+        <div className="flex flex-col min-h-0 lg:landscape:flex-1 lg:landscape:w-1/2">
+          <div ref={boxRef} onScroll={check}
+            className="mt-4 flex-1 min-h-[14rem] max-h-[42vh] landscape:max-h-[34vh] lg:landscape:max-h-[58vh] lg:landscape:min-h-[58vh] overflow-y-auto border border-gray-200 rounded-xl p-4 bg-gray-50">
+            <p className="whitespace-pre-line text-[15px] leading-relaxed text-gray-800">{agreement.body}</p>
           </div>
-        ) : (
-          <SignaturePad onSave={(img) => setImage(img)} onCancel={() => setImage(null)} />
-        )}
+          {!read && (
+            <p className="text-sm text-gray-500 mt-2 text-center">Scroll to the end to continue.</p>
+          )}
+        </div>
+
+        <div className={`lg:landscape:flex-1 lg:landscape:w-1/2 lg:landscape:mt-4 ${read ? 'mt-5' : 'mt-5 opacity-40 pointer-events-none'}`}>
+          <Field label="Your full name" required>
+            <input value={name} onChange={e => setName(e.target.value)} className={INPUT}
+              autoComplete="off" autoCapitalize="words" />
+          </Field>
+          <span className="block text-xl font-bold text-gray-900 mb-2">Sign below <span className="text-orange-500">*</span></span>
+          {image ? (
+            <div className="border border-gray-300 rounded-xl p-3 bg-white">
+              <img src={image} alt="Your signature" className="h-28 mx-auto" />
+              <button type="button" onClick={() => setImage(null)}
+                className="mt-2 mx-auto flex items-center gap-1.5 text-base text-gray-500">
+                <RotateCcw size={16} /> Sign again
+              </button>
+            </div>
+          ) : (
+            <SignaturePad onSave={(img) => setImage(img)} onCancel={() => setImage(null)} />
+          )}
+        </div>
       </div>
 
       <button type="button" disabled={!read || !name.trim() || !image}
         onClick={() => onSigned({ agreement_id: agreement.id, signed_name: name.trim(), signature_image: image })}
-        className="mt-6 w-full py-5 rounded-2xl bg-powder-600 text-white text-2xl font-bold disabled:opacity-40">
+        className="mt-6 landscape:mt-4 w-full py-5 landscape:py-4 rounded-2xl bg-powder-600 text-white text-2xl font-bold disabled:opacity-40">
         Agree &amp; continue
       </button>
     </Shell>
@@ -205,21 +234,25 @@ export default function VisitorKiosk() {
 
   if (screen === 'home') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6">
-        <div className="flex-1 flex items-center">
+      <div className={`${FULL} bg-white flex flex-col landscape:flex-row items-center justify-center gap-4 landscape:gap-10 px-6 py-8 landscape:py-6`}>
+        <div className="flex-1 flex items-center justify-center min-h-0 w-full">
           {/* The real mark, the same bytes the COA prints — see the note in
               LoginScreen. A visitor's first sight of the company should not be
-              a redrawing of its logo. */}
-          <img src="/brand/logo.jpg" alt="Powder Ops" className="w-56 sm:w-64"
+              a redrawing of its logo.
+              max-h + object-contain because this is a tall portrait mark: at a
+              fixed width it stands 320px high, which overflows a phone turned
+              sideways and pushes SIGN IN off the bottom. */}
+          <img src="/brand/logo.jpg" alt="Powder Ops"
+            className="w-56 sm:w-64 lg:landscape:w-[22rem] max-h-[42vh] landscape:max-h-[70vh] object-contain"
             onError={(e) => { e.currentTarget.style.display = 'none'; }} />
         </div>
-        <div className="w-full max-w-md pb-10">
+        <div className="w-full max-w-md landscape:flex-1 landscape:max-w-sm pb-10 landscape:pb-0">
           <button onClick={() => setScreen('visitor')}
-            className="w-full py-6 rounded-2xl bg-powder-500 text-white text-3xl font-bold shadow-sm flex items-center justify-center gap-3">
+            className="w-full py-6 landscape:py-5 rounded-2xl bg-powder-500 text-white text-3xl font-bold shadow-sm flex items-center justify-center gap-3">
             <LogIn size={30} /> SIGN IN
           </button>
           <button onClick={() => setScreen('out')}
-            className="mt-6 w-full py-4 text-2xl text-gray-500 font-medium flex items-center justify-center gap-3">
+            className="mt-6 landscape:mt-4 w-full py-4 text-2xl text-gray-500 font-medium flex items-center justify-center gap-3">
             <LogOut size={24} /> Sign Out
           </button>
         </div>
@@ -231,8 +264,8 @@ export default function VisitorKiosk() {
     const ready = form.first_name.trim() && form.last_name.trim() && form.email.trim();
     return (
       <Shell onBack={reset} onStartOver={reset}>
-        <h1 className="text-4xl font-extrabold text-powder-800">Visitor</h1>
-        <p className="text-lg text-gray-500 mt-1 mb-6">
+        <h1 className="text-4xl landscape:text-3xl lg:landscape:text-4xl font-extrabold text-powder-800">Visitor</h1>
+        <p className="text-lg text-gray-500 mt-1 mb-6 landscape:mb-4">
           Please complete the form. You will be asked to sign our {agreements[0]?.title || 'agreement'}.
         </p>
         {error && (
@@ -240,6 +273,10 @@ export default function VisitorKiosk() {
             <AlertTriangle size={18} className="shrink-0 mt-0.5" />{error}
           </p>
         )}
+        {/* Two columns on a landscape tablet. The keyboard takes most of a
+            landscape screen's height, so a single column of six fields means
+            scrolling a form while typing into it. */}
+        <div className="lg:landscape:grid lg:landscape:grid-cols-2 lg:landscape:gap-x-10">
         <Field label="First Name" required>
           <input value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
             className={INPUT} autoCapitalize="words" autoComplete="off" />
@@ -277,10 +314,11 @@ export default function VisitorKiosk() {
             )}
           </Field>
         ))}
+        </div>
 
         <button type="button" disabled={!ready || busy}
           onClick={() => { setError(''); setAgreementIdx(0); setScreen(agreements.length ? 'agreement' : 'submitting'); if (!agreements.length) submit([]); }}
-          className="mt-2 w-full py-5 rounded-2xl bg-powder-500 text-white text-2xl font-bold disabled:opacity-40">
+          className="mt-2 w-full py-5 landscape:py-4 rounded-2xl bg-powder-500 text-white text-2xl font-bold disabled:opacity-40">
           {busy ? 'Please wait…' : 'NEXT'}
         </button>
       </Shell>
@@ -308,7 +346,7 @@ export default function VisitorKiosk() {
 
   if (screen === 'done') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6 text-center">
+      <div className={`${FULL} bg-white flex flex-col items-center justify-center px-6 py-8 text-center`}>
         <div className="h-24 w-24 rounded-full bg-green-100 flex items-center justify-center mb-6">
           <Check size={52} className="text-green-600" />
         </div>
@@ -353,7 +391,7 @@ export default function VisitorKiosk() {
 
   if (screen === 'outDone') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6 text-center">
+      <div className={`${FULL} bg-white flex flex-col items-center justify-center px-6 py-8 text-center`}>
         <div className="h-24 w-24 rounded-full bg-green-100 flex items-center justify-center mb-6">
           <Check size={52} className="text-green-600" />
         </div>
@@ -365,7 +403,7 @@ export default function VisitorKiosk() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center">
+    <div className={`${FULL} bg-white flex items-center justify-center`}>
       <p className="text-xl text-gray-400">Please wait…</p>
     </div>
   );

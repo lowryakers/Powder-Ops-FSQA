@@ -16,19 +16,59 @@ export function SignaturePad({ onSave, onCancel, saving }) {
   const drawingRef = useRef(false);
   const [hasInk, setHasInk] = useState(false);
 
+  // THE BOX CAN CHANGE SIZE UNDER THE PAD, AND THE INK MUST SURVIVE IT.
+  //
+  // Sizing the backing store once on mount was fine while the lobby tablet was
+  // locked to portrait. It stopped being fine the moment rotation was allowed:
+  // the CSS box gets a new width, the backing store keeps the old one, and from
+  // then on the line lands somewhere other than the finger — which reads as the
+  // pad being broken rather than as a resize. So it re-fits, and it carries the
+  // existing strokes across rather than clearing them, because losing a
+  // half-drawn signature to a rotation is worse than the offset was.
   useEffect(() => {
     const c = canvasRef.current;
-    if (!c) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = c.getBoundingClientRect();
-    c.width = rect.width * dpr;
-    c.height = rect.height * dpr;
-    const ctx = c.getContext('2d');
-    ctx.scale(dpr, dpr);
-    ctx.lineWidth = 2.2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#1e3a8a'; // signature-pen blue
+    if (!c) return undefined;
+    let last = { w: 0, h: 0 };
+
+    const fit = () => {
+      const rect = c.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.round(rect.width * dpr);
+      const h = Math.round(rect.height * dpr);
+      // A no-op when nothing moved. The on-screen keyboard fires resize on some
+      // browsers without the pad changing at all, and re-blitting a canvas on
+      // every keystroke would soften the strokes a little each time.
+      if (w === last.w && h === last.h) return;
+
+      // Keep whatever has been drawn, scaled into the new box.
+      let previous = null;
+      if (last.w && last.h) {
+        previous = document.createElement('canvas');
+        previous.width = last.w; previous.height = last.h;
+        previous.getContext('2d').drawImage(c, 0, 0);
+      }
+
+      c.width = w; c.height = h;
+      last = { w, h };
+      const ctx = c.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#1e3a8a'; // signature-pen blue
+      if (previous) ctx.drawImage(previous, 0, 0, rect.width, rect.height);
+    };
+
+    fit();
+    // ResizeObserver catches a layout change the window never hears about — a
+    // column becoming a row beside it, a panel opening. `orientationchange`
+    // fires before the new size is settled on iOS, so re-fit on the next frame.
+    const ro = new ResizeObserver(fit);
+    ro.observe(c);
+    const onRotate = () => requestAnimationFrame(fit);
+    window.addEventListener('orientationchange', onRotate);
+    return () => { ro.disconnect(); window.removeEventListener('orientationchange', onRotate); };
   }, []);
 
   const pos = (e) => {
