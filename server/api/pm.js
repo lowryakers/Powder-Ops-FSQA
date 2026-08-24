@@ -963,6 +963,20 @@ router.post('/work-orders/batch-complete', (req, res) => {
   // completed with an empty account of the work — which is the state that put
   // "0 of 3 ticked" in front of QA in the first place.
   const skipped = [];
+  // ...AND IT MUST STILL FILE THE RECORD. This path closed the work order and
+  // stopped there, so a restroom clean, a breakroom clean, a light inspection or
+  // a temp & humidity check ticked off in bulk left the Sanitation and QA
+  // Inspection logs completely empty. The work was done, the task said
+  // completed, and the controlled record an auditor asks for did not exist.
+  //
+  // That is the SAME defect as the original "completing a QA inspection must
+  // file its record" bug — fixed on complete-and-recur and never carried across
+  // to the other completion path. Two ways to finish a task is two chances for
+  // the record to go unwritten, which is exactly what happened.
+  //
+  // The record is filed inside the same transaction as the completion, for the
+  // reason that fix gives: the task and the record are one event.
+  const filed = [];
   const batchRun = db.transaction(() => {
     for (const id of ids) {
       const wo = getWO.get(id);
@@ -981,7 +995,27 @@ router.post('/work-orders/batch-complete', (req, res) => {
         logAudit('system', 'clearance_required', 'work_order', id, 'Food-contact equipment — hygiene clearance pending');
       }
 
-      logAudit(completedBy, 'complete', 'work_order', id, { batch: true }, null, null);
+      // The controlled record this completion is evidence for. `recordAreaForTask`
+      // returns null for anything it does not recognise — a maintenance PM can
+      // never file a cleaning record — so an unmapped task simply files nothing,
+      // exactly as before.
+      const area = recordAreaForTask(wo.title);
+      if (area) {
+        try {
+          const recordId = fileQaInspectionRecord(db, {
+            area, wo, readings: {}, stepResults: [], result: 'pass',
+            notes: 'Batch completed', by: completedBy, workOrderId: id,
+          });
+          if (recordId) filed.push({ id, area });
+        } catch (err) {
+          // A record that cannot be written must not silently vanish, and it
+          // must not take the whole batch down either. Naming it in `skipped`
+          // is how somebody finds out.
+          skipped.push({ id, title: wo.title, reason: `Completed, but its ${area} record could not be filed: ${err.message}` });
+        }
+      }
+
+      logAudit(completedBy, 'complete', 'work_order', id, { batch: true, filed_record_area: area || null }, null, null);
       onWorkOrderCompleted(db, wo);
 
       if (wo.pm_schedule_id) {
@@ -995,7 +1029,10 @@ router.post('/work-orders/batch-complete', (req, res) => {
   });
 
   batchRun();
-  res.json({ completed: results.length, ids: results, skipped });
+  // `filed` is reported rather than left silent: "12 completed" and "12
+  // completed, 9 records filed" answer different questions, and the second is
+  // the one that says whether the compliance logs actually moved.
+  res.json({ completed: results.length, ids: results, skipped, records_filed: filed.length, filed });
 });
 
 // --- Mark Work Order Not Applicable ---
