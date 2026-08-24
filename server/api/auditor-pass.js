@@ -22,6 +22,7 @@ import { randomBytes, createHash } from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
+import { uniqueUsername } from '../usernames.js';
 import { issueSession } from './sessions.js';
 
 const router = express.Router();          // admin-only management
@@ -69,9 +70,18 @@ function auditorAccountFor(db, visitorName, actor) {
     return existing;
   }
   const id = uuid();
+  // users.username is UNIQUE, and the visitor's name may well already be on the
+  // roster — a consultant who also has a staff account, or simply a second
+  // Carol. Inserting the name straight in threw "UNIQUE constraint failed".
+  // uniqueUsername() is the roster's own rule for this and returns a free
+  // variant; the display NAME still reads exactly as typed, which is what goes
+  // on the records. A same-named staff account is deliberately NOT reused: the
+  // pass must grant read-only auditor access and nothing that account happens
+  // to carry.
+  const username = uniqueUsername(db, name) || `${name} ${Date.now().toString(36)}`;
   db.prepare(`INSERT INTO users (id, name, username, role, department, is_active, password_hash, module_access)
               VALUES (?, ?, ?, 'auditor', 'qa', 1, ?, NULL)`)
-    .run(id, name, name, `pass:${randomBytes(32).toString('hex')}`);
+    .run(id, name, username, `pass:${randomBytes(32).toString('hex')}`);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   logAudit(actor, 'create', 'user', id,
     { reason: 'auditor_pass', note: 'Read-only auditor account created for an audit pass. Signs in by link only.' },
@@ -116,13 +126,21 @@ router.post('/', (req, res) => {
   const token = randomBytes(32).toString('base64url');
   const id = uuid();
 
-  const created = db.transaction(() => {
-    const user = auditorAccountFor(db, visitor_name, req.user);
-    db.prepare(`INSERT INTO auditor_passes (id, token_hash, visitor_name, user_id, note, created_by, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, hashToken(token), visitor_name, user.id, note, req.user?.name || 'system', expires.toISOString());
-    return user;
-  })();
+  let created;
+  try {
+    created = db.transaction(() => {
+      const user = auditorAccountFor(db, visitor_name, req.user);
+      db.prepare(`INSERT INTO auditor_passes (id, token_hash, visitor_name, user_id, note, created_by, expires_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, hashToken(token), visitor_name, user.id, note, req.user?.name || 'system', expires.toISOString());
+      return user;
+    })();
+  } catch (err) {
+    // A database constraint is not a message anybody can act on. Say what went
+    // wrong in terms of the thing on screen.
+    console.error('[auditor-pass] issue failed:', err.message);
+    return res.status(500).json({ error: 'Could not issue the pass. Try a slightly different name, or check the server log.' });
+  }
 
   logAudit(req.user, 'create', 'auditor_pass', id,
     { visitor_name, expires_at: expires.toISOString(), days, note }, null, null, visitor_name);
