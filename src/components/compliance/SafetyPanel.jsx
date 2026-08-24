@@ -51,10 +51,20 @@ function CrisisContacts({ form }) {
 }
 
 function EvacuationForm({ form, initial, onClose, onSaved }) {
-  const blank = () => (form?.work_areas || []).map(a => ({ area: a, total: '', accounted: '', reason: '' }));
+  const blank = () => (form?.work_areas || []).map(a => ({ area: a, total: '', accounted: '', reasons: [] }));
   const [rec, setRec] = useState(() => initial ? {
-    ...initial, areas: initial.areas?.length ? initial.areas.map(a => ({ ...a, total: a.total ?? '', accounted: a.accounted ?? '', reason: a.reason || '' })) : blank(),
+    ...initial, areas: initial.areas?.length ? initial.areas.map(a => ({ ...a, total: a.total ?? '', accounted: a.accounted ?? '', reasons: a.reasons || (a.reason ? [a.reason] : []) })) : blank(),
   } : { event_date: new Date().toISOString().slice(0, 10), event_time: '', is_drill: true, areas: blank(), notes: '', completed_by: '' });
+  // The form says "circle ANY reason" — one evacuation can be a fire drill and
+  // an earthquake drill at once, which is what the plant's April sheets record.
+  const toggleReason = (i, code) => setRec(r => ({
+    ...r,
+    areas: r.areas.map((a, j) => {
+      if (j !== i) return a;
+      const have = a.reasons || [];
+      return { ...a, reasons: have.includes(code) ? have.filter(c => c !== code) : [...have, code] };
+    }),
+  }));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -63,7 +73,7 @@ function EvacuationForm({ form, initial, onClose, onSaved }) {
   const save = async () => {
     setSaving(true); setError('');
     try {
-      const payload = { ...rec, areas: rec.areas.map(a => ({ ...a, total: a.total === '' ? null : Number(a.total), accounted: a.accounted === '' ? null : Number(a.accounted), reason: a.reason || null })) };
+      const payload = { ...rec, areas: rec.areas.map(a => ({ ...a, total: a.total === '' ? null : Number(a.total), accounted: a.accounted === '' ? null : Number(a.accounted), reasons: a.reasons || [] })) };
       if (initial?.id) await apiPut(`/safety/evacuations/${initial.id}`, payload);
       else await apiPost('/safety/evacuations', payload);
       onSaved();
@@ -125,8 +135,8 @@ function EvacuationForm({ form, initial, onClose, onSaved }) {
                   <div className="flex gap-1">
                     {Object.entries(form?.reasons || {}).map(([code, label]) => (
                       <button key={code} type="button" title={label}
-                        onClick={() => setArea(i, 'reason', a.reason === code ? '' : code)}
-                        className={`w-8 h-8 rounded-full border text-xs font-bold ${a.reason === code
+                        onClick={() => toggleReason(i, code)}
+                        className={`w-8 h-8 rounded-full border text-xs font-bold ${(a.reasons || []).includes(code)
                           ? 'bg-red-600 text-white border-red-600' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
                         {code}
                       </button>
@@ -138,7 +148,7 @@ function EvacuationForm({ form, initial, onClose, onSaved }) {
           </tbody>
         </table>
       </div>
-      <button type="button" onClick={() => setRec(r => ({ ...r, areas: [...r.areas, { area: '', total: '', accounted: '', reason: '' }] }))}
+      <button type="button" onClick={() => setRec(r => ({ ...r, areas: [...r.areas, { area: '', total: '', accounted: '', reasons: [] }] }))}
         className="text-xs font-medium text-powder-700 hover:underline inline-flex items-center gap-1"><Plus size={12} /> Add a row</button>
       <p className="text-[11px] text-gray-500">
         {Object.entries(form?.reasons || {}).map(([c, l]) => `${c}=${l}`).join(' · ')}
@@ -213,11 +223,15 @@ function Evacuations({ form, user }) {
             </div>
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-            {(r.areas || []).filter(a => a.total != null || a.accounted != null || a.reason).map((a, i) => (
+            {(r.areas || []).filter(a => a.total != null || a.accounted != null || (a.reasons || []).length).map((a, i) => (
               <span key={i} className="text-xs text-gray-600">
                 <span className="font-medium text-gray-800">{a.area}</span>
                 {' '}{a.accounted ?? '—'}/{a.total ?? '—'}
-                {a.reason ? <span className="ml-1 text-red-700 font-semibold">({a.reason}={form?.reasons?.[a.reason]})</span> : ''}
+                {(a.reasons || []).length ? (
+                  <span className="ml-1 text-red-700 font-semibold">
+                    ({(a.reasons || []).map(c => `${c}=${form?.reasons?.[c] || c}`).join(', ')})
+                  </span>
+                ) : ''}
               </span>
             ))}
           </div>

@@ -102,6 +102,7 @@ import { seedTrainingCourses, seedWorkInstructionCourses } from './server/traini
 import { seedReferenceLibrary } from './server/reference-seed.js';
 import { seedCertifications } from './server/cert-seed.js';
 import { importPaperInternalAudits } from './server/internal-audit-import.js';
+import { importPaperEvacuations } from './server/evacuation-import.js';
 import { seedBannedSubstanceSopDraft } from './server/banned-substance-sop-seed.js';
 import { backfillFilmDrafts } from './server/film-draft-backfill.js';
 import { backfillPartnerDocLines } from './server/partner-doc-backfill.js';
@@ -1065,6 +1066,9 @@ try {
   seedCertifications(db);
   // The two signed paper internal audits, transcribed into the module (one-time).
   importPaperInternalAudits(db);
+  // The four signed Form 501-02 evacuation headcount sheets (one-time, keyed on
+  // the event date so a hand-corrected record is never overwritten).
+  importPaperEvacuations(db);
   // The Banned & Prohibited Substance Control SOP, as a DRAFT for review (one-time).
   seedBannedSubstanceSopDraft(db);
   // Draft film inspections for packaging escalations that fired before the

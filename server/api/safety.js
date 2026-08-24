@@ -26,20 +26,42 @@ router.get('/forms', (_req, res) => res.json(SAFETY_FORMS));
 
 // ── Evacuation headcounts ───────────────────────────────────────────────────
 
+// "Circle ANY Evacuation reason" — the paper says any, and the plant means it:
+// the April sheets have both F and N circled on every row, because one
+// evacuation covered a fire drill and an earthquake drill at the same time.
+// Storing a single code would have kept the F and silently dropped the N, so a
+// record of an earthquake drill would read as a record of a fire drill.
+const normalizeReasons = (a) => {
+  const raw = Array.isArray(a?.reasons) ? a.reasons : (a?.reason ? [a.reason] : []);
+  const seen = [];
+  for (const r of raw) {
+    const code = String(r || '').toUpperCase();
+    // A code the form does not print is dropped rather than stored as a reason
+    // the paper cannot show.
+    if (EVAC_REASONS[code] && !seen.includes(code)) seen.push(code);
+  }
+  return seen;
+};
+
 const normalizeAreas = (input) => {
   if (!Array.isArray(input)) return [];
   return input.map(a => ({
     area: String(a?.area || '').slice(0, 60),
     total: Number.isFinite(Number(a?.total)) && a?.total !== '' && a?.total !== null ? Number(a.total) : null,
     accounted: Number.isFinite(Number(a?.accounted)) && a?.accounted !== '' && a?.accounted !== null ? Number(a.accounted) : null,
-    // The circled code must be one the form prints; anything else is dropped
-    // rather than stored as a reason the paper cannot show.
-    reason: EVAC_REASONS[String(a?.reason || '').toUpperCase()] ? String(a.reason).toUpperCase() : null,
+    reasons: normalizeReasons(a),
   })).filter(a => a.area);
 };
 
 const shapeEvac = (r) => {
-  const areas = parseJson(r.areas, []) || [];
+  const stored = parseJson(r.areas, []) || [];
+  // Rows filed before reasons could be plural carry a single `reason`; they are
+  // upgraded on READ rather than migrated, so nothing rewrites a filed safety
+  // record. `reason` is still returned as the first code for any older caller.
+  const areas = stored.map(a => {
+    const reasons = Array.isArray(a.reasons) ? a.reasons : (a.reason ? [a.reason] : []);
+    return { ...a, reasons, reason: reasons[0] || null };
+  });
   return {
     ...r,
     areas,
