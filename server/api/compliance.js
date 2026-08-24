@@ -39,6 +39,29 @@ function binderHidden(db) {
   } catch { return []; }
 }
 
+// The plant is presenting controlled documents and the change log on paper this
+// audit, so those two start HIDDEN. Written ONCE, behind its own marker, and
+// never again: the moment somebody turns a section back on, that is a decision,
+// and a seeder that re-applied the default on the next deploy would quietly
+// undo it. Same rule as every other seeder here — a redeploy must not overwrite
+// what a person set by hand.
+export function seedAuditorBinderDefaults(db) {
+  try {
+    const MARKER = 'auditor_binder_defaults_v1';
+    if (db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(MARKER)) return;
+    const set = db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    // Only if nothing has been chosen yet — an instance where somebody already
+    // set this keeps what they set.
+    if (!db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(BINDER_HIDDEN_KEY)) {
+      set.run(BINDER_HIDDEN_KEY, JSON.stringify(['documents', 'dcr']));
+      console.log('[compliance] Auditor binder: controlled documents and DCRs start hidden');
+    }
+    set.run(MARKER, new Date().toISOString());
+  } catch (err) {
+    console.warn('[compliance] Auditor binder defaults skipped:', err.message);
+  }
+}
+
 // Read is open to any signed-in user because the auditor themselves has to
 // fetch it to render their own binder, and it says nothing an auditor could not
 // already see by looking at the page.

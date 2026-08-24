@@ -31,7 +31,7 @@ import cleanupRoutes from './server/api/cleanup.js';
 import sanitationRoutes from './server/api/sanitation.js';
 import auditRoutes from './server/api/audit.js';
 import integrationsRoutes from './server/api/integrations.js';
-import complianceRoutes, { buildBackupZip, computeCritical } from './server/api/compliance.js';
+import complianceRoutes, { buildBackupZip, computeCritical, seedAuditorBinderDefaults } from './server/api/compliance.js';
 import { startScheduledJobs } from './server/scheduled-jobs.js';
 import lotoRoutes from './server/api/loto.js';
 import userRoutes from './server/api/users.js';
@@ -1069,6 +1069,10 @@ try {
   // The four signed Form 501-02 evacuation headcount sheets (one-time, keyed on
   // the event date so a hand-corrected record is never overwritten).
   importPaperEvacuations(db);
+  // Controlled documents and the DCR log start hidden in the auditor binder —
+  // the plant is presenting those on paper. One-time; the toggle is in
+  // Settings → Shareable Links and whatever is set there wins from then on.
+  seedAuditorBinderDefaults(db);
   // The Banned & Prohibited Substance Control SOP, as a DRAFT for review (one-time).
   seedBannedSubstanceSopDraft(db);
   // Draft film inspections for packaging escalations that fired before the
