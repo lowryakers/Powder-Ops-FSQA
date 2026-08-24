@@ -25,6 +25,13 @@ const LINKS = [
     note: null,
   },
   {
+    path: '/kiosk/visitor',
+    title: 'Visitor Sign-In (lobby tablet)',
+    blurb: 'Open on the lobby tablet and add it to the home screen. No login — visitors sign themselves in and out, and sign the NDA.',
+    tone: 'border-sky-200', code: 'text-sky-600',
+    note: 'Returns to the logo by itself, so the next visitor never sees the last one\'s details.',
+  },
+  {
     path: '/auditor',
     title: 'Auditor Portal',
     blurb: 'The read-only evidence binder. Anyone opening this link needs a pass — issue one below.',

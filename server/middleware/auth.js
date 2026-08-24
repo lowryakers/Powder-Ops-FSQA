@@ -54,6 +54,11 @@ const PUBLIC_ROUTES = [
   // hash in the handler and redeems into an ordinary read-only auditor session;
   // issuing and revoking live on /auditor-passes and are admin-only.
   { prefix: '/auditor-pass/' },
+  // The lobby visitor tablet. Public for the same reason the other kiosks are —
+  // it sits unattended with nobody signed in. It can sign a visitor in, sign one
+  // out, and serve the agreement being signed; it cannot list who is on site,
+  // search the visitor book, or read anybody's stored signature.
+  { prefix: '/visitor-kiosk/' },
   { path: '/version' },
   { path: '/health' },
 ];

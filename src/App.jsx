@@ -22,11 +22,13 @@ import KnifeKiosk from './components/kiosk/KnifeKiosk.jsx';
 import ComponentKiosk from './components/kiosk/ComponentKiosk.jsx';
 import MaintenanceKiosk from './components/kiosk/MaintenanceKiosk.jsx';
 import ScaleKiosk from './components/kiosk/ScaleKiosk.jsx';
+import VisitorKiosk from './components/kiosk/VisitorKiosk.jsx';
 const AiAskPanel = lazy(() => import('./components/compliance/AiAskPanel.jsx'));
 const ComplianceDashboard = lazy(() => import('./components/compliance/ComplianceDashboard.jsx'));
 const EquipmentPanel = lazy(() => import('./components/compliance/EquipmentPanel.jsx'));
 const PMPanel = lazy(() => import('./components/compliance/PMPanel.jsx'));
 const PMSchedulesPanel = lazy(() => import('./components/compliance/PMSchedulesPanel.jsx'));
+const VisitorLogPanel = lazy(() => import('./components/office/VisitorLogPanel.jsx'));
 const CalibrationPanel = lazy(() => import('./components/compliance/CalibrationPanel.jsx'));
 const SanitationPanel = lazy(() => import('./components/compliance/SanitationPanel.jsx'));
 const QAInspectionsPanel = lazy(() => import('./components/compliance/QAInspectionsPanel.jsx'));
@@ -232,6 +234,9 @@ const NAV_GROUPS = [
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
       { id: 'pay-tracking', label: 'Pay Tracking', icon: BadgeDollarSign, keywords: 'raise increase evaluation rubric wage rate salary review compensation' },
       { id: 'policies', label: 'Policies', icon: BookText, keywords: 'handbook PTO vacation grievance conduct attendance dress code company rules HR' },
+      // Who has been in the building. The lobby tablet itself is a public kiosk
+      // at /kiosk/visitor; this is the record behind it.
+      { id: 'visitors', label: 'Visitors', icon: Users, keywords: 'visitor sign in sign out lobby front desk NDA guest contractor kiosk lobbytrack' },
       // Granted, never a role default — it is one person's working queue.
       { id: 'dannys-list', label: "Danny's List", icon: ListTodo, keywords: 'danny owner approvals payments text sms requests chase' },
     ],
@@ -1522,6 +1527,14 @@ function App() {
     return <><ScaleKiosk /><UpdateBanner /></>;
   }
 
+  // The lobby tablet. Unlike the other kiosks this does NOT redirect a
+  // signed-in user into an in-app form, because there isn't one and shouldn't
+  // be: the subject of a visitor sign-in is the VISITOR, not the operator, and
+  // a staff member helping somebody at the tablet still wants the tablet.
+  if (path === '/kiosk/visitor') {
+    return <><VisitorKiosk /><UpdateBanner /></>;
+  }
+
   if (path === '/production-entry') {
     if (loading) {
       return (
@@ -1977,6 +1990,7 @@ function App() {
           {resolvedTab === 'procurement' && <ProcurementPanel />}
           {resolvedTab === 'newsletter' && <NewsletterPanel />}
           {resolvedTab === 'policies' && <PoliciesPanel />}
+          {resolvedTab === 'visitors' && <VisitorLogPanel />}
           {resolvedTab === 'dannys-list' && <DannysListPanel />}
           {resolvedTab === 'pay-tracking' && <PayTrackingPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}

@@ -42,6 +42,9 @@ export const ALL_MODULE_IDS = [
   'procurement', 'newsletter', 'pay-tracking',
   // Company policies (the handbook), separate from the controlled-document registry.
   'policies',
+  // The visitor book. The lobby tablet itself is a public kiosk and needs no
+  // grant; this is the record behind it.
+  'visitors',
   // Danny's List — the text-message request log for the owner. Granted, never
   // a role default: it is one person's working queue, not a plant module.
   'dannys-list',

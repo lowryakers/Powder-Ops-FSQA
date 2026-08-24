@@ -151,6 +151,9 @@ export const KNOWN_SCOPES = [
   { scope: 'internal_audit', label: 'Internal Audits' },
   { scope: 'retention_sample', label: 'Retention Samples' },
   { scope: 'reimbursement', label: 'Reimbursements' },
+  // Extra questions on the lobby visitor form — added here, they appear on the
+  // tablet with no deploy. First/last/email stay fixed: they are the identity.
+  { scope: 'visitor', label: 'Visitor Sign-In (lobby tablet)' },
 ];
 
 router.get('/scopes', (req, res) => {
@@ -244,6 +247,7 @@ router.get('/fields/:scope/:id/usage', (req, res) => {
 
 // Scope prefix → host table holding the custom_data column.
 const SCOPE_TABLES = {
+  visitor: 'visitors',
   receiving_log: 'receiving_log',
   qms: 'qms_records',
   supply_order: 'supply_orders',

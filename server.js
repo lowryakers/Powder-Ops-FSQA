@@ -50,6 +50,7 @@ import retentionRoutes from './server/api/retention.js';
 import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
 import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './server/api/auditor-pass.js';
+import visitorRoutes, { kioskRouter as visitorKioskRoutes, seedVisitorAgreements } from './server/api/visitors.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
 import activityRoutes from './server/api/activity.js';
@@ -1078,6 +1079,8 @@ try {
   // the plant is presenting those on paper. One-time; the toggle is in
   // Settings → Shareable Links and whatever is set there wins from then on.
   seedAuditorBinderDefaults(db);
+  // The NDA visitors sign at the lobby tablet, as a frozen revision.
+  seedVisitorAgreements(db);
   // The Banned & Prohibited Substance Control SOP, as a DRAFT for review (one-time).
   seedBannedSubstanceSopDraft(db);
   // Draft film inspections for packaging escalations that fired before the
@@ -1712,6 +1715,13 @@ app.use('/api/partner-portal', partnerPortalRoutes);
 // issuing and revoking are admin-only inside their own router.
 app.use('/api/auditor-pass', auditorPassPublicRoutes);
 app.use('/api/auditor-passes', auditorPassRoutes);
+// The lobby tablet is public — it runs with nobody signed in, like the knife,
+// component, maintenance and scale kiosks. Its surface is narrow by
+// construction (sign in, sign out, read the agreement) and it can neither list
+// who is on site nor read a stored signature. The visitor LOG behind it is an
+// ordinary guarded module.
+app.use('/api/visitor-kiosk', visitorKioskRoutes);
+app.use('/api/visitors', requireModuleWrite('visitors'), visitorRoutes);
 // Filing is what View gets you here — anyone granted the module can claim
 // their own money back, and only ever sees their own claims. Approving and
 // PAYING are a second, narrower check inside the router (office or admin),
