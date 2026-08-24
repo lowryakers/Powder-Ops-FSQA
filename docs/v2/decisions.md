@@ -30,6 +30,9 @@ Consequences that follow and are binding unless a later entry overturns them:
 
 ## D-002 · 2026-08-24 · decided — "The spine" is the record lifecycle, not the Food Safety Plan
 
+*Status note: the test below stands. Its implied reading that a program means a cadence is
+superseded by D-011, and its three-verdict list gained a fourth, `elsewhere`, in D-008.*
+
 Raised directly: does "a single spine" mean the Food Safety Document / Food Defense Plan?
 
 **No — but they are the top of it.** The spine is the record lifecycle: controlled document → program →
@@ -415,3 +418,51 @@ Whether verification becomes a fourth leg — and if so which controls genuinely
 eyes — is a decision, not a reading. It is adjacent to the role question D-007 left open, that QA
 performing a check and QA verifying it are different jobs, and the two are best settled together
 while the plans are being rewritten anyway.
+
+---
+
+## D-011 · 2026-08-24 · decided — A program may be a TRIGGER, not a cadence (supersedes the cadence reading in D-002)
+
+**Supersedes:** the reading of D-002's test that a program means a *cadence*. D-002's wording — "a
+program that generates dated work" — was taken to mean a schedule. That reading is wrong and the Food
+Safety Plan proves it rather than merely allowing it.
+
+Three of the plan's four preventive controls fire **per production run**, not per calendar:
+
+- PC #1 (ATP, pathogens) — "at the beginning of every run"
+- PC #2 (allergen swab) — "at the end of every run"
+- PC #3 (screens) — "at the beginning of every machine start up"
+
+A control that fires per run and one that fires per week satisfy the same leg. **What fails the leg is
+a control that depends on somebody deciding to start it** — not one without a frequency. Receiving,
+sign-outs, film inspection and disposal were already event-driven and correctly so; the plan makes it
+a rule rather than an accommodation.
+
+The consequence is architectural and is recorded in `preventive-control-walk.md` §7: **every generator
+in the system is a calendar**, and there is no object for "a run" for a per-run obligation to hang
+off. The nearest thing, a `production_entries` row, is filed at the end of the shift — after both
+controls should already have fired. That lands on recommended move 05 (collapse the four schedule
+generators into one), which `architecture.md` defers until after the audit. **This entry does not move
+it up.** It records that the one cadence model must grow a second kind of trigger when it is done, and
+that the plant's highest-consequence controls are the ones waiting on it.
+
+The second refinement recorded in D-008 — that the work order is the universal fallback record and is
+not always enough — stands unchanged.
+
+---
+
+## D-012 · 2026-08-24 · decided — Track B rebases on `main` periodically, not at the end
+
+D-005 keeps the two tracks from colliding by rule: new construction in Track B, refactors of shared
+code in Track A on `main`. **Small collisions are not no collisions.** Track A keeps merging to `main`,
+so the Track B branch drifts behind from the day it is cut, and a branch that only meets `main` at the
+end is the big-bang merge D-003 and D-005 both exist to prevent — arriving as a merge conflict instead
+of a cutover.
+
+**So: rebase the Track B branch on `main` on a regular beat, and treat a rebase that is getting hard
+as information.** Two consecutive painful rebases means Track B is touching shared code, which is
+Track A's job by D-005 — the fix is to move that change to `main` and rebase again, not to push
+through the conflict.
+
+Current Track B branch: `claude/food-safety-preventive-controls-8y6mu2`. The beat is weekly, or
+immediately after any Track A change to `shared/`, `server/db.js` or the form registry.
