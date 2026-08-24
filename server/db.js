@@ -1534,6 +1534,39 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_partner_settlements ON partner_settlements(partner_id, period_end DESC);
 
+    -- How an auditor (or the consultant walking one through the binder) gets in.
+    --
+    -- A username and password is the wrong credential for this. The visitor is
+    -- here for a day, has never signed in before, and the failure modes all land
+    -- in front of the auditor: a name typed slightly wrong, an account whose
+    -- password was never set, or five bad attempts and a fifteen-minute lockout
+    -- with the room waiting. A pass is a link — it either works or it has been
+    -- revoked, and neither state depends on anyone remembering anything.
+    --
+    -- Same posture as partner_portal_tokens and the NFP approval links: stored
+    -- as a SHA-256 hash, shown in the clear exactly once, revocable, expiring,
+    -- and audited every time it is used. It redeems into an ordinary session for
+    -- an auditor-role account, so every read is subject to the same role rules as
+    -- an auditor signing in normally — read-only everywhere, no comms, no writes.
+    CREATE TABLE IF NOT EXISTS auditor_passes (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      -- Who is holding it. The pass binds to its own auditor account named for
+      -- this person, so the audit trail says "Carol Pierce", not "Auditor".
+      visitor_name TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      revoked_by TEXT,
+      last_used_at TEXT,
+      use_count INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_auditor_passes_active ON auditor_passes(revoked_at, expires_at);
+
     -- A scoped link the partner uses to see the same ledger and upload their
     -- own paperwork. Read + upload only — approving, disputing and settling stay
     -- with whoever owns the account. Hashed like a session token, never stored

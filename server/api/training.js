@@ -1065,7 +1065,18 @@ router.post('/import/scans/analyze', requireRole('admin'), zipScanUpload.single(
     people.get(key).count++;
 
     const tk = normName(f.topic);
-    if (!topics.has(tk)) topics.set(tk, { topic: f.topic, count: 0, suggested_course_id: suggestCourse(f.topic, courses) });
+    if (!topics.has(tk)) {
+      topics.set(tk, {
+        topic: f.topic, count: 0,
+        // A topic naming no subject ("QUIZ") gets NO suggestion. Which quiz it
+        // was is a question only a person can answer, and a pre-filled dropdown
+        // is the thing reviewers accept without reading — the same failure that
+        // nearly filed 256 people as trained to clean a machine they were
+        // trained to run.
+        suggested_course_id: f.vague_topic ? null : suggestCourse(f.topic, courses),
+        vague: !!f.vague_topic,
+      });
+    }
     topics.get(tk).count++;
   }
 

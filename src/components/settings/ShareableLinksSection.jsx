@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Shield, Trash2, Plus, Eye, EyeOff } from 'lucide-react';
+import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 
 // The public and semi-public ways in: the QR-code work order form, the end-of-
 // day entry form, and the auditor portal.
@@ -26,9 +27,12 @@ const LINKS = [
   {
     path: '/auditor',
     title: 'Auditor Portal',
-    blurb: 'Read-only compliance view with export functionality. Give this link to auditors.',
+    blurb: 'The read-only evidence binder. Anyone opening this link needs a pass — issue one below.',
     tone: 'border-purple-200', code: 'text-purple-600',
-    note: 'Auditor signs in as auditor@powder-ops.com and sets a password on first sign-in.',
+    // The old note here said the auditor signs in as an email address. Login
+    // matches on username or full name and never on an email, so that
+    // instruction returned "User not found" every time it was followed.
+    note: null,
   },
 ];
 
@@ -73,6 +77,206 @@ export default function ShareableLinksSection() {
           </div>
         );
       })}
+
+      <AuditorPasses copy={copy} copied={copied} origin={origin} />
+      <BinderSections />
+    </div>
+  );
+}
+
+// ── Auditor passes ───────────────────────────────────────────────────────────
+//
+// A pass is how the auditor (or Carol walking them through it) gets in. The
+// clear text comes back exactly once, so it is shown until the page is left
+// and then it is gone — there is nowhere to look it up again, which is what
+// makes storing only the hash worth anything.
+function AuditorPasses({ copy, copied, origin }) {
+  const { data: passes, refresh } = useApiGet('/auditor-passes');
+  const [name, setName] = useState('');
+  const [note, setNote] = useState('');
+  const [days, setDays] = useState(14);
+  const [issued, setIssued] = useState(null);   // shown once, never fetched again
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const issue = async (e) => {
+    e.preventDefault();
+    setError(''); setBusy(true);
+    try {
+      const res = await apiPost('/auditor-passes', { visitor_name: name.trim(), note: note.trim(), days });
+      setIssued(res);
+      setName(''); setNote('');
+      refresh();
+    } catch (err) {
+      setError(err.message || 'Could not issue the pass.');
+    } finally { setBusy(false); }
+  };
+
+  const revoke = async (p) => {
+    if (!window.confirm(`Revoke ${p.visitor_name}'s pass? The link stops working immediately.`)) return;
+    try { await apiDelete(`/auditor-passes/${p.id}`); refresh(); }
+    catch (err) { setError(err.message || 'Could not revoke that pass.'); }
+  };
+
+  const passUrl = issued ? `${origin}/auditor?pass=${issued.token}` : '';
+  const rows = passes || [];
+
+  return (
+    <div className="bg-white rounded-xl border border-purple-200 p-4 space-y-4">
+      <div className="flex items-start gap-2.5">
+        <Shield size={18} className="text-purple-600 shrink-0 mt-0.5" />
+        <div>
+          <h3 className="font-semibold text-gray-900">Auditor passes</h3>
+          <p className="text-sm text-gray-500">
+            A link that opens the binder with nothing to type. No password, nothing to forget,
+            and no lockout after a few wrong attempts. The visitor's name goes on every record
+            they open, so the audit trail says who was looking.
+          </p>
+        </div>
+      </div>
+
+      {issued && (
+        <div className="rounded-xl border border-green-300 bg-green-50 p-3.5 space-y-2">
+          <p className="text-sm font-semibold text-green-900">
+            Pass for {issued.visitor_name} — copy it now
+          </p>
+          <p className="text-[11px] text-green-800">
+            This is the only time the link is shown. If it is lost, revoke this pass and issue another.
+          </p>
+          <code className="block text-xs break-all bg-white border border-green-200 rounded-lg p-2 text-gray-800">{passUrl}</code>
+          <button type="button" onClick={() => copy(passUrl)}
+            className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 flex items-center gap-1.5">
+            {copied === passUrl ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy the link</>}
+          </button>
+        </div>
+      )}
+
+      <form onSubmit={issue} className="flex flex-wrap items-end gap-2">
+        <div className="min-w-[10rem] flex-1">
+          <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Who is it for?</label>
+          <input value={name} onChange={e => setName(e.target.value)} required minLength={2}
+            placeholder="Carol Pierce"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div className="min-w-[10rem] flex-1">
+          <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Note (optional)</label>
+          <input value={note} onChange={e => setNote(e.target.value)}
+            placeholder="SQF audit, consultant"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div className="w-24">
+          <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Valid for</label>
+          <select value={days} onChange={e => setDays(parseInt(e.target.value, 10))}
+            className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value={1}>1 day</option>
+            <option value={3}>3 days</option>
+            <option value={7}>7 days</option>
+            <option value={14}>14 days</option>
+            <option value={30}>30 days</option>
+            <option value={90}>90 days</option>
+          </select>
+        </div>
+        <button type="submit" disabled={busy || name.trim().length < 2}
+          className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1.5 shrink-0">
+          <Plus size={14} /> {busy ? 'Issuing…' : 'Issue pass'}
+        </button>
+      </form>
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {rows.length > 0 && (
+        <div className="divide-y divide-gray-100 border-t border-gray-100 pt-1">
+          {rows.map(p => (
+            <div key={p.id} className="py-2 flex items-center gap-3 flex-wrap">
+              <span className="font-medium text-gray-900 text-sm">{p.visitor_name}</span>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                p.status === 'active' ? 'bg-green-100 text-green-700'
+                  : p.status === 'expired' ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-700'}`}>
+                {p.status.toUpperCase()}
+              </span>
+              <span className="text-xs text-gray-400 flex-1 min-w-0 truncate">
+                {p.note ? `${p.note} · ` : ''}
+                expires {String(p.expires_at).slice(0, 10)}
+                {p.use_count > 0 ? ` · opened ${p.use_count}×` : ' · never opened'}
+              </span>
+              {p.status === 'active' && (
+                <button type="button" onClick={() => revoke(p)}
+                  className="text-gray-400 hover:text-red-600 shrink-0" title="Revoke this pass">
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── What the binder shows ────────────────────────────────────────────────────
+//
+// Hiding a section is a SETTING and not a code change, because "temporarily"
+// means whoever decided it has to be able to put it back without a deploy.
+// Nothing is deleted and no log is filtered — the registry is still there in
+// the operating app for everyone who could see it before.
+const BINDER_LABELS = {
+  documents: {
+    label: 'Controlled Document Registry',
+    blurb: 'SOPs, work instructions and policies with their revisions.',
+  },
+  dcr: {
+    label: 'Document Change Requests',
+    blurb: 'The change-request log.',
+  },
+  'process-maps': {
+    label: 'Process Maps',
+    blurb: 'How records move and who owns each step.',
+  },
+};
+
+function BinderSections() {
+  const { data, refresh } = useApiGet('/compliance/binder');
+  const [error, setError] = useState('');
+  const hidden = data?.hidden || [];
+  const sections = data?.sections || [];
+
+  const toggle = async (id) => {
+    const next = hidden.includes(id) ? hidden.filter(h => h !== id) : [...hidden, id];
+    setError('');
+    try { await apiPut('/compliance/binder', { hidden: next }); refresh(); }
+    catch (err) { setError(err.message || 'Could not save that.'); }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+      <div>
+        <h3 className="font-semibold text-gray-900">What the binder shows</h3>
+        <p className="text-sm text-gray-500">
+          Turn a chapter off while the plant is presenting that evidence on paper. Nothing is
+          deleted and nothing changes anywhere else in ReadyDoc — this only decides what an
+          auditor sees in the binder. A chapter left with no sections is dropped entirely.
+        </p>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {sections.map(id => {
+          const meta = BINDER_LABELS[id] || { label: id, blurb: '' };
+          const off = hidden.includes(id);
+          return (
+            <div key={id} className="py-2 flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-medium ${off ? 'text-gray-400' : 'text-gray-900'}`}>{meta.label}</p>
+                <p className="text-xs text-gray-400">{meta.blurb}</p>
+              </div>
+              <button type="button" onClick={() => toggle(id)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 ${
+                  off ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                {off ? <><EyeOff size={13} /> Hidden</> : <><Eye size={13} /> Showing</>}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );
 }

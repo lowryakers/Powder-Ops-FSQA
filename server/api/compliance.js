@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import AdmZip from 'adm-zip';
 import { equipmentReadiness } from '../equipment-readiness.js';
-import { getDb } from '../db.js';
+import { getDb, logAudit } from '../db.js';
 import { QMS_TYPES } from '../qms-config.js';
 import { recleanRooms } from './sanitation.js';
 import { requireRole } from '../middleware/auth.js';
@@ -9,8 +9,56 @@ import { hasExplicitGrant } from '../module-access.js';
 import { readinessReview } from '../audit-readiness.js';
 // One definition of "waiting on a signature" — see the sign-out badge note below.
 import { getSource, safeCount } from '../qa-review.js';
+// One definition of "completed PM" — the dashboard, the Task Center and the
+// auditor binder all read it from here.
+import { pmCompletion } from '../pm-completion.js';
 
 const router = Router();
+
+// ── What the auditor binder shows ────────────────────────────────────────────
+//
+// Some evidence is genuinely not ready to be shown from the app — right now the
+// controlled documents and the change-request log, which the plant is still
+// working from paper for. Hiding those has to be a SETTING and not a code edit,
+// because "temporarily" means somebody has to be able to put them back without
+// a deploy, and the person who decides that is not the person who deploys.
+//
+// This hides SECTIONS OF THE BINDER, not records. Nothing is deleted, no log is
+// filtered, and every other route still returns exactly what it returned
+// before — an admin, QA and Document Control all still see the registry in the
+// operating app. It is a statement about which evidence the plant is presenting
+// from the system this time round, which is the plant's call to make.
+const BINDER_SECTION_IDS = ['documents', 'dcr', 'process-maps'];
+const BINDER_HIDDEN_KEY = 'auditor_binder_hidden';
+
+function binderHidden(db) {
+  try {
+    const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(BINDER_HIDDEN_KEY);
+    const parsed = row?.value ? JSON.parse(row.value) : [];
+    return Array.isArray(parsed) ? parsed.filter(id => BINDER_SECTION_IDS.includes(id)) : [];
+  } catch { return []; }
+}
+
+// Read is open to any signed-in user because the auditor themselves has to
+// fetch it to render their own binder, and it says nothing an auditor could not
+// already see by looking at the page.
+router.get('/binder', (_req, res) => {
+  res.json({ sections: BINDER_SECTION_IDS, hidden: binderHidden(getDb()) });
+});
+
+router.put('/binder', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const raw = Array.isArray(req.body?.hidden) ? req.body.hidden : [];
+  const unknown = raw.filter(id => !BINDER_SECTION_IDS.includes(id));
+  if (unknown.length) return res.status(400).json({ error: `Unknown binder section: ${unknown.join(', ')}` });
+  const hidden = BINDER_SECTION_IDS.filter(id => raw.includes(id)); // normalised order, deduplicated
+  const before = binderHidden(db);
+  db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .run(BINDER_HIDDEN_KEY, JSON.stringify(hidden));
+  logAudit(req.user, 'update', 'auditor_binder', BINDER_HIDDEN_KEY,
+    { hidden }, { hidden: before }, { hidden }, 'Auditor binder sections');
+  res.json({ sections: BINDER_SECTION_IDS, hidden });
+});
 
 // ── Critical Tracking (Audit Prep Phase 2) ───────────────────────────────────
 // One aggregation for the program-health dashboard: every category returns a
@@ -271,9 +319,13 @@ router.get('/dashboard', (_req, res) => {
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const pmCutoff = yesterday.toISOString().split('T')[0];
-  const pmTotal = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date BETWEEN ? AND ? AND status != 'not_applicable'").get(from, pmCutoff).c;
-  const pmCompleted = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')").get(from, pmCutoff).c;
-  const pmRate = pmTotal > 0 ? ((pmCompleted / pmTotal) * 100) : 0;
+  // One definition of "completed", shared with the Task Center — see
+  // pm-completion.js for why a cancelled task is not a missed one.
+  const pm = pmCompletion(db, { from, to: pmCutoff });
+  const pmTotal = pm.total;
+  const pmCompleted = pm.completed;
+  const pmStoodDown = pm.stood_down;
+
 
   const overdueWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE due_date < ? AND status IN ('open','in_progress','overdue')").get(to).c;
   const openWOs = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE status IN ('open','in_progress')").get().c;
@@ -337,8 +389,12 @@ router.get('/dashboard', (_req, res) => {
     pm: {
       total: pmTotal,
       completed: pmCompleted,
-      completion_rate: parseFloat(pmRate.toFixed(1)),
-      meets_sqf_target: pmRate >= 95,
+      completion_rate: pm.completion_rate,
+      meets_sqf_target: pm.meets_sqf_target,
+      // Reported rather than folded silently into the rate: "12 stood down" is
+      // a fact somebody should be able to check, not an adjustment hidden in a
+      // percentage.
+      stood_down: pmStoodDown,
       overdue: overdueWOs,
       open: openWOs,
       due_soon: dueSoonWOs,

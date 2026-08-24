@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import MarkdownView from '../common/MarkdownView.jsx';
@@ -764,12 +764,18 @@ const CHAPTERS = [
     id: 'docs', title: 'Food Safety Documentation & Document Control',
     ref: 'SQF 2.2 / NSF 455-2 Documentation Requirements', icon: BookOpen,
     desc: 'Controlled SOPs, policies, and work instructions with revision control, plus the document change request log.',
+    // When the registry and the change log are both hidden, this chapter is
+    // about how records move rather than about documents — so it says so.
+    // A chapter heading promising a document registry above a page with no
+    // registry on it reads as something failing to load.
+    descWhenHidden: 'How records move through the plant and who owns each step. Controlled documents and change requests are being presented on paper this audit.',
+    titleWhenHidden: 'How Records Move',
     sections: () => [
-      ['Controlled Document Registry', BookOpen, <DocumentsSection key="d" title="Documents" />],
-      ['Document Change Requests', FileText, <QmsSection key="dcr" type="document_change_request" />],
+      ['Controlled Document Registry', BookOpen, <DocumentsSection key="d" title="Documents" />, 'documents'],
+      ['Document Change Requests', FileText, <QmsSection key="dcr" type="document_change_request" />, 'dcr'],
       // How the records actually move, and who owns what. Sits in chapter 1
       // because it is the orientation an auditor wants before opening any log.
-      ['Process Maps — how records move, who does what', Workflow, <ProcessFlows key="pf" />],
+      ['Process Maps — how records move, who does what', Workflow, <ProcessFlows key="pf" />, 'process-maps'],
     ],
   },
   {
@@ -850,6 +856,25 @@ const CHAPTERS = [
   },
 ];
 
+// A chapter with every section hidden is dropped from the binder entirely —
+// a numbered chapter that opens on nothing is worse than one that isn't there,
+// because the auditor is left wondering what was meant to be in it.
+function visibleChapters(hidden) {
+  const out = [];
+  for (const c of CHAPTERS) {
+    const sections = c.sections(null).filter(([, , , id]) => !id || !hidden.includes(id));
+    if (!sections.length) continue;
+    const reduced = sections.length < c.sections(null).length;
+    out.push({
+      ...c,
+      title: reduced && c.titleWhenHidden ? c.titleWhenHidden : c.title,
+      desc: reduced && c.descWhenHidden ? c.descWhenHidden : c.desc,
+      sections: (dr) => c.sections(dr).filter(([, , , id]) => !id || !hidden.includes(id)),
+    });
+  }
+  return out;
+}
+
 export default function AuditorView() {
   const { user, logout } = useAuth();
   const now = new Date();
@@ -860,10 +885,14 @@ export default function AuditorView() {
     to: now.toISOString().split('T')[0],
   });
   const [chapterId, setChapterId] = useState(null); // null = table of contents
-  const { data: dashboard } = useApiGet('/compliance/dashboard');
+  // Which sections the plant is presenting from the system this time. Set in
+  // Settings → Shareable Links, so it changes without a deploy.
+  const { data: binder } = useApiGet('/compliance/binder');
+  const hidden = useMemo(() => binder?.hidden || [], [binder]);
+  const chapters = useMemo(() => visibleChapters(hidden), [hidden]);
 
-  const chapter = CHAPTERS.find(c => c.id === chapterId) || null;
-  const chapterIndex = chapter ? CHAPTERS.indexOf(chapter) : -1;
+  const chapter = chapters.find(c => c.id === chapterId) || null;
+  const chapterIndex = chapter ? chapters.indexOf(chapter) : -1;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -906,19 +935,19 @@ export default function AuditorView() {
                   <Printer size={15} /> Print this page
                 </button>
               </div>
-              {dashboard && (
-                <div className={`mt-4 rounded-xl p-3.5 flex items-center gap-3 ${dashboard.pm.meets_sqf_target ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                  {dashboard.pm.meets_sqf_target ? <CheckCircle size={22} className="text-green-600 shrink-0" /> : <AlertTriangle size={22} className="text-red-600 shrink-0" />}
-                  <p className="text-sm text-gray-700">
-                    <span className="font-semibold">{dashboard.pm.meets_sqf_target ? 'SQF compliance target met. ' : 'Below SQF compliance target. '}</span>
-                    PM completion {dashboard.pm.completion_rate}% (target ≥95%) · Calibration overdue: {dashboard.calibration.overdue} · Sanitation pass rate {dashboard.sanitation.pass_rate}%
-                  </p>
-                </div>
-              )}
+              {/* The plant's own pass/fail verdict does not belong on the cover
+                  of the binder. It was a self-assessment computed from a
+                  thirty-day window, printed in red, above the records — which
+                  reads as a finding the auditor did not make and cannot check
+                  from the sentence itself. The evidence is in the chapters:
+                  the PM chapter still shows the completion rate with the
+                  history behind it, calibration still shows what is overdue,
+                  and sanitation still shows its pass rate. Removing the verdict
+                  hides no record; it stops the binder arguing with itself. */}
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-              {CHAPTERS.map((c, i) => (
+              {chapters.map((c, i) => (
                 <button key={c.id} onClick={() => setChapterId(c.id)}
                   className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-powder-50/50 transition-colors group">
                   <span className="text-lg font-bold text-gray-300 group-hover:text-powder-400 w-7 shrink-0 tabular-nums">{i + 1}</span>
@@ -974,13 +1003,13 @@ export default function AuditorView() {
 
             <div className="flex items-center justify-between print:hidden">
               {chapterIndex > 0 ? (
-                <button onClick={() => setChapterId(CHAPTERS[chapterIndex - 1].id)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-powder-700">
-                  <ArrowLeft size={14} /> {chapterIndex}. {CHAPTERS[chapterIndex - 1].title}
+                <button onClick={() => setChapterId(chapters[chapterIndex - 1].id)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-powder-700">
+                  <ArrowLeft size={14} /> {chapterIndex}. {chapters[chapterIndex - 1].title}
                 </button>
               ) : <span />}
-              {chapterIndex < CHAPTERS.length - 1 && (
-                <button onClick={() => setChapterId(CHAPTERS[chapterIndex + 1].id)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-powder-700 text-right">
-                  {chapterIndex + 2}. {CHAPTERS[chapterIndex + 1].title} <ChevronRight size={14} />
+              {chapterIndex < chapters.length - 1 && (
+                <button onClick={() => setChapterId(chapters[chapterIndex + 1].id)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-powder-700 text-right">
+                  {chapterIndex + 2}. {chapters[chapterIndex + 1].title} <ChevronRight size={14} />
                 </button>
               )}
             </div>

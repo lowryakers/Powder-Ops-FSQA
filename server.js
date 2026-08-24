@@ -49,6 +49,7 @@ import facilityRoutes from './server/api/facility.js';
 import retentionRoutes from './server/api/retention.js';
 import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
+import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './server/api/auditor-pass.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
 import activityRoutes from './server/api/activity.js';
@@ -1693,6 +1694,11 @@ app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRout
 app.use('/api/partners', requireModuleWrite('partner-reconciliation'), partnerRoutes);
 // Public: token-scoped partner access, guarded inside the router.
 app.use('/api/partner-portal', partnerPortalRoutes);
+// Two halves of the auditor pass, deliberately mounted separately: redeeming is
+// public (the holder has no session yet — that is the whole point), while
+// issuing and revoking are admin-only inside their own router.
+app.use('/api/auditor-pass', auditorPassPublicRoutes);
+app.use('/api/auditor-passes', auditorPassRoutes);
 // Filing is what View gets you here — anyone granted the module can claim
 // their own money back, and only ever sees their own claims. Approving and
 // PAYING are a second, narrower check inside the router (office or admin),

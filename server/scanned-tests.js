@@ -84,6 +84,48 @@ export function cleanPersonName(text) {
   return s;
 }
 
+// Some batches write the topic WITHOUT parentheses — "Jose Ortiz ANNUAL cGMP
+// QUIZ 04-23-2026.pdf" rather than "…(cGMP)…". Those were all being rejected as
+// group forms, which is what "0 readable" out of 24 files looked like.
+//
+// The parenthesised form still wins wherever it is present, so nothing that
+// already imported parses differently now. This is only the fallback.
+//
+// SPLITTING ON A KEYWORD, NOT ON WORD COUNT. "the first two words are the name"
+// is wrong for this plant — the training log is full of two-surname Spanish
+// names — and "the topic is the words in capitals" is wrong too, because the
+// scans write plenty of names in capitals ("SILVIA CARRILLO"). So the topic is
+// taken to start at the first word from a SMALL, EXPLICIT vocabulary of things
+// a training topic is actually called here. A filename using none of these
+// words is left alone and still reported, rather than guessed at.
+const TOPIC_STARTERS = new Set([
+  'annual', 'quiz', 'test', 'exam', 'training', 'refresher', 'acknowledgement',
+  'gmp', 'cgmp', 'haccp', 'sqf', 'sop', 'wi', 'ppe',
+  'food', 'allergen', 'sanitation', 'chemical', 'chemicals', 'glass', 'brittle',
+  'safety', 'defense', 'defence', 'hazard', 'forklift', 'pallet', 'lockout',
+  'loto', 'emergency', 'evacuation', 'fire', 'crisis', 'recall', 'traceability',
+]);
+
+// A topic that names no subject — "QUIZ" on its own. It is still a topic and
+// still importable, but it must never be auto-suggested onto a course: which
+// quiz it was is a question only a person can answer, and filing a hundred
+// people against the wrong course is the failure this importer exists to avoid.
+const VAGUE_TOPICS = new Set(['quiz', 'test', 'exam', 'training', 'annual', 'annual quiz', 'annual test']);
+
+function splitNameAndTopic(rest) {
+  const words = String(rest || '').trim().split(/\s+/).filter(Boolean);
+  const at = words.findIndex(w => TOPIC_STARTERS.has(w.toLowerCase().replace(/[^a-z]/g, '')));
+  // Nothing before the keyword is not a name, it is a file that happens to
+  // start with one of these words — leave it whole rather than inventing a
+  // person out of nothing.
+  if (at < 1) return { name: rest, topic: null };
+  const name = words.slice(0, at).join(' ');
+  const topic = words.slice(at).join(' ');
+  // The person still has to look like a person. A single leading word falls
+  // through to the existing partial_name report.
+  return { name, topic };
+}
+
 /**
  * One scanned file → { name, topic, date } plus why it couldn't be read.
  * `problem` is set (and the row is not importable) when a required part is
@@ -97,19 +139,27 @@ export function parseScanName(filename) {
 
   // The topic is what's in parentheses — the plant's own labelling.
   const paren = s.match(/\(([^)]*)\)/);
-  const topic = paren ? paren[1].replace(/\s+/g, ' ').trim() : null;
+  let topic = paren ? paren[1].replace(/\s+/g, ' ').trim() : null;
   if (paren) s = `${s.slice(0, paren.index)} ${s.slice(paren.index + paren[0].length)}`.replace(/\s+/g, ' ').trim();
 
   const { date, rest, order } = extractDate(s);
-  const name = cleanPersonName(rest);
+
+  // No parentheses: try the unparenthesised layout before giving up on the file.
+  let namePart = rest;
+  if (!topic) {
+    const split = splitNameAndTopic(rest);
+    if (split.topic) { topic = split.topic; namePart = split.name; }
+  }
+  const name = cleanPersonName(namePart);
 
   let problem = null;
-  if (!topic) problem = 'no_topic';          // no "(…)" — a group form, not a person's test
+  if (!topic) problem = 'no_topic';          // neither "(…)" nor a topic word — a group form
   else if (!name) problem = 'no_person';     // nothing left that could be a name
   else if (!date) problem = 'no_date';       // never invented; see training-log.js
   else if (name.split(' ').length < 2) problem = 'partial_name';
 
-  return { filename: base, name, topic, date, date_order: order, problem };
+  const vague = !!topic && VAGUE_TOPICS.has(topic.toLowerCase().replace(/\s+/g, ' ').trim());
+  return { filename: base, name, topic, date, date_order: order, problem, vague_topic: vague };
 }
 
 /** Dice bigram similarity — used only to SUGGEST a roster match, never to pick one. */

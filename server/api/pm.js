@@ -10,6 +10,7 @@ import { periodically, resetHousekeeping } from '../housekeeping.js';
 import { pushToUser } from '../push.js';
 import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
 import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
+import { pmCompletion } from '../pm-completion.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 
@@ -690,9 +691,15 @@ router.get('/metrics', (req, res) => {
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const rateCutoff = yesterday.toISOString().split('T')[0];
-  const total = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ?" + gf).get(start, rateCutoff, ...gp);
-  const completed = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status IN ('completed','not_applicable')" + gf).get(start, rateCutoff, ...gp);
-  const naCount = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'not_applicable'" + gf).get(start, rateCutoff, ...gp);
+  // The same completion rule the compliance dashboard uses — see
+  // pm-completion.js. This used to be its own copy, and the two disagreed:
+  // `total` here counted every row including the ones stood down, while the
+  // dashboard counted `not_applicable` as a completion. Both treated a
+  // cancelled task as a miss.
+  const rate = pmCompletion(db, { from: start, to: rateCutoff, extraWhere: gf, params: gp });
+  const total = { count: rate.total };
+  const completed = { count: rate.completed };
+  const naCount = { count: rate.stood_down };
   const open = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE status IN ('open','in_progress')" + gf).get(...gp);
 
   // OVERDUE IS PAST DUE AND NOT DONE — which in this app means `missed`.
@@ -728,8 +735,6 @@ router.get('/metrics', (req, res) => {
   // which is the compliance question the trend chart asks.
   const missedInPeriod = db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE due_date BETWEEN ? AND ? AND status = 'missed'" + gf).get(start, rateCutoff, ...gp);
 
-  const completionRate = total.count > 0 ? ((completed.count / total.count) * 100).toFixed(1) : 0;
-
   const byEquipment = db.prepare(`
     SELECT e.name, e.room, COUNT(*) as total,
       SUM(CASE WHEN wo.status IN ('completed','not_applicable') THEN 1 ELSE 0 END) as completed
@@ -754,11 +759,14 @@ router.get('/metrics', (req, res) => {
     missed: missed.count,
     missed_runs: missedRuns.count,
     missed_in_period: missedInPeriod.count,
+    // Tasks deliberately stood down — not applicable, or cancelled with a
+    // reason. Out of both halves of the rate rather than counted as misses.
     not_applicable: naCount.count,
+    stood_down: rate.stood_down,
     overdue: overdue.count,
     open: open.count,
-    completion_rate: parseFloat(completionRate),
-    meets_sqf_target: parseFloat(completionRate) >= 95,
+    completion_rate: rate.completion_rate,
+    meets_sqf_target: rate.meets_sqf_target,
     by_equipment: byEquipment,
     monthly_trend: monthlyTrend.reverse(),
   });

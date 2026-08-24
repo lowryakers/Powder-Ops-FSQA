@@ -4,6 +4,7 @@ import { getDb, logAudit } from '../db.js';
 import crypto from 'crypto';
 import { requireRole } from '../middleware/auth.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
+import { issueSession } from './sessions.js';
 import { ALL_MODULE_IDS } from '../module-access.js';
 import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
 import { smsEnabled, sendOptIn } from '../sms.js';
@@ -32,17 +33,8 @@ function verifyPassword(password, stored) {
   const known = Buffer.from(hash, 'hex');
   return known.length === test.length && crypto.timingSafeEqual(known, test);
 }
-function issueSession(db, user) {
-  const token = crypto.randomBytes(32).toString('hex');
-  const expires = new Date();
-  expires.setDate(expires.getDate() + 30);
-  db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)').run(uuid(), user.id, token, expires.toISOString());
-  const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
-  let quickTabs;
-  try { quickTabs = user.quick_tabs ? JSON.parse(user.quick_tabs) : null; } catch { quickTabs = null; }
-  const daysLeft = passwordDaysLeft(user.password_changed_at);
-  return { token, user: { id: user.id, name: user.name, username: user.username || user.name, role: user.role, department: user.department || 'warehouse', module_access: moduleAccess, home_workspace: user.home_workspace || 'fsqa', quick_tabs: quickTabs, password_days_left: daysLeft, password_expired: passwordExpired(user.password_changed_at) } };
-}
+// issueSession lives in ./sessions.js — the auditor pass mints one too, and one
+// definition is the point.
 
 // --- User CRUD ---
 

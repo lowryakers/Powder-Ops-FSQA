@@ -12,6 +12,7 @@ import { useInstallPrompt, installEnvironment } from './lib/useInstallPrompt.js'
 import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview } from './utils/permissions';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
+import AuditorLogin from './components/AuditorLogin.jsx';
 import AttentionBar from './components/AttentionBar.jsx';
 import ModuleBoundary from './components/ModuleBoundary.jsx';
 import InstallHelp from './components/InstallHelp.jsx';
@@ -1206,6 +1207,9 @@ function App() {
   const [showChangePw, setShowChangePw] = useState(false);
   const [showSignature, setShowSignature] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
+  // /auditor shows the binder's own sign-in; staff can switch to the ordinary
+  // one from there rather than the visitor being shown a staff login.
+  const [auditorStaffLogin, setAuditorStaffLogin] = useState(false);
   // ReadyDoc feedback box — one click from anywhere in the app.
   // Docked chat: a slim Messages panel beside the modules (desktop split screen).
   const [dockChat, setDockChat] = useState(() => { try { return localStorage.getItem('dock_chat') === '1'; } catch { return false; } });
@@ -1557,7 +1561,14 @@ function App() {
         </div>
       );
     }
-    if (!user) return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
+    // The binder's own door: a pass redeems with nothing typed, and the screen
+    // says what it is rather than showing the staff login to a visitor. Staff
+    // can still get to the ordinary sign-in from there.
+    if (!user) {
+      return auditorStaffLogin
+        ? <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />
+        : <AuditorLogin onLoginWithToken={loginWithToken} onStaffSignIn={() => setAuditorStaffLogin(true)} />;
+    }
     if (user.password_expired) return <PasswordExpiredGate />;
     return <><AuditorView /><UpdateBanner /></>;
   }
