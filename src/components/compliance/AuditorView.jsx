@@ -189,7 +189,7 @@ function DocumentViewer({ id, onClose }) {
 }
 
 // ── Controlled documents registry ────────────────────────────────────────────
-function DocumentsSection({ docType, title }) {
+function DocumentsSection({ docType, title, noun = 'controlled documents' }) {
   const { data: docs } = useApiGet(docType ? `/documents?doc_type=${docType}` : '/documents');
   const rows = docs || [];
   const [openId, setOpenId] = useState(null);
@@ -208,7 +208,7 @@ function DocumentsSection({ docType, title }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{rows.length} controlled documents</p>
+        <p className="text-sm text-gray-500">{rows.length} {noun}</p>
         <ExportButton onClick={doExport} />
       </div>
       {rows.length > 0 && (
@@ -779,11 +779,19 @@ const CHAPTERS = [
     ],
   },
   {
-    id: 'people', title: 'Personnel: Training & Certifications',
+    id: 'people', title: 'Personnel: Training, Job Descriptions & Certifications',
     ref: 'SQF 2.9 / NSF 455-2 Personnel & Training', icon: GraduationCap,
-    desc: 'GMP and role training completions, plus professional certifications (PCQI, HACCP) with certificate files on record.',
+    desc: 'GMP and role training completions, the job descriptions those roles are defined by, and professional certifications (PCQI, HACCP) with certificate files on record.',
     sections: () => [
       ['Training Records', GraduationCap, <TrainingSection key="t" />],
+      // Job descriptions live in sop_documents like every other controlled
+      // document, but they belong to the PERSONNEL chapter, not the document
+      // registry: an auditor asks for a JD next to that person's training, and
+      // "who is responsible for X" is a personnel question. Its own section id
+      // so it is independent of the registry toggle — hiding the registry while
+      // the plant works from paper must not take the job descriptions with it,
+      // which is exactly what happened.
+      ['Job Descriptions', GraduationCap, <DocumentsSection key="jd" docType="job_description" title="Job Descriptions" noun="job descriptions" />, 'job-descriptions'],
       ['Certifications (PCQI / HACCP / other)', CheckCircle, <CertificationsSection key="c" />],
     ],
   },

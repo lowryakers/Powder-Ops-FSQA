@@ -228,6 +228,10 @@ const BINDER_LABELS = {
     label: 'Document Change Requests',
     blurb: 'The change-request log.',
   },
+  'job-descriptions': {
+    label: 'Job Descriptions',
+    blurb: 'Listed under Personnel, not the registry — an auditor asks for a JD beside that person\'s training.',
+  },
   'process-maps': {
     label: 'Process Maps',
     blurb: 'How records move and who owns each step.',

@@ -28,7 +28,12 @@ const router = Router();
 // before — an admin, QA and Document Control all still see the registry in the
 // operating app. It is a statement about which evidence the plant is presenting
 // from the system this time round, which is the plant's call to make.
-const BINDER_SECTION_IDS = ['documents', 'dcr', 'process-maps'];
+// Job descriptions are listed separately from the document registry on purpose.
+// They are controlled documents, but they answer a PERSONNEL question — "who is
+// responsible for this, and what were they told the job was" — and hiding the
+// registry while the plant presents it on paper took the job descriptions with
+// it, which was not the intent.
+const BINDER_SECTION_IDS = ['documents', 'dcr', 'job-descriptions', 'process-maps'];
 const BINDER_HIDDEN_KEY = 'auditor_binder_hidden';
 
 function binderHidden(db) {
