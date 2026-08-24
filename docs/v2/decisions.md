@@ -348,3 +348,70 @@ considering as a small Track A change later: a paused schedule that still has op
 so where it is paused. Zero such leftovers existed on the 19 August copy, but that copy predates this
 decision, so the count today is unmeasured — **treat that as an open question, not as a zero.** (D-010's
 false-zero note applies: an unmeasured number and a measured zero must not be written down the same way.)
+## D-008 · 2026-08-24 · decided — How the D-006 walk is conducted, and the four verdicts
+
+D-006 said *do the walk*. This records **how**, so a cold session resumes it rather than re-deciding
+it. The walk itself lives in `docs/v2/preventive-control-walk.md`; that file is a reading of the code
+at a date and is updated in place. Decisions taken while walking come here.
+
+**Three legs, and both refinements are load-bearing.** A control passes only with a *program* (a dated
+obligation nobody has to remember), a *numbered form*, and a *record that accumulates in a log*.
+
+1. **A program may be a trigger rather than a cadence.** Receiving, sign-outs, film inspection and
+   disposal are event-driven and correctly so. What fails the leg is a control that depends on
+   somebody deciding to start it — not one without a frequency.
+2. **The work order is the universal fallback record, and it is not always enough.** Completing any
+   task writes actor, time, readings and step ticks onto `work_orders`. For an equipment PM that is
+   the record. It is not enough where the control answers to a numbered log, because a work order is
+   not retrievable by form number, is on no module's log, and does not pass QA Review. "The task was
+   completed" and "the record exists" are therefore kept as separate findings.
+
+**Four verdicts, not three.** D-002 anticipated wired / running-unrecorded / described-not-done. The
+Master Index's `where` field forced a fourth: **`elsewhere`** — resolved outside ReadyDoc by
+decision. Seven forms are assigned to Keychain, including the batch production record, supplier
+qualification and product release. That is a legitimate answer to the test and it still owes two
+things, and both are now punch-list items rather than assumptions: *which of the seven are live in
+Keychain today*, and *how a Keychain record is retrieved on a date an auditor picks* — because L6's
+rule is that nothing is prepared for the audit.
+
+**Consequence for the 4 August gap analysis.** Three of its findings move: supplier approval and
+product release are `elsewhere`, not absent, and retention samples have been built since. That
+document is left as written and corrected in §6 of the walk — the same rule this file follows.
+
+---
+
+## D-009 · 2026-08-24 · open — The two plans are not in the repository, and the walk is blocked on them
+
+The app side of the D-006 walk is complete (`preventive-control-walk.md` §3). The plan side cannot
+start: **neither the Food Safety Plan nor the Food Defense Plan exists in the repository** in any
+form — searched `docs/`, `public/forms/`, `server/assets/`, every seeder and the whole tree. What is
+on file is second-hand: PCQI and HACCP certificates, an AIB Food Defense Coordinator certificate, and
+Form 403-01, whose 104 questions are a proxy for what the plant audits itself against but are not the
+plan's control list.
+
+Two things are needed, and the second is the one that shapes everything:
+
+1. **The two documents**, in any legible form. `emp-site-list.js` and `audit-checklist.js` were both
+   transcribed from supplied documents; a PDF is enough.
+2. **Is the Food Safety Plan written as a 21 CFR 117 preventive-controls plan, or as a HACCP plan
+   with CCPs?** Raised in the 4 August gap analysis and still unanswered. It decides the vocabulary of
+   the whole walk — process / allergen / sanitation / supply-chain controls, or CCPs with critical
+   limits — and `haccp_ccps` is currently modelled for the second. **Answer it from the plan itself.**
+   The plant holds both PCQI and HACCP certificates, so inference from the certificates is not an
+   answer.
+
+Recorded as `open` rather than left in conversation, because this is the single input the first V2
+project waits on.
+
+---
+
+## D-010 · 2026-08-24 · open — Is verification a fourth leg of the D-002 test?
+
+Surfaced by the walk and deliberately not answered inside it. D-002's test names program, form and
+record; the spine has seven nodes and **verification (L5) is not among the three**. Several controls
+are wired end to end and never counter-signed; others pass through QA Review and are.
+
+Whether verification becomes a fourth leg — and if so which controls genuinely need a second pair of
+eyes — is a decision, not a reading. It is adjacent to the role question D-007 left open, that QA
+performing a check and QA verifying it are different jobs, and the two are best settled together
+while the plans are being rewritten anyway.
