@@ -2,7 +2,7 @@ import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import RecordBackfillStrip from '../common/RecordBackfillStrip.jsx';
 import { useAuth } from '../../hooks/useAuth';
-import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList, Settings2 } from 'lucide-react';
+import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList, Settings2, Search } from 'lucide-react';
 import { useCappedList } from '../../lib/useCappedList';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
@@ -627,7 +627,7 @@ export default function SanitationPanel() {
   // that they were never asked for. The endpoint has always supported area and
   // date filters; the panel simply never used them, so there was no way to ask
   // for one area's history at all.
-  const [filters, setFilters] = useState({ area: '', from: '', to: '' });
+  const [filters, setFilters] = useState({ q: '', area: '', from: '', to: '' });
   const query = new URLSearchParams(
     Object.entries(filters).filter(([, v]) => v)).toString();
   // A filtered view raises the bound: somebody asking for one area wants that
@@ -698,6 +698,16 @@ export default function SanitationPanel() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-wrap items-end gap-2">
+        <div className="min-w-[14rem] flex-1">
+          <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Search</label>
+          <div className="relative">
+            <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input type="search" value={filters.q}
+              onChange={e => setFilters(f => ({ ...f, q: e.target.value }))}
+              placeholder="Area, person, chemical, notes…"
+              className="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+        </div>
         <div className="min-w-[12rem] flex-1">
           <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Area</label>
           <select value={filters.area} onChange={e => setFilters(f => ({ ...f, area: e.target.value }))}

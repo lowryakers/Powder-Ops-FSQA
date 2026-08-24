@@ -26,6 +26,7 @@ const AiAskPanel = lazy(() => import('./components/compliance/AiAskPanel.jsx'));
 const ComplianceDashboard = lazy(() => import('./components/compliance/ComplianceDashboard.jsx'));
 const EquipmentPanel = lazy(() => import('./components/compliance/EquipmentPanel.jsx'));
 const PMPanel = lazy(() => import('./components/compliance/PMPanel.jsx'));
+const PMSchedulesPanel = lazy(() => import('./components/compliance/PMSchedulesPanel.jsx'));
 const CalibrationPanel = lazy(() => import('./components/compliance/CalibrationPanel.jsx'));
 const SanitationPanel = lazy(() => import('./components/compliance/SanitationPanel.jsx'));
 const QAInspectionsPanel = lazy(() => import('./components/compliance/QAInspectionsPanel.jsx'));
@@ -981,6 +982,19 @@ function DashboardHub({ user, onNavigate, initialTab = 'overview' }) {
 // with tabs inside. Access stays granular — tabs only show sub-modules the
 // user can view, and cross-links to the old module ids land on the right tab.
 const HUB_TABS = {
+  // The Task Center and the rules that fill it. `POST`/`PUT /pm/schedules` had
+  // been in the API from the start with nothing in the client calling them, so
+  // there was no way to see a recurring schedule, change its cadence, or put a
+  // paused one back — "where is this task generated from?" had no answer on any
+  // screen. A schedule belongs beside the tasks it raises, not in a settings
+  // corner: they are the same subject at two altitudes.
+  pm: [
+    { id: 'pm', label: 'Tasks', render: () => <PMPanel /> },
+    { id: 'pm-schedules', label: 'Recurring Schedules', render: () => <PMSchedulesPanel />,
+      // Rides the `pm` grant — anyone who can work the Task Center can see what
+      // generates its work. Editing is gated inside the panel on role.
+      visible: (u) => canViewModule(u, 'pm') },
+  ],
   'document-control': [
     { id: 'sops', label: 'SOPs', render: () => <DocumentRegistry docType="sop" moduleId="sops" title="SOP Registry" typeLabel="SOP" /> },
     { id: 'work-instructions', label: 'Work Instructions', render: () => <DocumentRegistry docType="work_instruction" moduleId="work-instructions" title="Work Instructions" typeLabel="Work Instruction" /> },
@@ -1972,7 +1986,8 @@ function App() {
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}
           {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}
           {resolvedTab === 'production-dashboard' && <ProductionDashboard />}
-          {resolvedTab === 'pm' && <PMPanel />}
+          {(resolvedTab === 'pm' || resolvedTab === 'pm-schedules') &&
+            <ModuleHub key={`pm-${resolvedTab}`} hubId="pm" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'calibration' && <CalibrationPanel />}
           {resolvedTab === 'sanitation' && <SanitationPanel />}
           {resolvedTab === 'chemicals' && <ChemicalsPanel />}

@@ -16,6 +16,11 @@ export { recordGroupFor };
 router.get('/', (req, res) => {
   const db = getDb();
   const { area, type, from, to, result, equipment_id } = req.query;
+  // Free-text search, ON THE SERVER. The panel used to have none at all, and a
+  // client-side one would only ever search the page it had already been given —
+  // the newest 500 of a log that keeps growing — which reads as "we have no
+  // record of that" when the record is simply older than the cap.
+  const q = String(req.query.q || '').trim().toLowerCase();
   // Default to cleaning records; 'qa' is the inspection list, 'all' is both.
   const group = req.query.group === 'qa' ? 'qa' : req.query.group === 'all' ? null : 'sanitation';
   let sql = `SELECT sr.*, e.name as equipment_name
@@ -25,6 +30,15 @@ router.get('/', (req, res) => {
   if (group) { sql += " AND COALESCE(sr.record_group, 'sanitation') = ?"; params.push(group); }
 
   if (area) { sql += ' AND sr.area = ?'; params.push(area); }
+  if (q) {
+    // The columns somebody actually looks a cleaning record up by: where, who,
+    // what was used, and what they wrote.
+    sql += ` AND (LOWER(sr.area) LIKE ? OR LOWER(COALESCE(sr.performed_by,'')) LIKE ?
+                  OR LOWER(COALESCE(sr.notes,'')) LIKE ? OR LOWER(COALESCE(sr.chemicals_used,'')) LIKE ?
+                  OR LOWER(COALESCE(sr.verified_by,'')) LIKE ? OR LOWER(COALESCE(e.name,'')) LIKE ?)`;
+    const like = `%${q}%`;
+    params.push(like, like, like, like, like, like);
+  }
   if (type) { sql += ' AND sr.type = ?'; params.push(type); }
   if (result) { sql += ' AND sr.result = ?'; params.push(result); }
   if (equipment_id) { sql += ' AND sr.equipment_id = ?'; params.push(equipment_id); }
