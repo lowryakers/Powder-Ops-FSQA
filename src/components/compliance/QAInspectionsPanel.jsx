@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, Fragment } from 'react';
+import { useState, useMemo, Fragment } from 'react';
+import RecordBackfillStrip from '../common/RecordBackfillStrip.jsx';
 import { useApiGet, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -11,7 +12,6 @@ import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { formatDateTime } from '../../lib/datetime.js';
 import FormChip from '../common/FormChip';
-import RuleTip from '../common/RuleTip.jsx';
 import { formLabel } from '../../../shared/form-registry.js';
 
 // Columns as data, so the header and the sort cannot disagree. The first entry
@@ -117,63 +117,6 @@ function InspectionEdit({ record, onDone }) {
 // a compliance log. It renders nothing at all when there is nothing to file, or
 // when the caller may not run it — the server answers that, and a client copy
 // of the permission rule is how the two start disagreeing.
-function BackfillStrip({ onDone }) {
-  const [plan, setPlan] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let live = true;
-    apiFetch('/sanitation/qa-backfill/preview')
-      .then(p => { if (live) setPlan(p); })
-      .catch(() => { /* not permitted, or nothing to say — stay silent */ });
-    return () => { live = false; };
-  }, [done]);
-
-  useEffect(() => { if (done && onDone) onDone(); }, [done, onDone]);
-
-  if (done) {
-    return (
-      <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-900">
-        Filed {done.created} inspection record{done.created === 1 ? '' : 's'} from checks that were completed
-        but never recorded. Each carries the date the check was actually done and is marked entered late.
-      </div>
-    );
-  }
-  if (!plan || !plan.total) return null;
-
-  const months = Object.entries(plan.by_month).sort(([a], [b]) => a.localeCompare(b));
-
-  const run = async () => {
-    setBusy(true); setError(null);
-    try { setDone(await apiFetch('/sanitation/qa-backfill', { method: 'POST' })); }
-    catch (e) { setError(e.message); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-      <h3 className="font-semibold text-amber-900 text-sm">
-        {plan.total} completed check{plan.total === 1 ? '' : 's'} {plan.total === 1 ? 'has' : 'have'} no record on this list
-      </h3>
-      <p className="text-xs text-amber-800 mt-1">
-        These inspections were completed in ReadyDoc, but at the time completing the task did not file its
-        record. <RuleTip id="backfill.invents-nothing" label="What exactly gets filed?" />
-      </p>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-        {months.map(([m, n]) => (
-          <span key={m} className="text-xs text-amber-900"><span className="font-medium">{m}</span> · {n}</span>
-        ))}
-      </div>
-      {error && <p className="text-xs text-red-700 mt-2">{error}</p>}
-      <button type="button" onClick={run} disabled={busy}
-        className="mt-3 px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-60">
-        {busy ? 'Filing…' : `File ${plan.total} record${plan.total === 1 ? '' : 's'}`}
-      </button>
-    </div>
-  );
-}
 
 export default function QAInspectionsPanel() {
   const { user } = useAuth();
@@ -236,7 +179,7 @@ export default function QAInspectionsPanel() {
         </p>
       </div>
 
-      <BackfillStrip onDone={refresh} />
+      <RecordBackfillStrip group="qa" noun="inspection" onDone={refresh} />
 
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {[

@@ -1,5 +1,6 @@
 import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import RecordBackfillStrip from '../common/RecordBackfillStrip.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList, Settings2 } from 'lucide-react';
 import { useCappedList } from '../../lib/useCappedList';
@@ -681,6 +682,11 @@ export default function SanitationPanel() {
       </div>
 
       <AreaNormalizeStrip onDone={refresh} />
+
+      {/* Cleans that were completed as tasks but whose record was never filed.
+          This belongs HERE and not only on QA Inspections: a missing restroom or
+          breakroom record is noticed by whoever opens the cleaning log. */}
+      <RecordBackfillStrip group="sanitation" noun="clean" onDone={refresh} />
 
       <RecleanSection />
 

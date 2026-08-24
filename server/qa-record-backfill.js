@@ -92,6 +92,11 @@ export function planQaRecordBackfill(db) {
       work_order_id: w.id,
       title: w.title,
       area,
+      // Which LIST this record belongs on. A restroom clean lands on Sanitation
+      // and a light inspection on QA's, so each screen can report its own gap
+      // instead of one screen reporting everybody's — which is how a cleaning
+      // record went missing behind a strip on a page the cleaners never open.
+      group: recordGroupFor(area),
       equipment_id: w.equipment_id || null,
       // The date the WORK happened, not today.
       performed_at: w.completed_at,
@@ -105,22 +110,30 @@ export function planQaRecordBackfill(db) {
   // write to a compliance log.
   const byArea = {};
   const byMonth = {};
+  const byGroup = {};
   for (const p of plan) {
     byArea[p.area] = (byArea[p.area] || 0) + 1;
+    byGroup[p.group] = (byGroup[p.group] || 0) + 1;
     const m = String(p.performed_at).slice(0, 7);
     byMonth[m] = (byMonth[m] || 0) + 1;
   }
 
-  return { plan, total: plan.length, skipped, by_area: byArea, by_month: byMonth };
+  return { plan, total: plan.length, skipped, by_area: byArea, by_month: byMonth, by_group: byGroup };
 }
 
 /**
  * File them. One transaction, idempotent, audited individually plus a summary —
  * a bulk action has to leave the trail a manual one would.
  */
-export function runQaRecordBackfill(db, { by = 'system' } = {}) {
-  const { plan, skipped, by_area, by_month } = planQaRecordBackfill(db);
-  if (!plan.length) return { created: 0, skipped, by_area, by_month };
+export function runQaRecordBackfill(db, { by = 'system', group = null } = {}) {
+  const full = planQaRecordBackfill(db);
+  const { skipped, by_area, by_month, by_group } = full;
+  // Scoped to one list when asked. The Sanitation screen offering to file
+  // twelve cleaning records must not quietly file QA's forty as well —
+  // somebody authorising a bulk write to a compliance log should get what the
+  // button said.
+  const plan = group ? full.plan.filter(p => p.group === group) : full.plan;
+  if (!plan.length) return { created: 0, skipped, by_area, by_month, by_group };
 
   const insert = db.prepare(`
     INSERT INTO sanitation_records

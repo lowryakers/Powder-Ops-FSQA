@@ -334,7 +334,7 @@ router.get('/qa-backfill/preview', (req, res) => {
 router.post('/qa-backfill', (req, res) => {
   if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can run the inspection backfill.' });
   try {
-    res.json({ ok: true, ...runQaRecordBackfill(getDb(), { by: req.user?.name || 'system' }) });
+    res.json({ ok: true, ...runQaRecordBackfill(getDb(), { by: req.user?.name || 'system', group: req.body?.group || null }) });
   } catch (e) {
     console.error('[qa-backfill]', e);
     res.status(500).json({ error: e.message });
