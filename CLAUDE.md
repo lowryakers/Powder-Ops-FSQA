@@ -1,5 +1,35 @@
 # Powder Ops FSQA — working notes
 
+## V2 / "Foundation to Spire" — READ THIS BEFORE STARTING V2 WORK
+`docs/v2/architecture.md` is the target architecture; `docs/v2/decisions.md` is the running record of
+what has been decided and why. **Sessions are disposable; the repository is the thread** — anything
+agreed in conversation and not written into `decisions.md` is lost when the session ends. Append a
+`D-nnn` entry; never rewrite one. A decision that turns out wrong gets a superseding entry that says so,
+because the reasoning behind the original is usually still worth having.
+
+**Two tracks, and one rule that keeps them apart:**
+- **Track A — maintenance.** Everything the rest of this file describes. Keeps the plant running; ships
+  to `main`; Railway deploys.
+- **Track B — V2 foundation.** Its own branch and session.
+- > **New construction happens in Track B. Refactors of existing shared code happen in Track A, on
+  > `main`, in one pass.** Most of the recommended moves are refactors of live code (one signature
+  > service touches 34 files). A long-lived V2 fork IS the big-bang cutover, wearing engineering
+  > clothes — see D-003 and D-005.
+
+**The one-line thesis:** logs are the wrong primitive. The recurring defect in this codebase is always
+*a fact that exists in more than one place* — the QA records that never filed, the knife status mirror,
+the badge disagreeing with its queue, a cancelled task counted as a missed one. So the valuable work is
+**consolidation**: give a fact exactly one owner. The pattern already works in five places — the QMS
+spine, QA Review, the form registry, derived readiness, and `pm-completion.js`. Extend those; don't
+invent a new pattern.
+
+**Order that matters:** (1) one signature service, (2) a record interface before a record table,
+(3) limits out of code and into documents. Everything else waits. **Do not rebuild** (D-001).
+
+**Not started yet.** The first V2 project is a *document* project — walking the Food Safety Plan and
+Food Defense Plan against "does every preventive control resolve to a program, a form and a record?"
+(D-002, D-006). No code, no migration, no branch discipline needed.
+
 ## Flavor approvals via SMS (Danny)
 `flavor_approval` QMS type + FlavorPanel ("Text for approval" row action) → magic link `/approve/<token>`
 (public, single-use, ApprovePage.jsx) → decision updates the record + announces in #batching.
