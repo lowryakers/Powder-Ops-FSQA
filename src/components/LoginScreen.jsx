@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, User, KeyRound, Lock } from 'lucide-react';
+import { User, KeyRound, Lock } from 'lucide-react';
 
 export default function LoginScreen({ onLogin, onLoginWithToken }) {
   const [name, setName] = useState('');
@@ -148,11 +148,13 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="h-14 w-14 bg-powder-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Shield size={28} className="text-white" />
-          </div>
+          {/* The plant's own mark, not a generic shield. `public/logo.svg` is the
+              single copy — the visitor kiosk reads the same file, so replacing
+              it changes both and neither can drift. */}
+          <img src="/logo.svg" alt="Powder Ops" className="h-24 mx-auto mb-4"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           <h1 className="text-2xl font-bold text-gray-900">ReadyDoc</h1>
-          <p className="text-sm text-gray-500 mt-1">Powder Ops · FSQA & Compliance</p>
+          <p className="text-sm text-gray-500 mt-1">Powder Ops · FSQA &amp; Compliance</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">

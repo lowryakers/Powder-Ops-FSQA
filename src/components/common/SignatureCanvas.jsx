@@ -35,9 +35,48 @@ export function SignaturePad({ onSave, onCancel, saving }) {
     const rect = canvasRef.current.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
+
+  // A STROKE MUST SURVIVE LEAVING THE BOX AND MUST NEVER BECOME A SCROLL.
+  //
+  // Reported from the lobby tablet: "it starts to sign, then it starts to
+  // affect the scroll, almost like the touch isn't read continually." Three
+  // things caused that together, and only fixing all three makes a finger
+  // behave like a pen:
+  //
+  //  * `setPointerCapture` was called on the canvas and simply not honoured
+  //    part-way through a stroke on iPad Safari, after which no further move
+  //    events reached the canvas at all. The stroke stopped dead and the
+  //    browser took the gesture back as a pan. Moves and the release are now
+  //    tracked on the WINDOW for the life of the stroke, so losing capture
+  //    costs nothing.
+  //  * `onPointerLeave` ended the stroke. A signature routinely runs past the
+  //    edge of a 160px box — the tail of a "y", the cross of a "t" — and each
+  //    time it did, the pen lifted. It ends on release or cancellation now,
+  //    not on leaving.
+  //  * `preventDefault` was called on the first touch only. `touch-action:
+  //    none` handles most of it, but a move that is not also defaulted can
+  //    still start a scroll on iOS once the gesture is in flight.
+  const endStroke = () => {
+    drawingRef.current = false;
+    window.removeEventListener('pointermove', winMove);
+    window.removeEventListener('pointerup', endStroke);
+    window.removeEventListener('pointercancel', endStroke);
+  };
+  const drawTo = (e) => {
+    const ctx = canvasRef.current?.getContext('2d');
+    if (!ctx) return;
+    const p = pos(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  };
+  const winMove = (e) => {
+    if (!drawingRef.current) return;
+    if (e.cancelable) e.preventDefault();
+    drawTo(e);
+  };
   const down = (e) => {
     e.preventDefault();
-    canvasRef.current.setPointerCapture?.(e.pointerId);
+    try { canvasRef.current.setPointerCapture?.(e.pointerId); } catch { /* not honoured everywhere */ }
     drawingRef.current = true;
     const ctx = canvasRef.current.getContext('2d');
     const p = pos(e);
@@ -47,15 +86,22 @@ export function SignaturePad({ onSave, onCancel, saving }) {
     ctx.lineTo(p.x + 0.1, p.y + 0.1);
     ctx.stroke();
     setHasInk(true);
+    // Passive listeners cannot preventDefault, and preventing the default is
+    // the half that stops the page panning mid-signature.
+    window.addEventListener('pointermove', winMove, { passive: false });
+    window.addEventListener('pointerup', endStroke);
+    window.addEventListener('pointercancel', endStroke);
   };
   const move = (e) => {
+    // The window listener does the work while a stroke is live; this only
+    // matters for a mouse that never left the canvas.
     if (!drawingRef.current) return;
-    const ctx = canvasRef.current.getContext('2d');
-    const p = pos(e);
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
+    if (e.cancelable) e.preventDefault();
+    drawTo(e);
   };
-  const up = () => { drawingRef.current = false; };
+
+  // A stroke in flight when the pad unmounts would leave listeners on window.
+  useEffect(() => endStroke, []);
 
   const clear = () => {
     const c = canvasRef.current;
@@ -73,8 +119,9 @@ export function SignaturePad({ onSave, onCancel, saving }) {
     <div className="space-y-2">
       {/* touch-none: the page must not scroll out from under a signature. */}
       <canvas ref={canvasRef}
-        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
-        className="w-full h-40 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 touch-none cursor-crosshair" />
+        onPointerDown={down} onPointerMove={move}
+        style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
+        className="w-full h-40 sm:h-48 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 touch-none cursor-crosshair select-none" />
       <p className="text-[11px] text-gray-500">Sign above with your finger or mouse — the way you would on paper.</p>
       <div className="flex gap-2">
         <button type="button" onClick={save} disabled={!hasInk || saving}

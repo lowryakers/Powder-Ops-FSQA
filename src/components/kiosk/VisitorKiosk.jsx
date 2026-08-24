@@ -207,7 +207,7 @@ export default function VisitorKiosk() {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6">
         <div className="flex-1 flex items-center">
-          <img src="/logo.png" alt="Powder Ops" className="w-56 sm:w-64"
+          <img src="/logo.svg" alt="Powder Ops" className="w-56 sm:w-64"
             onError={(e) => { e.currentTarget.style.display = 'none'; }} />
         </div>
         <div className="w-full max-w-md pb-10">
