@@ -1567,6 +1567,110 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_auditor_passes_active ON auditor_passes(revoked_at, expires_at);
 
+    -- ── Visitor sign-in (the lobby tablet) ───────────────────────────────────
+    --
+    -- Replaces Lobby Track. Three tables because there are three different
+    -- lifetimes here and collapsing them loses something each time:
+    --
+    --   visitors            a PERSON, who comes back. Deduplicated so the
+    --                       second visit does not create a second stranger.
+    --   visitor_visits      one arrival. In, out, where, and how it ended.
+    --   visitor_agreements  the exact wording somebody agreed to, ONE ROW PER
+    --                       REVISION rather than per visit. A signed agreement
+    --                       has to be reproducible verbatim years later, and
+    --                       "the current NDA" is not what they signed if it has
+    --                       been edited since. Storing the text per visit would
+    --                       be the same fact thousands of times; storing only a
+    --                       pointer to a document that can change would be a
+    --                       signature against wording nobody can recover.
+    CREATE TABLE IF NOT EXISTS visitors (
+      id TEXT PRIMARY KEY,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      email TEXT,
+      company TEXT,
+      phone TEXT,
+      -- Extra questions the plant adds later, via the same structure engine
+      -- every other module uses (custom_field_defs scope 'visitor').
+      custom_data TEXT,
+      notes TEXT,
+      -- Someone who should not be signed in unattended. A reason is required,
+      -- so the flag can never be a silent mark against a name.
+      blocked INTEGER NOT NULL DEFAULT 0,
+      blocked_reason TEXT,
+      blocked_by TEXT,
+      first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at TEXT,
+      visit_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    -- Matching on the email when there is one, on the name when there is not.
+    CREATE INDEX IF NOT EXISTS idx_visitors_email ON visitors(email);
+    CREATE INDEX IF NOT EXISTS idx_visitors_name ON visitors(last_name, first_name);
+
+    -- The agreement text as it stood when somebody signed it. Inserted once per
+    -- revision and never rewritten — that is the whole point.
+    CREATE TABLE IF NOT EXISTS visitor_agreements (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,              -- 'NDA'
+      title TEXT NOT NULL,
+      revision TEXT NOT NULL,
+      body TEXT NOT NULL,              -- the wording, verbatim
+      body_sha256 TEXT NOT NULL,       -- so a silent edit is detectable
+      require_signature INTEGER NOT NULL DEFAULT 1,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      effective_from TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_visitor_agreements_rev ON visitor_agreements(code, revision);
+
+    CREATE TABLE IF NOT EXISTS visitor_visits (
+      id TEXT PRIMARY KEY,
+      visitor_id TEXT NOT NULL,
+      signed_in_at TEXT NOT NULL DEFAULT (datetime('now')),
+      signed_out_at TEXT,
+      -- WHERE, because the plant may end up with more than one tablet and
+      -- "Front Kiosk" is a fact the paper log used to carry.
+      location TEXT NOT NULL DEFAULT 'Front Kiosk',
+      signed_out_location TEXT,
+      -- HOW the visit ended, and this distinction is load-bearing. 'kiosk' means
+      -- they tapped Sign Out and we know when they left. 'auto' means the visit
+      -- timed out and we do NOT — the timestamp is when the system closed the
+      -- record, not when the person walked out. Recording both as if they were
+      -- the same fact would make the log claim knowledge it does not have.
+      signed_out_method TEXT CHECK (signed_out_method IN ('kiosk','auto','staff')),
+      signed_out_by TEXT,
+      purpose TEXT,
+      host_name TEXT,
+      custom_data TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_visitor_visits_open ON visitor_visits(signed_out_at, signed_in_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_visitor_visits_visitor ON visitor_visits(visitor_id, signed_in_at DESC);
+
+    -- One row per document signed on one visit. The signature is the drawn
+    -- image; the agreement it belongs to is referenced by ID, so the wording is
+    -- always recoverable exactly as presented.
+    CREATE TABLE IF NOT EXISTS visitor_signatures (
+      id TEXT PRIMARY KEY,
+      visit_id TEXT NOT NULL,
+      visitor_id TEXT NOT NULL,
+      agreement_id TEXT NOT NULL,
+      agreement_code TEXT NOT NULL,
+      agreement_revision TEXT NOT NULL,
+      -- The typed name is required alongside the drawn mark: a scribble with
+      -- nobody's name beside it is not an identifiable signature.
+      signed_name TEXT NOT NULL,
+      signature_image TEXT,            -- data: URL of the drawn signature
+      signed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (visit_id) REFERENCES visitor_visits(id),
+      FOREIGN KEY (agreement_id) REFERENCES visitor_agreements(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_visitor_signatures_visit ON visitor_signatures(visit_id);
+    CREATE INDEX IF NOT EXISTS idx_visitor_signatures_visitor ON visitor_signatures(visitor_id, signed_at DESC);
+
     -- A scoped link the partner uses to see the same ledger and upload their
     -- own paperwork. Read + upload only — approving, disputing and settling stay
     -- with whoever owns the account. Hashed like a session token, never stored
