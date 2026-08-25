@@ -98,4 +98,4 @@ paper process, logged in MRPEasy. So all four preventive controls' records are o
 `recordToday` on each control says so.
 
 That is a legitimate answer to the record leg — paper is a record — and it is *not* what the form
-registry appears to say. See D-017.
+registry appears to say. See D-021.

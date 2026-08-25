@@ -351,7 +351,7 @@ considering as a small Track A change later: a paused schedule that still has op
 so where it is paused. Zero such leftovers existed on the 19 August copy, but that copy predates this
 decision, so the count today is unmeasured — **treat that as an open question, not as a zero.** (D-010's
 false-zero note applies: an unmeasured number and a measured zero must not be written down the same way.)
-## D-008 · 2026-08-24 · decided — How the D-006 walk is conducted, and the four verdicts
+## D-013 · 2026-08-24 · decided — How the D-006 walk is conducted, and the four verdicts
 
 D-006 said *do the walk*. This records **how**, so a cold session resumes it rather than re-deciding
 it. The walk itself lives in `docs/v2/preventive-control-walk.md`; that file is a reading of the code
@@ -383,7 +383,7 @@ document is left as written and corrected in §6 of the walk — the same rule t
 
 ---
 
-## D-009 · 2026-08-24 · open — The two plans are not in the repository, and the walk is blocked on them
+## D-014 · 2026-08-24 · resolved 2026-08-24 — The two plans were not in the repository; both have since been supplied
 
 The app side of the D-006 walk is complete (`preventive-control-walk.md` §3). The plan side cannot
 start: **neither the Food Safety Plan nor the Food Defense Plan exists in the repository** in any
@@ -403,12 +403,14 @@ Two things are needed, and the second is the one that shapes everything:
    The plant holds both PCQI and HACCP certificates, so inference from the certificates is not an
    answer.
 
-Recorded as `open` rather than left in conversation, because this is the single input the first V2
-project waits on.
+**Resolved the same day.** Protocol 003 V4 and Protocol 001 V2 were supplied, and question 2 is
+answered: the plan is a 21 CFR 117 preventive-controls plan by structure, though the plant's own
+documents also use HACCP/CCP vocabulary. Kept rather than deleted, because the *shape* of the block —
+the app side can be walked without the plans, the plan side cannot — is the reusable part.
 
 ---
 
-## D-010 · 2026-08-24 · open — Is verification a fourth leg of the D-002 test?
+## D-015 · 2026-08-24 · open — Is verification a fourth leg of the D-002 test?
 
 Surfaced by the walk and deliberately not answered inside it. D-002's test names program, form and
 record; the spine has seven nodes and **verification (L5) is not among the three**. Several controls
@@ -421,37 +423,7 @@ while the plans are being rewritten anyway.
 
 ---
 
-## D-011 · 2026-08-24 · decided — A program may be a TRIGGER, not a cadence (supersedes the cadence reading in D-002)
-
-**Supersedes:** the reading of D-002's test that a program means a *cadence*. D-002's wording — "a
-program that generates dated work" — was taken to mean a schedule. That reading is wrong and the Food
-Safety Plan proves it rather than merely allowing it.
-
-Three of the plan's four preventive controls fire **per production run**, not per calendar:
-
-- PC #1 (ATP, pathogens) — "at the beginning of every run"
-- PC #2 (allergen swab) — "at the end of every run"
-- PC #3 (screens) — "at the beginning of every machine start up"
-
-A control that fires per run and one that fires per week satisfy the same leg. **What fails the leg is
-a control that depends on somebody deciding to start it** — not one without a frequency. Receiving,
-sign-outs, film inspection and disposal were already event-driven and correctly so; the plan makes it
-a rule rather than an accommodation.
-
-The consequence is architectural and is recorded in `preventive-control-walk.md` §7: **every generator
-in the system is a calendar**, and there is no object for "a run" for a per-run obligation to hang
-off. The nearest thing, a `production_entries` row, is filed at the end of the shift — after both
-controls should already have fired. That lands on recommended move 05 (collapse the four schedule
-generators into one), which `architecture.md` defers until after the audit. **This entry does not move
-it up.** It records that the one cadence model must grow a second kind of trigger when it is done, and
-that the plant's highest-consequence controls are the ones waiting on it.
-
-The second refinement recorded in D-008 — that the work order is the universal fallback record and is
-not always enough — stands unchanged.
-
----
-
-## D-012 · 2026-08-24 · decided — Track B rebases on `main` periodically, not at the end
+## D-016 · 2026-08-24 · decided — Track B rebases on `main` periodically, not at the end
 
 D-005 keeps the two tracks from colliding by rule: new construction in Track B, refactors of shared
 code in Track A on `main`. **Small collisions are not no collisions.** Track A keeps merging to `main`,
@@ -469,7 +441,7 @@ immediately after any Track A change to `shared/`, `server/db.js` or the form re
 
 ---
 
-## D-013 · 2026-08-24 · decided — A form number is the PLANT's; `where` says which system produces the record
+## D-017 · 2026-08-24 · decided — A form number is the PLANT's; `where` says which system produces the record
 
 Corrects a misreading in the first pass of the preventive control walk, which treated the seven forms
 marked `where: keychain` as *assigned to* Keychain — as though the migration had taken the paperwork
@@ -504,7 +476,7 @@ evidence for that larger one.
 
 ---
 
-## D-014 · 2026-08-24 · decided — Work is QUEUED before it is pushed; `docs/v2/queued/` is where it waits
+## D-018 · 2026-08-24 · decided — Work is QUEUED before it is pushed; `docs/v2/queued/` is where it waits
 
 Stated directly while reviewing the walk's punch list: *no updates yet — let's have things like this
 queued, so we can explore, improve, and have it in a great state before we push anything.*
@@ -525,7 +497,7 @@ tested on Track B) and `dcr-protocol-003.md` (item 4, for Document Control — n
 
 ---
 
-## D-015 · 2026-08-24 · decided — PC #1: do the record and the limit now, the per-run trigger later
+## D-019 · 2026-08-24 · decided — PC #1: do the record and the limit now, the per-run trigger later
 
 The walk found PC #1 failing two legs at once: no per-run **program**, and a **record** whose critical
 limit nothing enforces. Both were on the punch list. They are now deliberately split.
@@ -536,7 +508,7 @@ reviewable, and it closes the finding an auditor can reach on their own: *a stat
 nothing enforces.*
 
 **Later — the trigger.** Nothing in the platform fires at the beginning of a production run, because
-there is no object for "a run" to hang an obligation off (D-011). That is architecture move 05, which
+there is no object for "a run" to hang an obligation off (D-009). That is architecture move 05, which
 `architecture.md` defers until after the audit, and this entry does not move it up. The clean stays on
 its daily cadence in the meantime.
 
@@ -551,7 +523,7 @@ deliberate half-step, not an oversight.
 
 ---
 
-## D-016 · 2026-08-24 · decided — PC #1's 35 RLU is the pilot for architecture move 03
+## D-020 · 2026-08-24 · decided — PC #1's 35 RLU is the pilot for architecture move 03
 
 Move 03 — *limits out of code and into documents* — was written as a project without a first case.
 It has one now, and it is unusually clean: **the limit was never in code to begin with.** It lives in
@@ -573,7 +545,7 @@ same rule, and any limit attached to a record fully defined by its readings shou
 
 ---
 
-## D-017 · 2026-08-24 · decided — The seven Keychain forms are on PAPER today; `where` conflates present state with intent
+## D-021 · 2026-08-24 · decided — The seven Keychain forms are on PAPER today; `where` conflates present state with intent
 
 Confirmed by the plant, 24 Aug 2026: **none of the seven forms marked `where: keychain` is producing
 anything in Keychain.** Production runs the old manual paper process, logged in MRPEasy. So the
@@ -603,7 +575,7 @@ recurring defect of this codebase stated at its sharpest, on a preventive contro
 
 ---
 
-## D-018 · 2026-08-24 · decided — Preventive controls are TRANSCRIBED from the document, not typed into the app
+## D-022 · 2026-08-24 · decided — Preventive controls are TRANSCRIBED from the document, not typed into the app
 
 Reverses advice given earlier in this project, which was that QA could enter the four preventive
 controls into `haccp_ccps` by hand. **That was wrong by the plant's own doctrine and would have
@@ -634,3 +606,31 @@ carry a `sourceNote` flagging where the PDF's text layer split a table cell — 
 renders as *"Product passes through r- ray"* in the extraction, which is *x-ray* broken across a cell
 boundary. Lowry, Daniela and Carol are checking all four against the PDF. A correction goes in
 `preventive-controls.js`, never in the database.
+
+---
+
+## D-023 · 2026-08-25 · decided — Decision numbers are allocated on `main`; Track B renumbers on rebase
+
+The collision D-016 predicted happened on the first rebase, and faster than weekly. Track A and Track B
+both appended to this file and **both started at D-008**, so nine numbers described two different
+decisions each. One pair was the same decision found twice: Track A's **D-009** (a program may be a
+trigger, not a cadence) and Track B's entry of the same name, raised by the plan walk.
+
+**The rule, so this is mechanical next time.** `main` is where decision numbers are allocated. A Track B
+entry is provisional until it rebases, and **renumbering on rebase is expected work, not damage**. Three
+things travel with the renumber:
+
+1. **A duplicate is dropped, not merged.** Track B's trigger entry was removed in favour of Track A's
+   D-009, which already credits the walk. Two numbers for one decision is the defect this repository is
+   about, and a decisions file is the last place it should appear.
+2. **Cross-references are remapped in the same commit** — the walk, `architecture.md`, the queued
+   documents and `CLAUDE.md`. A decision file whose numbers are right and whose citations point at the
+   wrong entries is worse than one that is simply behind.
+3. **Renumbering only applies to entries that never reached `main`.** Once an entry is on the trunk its
+   number is permanent and the append-only rule takes over — a wrong one gets a superseding entry, never
+   a rewrite.
+
+**And a note on how it was resolved, because the temptation was real.** The rebase conflicted on this
+file and the fast fix was to take one side. Both sides were kept instead: Track A's findings about
+duplicate programs and PM checklists are not less true for having been written the same week, and the
+walk's entries are not less true for arriving second.

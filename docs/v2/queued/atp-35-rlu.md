@@ -100,7 +100,7 @@ safety limit shown only in English is a limit half the shift cannot read.
 
 ### 5. `shared/form-registry.js` — nothing
 
-Deliberately. FORM 111-01 is `where: keychain` and that is correct (D-013). This change gives the
+Deliberately. FORM 111-01 is `where: keychain` and that is correct (D-017). This change gives the
 ReadyDoc cleaning record a graded limit; it does not move a form number.
 
 ---

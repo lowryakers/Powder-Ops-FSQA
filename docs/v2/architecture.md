@@ -5,7 +5,7 @@
 *What changed in Revision 2.* The Food Safety Plan (Protocol 003 V4) and Food Defense Plan (Protocol
 001 V2) have now been walked against the test in §1 — `docs/v2/preventive-control-walk.md`. Four
 changes follow, all of them evidence rather than opinion: L2's load-bearing rule now admits a
-**trigger** as well as a cadence (§2, D-011); §5 gains the preventive-control reading; §6 gains the
+**trigger** as well as a cadence (§2, D-009); §5 gains the preventive-control reading; §6 gains the
 sharpest instance of the recurring defect the whole document is about; and moves **03** and **05**
 in §7 gain the concrete cases the walk supplied. Revision 1's argument is unchanged — the walk
 supported it rather than moved it.
@@ -79,7 +79,7 @@ effective-dated, withdrawn — never edited in place.
 > produces the record.** FORM 413-1 is the plant's number for the batch production record and predates
 > Keychain; which system generates it today is a separate fact, allowed to change without the number
 > changing. Same doctrine as a renamed SKU keeping `legacy_sku`, and a retired form number never being
-> reissued. See D-013.
+> reissued. See D-017.
 
 ### L2 — Program: what must happen, and how often
 
@@ -96,7 +96,7 @@ EMP, internal audit, recall drills.
 > of every run", "at the end of every run", "at the beginning of every machine start up" — and every
 > generator in the platform today is a calendar. A control that fires per run and one that fires per
 > week are the same obligation. What fails this layer is a control that depends on somebody *deciding*
-> to start it. See D-011.
+> to start it. See D-009.
 
 ### L3 — Execution: work
 
@@ -266,7 +266,7 @@ reading an auditor actually takes, and it is harder.
 **`haccp_ccps` holds zero rows**, and neither X-ray machine is linked to a CCP, though both are in the
 equipment registry. The table is modelled almost field-for-field for the plan's own chart.
 
-The form leg is fine — those are the plant's numbers and always were (D-013). It is the **record** leg
+The form leg is fine — those are the plant's numbers and always were (D-017). It is the **record** leg
 that is empty in ReadyDoc for all four, and the **program** leg that has nothing to hang a per-run
 obligation off. That is the state of L2 and L4 stated at the altitude the audit asks about.
 

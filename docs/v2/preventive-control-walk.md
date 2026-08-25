@@ -26,7 +26,7 @@ Checklist in batch production record" (PC #1, PC #2), "Observations on batch rec
 Operation Record" (PC #4). In the Forms Master Index those are FORM 111-01, FORM 413-1 and FORM 413-1
 (X-Ray), and **all three are marked `where: keychain`**.
 
-**Read that field correctly — see D-013.** `where` says which system *produces* the record today. It
+**Read that field correctly — see D-017.** `where` says which system *produces* the record today. It
 says nothing about who owns the number. **FORM 413-1 is the plant's own form number for the MMR /
 Manufacturing Record / Batch Production Record, and it predates Keychain**, as every number in the
 index does. The plant is not borrowing Keychain's paperwork; Keychain is currently generating the
@@ -48,7 +48,7 @@ real content of this finding:
 1. **The registry reads as though Keychain were already handling these.** `where: keychain` means
    *moving to* Keychain in `form-registry.js`'s own vocabulary — it conflates where a record is
    produced **today** with where it is **intended** to go, and for these seven those are different
-   answers. See D-017.
+   answers. See D-021.
 2. **PC #1 now has two records and neither carries its limit.** The paper cleaning log checklist rides
    on the BPR, while ReadyDoc's own cleaning record (108-03, `sanitation_records`) exists alongside it
    with an ATP field that is empty and ungraded. One control, two records, and the number the control
@@ -74,7 +74,7 @@ A control passes only if all three legs are present, each evidenced by something
 | **Form** | A number in the Forms Master Index, and a match rule that resolves a task or record to it. | L1 |
 | **Record** | A row that accumulates in a queryable log, written **by completing the work**. | L4 |
 
-Two refinements, both learned from the code and both now load-bearing — see **D-011**, which records
+Two refinements, both learned from the code and both now load-bearing — see **D-009**, which records
 the first as superseding the cadence reading implied by D-002:
 
 1. **A program may be a trigger rather than a cadence.** The plan proves this rather than merely
@@ -93,7 +93,7 @@ the first as superseding the cadence reading implied by D-002:
 **Wired** — all three legs, and completing the work writes the record.
 **Running, unrecorded** — the work happens and closes; nothing accumulates in a log.
 **Elsewhere** — the record is *produced* in another system today (Keychain, or paper). The form number
-stays the plant's either way (D-013). Owes an answer to *how is this retrieved on a date the auditor
+stays the plant's either way (D-017). Owes an answer to *how is this retrieved on a date the auditor
 picks*, not to who owns the form.
 **Absent** — no control object at all.
 
@@ -219,7 +219,7 @@ Ranked by audit exposure per unit of work. Items 1–4 need a decision, not a bu
    directly, or **(b)** connect to Keychain by API so ReadyDoc can retrieve what Keychain generates.
    The interval-with-no-record exposure this item was raised to catch **did not happen** — nothing
    left paper before its replacement was ready, which is the right way to run a migration. What is
-   left is a bookkeeping fix (D-017) so the registry stops implying otherwise, and a decision about
+   left is a bookkeeping fix (D-021) so the registry stops implying otherwise, and a decision about
    which exit, which can be made for FORM 413-1 alone ahead of the whole-ERP question in D-004.
 2. **Grade the ATP reading against 35 RLU, or move the limit.** The reading has a home, the home is
    empty, and nothing enforces the number. This is `gradeReadings()` in `scale-forms.js` applied to a
@@ -254,7 +254,7 @@ Ranked by audit exposure per unit of work. Items 1–4 need a decision, not a bu
 
 ### 6.1 The Forms Master Index
 
-52 forms, all of them the plant's own numbers regardless of which system produces the record (D-013):
+52 forms, all of them the plant's own numbers regardless of which system produces the record (D-017):
 **40 readydoc** (every one carries a match rule), **7 keychain** (111-01 · 404-1 · 404-2 · 405-1 ·
 405-02 · 413-1 · 413-1 X-Ray), **4 paper** (100-01 · 402 · 413-2 · 438-01), **1 retired** (111-02).
 
@@ -344,17 +344,17 @@ Recorded because vocabulary flips at once (D-003) and these will bite when it do
 
 ## 9. Still open
 
-- **D-009** is answered on the format question: the plan is a **21 CFR 117 preventive-controls plan**
+- **D-014** is answered on the format question: the plan is a **21 CFR 117 preventive-controls plan**
   — the hazard analysis is the standard PCHF table and the control categories are the 117 ones
   (process including CCPs, allergen, sanitation, supply chain). The policy statement calls it "a
   validated HACCP-based approach" and V2's revision note says "Added X-ray as a **CCP**", so both
   vocabularies are in use across the plant's own documents. `haccp_ccps` is modelled for the second
   and its columns fit the first. **Not a blocker any more; a vocabulary item for step 3.**
-- **D-010** — whether verification is a fourth leg of the test. The plan makes this concrete rather
+- **D-015** — whether verification is a fourth leg of the test. The plan makes this concrete rather
   than theoretical: every one of its four preventive controls names a verification distinct from its
   monitoring, and PC #1 names the same activity as both (§3.3).
 - ~~Which of the seven Keychain forms are producing records today.~~ **Answered 24 Aug 2026: none.
   Paper, logged in MRPEasy.**
-- Which exit is taken for the BPR — absorb into ReadyDoc, or API-connect to Keychain (D-013). D-004
+- Which exit is taken for the BPR — absorb into ReadyDoc, or API-connect to Keychain (D-017). D-004
   says decide the ERP question on counts after the migration lands; this is the narrower version of
   the same question and can be answered for FORM 413-1 alone, ahead of it.
