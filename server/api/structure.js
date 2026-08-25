@@ -154,6 +154,7 @@ export const KNOWN_SCOPES = [
   // Extra questions on the lobby visitor form — added here, they appear on the
   // tablet with no deploy. First/last/email stay fixed: they are the identity.
   { scope: 'visitor', label: 'Visitor Sign-In (lobby tablet)' },
+  { scope: 'candidate', label: 'People (candidate tracker)' },
 ];
 
 router.get('/scopes', (req, res) => {
@@ -256,6 +257,7 @@ const SCOPE_TABLES = {
   disposal: 'disposals',
   retention_sample: 'retention_samples',
   reimbursement: 'reimbursements',
+  candidate: 'candidates',
 };
 
 export default router;

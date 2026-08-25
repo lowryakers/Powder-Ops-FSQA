@@ -90,6 +90,43 @@ const TARGETS = {
     identityFallback: ['date_received', 'part_description', 'quantity_received'],
   },
 
+  /* ── Monday.com contacts board (people we might hire) ────────────────────── */
+
+  candidates: {
+    label: 'People (candidate tracker)',
+    table: 'candidates',
+    module: 'candidates',
+    fields: [
+      { key: 'name', label: 'Name', required: true, aliases: ['name', 'contact', 'person'] },
+      { key: 'title', label: 'Title', aliases: ['title', 'role', 'position'] },
+      { key: 'company', label: 'Company', aliases: ['company', 'employer', 'where'] },
+      // The board's "Type" is the area they'd fit, and one cell can hold two of
+      // them ("cleaning/Maintenance"). Split on the way in, or she is findable
+      // under neither.
+      { key: 'areas', label: 'Type / area', aliases: ['type', 'area', 'department', 'areas'] },
+      { key: 'phone', label: 'Phone', aliases: ['phone', 'mobile', 'cell', 'number'] },
+      { key: 'email', label: 'Email', aliases: ['email', 'e-mail'] },
+      // A DATE. The Monday export writes these as Excel serials (46087, 46091,
+      // 46094); `toDate` resolves those, and a blank stays blank rather than
+      // becoming "not interviewed", which is a different claim.
+      { key: 'interviewed_on', label: 'Interviewed', type: 'date', aliases: ['interviewed', 'interview', 'interview date'] },
+      { key: 'notes', label: 'Notes', aliases: ['notes', 'note', 'comment', 'comments'] },
+    ],
+    columns: ['name', 'title', 'company', 'areas', 'phone', 'email', 'interviewed_on', 'notes', 'source'],
+    transform: (row) => ({
+      ...row,
+      areas: JSON.stringify(String(row.areas || '').split(/[/,;]/).map(s => s.trim()).filter(Boolean)),
+      source: 'monday',
+    }),
+    // A function, not an object — it is called per row.
+    insertDefaults: () => ({ status: 'prospect' }),
+    // Name alone is not enough — the seven real rows contain two people called
+    // Vanessa. The phone is what actually tells them apart, and the pair is
+    // stable across re-exports of the same board.
+    identity: ['name', 'phone'],
+    identityFallback: ['name', 'company', 'notes'],
+  },
+
   /* ── Monday.com procurement board ────────────────────────────────────────── */
 
   purchase_orders: {

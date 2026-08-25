@@ -147,6 +147,7 @@ const MODULE_GROUPS = [
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
       { id: 'dannys-list', label: "Danny's List (the owner's text-message request log)", note: 'One person\'s working queue — grant it to whoever tracks what Danny owes and is owed, not by role.' },
       { id: 'policies', label: 'Policies (handbook; edit = upload and publish)' },
+      { id: 'candidates', label: 'People (who we would hire when the timing is right)', note: 'Personal contact details for people who do not work here, so the module carries a SECOND door: office / HR departments and admins only. Granting this to anyone else gives them nothing.' },
     ],
   },
   {

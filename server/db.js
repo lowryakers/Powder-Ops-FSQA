@@ -1595,6 +1595,45 @@ function initSchema() {
     --                       be the same fact thousands of times; storing only a
     --                       pointer to a document that can change would be a
     --                       signature against wording nobody can recover.
+    -- People we would like to work with, when the timing is right.
+    --
+    -- "Who first, then where" — this is a list of PEOPLE, not of vacancies.
+    -- The plant hires rarely and has low turnover, so the thing worth keeping
+    -- is not a pipeline but a memory: who was good, who knows them, and how to
+    -- reach them in eighteen months. That is why there are no stages, no
+    -- requisitions and no vacancy to attach anybody to. It is deliberately NOT
+    -- a CRM.
+    --
+    -- THIS IS PERSONAL DATA ABOUT PEOPLE WHO DO NOT WORK HERE. Phone numbers,
+    -- who their mother is, whether they are currently unemployed. It is the
+    -- most sensitive table in the system per row, and it is not a compliance
+    -- record — no auditor asks for it, and nothing depends on it. So the two
+    -- rules here run OPPOSITE to the rest of the schema: access is narrow
+    -- (office/HR and admins only, enforced at the mount), and a row can be
+    -- DELETED outright rather than retired. Somebody who asks to be taken off
+    -- the list should come off it, and there is no duty to keep them.
+    CREATE TABLE IF NOT EXISTS candidates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      title TEXT,                       -- what they do now
+      company TEXT,                     -- where they do it
+      areas TEXT,                       -- JSON array: "cleaning/Maintenance" is two areas
+      phone TEXT,
+      email TEXT,
+      referred_by TEXT,                 -- the most valuable column in the sheet
+      -- A DATE, not a tick. Marnee's sheet stores the day of the conversation,
+      -- and "interviewed in March" answers a question "interviewed: yes" cannot.
+      interviewed_on TEXT,
+      last_contacted_on TEXT,
+      status TEXT NOT NULL DEFAULT 'prospect',
+      notes TEXT,
+      custom_data TEXT,
+      source TEXT,                      -- provenance: 'monday', 'walk-in', typed here
+      external_id TEXT,                 -- idempotent re-import from the old board
+      created_by TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS visitors (
       id TEXT PRIMARY KEY,
       first_name TEXT NOT NULL,
@@ -1618,6 +1657,9 @@ function initSchema() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     -- Matching on the email when there is one, on the name when there is not.
+    CREATE INDEX IF NOT EXISTS idx_candidates_status ON candidates(status, name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_external ON candidates(external_id) WHERE external_id IS NOT NULL;
+
     CREATE INDEX IF NOT EXISTS idx_visitors_email ON visitors(email);
     CREATE INDEX IF NOT EXISTS idx_visitors_name ON visitors(last_name, first_name);
 

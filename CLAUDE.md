@@ -408,6 +408,35 @@ and picks nothing (choosing for people is what made the landing feel random). Wi
 the read-on-screen rule immediately undo it.
 `isCompactLayout` tracks the same `md` breakpoint the markup uses, live, via matchMedia.
 
+## People (the candidate tracker) — `server/api/candidates.js` + `CandidatesPanel.jsx`
+Marnee's Monday board of people worth hiring one day. **"Who first, then where"** — a list of PEOPLE, not
+of vacancies. The plant hires rarely and has low turnover, so the asset is the memory of somebody good and
+who vouched for them, not a pipeline. Deliberately **not a CRM**: no stages, no reminders, no email, nothing
+that has to be fed to stay useful. Office nav group, module id `candidates`.
+- **TWO DOORS, and the second one is the point.** Every row is personal data about somebody who does not
+  work here — a mobile number, whose daughter they are, whether they are currently unemployed. So the
+  module grant gets you to the mount and `mayUseCandidates()` inside the router requires **office/HR or
+  admin** on top. Granting the module to a supervisor by mistake gives them nothing.
+- **Rows are DELETED, not retired** — the opposite of the rule everywhere else here, and deliberate. This is
+  not a compliance record; no auditor asks for it and nothing references it. Somebody who asks to come off
+  the list comes off it. The audit entry keeps who removed them and when, which is the part worth having.
+- **A name is the only required field.** Two of the seven real rows are a first name and a phone number, and
+  "Vanessa, cleaning, reference from Romina" is a useful entry. A form that refuses it is one people keep a
+  private list instead of.
+- **`interviewed_on` is a DATE, not a tick**, so "interviewed in March" is answerable. Status is five values
+  (prospect / keep warm / not a fit / hired / unavailable) and `keep_warm` is the whole reason the module
+  exists.
+- **`areas` is a JSON array because one Monday cell holds `cleaning/Maintenance`** — split on `/,;` at every
+  write, or she is findable under neither. Areas are free text with suggestions from what is already in use,
+  never a closed list.
+- **The search covers NOTES**, because "Reina's previous coworker" is how somebody is actually remembered.
+  Trap found by testing with a word rather than a number: the phone clause stripped non-digits, so a text
+  query became `LIKE '%%'` and every search returned everyone. The phone clause is only added when the query
+  contains digits.
+- `imports.js` has a `candidates` TARGETS entry, so the board re-imports idempotently (identity = name +
+  phone; there are two people called Vanessa). **`insertDefaults` is a FUNCTION called per row**, not an
+  object — the object form throws at commit while preview looks perfect.
+
 ## Deleting a message is admin-only (`shared/comms-permissions.js`)
 Decided 2026-08-25. **Delete = admin, nobody else. Edit = the author, unchanged.** A chat message is the
 plant's record of who said what and when — it converts into compliance records, gets quoted into work

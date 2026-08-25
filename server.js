@@ -51,6 +51,7 @@ import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
 import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './server/api/auditor-pass.js';
 import visitorRoutes, { kioskRouter as visitorKioskRoutes, seedVisitorAgreements } from './server/api/visitors.js';
+import candidateRoutes from './server/api/candidates.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
 import activityRoutes from './server/api/activity.js';
@@ -1738,6 +1739,11 @@ app.use('/api/auditor-passes', auditorPassRoutes);
 // ordinary guarded module.
 app.use('/api/visitor-kiosk', visitorKioskRoutes);
 app.use('/api/visitors', requireModuleWrite('visitors'), visitorRoutes);
+// People we might hire one day. The router carries its OWN, narrower door
+// (office/HR/admin) on top of the module grant — every row is somebody's
+// personal contact details, and a module grant ticked in a hurry should not be
+// enough to reach them.
+app.use('/api/candidates', requireModuleWrite('candidates'), candidateRoutes);
 // Filing is what View gets you here — anyone granted the module can claim
 // their own money back, and only ever sees their own claims. Approving and
 // PAYING are a second, narrower check inside the router (office or admin),
