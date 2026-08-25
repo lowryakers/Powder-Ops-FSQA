@@ -9,6 +9,7 @@ import SchedulesFromTasksModal, { RepairTaskTextModal, SplitMergedStepsModal } f
 import EquipmentFiles, { ManualSearch } from './EquipmentFiles.jsx';
 import { MACHINE_TYPES, ZONE_TYPES, defaultAssetKind } from '../../../shared/equipment-types.js';
 import { keepCurrent } from '../../lib/selectOptions.js';
+import ResyncStepsModal from './ResyncStepsModal.jsx';
 
 // Types come from shared/equipment-types.js so the form, the setup checklist
 // and the boot migrations all speak the same vocabulary. The type only sets the
@@ -647,6 +648,7 @@ export default function EquipmentPanel() {
   const { data: fromTasks, refresh: refreshFromTasks } = useApiGet('/equipment/schedules-from-tasks/preview');
   const { data: textRepair, refresh: refreshTextRepair } = useApiGet('/equipment/maintenance-tasks/repair/preview');
   const { data: stepSplit, refresh: refreshStepSplit } = useApiGet('/pm/schedules/step-split/preview');
+  const { data: stepsOutOfStep, refresh: refreshStepsOutOfStep } = useApiGet('/equipment/procedure-steps/resync/preview');
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'equipment');
   const canCcp = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
@@ -659,6 +661,7 @@ export default function EquipmentPanel() {
   const [manualSearch, setManualSearch] = useState(false);
   const [repairText, setRepairText] = useState(false);
   const [splitSteps, setSplitSteps] = useState(false);
+  const [resyncSteps, setResyncSteps] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const { data: review, refresh: refreshReview } = useApiGet('/equipment/registry-review');
 
@@ -910,6 +913,35 @@ export default function EquipmentPanel() {
 
       {repairText && (
         <RepairTaskTextModal onClose={() => setRepairText(false)} onDone={() => { refresh(); refreshTextRepair(); refreshFromTasks(); }} />
+      )}
+
+      {/* A schedule's steps are a COPY of the machine's written tasks for that
+          cadence. A bug used to write EVERY cadence into EVERY schedule, so a
+          daily task of 11 items reached the floor as 39 lines including the
+          annual work. The cause is fixed; these were flattened before that. */}
+      {!!stepsOutOfStep?.extra_schedules && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 flex-wrap">
+          <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-amber-900">
+              {stepsOutOfStep.extra_schedules} PM checklist{stepsOutOfStep.extra_schedules === 1 ? '' : 's'} carry steps from other frequencies
+            </h3>
+            <p className="text-xs text-amber-800">
+              Across {stepsOutOfStep.extra_machines} machine{stepsOutOfStep.extra_machines === 1 ? '' : 's'} — a daily check
+              asking for the annual work, so the operator sees a far longer list than the Equipment list shows.
+              Re-syncing puts each schedule back to the tasks written under its own frequency.
+            </p>
+          </div>
+          <button onClick={() => setResyncSteps(true)}
+            className="shrink-0 px-3 py-2 bg-white border border-amber-300 text-amber-900 rounded-lg text-sm font-medium hover:bg-amber-100">
+            Review and re-sync
+          </button>
+        </div>
+      )}
+
+      {resyncSteps && (
+        <ResyncStepsModal onClose={() => setResyncSteps(false)}
+          onDone={() => { refresh(); refreshStepsOutOfStep(); refreshStepSplit(); }} />
       )}
 
       {/* A whole written procedure pasted into one schedule: the weekly task

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createReadStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { requireRole } from '../middleware/auth.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
@@ -16,26 +17,62 @@ const STATUSES = ['active', 'partial', 'out_of_service'];
 
 const router = Router();
 
+/**
+ * The steps a schedule of one cadence should carry, out of a machine's written
+ * maintenance tasks. `null` when that cadence has nothing written for it —
+ * which is deliberately different from an empty list, see below.
+ */
+function stepsForFrequency(tasks, frequencyType) {
+  for (const [label, freqType] of Object.entries(FREQ_TO_SCHEDULE)) {
+    if (freqType !== frequencyType) continue;
+    const list = Array.isArray(tasks[label]) ? tasks[label].filter(Boolean) : [];
+    if (list.length) return list;
+  }
+  return null;
+}
+
+/**
+ * A DAILY SCHEDULE CARRIES THE DAILY TASKS. Nothing else.
+ *
+ * This used to flatten EVERY cadence into EVERY active schedule on the machine
+ * — the whole list under `Daily:` / `Weekly:` / `Annual:` headings, written
+ * identically to the daily schedule, the weekly one and the annual one. So the
+ * forklift's daily task, which the Equipment list correctly shows as 11 items,
+ * reached the operator as 39 lines including the annual load test. Measured:
+ * one plain save of the equipment record, changing nothing, took the daily
+ * schedule from 11 steps to 39 and did the same to the other four.
+ *
+ * The other two writers of this same field — `writeSchedulesFromTasks` and the
+ * task-text repair — were always per cadence, so this was one writer disagreeing
+ * with two, and the disagreement was silent. `POST /pm/schedules/:id/split-steps`
+ * exists to REPAIR the result; without this fix the next equipment edit simply
+ * undid the repair.
+ *
+ * A cadence with nothing written is LEFT ALONE rather than blanked. Blanking
+ * would wipe a procedure a technician typed by hand, and on a food-contact
+ * machine it would remove the very steps the completion gate requires to be
+ * ticked — turning a formatting bug into a task nobody can close.
+ */
 function syncMaintenanceTasksToPM(db, equipmentId) {
   const eq = db.prepare('SELECT maintenance_tasks FROM equipment WHERE id = ?').get(equipmentId);
   if (!eq) return;
   let tasks;
-  try { tasks = JSON.parse(eq.maintenance_tasks || '{}'); } catch { tasks = {}; }
-  const flatSteps = [];
-  const freqOrder = ['Daily', 'Bi-weekly', 'Weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Annual', 'As Needed'];
-  for (const freq of freqOrder) {
-    if (tasks[freq]?.length) {
-      flatSteps.push(`${freq}:`);
-      tasks[freq].forEach(t => flatSteps.push(`  ${t}`));
-    }
-  }
-  const stepsJson = JSON.stringify(flatSteps);
+  try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
 
-  const schedules = db.prepare("SELECT id FROM pm_schedules WHERE equipment_id = ? AND is_active = 1").all(equipmentId);
+  const schedules = db.prepare('SELECT id, frequency_type FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(equipmentId);
+  let updated = 0;
   for (const s of schedules) {
+    const steps = stepsForFrequency(tasks, s.frequency_type);
+    if (!steps) continue;
+    updated += 1;
+    const stepsJson = JSON.stringify(steps);
     db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?").run(stepsJson, s.id);
-    db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress')").run(stepsJson, s.id);
+    // 'missed' too: a daily task missed yesterday is still the one on the
+    // operator's screen under Overdue, and leaving it on the old list is how
+    // the two screens start disagreeing again.
+    db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','missed')").run(stepsJson, s.id);
   }
+  return updated;
 }
 
 // Propagate an equipment's assignee (task_group) to its PM schedules and any
@@ -368,6 +405,107 @@ router.delete('/:id/steps/:stepId/skip', (req, res) => {
  *
  * BEFORE '/:id'.
  */
+/**
+ * Putting right the schedules that are ALREADY carrying every cadence.
+ *
+ * Fixing `syncMaintenanceTasksToPM` stops it happening again; it does nothing
+ * for the schedules that were flattened before the fix — and every machine
+ * whose equipment record has been opened and saved since its schedules were
+ * created is in that state. The forklift's daily task reads 39 lines today and
+ * will go on reading 39 until something rewrites it.
+ *
+ * The repair is simply to run the corrected sync. `POST /pm/schedules/step-split`
+ * exists and is the wrong tool for this shape — measured on the real forklift
+ * data it left the daily schedule at 26 steps instead of 11, because it works
+ * out the cadences from the headings rather than from the machine's own task
+ * list. This goes back to the source: whatever the Equipment list says under
+ * Daily IS the daily schedule.
+ *
+ * `disagrees` is the honest test — a schedule whose steps are not exactly its
+ * cadence's tasks — so a machine already correct is not touched and the count
+ * is not inflated by no-ops.
+ *
+ * BEFORE '/:id', or Express reads "procedure-steps" as an equipment id.
+ */
+function stepsOutOfStep(db) {
+  const rows = db.prepare(`SELECT e.id, e.name, e.type, e.asset_id, e.maintenance_tasks,
+      s.id AS schedule_id, s.title, s.frequency_type, s.procedure_steps
+    FROM pm_schedules s JOIN equipment e ON e.id = s.equipment_id
+    WHERE s.is_active = 1 AND COALESCE(e.maintenance_tasks,'{}') NOT IN ('{}','')
+    ORDER BY e.name, s.frequency_type`).all();
+  const byMachine = new Map();
+  for (const r of rows) {
+    let tasks;
+    try { tasks = JSON.parse(r.maintenance_tasks) || {}; } catch { continue; }
+    const want = stepsForFrequency(tasks, r.frequency_type);
+    if (!want) continue;                       // nothing written for this cadence — left alone
+    let have;
+    try { have = JSON.parse(r.procedure_steps || '[]'); } catch { have = []; }
+    if (Array.isArray(have) && have.length === want.length
+      && have.every((v, i) => v === want[i])) continue;   // already right
+    if (!byMachine.has(r.id)) byMachine.set(r.id, { id: r.id, name: r.name, type: r.type, asset_id: r.asset_id, schedules: [] });
+    // NOT ALL DISAGREEMENT IS THE BUG, and conflating them would make this
+    // repair dangerous. Measured on the real data: 10 schedules carry MORE
+    // steps than are written for their cadence — that is the flattening, and
+    // it is what the operator is complaining about. 120 carry FEWER, which is
+    // usually deliberate (a procedure typed by hand, or one the step-split
+    // repair narrowed) and re-syncing it would silently put back work somebody
+    // removed on purpose. So the two are labelled, and only the first is
+    // offered as the default.
+    const direction = have.length > want.length ? 'extra'
+      : have.length < want.length ? 'fewer' : 'reworded';
+    byMachine.get(r.id).schedules.push({
+      id: r.schedule_id, title: r.title, frequency_type: r.frequency_type,
+      now: have.length, should_be: want.length, direction,
+    });
+  }
+  const machines = [...byMachine.values()];
+  for (const m of machines) m.has_extra = m.schedules.some(s => s.direction === 'extra');
+  return machines;
+}
+
+router.get('/procedure-steps/resync/preview', (_req, res) => {
+  const machines = stepsOutOfStep(getDb());
+  const all = machines.flatMap(m => m.schedules);
+  res.json({
+    machines,
+    total_machines: machines.length,
+    total_schedules: all.length,
+    // The headline number is the flattening, not every difference.
+    extra_machines: machines.filter(m => m.has_extra).length,
+    extra_schedules: all.filter(s => s.direction === 'extra').length,
+    fewer_schedules: all.filter(s => s.direction === 'fewer').length,
+    reworded_schedules: all.filter(s => s.direction === 'reworded').length,
+  });
+});
+
+router.post('/procedure-steps/resync', requireRole('admin', 'supervisor'), (req, res) => {
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(Boolean) : [];
+  // An empty list is REFUSED rather than treated as "all" — this rewrites the
+  // procedure on every schedule it touches, and "I meant to send none" must
+  // never mean "do the lot". Same rule as the bulk schedule creation.
+  if (!ids.length) return res.status(400).json({ error: 'Pick the machines to re-sync.' });
+
+  const pending = new Map(stepsOutOfStep(db).map(m => [m.id, m]));
+  const results = [];
+  db.transaction(() => {
+    for (const id of ids) {
+      const m = pending.get(id);
+      if (!m) { results.push({ id, skipped: 'already matches the equipment list' }); continue; }
+      const before = m.schedules.map(s => ({ frequency: s.frequency_type, steps: s.now }));
+      const updated = syncMaintenanceTasksToPM(db, id);
+      const after = m.schedules.map(s => ({ frequency: s.frequency_type, steps: s.should_be }));
+      logAudit(req.user, 'update', 'equipment', id,
+        { action: 'procedure_steps_resync', schedules: updated }, { schedules: before }, { schedules: after }, m.name);
+      results.push({ id, name: m.name, schedules: updated, detail: m.schedules });
+    }
+  })();
+  logAudit(req.user, 'update', 'equipment', 'bulk',
+    { action: 'procedure_steps_resync', machines: results.filter(r => !r.skipped).length }, null, null, 'Procedure steps re-synced');
+  res.json({ results, machines: results.filter(r => !r.skipped).length });
+});
+
 router.get('/maintenance-tasks/repair/preview', (_req, res) => {
   const db = getDb();
   const rows = db.prepare("SELECT id, name, type, asset_id, maintenance_tasks FROM equipment WHERE COALESCE(maintenance_tasks,'{}') NOT IN ('{}','') ORDER BY name").all();
@@ -416,19 +554,10 @@ router.post('/maintenance-tasks/repair', (req, res) => {
 
       // Any schedule built FROM these tasks is carrying the fragments as its
       // procedure steps, so it has to be refreshed too — otherwise the
-      // technician's work order still shows "leaks" as a step.
-      let refreshed = 0;
-      for (const [freq, list] of Object.entries(out.tasks)) {
-        const freqType = FREQ_TO_SCHEDULE[freq];
-        if (!freqType) continue;
-        const steps = JSON.stringify(list);
-        refreshed += db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE equipment_id = ? AND frequency_type = ? AND is_active = 1")
-          .run(steps, eq.id, freqType).changes;
-        db.prepare(`UPDATE work_orders SET procedure_steps = ?
-          WHERE status IN ('open','in_progress') AND pm_schedule_id IN
-            (SELECT id FROM pm_schedules WHERE equipment_id = ? AND frequency_type = ? AND is_active = 1)`)
-          .run(steps, eq.id, freqType);
-      }
+      // technician's work order still shows "leaks" as a step. Through the
+      // same function the ordinary edit path uses, so a repair and a save can
+      // never leave a schedule holding two different ideas of its own steps.
+      const refreshed = syncMaintenanceTasksToPM(db, eq.id);
 
       // The whole before/after is in the audit trail, so the change is
       // reversible by reading the log rather than by guesswork.
