@@ -433,9 +433,26 @@ that has to be fed to stay useful. Office nav group, module id `candidates`.
   Trap found by testing with a word rather than a number: the phone clause stripped non-digits, so a text
   query became `LIKE '%%'` and every search returned everyone. The phone clause is only added when the query
   contains digits.
-- `imports.js` has a `candidates` TARGETS entry, so the board re-imports idempotently (identity = name +
-  phone; there are two people called Vanessa). **`insertDefaults` is a FUNCTION called per row**, not an
-  object — the object form throws at commit while preview looks perfect.
+- `imports.js` has a `candidates` TARGETS entry (+ an **Import a list** button, admin-only), so the board
+  re-imports idempotently — identity is name + phone, because there are two people called Vanessa.
+  **`insertDefaults` is a FUNCTION called per row**, not an object; the object form throws at commit while
+  the preview looks perfect. `server/candidates-seed.js` files the seven real rows on first boot, verbatim
+  including "Nutriient"/"Nutrisoft", **insert-only and skipped entirely once the table has any row** — a
+  redeploy must never resurrect somebody Marnee removed.
+
+## `coerceCustomData` returns `{ data, errors }`; `mergeCustomData` takes TWO arguments
+Both are easy to call wrongly and neither complains. Five call sites across three modules were wrong and
+the failures were silent, so **check the signature in `custom-fields.js` rather than copying a caller**:
+- `coerceCustomData(db, scope, raw)` → `{ data, errors }`. Store **`.data`**. Storing the wrapper puts
+  `{"data":{…},"errors":[]}` in the column, so the answers render blank on the record they were given on,
+  and a required field left empty is silently accepted. (Was wrong in visitors + retention create.)
+- `mergeCustomData(existingRaw, incoming)`. Extra arguments are not ignored — they shift, and **spreading a
+  string yields `{0:'r',1:'e',…}`**, so an edit wrote indexed characters into `custom_data`. (Was wrong in
+  retention + reimbursement edit.) Reimbursement *create* passed `(scope, raw)`, leaving `raw` undefined, so
+  it returned `{data:null}` and discarded every answer.
+- Nothing was actually damaged: no custom field had been defined on those scopes yet, so every
+  `custom_data` was NULL and the bugs were latent. They would have bitten the first time somebody added an
+  extra question. The correct callers to copy are meetings, receiving and internal-audits.
 
 ## Deleting a message is admin-only (`shared/comms-permissions.js`)
 Decided 2026-08-25. **Delete = admin, nobody else. Edit = the author, unchanged.** A chat message is the

@@ -175,7 +175,10 @@ router.post('/', uploadReceipts, async (req, res) => {
       .run(id, userId, person, spentOn, amount,
         clean(req.body?.category, 60), clean(req.body?.merchant, 160),
         clean(req.body?.description, 1000), clean(req.body?.payment_method, 60) || 'Personal card',
-        JSON.stringify(coerceCustomData('reimbursement', req.body?.custom_data)), req.user?.name || null);
+        // (db, scope, raw) and then `.data`. Called as (scope, raw) the third
+        // argument was undefined, so this returned {data:null} every time and
+        // the extra answers were discarded before they reached the column.
+        JSON.stringify(coerceCustomData(db, 'reimbursement', req.body?.custom_data).data || {}), req.user?.name || null);
 
     await storeReceipts(db, id, files, req.user);
     logAudit(req.user, 'create', 'reimbursement', id,
@@ -283,7 +286,12 @@ router.put('/:id', (req, res) => {
     .run(isoDay(req.body?.spent_on) || before.spent_on, amount,
       clean(req.body?.category, 60), clean(req.body?.merchant, 160),
       clean(req.body?.description, 1000), clean(req.body?.payment_method, 60),
-      JSON.stringify(mergeCustomData('reimbursement', before.custom_data, req.body?.custom_data)),
+      // TWO arguments. Called with three, `existingRaw` was the scope string
+      // and `incoming` was the stored JSON — which got spread character by
+      // character, so EVERY edit of a claim wrote {"0":"{","1":"\"",…} into
+      // custom_data, whether or not anybody used a custom field.
+      JSON.stringify(mergeCustomData(before.custom_data,
+        coerceCustomData(db, 'reimbursement', req.body?.custom_data).data) || {}),
       req.user?.name || null, before.id);
   const after = db.prepare('SELECT * FROM reimbursements WHERE id = ?').get(before.id);
   logAudit(req.user, 'update', 'reimbursement', before.id, null, before, after, after.person);

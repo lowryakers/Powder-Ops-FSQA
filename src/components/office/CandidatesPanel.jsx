@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Search, Plus, X, Phone, Mail, UserPlus, Trash2, Pencil, StickyNote } from 'lucide-react';
+import { Search, Plus, X, Phone, Mail, UserPlus, Trash2, Pencil, StickyNote, Upload } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields.jsx';
+import ImportPanel from '../common/ImportPanel.jsx';
 
 // People we would like to work with, when the timing is right.
 //
@@ -208,6 +209,7 @@ export default function CandidatesPanel() {
   const { data: list, refresh } = useApiGet(`/candidates${query ? `?${query}` : ''}`, [query]);
   const { data: meta, refresh: refreshMeta } = useApiGet('/candidates/meta');
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [editing, setEditing] = useState(null);
   const rows = list || [];
   const statuses = meta?.statuses || [];
@@ -230,12 +232,28 @@ export default function CandidatesPanel() {
           </p>
         </div>
         {!adding && !editing && (
-          <button type="button" onClick={() => setAdding(true)}
-            className="px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 sm:ml-auto">
-            <Plus size={15} /> Add someone
-          </button>
+          <div className="flex items-center gap-2 sm:ml-auto flex-wrap">
+            {/* The board lives in Monday until it does not. Re-importing the
+                same export updates in place rather than doubling anybody, so
+                this stays useful after the move, not just during it. */}
+            {user?.role === 'admin' && (
+              <button type="button" onClick={() => setImporting(v => !v)}
+                className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium flex items-center gap-1.5 hover:bg-gray-200">
+                <Upload size={15} /> Import a list
+              </button>
+            )}
+            <button type="button" onClick={() => setAdding(true)}
+              className="px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium flex items-center gap-1.5">
+              <Plus size={15} /> Add someone
+            </button>
+          </div>
         )}
       </div>
+
+      {importing && (
+        <ImportPanel target="candidates" targetLabel="People"
+          onDone={() => { setImporting(false); done(); }} />
+      )}
 
       {(adding || editing) && (
         <Form initial={editing} statuses={statuses} areaSuggestions={meta?.areas || []}

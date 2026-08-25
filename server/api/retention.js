@@ -227,8 +227,11 @@ router.post('/', (req, res) => {
     if (box.status === 'destroyed') return res.status(400).json({ error: `Box ${box.box_no} has been destroyed — pick an open box.` });
   }
 
+  // `.data`, not the `{ data, errors }` wrapper — storing the wrapper put
+  // `{"data":{…},"errors":[]}` in the column and made every extra question
+  // render blank on the record it was answered on.
   let custom;
-  try { custom = coerceCustomData(db, 'retention_sample', req.body?.custom_data); } catch { custom = null; }
+  try { custom = coerceCustomData(db, 'retention_sample', req.body?.custom_data).data; } catch { custom = null; }
 
   const id = uuid();
   db.prepare(`INSERT INTO retention_samples
@@ -267,8 +270,14 @@ router.put('/:id', (req, res) => {
 
   let custom = before.custom_data;
   if (req.body?.custom_data !== undefined) {
-    try { custom = JSON.stringify(mergeCustomData(db, 'retention_sample', before.custom_data, req.body.custom_data)); }
-    catch { /* keep what's there */ }
+    // `mergeCustomData(existingRaw, incoming)` takes TWO arguments. Called
+    // with four, `existingRaw` was the Database object and `incoming` was the
+    // scope STRING — and spreading a string yields {0:'r',1:'e',…}, so every
+    // edit wrote indexed characters into the column. Measured, not guessed.
+    try {
+      const { data } = coerceCustomData(db, 'retention_sample', req.body.custom_data);
+      custom = JSON.stringify(mergeCustomData(before.custom_data, data) || {});
+    } catch { /* keep what's there */ }
   }
 
   db.prepare(`UPDATE retention_samples SET box_id = ?, stage = ?, item_number = ?, item_name = ?,

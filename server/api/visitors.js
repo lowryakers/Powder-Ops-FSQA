@@ -134,9 +134,15 @@ kioskRouter.post('/sign-in', (req, res) => {
     }
   }
 
+  // `.data` — `coerceCustomData` returns `{ data, errors }`, and assigning the
+  // whole thing stored `{"data":{…},"errors":[]}` on every visitor: the answers
+  // double-wrapped, and a required question left blank silently accepted.
   let custom_data = null;
-  try { custom_data = coerceCustomData(db, 'visitor', req.body?.custom_data || {}); }
-  catch (e) { return res.status(400).json({ error: e.message }); }
+  try {
+    const { data, errors } = coerceCustomData(db, 'visitor', req.body?.custom_data || {});
+    if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+    custom_data = data;
+  } catch (e) { return res.status(400).json({ error: e.message }); }
 
   const location = trim(req.body?.location, 60) || 'Front Kiosk';
   const now = new Date().toISOString();

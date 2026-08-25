@@ -52,6 +52,7 @@ import partnerPortalRoutes from './server/api/partner-portal.js';
 import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './server/api/auditor-pass.js';
 import visitorRoutes, { kioskRouter as visitorKioskRoutes, seedVisitorAgreements } from './server/api/visitors.js';
 import candidateRoutes from './server/api/candidates.js';
+import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
 import activityRoutes from './server/api/activity.js';
@@ -1098,6 +1099,9 @@ try {
   seedAuditorBinderDefaults(db);
   // The NDA visitors sign at the lobby tablet, as a frozen revision.
   seedVisitorAgreements(db);
+  // Insert-only, and skipped entirely once the table has any row — a redeploy
+  // must never resurrect somebody Marnee removed from the list.
+  seedCandidates(db);
   // The Banned & Prohibited Substance Control SOP, as a DRAFT for review (one-time).
   seedBannedSubstanceSopDraft(db);
   // Draft film inspections for packaging escalations that fired before the
