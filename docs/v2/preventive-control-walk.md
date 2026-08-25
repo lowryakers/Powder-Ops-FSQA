@@ -34,10 +34,26 @@ plant's form.
 
 So the finding is narrower than it first looks, and more actionable. The form leg is **not** missing —
 it has been answered since before the migration started. What is true is that **ReadyDoc holds none of
-the evidence for any preventive control in the plan**, and that is a migration state with exactly two
-named exits (§5, item 1): build the function into ReadyDoc, or connect to Keychain by API. Until one of
-those lands, Keychain generates any record for work Keychain handles, and the live question is which
-of the seven are producing today.
+the evidence for any preventive control in the plan.**
+
+**And the live question is now answered: none of the seven Keychain-marked forms is producing
+anything** (confirmed 24 Aug 2026). Production runs on the old manual paper process, logged in
+MRPEasy. So the records for all four preventive controls are **on paper today** — not in Keychain, not
+in ReadyDoc.
+
+That is a legitimate answer to the record leg. Paper is a record, and a plant mid-migration running
+paper is doing the safe thing rather than the negligent one. Two consequences follow, and they are the
+real content of this finding:
+
+1. **The registry reads as though Keychain were already handling these.** `where: keychain` means
+   *moving to* Keychain in `form-registry.js`'s own vocabulary — it conflates where a record is
+   produced **today** with where it is **intended** to go, and for these seven those are different
+   answers. See D-017.
+2. **PC #1 now has two records and neither carries its limit.** The paper cleaning log checklist rides
+   on the BPR, while ReadyDoc's own cleaning record (108-03, `sanitation_records`) exists alongside it
+   with an ATP field that is empty and ungraded. One control, two records, and the number the control
+   turns on is in neither. That is the same defect the whole architecture is about, and it is the
+   argument for the queued ATP work rather than against it.
 
 **And one limit is worse than absent — it is contradicted.** PC #1's critical limit is **35 RLU**.
 `sanitation_records.atp_reading` exists as a REAL, the Sanitation form asks for it and the Operator
@@ -198,14 +214,13 @@ on the list: it is `mock_recalls` with a different checklist.
 
 Ranked by audit exposure per unit of work. Items 1–4 need a decision, not a build.
 
-1. **Confirm which of the seven Keychain forms are producing records today**, and pick the exit. The
-   form numbers are settled and always were (D-013); what is open is which system produces each one
-   right now, and where it produces it a year from now. Two exits, and they are not exclusive —
-   **(a)** build the function into ReadyDoc so it produces FORM 413-1 directly, or **(b)** connect to
-   Keychain by API so ReadyDoc can retrieve what Keychain generated. Until either lands, Keychain
-   generates the record for work Keychain handles, which is a legitimate answer — the exposure is a
-   form no longer on paper and not yet producing in Keychain, which is a control with no record at all
-   in the interval. That is a list of seven to check, not a decision to agonise over.
+1. **Answered, 24 Aug 2026 — all seven are on paper, logged in MRPEasy.** What remains is the exit,
+   and the two are not exclusive: **(a)** build the function into ReadyDoc so it produces FORM 413-1
+   directly, or **(b)** connect to Keychain by API so ReadyDoc can retrieve what Keychain generates.
+   The interval-with-no-record exposure this item was raised to catch **did not happen** — nothing
+   left paper before its replacement was ready, which is the right way to run a migration. What is
+   left is a bookkeeping fix (D-017) so the registry stops implying otherwise, and a decision about
+   which exit, which can be made for FORM 413-1 alone ahead of the whole-ERP question in D-004.
 2. **Grade the ATP reading against 35 RLU, or move the limit.** The reading has a home, the home is
    empty, and nothing enforces the number. This is `gradeReadings()` in `scale-forms.js` applied to a
    second control — the precedent, the doctrine ("a reading outside tolerance can never be filed as a
@@ -338,7 +353,8 @@ Recorded because vocabulary flips at once (D-003) and these will bite when it do
 - **D-010** — whether verification is a fourth leg of the test. The plan makes this concrete rather
   than theoretical: every one of its four preventive controls names a verification distinct from its
   monitoring, and PC #1 names the same activity as both (§3.3).
-- Which of the seven Keychain forms are producing records today. Not knowable from this repository.
+- ~~Which of the seven Keychain forms are producing records today.~~ **Answered 24 Aug 2026: none.
+  Paper, logged in MRPEasy.**
 - Which exit is taken for the BPR — absorb into ReadyDoc, or API-connect to Keychain (D-013). D-004
   says decide the ERP question on counts after the migration lands; this is the narrower version of
   the same question and can be answered for FORM 413-1 alone, ahead of it.

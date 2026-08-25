@@ -570,3 +570,67 @@ same rule, and any limit attached to a record fully defined by its readings shou
 
 `architecture.md` Revision 2 names this pilot under move 03. The build is queued in
 `docs/v2/queued/atp-35-rlu.md`.
+
+---
+
+## D-017 · 2026-08-24 · decided — The seven Keychain forms are on PAPER today; `where` conflates present state with intent
+
+Confirmed by the plant, 24 Aug 2026: **none of the seven forms marked `where: keychain` is producing
+anything in Keychain.** Production runs the old manual paper process, logged in MRPEasy. So the
+records for all four preventive controls — the batch production record, the cleaning log checklist
+that rides on it, and the X-ray operation record — are **on paper**.
+
+**This is the good version of the answer, and it closes an exposure rather than opening one.** Punch
+list item 1 was raised to catch a form that had left paper before its replacement was ready — a
+control with no record at all in the interval. That did not happen. Nothing left paper early, which
+is how a migration is supposed to be run.
+
+**What it does expose is a vocabulary fault, and it is one this project exists to find.**
+`form-registry.js` defines `keychain` as *"moving to Keychain; not in ReadyDoc and not expected to
+be"* — so a single field carries two different facts at once: **where the record is produced today**
+and **where it is intended to go**. For these seven those answers differ, and the one an auditor asks
+for is the first. It read to a careful reader (this session, twice) as "Keychain is handling it".
+
+The fix is Track A and small — either a second field, or `where: paper` with the intent in `note`.
+Recorded rather than done, because it changes a shared file the walk is not otherwise touching, and
+because Document Control should decide how the register says it.
+
+**One consequence worth naming, because it strengthens the queued ATP work rather than weakening it.**
+PC #1 now demonstrably has **two** records and neither carries its critical limit: the paper cleaning
+log checklist attached to the BPR, and ReadyDoc's own `sanitation_records` row with an ATP field that
+is empty and ungraded. One control, two homes, and the number it turns on in neither. That is the
+recurring defect of this codebase stated at its sharpest, on a preventive control.
+
+---
+
+## D-018 · 2026-08-24 · decided — Preventive controls are TRANSCRIBED from the document, not typed into the app
+
+Reverses advice given earlier in this project, which was that QA could enter the four preventive
+controls into `haccp_ccps` by hand. **That was wrong by the plant's own doctrine and would have
+undone a rule the codebase already enforces everywhere else.**
+
+`scale-forms.js` tolerances are deliberately not editable in Settings because the number *is* the
+compliance decision. The scale forms' revision is disabled in the form register for the same reason.
+PC #4's critical limit is `NFe 2mm Fe 2mm Stainless Steel 4mm Ceramic 2mm Glass 2mm` — five figures
+and five materials, which is five chances to mistype a critical limit into a text box with nothing
+checking it, and no way afterwards to tell a typo from a decision.
+
+So the four controls are transcribed from Protocol 003 V4 in `server/preventive-controls.js`, verbatim
+and irregularities included, exactly as `audit-checklist.js` holds Form 403-01 and `emp-site-list.js`
+holds Form 604-01. Insert-only, keyed on the CCP name, so a row somebody edits by hand is never undone
+by a redeploy.
+
+**Two halves, split by D-005.** The transcription and the seeder are new construction and live on the
+Track B branch. The two things that make the limits actually safe — the `server.js` call and an edit
+guard in `api/haccp.js` refusing document-owned fields — touch live code and are queued for `main`
+(`docs/v2/queued/preventive-controls-seed.md`).
+
+**In the meantime `ccpDrift()` makes a divergence visible rather than preventing it**, which is the
+honest half that can be built without touching Track A. A stored row that no longer matches the
+document is reported field by field, naming both values.
+
+**The transcription is a faithful draft until Document Control confirms the wording.** Three lines
+carry a `sourceNote` flagging where the PDF's text layer split a table cell — PC #4's monitoring line
+renders as *"Product passes through r- ray"* in the extraction, which is *x-ray* broken across a cell
+boundary. Lowry, Daniela and Carol are checking all four against the PDF. A correction goes in
+`preventive-controls.js`, never in the database.

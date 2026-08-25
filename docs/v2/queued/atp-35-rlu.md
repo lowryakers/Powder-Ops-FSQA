@@ -1,6 +1,6 @@
 # Queued for `main` — grade the ATP reading against PC #1's 35 RLU
 
-**Status: designed and half-built · not deployed · 24 August 2026**
+**Status: designed, built, and VERIFIED END TO END on a fresh database · not deployed · 24 August 2026**
 
 Punch-list item 2 of `preventive-control-walk.md`, and the pilot for architecture move 03 (limits out
 of code and into documents). Scope decision, 24 Aug: **do the record and the limit now; the per-run
@@ -118,15 +118,27 @@ change can land while the plant is asked about the bigger one.
 
 ---
 
-## How to verify before landing
+## Verified — 24 August 2026
 
-- Boot a **fresh** DB (`DB_PATH=` a new path) — the production volume will not show a migration
-  ordering fault.
-- File a clean with `atp_reading = 60` and `result = 'pass'`; it must store `fail`, `atp_limit = 35`,
-  and return the reason naming Protocol 003 V4.
-- File one at exactly 35 — passes.
-- File one with no reading — stores exactly what the filer chose, `atp_limit` null.
-- File one at 12 marked `reclean` — stays `reclean`.
-- Change `ATP_LIMIT.max` in the source and reboot: the change must be **parked**, and the app must go
-  on grading against the approved 35 until Document Control approves it. That is the test that proves
-  the limit is owned by a document rather than by a deploy.
+The whole diff above was applied to a working copy, exercised against a **fresh** database over HTTP,
+and then reverted. Nothing was pushed. Results:
+
+| Check | Result |
+|---|---|
+| Fresh DB boots (migration ordering) | **Clean** — no FATAL, `atp_limit REAL` present on `sanitation_records` |
+| First boot registers the limit | **Baseline recorded silently** — `atp:pc-1` stored `approved`, not parked. This is `syncDefinitions`' never-seen-before branch and is the single most important thing to get right on a release that introduces a controlled definition. |
+| 60 RLU filed as `pass` | Stored **`fail`**, `atp_limit` 35, reason returned: *ATP 60 RLU exceeds the critical limit of 35 RLU (Protocol 003 V4, PC #1 — "No more than 35 RLU"). Corrective action: Re-clean line.* |
+| Exactly 35 filed as `pass` | **`pass`**, `atp_limit` 35, no override |
+| No reading | **`pass`** — the filer's own answer, `atp_limit` null |
+| 12 RLU marked `reclean` | Stays **`reclean`** — the grade never upgrades a result |
+| **Limit changed in source to 20, redeployed** | Change **PARKED** (`status: pending`, approved snapshot still 35), a **DCR was raised**, and a 25 RLU swab filed afterwards was graded against the **approved 35** — stored `pass`, stamped 35. |
+
+That last row is the one that matters: it is the proof that the limit is owned by a document revision
+rather than by a deploy, which is the whole of architecture move 03 demonstrated on one control.
+
+### One detail found while testing, now in the diff above
+
+`closeRecleanTasksFor` is called when the result is `pass`. It must read **`decided.result`**, not the
+filer's `result` — otherwise an over-limit swab stored as `fail` would still close the 72-hour
+re-clean task that the failure should have raised, and the cleaner would never see the job. Easy to
+miss, because both variables are in scope and either compiles.
