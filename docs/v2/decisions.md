@@ -313,3 +313,38 @@ on the same room), light inspection, and anything with both a numbered form and 
 Note that the scale assets are also prominent in D-010's over-carrying list, which is how the two findings
 surfaced in the same conversation — worth remembering that a duplicated program and a corrupted checklist
 present to the operator as the same complaint: "there is more here than there should be."
+
+*Partly resolved by D-012 — the scale case is settled; the survey stays open.*
+
+---
+
+## D-012 · 2026-08-25 · decided — Retiring a duplicate program is two acts, not one
+
+**Done by the plant, not by this repository.** All Daily Scale PM schedules — Batching, Filling and
+Kitting — are **paused**, on the grounds that the check already happens daily in Scale Verification. That
+settles the scale case in D-011 and confirms its test in practice: where two programs raise work for one
+activity, the one to keep is the one that produces the controlled record (FORM 417-01 … 417-05).
+
+Deliberately not done, and the boundary is the point: the scales **stay in the equipment register**, which
+calibration and the surviving PMs both depend on; the **weekly, monthly, quarterly and annual scale PMs
+stay**, because cleaning, cabling, load cell and the annual calibration are genuinely different work from
+the daily accuracy check; and nothing is deleted — a paused schedule keeps its history and can be resumed.
+
+**The general lesson, which is what Track B should carry forward.** Pausing is only half of retiring a
+program. `PUT /pm/schedules/:id` sets `is_active = 0` and **cascades nothing** — verified in the code: the
+only cascade on that handler is `task_group`, added so a reassignment reaches tasks already raised.
+Work orders the schedule generated before the pause stay `open` / `missed` indefinitely. Nobody will ever
+complete them, because the work is now being recorded somewhere else. They go on dragging PM completion
+down and go on appearing in the operator's Overdue bucket — **which is the exact symptom the pause was
+meant to remove.** A retirement that leaves its own residue looks, from the floor, like the retirement
+never happened.
+
+So: **stopping a program from raising new work and closing what it already raised are two separate acts,
+and only the first has a button.** The second is Cleanup Review — closed as `cancelled` with a reason,
+audited, never deleted, because a deleted task is indistinguishable from one that never existed.
+
+This belongs on the survey's checklist for every duplicate D-011 turns up, not just this one. Worth
+considering as a small Track A change later: a paused schedule that still has open work orders should say
+so where it is paused. Zero such leftovers existed on the 19 August copy, but that copy predates this
+decision, so the count today is unmeasured — **treat that as an open question, not as a zero.** (D-010's
+false-zero note applies: an unmeasured number and a measured zero must not be written down the same way.)
