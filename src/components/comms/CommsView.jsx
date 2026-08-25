@@ -5,6 +5,7 @@ import { getSocket } from '../../lib/socket';
 import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
 import { notifyDataChanged } from '../../lib/dataChanged';
+import { canDeleteMessage, canEditMessage } from '../../../shared/comms-permissions.js';
 import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera, CornerUpLeft } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { shareFile as shareAttachment, canNativeShare } from '../../lib/shareFile.js';
@@ -1651,7 +1652,7 @@ function SheetRow({ icon: Icon, label, danger, act, onAction }) {
   );
 }
 
-function MessageActionSheet({ preview, mine, canReply, canTranslate, translateLabel, canMarkUnread, onClose, onReact, onAction }) {
+function MessageActionSheet({ preview, mayEdit, mayDelete, canReply, canTranslate, translateLabel, canMarkUnread, onClose, onReact, onAction }) {
   const [showAll, setShowAll] = useState(false);
   return (
     <div className="fixed inset-0 z-[80] flex flex-col justify-end md:hidden" onClick={e => { e.stopPropagation(); onClose(); }}>
@@ -1687,8 +1688,8 @@ function MessageActionSheet({ preview, mine, canReply, canTranslate, translateLa
           {canTranslate && <SheetRow icon={Languages} label={translateLabel || 'Translate'} act="translate" onAction={onAction} />}
           {canMarkUnread && <SheetRow icon={null} label="Mark unread from here" act="unread" onAction={onAction} />}
           <SheetRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={onAction} />
-          {mine && <SheetRow icon={Edit2} label="Edit message" act="edit" onAction={onAction} />}
-          {mine && <SheetRow icon={Trash2} label="Delete message" danger act="delete" onAction={onAction} />}
+          {mayEdit && <SheetRow icon={Edit2} label="Edit message" act="edit" onAction={onAction} />}
+          {mayDelete && <SheetRow icon={Trash2} label="Delete message" danger act="delete" onAction={onAction} />}
         </div>
       </div>
     </div>
@@ -1835,7 +1836,18 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
   const [convert, setConvert] = useState(false); // message → compliance record
   const [remind, setRemind] = useState(false);   // Slack-style "remind me"
   const [fwd, setFwd] = useState(false);         // forward to another channel
-  const mine = m.user_id === me.id;
+  // Both from the ONE definition in shared/comms-permissions.js, which the
+  // server's DELETE handler also imports — so what the menu offers and what the
+  // server allows come from the same function and cannot drift.
+  //
+  // The `mine` this replaced was doing the whole job on its own: it decided
+  // edit AND delete, and it disagreed with the server in both directions at
+  // once — an admin was never shown Delete on somebody else's message even
+  // though the server would have honoured it, and an author was always shown it
+  // on their own. Nothing else in this component wanted `mine`, so it is gone
+  // rather than left as a third opinion waiting to be picked up.
+  const mayEdit = canEditMessage(me, m);
+  const mayDelete = canDeleteMessage(me, m);
 
   const doTranslate = useCallback(async () => {
     if (translating || translated) return;
@@ -2029,8 +2041,8 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
                 )}
                 {onMarkUnread && <MenuRow icon={null} label="Mark unread from here" act="unread" onAction={handleSheetAction} />}
                 {m.body && <MenuRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={handleSheetAction} />}
-                {mine && <MenuRow icon={Edit2} label="Edit message" act="edit" onAction={handleSheetAction} />}
-                {mine && <MenuRow icon={Trash2} label="Delete message" danger act="delete" onAction={handleSheetAction} />}
+                {mayEdit && <MenuRow icon={Edit2} label="Edit message" act="edit" onAction={handleSheetAction} />}
+                {mayDelete && <MenuRow icon={Trash2} label="Delete message" danger act="delete" onAction={handleSheetAction} />}
               </MenuPortal>
             )}
           </div>
@@ -2043,7 +2055,7 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
       {sheet && !m.deleted && (
         <MessageActionSheet
           preview={`${m.user_name}: ${(displayBody || '').slice(0, 80)}`}
-          mine={mine} canReply={!!onReply} canTranslate={canTranslate && !!m.body && !translated}
+          mayEdit={mayEdit} mayDelete={mayDelete} canReply={!!onReply} canTranslate={canTranslate && !!m.body && !translated}
           translateLabel={`Translate to ${viewerLang === 'en' ? 'English' : 'Spanish'}`} canMarkUnread={!!onMarkUnread}
           onClose={() => setSheet(false)}
           onReact={(e) => { setSheet(false); onReact(m, e); }}

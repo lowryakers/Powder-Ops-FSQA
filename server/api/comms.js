@@ -10,6 +10,7 @@ import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo }
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
 import { aiEnabled, summarizeChat, translateText } from '../ai.js';
 import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
+import { canDeleteMessage } from '../../shared/comms-permissions.js';
 import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
 import { getType } from '../qms-config.js';
@@ -1511,8 +1512,19 @@ router.put('/messages/:id', async (req, res) => {
 router.delete('/messages/:id', async (req, res) => {
   const ctx = ownedMessage(req, res); if (!ctx) return;
   const db = getDb();
-  if (ctx.m.user_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'You can only delete your own messages' });
-  db.prepare("UPDATE chat_messages SET deleted_at = datetime('now'), body = NULL WHERE id = ?").run(ctx.m.id);
+  if (!canDeleteMessage(req.user, ctx.m)) {
+    return res.status(403).json({ error: 'Only an admin can delete a message. You can edit your own instead.' });
+  }
+  // WHO REMOVED IT IS PART OF THE RECORD. While anybody could delete their own,
+  // the answer to "where did that message go" was always "its author took it
+  // down". Now that removing one is a moderation action taken on somebody
+  // else's words, an unattributed deletion is the version of this that cannot
+  // be questioned six months later.
+  db.prepare("UPDATE chat_messages SET deleted_at = datetime('now'), deleted_by = ?, body = NULL WHERE id = ?")
+    .run(req.user.id, ctx.m.id);
+  logAudit(req.user, 'delete', 'chat_message', ctx.m.id,
+    { channel: ctx.channel.name || ctx.channel.id, author_id: ctx.m.user_id },
+    { body: ctx.m.body }, null, `Message in ${ctx.channel.name || 'a conversation'}`);
   // Drop the attachment rows, then purge only objects with no remaining
   // reference — a forwarded copy of this message shares the same storage_key,
   // and deleting the original must not break the copy (or vice versa).

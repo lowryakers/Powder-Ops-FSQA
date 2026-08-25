@@ -408,6 +408,21 @@ and picks nothing (choosing for people is what made the landing feel random). Wi
 the read-on-screen rule immediately undo it.
 `isCompactLayout` tracks the same `md` breakpoint the markup uses, live, via matchMedia.
 
+## Deleting a message is admin-only (`shared/comms-permissions.js`)
+Decided 2026-08-25. **Delete = admin, nobody else. Edit = the author, unchanged.** A chat message is the
+plant's record of who said what and when — it converts into compliance records, gets quoted into work
+orders and is searched months later — so an author quietly removing their own is the wrong default here.
+An author who said it wrong **edits**; removing a message is moderation and belongs to someone accountable.
+- **`canDeleteMessage` / `canEditMessage` live in `shared/` and BOTH sides import them.** The client used
+  to decide with a bare `m.user_id === me.id` while the server allowed author-OR-admin, so the two
+  disagreed in both directions at once: an admin was never offered Delete on someone else's message
+  although the server would have honoured it, and the author was always offered it on their own. Widen or
+  narrow the rule **in that file only** — a second `role === 'admin'` in a component is how this ends up
+  meaning two things on two screens.
+- **`chat_messages.deleted_by` + an audit entry.** Deletion is still soft (`deleted_at`, `body = NULL`, row
+  kept), but now that it is an action taken on somebody else's words, "where did that message go" needs a
+  name attached. NULL on everything deleted before this — those were the author's own.
+
 ## Comms touch feel
 - **A scroll must not also be a tap.** `Message`'s `onTouchMove` only cancelled the long-press timer; the
   click still fired, so flicking the list and lifting your finger over a message threw you into its thread.

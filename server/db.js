@@ -3041,6 +3041,13 @@ function runMigrations() {
   // mark on a thread reply has the same two problems to survive.
   addColumnIfMissing('chat_thread_reads', 'deliberate_unread', 'INTEGER NOT NULL DEFAULT 0');
 
+  // Who took a message down. Deleting became admin-only (2026-08-25), which
+  // makes it a moderation action on somebody else's words rather than an author
+  // withdrawing their own — and "where did that message go" is then a question
+  // with a name attached or no answer at all. NULL on everything deleted before
+  // this, which is honest: those were the author's own.
+  addColumnIfMissing('chat_messages', 'deleted_by', 'TEXT');
+
   addColumnIfMissing('chat_push_subscriptions', 'vapid_key', 'TEXT');
   addColumnIfMissing('chat_push_subscriptions', 'user_agent', 'TEXT');
   addColumnIfMissing('chat_push_subscriptions', 'last_success_at', 'TEXT');
