@@ -234,3 +234,82 @@ inputs are incomplete: the obligation is simply never raised, silently, forever.
 **Do not "fix" this by giving event-driven controls a fake cadence.** A monthly schedule for "receiving
 inspection" would generate work nobody owes and mask the real question, which is whether every arrival
 produced a record.
+
+---
+
+## D-010 · 2026-08-25 · decided — A repair without a cause fix is a repair that gets undone
+
+Fourth instance of D-008's defect, reported from the floor rather than found by survey: Bernardo's
+**Forklift Sit Down daily task listed far more work than the Equipment list shows under Daily.**
+
+The fact — a machine's written maintenance tasks — is copied down a three-link chain:
+`equipment.maintenance_tasks` → `pm_schedules.procedure_steps` → `work_orders.procedure_steps`. Three
+code paths write the middle link. Two of them wrote **per cadence**. The third, `syncMaintenanceTasksToPM`
+(which runs on any equipment save), **flattened every cadence into every schedule** — the whole list under
+`Daily:` / `Weekly:` / `Annual:` headings, written identically to the daily, weekly and annual schedules.
+
+Measured on the real forklift: Equipment list reads Daily 11 · Weekly 9 · Monthly 6 · Quarterly 5 ·
+Annual 3. Creating schedules from those tasks produces exactly those counts. **One save of the equipment
+record — changing nothing — takes every schedule to 39 lines.** So a daily check asked for the annual load
+test, and the two screens disagreed with nothing on either saying which was right.
+
+**The new lesson, and the reason this gets its own entry.** A repair for the *symptom* already existed:
+`POST /pm/schedules/:id/split-steps`, built to pull a multi-cadence checklist apart, with a review strip on
+the Equipment panel. It had been written, tested and shipped. The **cause was never found**, so every
+repair was silently undone by the next equipment save. Worse, the repair reconstructs cadences from the
+*headings* rather than from the machine's own task list, so run on this shape it left the daily schedule at
+26 steps instead of 11 — a repair that reports success and leaves the record wrong.
+
+So D-008's survey needs a second column beside "writers and readers": **for every derived fact that already
+has a repair tool, ask what the repair is repairing and whether that thing still happens.** A repair tool is
+evidence of an unfixed cause, not evidence that a problem is handled. Where both exist, the cause fix comes
+first and the repair is re-checked against real data afterwards — ours had to be replaced, not re-run.
+
+**Two rules from the fix that generalise.** A cadence with nothing written is **left alone, not blanked** —
+blanking would erase a hand-typed procedure and, on a food-contact machine, remove the very steps the
+completion gate requires to be ticked, turning a formatting bug into a task nobody can close. And **not all
+disagreement is the bug**: on the 19 August copy, ten checklists across seven machines carry *more* steps
+than are written (the flattening), while **120 carry fewer**, which is usually deliberate. A repair that
+treated every difference the same would have put back work somebody removed on purpose. Distinguish the
+directions and default to the one that is definitely wrong.
+
+**Measurement note, added to D-008's method.** One reading in this investigation was a **false zero** — a
+scratch database copied without its `-wal` lost every `maintenance_tasks` value, so the survey reported
+"nothing out of step" on data that had plenty. It was caught only because it contradicted a measurement
+taken minutes earlier. A false negative is the dangerous direction for this survey: it closes a question
+that is still open. **Every "zero found" needs a positive control** — a case known to be broken that the
+same query does find.
+
+---
+
+## D-011 · 2026-08-25 · open — Two programs claiming one activity
+
+Reported alongside D-010 and deliberately **not** fixed in code, because it is a question about programs
+rather than a defect: the plant's scales are checked daily **twice**. Once through **Scale Verification
+(FORM 417-01 … 417-05)** — three certified weights, graded against tolerance, filing a controlled record —
+and once through a generic **Daily PM** on each scale in the equipment register, which raises a work order,
+names no controlled form and files no record. The operator sees both and does the work once.
+
+This is a **different shape from D-008 and D-010**, and the distinction matters for the survey. Those are
+one fact with several writers. This is **one obligation claimed by two programs** — a duplicate at the
+level D-002 and D-009 are about, not at the data level. It is invisible to a mirror-column audit and would
+be invisible to the writers-and-readers survey too, because neither program is wrong on its own terms.
+
+The test that catches it, and which the Track B document walk should apply:
+
+> For every recurring obligation, name the **one** program that owns it and the **one** numbered form that
+> catches it. Where two programs raise work for the same activity, one of them is not a program — it is a
+> duplicate, and the one to keep is the one that produces the controlled record.
+
+Applied here: Scale Verification owns the daily accuracy check and produces the record an auditor asks for;
+the generic Daily PM produces nothing and should be retired at that cadence. **Weekly, monthly, quarterly
+and annual scale PMs are genuinely different work** — cleaning, cabling, load cell, the annual calibration
+— and stay. The scales themselves stay in the equipment register, which calibration and the surviving PMs
+both depend on. Nothing is deleted; the daily schedules are paused.
+
+Left **open** because the same question almost certainly has other answers in this plant and nobody has
+looked. Candidates to check by the same test: temperature and humidity (QA inspection vs any equipment PM
+on the same room), light inspection, and anything with both a numbered form and an equipment-derived PM.
+Note that the scale assets are also prominent in D-010's over-carrying list, which is how the two findings
+surfaced in the same conversation — worth remembering that a duplicated program and a corrupted checklist
+present to the operator as the same complaint: "there is more here than there should be."
