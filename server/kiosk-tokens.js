@@ -32,12 +32,15 @@ export const MODES = ['off', 'warn', 'on'];
 
 // The five posters. A slug is the kiosk's own name, and it is what a key is
 // bound to — a key for the scale poster cannot read the blade list.
+// `short_name` is what a home-screen icon is labelled with — a phone truncates
+// at roughly twelve characters, and five icons all reading "ReadyDoc" is how
+// somebody opens the wrong one.
 export const KIOSKS = [
-  { slug: 'knife', label: 'Knife & Blade Sign In/Out', path: '/kiosk/knife' },
-  { slug: 'components', label: 'Component Sign In/Out', path: '/kiosk/components' },
-  { slug: 'maintenance', label: 'Equipment, Tool & Chemical Sign Out', path: '/kiosk/maintenance' },
-  { slug: 'scale', label: 'Scale Verification', path: '/kiosk/scale' },
-  { slug: 'visitor', label: 'Visitor Sign In (lobby tablet)', path: '/kiosk/visitor' },
+  { slug: 'knife', label: 'Knife & Blade Sign In/Out', short_name: 'Knives', path: '/kiosk/knife' },
+  { slug: 'components', label: 'Component Sign In/Out', short_name: 'Components', path: '/kiosk/components' },
+  { slug: 'maintenance', label: 'Equipment, Tool & Chemical Sign Out', short_name: 'Sign Out', path: '/kiosk/maintenance' },
+  { slug: 'scale', label: 'Scale Verification', short_name: 'Scales', path: '/kiosk/scale' },
+  { slug: 'visitor', label: 'Visitor Sign In (lobby tablet)', short_name: 'Visitors', path: '/kiosk/visitor' },
 ];
 const SLUGS = new Set(KIOSKS.map(k => k.slug));
 

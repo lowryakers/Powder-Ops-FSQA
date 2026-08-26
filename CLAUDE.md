@@ -437,6 +437,31 @@ through ReadyBot with who it is for, who issued it, how long it lasts and a link
   here, never a watcher of one. Caught by reading the test output rather than the code.
 - Fire-and-forget: the pass is issued and returned before this runs, so a comms outage cannot fail it.
 
+## A kiosk installs as ITSELF, not as ReadyDoc
+Re-adding the lobby tablet to the home screen produced an icon that opened the **ReadyDoc sign-in page** —
+the one screen that tablet must never show a visitor. Nothing was broken: "Add to Home Screen" launches
+whatever the manifest's `start_url` says, not the page you are looking at, and index.html links the app
+manifest whose `start_url` is `/`.
+- **`GET /kiosk-manifest/:slug.webmanifest`** serves one manifest per kiosk — its own name and short_name
+  (five icons all reading "ReadyDoc" is how somebody opens the wrong one), and a `start_url` that is the
+  kiosk page. Public by necessity: the OS fetches it with no session.
+- **THE POSTER KEY TRAVELS INTO `start_url`.** The key lives in the URL, so an icon saved without it would
+  stop working the day enforcement is switched from Counting to Enforced — exactly the breakage the staged
+  rollout exists to avoid. It is validated against the token charset before being reflected into JSON, not
+  trusted.
+- **`scope` is `/kiosk/`**, so any navigation that leaves the kiosk leaves the installed app and opens in
+  the browser rather than surfacing the rest of ReadyDoc inside the lobby icon.
+- **`no-store`**: a key can be re-issued, and a cached manifest is an icon that silently stops working.
+- Client: `applyKioskManifest()` swaps the `<link rel="manifest">` href while a kiosk route is mounted and
+  **puts it back on the way out** — a stale kiosk manifest left on the main app would install the lobby
+  tablet from somebody's desk. `<KioskShell>` in App.jsx wraps all five routes.
+- **iOS reads `apple-mobile-web-app-title`, not the manifest**, for the home-screen label, so both are set
+  or the icon still says "Powder Ops".
+- Not a hook despite touching the document — deliberately named `applyKioskManifest`, since `use…` would
+  put it under rules-of-hooks for no reason.
+- Verified in a real browser: 16 assertions, including that following the swapped link resolves to
+  `/kiosk/visitor?k=…` and that leaving the page restores the app manifest.
+
 ## QR posters carry their own key (`server/kiosk-tokens.js`)
 The kiosk pages are public because a QR code has no session — which made the lists they need (equipment
 register, blade list, tool/chemical catalogue, scale forms) readable by anyone who knew the address. Found

@@ -73,6 +73,7 @@ const ProductsPanel = lazy(() => import('./components/compliance/ProductsPanel.j
 const ArtworkPanel = lazy(() => import('./components/compliance/ArtworkPanel.jsx'));
 import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
+import { applyKioskManifest, setKioskAppTitle } from './lib/kioskManifest.js';
 import PageInfo from './components/PageInfo.jsx';
 const SupplyOrdersPanel = lazy(() => import('./components/office/SupplyOrdersPanel.jsx'));
 const TimeTrackingPanel = lazy(() => import('./components/office/TimeTrackingPanel.jsx'));
@@ -264,6 +265,25 @@ const isRicardo = (u) => (u?.name || '').toLowerCase().startsWith('ricardo');
 // Sends a signed-in kiosk-QR scanner into the app with the form as an overlay
 // (?form=…). A component (not an inline call) so the navigation runs as an
 // effect rather than as a side effect during render.
+/**
+ * A kiosk page installs as ITSELF.
+ *
+ * "Add to Home Screen" launches whatever the manifest says, not the page you
+ * are on — and index.html's manifest starts at "/". So the lobby tablet was
+ * being re-added as an icon that opened the ReadyDoc sign-in page, which is the
+ * one screen a visitor must never see. This points the page at its own manifest
+ * (start_url = this kiosk, carrying the poster key) while the kiosk is on
+ * screen, and puts it back on the way out.
+ */
+function KioskShell({ slug, title, children }) {
+  useEffect(() => {
+    const restore = applyKioskManifest(slug);
+    if (title) setKioskAppTitle(title);
+    return restore;
+  }, [slug, title]);
+  return children;
+}
+
 function KioskAppRedirect({ form }) {
   useEffect(() => { window.location.replace(`/?form=${form}`); }, [form]);
   return null;
@@ -1481,7 +1501,7 @@ function App() {
   const hasSession = (() => { try { return !!localStorage.getItem('auth_token'); } catch { return false; } })();
   if (path === '/kiosk/knife') {
     if (hasSession) return <KioskAppRedirect form="knife" />;
-    return <><KnifeKiosk /><UpdateBanner /></>;
+    return <KioskShell slug="knife" title="Knife Sign In/Out"><KnifeKiosk /><UpdateBanner /></KioskShell>;
   }
 
   // Flavor-approval magic link (texted to the approver) — public, token-gated.
@@ -1518,17 +1538,17 @@ function App() {
 
   if (path === '/kiosk/components') {
     if (hasSession) return <KioskAppRedirect form="components" />;
-    return <><ComponentKiosk /><UpdateBanner /></>;
+    return <KioskShell slug="components" title="Component Sign In/Out"><ComponentKiosk /><UpdateBanner /></KioskShell>;
   }
 
   if (path === '/kiosk/maintenance') {
     if (hasSession) return <KioskAppRedirect form="maintenance" />;
-    return <><MaintenanceKiosk /><UpdateBanner /></>;
+    return <KioskShell slug="maintenance" title="Sign Out an Item"><MaintenanceKiosk /><UpdateBanner /></KioskShell>;
   }
 
   if (path === '/kiosk/scale') {
     if (hasSession) return <KioskAppRedirect form="scale" />;
-    return <><ScaleKiosk /><UpdateBanner /></>;
+    return <KioskShell slug="scale" title="Scale Verification"><ScaleKiosk /><UpdateBanner /></KioskShell>;
   }
 
   // The lobby tablet. Unlike the other kiosks this does NOT redirect a
@@ -1536,7 +1556,7 @@ function App() {
   // be: the subject of a visitor sign-in is the VISITOR, not the operator, and
   // a staff member helping somebody at the tablet still wants the tablet.
   if (path === '/kiosk/visitor') {
-    return <><VisitorKiosk /><UpdateBanner /></>;
+    return <KioskShell slug="visitor" title="Visitor Sign In"><VisitorKiosk /><UpdateBanner /></KioskShell>;
   }
 
   if (path === '/production-entry') {

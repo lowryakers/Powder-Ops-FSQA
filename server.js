@@ -54,6 +54,7 @@ import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './se
 import visitorRoutes, { kioskRouter as visitorKioskRoutes, seedVisitorAgreements } from './server/api/visitors.js';
 import candidateRoutes from './server/api/candidates.js';
 import kioskTokenRoutes from './server/api/kiosk-tokens.js';
+import { KIOSKS } from './server/kiosk-tokens.js';
 import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
@@ -175,6 +176,56 @@ for (const [route, file] of [
 app.get('/brand/logo.jpg', (_req, res) => {
   res.set('Cache-Control', 'public, max-age=86400');
   res.sendFile(path.join(__dirname, 'server', 'assets', 'powder-ops-logo.jpg'));
+});
+
+/**
+ * A kiosk installs as ITSELF, not as ReadyDoc.
+ *
+ * "Add to Home Screen" launches whatever the manifest's `start_url` says, not
+ * the page you were looking at — and the app manifest says "/". So adding the
+ * lobby tablet from the visitor kiosk produced an icon that opened the ReadyDoc
+ * SIGN-IN PAGE, in front of a visitor, which is the one screen that tablet must
+ * never show.
+ *
+ * So each kiosk serves its own manifest: its own name on the home screen, and a
+ * `start_url` that is the kiosk page — carrying the poster's key, because the
+ * key is in the URL and a saved icon that has lost it would stop working the
+ * day enforcement is switched on.
+ *
+ * `scope` is the kiosk directory, so any navigation that leaves /kiosk/ leaves
+ * the installed app and opens in the browser instead of surfacing the rest of
+ * ReadyDoc inside the lobby icon.
+ *
+ * Public by necessity: the OS fetches this with no session, exactly as it
+ * fetches the app manifest.
+ */
+app.get('/kiosk-manifest/:slug.webmanifest', (req, res) => {
+  const kiosk = KIOSKS.find(k => k.slug === req.params.slug);
+  if (!kiosk) return res.status(404).json({ error: 'Unknown kiosk' });
+  // The key is reflected into JSON, so it is validated rather than trusted —
+  // tokens are base64url and nothing else is echoed back.
+  const key = /^[A-Za-z0-9_-]{1,128}$/.test(String(req.query.k || '')) ? String(req.query.k) : null;
+  const start = `/kiosk/${kiosk.slug}${key ? `?k=${key}` : ''}`;
+  res.set('Content-Type', 'application/manifest+json');
+  // Never cached: the key can be re-issued, and a stale manifest is an icon
+  // that silently stops working.
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    name: `${kiosk.label} — Powder Ops`,
+    short_name: kiosk.short_name || kiosk.label.split(' ')[0],
+    description: `Powder Ops ${kiosk.label}`,
+    start_url: start,
+    scope: '/kiosk/',
+    display: 'standalone',
+    background_color: '#f9fafb',
+    theme_color: '#5c7cfa',
+    orientation: 'any',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  });
 });
 
 // Intranet launcher: the bare landing page on the launcher hostname
