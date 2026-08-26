@@ -648,9 +648,14 @@ router.get('/submissions/:id/pdf', (req, res) => {
   // THE SAMPLES AS SENT, not as they stand now. Somebody correcting a lot
   // number next week must not change the form the laboratory was given —
   // re-downloading it would then show something nobody ever received.
-  let rows = [];
-  try { rows = JSON.parse(s.samples || 'null') || []; } catch { rows = []; }
-  if (!rows.length) rows = db.prepare('SELECT * FROM coa_requests WHERE submission_id = ? ORDER BY created_at').all(s.id);
+  const frozen = (() => {
+    try { return JSON.parse(s.samples || 'null') || []; } catch { return []; }
+  })();
+  // Submissions written before `samples` existed fall back to the live rows —
+  // better than an empty table, and there are none in service.
+  const rows = frozen.length
+    ? frozen
+    : db.prepare('SELECT * FROM coa_requests WHERE submission_id = ? ORDER BY created_at').all(s.id);
 
   const doc = new PDFDocument({ size: 'LETTER', margins: { top: 42, bottom: 70, left: 50, right: 50 }, bufferPages: true });
   res.setHeader('Content-Type', 'application/pdf');

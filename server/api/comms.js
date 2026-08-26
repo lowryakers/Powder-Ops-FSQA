@@ -1952,11 +1952,34 @@ function facetsFor(rows) {
   };
 }
 
-function keywordHits(db, q) {
+/**
+ * THE MEMBERSHIP SCOPE GOES IN THE QUERY, BEFORE THE CAP.
+ *
+ * This used to take the top 200 FTS matches across the WHOLE plant and let
+ * `resultsFor` drop the inaccessible ones afterwards. For any common word that
+ * silently ate the caller's own results: the global top 200 could be entirely
+ * messages in channels they are not in, so a term with plenty of hits in their
+ * own channels returned few or none — which reads exactly like "search only
+ * works in some channels". Same class as the QuickBooks `MAXRESULTS 500` and
+ * the `LIKE '%%'` bug: a limit applied before the filter that decides what
+ * counts.
+ *
+ * `semanticHits` already bounded to member channels up front; keyword did not,
+ * so the two modes disagreed about scope on exactly the words people search.
+ * `resultsFor` still re-checks membership — that stays as the authority, this
+ * is what makes the pool it is given the RIGHT 300 rows.
+ */
+function keywordHits(db, me, q, limit = 300) {
   const terms = q.split(/\s+/).filter(Boolean).map(t => `"${t.replace(/"/g, '')}"*`).join(' ');
   try {
-    return db.prepare('SELECT message_id FROM chat_messages_fts WHERE chat_messages_fts MATCH ? ORDER BY rank LIMIT 200')
-      .all(terms).map(h => h.message_id);
+    return db.prepare(`
+      SELECT f.message_id FROM chat_messages_fts f
+      JOIN chat_messages m ON m.id = f.message_id
+      JOIN chat_channels c ON c.id = m.channel_id
+      JOIN chat_channel_members cm ON cm.channel_id = m.channel_id AND cm.user_id = ?
+      WHERE chat_messages_fts MATCH ? AND m.deleted_at IS NULL AND c.archived = 0
+      ORDER BY rank LIMIT ?`)
+      .all(me, terms, limit).map(h => h.message_id);
   } catch { return []; }
 }
 
@@ -1998,7 +2021,7 @@ router.get('/search', async (req, res) => {
   if (q.length < 2) return res.json(empty);
   try {
     const semantic = req.query.mode === 'semantic' && voyageEnabled();
-    const ids = semantic ? await semanticHits(db, me, q, SEARCH_POOL) : keywordHits(db, q);
+    const ids = semantic ? await semanticHits(db, me, q, SEARCH_POOL) : keywordHits(db, me, q, SEARCH_POOL);
     const all = resultsFor(db, me, ids, SEARCH_POOL, !!req.impersonated);
 
     const facets = facetsFor(all);

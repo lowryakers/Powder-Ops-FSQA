@@ -2953,6 +2953,27 @@ about each of them. The fix is the **Job Description pattern applied to document
   leaves the set alone, a scalar-only document still counts, the roll-up and the machine panel agree on the
   same count) and 8 in a real browser through to the POST carrying two ids.
 
+## A cap applied BEFORE the access filter looks like "search only works in one channel"
+Reported as "search only works within each channel individually". It does not — `GET /comms/search` has no
+implicit scope, `fChannel` starts empty and is only set by clicking a facet chip, and one search spans every
+channel and DM the caller is in. But there was a real bug underneath producing exactly that symptom.
+- **`keywordHits` took the top 200 FTS matches across the WHOLE plant and let `resultsFor` drop the
+  inaccessible ones afterwards.** For any common word the global top 200 could be entirely messages in
+  channels the caller is not in, so a term with plenty of hits in their own channels returned few or none.
+  Same class as the QuickBooks `MAXRESULTS 500` and the `LIKE '%%'` search bug: **a limit applied before the
+  filter that decides what counts.**
+- The membership join is in the SQL now, before the LIMIT — `chat_messages_fts` carries `channel_id`, so it
+  is one join to `chat_channel_members`. `resultsFor` still re-checks membership; that stays the authority,
+  this is what makes the pool it is handed the RIGHT 300 rows.
+- **`semanticHits` already did it correctly** (bounded to member channels up front, from the admin-DM fix),
+  so Keyword and Smart disagreed about scope on exactly the words people search — which is the "nuance
+  depending on where you are" that was actually being observed.
+- **Two people searching the same word SHOULD get different totals.** In the reported screenshots one got 7
+  and the other 8; the extra was a DM the first person is not in. That is the scoping working.
+- Reproduced before fixing: 400 matching messages in a channel the caller cannot see, ranked above their
+  one, and their message did not come back. 9 assertions incl. that one search spans a channel and a DM
+  together, the facets name both, and a chip still narrows deliberately.
+
 ## Comms search is membership-scoped — for admins too (the DM exposure fix)
 `resultsFor()` filtered hits with `canAccess(..., isAdmin)` and `semanticHits()` short-circuited the
 membership join to `1=1` for admins — so an admin's search (keyword AND semantic, and `/ask`) returned
