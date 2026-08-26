@@ -2844,6 +2844,30 @@ object only when the last reference is gone** — the same refcount rule as forw
 UI: the copy icon on a file row → multi-select with a filter and select-all-filtered (the "select all
 equipment items" bulk case).
 
+## One work instruction, many machines (`sop_documents.equipment_ids`)
+Same fact, one level up: the manual could already reach eleven vacuums but the **work instruction** could
+only name one, so ten identical machines read as having none and the equipment setup checklist was wrong
+about each of them. The fix is the **Job Description pattern applied to documents** — `equipment_ids`
+(JSON array) added alongside the retained scalar, which is now a **MIRROR of the first entry**, exactly as
+`org_positions.job_description_ids` sits beside `job_description_id` and `mo_lines` line 0 mirrors
+`product_name`/`mo_number`.
+- **`normalizeEquipmentIds(body, existing)` in api/documents.js is the single writer** and both write paths
+  go through it, so the scalar can never disagree with the array. It accepts either shape: a caller sending
+  only `equipment_id` still links (the set is derived from it), and a caller sending neither on a PUT means
+  **"leave it alone"**, never "clear it" — an edit to a title must not silently unlink ten machines.
+- **`equipmentIdsOf(row)` falls back to the scalar**, so the ~existing documents written before the column
+  existed keep counting with no backfill. Every document read hands back the resolved array, so no client
+  needs to know the column holds JSON or that there are two columns at all.
+- **`equipment-readiness.js` reads BOTH** — `equipment_id = ? OR EXISTS (SELECT 1 FROM json_each(...))`.
+  `json_each` on a NULL column yields no rows rather than erroring, which is what lets one query cover the
+  scalar-only rows and the set rows together. Reading only the mirror would have made the whole change
+  invisible to the checklist that motivated it.
+- The registry form is the OrgChart chip picker: chips for what is linked, a `SearchSelect` type-ahead to
+  add the next, duplicates and blanks dropped at the normalizer rather than in the component.
+- Verified end to end on a fresh DB: 22 API assertions (the mirror follows a removal, an unrelated edit
+  leaves the set alone, a scalar-only document still counts, the roll-up and the machine panel agree on the
+  same count) and 8 in a real browser through to the POST carrying two ids.
+
 ## Comms search is membership-scoped — for admins too (the DM exposure fix)
 `resultsFor()` filtered hits with `canAccess(..., isAdmin)` and `semanticHits()` short-circuited the
 membership join to `1=1` for admins — so an admin's search (keyword AND semantic, and `/ask`) returned

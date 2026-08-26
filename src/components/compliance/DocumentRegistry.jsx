@@ -10,6 +10,7 @@ import RevisionUploadModal from '../settings/RevisionUploadModal.jsx';
 import { SignaturePad } from '../common/SignatureCanvas.jsx';
 import { formatDate } from '../../lib/datetime.js';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
+import SearchSelect from '../common/SearchSelect.jsx';
 
 /**
  * Wet signatures on a controlled document — the drawn image beside name,
@@ -183,7 +184,9 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
     effective_date: initial?.effective_date || '',
     review_due: initial?.review_due || '',
     review_frequency: initial?.review_frequency || 'annual',
-    equipment_id: initial?.equipment_id || '',
+    equipment_ids: initial?.equipment_ids?.length
+      ? initial.equipment_ids
+      : (initial?.equipment_id ? [initial.equipment_id] : []),
     content: initial?.description || '',
     content_es: initial?.description_es || '',
     _change_summary: '',
@@ -297,14 +300,37 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
             <p className="mt-1 text-[11px] text-gray-500">A Document-Control review task is generated 30 days before the review due date. Completing it advances the next review by the frequency. Leave the review-due date blank to auto-set it from the effective date + frequency.</p>
           </div>
           <div>
-            {/* Naming the machine is what lets the equipment setup checklist
-                answer "is there a work instruction for this". Most documents
-                are not about one machine, so the default is none. */}
+            {/* Naming the equipment is what lets the setup checklist answer
+                "is there a work instruction for this". It is a multi-pick
+                because one WI routinely covers several identical machines —
+                eleven vacuums, two blenders — and picking one of them leaves
+                the other ten reading as having no work instruction. Most
+                documents are not about equipment at all, so the default is
+                none. */}
             <label className="block text-xs font-medium text-gray-700 mb-1">Equipment this document covers</label>
-            <select value={form.equipment_id || ''} onChange={e => set('equipment_id', e.target.value)} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm">
-              <option value="">— Not about one machine —</option>
-              {(equipment || []).map(eq => <option key={eq.id} value={eq.id}>{eq.name}{eq.asset_id ? ` (#${eq.asset_id})` : ''}</option>)}
-            </select>
+            {form.equipment_ids.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {form.equipment_ids.map(id => {
+                  const eq = (equipment || []).find(x => x.id === id);
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-powder-50 border border-powder-200 text-xs text-powder-900">
+                      {eq ? `${eq.name}${eq.asset_id ? ` (#${eq.asset_id})` : ''}` : 'Unknown equipment'}
+                      <button type="button" onClick={() => set('equipment_ids', form.equipment_ids.filter(x => x !== id))}
+                        className="text-powder-400 hover:text-red-500"><X size={11} /></button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <SearchSelect value="" placeholder="Type to search equipment…"
+              options={(equipment || []).filter(eq => !form.equipment_ids.includes(eq.id))
+                .map(eq => `${eq.name}${eq.asset_id ? ` (#${eq.asset_id})` : ''}`)}
+              onChange={(label) => {
+                if (!label) return;
+                const eq = (equipment || []).find(x => `${x.name}${x.asset_id ? ` (#${x.asset_id})` : ''}` === label);
+                if (eq && !form.equipment_ids.includes(eq.id)) set('equipment_ids', [...form.equipment_ids, eq.id]);
+              }} />
+            <p className="mt-1 text-[11px] text-gray-500">Leave empty when the document is not about a machine. Add every machine it covers — each one then counts this as its work instruction.</p>
           </div>
         </div>
 

@@ -15,6 +15,35 @@ const router = Router();
 
 const MAX_IMPORT_MB = 50;
 
+// ── One work instruction, several machines ──────────────────────────────────
+// The plant runs eleven identical vacuums and two blenders off one WI, so
+// naming a single machine made the equipment setup checklist wrong for every
+// other copy. The FULL set lives in equipment_ids (JSON array);
+// `equipment_id` stays as a MIRROR of the first entry so everything that
+// already reads that column (equipment-readiness.js, the CSV, the registry
+// chip) keeps working untouched — the same line-0 mirroring rule as
+// org_positions.job_description_ids and production_entries.mo_lines.
+function normalizeEquipmentIds(body, existing = null) {
+  if (body.equipment_ids !== undefined) {
+    const arr = Array.isArray(body.equipment_ids) ? body.equipment_ids : [];
+    return [...new Set(arr.map(v => String(v || '').trim()).filter(Boolean))];
+  }
+  if (body.equipment_id !== undefined) {
+    return body.equipment_id ? [String(body.equipment_id)] : [];
+  }
+  return existing ? equipmentIdsOf(existing) : [];
+}
+export function equipmentIdsOf(row) {
+  try {
+    const arr = JSON.parse(row.equipment_ids || 'null');
+    if (Array.isArray(arr) && arr.length) return arr;
+  } catch { /* fall through */ }
+  return row.equipment_id ? [row.equipment_id] : [];
+}
+// Every document read hands back the resolved array, so no client has to know
+// the column holds JSON — or that there are two columns at all.
+const withEquipment = (row) => (row ? { ...row, equipment_ids: equipmentIdsOf(row) } : row);
+
 // ── Document review scheduling (Doc-Control task feed) ────────────────────────
 export const REVIEW_FREQ_MONTHS = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12, biennial: 24 };
 const REVIEW_LEAD_DAYS = 30;
@@ -521,7 +550,7 @@ router.get('/', (req, res) => {
   const col = SORTABLE[sort] || 'doc_number';
   const dir = order === 'desc' ? 'DESC' : 'ASC';
   sql += ` ORDER BY ${col} ${dir}, doc_number ASC`;
-  res.json(db.prepare(sql).all(...params));
+  res.json(db.prepare(sql).all(...params).map(withEquipment));
 });
 
 // ── Wet signatures on controlled documents ──────────────────────────────────
@@ -584,7 +613,7 @@ router.get('/:id', (req, res) => {
   const db = getDb();
   const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!doc) return res.status(404).json({ error: 'Not found' });
-  res.json(doc);
+  res.json(withEquipment(doc));
 });
 
 router.get('/:id/versions', (req, res) => {
@@ -615,15 +644,18 @@ router.post('/', (req, res) => {
       : db.prepare(`SELECT date('now', ?) d`).get(`+${months} months`).d;
   }
 
+  const equipmentIds = normalizeEquipmentIds(req.body);
+
   db.prepare(`INSERT INTO sop_documents
-    (id, doc_type, doc_number, title, category, revision, effective_date, review_due, review_frequency, status, owner, description, source_file, approved_by, approved_at, equipment_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, doc_type, doc_number, title, category, revision, effective_date, review_due, review_frequency, status, owner, description, source_file, approved_by, approved_at, equipment_id, equipment_ids)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, type, doc_number || '', title, category, revision || '1.0',
     effective_date || null, reviewDue, reviewFrequency, st, owner || null,
-    content || null, source_file || null, approvedBy, approvedAt, req.body.equipment_id || null
+    content || null, source_file || null, approvedBy, approvedAt,
+    equipmentIds[0] || null, equipmentIds.length ? JSON.stringify(equipmentIds) : null
   );
 
-  const created = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(id);
+  const created = withEquipment(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(id));
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
     .run(uuid(), id, created.revision, req.user.name, 'Created', JSON.stringify(created));
   logAudit(req.user, 'document_created', 'document', id, { doc_type: type, title, category });
@@ -671,18 +703,20 @@ router.put('/:id', (req, res) => {
   // value (initialized to the current revision by migration).
   const trainingRevision = materialChange ? newRevision : (existing.training_revision || newRevision);
 
-  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, review_frequency=?, status=?, owner=?, description=?, description_es=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, equipment_id=?, updated_at=datetime('now') WHERE id=?`).run(
+  const equipmentIds = normalizeEquipmentIds(req.body, existing);
+
+  db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, review_frequency=?, status=?, owner=?, description=?, description_es=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, equipment_id=?, equipment_ids=?, updated_at=datetime('now') WHERE id=?`).run(
     doc_number ?? existing.doc_number, title || existing.title, category || existing.category,
     newRevision, effective_date ?? existing.effective_date,
     newReviewDue, newFrequency, newStatus, owner ?? existing.owner,
     content ?? existing.description, content_es !== undefined ? content_es : existing.description_es,
     source_file ?? existing.source_file,
     approvedBy, approvedAt, trainingRevision,
-    req.body.equipment_id !== undefined ? (req.body.equipment_id || null) : existing.equipment_id,
+    equipmentIds[0] || null, equipmentIds.length ? JSON.stringify(equipmentIds) : null,
     req.params.id
   );
 
-  const updated = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
+  const updated = withEquipment(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id));
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot, minor) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(uuid(), req.params.id, updated.revision, req.user.name, _change_summary || (isMinor ? 'Minor edit' : 'Updated'), JSON.stringify(updated), isMinor ? 1 : 0);
 

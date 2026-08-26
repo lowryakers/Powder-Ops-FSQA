@@ -2955,6 +2955,13 @@ function runMigrations() {
   addColumnIfMissing('sop_documents', 'equipment_id', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_training_courses_equipment ON training_courses(equipment_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sop_documents_equipment ON sop_documents(equipment_id)');
+  // The FULL set of equipment a document covers (JSON array). One work
+  // instruction routinely covers several identical machines — eleven vacuums,
+  // two blenders — and picking one of them makes the checklist wrong for the
+  // other ten. equipment_id above stays as a MIRROR of the first entry so
+  // everything already reading that column keeps working; same rule as
+  // org_positions.job_description_ids and production_entries.mo_lines line 0.
+  addColumnIfMissing('sop_documents', 'equipment_ids', 'TEXT');
 
   // Withdrawing a controlled document is a DECISION, not housekeeping.
   //

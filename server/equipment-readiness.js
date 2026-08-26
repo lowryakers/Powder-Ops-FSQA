@@ -172,7 +172,15 @@ const STEPS = [
     link: { tab: 'document-control' },
     applies: (eq) => needsTraining(eq),
     check: (db, eq) => {
-      const n = db.prepare("SELECT COUNT(*) c FROM sop_documents WHERE equipment_id = ? AND status != 'archived'").get(eq.id).c;
+      // One WI covers several identical machines, so the link is a SET
+      // (equipment_ids) with equipment_id mirroring its first entry. Both are
+      // read: a document linked to eleven vacuums must answer for the eleventh
+      // as readily as for the first, and documents written before the set
+      // existed carry only the scalar.
+      const n = db.prepare(`SELECT COUNT(*) c FROM sop_documents d
+        WHERE d.status != 'archived'
+          AND (d.equipment_id = ? OR EXISTS (
+                SELECT 1 FROM json_each(d.equipment_ids) WHERE json_each.value = ?))`).get(eq.id, eq.id).c;
       return { done: n > 0, detail: n ? `${n} document${n === 1 ? '' : 's'}` : 'No document linked' };
     },
   },
