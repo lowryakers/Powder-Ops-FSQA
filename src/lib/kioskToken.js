@@ -19,11 +19,14 @@ const KEY = (slug) => `kiosk_token_${slug}`;
  * recent instruction) and falling back to what was stored by an earlier one.
  * A key in the URL is remembered on the way past.
  */
+function urlKey() {
+  // Reading location can throw in a sandboxed frame; no key is the safe answer.
+  try { return new URLSearchParams(window.location.search).get('k'); }
+  catch { return null; }
+}
+
 export function kioskToken(slug) {
-  let fromUrl = null;
-  try {
-    fromUrl = new URLSearchParams(window.location.search).get('k');
-  } catch { fromUrl = null; }
+  const fromUrl = urlKey();
 
   if (fromUrl) {
     try { localStorage.setItem(KEY(slug), fromUrl); } catch { /* private mode */ }
