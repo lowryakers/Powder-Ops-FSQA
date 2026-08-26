@@ -3,6 +3,7 @@ import { useKioskLang } from './useKioskLang.js';
 import KioskLangToggle from './KioskLangToggle.jsx';
 import { PackageCheck, CheckCircle, AlertTriangle, LogOut, LogIn } from 'lucide-react';
 import SearchSelect from '../common/SearchSelect.jsx';
+import { kioskHeaders } from '../../lib/kioskToken.js';
 
 const EMPTY = { direction: 'Out', item_name: '', part_number: '', lot_number: '', mo_number: '', qty_pulled: '', person: '' };
 
@@ -18,7 +19,7 @@ export default function ComponentKiosk({ defaultName = '' }) {
     // Merge rather than replace: a response from an older server without one
     // of the suggestion lists would otherwise leave it undefined and break the
     // datalist that maps over it.
-    fetch('/api/submit/component-options').then(r => r.json())
+    fetch('/api/submit/component-options', { headers: kioskHeaders('components') }).then(r => r.json())
       .then(o => setOptions(prev => ({ ...prev, ...o }))).catch(() => {});
   }, []);
 
@@ -29,7 +30,7 @@ export default function ComponentKiosk({ defaultName = '' }) {
     setSaving(true); setError('');
     try {
       const res = await fetch('/api/submit/component-signout', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...kioskHeaders('components', { headers: kioskHeaders('components') }) }, body: JSON.stringify(form),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong');

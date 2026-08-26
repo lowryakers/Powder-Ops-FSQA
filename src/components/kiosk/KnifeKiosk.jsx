@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Scissors, CheckCircle, AlertTriangle, Search, ArrowLeft, LogOut, LogIn } from 'lucide-react';
 import { useKioskLang } from './useKioskLang.js';
 import KioskLangToggle from './KioskLangToggle.jsx';
+import { kioskHeaders } from '../../lib/kioskToken.js';
 
 export default function KnifeKiosk({ defaultName = '' }) {
   const { lang, toggle, t } = useKioskLang();
@@ -14,7 +15,7 @@ export default function KnifeKiosk({ defaultName = '' }) {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
-  const load = () => fetch('/api/submit/knife-list').then(r => r.json()).then(setKnives).catch(() => {});
+  const load = () => fetch('/api/submit/knife-list', { headers: kioskHeaders('knife') }).then(r => r.json()).then(setKnives).catch(() => {});
   useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => {
@@ -28,7 +29,7 @@ export default function KnifeKiosk({ defaultName = '' }) {
     setSaving(true); setError('');
     try {
       const res = await fetch('/api/submit/knife', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...kioskHeaders('knife', { headers: kioskHeaders('knife') }) },
         body: JSON.stringify({ record_id: selected.id, person: name.trim(), condition }),
       });
       const data = await res.json();

@@ -322,6 +322,16 @@ check('VK-36', 'The realtime socket refuses a client with no token and a forged 
   `no token: ${anon.connected ? 'CONNECTED' : anon.error} · forged: ${forged.connected ? 'CONNECTED' : forged.error}`,
   !anon.connected && !forged.connected);
 
+/* ── K. The QR posters carry their own key ──────────────────────────────── */
+
+// Ships OFF, so the checks above describe the plant as it runs today. What this
+// records is that the control EXISTS and that turning it on cannot be done
+// carelessly — the sequence is verified separately in the kiosk-token tests.
+res = await fetch(`${ORIGIN}/api/kiosk-tokens`);
+check('VK-37', 'Kiosk keys are managed by admins only',
+  'Refused without an admin session',
+  `HTTP ${res.status}`, REFUSED.has(res.status));
+
 console.log(JSON.stringify(results, null, 1));
 const failed = results.filter(x => x.verdict === 'FAIL');
 console.error(`\n${results.length - failed.length} PASS / ${failed.length} FAIL`);

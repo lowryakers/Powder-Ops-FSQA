@@ -26,6 +26,7 @@ import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { coerceCustomData, parseJson } from '../custom-fields.js';
 import { seedVisitorAgreements, sha256 } from '../visitor-agreements.js';
+import { requireKioskToken } from '../kiosk-tokens.js';
 
 const router = Router();                       // authenticated: the log
 export const kioskRouter = Router();           // public: the tablet
@@ -88,7 +89,7 @@ function findVisitor(db, { first_name, last_name, email }) {
 
 // What the sign-in screen needs to render itself: the extra questions the plant
 // has added, and the documents to be signed. No visitor data of any kind.
-kioskRouter.get('/config', (_req, res) => {
+kioskRouter.get('/config', requireKioskToken('visitor'), (_req, res) => {
   const db = getDb();
   autoSignOutStaleVisits(db);
   let fields;
@@ -109,7 +110,7 @@ kioskRouter.get('/config', (_req, res) => {
   });
 });
 
-kioskRouter.post('/sign-in', (req, res) => {
+kioskRouter.post('/sign-in', requireKioskToken('visitor'), (req, res) => {
   const db = getDb();
   const first_name = trim(req.body?.first_name, 60);
   const last_name = trim(req.body?.last_name, 60);
@@ -207,7 +208,31 @@ kioskRouter.post('/sign-in', (req, res) => {
 // Looking yourself up to sign out. Returns ONLY open visits, and only enough to
 // pick one — no email, no history, no signature. A lobby tablet must not become
 // a way to find out who has been visiting.
-kioskRouter.get('/open', (req, res) => {
+
+// WHO IS IN THE BUILDING SHOULD NOT BE SWEEPABLE.
+//
+// The look-up is deliberately generous — two characters, prefix match — because
+// a visitor on the way out should find themselves on the first try. Measured in
+// the isolation verification, that also meant 676 requests across the alphabet
+// surfaced every on-site name. A real visitor types their name once or twice;
+// nothing legitimate needs thirty tries a minute, so the sweep stops being
+// practical while the lobby never notices.
+const lookupHits = new Map();           // ip -> { n, windowStart }
+const LOOKUP_LIMIT = 30;
+const LOOKUP_WINDOW_MS = 60 * 1000;
+function limitLookups(req, res, next) {
+  const ip = req.ip || 'unknown';
+  const now = Date.now();
+  const e = lookupHits.get(ip);
+  if (!e || now - e.windowStart > LOOKUP_WINDOW_MS) { lookupHits.set(ip, { n: 1, windowStart: now }); return next(); }
+  if (e.n >= LOOKUP_LIMIT) {
+    return res.status(429).json({ error: 'Too many look-ups. Wait a moment and try your name again.' });
+  }
+  e.n += 1;
+  next();
+}
+
+kioskRouter.get('/open', requireKioskToken('visitor'), limitLookups, (req, res) => {
   const db = getDb();
   autoSignOutStaleVisits(db);
   const q = norm(req.query.q);
@@ -222,7 +247,7 @@ kioskRouter.get('/open', (req, res) => {
   res.json(rows.map(r => ({ id: r.id, name: `${r.first_name} ${r.last_name}`, signed_in_at: r.signed_in_at })));
 });
 
-kioskRouter.post('/sign-out', (req, res) => {
+kioskRouter.post('/sign-out', requireKioskToken('visitor'), (req, res) => {
   const db = getDb();
   const visit = db.prepare('SELECT * FROM visitor_visits WHERE id = ?').get(trim(req.body?.visit_id, 60));
   if (!visit) return res.status(404).json({ error: 'We could not find that visit.' });

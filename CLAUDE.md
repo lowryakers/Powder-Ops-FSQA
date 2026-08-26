@@ -408,6 +408,29 @@ and picks nothing (choosing for people is what made the landing feel random). Wi
 the read-on-screen rule immediately undo it.
 `isCompactLayout` tracks the same `md` breakpoint the markup uses, live, via matchMedia.
 
+## QR posters carry their own key (`server/kiosk-tokens.js`)
+The kiosk pages are public because a QR code has no session — which made the lists they need (equipment
+register, blade list, tool/chemical catalogue, scale forms) readable by anyone who knew the address. Found
+by the kiosk isolation verification. Each poster now carries a key in its URL (`/kiosk/scale?k=…`).
+- **One key PER KIOSK, bound to its slug.** A scale key on the knife route is refused. One leaked key
+  therefore costs one reprint, not five — which is the difference between a control people keep and one
+  they switch off the first time it is inconvenient.
+- **It ships OFF, and the rollout is the hard part, not the check.** Posters are on walls and the lobby
+  tablet is on a home screen; enforcing at deploy breaks them all at once in front of whoever is standing
+  there. Three states: `off` → `warn` (untokened requests still work and are COUNTED) → `on`. Nobody should
+  jump from off to on: sit in `warn` until the count stops rising. **`POST /kiosk-tokens/mode` refuses `on`
+  while any kiosk has no live key** and names them.
+- **The key is in the QR, never in the printed text** under it — a key printed in readable characters is
+  one somebody types into a phone and keeps.
+- Client: `src/lib/kioskToken.js` reads `?k=` and remembers it **per kiosk** in localStorage (a phone that
+  scanned scale this morning and knife this afternoon must not have the second overwrite the first), then
+  sends `X-Kiosk-Token`. Both header and query are accepted server-side so a poster works on the first scan
+  and after the page has stored it.
+- Admin only (Settings → Kiosk keys). Hashed SHA-256, clear text once, revocable, every issue and revoke
+  audited. `flavor-approval/:token` is untouched — it carries its own token in the path already.
+- **The visitor sign-out look-up is rate-limited to 30/minute per address.** The 676-request alphabet sweep
+  that surfaced every on-site name is now impractical; a visitor typing their own name never notices.
+
 ## People (the candidate tracker) — `server/api/candidates.js` + `CandidatesPanel.jsx`
 Marnee's Monday board of people worth hiring one day. **"Who first, then where"** — a list of PEOPLE, not
 of vacancies. The plant hires rarely and has low turnover, so the asset is the memory of somebody good and

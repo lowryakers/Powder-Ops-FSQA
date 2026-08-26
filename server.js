@@ -52,6 +52,7 @@ import partnerPortalRoutes from './server/api/partner-portal.js';
 import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './server/api/auditor-pass.js';
 import visitorRoutes, { kioskRouter as visitorKioskRoutes, seedVisitorAgreements } from './server/api/visitors.js';
 import candidateRoutes from './server/api/candidates.js';
+import kioskTokenRoutes from './server/api/kiosk-tokens.js';
 import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
@@ -1708,6 +1709,10 @@ app.use('/api/integrations', integrationsRoutes);
 app.use('/api/compliance', complianceRoutes);
 app.use('/api/loto', requireModuleWrite('loto'), lotoRoutes);
 app.use('/api/users', userRoutes);
+// Admin-only: issuing and revoking the keys the QR posters carry. Not behind
+// requireModuleWrite — it is not a module, it is a credential, same class as
+// the auditor pass.
+app.use('/api/kiosk-tokens', kioskTokenRoutes);
 app.use('/api/submit', submitRoutes);
 app.use('/api/sms', smsInboundRoutes);
 app.use('/api/dannys-list', requireModuleWrite('dannys-list'), dannyRoutes);

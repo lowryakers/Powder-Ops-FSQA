@@ -33,7 +33,7 @@ const out = await renderReport({
     ['Revision', 'V1'],
     ['Document number', 'To be assigned by Document Control'],
     ['System verified', 'ReadyDoc — Powder Ops FSQA platform'],
-    ['Software version', 'Build 83944af (25 August 2026)'],
+    ['Software version', 'Build 25 August 2026 (kiosk keys)'],
     ['Date of verification', '25 August 2026'],
     ['Result', `${N} checks executed — ${passed} met, ${failed} not met`],
     ['Verified by', ''],
@@ -139,12 +139,14 @@ const out = await renderReport({
     h1('8. Residual risks'),
     p('Stated so the record does not claim more than was shown. None of these is a defect; each is a '
       + 'consequence of a deliberate design choice, and each is a decision the plant may wish to revisit.'),
-    li('THE QR-CODE KIOSK CATALOGUES SHARE THE SAME PUBLIC PREFIX. The scale, knife, component and '
-      + 'maintenance kiosks need their lists before anybody signs in, so the equipment register, the blade '
-      + 'list, the tool and chemical catalogue and the scale verification forms are readable by anyone who '
-      + 'knows the address. They are catalogues — they name no person and contain no filed record, which '
-      + 'section 5 checks — but they do describe what the plant owns. Closing this means putting a token '
-      + 'into the QR codes and reprinting them.'),
+    li('THE QR-CODE KIOSK CATALOGUES SHARE THE SAME PUBLIC PREFIX — ADDRESSED, AWAITING ROLLOUT. Each '
+      + 'poster now carries its own key, and a key is bound to its own kiosk so one that leaks does not '
+      + 'open the other four. It ships switched OFF: posters are already on walls and the lobby tablet is '
+      + 'saved to a home screen, so enforcing at deploy would break all of them at once with nobody at the '
+      + 'poster able to fix it. The changeover runs Off → Counting → Enforced, and the Counting state '
+      + 'reports how many scans still arrive without a key, so the decision to enforce rests on a number '
+      + 'rather than a hope. Until that switch is thrown, the catalogues remain readable as described '
+      + 'above.'),
     li('FILES UNDER /uploads ARE PROTECTED BY AN UNGUESSABLE NAME, NOT BY A SESSION. Their names are '
       + 'random identifiers, the folder cannot be listed and a guessed name returns nothing — all verified '
       + '— but a link that escapes, pasted into a message or left in a browser history, is readable by '
@@ -153,11 +155,11 @@ const out = await renderReport({
       + 'it takes, which is what makes the exit quick. The cost is that a departure time can be recorded '
       + 'for somebody who has not left. The log records that the sign-out came from the kiosk, and staff '
       + 'can correct it.'),
-    li('WHO IS CURRENTLY IN THE BUILDING CAN BE DISCOVERED BY REPEATED GUESSING. Two-letter prefixes, '
-      + 'swept across the alphabet, will surface the names of visitors on site — measured at 676 requests '
-      + 'to find three. Only names and arrival times, only people not yet signed out, never staff and '
-      + 'never history. Requiring more characters would make it harder for a visitor to find themselves on '
-      + 'the way out.'),
+    li('WHO IS CURRENTLY IN THE BUILDING CAN BE DISCOVERED BY REPEATED GUESSING — NOW BOUNDED. The sweep '
+      + 'that surfaced every on-site name needed 676 requests; the look-up is now limited to thirty a '
+      + 'minute from one address, which makes the sweep impractical while a visitor typing their own name '
+      + 'once or twice never notices. Measured: forty-five rapid look-ups, thirty answered and fifteen '
+      + 'refused. The exposure was only ever names and arrival times of people not yet signed out.'),
 
     h1('9. When this must be repeated'),
     li('Whenever a route is added to the public list, which is the single place they are declared.'),

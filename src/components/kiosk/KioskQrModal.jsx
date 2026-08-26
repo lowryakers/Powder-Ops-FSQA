@@ -8,7 +8,11 @@ import QRCode from 'qrcode';
 //   kioskPath (required), label (required), formCode, kioskTagline, kioskBlurb.
 export default function KioskQrModal({ cfg, onClose }) {
   const [dataUrl, setDataUrl] = useState('');
-  const url = `${window.location.origin}${cfg.kioskPath}`;
+  // THE KEY IS PART OF THE POSTER. `cfg.kioskToken` is the clear text handed
+  // back when the key was issued — it exists here, in the QR and on the printed
+  // sheet, and nowhere else. A poster printed without one still works while
+  // enforcement is off, which is what makes the changeover survivable.
+  const url = `${window.location.origin}${cfg.kioskPath}${cfg.kioskToken ? `?k=${encodeURIComponent(cfg.kioskToken)}` : ''}`;
   const tagline = cfg.kioskTagline || 'Scan to Open the Form';
   const blurb = cfg.kioskBlurb || 'Print and post this QR where staff need it. Scanning it opens the form — no login required.';
 
@@ -37,7 +41,7 @@ export default function KioskQrModal({ cfg, onClose }) {
         <h2>${tagline}</h2>
         <img src="${dataUrl}" alt="QR code" />
         <p class="scan">📷 Scan with your phone camera</p>
-        <p class="url">${url}</p>
+        <p class="url">${window.location.origin}${cfg.kioskPath}</p>
         <p class="code">${cfg.formCode || ''}</p>
       </div></body></html>`);
     w.document.close();

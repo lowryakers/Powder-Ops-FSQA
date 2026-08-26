@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { SignaturePad } from '../common/SignatureCanvas.jsx';
 import { ArrowLeft, RotateCcw, Check, LogIn, LogOut, AlertTriangle } from 'lucide-react';
+import { kioskHeaders } from '../../lib/kioskToken.js';
 
 // The lobby tablet. Replaces Lobby Track.
 //
@@ -40,7 +41,9 @@ const FULL = 'min-h-[100dvh]';
 const api = async (path, opts = {}) => {
   const res = await fetch(`/api/visitor-kiosk${path}`, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    // The poster's key rides on every kiosk request. Empty while enforcement
+    // is off, which is why this is safe to ship before any key is issued.
+    headers: { 'Content-Type': 'application/json', ...kioskHeaders('visitor'), ...(opts.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong. Please ask at the front desk.');

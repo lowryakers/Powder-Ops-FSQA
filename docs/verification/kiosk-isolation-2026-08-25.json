@@ -250,5 +250,12 @@
   "expected": "Both rejected — no live feed of plant messages",
   "actual": "no token: unauthorized · forged: unauthorized",
   "verdict": "PASS"
+ },
+ {
+  "id": "VK-37",
+  "title": "Kiosk keys are managed by admins only",
+  "expected": "Refused without an admin session",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
  }
 ]

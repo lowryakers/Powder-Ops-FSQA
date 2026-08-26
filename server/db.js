@@ -1560,6 +1560,35 @@ function initSchema() {
     -- and audited every time it is used. It redeems into an ordinary session for
     -- an auditor-role account, so every read is subject to the same role rules as
     -- an auditor signing in normally — read-only everywhere, no comms, no writes.
+    -- A QR poster's own key.
+    --
+    -- The kiosk pages are public by necessity: a QR code on a wall has no
+    -- session, and the whole point is that a technician can scan it and work
+    -- without signing in. That made the lists those pages need — equipment,
+    -- blades, tools and chemicals, the scale forms — readable by anybody who
+    -- knew the address. This binds each poster to a key instead.
+    --
+    -- ONE KEY PER KIOSK, not one for all of them. A key can then be revoked and
+    -- that poster reprinted without taking every other kiosk in the plant down
+    -- with it — which is the difference between a control people use and one
+    -- they turn off the first time it is inconvenient.
+    --
+    -- Stored as SHA-256, shown in clear exactly once, same as the auditor pass
+    -- and the partner portal.
+    CREATE TABLE IF NOT EXISTS kiosk_tokens (
+      id TEXT PRIMARY KEY,
+      slug TEXT NOT NULL,               -- knife | components | maintenance | scale | visitor
+      label TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      revoked_at TEXT,
+      revoked_by TEXT,
+      last_used_at TEXT,
+      use_count INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS auditor_passes (
       id TEXT PRIMARY KEY,
       token_hash TEXT NOT NULL UNIQUE,
@@ -1657,6 +1686,7 @@ function initSchema() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     -- Matching on the email when there is one, on the name when there is not.
+    CREATE INDEX IF NOT EXISTS idx_kiosk_tokens_slug ON kiosk_tokens(slug, revoked_at);
     CREATE INDEX IF NOT EXISTS idx_candidates_status ON candidates(status, name);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_external ON candidates(external_id) WHERE external_id IS NOT NULL;
 

@@ -1,9 +1,10 @@
 import { useAuth } from '../../hooks/useAuth';
-import { Users, Sliders, Database, Sparkles, Link2, Plug } from 'lucide-react';
+import { QrCode, Users, Sliders, Database, Sparkles, Link2, Plug } from 'lucide-react';
 import SettingsShell from '../settings/SettingsShell.jsx';
 import UsersSection from '../settings/UsersSection.jsx';
 import DataBackupSection from '../settings/DataBackupSection.jsx';
 import ShareableLinksSection from '../settings/ShareableLinksSection.jsx';
+import KioskKeysSection from '../settings/KioskKeysSection.jsx';
 import LogBuilderPanel from '../settings/LogBuilderPanel.jsx';
 import CleanupReviewPanel from '../settings/CleanupReviewPanel.jsx';
 import IntegrationsSection from '../settings/IntegrationsSection.jsx';
@@ -79,6 +80,14 @@ const SECTIONS = [
         keywords: 'export csv zip download restore friday archive',
         icon: Database,
         Component: DataBackupSection,
+      },
+      {
+        id: 'kiosk-keys',
+        label: 'Kiosk keys',
+        description: 'Bind each QR poster to its own key',
+        keywords: 'qr code kiosk token key poster public scan knife scale visitor lobby security',
+        icon: QrCode,
+        Component: KioskKeysSection,
       },
       {
         id: 'links',

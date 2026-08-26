@@ -3,6 +3,7 @@ import { Scale, CheckCircle, AlertTriangle, ChevronLeft } from 'lucide-react';
 import ScaleProcedureCard from '../common/ScaleProcedureCard.jsx';
 import { useKioskLang } from './useKioskLang.js';
 import KioskLangToggle from './KioskLangToggle.jsx';
+import { kioskHeaders } from '../../lib/kioskToken.js';
 
 // Scale Calibration Verification — Forms 417-01 … 417-05.
 //
@@ -37,7 +38,7 @@ export default function ScaleKiosk({ defaultName = '' }) {
   const [result, setResult] = useState(null);
 
   useEffect(() => {
-    fetch('/api/submit/scale-forms').then(r => r.json())
+    fetch('/api/submit/scale-forms', { headers: kioskHeaders('scale') }).then(r => r.json())
       .then(d => { setForms(d.forms || []); setRooms(d.rooms || []); setProcedure(d.procedure || null); })
       .catch(() => {});
   }, []);
@@ -57,7 +58,7 @@ export default function ScaleKiosk({ defaultName = '' }) {
     try {
       const res = await fetch('/api/submit/scale-verification', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...kioskHeaders('scale', { headers: kioskHeaders('scale') }) },
         body: JSON.stringify({ ...meta, form_code: form.code, readings: values }),
       });
       const data = await res.json();

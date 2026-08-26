@@ -8,16 +8,17 @@ import { recordScaleVerification } from './scale-verification.js';
 import { activeChemicalNames, syncFlavorOrganoleptic } from './qms.js';
 import { openSignOuts, syncKnifeStatus, toolIdOf } from '../knife-state.js';
 import { readyDocOrigin } from '../links.js';
+import { requireKioskToken } from '../kiosk-tokens.js';
 
 const router = Router();
 
-router.get('/equipment-list', (_req, res) => {
+router.get('/equipment-list', requireKioskToken('maintenance'), (_req, res) => {
   const db = getDb();
   const equipment = db.prepare("SELECT id, name, type, location, asset_id FROM equipment WHERE status = 'active' ORDER BY name").all();
   res.json(equipment);
 });
 
-router.post('/work-order', (req, res) => {
+router.post('/work-order', requireKioskToken('maintenance'), (req, res) => {
   const db = getDb();
   const { equipment_id, title, description, priority, submitted_by, attachments } = req.body;
 
@@ -74,7 +75,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 // was the only thing the kiosk consulted, so a return recorded in the app left
 // the scanner insisting the knife was still out and refusing to sign it out
 // again. See server/knife-state.js for the rule.
-router.get('/knife-list', (_req, res) => {
+router.get('/knife-list', requireKioskToken('knife'), (_req, res) => {
   const db = getDb();
   const rows = db.prepare("SELECT * FROM qms_records WHERE record_type = 'knife_accountability' AND (status IS NULL OR status != 'decommissioned') ORDER BY record_number").all();
   const held = openSignOuts(db);
@@ -109,7 +110,7 @@ router.get('/knife-list', (_req, res) => {
 // check-out opens a knife_sign_out log record (Form 440-02) that the check-in
 // closes — the log record then awaits the in-app QA review sign-off, mirroring
 // the Equipment/Tool/Chemical Sign In-Out flow.
-router.post('/knife', (req, res) => {
+router.post('/knife', requireKioskToken('knife'), (req, res) => {
   const db = getDb();
   const { record_id, person, condition } = req.body;
   const name = (person || '').trim();
@@ -325,7 +326,7 @@ export async function applyFlavorReplyText(db, fromDigits, text, senderName) {
 
 // ── Component Sign In/Out kiosk ───────────────────────────────────────────────
 // Suggestion lists (item names / part numbers seen before) for quick entry.
-router.get('/component-options', (_req, res) => {
+router.get('/component-options', requireKioskToken('components'), (_req, res) => {
   const db = getDb();
   const rows = db.prepare("SELECT data FROM qms_records WHERE record_type = 'component_sign_out'").all();
   const items = new Set(), parts = new Set(), mos = new Set();
@@ -346,7 +347,7 @@ router.get('/component-options', (_req, res) => {
 
 // Log a component sign-out (or sign-in) as a new record awaiting in-app WH/QA
 // approval. `person` is the typed name at the kiosk.
-router.post('/component-signout', (req, res) => {
+router.post('/component-signout', requireKioskToken('components'), (req, res) => {
   const db = getDb();
   const cfg = getType('component_sign_out');
   const { direction, item_name, part_number, lot_number, mo_number, qty_pulled, person } = req.body;
@@ -380,7 +381,7 @@ router.post('/component-signout', (req, res) => {
 // The editable item list (same one managed in the app) plus the approved
 // chemical registry, grouped for the kiosk dropdown. `chemicals` tells the
 // kiosk which items need a use specification.
-router.get('/maintenance-items', (_req, res) => {
+router.get('/maintenance-items', requireKioskToken('maintenance'), (_req, res) => {
   const db = getDb();
   let rows = [];
   try { rows = db.prepare('SELECT name, category FROM maintenance_items ORDER BY sort_order, name').all(); } catch { /* table optional */ }
@@ -403,7 +404,7 @@ router.get('/maintenance-items', (_req, res) => {
 // awaiting the in-app QA return/review. `employee_name` is the typed name.
 // items[] entries are strings or { name, qty, use_spec }; a chemical from the
 // approved registry must carry a use_spec. tool_box applies to the whole batch.
-router.post('/maintenance-signout', (req, res) => {
+router.post('/maintenance-signout', requireKioskToken('maintenance'), (req, res) => {
   const db = getDb();
   const cfg = getType('maintenance_sign_out');
   const { employee_name, item_description, items, asset_tag, condition_out, time_out, tool_box, use_spec, qty } = req.body;
@@ -463,7 +464,7 @@ router.post('/maintenance-signout', (req, res) => {
 // scale and fills it in on their phone. Grading happens server-side, so a
 // reading outside tolerance can never be filed as a pass.
 
-router.get('/scale-forms', (_req, res) => {
+router.get('/scale-forms', requireKioskToken('scale'), (_req, res) => {
   const db = getDb();
   let rooms;
   try {
@@ -475,7 +476,7 @@ router.get('/scale-forms', (_req, res) => {
   res.json({ forms: SCALE_FORMS.map(f => ({ ...f, procedure: procedureFor(f) })), rooms, procedure: SCALE_PROCEDURE });
 });
 
-router.post('/scale-verification', (req, res) => {
+router.post('/scale-verification', requireKioskToken('scale'), (req, res) => {
   const db = getDb();
   const { error, record } = recordScaleVerification(db, req.body, {
     actor: (req.body?.performed_by || '').trim() || 'kiosk',

@@ -3,6 +3,7 @@ import { useKioskLang } from './useKioskLang.js';
 import KioskLangToggle from './KioskLangToggle.jsx';
 import { Wrench, CheckCircle, AlertTriangle, X } from 'lucide-react';
 import SearchSelect from '../common/SearchSelect.jsx';
+import { kioskHeaders } from '../../lib/kioskToken.js';
 
 const EMPTY = { employee_name: '', tool_box: '', asset_tag: '', condition_out: 'Good' };
 
@@ -17,7 +18,7 @@ export default function MaintenanceKiosk({ defaultName = '' }) {
   const [result, setResult] = useState(null);
 
   useEffect(() => {
-    fetch('/api/submit/maintenance-items').then(r => r.json()).then(d => setCatalog({
+    fetch('/api/submit/maintenance-items', { headers: kioskHeaders('maintenance') }).then(r => r.json()).then(d => setCatalog({
       groups: d.groups?.length ? d.groups : [{ group: 'Items', items: d.items || [] }],
       chemicals: d.chemicals || [],
       use_specs: d.use_specs || ['Food Contact', 'Non-Food Contact', 'Food Grade', 'Non-Food Grade'],
@@ -41,7 +42,7 @@ export default function MaintenanceKiosk({ defaultName = '' }) {
     setSaving(true); setError('');
     try {
       const res = await fetch('/api/submit/maintenance-signout', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...kioskHeaders('maintenance', { headers: kioskHeaders('maintenance') }) },
         body: JSON.stringify({ ...form, items: picked }),
       });
       const data = await res.json();
