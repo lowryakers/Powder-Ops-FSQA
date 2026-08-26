@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square, PenLine } from 'lucide-react';
 import ModuleTabs from '../common/ModuleTabs.jsx';
+import CopyButton from '../common/CopyButton.jsx';
 
 // Typed-confirmation dialog for permanent, irreversible bulk deletion.
 function ConfirmDeleteModal({ count, onConfirm, onClose }) {
@@ -1787,6 +1788,136 @@ function MaterialSpecModal({ item, onClose, onSaved }) {
   );
 }
 
+/* ── Asking the lab to collect ─────────────────────────────────────────────── */
+
+/**
+ * The paper loop was: fill CTLA's Sample Submission Form by hand, scan it,
+ * email the scan. Everything on that form is already on the requests, so this
+ * composes the submission from them and puts it on the clipboard — the person
+ * pastes it into the email thread they already have open and presses send.
+ *
+ * PREVIEW WRITES NOTHING. What is about to go to an outside laboratory is on
+ * screen before it counts as sent; only "Copy & mark sent" files it. The same
+ * server function builds both, so the preview cannot differ from what commits.
+ */
+function LabSubmissionModal({ ids, onClose, onSent }) {
+  const [processing, setProcessing] = useState('normal');
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(null);
+  const { data: options } = useApiGet('/coa/requests/submission/options');
+
+  useEffect(() => {
+    let cancelled = false;
+    apiPost('/coa/requests/submission/preview', { ids, processing })
+      .then(p => { if (!cancelled) { setPreview(p); setError(''); } })
+      .catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [ids, processing]);
+
+  // Composing on the click keeps the copy inside the same user gesture, which
+  // is what some browsers require for clipboard access. Once filed, copying
+  // again returns the stored text and files nothing a second time.
+  const composeAndCopy = async () => {
+    if (sent) return sent.text;
+    setBusy(true); setError('');
+    try {
+      const r = await apiPost('/coa/requests/submission', { ids, processing });
+      setSent(r); onSent?.(r);
+      return r.text;
+    } catch (e) { setError(e.message); return null; }
+    finally { setBusy(false); }
+  };
+
+  const p = sent || preview;
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-5 space-y-3 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2"><FlaskConical size={18} className="text-gray-400" /> Send samples to the lab</h3>
+          <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+
+        <p className="text-xs text-gray-500">
+          {ids.length} request{ids.length === 1 ? '' : 's'}
+          {p?.lab_name ? ` · ${p.lab_name}` : ''}
+          {p?.to ? ` · ${p.to}` : ''}
+        </p>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Processing</label>
+          <div className="flex flex-wrap gap-1.5">
+            {(options?.processing || [{ value: 'normal', label: 'Normal' }]).map(o => (
+              <button key={o.value} type="button" onClick={() => setProcessing(o.value)} disabled={!!sent}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium border disabled:opacity-60 ${processing === o.value ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                {o.label}{o.fee ? ' *' : ''}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-gray-500">* Rush carries an additional fee and is not always available.</p>
+        </div>
+
+        {/* A gap is NAMED, never filled. A lab receiving a jar it cannot tie to
+            a lot is the failure this module exists to prevent, so a missing lot
+            or an empty test list is said out loud rather than composed over. */}
+        {p?.warnings?.length > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+            <p className="text-xs font-medium text-amber-900">{p.warnings.length} thing{p.warnings.length === 1 ? '' : 's'} missing from the requests</p>
+            <ul className="mt-1 text-[11px] text-amber-800 list-disc pl-4">
+              {p.warnings.slice(0, 6).map((w, i) => <li key={i}>{w.message}</li>)}
+            </ul>
+            <p className="mt-1 text-[11px] text-amber-700">They are marked NOT RECORDED below. Correct the request rather than typing over the text.</p>
+          </div>
+        )}
+        {p?.multiple_labs > 0 && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            These requests are assigned to {p.multiple_labs} different laboratories. One submission is one form with one address — submit a single lab at a time.
+          </div>
+        )}
+        {!sent && preview?.already_sent?.length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+            {preview.already_sent.length} of these {preview.already_sent.length === 1 ? 'was' : 'were'} already sent and will be left as {preview.already_sent.length === 1 ? 'it is' : 'they are'} — the turnaround clock already started.
+          </div>
+        )}
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs font-medium text-gray-700">Email body</label>
+            {p?.subject && <span className="text-[11px] text-gray-500 truncate ml-2">Subject: {p.subject}</span>}
+          </div>
+          <pre className="text-[11px] leading-relaxed bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto whitespace-pre max-h-72 overflow-y-auto font-mono">{p?.text || 'Composing…'}</pre>
+        </div>
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        {sent && (
+          <p className="text-xs text-green-700">
+            Filed as sent: {sent.sent} request{sent.sent === 1 ? '' : 's'}
+            {sent.skipped?.length ? ` · ${sent.skipped.length} left alone (already sent)` : ''}. Paste it into the email and press send.
+          </p>
+        )}
+
+        <div className="flex items-center gap-2 pt-1 flex-wrap">
+          {/* ONE button, whatever state this is in. Swapping it for a second
+              one on success unmounts the first — taking its "Copied" with it,
+              so the click that both filed the requests and loaded the
+              clipboard appeared to do nothing at all. */}
+          <CopyButton getText={composeAndCopy}
+            label={sent ? 'Copy again' : 'Copy & mark sent'} doneLabel="Copied — now paste & send"
+            disabled={busy || !preview || preview.multiple_labs > 0} />
+          {p?.subject && <CopyButton getText={p.subject} label="Copy subject"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200" />}
+          <div className="flex-1" />
+          <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+            {sent ? 'Done' : 'Cancel'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function COAPanel() {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'coa');
@@ -1803,6 +1934,7 @@ export default function COAPanel() {
   const [sortDir, setSortDir] = useState('desc');
   const [selected, setSelected] = useState(() => new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [submitIds, setSubmitIds] = useState(null); // requests being composed into a lab submission
   const [bulkStatus, setBulkStatus] = useState('');
   const [msg, setMsg] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -1995,6 +2127,10 @@ export default function COAPanel() {
             <div className="flex items-center gap-2 flex-wrap bg-powder-50 border border-powder-200 rounded-lg px-3 py-2">
               <span className="text-sm font-medium text-powder-800">{selected.size} selected</span>
               <div className="flex-1" />
+              <button onClick={() => setSubmitIds([...selected])}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
+                <FlaskConical size={14} /> Send to lab
+              </button>
               <select value={bulkStatus} onChange={e => handleBulkStatus(e.target.value)} className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
                 <option value="">Set status…</option>
                 {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -2242,6 +2378,10 @@ export default function COAPanel() {
 
       {confirmDelete && (
         <ConfirmDeleteModal count={selected.size} onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />
+      )}
+      {submitIds && (
+        <LabSubmissionModal ids={submitIds} onClose={() => setSubmitIds(null)}
+          onSent={() => { clearSelection(); refreshReqs(); refreshSummary(); }} />
       )}
     </div>
   );

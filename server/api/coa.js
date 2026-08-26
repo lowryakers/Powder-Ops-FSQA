@@ -11,6 +11,7 @@ import { requireRole } from '../middleware/auth.js';
 import { gradeResult, specIndex } from '../coa-grade.js';
 import { parseColumnarCoa, foundSomething } from '../coa-parse.js';
 import { aiEnabled, readLabReport } from '../ai.js';
+import { composeSubmission, PROCESSING, processingLabel } from '../coa-submission.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Beside the DB (the persistent volume in production) — NOT the app dir,
@@ -482,6 +483,103 @@ router.get('/requests', (req, res) => {
     total,
     shown: requests.length,
     limit,
+  });
+});
+
+/* ── Asking the lab to collect ────────────────────────────────────────────────
+ *
+ * Declared BEFORE '/requests/:id' — Express matches in declaration order and
+ * "submission" is a perfectly good :id. Same trap as /master.csv and PUT
+ * /org/meta, both of which shipped dead.
+ *
+ * Two endpoints on purpose. `preview` WRITES NOTHING, so somebody can look at
+ * what is about to go to an outside laboratory before it counts as sent;
+ * `submission` composes the same text and files the requests as sent. A
+ * preview computed differently from the thing that commits is a preview that
+ * lies, so both call `build()`.
+ */
+function buildSubmission(db, ids, { processing, releasedBy }) {
+  const rows = ids.map(id => db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id)).filter(Boolean);
+  if (!rows.length) return null;
+  // The lab comes from the requests themselves when they agree; a submission
+  // spanning two laboratories is refused by the caller rather than silently
+  // addressed to one of them.
+  const labIds = [...new Set(rows.map(r => r.lab_id).filter(Boolean))];
+  const lab = labIds.length === 1 ? db.prepare('SELECT * FROM coa_labs WHERE id = ?').get(labIds[0]) : null;
+
+  const specsByItem = {};
+  for (const item of [...new Set(rows.map(r => r.item_number))]) {
+    specsByItem[item] = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1')
+      .all(item);
+  }
+  return { rows, labIds, ...composeSubmission({ lab, requests: rows, specsByItem, processing, releasedBy }) };
+}
+
+router.get('/requests/submission/options', (_req, res) => {
+  res.json({ processing: PROCESSING });
+});
+
+router.post('/requests/submission/preview', (req, res) => {
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'Pick at least one request.' });
+  const built = buildSubmission(db, ids, { processing: req.body?.processing, releasedBy: req.user.name });
+  if (!built) return res.status(404).json({ error: 'No such requests.' });
+  const alreadySent = built.rows.filter(r => r.date_sent).map(r => ({ id: r.id, lot_number: r.lot_number, date_sent: r.date_sent }));
+  res.json({
+    subject: built.subject, to: built.to, lab_name: built.lab_name, text: built.text,
+    samples: built.samples, warnings: built.warnings, already_sent: alreadySent,
+    multiple_labs: built.labIds.length > 1 ? built.labIds.length : 0,
+  });
+});
+
+router.post('/requests/submission', (req, res) => {
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'Pick at least one request.' });
+  const built = buildSubmission(db, ids, { processing: req.body?.processing, releasedBy: req.user.name });
+  if (!built) return res.status(404).json({ error: 'No such requests.' });
+  // One submission is one form with one Processing box and one lab address.
+  // Composing across two laboratories would produce a document that is wrong
+  // for both of them.
+  if (built.labIds.length > 1) {
+    return res.status(400).json({ error: 'Those requests are assigned to more than one laboratory. Submit one lab at a time.' });
+  }
+  // A request already sent is not re-sent by accident — date_sent drives the
+  // turnaround clock and the expected-results date, and quietly restamping it
+  // would hide a sample that has been out for three weeks.
+  const resend = !!req.body?.resend;
+  const skipped = resend ? [] : built.rows.filter(r => r.date_sent)
+    .map(r => ({ id: r.id, lot_number: r.lot_number, reason: `Already sent ${r.date_sent}` }));
+  const skip = new Set(skipped.map(s => s.id));
+  const filing = built.rows.filter(r => !skip.has(r.id));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const tx = db.transaction(() => {
+    for (const r of filing) {
+      const tat = r.tat_days || null;
+      const expected = tat
+        ? db.prepare("SELECT date(?, ?) d").get(today, `+${tat} days`).d
+        : r.expected_results_date || null;
+      db.prepare(`UPDATE coa_requests SET status = CASE WHEN status = 'pending' THEN 'sent' ELSE status END,
+        date_sent = ?, expected_results_date = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(today, expected, r.id);
+    }
+  });
+  tx();
+  // Audited individually as well as in summary — a batch action has to leave
+  // the trail a manual one would.
+  for (const r of filing) {
+    logAudit(req.user, 'update', 'coa_request', r.id,
+      { action: 'submitted_to_lab', lab: built.lab_name, processing: processingLabel(req.body?.processing), date_sent: today },
+      r, db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(r.id), `${r.item_number} lot ${r.lot_number}`);
+  }
+  logAudit(req.user, 'update', 'coa_request', null,
+    { action: 'lab_submission_composed', samples: built.samples, sent: filing.length, skipped: skipped.length, lab: built.lab_name });
+
+  res.json({
+    subject: built.subject, to: built.to, lab_name: built.lab_name, text: built.text,
+    samples: built.samples, warnings: built.warnings, sent: filing.length, skipped,
   });
 });
 

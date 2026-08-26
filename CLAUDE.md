@@ -1276,6 +1276,47 @@ list — same tests, two ways of writing them. `TestsRequestedPicker` (COAPanel.
 - The picker replaced a `required` input, so `handleSubmit` validates it itself; the server 400s on an empty
   `tests_requested` and a form that silently does nothing is worse than one that says why.
 
+## Asking the lab to collect: COA → the email that used to be a scanned form
+The loop was paper: fill in CTLA's Sample Submission Form by hand, scan it, email the scan asking them to
+pick up. Everything on that form is already in `coa_requests` by the time somebody reaches for a pen, so
+`server/coa-submission.js` composes the submission FROM the requests and puts it on the clipboard — tick the
+lines, Copy, paste into the thread that is already open, send. Same shape as Danny's List compose.
+- **`coa-submission.js` is PURE** — rows in, text out, no Express and no database. The thing an outside
+  laboratory is going to act on should be checkable without standing up a server, and the caller decides
+  what filing it means. Same doctrine as `partner-recon.js`.
+- **IT FORMATS, IT DOES NOT PHRASE.** Every value is the record's own. `HM & Micro` — how 1,150 of the real
+  requests are written — passes through verbatim; nothing expands a panel shorthand into named tests.
+- **A GAP IS NAMED, NEVER FILLED.** A request with no lot composes as `Lot #: NOT RECORDED` and is reported
+  in `warnings` with an amber strip on the modal. A lab receiving a jar it cannot tie to a lot is the exact
+  failure this module exists to prevent; guessing would be worse than the gap.
+- **`preview` writes NOTHING and `submission` files.** Both call the same `buildSubmission()`, so what is on
+  screen before it goes to an outside company cannot differ from what commits — a preview computed
+  differently from the commit is a preview that lies.
+- **A request already sent is left alone and NAMED, not re-stamped.** `date_sent` drives the turnaround
+  clock and `expected_results_date`; quietly restamping it would hide a sample that has been out three
+  weeks. `resend: true` is the deliberate override.
+- **Two laboratories in one submission is REFUSED.** One submission is one form with one Processing box and
+  one address; composing across two would produce a document that is wrong for both.
+- **Only specs covering a REQUESTED test are printed.** Sending the whole spec sheet for a micro-only
+  submission is noise, and noise in a document somebody must act on is how the important line gets skipped.
+  `specText()` mirrors coa.js's derivation — a second, subtly different one is how the number we send a lab
+  stops matching the number we grade against.
+- **`PLANT_CONTACT` is the company's own block** (address, email, phone, the standing contact) — the same
+  five lines on every submission, which is why they are a constant rather than typed per request.
+  `Released by` is the person composing.
+- **ONE CopyButton, whatever state the modal is in.** Swapping it for a second button on success unmounts
+  the first and takes its "Copied" with it, so the click that both filed the requests and loaded the
+  clipboard appeared to do nothing. Found in the browser, not by reading.
+- `copyText` moved to **`src/lib/clipboard.js`** and `CopyButton` to `common/CopyButton.jsx`, imported by
+  both Danny's List and COA. The iOS `execCommand` fallback is load-bearing (no `navigator.clipboard` in an
+  older home-screen PWA), and a second copy is how one module silently stops copying on somebody's phone.
+- **Not yet: a signed PDF.** CTLA's terms say they will not test until the form is signed, and a pasted
+  email body is not a signed form. Worth agreeing with CTLA whether the emailed request is acceptable, or
+  adding an attachable PDF that goes through the existing wet-signature path.
+- Verified on a fresh DB: 31 assertions (15 on the pure composer, 16 end to end incl. preview-writes-nothing,
+  the already-sent skip, the two-lab refusal and route ordering) and 9 in a real browser through to the
+  clipboard actually holding the body.
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —

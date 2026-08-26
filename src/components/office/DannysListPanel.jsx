@@ -3,9 +3,10 @@ import { useApiGet, apiPost, apiFetch, apiUpload } from '../../hooks/useApi';
 import { consumeParam } from '../../lib/deepLink.js';
 import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import {
-  Plus, Copy, Check, MessageSquare, ChevronDown, ChevronRight, Send,
+  Plus, Check, MessageSquare, ChevronDown, ChevronRight, Send,
   Paperclip, DollarSign, Bell, Inbox, CircleCheck, CircleX, CalendarClock, FileText,
 } from 'lucide-react';
+import CopyButton from '../common/CopyButton.jsx';
 
 /**
  * Danny's List — the panel side of a text-message workflow.
@@ -44,32 +45,6 @@ const submitOnShiftEnter = (fn) => (e) => {
 
 const PRIORITY_DOT = { urgent: 'bg-red-500', high: 'bg-amber-500', normal: 'bg-gray-300', low: 'bg-gray-200' };
 const money = (n) => (n == null ? null : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
-
-// One clipboard helper: execCommand fallback for older iOS Safari in-PWA.
-async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); return true; }
-  catch {
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text; document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta);
-      return true;
-    } catch { return false; }
-  }
-}
-
-function CopyButton({ getText, label = 'Copy', className = '' }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button type="button" className={className || 'inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700'}
-      onClick={async () => {
-        const text = typeof getText === 'function' ? await getText() : getText;
-        if (text && await copyText(text)) { setDone(true); setTimeout(() => setDone(false), 2000); }
-      }}>
-      {done ? <Check size={14} /> : <Copy size={14} />} {done ? 'Copied' : label}
-    </button>
-  );
-}
 
 /* ── Quick capture ────────────────────────────────────────────────────────── */
 
