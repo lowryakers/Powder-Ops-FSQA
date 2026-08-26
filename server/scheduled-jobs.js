@@ -174,6 +174,38 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] partner reminders failed:', e.message); }
   }
 
+  /* ── Flash reports ───────────────────────────────────────────────────────
+   *
+   * DMd, not posted to a channel: this is one person's read on the plant, and
+   * a channel post would turn it into something everyone feels obliged to
+   * react to. Daily on weekday mornings, weekly on Monday, monthly on the
+   * last day of the month.
+   *
+   * Each is stamped with the period it covered, so a restart or a second tick
+   * inside the same hour can never send it twice — and a missed morning
+   * (a deploy at 06:00) still goes out on the next tick rather than being
+   * skipped for the day.
+   */
+  if (deps.sendFlashReport) {
+    const hour = now.getHours();
+    const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() === now.getDate();
+    const due = [];
+    // Not before 6am, and not at the weekend for the daily — a report nobody
+    // is at work to read is one they scroll past on Monday.
+    if (hour >= 6 && day >= 1 && day <= 5 && getFlag(db, 'last_flash_daily') !== todayStr) due.push(['daily', 'last_flash_daily', todayStr]);
+    if (hour >= 6 && day === 1 && getFlag(db, 'last_flash_weekly') !== week) due.push(['weekly', 'last_flash_weekly', week]);
+    const month = todayStr.slice(0, 7);
+    if (hour >= 6 && lastOfMonth && getFlag(db, 'last_flash_monthly') !== month) due.push(['monthly', 'last_flash_monthly', month]);
+
+    for (const [period, flag, value] of due) {
+      try {
+        const r = await deps.sendFlashReport(db, period, now);
+        setFlag(db, flag, value);
+        console.log(`[jobs] ${period} flash report sent to ${r.sent} recipient(s)`);
+      } catch (e) { console.warn(`[jobs] ${period} flash report failed:`, e.message); }
+    }
+  }
+
   // Monday PM digest: each team's recurring work for the week, posted into the
   // team's own channel — where people already look — like the schedule publish.
   if (day === 1 && getFlag(db, 'last_pm_digest_week') !== week) {

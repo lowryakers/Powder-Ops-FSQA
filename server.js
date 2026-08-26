@@ -14,6 +14,7 @@ import { readyDocOrigin } from './server/links.js';
 import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import procurementRoutes from './server/api/procurement.js';
 import payRoutes, { payReviewNudges } from './server/api/pay.js';
+import flashRoutes, { sendFlashReport } from './server/api/flash.js';
 import policyRoutes from './server/api/policies.js';
 import newsletterRoutes from './server/api/newsletter.js';
 import { seedProcurement } from './server/procurement-seed.js';
@@ -1817,6 +1818,7 @@ app.use('/api/office', officeRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/procurement', procurementRoutes);
 app.use('/api/pay', payRoutes);
+app.use('/api/flash', flashRoutes);
 app.use('/api/policies', policyRoutes);
 app.use('/api/newsletter', newsletterRoutes);
 app.use('/api/controlled', controlledRoutes);
@@ -1904,7 +1906,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, partnerReminderNudges, recordBackfillNudge });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, partnerReminderNudges, recordBackfillNudge, sendFlashReport });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

@@ -2,14 +2,15 @@
 //
 // Three NSF booklets — Certification Guideline 306 (Certified for Sport),
 // NSF/ANSI 455 Certification Policies, and the GMP for Sport Audit Guide —
-// uploaded so the requirements being built against live beside the documents
-// built against them. They are seeded as `doc_type = 'reference'`, a separate
-// Reference Library tab in Document Control, NEVER mixed into the SOP
-// registry: an auditor reading the plant's SOP list must not find NSF's own
-// publications in it.
+// plus the SQF Food Safety Code (Food Manufacturing, Edition 9), the code the
+// plant is actually audited against. Uploaded so the requirements being built
+// against live beside the documents built against them. They are seeded as
+// `doc_type = 'reference'`, a separate Reference Library tab in Document
+// Control, NEVER mixed into the SOP registry: an auditor reading the plant's
+// SOP list must not find NSF's or SQFI's own publications in it.
 //
 // THE TEXT GOES IN THE DATABASE, THE FILES STAY OUT OF public/. The booklets
-// are marked "NSF Confidential" — the plant's licensed copies — and public/
+// are licensed copies (NSF Confidential; SQFI) and public/
 // is served without authentication (the BPG diagram lives there on purpose;
 // these must not). The full extracted text is the document body, so it is
 // readable, searchable and printable in-app behind login; the extraction
@@ -52,6 +53,19 @@ const BOOKLETS = [
     description_intro:
       'External reference standard (NSF Confidential — the plant\'s licensed copy; do not distribute). '
       + 'The question-by-question guide NSF auditors work from — the closest thing to the exam paper. Full text below.',
+  },
+  {
+    doc_number: 'REF-SQF-FSC-9',
+    // The revision is the document's OWN words. It carries no publication date
+    // anywhere in its front matter, and inventing one would put a date on a
+    // reference standard that nobody can check it against.
+    title: 'SQF Food Safety Code: Food Manufacturing — Edition 9',
+    revision: 'Edition 9',
+    file: 'sqf-food-safety-code-ed9.txt',
+    description_intro:
+      'External reference standard (SQFI — the plant\'s licensed copy; do not distribute). '
+      + 'The SQF code the plant is audited against, covering Food Manufacturing including Dietary Supplements. '
+      + 'Full text below, extracted for search and reading; page markers preserved.',
   },
 ];
 

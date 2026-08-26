@@ -1408,6 +1408,44 @@ UI is the admin-only **QuickBooks** tab of the Accounting hub (`QuickBooksPanel.
   the module + 22 on the HTTP surface. Still **never run against their real company**; that's blocked on
   the four env vars, and `docs/quickbooks-api-setup.md` is the step-by-step for them.
 
+## The Flash Report (`server/flash-report.js` + `api/flash.js`)
+Pushed to the people who would otherwise go looking. **The first design was a task list with a timestamp
+and that was the wrong shape** — Task Center, QA Review and the bell already carry what needs doing, and a
+report that competes with a queue gets skimmed. So it is three sections and no to-dos:
+- **EXCEPTIONS** — a deviation from THIS PLANT'S OWN recent pattern. Not "12 tasks overdue" but "Batching
+  filed no production entry yesterday — 19 entries in the previous 30 days."
+- **SCORECARD** — one number per domain with its prior value and direction. A figure that is fine but
+  falling is the thing a dashboard never shows.
+- **OUTPUT** — kg, MOs and rooms by team, plus disposals filed. Nothing to act on; it is the picture.
+
+- **A QUIET DAY PRODUCES A SHORT REPORT.** No exceptions collapses to the single line "Nothing unusual". A
+  message the same length whether or not anything is wrong trains the reader to skim it. Asserted.
+- **NOTHING IS INVENTED.** `MIN_BASELINE = 8` — a team with three entries in the window has no pattern to
+  deviate from, and calling that an anomaly is how people learn to ignore the report. Also: `disposals`
+  carries **no value column**, so "what it cost" is answered in weight and count, never a dollar figure the
+  report cannot source.
+- **A metric with no comparable prior reads "unknown", never "flat"** — a 0% change would say the number
+  held steady when it means we don't know.
+- **The delta is computed in the module, not the renderer.** Two renderers subtracting in different orders
+  is how a report starts saying "up" about a number that fell. `better: 'up'|'down'` per row drives the ⚠️,
+  so a falling completion rate is flagged and a falling turnaround is not.
+- **One failing check costs a line, never the message** — each exception check is individually try/caught,
+  verified by renaming a table out from under it.
+- **PURE.** Rows in, report out; `api/flash.js` is only delivery and permission. Same doctrine as
+  `partner-recon.js` and `coa-submission.js`.
+- **DMd, never posted to a channel** — this is one person's read on the plant, and a channel post makes it
+  something everyone feels obliged to react to. Built ONCE and sent to everyone, so two people can never
+  receive different numbers for the same morning.
+- Recipients are `app_settings.flash_report_recipients` (a settings change, not a deploy); **unset falls
+  back to active admins rather than to nobody**, because a report configured and never delivered is
+  indistinguishable from a broken job. ReadyBot is excluded.
+- Scheduled off the existing hourly tick: daily on weekday mornings from 06:00, weekly Monday, monthly on
+  the last day. Each stamps the period it covered, so a restart cannot double-send and a deploy at 06:00
+  does not lose the day. `GET /api/flash?period=` reads it on demand (admin only) — which is also how it
+  gets tuned; `POST /flash/send` sends it now and is audited.
+- Verified: 15 assertions on the pure module (incl. the quiet-day collapse, the baseline floor, an
+  adjustment-only entry adding no MO run, and a check surviving a missing table) and 13 on the HTTP surface.
+
 ## Whole-page EN/ES
 `src/lib/usePageTranslation.js` + `src/components/LangToggle.jsx`: pass every string the page shows, get
 `tr()` back. Uses the cached `/ai/translate-content` endpoint, so it silently stays English when AI is off.
