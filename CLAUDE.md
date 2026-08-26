@@ -408,6 +408,35 @@ and picks nothing (choosing for people is what made the landing feel random). Wi
 the read-on-screen rule immediately undo it.
 `isCompactLayout` tracks the same `md` breakpoint the markup uses, live, via matchMedia.
 
+## Uploaded files need a session (`FILE_COOKIE` in `middleware/auth.js`)
+`/uploads` served work-order issue photos, PM attachments and attached QMS/disposal forms to anybody who
+knew the filename — access control by URL secrecy, and the last of it in the system (found by the kiosk
+isolation verification). Reading one now requires a live session.
+- **A COOKIE, NOT A BEARER TOKEN, and the reason is mechanical.** Those files render as `<img src>` and
+  `<a href>` in about a dozen places, and a browser fetching a subresource cannot attach an Authorization
+  header. A cookie is the mechanism for "fetch this WITH the caller's credentials", so **none of the render
+  sites changed** — which is what made this shippable rather than a rewrite that breaks photographs on the
+  floor. HttpOnly, `SameSite=Lax`, `Path=/uploads`, carrying the same session token so it expires and is
+  revoked with the session and needs no second lifecycle.
+- **Set inside `issueSession`**, not at the three call sites — a door that forgot it is one where somebody's
+  photographs silently stop loading. Cleared by logout.
+- **A miss returns 404, never 403.** A 403 confirms the file exists, which hands back the fact the random
+  filename was protecting.
+- Verified in a real browser: the image loads at 200 for a signed-in person, 404 with no session, and 404
+  again for the same cookie after that person signs out.
+
+## An auditor pass is announced, because it mints a real session
+Every other grant here is narrow (a kiosk key reads one catalogue) or visible (an account is in the roster).
+A pass creates a working read-only session for somebody who is not an employee, and the only trace was an
+audit entry nobody reads until they are already looking. Issuing one now DMs QA and the other admins
+through ReadyBot with who it is for, who issued it, how long it lasts and a link to revoke.
+- **Not an approval.** An admin issuing a pass with an auditor standing in front of them must not be
+  blocked; this is a second pair of eyes the same day, not a gate.
+- **`role != 'auditor'` in the watcher query.** A pass account is created in the QA department, so without
+  it the auditor was DM'd an announcement of her own pass. An auditor is the SUBJECT of an access grant
+  here, never a watcher of one. Caught by reading the test output rather than the code.
+- Fire-and-forget: the pass is issued and returned before this runs, so a comms outage cannot fail it.
+
 ## QR posters carry their own key (`server/kiosk-tokens.js`)
 The kiosk pages are public because a QR code has no session — which made the lists they need (equipment
 register, blade list, tool/chemical catalogue, scale forms) readable by anyone who knew the address. Found

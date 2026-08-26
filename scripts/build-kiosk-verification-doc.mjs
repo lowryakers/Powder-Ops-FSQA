@@ -147,10 +147,13 @@ const out = await renderReport({
       + 'reports how many scans still arrive without a key, so the decision to enforce rests on a number '
       + 'rather than a hope. Until that switch is thrown, the catalogues remain readable as described '
       + 'above.'),
-    li('FILES UNDER /uploads ARE PROTECTED BY AN UNGUESSABLE NAME, NOT BY A SESSION. Their names are '
-      + 'random identifiers, the folder cannot be listed and a guessed name returns nothing — all verified '
-      + '— but a link that escapes, pasted into a message or left in a browser history, is readable by '
-      + 'anyone. Attachments to controlled records are stored separately and are access-checked.'),
+    li('FILES UNDER /uploads — CLOSED. They were protected by an unguessable name alone, which is access '
+      + 'control by secrecy and was the last of it in the system. Reading one now requires a live session, '
+      + 'carried by a cookie scoped to that folder and cleared at sign-out. A cookie rather than a token '
+      + 'because these files are rendered as ordinary images and links in a dozen places and a browser '
+      + 'cannot attach a token to those — so nothing on the floor changed. Verified in a real browser: the '
+      + 'image loads for a signed-in person and is refused for everybody else, and refused again after the '
+      + 'same person signs out.'),
     li('ANYONE AT THE TABLET CAN SIGN OUT ANY VISITOR WHO IS ON SITE. Choosing a name from the list is all '
       + 'it takes, which is what makes the exit quick. The cost is that a departure time can be recorded '
       + 'for somebody who has not left. The log records that the sign-out came from the kiosk, and staff '

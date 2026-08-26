@@ -78,7 +78,7 @@
     <tr><th scope="row">System verified</th><td>ReadyDoc — Powder Ops FSQA platform</td></tr>
     <tr><th scope="row">Software version</th><td>Build 25 August 2026 (kiosk keys)</td></tr>
     <tr><th scope="row">Date of verification</th><td>25 August 2026</td></tr>
-    <tr><th scope="row">Result</th><td>37 checks executed — 37 met, 0 not met</td></tr>
+    <tr><th scope="row">Result</th><td>38 checks executed — 38 met, 0 not met</td></tr>
     <tr><th scope="row">Verified by</th><td>&nbsp;</td></tr>
     <tr><th scope="row">Reviewed and approved by</th><td>&nbsp;</td></tr>
     </tbody></table>
@@ -99,7 +99,7 @@
 <p>It was run against a copy of the production database. Visitors created by the probe are recognisable by name, and no real visit was altered.</p>
 <p>The raw output of the run reported here is retained beside this document as kiosk-isolation-2026-08-25.json.</p>
 <h2>5. Checks and results</h2>
-<p>37 checks were executed on 25 August 2026. 37 passed; none failed.</p>
+<p>38 checks were executed on 25 August 2026. 38 passed; none failed.</p>
 <div class="scroll"><table class="results">
   <thead><tr><th>Ref</th><th>What was tested</th><th>What happened</th><th>Result</th></tr></thead>
   <tbody><tr>
@@ -202,10 +202,13 @@
   <td class="ref">VK-33</td><td>Kiosk suggestion lists come from that log alone, not from the plant</td><td class="obs">keys: item_names, part_numbers, mo_numbers</td>
   <td class="met">Met</td>
   </tr><tr>
-  <td class="ref">VK-34</td><td>The upload directory cannot be listed</td><td class="obs">HTTP 200, text/html; charset=utf-8, 1240 bytes; stored filenames present: no</td>
+  <td class="ref">VK-34</td><td>The upload directory cannot be listed</td><td class="obs">HTTP 404, text/plain; charset=utf-8, 9 bytes; stored filenames present: no</td>
   <td class="met">Met</td>
   </tr><tr>
-  <td class="ref">VK-35</td><td>A guessed upload filename returns no file</td><td class="obs">HTTP 200, text/html; charset=utf-8</td>
+  <td class="ref">VK-35</td><td>A guessed upload filename returns no file</td><td class="obs">HTTP 404, text/plain; charset=utf-8, 9 bytes</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-35b</td><td>Uploaded files need a session, not just the filename</td><td class="obs">HTTP 404</td>
   <td class="met">Met</td>
   </tr><tr>
   <td class="ref">VK-36</td><td>The realtime socket refuses a client with no token and a forged one</td><td class="obs">no token: unauthorized · forged: unauthorized</td>
@@ -230,7 +233,7 @@
 <p>A person at the lobby tablet cannot read, alter or discover the plant’s records.</p>
 <h2>8. Residual risks</h2>
 <p>Stated so the record does not claim more than was shown. None of these is a defect; each is a consequence of a deliberate design choice, and each is a decision the plant may wish to revisit.</p>
-<ul><li>THE QR-CODE KIOSK CATALOGUES SHARE THE SAME PUBLIC PREFIX — ADDRESSED, AWAITING ROLLOUT. Each poster now carries its own key, and a key is bound to its own kiosk so one that leaks does not open the other four. It ships switched OFF: posters are already on walls and the lobby tablet is saved to a home screen, so enforcing at deploy would break all of them at once with nobody at the poster able to fix it. The changeover runs Off → Counting → Enforced, and the Counting state reports how many scans still arrive without a key, so the decision to enforce rests on a number rather than a hope. Until that switch is thrown, the catalogues remain readable as described above.</li><li>FILES UNDER /uploads ARE PROTECTED BY AN UNGUESSABLE NAME, NOT BY A SESSION. Their names are random identifiers, the folder cannot be listed and a guessed name returns nothing — all verified — but a link that escapes, pasted into a message or left in a browser history, is readable by anyone. Attachments to controlled records are stored separately and are access-checked.</li><li>ANYONE AT THE TABLET CAN SIGN OUT ANY VISITOR WHO IS ON SITE. Choosing a name from the list is all it takes, which is what makes the exit quick. The cost is that a departure time can be recorded for somebody who has not left. The log records that the sign-out came from the kiosk, and staff can correct it.</li><li>WHO IS CURRENTLY IN THE BUILDING CAN BE DISCOVERED BY REPEATED GUESSING — NOW BOUNDED. The sweep that surfaced every on-site name needed 676 requests; the look-up is now limited to thirty a minute from one address, which makes the sweep impractical while a visitor typing their own name once or twice never notices. Measured: forty-five rapid look-ups, thirty answered and fifteen refused. The exposure was only ever names and arrival times of people not yet signed out.</li></ul>
+<ul><li>THE QR-CODE KIOSK CATALOGUES SHARE THE SAME PUBLIC PREFIX — ADDRESSED, AWAITING ROLLOUT. Each poster now carries its own key, and a key is bound to its own kiosk so one that leaks does not open the other four. It ships switched OFF: posters are already on walls and the lobby tablet is saved to a home screen, so enforcing at deploy would break all of them at once with nobody at the poster able to fix it. The changeover runs Off → Counting → Enforced, and the Counting state reports how many scans still arrive without a key, so the decision to enforce rests on a number rather than a hope. Until that switch is thrown, the catalogues remain readable as described above.</li><li>FILES UNDER /uploads — CLOSED. They were protected by an unguessable name alone, which is access control by secrecy and was the last of it in the system. Reading one now requires a live session, carried by a cookie scoped to that folder and cleared at sign-out. A cookie rather than a token because these files are rendered as ordinary images and links in a dozen places and a browser cannot attach a token to those — so nothing on the floor changed. Verified in a real browser: the image loads for a signed-in person and is refused for everybody else, and refused again after the same person signs out.</li><li>ANYONE AT THE TABLET CAN SIGN OUT ANY VISITOR WHO IS ON SITE. Choosing a name from the list is all it takes, which is what makes the exit quick. The cost is that a departure time can be recorded for somebody who has not left. The log records that the sign-out came from the kiosk, and staff can correct it.</li><li>WHO IS CURRENTLY IN THE BUILDING CAN BE DISCOVERED BY REPEATED GUESSING — NOW BOUNDED. The sweep that surfaced every on-site name needed 676 requests; the look-up is now limited to thirty a minute from one address, which makes the sweep impractical while a visitor typing their own name once or twice never notices. Measured: forty-five rapid look-ups, thirty answered and fifteen refused. The exposure was only ever names and arrival times of people not yet signed out.</li></ul>
 <h2>9. When this must be repeated</h2>
 <ul><li>Whenever a route is added to the public list, which is the single place they are declared.</li><li>Whenever a new module is mounted — VK-13 will cover it automatically, but the run has to happen.</li><li>Before an external audit, and annually regardless.</li></ul>
 <p>Repeating it is one command, and it fails a build on any regression.</p>

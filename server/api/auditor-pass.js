@@ -24,6 +24,53 @@ import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { uniqueUsername } from '../usernames.js';
 import { issueSession } from './sessions.js';
+import { botDm, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
+import { readyDocOrigin } from '../links.js';
+
+// A PASS IS A SESSION, AND ONE PERSON SHOULD NOT BE ABLE TO ISSUE ONE QUIETLY.
+//
+// Everything else that hands out access here is either narrow (a kiosk key
+// reads one catalogue) or visible (a user account appears in the roster). This
+// mints a real, working session for somebody who is not an employee, and until
+// now the only trace was an audit entry nobody reads until they are looking for
+// something. Telling QA at the moment it happens is what turns that into a
+// control: not an approval — an admin who needs to issue a pass in front of a
+// waiting auditor must still be able to — but a second pair of eyes, the same
+// day rather than at the next review.
+//
+// Best-effort, and never in the way: the pass is already issued and returned
+// before this runs, so a comms outage cannot fail an admin standing next to the
+// person waiting for it.
+async function announcePass(db, { visitor_name, note, days, expires, account, by }) {
+  // `role != 'auditor'` is the one that is easy to miss and looks silly when it
+  // bites: a pass account is created in the QA department, so it matched this
+  // query and the auditor was DM'd an announcement of their own pass. An
+  // auditor is the SUBJECT of an access grant here, never a watcher of one.
+  const watchers = db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'
+      AND role != 'auditor'
+      AND (role = 'admin' OR LOWER(COALESCE(department,'')) IN ('qa','quality'))`).all()
+    .filter(u => u.name !== by);
+  if (!watchers.length) return 0;
+  const when = new Date(expires).toLocaleDateString();
+  for (const w of watchers) {
+    try {
+      const { bot, dm } = botDm(db, w.id);
+      // Bot bold is *text*, not **text** — the chat renderer isn't markdown.
+      await postMessageAs(db, dm, bot,
+        `🎫 An auditor pass was issued\n*${visitor_name}*${note ? ` — ${note}` : ''}\n`
+        + `Issued by ${by || 'an admin'}, good for ${days} day${days === 1 ? '' : 's'} (until ${when}).\n`
+        + `It signs in read-only as *${account}* and every record they open is stamped with that name.\n`
+        + `If this is not expected, revoke it: ${readyDocOrigin()}/?tab=settings&section=links`);
+      pushToUser(w.id, {
+        title: 'Auditor pass issued',
+        body: `${visitor_name} — ${days} day${days === 1 ? '' : 's'}, by ${by || 'an admin'}`,
+        tag: 'auditor-pass', url: '/?tab=settings&section=links',
+      }).catch(() => {});
+    } catch { /* one unreachable watcher must not stop the others */ }
+  }
+  return watchers.length;
+}
 
 const router = express.Router();          // admin-only management
 export const publicRouter = express.Router(); // the redeem half
@@ -145,6 +192,12 @@ router.post('/', (req, res) => {
   logAudit(req.user, 'create', 'auditor_pass', id,
     { visitor_name, expires_at: expires.toISOString(), days, note }, null, null, visitor_name);
 
+  // Fire and forget — see announcePass. The pass is already valid.
+  announcePass(db, {
+    visitor_name, note, days, expires: expires.toISOString(),
+    account: created.name, by: req.user?.name,
+  }).catch(err => console.warn('[auditor-pass] could not announce:', err.message));
+
   res.status(201).json({
     id, visitor_name, note, account_name: created.name,
     expires_at: expires.toISOString(), status: 'active', use_count: 0,
@@ -189,7 +242,7 @@ publicRouter.post('/redeem', (req, res) => {
   // An auditor account never carries a password expiry — it has no password to
   // expire, and PasswordExpiredGate would strand the visitor on a change-your-
   // password screen they can do nothing with.
-  res.json(issueSession(db, { ...user, password_changed_at: null }));
+  res.json(issueSession(db, { ...user, password_changed_at: null }, res));
 });
 
 // Whether a pass is good, without spending it — so the binder can say "this

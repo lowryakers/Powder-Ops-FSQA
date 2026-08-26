@@ -293,10 +293,20 @@ check('VK-34', 'The upload directory cannot be listed',
 
 res = await fetch(`${ORIGIN}/uploads/00000000-0000-0000-0000-000000000000.png`);
 text = await res.text();
+// The test is that no FILE comes back, not which non-file does. This used to
+// fall through to the app shell; it is a 404 now that /uploads needs a session,
+// and asserting on the old shape would have read as a regression when the
+// behaviour had improved.
 check('VK-35', 'A guessed upload filename returns no file',
-  'The app shell, not bytes — names are random UUIDs',
-  `HTTP ${res.status}, ${res.headers.get('content-type')}`,
-  /text\/html/.test(res.headers.get('content-type') || ''));
+  'Not an image — names are random and the folder now needs a session as well',
+  `HTTP ${res.status}, ${res.headers.get('content-type')}, ${text.length} bytes`,
+  !/^image\//.test(res.headers.get('content-type') || ''));
+
+// The gate itself, which is the new part.
+res = await fetch(`${ORIGIN}/uploads/anything.png`);
+check('VK-35b', 'Uploaded files need a session, not just the filename',
+  'Refused with 404 — a 403 would confirm the file exists',
+  `HTTP ${res.status}`, res.status === 404);
 
 /* ── J. Realtime ────────────────────────────────────────────────────────── */
 

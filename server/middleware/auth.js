@@ -8,6 +8,62 @@ const SESSION_QUERY = `
   WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
 `;
 
+
+// ── The file cookie ────────────────────────────────────────────────────────
+//
+// Uploaded files (work-order issue photos, PM attachments, an attached QMS or
+// disposal form) were served from disk to anybody who knew the name — access
+// control by URL secrecy, which the kiosk isolation verification named as the
+// last one of those in the system.
+//
+// A COOKIE, NOT A BEARER TOKEN, and the reason is mechanical: those files are
+// rendered as `<img src="/uploads/…">` and `<a href>` in a dozen places, and a
+// browser fetching a subresource cannot attach an Authorization header. A
+// cookie is exactly the mechanism for "the browser fetches this WITH the
+// caller's credentials", so the twelve render sites need no change at all —
+// which is what makes this safe to ship rather than a rewrite that breaks
+// photographs on the floor.
+//
+// Scoped to /uploads and HttpOnly, so it is never readable by script and never
+// sent anywhere else. It carries the same session token the API uses, so it
+// expires and is revoked with the session and needs no second lifecycle.
+export const FILE_COOKIE = 'rd_file';
+
+export function readCookie(req, name) {
+  const raw = req.headers?.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) {
+      try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return null; }
+    }
+  }
+  return null;
+}
+
+export function setFileCookie(res, token, days = 30) {
+  if (!res || !token) return;
+  res.cookie(FILE_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/uploads',
+    maxAge: days * 24 * 60 * 60 * 1000,
+  });
+}
+
+export function clearFileCookie(res) {
+  if (!res) return;
+  res.clearCookie(FILE_COOKIE, { path: '/uploads' });
+}
+
+/** Does this request carry a live session, by cookie or by header? */
+export function sessionUser(token) {
+  if (!token) return null;
+  try { return getDb().prepare(SESSION_QUERY).get(token) || null; } catch { return null; }
+}
+
 // While a password is past its yearly change date, the session can do exactly
 // one thing: change that password. Enforcing it here rather than on the login
 // screen is the difference between a policy and a suggestion — an expired

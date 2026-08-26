@@ -234,14 +234,21 @@
   "id": "VK-34",
   "title": "The upload directory cannot be listed",
   "expected": "No index of what has been uploaded — the app shell is returned instead",
-  "actual": "HTTP 200, text/html; charset=utf-8, 1240 bytes; stored filenames present: no",
+  "actual": "HTTP 404, text/plain; charset=utf-8, 9 bytes; stored filenames present: no",
   "verdict": "PASS"
  },
  {
   "id": "VK-35",
   "title": "A guessed upload filename returns no file",
-  "expected": "The app shell, not bytes — names are random UUIDs",
-  "actual": "HTTP 200, text/html; charset=utf-8",
+  "expected": "Not an image — names are random and the folder now needs a session as well",
+  "actual": "HTTP 404, text/plain; charset=utf-8, 9 bytes",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-35b",
+  "title": "Uploaded files need a session, not just the filename",
+  "expected": "Refused with 404 — a 403 would confirm the file exists",
+  "actual": "HTTP 404",
   "verdict": "PASS"
  },
  {

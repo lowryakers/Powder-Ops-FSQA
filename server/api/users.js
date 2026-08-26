@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit, newSetupCode } from '../db.js';
 import crypto from 'crypto';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, clearFileCookie } from '../middleware/auth.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
 import { issueSession } from './sessions.js';
 import { ALL_MODULE_IDS } from '../module-access.js';
@@ -131,6 +131,10 @@ router.post('/logout', (req, res) => {
     db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
   }
   if (req.user) logAudit(req.user, 'logout', 'user', req.user.id, null, null, null, req.user.name);
+  // The file cookie is the same session by another door, so it goes at the same
+  // moment — a signed-out browser that could still read attachments would make
+  // "sign out" mean less than it says.
+  clearFileCookie(res);
   res.json({ ok: true });
 });
 
@@ -459,7 +463,7 @@ router.post('/login', (req, res) => {
   failedLogins.delete(key);
 
   logAudit(user, 'login', 'user', user.id, null, null, null, user.name);
-  res.json(issueSession(db, user));
+  res.json(issueSession(db, user, res));
 });
 
 // First-login / self-serve password set. A user transitioning from a PIN must
@@ -510,7 +514,7 @@ router.post('/set-password', (req, res) => {
   db.prepare(`UPDATE users SET password_hash = ?, pin = NULL, setup_code = NULL, setup_code_expires_at = NULL,
               password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`).run(hashPassword(password), user_id);
   logAudit(user, 'set_password', 'user', user.id, null, null, null, user.name);
-  res.json(issueSession(db, { ...user, password_hash: '1' }));
+  res.json(issueSession(db, { ...user, password_hash: '1' }, res));
 });
 
 // Admin reset: one click clears the user's password so their next sign-in runs

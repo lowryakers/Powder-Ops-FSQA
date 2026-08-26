@@ -115,7 +115,7 @@ import { recordBackfillNudge } from './server/qa-record-backfill.js';
 import { seedControlledForms } from './server/form-registry-seed.js';
 import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
-import { authenticate, isPublicPath, optionalAuth } from './server/middleware/auth.js';
+import { authenticate, isPublicPath, optionalAuth, sessionUser, readCookie, FILE_COOKIE } from './server/middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1673,7 +1673,19 @@ app.post('/api/uploads', optionalAuth, uploadRateLimit, upload.array('files', 5)
   res.json(results);
 });
 
-app.use('/uploads', express.static(UPLOAD_DIR));
+// UPLOADED FILES NOW NEED A SESSION, NOT JUST THE NAME.
+//
+// These were served to anybody who knew the filename. The names are random, the
+// directory cannot be listed and a guess returns nothing — all verified — but a
+// link that escapes into a message or a browser history was readable by anyone,
+// which is access control by secrecy and the last of it in the system.
+//
+// A MISS RETURNS 404, NOT 403. A 403 would confirm the file exists, which hands
+// back exactly the fact the name was protecting.
+app.use('/uploads', (req, res, next) => {
+  if (sessionUser(readCookie(req, FILE_COOKIE))) return next();
+  return res.status(404).type('text/plain').send('Not found');
+}, express.static(UPLOAD_DIR));
 
 // --- Auth middleware (applied to all /api/* except public paths) ---
 app.use('/api', (req, res, next) => {
