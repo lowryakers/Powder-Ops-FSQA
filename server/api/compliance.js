@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import AdmZip from 'adm-zip';
-import { equipmentReadiness } from '../equipment-readiness.js';
+import { equipmentSetupGaps, EQUIPMENT_OWNERS, attentionRows, isDrillable } from '../attention-sources.js';
 import { getDb, logAudit } from '../db.js';
 import { QMS_TYPES } from '../qms-config.js';
 import { recleanRooms } from './sanitation.js';
@@ -524,6 +524,26 @@ router.get('/audit-ready', (_req, res) => {
   });
 });
 
+/**
+ * What is behind one line of an attention bar.
+ *
+ * "85 machines with no work instruction linked" is the start of a question.
+ * This answers it with the machines themselves — from the SAME walk that
+ * produced the 85, so the list can never disagree with the figure above it.
+ *
+ * Declared before '/notifications' only for readability; the paths don't
+ * collide. Bounded, like every list endpoint here.
+ */
+router.get('/attention/:id', (req, res) => {
+  const db = getDb();
+  const rows = attentionRows(db, String(req.params.id || ''));
+  // A badge with no registry entry is not an error — it simply has nothing to
+  // open, and the client renders it as plain text.
+  if (rows === null) return res.status(404).json({ error: 'Nothing to open for that item.' });
+  const limit = Math.min(Number(req.query.limit) || 500, 1000);
+  res.json({ id: req.params.id, total: rows.length, shown: Math.min(rows.length, limit), rows: rows.slice(0, limit) });
+});
+
 router.get('/notifications', (req, res) => {
   const db = getDb();
   const today = new Date().toISOString().split('T')[0];
@@ -694,35 +714,17 @@ router.get('/notifications', (req, res) => {
    * disagree. Measured at ~22ms over 179 rows.
    */
   try {
-    const OWNERS = {
-      pm_schedule: { depts: ['maintenance'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no recurring PM schedule — nothing generates their tasks` },
-      pm_assignee: { depts: ['maintenance'], label: (n) => `${n} machine${n > 1 ? 's' : ''} whose PM work is not assigned to a team` },
-      hygienic_design: { depts: ['qa'], label: (n) => `${n} food-contact machine${n > 1 ? 's' : ''} with no hygienic design verification` },
-      calibration: { depts: ['qa'], label: (n) => `${n} measuring device${n > 1 ? 's' : ''} not set up for calibration` },
-      training_course: { depts: ['document_control', 'qa'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no training course` },
-      work_instruction: { depts: ['document_control'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no work instruction linked` },
-    };
     const myDept = String(dept || '').toLowerCase();
     const sees = (depts) => role === 'admin' || depts.includes(myDept)
       || (role === 'supervisor' && depts.includes(myDept));
     // Only compute if this viewer owns at least one of them.
-    if (role === 'admin' || Object.values(OWNERS).some(o => o.depts.includes(myDept))) {
-      const counts = {};
-      for (const eq of db.prepare("SELECT * FROM equipment WHERE status = 'active'").all()) {
-        const steps = equipmentReadiness(db, eq).steps;
-        const noSchedule = steps.some(x => x.id === 'pm_schedule' && !x.done);
-        for (const step of steps) {
-          if (step.done || !OWNERS[step.id]) continue;
-          // Don't report the same machine twice. A machine with no recurring
-          // schedule doesn't yet need a team assigned — the team only matters
-          // once something generates, so counting both turns one problem into
-          // two numbers and inflates the headline.
-          if (step.id === 'pm_assignee' && noSchedule) continue;
-          counts[step.id] = (counts[step.id] || 0) + 1;
-        }
-      }
-      for (const [id, owner] of Object.entries(OWNERS)) {
-        const n = counts[id] || 0;
+    if (role === 'admin' || Object.values(EQUIPMENT_OWNERS).some(o => o.depts.includes(myDept))) {
+      // ONE WALK. The count is the length of the same list the drill-down
+      // serves — a badge counted here and a list built by a second query is
+      // exactly how a figure and the rows behind it start disagreeing.
+      const gaps = equipmentSetupGaps(db);
+      for (const [id, owner] of Object.entries(EQUIPMENT_OWNERS)) {
+        const n = (gaps[id] || []).length;
         if (!n || !sees(owner.depts)) continue;
         items.push({
           id: `equip-setup-${id}`, tab: 'equipment',
@@ -758,7 +760,10 @@ router.get('/notifications', (req, res) => {
       badges[item.tab] = (badges[item.tab] || 0) + n;
     }
     (badgeDetail[item.tab] = badgeDetail[item.tab] || []).push({
+      // `drillable` is what turns a line into a button. A figure with nothing
+      // behind it stays plain text rather than opening an empty drawer.
       id: item.id, label: item.label, severity: item.severity, count: n,
+      drillable: isDrillable(item.id),
     });
   }
 

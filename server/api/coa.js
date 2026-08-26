@@ -11,7 +11,11 @@ import { requireRole } from '../middleware/auth.js';
 import { gradeResult, specIndex } from '../coa-grade.js';
 import { parseColumnarCoa, foundSomething } from '../coa-parse.js';
 import { aiEnabled, readLabReport } from '../ai.js';
-import { composeSubmission, PROCESSING, processingLabel } from '../coa-submission.js';
+import { composeSubmission, PROCESSING, processingLabel, PLANT_CONTACT } from '../coa-submission.js';
+
+// A drawn signature, as a data URL. One definition — the certificate sign-off
+// and the lab submission both validate against it.
+const SIGNATURE_RE = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Beside the DB (the persistent volume in production) — NOT the app dir,
@@ -554,16 +558,46 @@ router.post('/requests/submission', (req, res) => {
   const skip = new Set(skipped.map(s => s.id));
   const filing = built.rows.filter(r => !skip.has(r.id));
 
+  // The signature is optional here and REQUIRED by CTLA. Their form says they
+  // will not test until it is signed, so the PDF says so in red when it is
+  // missing rather than quietly printing a blank line — but composing the text
+  // is not blocked, because somebody may be sending the email now and signing
+  // the attachment at a desk.
+  let sig = req.body?.signature || null;
+  if (sig === true) sig = db.prepare('SELECT signature_image FROM users WHERE id = ?').get(req.user.id)?.signature_image || null;
+  if (sig && (typeof sig !== 'string' || sig.length > 400000 || !SIGNATURE_RE.test(sig))) {
+    return res.status(400).json({ error: 'Signature must be a PNG/JPEG data URL under 300 KB.' });
+  }
+  if (sig && req.body?.save_signature) {
+    db.prepare("UPDATE users SET signature_image = ?, updated_at = datetime('now') WHERE id = ?").run(sig, req.user.id);
+  }
+
   const today = new Date().toISOString().slice(0, 10);
+  const submissionId = uuid();
   const tx = db.transaction(() => {
+    // The body is FROZEN here. Correcting a request afterwards must never
+    // rewrite what the laboratory was actually sent.
+    db.prepare(`INSERT INTO coa_submissions
+      (id, lab_id, lab_name, processing, body, samples, subject, request_count, released_by, released_by_id, signature, signed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      submissionId, built.labIds[0] || null, built.lab_name, req.body?.processing || 'normal',
+      built.text,
+      // Frozen alongside the body, for the same reason.
+      JSON.stringify(filing.map(r => ({
+        id: r.id, item_number: r.item_number, item_description: r.item_description,
+        lot_number: r.lot_number, product_expiration: r.product_expiration,
+        tests_requested: r.tests_requested,
+      }))),
+      built.subject, filing.length, req.user.name, req.user.id,
+      sig || null, sig ? new Date().toISOString() : null);
     for (const r of filing) {
       const tat = r.tat_days || null;
       const expected = tat
         ? db.prepare("SELECT date(?, ?) d").get(today, `+${tat} days`).d
         : r.expected_results_date || null;
       db.prepare(`UPDATE coa_requests SET status = CASE WHEN status = 'pending' THEN 'sent' ELSE status END,
-        date_sent = ?, expected_results_date = ?, updated_at = datetime('now') WHERE id = ?`)
-        .run(today, expected, r.id);
+        date_sent = ?, expected_results_date = ?, submission_id = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(today, expected, submissionId, r.id);
     }
   });
   tx();
@@ -578,9 +612,168 @@ router.post('/requests/submission', (req, res) => {
     { action: 'lab_submission_composed', samples: built.samples, sent: filing.length, skipped: skipped.length, lab: built.lab_name });
 
   res.json({
+    submission_id: submissionId, signed: !!sig,
     subject: built.subject, to: built.to, lab_name: built.lab_name, text: built.text,
     samples: built.samples, warnings: built.warnings, sent: filing.length, skipped,
   });
+});
+
+// What went out, and when. An auditor asking "what did we send CTLA on the 4th"
+// should not depend on somebody's sent-mail folder.
+router.get('/submissions', (req, res) => {
+  const db = getDb();
+  const limit = Math.min(Number(req.query.limit) || 100, 500);
+  res.json(db.prepare(`SELECT s.id, s.lab_name, s.processing, s.subject, s.request_count,
+    s.released_by, s.signed_at, s.submitted_at,
+    (SELECT COUNT(*) FROM coa_requests r WHERE r.submission_id = s.id) AS linked
+    FROM coa_submissions s ORDER BY s.submitted_at DESC LIMIT ?`).all(limit));
+});
+
+/**
+ * The attachable form.
+ *
+ * CTLA's terms say they will not perform testing until the submission form is
+ * signed, so an emailed body alone is not a request they can act on. This is
+ * that form: the same samples, on our letterhead, with the wet signature drawn
+ * in-app applied at submission time.
+ *
+ * An UNSIGNED submission still renders — somebody may want to print it and sign
+ * by hand — but it is stamped, in red, as not yet valid. A blank signature line
+ * on an otherwise finished-looking form is an invitation to send it anyway.
+ */
+router.get('/submissions/:id/pdf', (req, res) => {
+  const db = getDb();
+  const s = db.prepare('SELECT * FROM coa_submissions WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Submission not found' });
+  // THE SAMPLES AS SENT, not as they stand now. Somebody correcting a lot
+  // number next week must not change the form the laboratory was given —
+  // re-downloading it would then show something nobody ever received.
+  let rows = [];
+  try { rows = JSON.parse(s.samples || 'null') || []; } catch { rows = []; }
+  if (!rows.length) rows = db.prepare('SELECT * FROM coa_requests WHERE submission_id = ? ORDER BY created_at').all(s.id);
+
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 42, bottom: 70, left: 50, right: 50 }, bufferPages: true });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Sample_Submission_${s.submitted_at.slice(0, 10)}.pdf"`);
+  doc.pipe(res);
+  // ONCE THE STREAM IS PIPED, THERE IS NO SENDING JSON. The global error
+  // handler tries anyway and the write-after-end takes the whole process down
+  // — one bad glyph position must not be an outage. Ending the document
+  // truncates the download instead, which is visible and survivable.
+  try {
+
+  // The certificate export keeps these as function-locals, so this has its own
+  // rather than reaching for a name that is not in scope here.
+  const SLATE = '#3a3a3a', ORANGE = '#c65d35';
+  const fmtDate = (d) => {
+    if (!d) return '';
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d));
+    if (!m) return String(d);
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+      .toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const lm = doc.page.margins.left;
+  const pageW = doc.page.width - lm - doc.page.margins.right;
+  const bottomY = () => doc.page.height - doc.page.margins.bottom;
+
+  const logoH = 74;
+  try { doc.image(LOGO_PATH, lm, 42, { height: logoH }); } catch { /* logo optional */ }
+  doc.font('Helvetica-Bold').fontSize(15).fillColor(SLATE).text('POWDER OPS', lm + 75, 50, { characterSpacing: 0.5 });
+  doc.font('Helvetica').fontSize(8.5).fillColor('#666')
+    .text(`${PLANT_CONTACT.address}, ${PLANT_CONTACT.city_state_zip}`, lm + 75, 69)
+    .text(`${PLANT_CONTACT.email}  ·  ${PLANT_CONTACT.phone}`, lm + 75, 81);
+  doc.font('Helvetica').fontSize(8.5).fillColor('#666').text('Processing', lm, 50, { width: pageW, align: 'right' });
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(SLATE).text(processingLabel(s.processing), lm, 61, { width: pageW, align: 'right' });
+
+  let y = 42 + logoH + 18;
+  doc.font('Helvetica-Bold').fontSize(17).fillColor(SLATE)
+    .text('SAMPLE SUBMISSION FORM', lm, y, { width: pageW, align: 'center', characterSpacing: 1 });
+  y += 24;
+  doc.moveTo(lm, y).lineTo(lm + pageW, y).lineWidth(2).strokeColor(ORANGE).stroke();
+  y += 14;
+
+  doc.font('Helvetica').fontSize(9).fillColor('#444');
+  doc.text(`Submitted to: ${s.lab_name || '—'}`, lm, y);
+  doc.text(`Date: ${fmtDate(s.submitted_at)}`, lm, y, { width: pageW, align: 'right' });
+  y += 14;
+  doc.text(`Contact: ${PLANT_CONTACT.contact_name}`, lm, y);
+  y += 20;
+
+  // ── Samples ──
+  const cols = [{ w: 0.40 }, { w: 0.16 }, { w: 0.14 }, { w: 0.30 }];
+  const head = ['Sample Name & Description', 'Lot #', 'Exp', 'Test(s) Requested'];
+  const drawHead = () => {
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(SLATE);
+    let x = lm;
+    head.forEach((h, i) => { doc.text(h, x + 3, y + 4, { width: cols[i].w * pageW - 6 }); x += cols[i].w * pageW; });
+    y += 18;
+    doc.moveTo(lm, y).lineTo(lm + pageW, y).lineWidth(0.8).strokeColor('#bbb').stroke();
+    y += 5;
+  };
+  drawHead();
+
+  doc.font('Helvetica').fontSize(8.5).fillColor('#333');
+  for (const r of rows) {
+    const cells = [
+      [r.item_number, r.item_description].filter(Boolean).join(' — ') || 'UNNAMED SAMPLE',
+      r.lot_number || 'NOT RECORDED',
+      r.product_expiration ? fmtDate(r.product_expiration) : '',
+      r.tests_requested || 'NOT RECORDED',
+    ];
+    const h = Math.max(...cells.map((c, i) => doc.heightOfString(String(c), { width: cols[i].w * pageW - 6 })));
+    if (y + h + 12 > bottomY()) { doc.addPage(); y = doc.page.margins.top; drawHead(); doc.font('Helvetica').fontSize(8.5).fillColor('#333'); }
+    let x = lm;
+    cells.forEach((c, i) => { doc.text(String(c), x + 3, y, { width: cols[i].w * pageW - 6 }); x += cols[i].w * pageW; });
+    y += h + 8;
+    doc.moveTo(lm, y - 3).lineTo(lm + pageW, y - 3).lineWidth(0.4).strokeColor('#eee').stroke();
+  }
+
+  // ── Release + signature ──
+  if (y + 120 > bottomY()) { doc.addPage(); y = doc.page.margins.top; }
+  y += 16;
+  doc.font('Helvetica').fontSize(7.6).fillColor('#444');
+  doc.text('The undersigned understands that all testing fees and bills will be charged directly, and agrees to be responsible for any fees and bills necessary to complete testing of the samples listed above. It is understood that this paperwork describes the testing desired for the sample(s) submitted.', lm, y, { width: pageW, lineGap: 2 });
+  y += 42;
+
+  const sigW = 220;
+  if (s.signature) {
+    try {
+      const b64 = s.signature.split(',')[1];
+      doc.image(Buffer.from(b64, 'base64'), lm + 10, y - 14, { fit: [sigW - 20, 34] });
+    } catch { /* corrupt image — leave the line blank */ }
+  }
+  doc.moveTo(lm, y + 22).lineTo(lm + sigW, y + 22).lineWidth(0.8).strokeColor('#999').stroke();
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(SLATE).text('Released by', lm, y + 27);
+  doc.font('Helvetica').fontSize(8).fillColor('#666')
+    .text(s.signature ? `${s.released_by} — digitally signed ${fmtDate(s.signed_at)}` : (s.released_by || ''), lm, y + 38);
+
+  doc.moveTo(lm + pageW - 160, y + 22).lineTo(lm + pageW, y + 22).lineWidth(0.8).strokeColor('#999').stroke();
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(SLATE).text('Date', lm + pageW - 160, y + 27);
+  doc.font('Helvetica').fontSize(8).fillColor('#666').text(fmtDate(s.submitted_at), lm + pageW - 160, y + 38);
+
+  // An unsigned form is not one the laboratory will act on, and it should not
+  // look finished. Same doctrine as stamping a withdrawn document.
+  if (!s.signature) {
+    y += 56;
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#c0392b')
+      .text('NOT YET SIGNED — this form is not valid until it is signed.', lm, y, { width: pageW, align: 'center' });
+  }
+
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    const keep = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.font('Helvetica').fontSize(7.5).fillColor('#999')
+      .text(`Powder Ops · Sample Submission · ${fmtDate(s.submitted_at)} · Page ${i - range.start + 1} of ${range.count}`,
+        lm, doc.page.height - 46, { width: pageW, align: 'center' });
+    doc.page.margins.bottom = keep;
+  }
+  } catch (e) {
+    console.error('[coa] submission PDF render failed:', e.message);
+  }
+  doc.end();
 });
 
 router.get('/requests/:id', (req, res) => {
@@ -1189,7 +1382,6 @@ router.delete('/files/:id', (req, res) => {
 // Maria (QA) signs the certificate in-app: the signature image (drawn once,
 // reusable) is snapshotted onto the request so the issued PDF carries it —
 // no print/sign/scan loop. Admins can remove a signature if signed in error.
-const SIGNATURE_RE = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/;
 const canSignCoa = (u) => !!u && (['admin', 'supervisor'].includes(u.role) || u.department === 'qa');
 
 router.post('/requests/:id/sign', (req, res) => {

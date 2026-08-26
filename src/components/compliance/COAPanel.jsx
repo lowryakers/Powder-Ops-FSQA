@@ -6,6 +6,8 @@ import { canEditModule } from '../../utils/permissions';
 import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square, PenLine } from 'lucide-react';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import CopyButton from '../common/CopyButton.jsx';
+import { downloadFile } from '../../lib/downloadFile.js';
+import { SignaturePad } from '../common/SignatureCanvas.jsx';
 
 // Typed-confirmation dialog for permanent, irreversible bulk deletion.
 function ConfirmDeleteModal({ count, onConfirm, onClose }) {
@@ -1806,7 +1808,13 @@ function LabSubmissionModal({ ids, onClose, onSent }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(null);
+  const [drawing, setDrawing] = useState(false);
+  const [sig, setSig] = useState(null);       // this submission's signature
+  const [saveSig, setSaveSig] = useState(true);
   const { data: options } = useApiGet('/coa/requests/submission/options');
+  const { data: me } = useApiGet('/users/me/signature');
+  const storedSig = me?.signature_image || null;
+  const signature = sig || storedSig;
 
   useEffect(() => {
     let cancelled = false;
@@ -1823,7 +1831,11 @@ function LabSubmissionModal({ ids, onClose, onSent }) {
     if (sent) return sent.text;
     setBusy(true); setError('');
     try {
-      const r = await apiPost('/coa/requests/submission', { ids, processing });
+      const r = await apiPost('/coa/requests/submission', {
+        ids, processing,
+        signature: signature || undefined,
+        save_signature: !!sig && saveSig,
+      });
       setSent(r); onSent?.(r);
       return r.text;
     } catch (e) { setError(e.message); return null; }
@@ -1890,11 +1902,47 @@ function LabSubmissionModal({ ids, onClose, onSent }) {
           <pre className="text-[11px] leading-relaxed bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto whitespace-pre max-h-72 overflow-y-auto font-mono">{p?.text || 'Composing…'}</pre>
         </div>
 
+        {/* THE SIGNATURE IS WHAT MAKES THE ATTACHMENT ACTIONABLE. CTLA's terms
+            say they will not test until the form is signed, so the email body
+            alone is a request they can decline. Signing here applies the wet
+            signature drawn once in-app to the PDF attachment. */}
+        {!sent && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
+                <PenLine size={13} className="text-gray-400" />
+                {signature ? 'Signed with your saved signature' : 'Not signed yet'}
+              </p>
+              <button type="button" onClick={() => setDrawing(d => !d)} className="text-xs font-medium text-powder-600 hover:underline">
+                {drawing ? 'Cancel' : (signature ? 'Draw a different one' : 'Draw signature')}
+              </button>
+            </div>
+            {signature && !drawing && (
+              <img src={signature} alt="Signature" className="mt-1.5 h-10 object-contain" />
+            )}
+            {drawing && (
+              <div className="mt-2">
+                <SignaturePad onSave={(img) => { setSig(img); setDrawing(false); }} onCancel={() => setDrawing(false)} />
+                <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-gray-600">
+                  <input type="checkbox" checked={saveSig} onChange={e => setSaveSig(e.target.checked)} className="rounded border-gray-300" />
+                  Save it for next time
+                </label>
+              </div>
+            )}
+            <p className="mt-1 text-[11px] text-gray-500">
+              {signature
+                ? 'The PDF attachment carries this signature. CTLA will not begin testing on an unsigned form.'
+                : 'The email body works either way, but the PDF prints as NOT YET SIGNED and CTLA will not begin testing on it.'}
+            </p>
+          </div>
+        )}
+
         {error && <p className="text-xs text-red-600">{error}</p>}
         {sent && (
           <p className="text-xs text-green-700">
             Filed as sent: {sent.sent} request{sent.sent === 1 ? '' : 's'}
-            {sent.skipped?.length ? ` · ${sent.skipped.length} left alone (already sent)` : ''}. Paste it into the email and press send.
+            {sent.skipped?.length ? ` · ${sent.skipped.length} left alone (already sent)` : ''}
+            {sent.signed ? ' · signed' : ' · NOT signed'}. Paste it into the email, attach the PDF, and press send.
           </p>
         )}
 
@@ -1908,6 +1956,14 @@ function LabSubmissionModal({ ids, onClose, onSent }) {
             disabled={busy || !preview || preview.multiple_labs > 0} />
           {p?.subject && <CopyButton getText={p.subject} label="Copy subject"
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200" />}
+          {/* The attachment only exists once the submission is a record — an
+              unsigned, unfiled PDF would be a form with nothing behind it. */}
+          {sent?.submission_id && (
+            <button type="button" onClick={() => downloadFile(`/coa/submissions/${sent.submission_id}/pdf`, `Sample_Submission_${new Date().toISOString().slice(0, 10)}.pdf`)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
+              <Download size={14} /> {sent.signed ? 'Download signed PDF' : 'Download PDF (unsigned)'}
+            </button>
+          )}
           <div className="flex-1" />
           <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
             {sent ? 'Done' : 'Cancel'}

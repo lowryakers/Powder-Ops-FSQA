@@ -2763,6 +2763,41 @@ function runMigrations() {
   // A user's reusable drawn signature (PNG data URL), applied when signing.
   addColumnIfMissing('users', 'signature_image', 'TEXT');
 
+  // ── Asking a lab to collect samples ────────────────────────────────────────
+  // A submission is a RECORD, not just text on a clipboard. CTLA's own terms
+  // say they will not test until the form is signed, so "who released these
+  // samples, when, and with what signature" is the fact the whole exchange
+  // rests on — and an auditor asking what went out on the 4th needs an answer
+  // that does not depend on somebody's sent-mail folder.
+  //
+  // `body` freezes the composed text at submission time: correcting a request
+  // afterwards must never rewrite what the laboratory was actually sent.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS coa_submissions (
+      id TEXT PRIMARY KEY,
+      lab_id TEXT,
+      lab_name TEXT,
+      processing TEXT NOT NULL DEFAULT 'normal',
+      body TEXT NOT NULL,
+      -- The samples AS SENT (JSON). The composed body is frozen and so is this:
+      -- correcting a request afterwards must never rewrite what the laboratory
+      -- was actually given, and the PDF attachment is the half CTLA acts on.
+      samples TEXT,
+      subject TEXT,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      released_by TEXT,
+      released_by_id TEXT,
+      signature TEXT,
+      signed_at TEXT,
+      submitted_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_coa_submissions_at ON coa_submissions(submitted_at);
+  `);
+  // Which submission a request went out on — so a result landing months later
+  // resolves back to the form it was requested on.
+  addColumnIfMissing('coa_requests', 'submission_id', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_coa_requests_submission ON coa_requests(submission_id)');
+
   // Multiple schedule lines per room/day (e.g. several Kitting products on the same day)
   addColumnIfMissing('production_schedule', 'slot', 'INTEGER NOT NULL DEFAULT 0');
 

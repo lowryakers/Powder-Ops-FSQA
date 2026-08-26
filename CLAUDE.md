@@ -1317,6 +1317,50 @@ lines, Copy, paste into the thread that is already open, send. Same shape as Dan
   the already-sent skip, the two-lab refusal and route ordering) and 9 in a real browser through to the
   clipboard actually holding the body.
 
+### The attachable form, signed (`coa_submissions`)
+CTLA's own terms say they will not perform testing until the submission form is signed, so an emailed body
+alone is a request they can decline. The PDF attachment closes that — the same samples, on our letterhead,
+carrying the wet signature drawn once in-app (`users.signature_image`, the same path the COA certificate
+signs through).
+- **A SUBMISSION IS A RECORD, not text on a clipboard.** `coa_submissions` holds who released it, when, the
+  signature, and — frozen — the composed `body` AND the `samples` as sent. Correcting a request next week
+  must never rewrite the form the laboratory was given; caught by rendering the PDF after a rename and
+  finding "RENAMED AFTER SENDING" in it while the frozen body was correct. Both halves are frozen now.
+- `coa_requests.submission_id` links each request back, so a result landing months later resolves to the
+  form it was requested on, and `GET /coa/submissions` answers "what did we send on the 4th" without
+  anybody's sent-mail folder.
+- **An UNSIGNED submission still renders and is stamped, in red, "NOT YET SIGNED".** Somebody may want to
+  print and sign by hand; a blank signature line on an otherwise finished-looking form is an invitation to
+  send it anyway. Same doctrine as stamping a withdrawn document.
+- **ONCE `doc.pipe(res)` HAS STARTED THERE IS NO SENDING JSON.** A bad glyph position (a `moveTo` missing its
+  y argument) threw, the global error handler tried to answer with JSON, and the write-after-end took the
+  whole process down — a FATAL, not a 500. The render is wrapped so a failure truncates one download
+  instead of causing an outage. **Every pdfkit route here has that shape; this is the one that has a guard.**
+- `downloadFile()` is now `src/lib/downloadFile.js` — these endpoints sit behind a session and a browser
+  following a plain `<a href>` cannot attach an Authorization header, the same reason `/uploads` needed a
+  cookie. COAPanel already had two private copies; new callers use the shared one.
+
+## A banner number opens what is behind it (`server/attention-sources.js`)
+"85 machines with no work instruction linked" is the start of a question, and working out WHICH eighty-five
+meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` line the server marks
+`drillable` is now a button that opens the rows.
+- **THE NUMBER AND THE LIST COME FROM THE SAME WALK.** `equipmentSetupGaps()` returns the machines and
+  compliance.js counts them with `.length`; it no longer keeps a counting loop of its own. A drawer built
+  from a second query is a list that disagrees with the figure above it and whoever clicked cannot tell
+  which is wrong — the rule `activity-metrics.js` already follows. The test asserts reconciliation on
+  **every** line, not a sample.
+- **A figure with nothing behind it stays plain text.** `isDrillable()` gates the button and
+  `GET /compliance/attention/:id` 404s for an unregistered id, so no line can open an empty drawer.
+- **The "Coming up" (info) lines are drillable too** — the biggest numbers on the Equipment page live down
+  there, and they were the ones actually being asked about.
+- Adding a source is one entry in `attentionRows()`. Equipment's six and the Sanitation 72-hour rooms are
+  wired; `EQUIPMENT_OWNERS` (the wording and the owning department) moved out of compliance.js so the badge,
+  the bar and the drawer share one definition.
+- The pm_schedule / pm_assignee de-duplication moved with it, and is asserted: a machine with no recurring
+  schedule is never also counted as unassigned.
+- Verified on a fresh DB: 26 API assertions and 9 in a real browser (bar 80 → drawer "80 in total", the
+  info line 122, close, and each row naming the machine, its asset number and why it is listed).
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —
