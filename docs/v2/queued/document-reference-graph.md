@@ -1,6 +1,9 @@
 # Queued — the document reference graph, and the fan-out on re-issue
 
-**Status: designed, not built · 25 August 2026 · Track B (new construction)**
+**Status: designed, not built · coverage checked 26 Aug 2026 · Track B (new construction)**
+
+> **Read the coverage check before scheduling this.** The two hub documents currently cite no other
+> document by number, so the graph would find nothing. The prerequisite is a plan revision, not code.
 
 The "hub and spoke" question, answered as a build: revise Protocol 003 and have every document that
 depends on it land in Document Control's queue with a reason, instead of relying on somebody
@@ -92,10 +95,11 @@ Two candidates, and this needs Document Control's answer rather than a guess:
 - **A doc-review task** (the mechanism the review-due cadence already uses) — lighter, and the honest
   shape when the answer is usually "still correct, no change needed".
 
-**Recommendation: the review task**, with raising a DCR as its outcome when the answer is "yes, this
-needs to change". A DCR per citation would raise a formal change request for documents that turn out
-to need no change, and an auditor reading a register full of DCRs closed with "no change required"
-learns the wrong thing about how the plant manages change.
+**DECIDED 25 Aug 2026: the review task**, with raising a DCR as its *outcome* when the answer is "yes,
+this needs to change". A DCR per citation would raise a formal change request against documents that
+turn out to need no change, and an auditor reading a register full of DCRs closed with "no change
+required" learns the wrong thing about how the plant manages change. The review task is the honest
+shape for a question whose usual answer is "still correct"; the DCR is what a *yes* produces.
 
 ### 4. `doc-review.js` gains a source
 
@@ -105,17 +109,66 @@ so is batchable, unlike the parked-change and open-DCR tabs.
 
 ---
 
-## The limit worth knowing before it is built
+## COVERAGE CHECK — run 26 Aug 2026, and it changes the order of work
+
+Two things were measured. The second is the finding.
+
+**1. The seeded registry is 6 documents, so it gives no coverage figure.** `docConsistencyReview`
+reviews 3 of them (reference documents are excluded by design) and reports 2 findings. The mechanism
+works; the sample is meaningless. **The real number needs the production database** — the plant's ~100
+documents were imported by Document Control, not seeded, and are not in this repository.
+
+**2. The two hub documents cite NOTHING. That is the finding, and it is not about coverage.**
+
+The extraction was run over the full text of both plans — 27,059 characters of Protocol 003 and 15,607
+of Protocol 001. Result:
+
+| Document | Citations the graph would extract |
+|---|---|
+| Protocol 003 — Food Safety Plan V4 | **0** (one self-reference, which the extractor skips) |
+| Protocol 001 — Food Defense Plan V2 | **0** (one self-reference) |
+
+The only reference to another controlled document anywhere in either plan is the phrase **"cleaning
+SOP"** in PC #1's monitoring column — in words, with no number. Protocol 001 names no other document
+at all.
+
+**So the graph would be built and find nothing.** Not because the parser is weak — because the hub
+does not name its spokes.
+
+### What that changes
+
+**The prerequisite is a document change, not engineering.** Before any fan-out can fire, the plans have
+to name their dependencies by document number. That promotes red-line finding **X-04** (add a Scope and
+Normative References section) from *consider* to **the thing this build waits on**, and it makes that
+section wiring rather than polish.
+
+The documents the plans already describe and do not name — a starting list for Document Control:
+
+| Where the plan describes it | The document it means |
+|---|---|
+| PC #1, PC #2 monitoring — "Procedure as outline in cleaning SOP" | the cleaning SOP, by number |
+| PC #1, PC #2 record keeping | FORM 111-01, and FORM 108-03 for the ReadyDoc clean |
+| PC #3, PC #4 record keeping | FORM 413-1, FORM 413-1 (X-Ray) |
+| Process Description — microbial verification | FORM 604-01, Master Site List (EMP) |
+| Process Description — allergen practice | the allergen control program (does not exist yet — FSP-30) |
+| Protocol 001 §6B1 — receiving procedures | FORM 204-01 |
+| Protocol 001 §8.2 — product recall | FORM 415-1 |
+| Protocol 001 §9.1 — internal audits | FORM 403-01 |
+| Protocol 001 §6C3, §10.4 — training | FORM 409-02 |
+| Both — the policy they implement | POLICY 002 |
+| Both — banned substances (FSP-28) | `SOP-DRAFT-BSC`, once numbered |
+
+**Build order, revised:** land the plan revision that adds the Scope and Normative References sections
+first, then build the graph. Building it first produces a working mechanism with an empty graph, which
+is indistinguishable from a broken one — the same failure as the QA records that filed for three months
+against a list nobody was watching.
+
+## The other limit, still true
 
 **The graph only sees documents whose body text is in ReadyDoc.** An SOP held as an attached PDF with
-an empty `description` has no citations to find, so it appears in the graph as a leaf — nothing cites
-it, and it cites nothing. That is not a bug in the graph; it is the state of the registry.
-
-`doc-consistency.js` already reports these as **`empty_shells`** — active documents with no body and no
-file. **Run that report before building this** and treat its count as the coverage figure: a fan-out
-across a registry that is half empty shells will look like it works and will silently miss half the
-plant's documents. That is the same failure mode as the QA records that filed for three months against
-an empty list.
+an empty `description` has no citations to find, so it appears as a leaf. `doc-consistency.js` already
+reports these as **`empty_shells`** — active documents with no body and no file. **Run that against the
+production database** and treat its count as the second coverage figure.
 
 If coverage is poor, the fix is not a cleverer parser. It is Document Control's existing project —
 bringing the ~100 documents up to date from the finalised paper, which `RevisionUploadModal` and

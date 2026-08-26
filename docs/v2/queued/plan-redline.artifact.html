@@ -122,9 +122,9 @@
   </p>
 
   <div class="tally">
-    <div class="t must"><div class="v">19</div><div class="k">must fix</div></div>
+    <div class="t must"><div class="v">20</div><div class="k">must fix</div></div>
     <div class="t should"><div class="v">39</div><div class="k">should fix</div></div>
-    <div class="t consider"><div class="v">10</div><div class="k">consider</div></div>
+    <div class="t consider"><div class="v">9</div><div class="k">consider</div></div>
     <div class="t"><div class="v">68</div><div class="k">total findings</div></div>
   </div>
 
@@ -419,8 +419,18 @@
 <div class="grid">
   <div class="mini"><b>X-03 · Approver and owner are the same person <span class="chip c-consider">consider</span></b>
     Protocol 003 records Owner: Daniela Servin and Approved By: Daniela Servin. Protocol 001 is better — approved by Carol Rojas, reviewed by Adam Bliss. The plant already demonstrates independent approval on the other plan.</div>
-  <div class="mini"><b>X-04 · Add a Scope and Normative References section <span class="chip c-consider">consider</span></b>
-    Half a page naming what each plan covers, which regulations and schemes it answers, and which documents it depends on. It is also exactly what the document reference graph reads to build the hub-and-spoke links.</div>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">X-04</span><span class="ft">Add a Scope and Normative References section to both</span><span class="chip c-must">must</span>
+  <span class="where">promoted from “consider” by the coverage check, 26 Aug 2026</span></div>
+  <p>Half a page naming what each plan covers, which regulations and schemes it answers (21 CFR 117 / 111 / 121, NSF/ANSI 455-2, SQF), and <b>which documents it depends on, by document number</b>.</p>
+  <p><b>Why it was promoted.</b> The reference extraction was run over the full text of both plans — 27,059 and 15,607 characters. <b>Neither cites a single other controlled document by number.</b> The only reference of any kind is the phrase <i>"cleaning SOP"</i> in PC #1's monitoring column, in words. Protocol 001 names no other document at all.</p>
+  <ul>
+    <li><b>An auditor cannot follow the plan to its procedures.</b> <i>"Procedure as outline in cleaning SOP"</i> does not say which SOP, and the plant has roughly a hundred documents.</li>
+    <li><b>The hub-and-spoke automation has nothing to work with.</b> Until the plans name their dependencies, re-issuing Protocol 003 can propagate to nothing — because nothing declares that it depends on it.</li>
+  </ul>
+  <div class="rec"><b>Not a research task.</b> The eleven documents each plan already <i>describes</i> and does not <i>name</i> are listed in <code>document-reference-graph.md</code> under the coverage check. That list is the starting point for this section.</div>
 </div>
 
 <h2>What I could not check</h2>
@@ -432,7 +442,7 @@
 </div>
 
 <footer>
-  <span>68 findings · 19 must · 39 should · 10 consider</span>
+  <span>68 findings · 20 must · 39 should · 9 consider</span>
   <span>Nothing changed in either document</span>
   <span>docs/v2/queued/plan-redline.md</span>
   <span>25 Aug 2026</span>

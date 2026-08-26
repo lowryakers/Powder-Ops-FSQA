@@ -695,3 +695,57 @@ people.** The Policies document lists 455-2's normative references as 21 CFR 111
 **Part 1 Subpart L** and **Part 1 Subpart O**. Neither plan mentions FSVP (Subpart L), sanitary
 transportation (Subpart O), electronic records (Part 11), or the banned-substance lists that NSF GMP
 for Sport §6.2.2 wants embedded in operating procedures.
+
+---
+
+## D-026 · 2026-08-26 · decided — The fan-out obligation is a REVIEW TASK; the DCR is what a "yes" produces
+
+Settled from the two candidates in `document-reference-graph.md`. When a parent document is re-issued,
+each document that cites it receives a **doc-review task**, not a Document Change Request.
+
+**Why the lighter object is the correct one.** The question the fan-out asks is *"the parent changed —
+does this still say the right thing?"*, and the usual honest answer is *"yes, no change needed"*. A DCR
+raised per citation would open a formal change request against documents that turn out not to change,
+and a register full of DCRs closed with "no change required" teaches an auditor the wrong thing about
+how this plant manages change — it makes a real change request harder to find, not easier.
+
+**The DCR is the outcome, not the trigger.** A review task whose answer is *yes, this needs to change*
+raises one. That keeps the DCR register meaning what it has always meant: a change somebody actually
+intends to make.
+
+It also fits an existing shape rather than inventing one. `doc-review.js` is already a registry of
+sources, and a source declares an `action` only when it genuinely has one — documents past their review
+date do, a parked controlled change does not. "Affected by a revised parent" has a real action (mark
+reviewed, no change needed), so it is batchable and belongs there as a fifth source.
+
+---
+
+## D-027 · 2026-08-26 · decided — The plans name no other document, so the hub-and-spoke build waits on a plan revision
+
+The coverage check for `document-reference-graph.md` was run on 26 Aug 2026 and produced a result that
+reorders the work.
+
+**Two measurements. The second is the finding.**
+
+1. **The seeded registry holds 6 documents**, 3 of them reviewable (reference documents are excluded by
+   design). The mechanism runs; the sample is meaningless. The real coverage figure needs the
+   production database, where Document Control's ~100 imported documents live.
+2. **Neither plan cites a single other controlled document by number.** The extractor was run over the
+   full text of both — 27,059 characters of Protocol 003 and 15,607 of Protocol 001 — and found only
+   each document's own number in its own footer, which the extractor correctly skips as a
+   self-reference. The one reference of any kind is the phrase **"cleaning SOP"** in PC #1's monitoring
+   column, in words. Protocol 001 names no other document at all.
+
+**So the graph would be built and find nothing.** Not a weak parser — the hub does not name its spokes.
+
+**The consequence is an ordering rule, and it generalises.** *Build the mechanism after the data it
+reads exists, not before.* A fan-out over an empty graph is a working mechanism producing no
+obligations, which from the outside is indistinguishable from a broken one — precisely the failure that
+let QA inspections go unrecorded for three months against a list nobody was watching. So:
+
+> **Land the plan revision that adds Scope and Normative References sections first. Then build the
+> graph.**
+
+Red-line finding **X-04** is promoted from *consider* to **must** on this basis, and the eleven
+documents each plan already describes but does not name are listed in `document-reference-graph.md` —
+so the section is a transcription job for Document Control, not a research one.

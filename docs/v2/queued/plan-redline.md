@@ -6,8 +6,8 @@
 |---|---|---|---|---|
 | Protocol 003 — Food Safety Plan V4 | 9 | 21 | 4 | **34** |
 | Protocol 001 — Food Defense Plan V2 | 9 | 17 | 4 | **30** |
-| Both documents | 1 | 1 | 2 | **4** |
-| | **19** | **39** | **10** | **68** |
+| Both documents | 2 | 1 | 1 | **4** |
+| | **20** | **39** | **9** | **68** |
 
 Every finding is numbered so it can be accepted, rejected or deferred one at a time. Nothing here has
 been applied. The intended path is: review this → decide each item → issue the DCR → Document Control
@@ -444,11 +444,26 @@ Protocol 003 records **Owner: Daniela Servin** and **Approved By: Daniela Servin
 better — approved by Carol Rojas, reviewed by Adam Bliss. Independent approval is the norm an auditor
 expects, and the plant already demonstrates it on the other plan.
 
-### X-04 · Add a Scope and Normative References section to both · **CONSIDER**
+### X-04 · Add a Scope and Normative References section to both · **MUST** *(promoted 26 Aug 2026)*
 Half a page naming what each plan covers, which regulations and schemes it answers (21 CFR 117 / 111 /
-121, NSF/ANSI 455-2, SQF), and which documents it depends on. It is also exactly the section the
-**document reference graph** would read to build the hub-and-spoke links — a plan that names its
-dependencies gets them enforced.
+121, NSF/ANSI 455-2, SQF), and **which documents it depends on, by document number**.
+
+**Promoted from *consider* to *must* by the coverage check.** The reference extraction was run over the
+full text of both plans — 27,059 and 15,607 characters. **Neither cites a single other controlled
+document by number.** The only reference of any kind is the phrase *"cleaning SOP"* in PC #1's
+monitoring column, in words. Protocol 001 names no other document at all.
+
+Two consequences:
+
+1. **An auditor cannot follow the plan to its procedures.** *"Procedure as outline in cleaning SOP"*
+   does not say which SOP, and the plant has ~100 documents.
+2. **The hub-and-spoke automation has nothing to work with.** The document reference graph
+   (`document-reference-graph.md`) reads exactly this section. Until the plans name their dependencies,
+   re-issuing Protocol 003 can propagate to nothing, because nothing declares that it depends on it.
+
+The list of documents each plan already *describes* and does not *name* is in
+`document-reference-graph.md` under the coverage check — eleven rows, and it is the starting point for
+this section rather than a research task.
 
 ---
 
