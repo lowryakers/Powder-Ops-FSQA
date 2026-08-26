@@ -1,0 +1,254 @@
+[
+ {
+  "id": "VK-01",
+  "title": "The kiosk config exposes only the form and the agreement text",
+  "expected": "location_default, auto_signout_minutes, fields, agreements — and nothing else",
+  "actual": "HTTP 200; keys: location_default, auto_signout_minutes, fields, agreements",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-02",
+  "title": "No visitor names, signatures or contact details ride along with the agreement",
+  "expected": "The agreement carries its own wording only",
+  "actual": "1 agreement(s), 6332 chars, no signature payload",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-03",
+  "title": "The visitor LOG cannot be read from the kiosk",
+  "expected": "HTTP 401/403 — the log is a separate, authenticated module",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-04",
+  "title": "Visitor statistics cannot be read from the kiosk",
+  "expected": "HTTP 401/403",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-05",
+  "title": "The sign-out lookup refuses a one-character probe",
+  "expected": "Empty — a single letter would enumerate the building",
+  "actual": "HTTP 200; 0 row(s)",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-06",
+  "title": "A wildcard in the lookup does not return the whole book",
+  "expected": "No rows — the parameter is bound, not interpolated",
+  "actual": "HTTP 200; 0 row(s)",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-07",
+  "title": "The lookup is not SQL-injectable",
+  "expected": "No rows, no error",
+  "actual": "HTTP 200; 0 row(s)",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-08",
+  "title": "A visitor can sign themselves in — the kiosk still works",
+  "expected": "HTTP 200/201",
+  "actual": "HTTP 201",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-09",
+  "title": "The lookup returns a name and a time, and nothing else",
+  "expected": "id, name, signed_in_at only — no email, phone, company, purpose, host or signature",
+  "actual": "fields: id, name, signed_in_at",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-10",
+  "title": "A signed agreement cannot be read back through visitors",
+  "expected": "Refused, or not a route at all",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-11",
+  "title": "A signed agreement cannot be read back through visitor-kiosk",
+  "expected": "Refused, or not a route at all",
+  "actual": "HTTP 200",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-12",
+  "title": "A signed agreement cannot be read back through visitors",
+  "expected": "Refused, or not a route at all",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-13",
+  "title": "No plant module answers a request that carries no session",
+  "expected": "All 60 mounted namespaces refuse",
+  "actual": "all 60 refused (401/403)",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-14",
+  "title": "The staff name look-up hands out no account identifiers",
+  "expected": "Names only — no id, no email, no phone, no role",
+  "actual": "fields: name, username, department",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-15",
+  "title": "A name alone yields no session from the kiosk",
+  "expected": "No token issued",
+  "actual": "HTTP 400; token = none",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-16",
+  "title": "Without a token, the partner portal returns nothing",
+  "expected": "Refused or empty",
+  "actual": "HTTP 200, 2 bytes",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-17",
+  "title": "Without a token, the auditor pass returns nothing",
+  "expected": "Refused or empty",
+  "actual": "HTTP 200, 2 bytes",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-18",
+  "title": "Without a token, a nutrition-panel approval link returns nothing",
+  "expected": "Refused or empty",
+  "actual": "HTTP 404, 79 bytes",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-19",
+  "title": "Without a token, the product master feed returns nothing",
+  "expected": "Refused or empty",
+  "actual": "HTTP 401, 29 bytes",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-20",
+  "title": "Extra fields posted to sign-in cannot create an account or a role",
+  "expected": "The visitor record is written; nothing touches users",
+  "actual": "HTTP 201; response carries token = no, role = none",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-21",
+  "title": "Signing in as a visitor creates no user account",
+  "expected": "No row in users",
+  "actual": "users named Escalate*: 0",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-22",
+  "title": "Signing out an unknown visit is refused",
+  "expected": "HTTP 404",
+  "actual": "HTTP 404",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-23",
+  "title": "The kiosk cannot file a quality record",
+  "expected": "Refused",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-24",
+  "title": "The kiosk cannot raise a work order",
+  "expected": "Refused",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-25",
+  "title": "The kiosk cannot delete a visit",
+  "expected": "Refused",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-26",
+  "title": "The kiosk cannot create a user",
+  "expected": "Refused",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-27",
+  "title": "The kiosk cannot rewrite the agreement being signed",
+  "expected": "Refused",
+  "actual": "HTTP 401",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-28",
+  "title": "The kiosk page ships no pre-loaded plant data",
+  "expected": "The HTML shell carries no records and no token",
+  "actual": "HTTP 200, 1240 bytes, no embedded state",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-29",
+  "title": "the equipment register is a catalogue and names nobody",
+  "expected": "Reachable by design (the QR kiosks need it) but carrying no person and no filed record",
+  "actual": "HTTP 200, 21936 bytes, person named: no",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-30",
+  "title": "the knife and blade list is a catalogue and names nobody",
+  "expected": "Reachable by design (the QR kiosks need it) but carrying no person and no filed record",
+  "actual": "HTTP 200, 5269 bytes, person named: no",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-31",
+  "title": "the tool and chemical catalogue is a catalogue and names nobody",
+  "expected": "Reachable by design (the QR kiosks need it) but carrying no person and no filed record",
+  "actual": "HTTP 200, 6773 bytes, person named: no",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-32",
+  "title": "the scale verification forms is a catalogue and names nobody",
+  "expected": "Reachable by design (the QR kiosks need it) but carrying no person and no filed record",
+  "actual": "HTTP 200, 9195 bytes, person named: no",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-33",
+  "title": "Kiosk suggestion lists come from that log alone, not from the plant",
+  "expected": "item_names / part_numbers / mo_numbers only",
+  "actual": "keys: item_names, part_numbers, mo_numbers",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-34",
+  "title": "The upload directory cannot be listed",
+  "expected": "No index of what has been uploaded — the app shell is returned instead",
+  "actual": "HTTP 200, text/html; charset=utf-8, 1240 bytes; stored filenames present: no",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-35",
+  "title": "A guessed upload filename returns no file",
+  "expected": "The app shell, not bytes — names are random UUIDs",
+  "actual": "HTTP 200, text/html; charset=utf-8",
+  "verdict": "PASS"
+ },
+ {
+  "id": "VK-36",
+  "title": "The realtime socket refuses a client with no token and a forged one",
+  "expected": "Both rejected — no live feed of plant messages",
+  "actual": "no token: unauthorized · forged: unauthorized",
+  "verdict": "PASS"
+ }
+]

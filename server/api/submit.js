@@ -87,7 +87,15 @@ router.get('/knife-list', (_req, res) => {
       record_number: r.record_number,
       tool_id: toolId,
       status: holder ? 'issued' : 'available',
-      issued_to: holder ? (holder.employee_name || null) : null,
+      // NO NAME ON A PUBLIC PATH. This route is unauthenticated — the knife
+      // kiosk is a QR code and has no session — so anybody who knows the URL
+      // could read which named employee is holding which controlled blade.
+      // That is food-defence information about a person, and the kiosk does not
+      // need it: it only has to say the knife is not available. The screen
+      // already renders "issued to someone" when the name is absent, so this
+      // costs nothing operationally. Found by probing the kiosk's own origin.
+      // The name is still on the sign-out record itself, behind a session.
+      issued_to: null,
       // What the operator needs when the answer surprises them: the log record
       // that says it is out, so they can go and look at it.
       sign_out_record: holder?.record_number || null,
