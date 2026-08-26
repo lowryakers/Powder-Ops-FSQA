@@ -1,0 +1,440 @@
+<title>Plan Red-Line</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
+<style>
+  :root {
+    --paper:#FBFAF8; --surface:#FFFFFF; --sunken:#F1EEE9;
+    --ink:#1A1714; --ink-2:#4A443D; --ink-3:#7D766C;
+    --rule:#E2DDD5; --rule-2:#CBC4B8;
+    --cut:#A32E22;  --cut-bg:#FBE9E6;
+    --add:#1F6B4A;  --add-bg:#E4F1EA;
+    --must:#A32E22; --must-bg:#FBE9E6;
+    --should:#8A5A0F; --should-bg:#FAEEDC;
+    --consider:#3D5A8A; --consider-bg:#E7EDF7;
+    --accent:#3D5A8A;
+    --shadow:0 1px 2px rgba(26,23,20,.05), 0 10px 26px -20px rgba(26,23,20,.3);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --paper:#131211; --surface:#1B1917; --sunken:#232120;
+    --ink:#EDE9E3; --ink-2:#B4ADA3; --ink-3:#847D73;
+    --rule:#2E2B28; --rule-2:#413D38;
+    --cut:#E08C7E; --cut-bg:#2C1A17;
+    --add:#79C39B; --add-bg:#152720;
+    --must:#E08C7E; --must-bg:#2C1A17;
+    --should:#DDA95F; --should-bg:#2A2114;
+    --consider:#94AEDB; --consider-bg:#1A2233;
+    --accent:#94AEDB;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 26px -20px rgba(0,0,0,.9);
+  } }
+  :root[data-theme="dark"] {
+    --paper:#131211; --surface:#1B1917; --sunken:#232120;
+    --ink:#EDE9E3; --ink-2:#B4ADA3; --ink-3:#847D73;
+    --rule:#2E2B28; --rule-2:#413D38;
+    --cut:#E08C7E; --cut-bg:#2C1A17;
+    --add:#79C39B; --add-bg:#152720;
+    --must:#E08C7E; --must-bg:#2C1A17;
+    --should:#DDA95F; --should-bg:#2A2114;
+    --consider:#94AEDB; --consider-bg:#1A2233;
+    --accent:#94AEDB;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 26px -20px rgba(0,0,0,.9);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Source Sans 3",ui-sans-serif,system-ui,sans-serif;font-size:16.5px;line-height:1.6;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:900px;margin:0 auto;padding:0 clamp(16px,4vw,44px) 90px}
+  code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.85em}
+
+  header{padding:clamp(34px,6vw,66px) 0 0}
+  .kicker{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--ink-3);margin-bottom:14px}
+  h1{font-family:"Source Serif 4",Georgia,serif;font-weight:700;
+    font-size:clamp(34px,6vw,56px);line-height:1.02;letter-spacing:-.02em;margin:0 0 16px;text-wrap:balance}
+  .sub{font-size:clamp(16px,1.9vw,19px);color:var(--ink-2);margin:0;max-width:60ch}
+
+  .tally{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:30px 0 0}
+  .t{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;box-shadow:var(--shadow)}
+  .t .v{font-family:"Source Serif 4",serif;font-size:31px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+  .t .k{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink-3);margin-top:6px}
+  .t.must .v{color:var(--must)} .t.should .v{color:var(--should)} .t.consider .v{color:var(--consider)}
+
+  .box{margin:26px 0 0;padding:17px 21px;border-radius:8px;border-left:3px solid var(--accent);
+    background:var(--sunken);color:var(--ink-2);font-size:15.2px}
+  .box b{color:var(--ink)} .box p{margin:0} .box p+p{margin-top:10px}
+  blockquote{margin:10px 0 0;padding:10px 16px;border-left:2px solid var(--rule-2);
+    background:var(--surface);border-radius:0 6px 6px 0;color:var(--ink-2);font-size:15px}
+
+  h2{font-family:"Source Serif 4",Georgia,serif;font-weight:700;font-size:clamp(25px,3.4vw,34px);
+    letter-spacing:-.015em;margin:60px 0 6px;padding-bottom:11px;border-bottom:2px solid var(--ink)}
+  h3{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;
+    margin:40px 0 0;color:var(--ink-2);letter-spacing:-.005em}
+  .lede{color:var(--ink-2);font-size:15.5px;margin:14px 0 0;max-width:66ch}
+
+  .f{background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--rule-2);
+    border-radius:8px;padding:15px 19px;margin-top:11px;box-shadow:var(--shadow)}
+  .f.must{border-left-color:var(--must)}
+  .f.should{border-left-color:var(--should)}
+  .f.consider{border-left-color:var(--consider)}
+  .fh{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px 11px}
+  .id{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--ink-3)}
+  .ft{font-weight:600;font-size:16.5px;flex:1 1 260px}
+  .chip{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .c-must{background:var(--must-bg);color:var(--must)}
+  .c-should{background:var(--should-bg);color:var(--should)}
+  .c-consider{background:var(--consider-bg);color:var(--consider)}
+  .c-verify{background:var(--sunken);color:var(--ink-3)}
+  .where{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3);
+    letter-spacing:.05em;margin-top:5px;width:100%}
+  .f p{margin:9px 0 0;color:var(--ink-2);font-size:15.2px}
+  .f p:last-child{margin-bottom:0}
+  .quote{margin:10px 0 0;padding:11px 15px;background:var(--sunken);border-radius:6px;
+    font-size:15px;line-height:1.55}
+  del{color:var(--cut);background:var(--cut-bg);text-decoration:line-through;
+    text-decoration-thickness:1.5px;padding:1px 3px;border-radius:3px}
+  ins{color:var(--add);background:var(--add-bg);text-decoration:none;font-weight:600;
+    padding:1px 3px;border-radius:3px}
+  .f ul{margin:9px 0 0;padding-left:19px;color:var(--ink-2);font-size:15.2px}
+  .f li{margin:4px 0}
+  .rec{margin-top:10px;padding:9px 14px;border-left:2px solid var(--add);
+    background:var(--add-bg);border-radius:0 5px 5px 0;font-size:15px;color:var(--ink-2)}
+  .rec b{color:var(--ink)}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-top:12px}
+  .mini{background:var(--surface);border:1px solid var(--rule);border-radius:7px;padding:12px 15px;font-size:14.6px;color:var(--ink-2)}
+  .mini b{color:var(--ink);display:block;margin-bottom:3px;font-size:15px}
+  .mini code{font-size:.86em}
+
+  footer{margin-top:70px;padding-top:18px;border-top:1px solid var(--rule);
+    display:flex;flex-wrap:wrap;gap:8px 22px;font-family:"IBM Plex Mono",monospace;
+    font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="kicker">Powder Ops FSQA · Document Control · 25 August 2026</div>
+  <h1>Plan Red-Line</h1>
+  <p class="sub">
+    Protocol 003 (Food Safety Plan V4) and Protocol 001 (Food Defense Plan V2), reviewed line by line.
+    Every finding is numbered so it can be accepted, rejected or deferred on its own.
+  </p>
+
+  <div class="tally">
+    <div class="t must"><div class="v">19</div><div class="k">must fix</div></div>
+    <div class="t should"><div class="v">39</div><div class="k">should fix</div></div>
+    <div class="t consider"><div class="v">10</div><div class="k">consider</div></div>
+    <div class="t"><div class="v">68</div><div class="k">total findings</div></div>
+  </div>
+
+  <div class="box">
+    <p><b>Nothing has been changed in either document.</b> This is a review. The path from here:
+    work through it → decide each item → issue the DCR → Document Control publishes V5 and V3 → the
+    team approves and adopts.</p>
+  </div>
+
+  <div class="box">
+    <p><b>What this was checked against.</b> On file and used: the <b>NSF/ANSI 455 Certification
+    Policies</b> (2 Sept 2025), the <b>NSF 306 Certified for Sport guideline</b> (9 Jan 2026), and the
+    <b>NSF GMP for Sport Audit Guide</b>. The Policies document names 455-2's normative references, and
+    four findings rest directly on that list:</p>
+    <blockquote><b>NSF/ANSI 455-2</b> → 21 CFR Part 111, 21 CFR Part 117, <b>21 CFR Part 11</b>,
+      <b>21 CFR Part 1.5 Subpart L</b>, <b>21 CFR Part 1.9 Subpart O</b>.</blockquote>
+    <p><b>Not on file: NSF/ANSI 455-2 itself, and the SQF Food Safety Code.</b> Anything resting on
+    those is argued from substance rather than cited by clause, and marked as unverified. Get both and
+    the clause numbers can be added.</p>
+    <p><b>One caveat on the text.</b> Both plans were read from the PDF text layer, which splits table
+    cells across columns. Anything that might be an extraction artefact rather than a real error is
+    marked <span class="chip c-verify">verify in source</span> rather than asserted.</p>
+  </div>
+</header>
+
+<h2>Protocol 003 — Food Safety Plan V4</h2>
+<h3>Must fix · 9</h3>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-01</span><span class="ft">The company's own name is misspelled in the opening line</span><span class="chip c-must">must</span>
+  <span class="where">Process Description → Overview</span></div>
+  <div class="quote"><del>Power-Ops</del> <ins>Powder-Ops</ins> is a contract manufacturing company that specializes in a variety of dietary supplement products.</div>
+  <p>The first sentence of the plan's substantive content. Nothing else in either document spells it this way.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-02</span><span class="ft">The Rework row describes a control the plant does not have</span><span class="chip c-must">must</span>
+  <span class="where">Hazard Analysis → Rework · already DCR item 2</span></div>
+  <div class="quote"><del>Metal detection at the metal detection process step during tub filling.</del> X ray is inspected finished good.</div>
+  <p>V3's own revision note reads <i>"Removed any Magnetic Detection information"</i>, and the plant runs an X-ray, not a metal detector. Residue of the V1 change that added magnets. An auditor will ask to be shown the metal-detection step at tub filling, and there is not one.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-03</span><span class="ft">Screens: the chart and the Process Description state different controls</span><span class="chip c-must">must</span>
+  <span class="where">PC #3 vs Process Description → Screens · already DCR item 1</span></div>
+  <p><b>Chart:</b> "Freq: at the beginning of every machine start up."<br>
+     <b>Process Description:</b> "The mesh size (50 mesh or 70 mesh) is recorded as well as the condition of the screen at the beginning and at the end of each batch."</p>
+  <p>The second is stricter and names two facts the chart does not — <b>mesh size used</b> and <b>screen condition</b>. A screen intact at start-up and torn at the end is precisely what this control exists to catch, and only the second reading catches it.</p>
+  <div class="rec"><b>Recommendation:</b> adopt the Process Description's wording into the chart.</div>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-04</span><span class="ft">PC #1's critical limit is stated in a unit only its verification step produces</span><span class="chip c-must">must</span>
+  <span class="where">PC #1 · already DCR item 3</span></div>
+  <p>Critical limit <i>"No more than 35 RLU"</i>; monitoring is <i>"Application of cleaning. Visual inspection prior to set up"</i>; verification is <i>"ATP swabs and visual inspection."</i></p>
+  <p><b>RLU is what an ATP swab reads</b> — nothing else in the process produces one. So the plan sets a numeric limit, monitors by eye, and puts the instrument that reads the number on the verification leg. Whichever leg carries the number is the leg software can enforce.</p>
+  <div class="rec"><b>Recommendation:</b> move the ATP swab to monitoring, leave visual inspection as verification. This also matches the Process Description: <i>"Product contact surfaces are swabbed using ATP swabs prior [to] the start of a production run."</i></div>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-05</span><span class="ft">Three signature lines are blank on a document marked Approved / Effective</span><span class="chip c-must">must</span>
+  <span class="where">Cover page</span></div>
+  <p>SQF Practitioner, Preventive Controls Qualified Individual and Plant Manager are all unsigned, while the document's status is <i>Approved / Effective</i> with an effective date of 2026-06-25. One of the first things an auditor checks.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-06</span><span class="ft">The QA/QC Manager is named differently in the two plans</span><span class="chip c-must">must</span>
+  <span class="where">Preventive Control Food Safety Team</span></div>
+  <p>Protocol 003 lists <b>Carol Pierce, QA/QC Manager</b>. Protocol 001 lists <b>Carol Rojas, Quality, Plan Coordinator</b>, and the AIB Food Defense Coordinator certificate on file is in the name <b>Carol Rojas</b>. One person under two names, or two people — both plans must agree.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-07</span><span class="ft">The revision history uses two numbering schemes</span><span class="chip c-must">must</span>
+  <span class="where">Revision History</span></div>
+  <p>Row one is <code>0</code>; every row after is <code>V1</code>…<code>V4</code>. Make the first row <b>V0</b>, or restate it as "Original issue".</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-08</span><span class="ft">The plan names records but never says where they are kept</span><span class="chip c-must">must</span>
+  <span class="where">Preventive Control Chart → Record Keeping</span></div>
+  <p>All four controls point at the batch production record or a document attached to it. <b>Those records are on paper today, logged in MRPEasy</b> — not in Keychain, not in ReadyDoc. "Cleaning log Checklist in batch production record" answers <i>what</i> but not <i>where</i>, and an auditor asks for a named record on a date they choose.</p>
+  <div class="rec"><b>Recommendation:</b> add a short <b>Records</b> section naming, per control, the record, its form number, where it is held, and the retention period.</div>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-33</span><span class="ft">The process flow diagram is referenced but absent</span><span class="chip c-must">must</span><span class="chip c-verify">verify in source</span>
+  <span class="where">Table of Contents → page 4</span></div>
+  <p>The contents list <b>Process Flow Diagram, page 4</b>, and the heading appears with no diagram beneath it. Either it did not survive the PDF, or it is genuinely missing. <b>A hazard analysis without a process flow is a finding on its own.</b></p>
+</div>
+
+<h3>Spelling and grammar · 14</h3>
+<p class="lede">Each one is small. Together they are what an auditor reads as a document that has not been proof-read, in a plan whose whole authority is that it was written carefully.</p>
+
+<div class="f should">
+  <div class="fh"><span class="id">FSP-09 … 22</span><span class="ft">Fourteen corrections</span><span class="chip c-should">should</span></div>
+  <div class="quote">
+    <b>09</b> · Allergen swabs are used to <del>verifies</del> <ins>verify</ins> that the surfaces are free of <del>allergen</del> <ins>allergens</ins>. <i>— twice</i><br>
+    <b>10</b> · …approved for their intended <del>used</del> <ins>use</ins>. <i>— three times</i><br>
+    <b>11</b> · <del>Peices</del> <ins>Pieces</ins> of plastic from liner<br>
+    <b>12</b> · checked against their COA <del>prior accepting</del> <ins>prior to accepting</ins> them<br>
+    <b>13</b> · swabbed using ATP swabs <del>prior the start</del> <ins>prior to the start</ins> of a production run<br>
+    <b>14</b> · Procedure as <del>outline</del> <ins>outlined</ins> in cleaning SOP<br>
+    <b>15</b> · Raw ingredients are sifted <del>prior going</del> <ins>prior to going</ins> into the super sack<br>
+    <b>16</b> · All received packaging <del>material are</del> <ins>materials are</ins> inspected<br>
+    <b>17</b> · <del>personal hygiene</del> <ins>personnel hygiene</ins> <i>— both forms used; pick one</i><br>
+    <b>18</b> · <del>X ray is inspected finished good.</del> <ins>The X-ray inspects finished goods.</ins><br>
+    <b>19</b> · wash their hands before entering <del>to</del> <ins>the</ins> weigh-up and production areas · <del>mouth covering</del> <ins>mouth coverings</ins><br>
+    <b>20</b> · <del>Add</del> <ins>Added</ins> magnets to prevent metal contamination <i>— revision history is past tense elsewhere</i><br>
+    <b>21</b> · placed on hold <del>in quarantine area floor</del> <ins>in the quarantine area</ins><br>
+    <b>22</b> · every machine <del>start up</del> <ins>start-up</ins>
+  </div>
+  <p>Also standardise on one spelling of <b>X-ray</b> — the document currently uses <i>X-Ray</i>, <i>X-ray</i> and <i>X ray</i>.</p>
+</div>
+
+<h3>Content and standards · 11</h3>
+
+<div class="f should">
+  <div class="fh"><span class="id">FSP-23</span><span class="ft">The plan cites no regulation anywhere</span><span class="chip c-should">should</span></div>
+  <p>Neither plan contains the string "21 CFR". The hazard analysis is laid out in the standard <b>21 CFR 117</b> preventive-controls format and the plant holds PCQI certificates — name the basis in a Scope section, along with <b>21 CFR 111</b>, the dietary-supplement CGMP that NSF/ANSI 455-2 is built on.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FSP-24</span><span class="ft">No reanalysis trigger other than the annual review</span><span class="chip c-should">should</span></div>
+  <p>The plan should say when it is reanalysed <b>other than on a schedule</b>: a change in process, equipment, supplier or product; a newly identified hazard; and after any failure of a preventive control. As written, a new piece of equipment could arrive without anything requiring the plan to be revisited.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FSP-25</span><span class="ft">Foreign Supplier Verification is not addressed</span><span class="chip c-should">should</span></div>
+  <p><b>21 CFR Part 1 Subpart L is a normative reference for NSF/ANSI 455-2.</b> Neither plan mentions FSVP or imported ingredients. If <b>any</b> ingredient is imported, this is a named gap. If none is, one sentence saying so closes it.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FSP-26</span><span class="ft">Sanitary Transportation is not addressed</span><span class="chip c-should">should</span></div>
+  <p><b>21 CFR Part 1 Subpart O is also a normative reference for 455-2.</b> The Food Defense Plan discusses transport as a <i>security</i> vulnerability; neither plan addresses transport as a <i>sanitation</i> control — carrier requirements, temperature, cleanliness of the conveyance, records.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FSP-28</span><span class="ft">Banned and prohibited substances are not referenced</span><span class="chip c-should">should</span></div>
+  <p>NSF GMP for Sport <b>§6.2.2</b> requires that references to the NSF 306 Annex C, NFL/NFLPA, MLB and WADA lists be <i>"incorporated as part of their applicable operating procedures"</i>, and <b>§6.2.3.1</b> requires a documented <b>annual review</b> of those lists. A draft <i>Banned and Prohibited Substance Control Program</i> already sits in the registry (<code>SOP-DRAFT-BSC</code>) — reference it once Document Control assigns a number.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FSP-29</span><span class="ft">Record retention is not stated</span><span class="chip c-should">should</span></div>
+  <p>21 CFR 111.605 sets retention at one year past shelf life or two years past distribution, whichever is longer. The plan names records and never says how long they are kept.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FSP-34</span><span class="ft">"CCP" and "preventive control" are used interchangeably</span><span class="chip c-should">should</span></div>
+  <p>The chart says <i>Preventive Control</i>; V2's revision note says <i>"Added X-ray as a <b>CCP</b>"</i>; Policy 002 calls it <i>"a validated HACCP-based approach"</i>. All three are defensible and should be deliberate. <b>This is the first item of the vocabulary pass.</b></p>
+</div>
+
+<div class="grid">
+  <div class="mini"><b>FSP-27 · Electronic records <span class="chip c-consider">consider</span></b>
+    21 CFR Part 11 is a normative reference for 455-2, and ReadyDoc holds a growing share of these records with e-signatures and an append-only audit trail. Say records may be kept electronically, and name the system.</div>
+  <div class="mini"><b>FSP-30 · Allergen program <span class="chip c-consider">consider</span></b>
+    PC #2 turns on allergen control and the Process Description describes real practice — end-of-batch scooping, gown changes, a full room clean verified by swab, a dedicated storage location. None of it is a referenced document.</div>
+  <div class="mini"><b>FSP-31 · Supply-chain control <span class="chip c-consider">consider</span></b>
+    Several rows justify "No" on supplier qualification and letters of guarantee — the reasoning behind a supply-chain preventive control, a category 117 names. The chart has none.</div>
+  <div class="mini"><b>FSP-32 · "the missing ingredient" <span class="chip c-consider">consider</span></b>
+    <i>"Rework … is allowed if the amount of the missing ingredient is known."</i> Read plainly this is about a spill. <b>Spilled</b> or <b>lost</b> would say it.</div>
+</div>
+
+<h2>Protocol 001 — Food Defense Plan V2</h2>
+<h3>Must fix · 9</h3>
+
+<div class="f must">
+  <div class="fh"><span class="id">FDP-01</span><span class="ft">Two sections are lettered "D"</span><span class="chip c-must">must</span>
+  <span class="where">§3 Potential Vulnerabilities</span></div>
+  <p>The sequence runs <b>A</b> Ingredient, <b>B</b> Facility, <b>C</b> Supply Chain, <b>D</b> Process, <b>E</b> Personnel, <b>D</b> External. The second <b>D</b> should be <b>F</b>.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FDP-02</span><span class="ft">Numbering jumps inside §3E</span><span class="chip c-must">must</span>
+  <span class="where">§3E Personnel Vulnerabilities</span></div>
+  <p>Items run 1, 2, 3, then <b>6. Employee Practices</b>, <b>7. Sanitation</b>. Either 4 and 5 were removed without renumbering, or the last two belong elsewhere — <i>Sanitation</i> in particular reads as a process vulnerability, not a personnel one.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FDP-03</span><span class="ft">"Page 10 of 9"</span><span class="chip c-must">must</span>
+  <span class="where">Footer</span></div>
+  <p>The last page numbers itself beyond the total.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FDP-04</span><span class="ft">The revision number in ReadyDoc disagrees with the document</span><span class="chip c-must">must</span>
+  <span class="where">Document metadata</span></div>
+  <p>ReadyDoc records the document as <b>Revision 1.0</b>. The document's own footer and revision history say <b>V2</b>. A record filed against the wrong revision is exactly what the registry exists to prevent.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FDP-05</span><span class="ft">"work legibility" → "work eligibility"</span><span class="chip c-must">must</span>
+  <span class="where">§6C1 Background Checks</span></div>
+  <div class="quote">All employees are screened for work <del>legibility</del> <ins>eligibility</ins> before hiring.</div>
+  <p>The wrong word, in the sentence describing the control.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FDP-06</span><span class="ft">"a specified period" is never specified — four times</span><span class="chip c-must">must</span>
+  <span class="where">§10 Record Keeping</span></div>
+  <p>Surveillance footage, access logs, inspection reports and training records are each kept <i>"for a specified period"</i>, and no period is given anywhere in the plan. An auditor will ask, and the plan cannot answer itself.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FDP-08</span><span class="ft">"05/202025" is not a date</span><span class="chip c-must">must</span>
+  <span class="where">Revision History, V1</span></div>
+  <p>Presumably 05/2025 or 05/20/2025.</p>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FDP-26</span><span class="ft">The internal audit named as verification cannot verify this plan</span><span class="chip c-must">must</span>
+  <span class="where">§9.1 Verification Procedures</span></div>
+  <p>§9.1 makes internal audits a verification activity for the food defense plan. <b>Form 403-01 has 19 sections and none of them is food defense.</b></p>
+  <div class="rec"><b>Recommendation:</b> add a food defense section to 403-01, or name a different verification activity here.</div>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FDP-07</span><span class="ft">Name disagreement with Protocol 003</span><span class="chip c-must">must</span>
+  <span class="where">§1 Food Defense Team · see FSP-06</span></div>
+  <p>Carol Rojas here, Carol Pierce in Protocol 003.</p>
+</div>
+
+<h3>Spelling and grammar · 12</h3>
+
+<div class="f should">
+  <div class="fh"><span class="id">FDP-09 … 20</span><span class="ft">Twelve corrections</span><span class="chip c-should">should</span></div>
+  <div class="quote">
+    <b>09</b> · <del>Jake@powder-ops</del> <ins>Jake@powder-ops.com</ins> — and the same for Maria, Daniela and Lowry. <i>A contact list that cannot be used is the one thing a food defense plan must get right.</i><br>
+    <b>10</b> · <del>Email: Powder-ops.com</del> <ins>Website: powder-ops.com</ins> — that is a domain, not an address<br>
+    <b>11</b> · a contract <del>manufacturer company</del> <ins>manufacturing company</ins><br>
+    <b>12</b> · guar gum, <del>digestive, enzymes</del> <ins>digestive enzymes</ins>, stevia extract <i>— a stray comma splits one ingredient into two</i><br>
+    <b>13</b> · <del>non fat milk</del> <ins>nonfat milk</ins> <i>— also "Non-fat Milk Powder" in §3A; standardise</i><br>
+    <b>14</b> · <del>Adults over 18-year olds</del> <ins>Adults aged 18 and over</ins><br>
+    <b>15</b> · Visitors without <del>a</del> <ins>an</ins> escort<br>
+    <b>16</b> · access the manufacturing <ins>area</ins> through keypad-controlled doors<br>
+    <b>17</b> · <del>Single serving dietary supplements/ food portable, mess free portion.</del> <ins>Single-serving dietary supplement and food products in a portable, mess-free portion.</ins> <span class="chip c-verify">verify in source</span><br>
+    <b>18</b> · Confirm the surname <b>Lowry Akens</b> against the roster<br>
+    <b>19</b> · Stray characters in the §2 heading <span class="chip c-verify">verify in source</span><br>
+    <b>20</b> · Risk Level <del>"e 12</del> <ins>≥ 12</ins> <span class="chip c-verify">verify in source</span>
+  </div>
+</div>
+
+<h3>Content and standards · 9</h3>
+
+<div class="f should">
+  <div class="fh"><span class="id">FDP-21</span><span class="ft">The plan does not cite the regulation it answers</span><span class="chip c-should">should</span></div>
+  <p>The FDA Intentional Adulteration rule, <b>21 CFR Part 121</b>, is the basis of a food defense plan for a registered facility. Naming it — alongside the FDA registration number the plan already carries — makes the plan self-evidently responsive.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FDP-23</span><span class="ft">No Food Defense Qualified Individual is named</span><span class="chip c-should">should</span></div>
+  <p>Part 121 requires the vulnerability assessment and mitigation strategies be prepared by, or overseen by, a qualified individual. <b>Carol Rojas holds an AIB Food Defense Coordinator certificate, which is on file</b> — the plan lists her as <i>Plan Coordinator</i> without naming the qualification. State it.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FDP-25</span><span class="ft">The mock incident has no form and no record</span><span class="chip c-should">should</span></div>
+  <p>§9.2 requires a mock incident <b>at least once every two years</b>. Nothing in the Forms Master Index answers to it and no record exists. <b>The plan's own verification of itself is the part with no evidence behind it.</b></p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FDP-29</span><span class="ft">The highest-scored mitigation has no record</span><span class="chip c-should">should</span></div>
+  <p>§5.4 mitigates <i>intentional adulteration by an employee</i> — joint-highest risk at <b>15</b> — with <i>"Require employees to never work alone and adequate monitoring of footage."</i> Nothing records whether anyone worked alone, and nothing records that footage was reviewed. A mitigation strategy with no monitoring record is the gap Part 121 is most pointed about.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">FDP-30</span><span class="ft">The risk matrix has no scoring key</span><span class="chip c-should">should</span></div>
+  <p>Likelihood and impact are scored 1–5 with no definition of what each value means. Two people scoring the same vulnerability will disagree, and the reassessment in §11 cannot be compared to this one.</p>
+</div>
+
+<div class="grid">
+  <div class="mini"><b>FDP-22 · "Actionable process step" <span class="chip c-consider">consider</span></b>
+    Part 121 turns on actionable process steps with mitigation strategies, monitoring, corrective actions and verification. §3–§7 do this in substance under different names; adopting the regulation's vocabulary makes the mapping obvious.</div>
+  <div class="mini"><b>FDP-24 · Reassessment interval <span class="chip c-consider">consider</span></b>
+    Part 121 expects reanalysis at least every three years. §11 commits to <b>annual</b>, which is stricter — say so, so a reader sees the plan exceeds the requirement.</div>
+  <div class="mini"><b>FDP-27 · Banned substances <span class="chip c-consider">consider</span></b>
+    Preventing a banned substance entering the facility is squarely a food defense control. A cross-reference from §6B1 Receiving Procedures would do it.</div>
+  <div class="mini"><b>FDP-28 · Employee counts <span class="chip c-consider">consider</span></b>
+    37 full-time, 1 part-time. Confirm current at re-issue — the kind of number an auditor spot-checks against the roster.</div>
+</div>
+
+<h2>Both documents</h2>
+
+<div class="f must">
+  <div class="fh"><span class="id">X-01</span><span class="ft">Neither plan says where its records are kept</span><span class="chip c-must">must</span></div>
+  <p>See FSP-08 and FDP-06. <b>The single most consequential omission across both documents</b>, and it became more pressing this week: the preventive-control records are on paper in MRPEasy, mid-migration, and neither plan says so.</p>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">X-02</span><span class="ft">One vocabulary, chosen deliberately</span><span class="chip c-should">should</span></div>
+  <p><i>Preventive control</i> / <i>CCP</i> / <i>HACCP</i> across Protocol 003, Policy 002 and the revision history. Decide once, apply to all three in the same revision.</p>
+</div>
+
+<div class="grid">
+  <div class="mini"><b>X-03 · Approver and owner are the same person <span class="chip c-consider">consider</span></b>
+    Protocol 003 records Owner: Daniela Servin and Approved By: Daniela Servin. Protocol 001 is better — approved by Carol Rojas, reviewed by Adam Bliss. The plant already demonstrates independent approval on the other plan.</div>
+  <div class="mini"><b>X-04 · Add a Scope and Normative References section <span class="chip c-consider">consider</span></b>
+    Half a page naming what each plan covers, which regulations and schemes it answers, and which documents it depends on. It is also exactly what the document reference graph reads to build the hub-and-spoke links.</div>
+</div>
+
+<h2>What I could not check</h2>
+<div class="box">
+  <p><b>NSF/ANSI 455-2 itself and the SQF Food Safety Code are not on file.</b> Findings resting on them are argued from substance, not cited by clause.</p>
+  <p><b>The process flow diagram</b> (FSP-33) — whether it is missing from the document or only from the text extraction.</p>
+  <p><b>Anything held only in the tables' visual layout.</b> Merged cells, strike-throughs and handwritten annotation do not survive text extraction.</p>
+  <p><b>Whether the practices described are what the plant actually does.</b> This is a review of two documents against each other, against the standards on file, and against what ReadyDoc holds. It is not a review of the floor.</p>
+</div>
+
+<footer>
+  <span>68 findings · 19 must · 39 should · 10 consider</span>
+  <span>Nothing changed in either document</span>
+  <span>docs/v2/queued/plan-redline.md</span>
+  <span>25 Aug 2026</span>
+</footer>
+</div>

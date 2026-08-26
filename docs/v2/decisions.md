@@ -634,3 +634,64 @@ things travel with the renumber:
 file and the fast fix was to take one side. Both sides were kept instead: Track A's findings about
 duplicate programs and PM checklists are not less true for having been written the same week, and the
 walk's entries are not less true for arriving second.
+
+---
+
+## D-024 · 2026-08-25 · decided — Hub and spoke: values propagate, obligations are raised, TEXT IS NEVER AUTO-WRITTEN
+
+Asked directly: with the Food Safety documents as the "bible", will editing them automatically update
+the SOPs, WIs and JDs beneath them? **Yes to the hub, and the spokes carry obligations, not edits.**
+Three tiers, and only two of them are automatic.
+
+**Tier 1 — values propagate automatically, and already do.** A limit, a frequency, a tolerance, a form
+number is read from the document *at the moment it is used*. `scale-forms.js` and now `atp-limits.js`
+are the working examples: change the approved revision and every grading decision follows, because
+there is no second copy. This is L1's rule and architecture move 03.
+
+**Tier 2 — obligations are raised automatically.** Re-issue a document and everything referencing it
+gets a task: *the parent changed — does this still say the right thing?* One spoke already works —
+`retrain_on_doc_change` supersedes completed training records for courses linked to a revised document.
+`docs/v2/queued/document-reference-graph.md` generalises it from training to every document.
+
+**Tier 3 — the text of another controlled document is NEVER written by the system.** This is the rule
+that keeps the other two safe, and it is not a limitation to be engineered away later:
+
+- **An auto-generated SOP has no author and no approver**, which is what "controlled" means. Its change
+  record would say the change was made by nobody.
+- **It would fire retraining on text nobody wrote** — staff retrained against a machine's paraphrase.
+- **There is usually nothing to propagate.** PC #1's monitoring reads "Procedure as outline in cleaning
+  SOP": the plan *points at* the SOP rather than containing it, so generating the SOP from the plan
+  would be inventing content the plan never held.
+
+So the spoke delivers **a task with a name on it**. Document Control still decides whether a child
+document changes and how — they simply never have to *discover* that it might need to.
+
+---
+
+## D-025 · 2026-08-25 · decided — Both plans are red-lined as one reviewable list, not edited in place
+
+`docs/v2/queued/plan-redline.md` — 68 findings across Protocol 003 V4 and Protocol 001 V2: 19 must-fix,
+39 should-fix, 10 consider. **Nothing was changed in either document**, and that is the point: a plan
+quietly improved by software is a plan nobody approved. Each finding is numbered so it can be accepted,
+rejected or deferred on its own, and the path is review → decide → DCR → Document Control publishes
+V5 and V3 → the team adopts.
+
+**Three rules the review follows, worth keeping for the next one.**
+
+1. **Cite only what is on file.** The NSF/ANSI 455 Certification Policies, the NSF 306 guideline and
+   the GMP for Sport Audit Guide are in `server/assets/reference/` and are cited by section. **NSF/ANSI
+   455-2 itself and the SQF code are not**, so findings resting on them are argued from substance and
+   marked unverified — the same rule `docs/SQF-NSF-gap-analysis.md` set.
+2. **Separate an extraction artefact from a document error.** Both plans were read from a PDF text
+   layer that splits table cells. Anything that might be an artefact is marked *[verify in source]*
+   rather than asserted — a red-line that cries wolf about the PDF is one nobody finishes reading.
+3. **A wording finding and a standards finding are different things**, kept in separate sections. The
+   fourteen grammar corrections in Protocol 003 are individually trivial; together they are what an
+   auditor reads as a document that was not proof-read, in a plan whose authority is that it was
+   written carefully.
+
+**The four findings grounded in a normative reference, because they are the ones that will surprise
+people.** The Policies document lists 455-2's normative references as 21 CFR 111, 117, **11**,
+**Part 1 Subpart L** and **Part 1 Subpart O**. Neither plan mentions FSVP (Subpart L), sanitary
+transportation (Subpart O), electronic records (Part 11), or the banned-substance lists that NSF GMP
+for Sport §6.2.2 wants embedded in operating procedures.
