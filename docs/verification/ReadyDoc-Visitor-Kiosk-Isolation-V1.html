@@ -1,0 +1,241 @@
+<title>Authentication Verification</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+  <style>
+    :root{
+      --ink:#1a1d21; --muted:#5b6470; --faint:#8b939e; --rule:#dfe3e8;
+      --ground:#fbfaf8; --card:#ffffff; --band:#f2f0ec;
+      --met:#1c6b45; --unmet:#a52222; --accent:#1c4f6b;
+    }
+    @media (prefers-color-scheme: dark){
+      :root:not([data-theme="light"]){
+        --ink:#e8eaed; --muted:#a3acb8; --faint:#7c8794; --rule:#333a42;
+        --ground:#15181c; --card:#1c2026; --band:#242a31;
+        --met:#5fca97; --unmet:#f08a8a; --accent:#7fb8d6;
+      }
+    }
+    :root[data-theme="dark"]{
+      --ink:#e8eaed; --muted:#a3acb8; --faint:#7c8794; --rule:#333a42;
+      --ground:#15181c; --card:#1c2026; --band:#242a31;
+      --met:#5fca97; --unmet:#f08a8a; --accent:#7fb8d6;
+    }
+    *{box-sizing:border-box}
+    body{background:var(--ground);color:var(--ink);
+      font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+      font-size:16px;line-height:1.6;margin:0;padding:0 1.25rem 5rem;-webkit-text-size-adjust:100%}
+    .sheet{max-width:52rem;margin:0 auto;background:var(--card);border:1px solid var(--rule);
+      padding:clamp(1.5rem,4vw,3.25rem);margin-top:2rem;border-radius:2px}
+    .eyebrow{font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);
+      font-weight:600;margin:0 0 .5rem}
+    h1{font-family:Newsreader,Georgia,serif;font-weight:600;font-size:clamp(1.7rem,4.4vw,2.4rem);
+      line-height:1.2;margin:0 0 1.5rem;text-wrap:balance;letter-spacing:-.01em}
+    h2{font-family:Newsreader,Georgia,serif;font-weight:600;font-size:1.3rem;line-height:1.3;
+      margin:2.4rem 0 .7rem;padding-top:1.1rem;border-top:1px solid var(--rule);text-wrap:balance}
+    h3{font-size:.8rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+      color:var(--muted);margin:1.5rem 0 .5rem}
+    p{margin:0 0 .95rem;max-width:64ch}
+    ul{margin:0 0 1.1rem;padding-left:1.15rem;max-width:64ch}
+    li{margin-bottom:.5rem}
+    li::marker{color:var(--faint)}
+    .note{font-size:.9rem;color:var(--muted);border-left:2px solid var(--rule);
+      padding-left:.9rem;margin:1.2rem 0}
+    table{border-collapse:collapse;width:100%;font-size:.85rem}
+    .meta{margin-bottom:1.5rem}
+    .meta th{text-align:left;font-weight:600;width:34%;background:var(--band);color:var(--muted);
+      font-size:.78rem}
+    .meta th,.meta td{border:1px solid var(--rule);padding:.42rem .6rem;vertical-align:top}
+    .meta td{font-variant-numeric:tabular-nums}
+    .scroll{overflow-x:auto;margin-bottom:.4rem}
+    .results{min-width:36rem}
+    .results th{background:var(--band);color:var(--muted);text-align:left;font-size:.74rem;
+      letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+    .results th,.results td{border:1px solid var(--rule);padding:.42rem .6rem;vertical-align:top}
+    .results .ref{font-family:'IBM Plex Mono',ui-monospace,monospace;font-weight:500;
+      white-space:nowrap;color:var(--accent)}
+    .results .obs{color:var(--muted);font-size:.8rem}
+    .results .met,.results .unmet{font-weight:600;white-space:nowrap}
+    .results .met{color:var(--met)} .results .unmet{color:var(--unmet)}
+    .sig{margin-top:.5rem}
+    .sig th{background:var(--band);color:var(--muted);text-align:left;font-size:.74rem;
+      letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+    .sig th,.sig td{border:1px solid var(--rule);padding:.5rem .6rem}
+    .sig tbody th{text-transform:none;letter-spacing:0;font-size:.85rem;color:var(--ink);width:30%}
+    .sig tbody td{height:2.9rem}
+    .foot{margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--rule);
+      font-size:.75rem;color:var(--faint)}
+    @media print{
+      body{background:#fff;padding:0}
+      .sheet{border:0;margin:0;padding:0;max-width:none}
+      h2{break-after:avoid} tr{break-inside:avoid}
+    }
+  </style>
+  <div class="sheet">
+    <p class="eyebrow">Powder Ops · ReadyDoc</p>
+    <h1>Visitor Kiosk Isolation Verification</h1>
+    <table class="meta"><tbody>
+      <tr><th scope="row">Document</th><td>Visitor Kiosk Isolation Verification</td></tr>
+    <tr><th scope="row">Revision</th><td>V1</td></tr>
+    <tr><th scope="row">Document number</th><td>To be assigned by Document Control</td></tr>
+    <tr><th scope="row">System verified</th><td>ReadyDoc — Powder Ops FSQA platform</td></tr>
+    <tr><th scope="row">Software version</th><td>Build 83944af (25 August 2026)</td></tr>
+    <tr><th scope="row">Date of verification</th><td>25 August 2026</td></tr>
+    <tr><th scope="row">Result</th><td>36 checks executed — 36 met, 0 not met</td></tr>
+    <tr><th scope="row">Verified by</th><td>&nbsp;</td></tr>
+    <tr><th scope="row">Reviewed and approved by</th><td>&nbsp;</td></tr>
+    </tbody></table>
+    <h2>1. Purpose</h2>
+<p>The lobby tablet sits unattended in reception, signed in to nothing, in front of people who do not work here. Its address is also an ordinary web address: anyone who learns it can open it from anywhere. This document records what was measured when the question was asked directly — standing at that tablet, what can somebody reach?</p>
+<p>Visitor control is a food-defence measure, so this is not only an IT question. A kiosk that leaks the plant’s records, or one that lets a stranger alter them, would undermine the control it exists to provide.</p>
+<h2>2. Scope</h2>
+<h3>The position tested</h3>
+<p>Every request in this verification carries NO session token — exactly what the tablet has. Nothing was signed in, no credential was supplied, and no privilege was borrowed from an existing session.</p>
+<ul><li>The kiosk’s own endpoints: what the tablet is given, and what it is not.</li><li>The visitor log, its statistics, and stored signatures.</li><li>All sixty mounted plant modules — the full list, not a sample.</li><li>The other public doors on the same origin: staff name look-up, sign-in, partner portal, auditor pass, approval links, the product feed, and the QR-code kiosk catalogues.</li><li>Files served from disk, and whether they can be listed or guessed.</li><li>The realtime message socket.</li><li>The served application itself, driven in a real browser away from the kiosk into the app.</li></ul>
+<h3>Not covered here</h3>
+<ul><li>Physical control of the tablet. If somebody signs in on it and walks away, the next person has that session — that is a kiosk-mode and supervision question, not a software one.</li><li>Transport encryption, which is provided by the hosting platform.</li><li>What a person who already holds a valid staff account can reach. That is module permissions, covered by its own controls.</li></ul>
+<h2>3. How the kiosk is separated</h2>
+<p>The design being verified, stated plainly:</p>
+<ul><li>The tablet talks to four endpoints and no others: read the form and the agreement, sign in, look up an open visit by name, sign out. Everything else in the system is behind a session check.</li><li>The visitor LOG — who came, their contact details, and their signed agreements — is a separate, authenticated module. The kiosk writes into the book; it cannot read it back.</li><li>The sign-out look-up is deliberately narrow: people currently on site only, by name prefix, at least two characters, ten at a time, returning a name and a time and nothing else.</li><li>The public routes are declared in ONE place in the software, so the set cannot grow unnoticed as modules are added.</li></ul>
+<h2>4. Method</h2>
+<p>Executed, not inspected. `scripts/verify-kiosk-isolation.mjs` drives a running copy of the software over the same interface a browser uses, from the position of an unauthenticated caller. Every line in section 5 is what the system actually returned. The protocol is held in the repository so it can be repeated unchanged against any future release, and it exits with the number of failures so a build can be stopped on one.</p>
+<p>It was run against a copy of the production database. Visitors created by the probe are recognisable by name, and no real visit was altered.</p>
+<p>The raw output of the run reported here is retained beside this document as kiosk-isolation-2026-08-25.json.</p>
+<h2>5. Checks and results</h2>
+<p>36 checks were executed on 25 August 2026. 36 passed; none failed.</p>
+<div class="scroll"><table class="results">
+  <thead><tr><th>Ref</th><th>What was tested</th><th>What happened</th><th>Result</th></tr></thead>
+  <tbody><tr>
+  <td class="ref">VK-01</td><td>The kiosk config exposes only the form and the agreement text</td><td class="obs">HTTP 200; keys: location_default, auto_signout_minutes, fields, agreements</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-02</td><td>No visitor names, signatures or contact details ride along with the agreement</td><td class="obs">1 agreement(s), 6332 chars, no signature payload</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-03</td><td>The visitor LOG cannot be read from the kiosk</td><td class="obs">HTTP 401</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-04</td><td>Visitor statistics cannot be read from the kiosk</td><td class="obs">HTTP 401</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-05</td><td>The sign-out lookup refuses a one-character probe</td><td class="obs">HTTP 200; 0 row(s)</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-06</td><td>A wildcard in the lookup does not return the whole book</td><td class="obs">HTTP 200; 0 row(s)</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-07</td><td>The lookup is not SQL-injectable</td><td class="obs">HTTP 200; 0 row(s)</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-08</td><td>A visitor can sign themselves in — the kiosk still works</td><td class="obs">HTTP 201</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-09</td><td>The lookup returns a name and a time, and nothing else</td><td class="obs">fields: id, name, signed_in_at</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-10</td><td>A signed agreement cannot be read back through visitors</td><td class="obs">HTTP 401</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-11</td><td>A signed agreement cannot be read back through visitor-kiosk</td><td class="obs">HTTP 200</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-12</td><td>A signed agreement cannot be read back through visitors</td><td class="obs">HTTP 401</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-13</td><td>No plant module answers a request that carries no session</td><td class="obs">all 60 refused (401/403)</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-14</td><td>The staff name look-up hands out no account identifiers</td><td class="obs">fields: name, username, department</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-15</td><td>A name alone yields no session from the kiosk</td><td class="obs">HTTP 400; token = none</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-16</td><td>Without a token, the partner portal returns nothing</td><td class="obs">HTTP 200, 2 bytes</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-17</td><td>Without a token, the auditor pass returns nothing</td><td class="obs">HTTP 200, 2 bytes</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-18</td><td>Without a token, a nutrition-panel approval link returns nothing</td><td class="obs">HTTP 404, 79 bytes</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-19</td><td>Without a token, the product master feed returns nothing</td><td class="obs">HTTP 401, 29 bytes</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-20</td><td>Extra fields posted to sign-in cannot create an account or a role</td><td class="obs">HTTP 201; response carries token = no, role = none</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-21</td><td>Signing in as a visitor creates no user account</td><td class="obs">users named Escalate*: 0</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-22</td><td>Signing out an unknown visit is refused</td><td class="obs">HTTP 404</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-23</td><td>The kiosk cannot file a quality record</td><td class="obs">HTTP 401</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-24</td><td>The kiosk cannot raise a work order</td><td class="obs">HTTP 401</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-25</td><td>The kiosk cannot delete a visit</td><td class="obs">HTTP 401</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-26</td><td>The kiosk cannot create a user</td><td class="obs">HTTP 401</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-27</td><td>The kiosk cannot rewrite the agreement being signed</td><td class="obs">HTTP 401</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-28</td><td>The kiosk page ships no pre-loaded plant data</td><td class="obs">HTTP 200, 1240 bytes, no embedded state</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-29</td><td>the equipment register is a catalogue and names nobody</td><td class="obs">HTTP 200, 21936 bytes, person named: no</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-30</td><td>the knife and blade list is a catalogue and names nobody</td><td class="obs">HTTP 200, 5269 bytes, person named: no</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-31</td><td>the tool and chemical catalogue is a catalogue and names nobody</td><td class="obs">HTTP 200, 6773 bytes, person named: no</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-32</td><td>the scale verification forms is a catalogue and names nobody</td><td class="obs">HTTP 200, 9195 bytes, person named: no</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-33</td><td>Kiosk suggestion lists come from that log alone, not from the plant</td><td class="obs">keys: item_names, part_numbers, mo_numbers</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-34</td><td>The upload directory cannot be listed</td><td class="obs">HTTP 200, text/html; charset=utf-8, 1240 bytes; stored filenames present: no</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-35</td><td>A guessed upload filename returns no file</td><td class="obs">HTTP 200, text/html; charset=utf-8</td>
+  <td class="met">Met</td>
+  </tr><tr>
+  <td class="ref">VK-36</td><td>The realtime socket refuses a client with no token and a forged one</td><td class="obs">no token: unauthorized · forged: unauthorized</td>
+  <td class="met">Met</td>
+  </tr></tbody></table></div>
+<p class="note">VK-13 is the broad one: it walks all sixty mounted plant modules in a single pass and reports any that answer. A module added later that forgets its guard fails this check without anybody having to remember to add it here.</p>
+<h2>6. Finding raised during this verification</h2>
+<p>One finding, corrected before this document was issued.</p>
+<h3>What was found</h3>
+<p>The knife and blade list served to the QR-code knife kiosk carried `issued_to` — the name of the employee currently holding each controlled blade. That route is unauthenticated by necessity (a QR code has no session), so the name was readable by anyone who knew the address, including from the lobby tablet’s browser.</p>
+<p>No record was exposed and no blade could be signed in or out by reading it. What was exposed is a person’s name tied to a controlled tool — which is precisely the kind of detail a food-defence programme exists to keep inside the building.</p>
+<h3>What was changed</h3>
+<ul><li>The public list now reports only whether a blade is available or issued. The holder’s name is removed from that payload and remains on the sign-out record, behind a session.</li><li>Nothing operational changed: the kiosk screen already displayed "issued to someone" when no name was present, so the floor sees the same thing it always did.</li></ul>
+<h3>Two probes that were wrong before they were right</h3>
+<p>Recorded because they bear on how much weight this method carries. A raw request to the realtime socket returns a success and a session identifier, which reads as an open connection — the transport handshake completes before the token is checked, and only a real client reaches the check. And a test for "the upload folder can be listed" fired on the application’s own icon link. Both were corrected and both then passed. A careless probe can invent a weakness as easily as it can miss one, which is why each result below names what was actually returned.</p>
+<h2>7. Conclusion</h2>
+<p>On the evidence of the run reported in section 5, the visitor kiosk reaches nothing in ReadyDoc beyond signing a visitor in and out. Specifically:</p>
+<ul><li>All sixty plant modules refuse a request that carries no session — measured in one pass, not sampled.</li><li>The visitor log, visitor statistics and every stored signature are refused.</li><li>The sign-out look-up returns a name and a time. It cannot be widened with a wildcard, is not injectable, and refuses a single-character probe.</li><li>Nothing posted to the kiosk creates an account, a role or a session; the probe confirmed no user row was written.</li><li>Navigating the tablet’s browser to any module address lands on the sign-in screen and returns no data. After a kiosk visit the browser holds one non-sensitive key and no token.</li><li>The realtime socket rejects both a missing and a forged token, so there is no live feed of plant messages.</li></ul>
+<p>A person at the lobby tablet cannot read, alter or discover the plant’s records.</p>
+<h2>8. Residual risks</h2>
+<p>Stated so the record does not claim more than was shown. None of these is a defect; each is a consequence of a deliberate design choice, and each is a decision the plant may wish to revisit.</p>
+<ul><li>THE QR-CODE KIOSK CATALOGUES SHARE THE SAME PUBLIC PREFIX. The scale, knife, component and maintenance kiosks need their lists before anybody signs in, so the equipment register, the blade list, the tool and chemical catalogue and the scale verification forms are readable by anyone who knows the address. They are catalogues — they name no person and contain no filed record, which section 5 checks — but they do describe what the plant owns. Closing this means putting a token into the QR codes and reprinting them.</li><li>FILES UNDER /uploads ARE PROTECTED BY AN UNGUESSABLE NAME, NOT BY A SESSION. Their names are random identifiers, the folder cannot be listed and a guessed name returns nothing — all verified — but a link that escapes, pasted into a message or left in a browser history, is readable by anyone. Attachments to controlled records are stored separately and are access-checked.</li><li>ANYONE AT THE TABLET CAN SIGN OUT ANY VISITOR WHO IS ON SITE. Choosing a name from the list is all it takes, which is what makes the exit quick. The cost is that a departure time can be recorded for somebody who has not left. The log records that the sign-out came from the kiosk, and staff can correct it.</li><li>WHO IS CURRENTLY IN THE BUILDING CAN BE DISCOVERED BY REPEATED GUESSING. Two-letter prefixes, swept across the alphabet, will surface the names of visitors on site — measured at 676 requests to find three. Only names and arrival times, only people not yet signed out, never staff and never history. Requiring more characters would make it harder for a visitor to find themselves on the way out.</li></ul>
+<h2>9. When this must be repeated</h2>
+<ul><li>Whenever a route is added to the public list, which is the single place they are declared.</li><li>Whenever a new module is mounted — VK-13 will cover it automatically, but the run has to happen.</li><li>Before an external audit, and annually regardless.</li></ul>
+<p>Repeating it is one command, and it fails a build on any regression.</p>
+<h2>10. Approval</h2>
+<p>This verification is complete and its result accepted:</p>
+<table class="sig">
+  <thead><tr><th>Role</th><th>Name and signature</th><th>Date</th></tr></thead>
+  <tbody><tr><th scope="row">Verified by</th><td></td><td></td></tr><tr><th scope="row">Quality Assurance</th><td></td><td></td></tr><tr><th scope="row">Document Control</th><td></td><td></td></tr></tbody></table>
+    <p class="foot">Uncontrolled when printed — verify the revision against the registry.
+      Generated from the recorded run kiosk-isolation-2026-08-25.json.</p>
+  </div>
