@@ -914,3 +914,48 @@ Every obligation is still ahead of you."* A register that reads like progress wh
 is worse than no register.
 
 Current state: **1 queued · 1 built · 5 drafted · 19 open · 0 landed.**
+
+---
+
+## D-033 · 2026-08-27 · decided — The Dietary Supplement code is the one that applies; the Part 5 citations survive it
+
+The scoping caveat raised in D-031 was right, and it resolved well. The **SQF Food Safety Code: Dietary
+Supplement Manufacturing, Edition 9** was supplied — that is the code this facility is certified
+against, and the *Food Manufacturing* code Part 5 was first read against is a different book whose own
+cover refers supplements elsewhere.
+
+**Both are now in the reference registry**, `REF-SQF-DSC-9` alongside `REF-SQF-FSC-9`, because the
+audit reports cite NSF/ANSI 455-2, the plant's documents cite SQF, and a reader comparing a clause
+needs to see which book it came from. The Food Manufacturing entry's description was corrected — it
+claimed to cover *"Food Manufacturing including Dietary Supplements"*, which is what made reading the
+wrong one easy.
+
+**Every clause cited in Part 5 was re-verified.** Of 26 clauses: **24 word-for-word or differing only
+in punctuation**, and the System Elements numbering is identical between the codes (2.1.1 … 2.9.2) —
+**so all 22 original findings hold at the same clause numbers.**
+
+**That identical numbering is the trap worth recording.** Two books, one numbering scheme, and a
+citation from the wrong one is indistinguishable from a citation from the right one until somebody
+looks it up. It is the same defect the codebase keeps finding — one identifier meaning two things —
+and the reason both codes are kept rather than the wrong one being deleted.
+
+**Two clauses differ substantively, and both add obligations rather than removing them:**
+
+- **SQF-23 · 2.2.3.3** — the supplements code adds a sentence the other does not have: *"Software
+  programs and electronic data and records shall be backed-up on hard drives or cloud remote from the
+  site's system."* **A new obligation that lands on ReadyDoc**, folded into the Part 11 validation
+  package (OBL-04) rather than made a separate project. The control plausibly exists; nothing states it.
+- **SQF-24 · 2.2.3.3** — the supplements code **drops the "or established by the site if no shelf-life
+  exists" fallback**. Retention is anchored to shelf life with no alternative basis, and NSF finding
+  4.6.21 records that the shelf life is not supported by data. The retention period rests on a number
+  under a nonconformance, and the code offers nothing else to rest it on (OBL-14).
+
+**One refinement worth having:** the supplements code's 2.4.3.17 reads *"food safety **and/or dietary
+supplement** regulations"*, which brings 21 CFR 111 explicitly inside the both-Codex-and-regulatory
+rule of SQF-13. The conclusion is unchanged and now rests on wording written for this industry.
+
+**And one difference that changes nothing, recorded so nobody re-derives it:** 2.5.1.1 opens *"shall
+validate"* in one code and *"shall ensure"* in the other. SQF-06 does not depend on it — the
+requirement it rests on is 2.4.3.11, identical in both.
+
+Red-line now 92 findings, 37 must / 48 should / 7 consider. OBL-25's SQF half is answered.

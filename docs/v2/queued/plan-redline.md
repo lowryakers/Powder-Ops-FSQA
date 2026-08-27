@@ -1,14 +1,14 @@
 # Red-line review — Protocol 003 (Food Safety Plan V4) and Protocol 001 (Food Defense Plan V2)
 
-**Draft for review · 25–27 August 2026 · 90 findings · nothing changed in either document**
+**Draft for review · 25–27 August 2026 · 92 findings · nothing changed in either document**
 
 | | Must fix | Should fix | Consider | Total |
 |---|---|---|---|---|
 | Protocol 003 — Food Safety Plan V4 | 12 | 20 | 2 | **34** |
 | Protocol 001 — Food Defense Plan V2 | 9 | 17 | 4 | **30** |
 | Both documents | 2 | 1 | 1 | **4** |
-| SQF Edition 9 pass (Part 5) | 13 | 9 | 0 | **22** |
-| | **36** | **47** | **7** | **90** |
+| SQF Edition 9 pass (Part 5) | 14 | 10 | 0 | **24** |
+| | **37** | **48** | **7** | **92** |
 
 Every finding is numbered so it can be accepted, rejected or deferred one at a time. Nothing here has
 been applied. The intended path is: review this → decide each item → issue the DCR → Document Control
@@ -37,12 +37,19 @@ basis of several findings below:
 **Not on file and therefore not cited by clause: NSF/ANSI 455-2 itself, and the SQF Food Safety Code
 Edition 9.** Where a finding rests on SQF, it is argued from substance and marked as unverified.
 
-> **SQF pass completed 27 Aug 2026.** The **SQF Food Safety Code: Food Manufacturing, Edition 9**
-> (108 pages, FMI 2020) was supplied and read. **Part 5 holds 22 new findings cited by clause**, and
-> they are additive — nothing in Parts 1–4 was withdrawn or reworded. Two existing findings were
-> promoted on SQF's authority and one was corrected. Note the Code's own scope line: it is the *Food
-> Manufacturing* code and refers dietary supplements to a related code, so where a clause reads oddly
-> for a supplement plant that is worth raising with the certification body rather than assuming.
+> **SQF pass completed 27 Aug 2026, and re-based on the correct code the same day.** Part 5 holds
+> **24 findings cited by clause**, additive — nothing in Parts 1–4 was withdrawn or reworded.
+>
+> **The scoping caveat was right, and it resolved well.** The first pass read the *Food Manufacturing*
+> code, whose cover refers dietary supplements elsewhere. The **SQF Food Safety Code: Dietary
+> Supplement Manufacturing, Edition 9** was then supplied — that is the code this facility is certified
+> against, and **every clause cited in Part 5 was re-checked against it**.
+>
+> **The System Elements numbering is identical between the two codes (2.1.1 … 2.9.2), so all 22
+> original findings hold at the same clause numbers.** Of 26 cited clauses, 24 are word-for-word or
+> differ only in punctuation. **Two differ substantively and both are in the supplements code's favour**
+> — they add obligations rather than removing them (SQF-23, and the note on SQF-12). Both are recorded
+> below.
 >
 > **NSF/ANSI 455-2 itself is still not on file** and findings resting on it remain argued from
 > substance.
@@ -512,7 +519,10 @@ this section rather than a research task.
 
 **Added 27 August 2026 · 22 new findings, cited by clause · nothing in Parts 1–4 withdrawn**
 
-Source: **SQF Food Safety Code: Food Manufacturing, Edition 9** (FMI, 2020, 108 pp.), supplied 27 Aug.
+**Source: SQF Food Safety Code: Dietary Supplement Manufacturing, Edition 9** (FMI, 2020, 102 pp.) —
+the code this facility is certified against. Clauses were first read in the *Food Manufacturing* code
+and every one has been re-verified against the supplements code; the System Elements numbering is
+identical, so the citations below are correct for both.
 
 Everything below is genuinely new — a requirement the Code states that neither plan meets, and that
 was not already raised from the NSF documents. Where SQF merely corroborates an existing finding it is
@@ -769,3 +779,58 @@ Not counted again, listed so the clause is available when the DCR is written.
 | FDP-26 · internal audit cannot verify the food defense plan | 2.5.4, and 2.7.1.4's separate review-and-test requirement |
 | FDP-30 · risk matrix has no scoring key | 2.4.3.8 — methodology documented and used consistently |
 | X-04 · Scope and Normative References | 2.4.3.3 — and SQF-01 makes it Mandatory rather than good practice |
+
+## 5D. What the Dietary Supplement code changes
+
+Added 27 Aug 2026 after re-basing Part 5 onto the correct code. **Of the 26 clauses cited above, 24
+are word-for-word identical or differ only in punctuation.** Two differ substantively, and both add
+obligations rather than removing them.
+
+### SQF-23 · Software and electronic records are not backed up off-site — or it is not documented · **MUST** · clause 2.2.3.3 (supplements only)
+The Food Manufacturing code ends 2.2.3.3 at retention periods. **The supplements code adds a sentence
+the other does not have:**
+
+> *"Software programs and electronic data and records shall be backed-up on hard drives or cloud remote
+> from the site's system."*
+
+**This is a new obligation and it lands squarely on ReadyDoc.** The platform runs on a hosted volume
+and `scripts/backup-db.js` exists, so the control plausibly *is* in place — but nothing states it, and
+NSF finding **4.4.39** has already recorded that formal documentation of the system was not available.
+
+**It belongs in the Part 11 validation package** (`audit-nc-triage.md` item 1) rather than as a separate
+project: intended use, gap assessment, IQ/OQ/PQ, test scripts — and now, explicitly, the backup
+arrangement and evidence that it is remote from the site's system. MRPEasy is in scope for the same
+clause and is the vendor's answer, not ours.
+
+### SQF-24 · The retention rule has no fallback in the supplements code · **SHOULD** · clause 2.2.3.3
+**Refines SQF-12.** The two codes state retention differently:
+
+| | Retention |
+|---|---|
+| Food Manufacturing | *"at minimum the product shelf-life **or established by the site if no shelf-life exists**"* |
+| **Dietary Supplement** | *"at minimum the product shelf life."* — **no fallback** |
+
+So under the code that applies, **retention is anchored to shelf life with no alternative basis.**
+That sharpens the interaction already noted in SQF-12: NSF finding **4.6.21** records that *"product
+bears an expiration date however, evidence that shelf life is supported by data was not available"* —
+so the record retention period currently rests on a number that is itself under a nonconformance, and
+the code offers nothing else to rest it on.
+
+### Two refinements, not new findings
+
+**SQF-13 is strengthened.** The supplements code's 2.4.3.17 reads *"Where food safety **and/or dietary
+supplement** regulations … prescribe a food safety control methodology other than … Codex"*. **That
+brings 21 CFR 111 explicitly inside the both-Codex-and-regulatory rule**, which is the regulation
+NSF/ANSI 455-2 is built on. The conclusion is unchanged and now rests on wording written for this
+industry rather than read across from another.
+
+**SQF-16 gains a sentence.** Item (iv) of the food defense minimum list adds: *"Sites requiring
+licensing under regulations shall meet regulatory requirements for security."* Worth checking whether
+any licensing applies to this facility; if none does, one sentence in the plan says so.
+
+### One difference that does not change anything, recorded so nobody re-derives it
+
+**2.5.1.1** opens *"The methods applied shall **validate** that…"* in Food Manufacturing and *"shall
+**ensure** that…"* in the supplements code. **SQF-06 does not depend on it** — the validation
+requirement it rests on is **2.4.3.11**, *"The food safety team shall validate all of the critical
+limits"*, which is identical in both codes. The annual re-validation in 2.5.1.1(ii) is also identical.

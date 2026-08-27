@@ -122,10 +122,10 @@
   </p>
 
   <div class="tally">
-    <div class="t must"><div class="v">36</div><div class="k">must fix</div></div>
-    <div class="t should"><div class="v">47</div><div class="k">should fix</div></div>
+    <div class="t must"><div class="v">37</div><div class="k">must fix</div></div>
+    <div class="t should"><div class="v">48</div><div class="k">should fix</div></div>
     <div class="t consider"><div class="v">7</div><div class="k">consider</div></div>
-    <div class="t"><div class="v">90</div><div class="k">total findings</div></div>
+    <div class="t"><div class="v">92</div><div class="k">total findings</div></div>
   </div>
 
   <div class="box">
@@ -143,11 +143,16 @@
       <b>21 CFR Part 1.5 Subpart L</b>, <b>21 CFR Part 1.9 Subpart O</b>.</blockquote>
     <p><b>Not on file: NSF/ANSI 455-2 itself, and the SQF Food Safety Code Edition 9.</b> Anything
     resting on those is argued from substance rather than cited by clause, and marked as unverified.</p>
-    <p><b>SQF pass completed 27 Aug 2026.</b> The <b>SQF Food Safety Code: Food Manufacturing,
-    Edition 9</b> (108 pp., FMI 2020) was supplied and read. <b>Part 5 holds 22 new findings cited by
-    clause</b>, and they are additive — nothing above was withdrawn or reworded. Two existing findings
-    were promoted on SQF's authority and one was corrected. <b>NSF/ANSI 455-2 itself is still not on
-    file.</b></p>
+    <p><b>SQF pass completed 27 Aug 2026, and re-based on the correct code the same day.</b> Part 5
+    holds <b>24 findings cited by clause</b>, additive — nothing above was withdrawn or reworded.</p>
+    <p><b>The scoping caveat was right, and it resolved well.</b> The first pass read the <i>Food
+    Manufacturing</i> code, whose cover refers dietary supplements elsewhere. The <b>SQF Food Safety
+    Code: Dietary Supplement Manufacturing, Edition 9</b> was then supplied — the code this facility is
+    certified against — and every clause in Part 5 was re-checked against it. <b>The System Elements
+    numbering is identical (2.1.1 … 2.9.2), so all 22 original findings hold at the same clause
+    numbers.</b> Of 26 cited clauses, 24 are word-for-word or differ only in punctuation; <b>two differ
+    substantively and both add obligations rather than removing them</b>. <b>NSF/ANSI 455-2 itself is
+    still not on file.</b></p>
     <p><b>Audit outcome, 24–26 Aug 2026.</b> Two NSF audits, one visit: <b>zero critical, zero major,
     twelve minor</b>. Two findings below were promoted on the strength of them — <b>FSP-27</b>
     (electronic records: now nonconformance 4.4.39, which names ReadyDoc) and <b>FSP-28</b>
@@ -574,6 +579,36 @@ documents.</p>
   </div>
 </div>
 
+
+<h3>What the Dietary Supplement code changes · 2 findings</h3>
+<p class="lede">Of the 26 clauses cited above, <b>24 are word-for-word identical or differ only in
+punctuation</b>. Two differ substantively, and both add obligations.</p>
+
+<div class="f must">
+  <div class="fh"><span class="id">SQF-23</span><span class="ft">Software and electronic records: off-site backup is not documented</span><span class="chip c-must">must</span><span class="chip c-verify">2.2.3.3 · supplements only</span></div>
+  <p>The Food Manufacturing code ends 2.2.3.3 at retention periods. <b>The supplements code adds a sentence the other does not have:</b></p>
+  <div class="quote">"Software programs and electronic data and records shall be <b>backed-up on hard drives or cloud remote from the site's system</b>."</div>
+  <p><b>A new obligation, and it lands squarely on ReadyDoc.</b> The platform runs on a hosted volume and <code>scripts/backup-db.js</code> exists, so the control plausibly <i>is</i> in place — but nothing states it, and NSF finding <b>4.4.39</b> has already recorded that formal documentation of the system was not available.</p>
+  <div class="rec">It belongs <b>in the Part 11 validation package</b>, not as a separate project: intended use, gap assessment, IQ/OQ/PQ, test scripts — and now, explicitly, the backup arrangement and evidence that it is remote from the site's system. MRPEasy is in scope for the same clause and is the vendor's answer, not ours.</div>
+</div>
+
+<div class="f should">
+  <div class="fh"><span class="id">SQF-24</span><span class="ft">The retention rule has no fallback in the supplements code</span><span class="chip c-should">should</span><span class="chip c-verify">2.2.3.3 · refines SQF-12</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Code</th><th>Retention</th></tr></thead>
+    <tbody>
+      <tr><td>Food Manufacturing</td><td>"at minimum the product shelf-life <b>or established by the site if no shelf-life exists</b>"</td></tr>
+      <tr><td><b>Dietary Supplement</b></td><td>"at minimum the product shelf life." — <b>no fallback</b></td></tr>
+    </tbody>
+  </table></div>
+  <div class="rec">Under the code that applies, <b>retention is anchored to shelf life with no alternative basis</b> — and NSF <b>4.6.21</b> records that the shelf life is not supported by data. The retention period rests on a number that is itself under a nonconformance, and the code offers nothing else to rest it on.</div>
+</div>
+
+<div class="box">
+  <p><b>Two refinements, not new findings.</b> <b>SQF-13 is strengthened</b> — the supplements code's 2.4.3.17 reads <i>"Where food safety <b>and/or dietary supplement</b> regulations … prescribe a methodology other than Codex"</i>, which brings <b>21 CFR 111 explicitly inside</b> the both-Codex-and-regulatory rule. <b>SQF-16 gains a sentence</b> — food defense item (iv) adds <i>"Sites requiring licensing under regulations shall meet regulatory requirements for security."</i></p>
+  <p><b>And one difference that changes nothing, recorded so nobody re-derives it.</b> 2.5.1.1 opens "shall <b>validate</b> that…" in Food Manufacturing and "shall <b>ensure</b> that…" in the supplements code. <b>SQF-06 does not depend on it</b> — the requirement it rests on is 2.4.3.11, <i>"shall validate all of the critical limits"</i>, identical in both.</p>
+</div>
+
 <h3>Where SQF corroborates findings already raised</h3>
 <p class="lede">Not counted again — listed so the clause is available when the DCR is written.</p>
 <div class="tw"><table>
@@ -596,7 +631,7 @@ documents.</p>
 </div>
 
 <footer>
-  <span>90 findings · 36 must · 47 should · 7 consider</span>
+  <span>92 findings · 37 must · 48 should · 7 consider</span>
   <span>Nothing changed in either document</span>
   <span>docs/v2/queued/plan-redline.md</span>
   <span>25 Aug 2026</span>

@@ -51,8 +51,8 @@
     {
       "id": "OBL-04", "title": "21 CFR Part 11 validation package for ReadyDoc",
       "bucket": "A", "status": "open", "owner": "platform + QA",
-      "sources": ["FSP-27", "NC-455-4.4.39"],
-      "note": "The only nonconformance that names ReadyDoc. Intended use and scope, a Part 11 gap assessment, IQ/OQ/PQ for the system, test scripts with recorded results approved by Quality, and software change control. Interlocks with OBL-05."
+      "sources": ["FSP-27", "NC-455-4.4.39", "SQF-23"],
+      "note": "The only nonconformance that names ReadyDoc. Intended use and scope, a Part 11 gap assessment, IQ/OQ/PQ for the system, test scripts with recorded results approved by Quality, and software change control. SQF-23 adds one the supplements code requires and the Food Manufacturing code does not: software and electronic records backed up remote from the site's system, documented. Interlocks with OBL-05."
     },
     {
       "id": "OBL-05", "title": "Change control covering processes, software, utility and physical plant",
@@ -111,8 +111,8 @@
     {
       "id": "OBL-14", "title": "Stability study, and link each product's expiry to it",
       "bucket": "C", "status": "open", "owner": "QA + the lab",
-      "sources": ["NC-455-4.6.21", "SQF-12"],
-      "note": "Laboratory work over real time. Interlocks with SQF-12: retention is at minimum the product shelf life, so the retention rule currently rests on a number under a nonconformance."
+      "sources": ["NC-455-4.6.21", "SQF-12", "SQF-24"],
+      "note": "Laboratory work over real time. SQF-24 sharpens it: the supplements code drops the Food Manufacturing code's 'or established by the site' fallback, so retention is anchored to shelf life with NO alternative basis — and that shelf life is itself under nonconformance 4.6.21."
     },
     {
       "id": "OBL-15", "title": "Reissue Protocol 003 — Food Safety Plan V5",
@@ -189,10 +189,10 @@
       "note": "Calibration has a record and no form number. Mock recall has a record and a form and no generator — its cadence is reported, not raised."
     },
     {
-      "id": "OBL-25", "title": "Confirm which SQF code applies, and which Keychain forms produce",
+      "id": "OBL-25", "title": "Confirm which Keychain forms produce records today",
       "bucket": "C", "status": "open", "owner": "Lowry + Carol",
       "sources": ["WALK-01-exit"],
-      "note": "Two facts nothing in the repository can settle. (1) The Food Manufacturing code's own cover refers dietary supplements to a related code — confirm with the certification body before clause numbers go into print. (2) None of the seven keychain-marked forms is producing; the absorb-or-API-connect exit is OBL-06."
+      "note": "ANSWERED IN PART, 27 Aug 2026: the SQF code question is settled — the Dietary Supplement Manufacturing code Edition 9 is the one that applies, it is now in the reference registry as REF-SQF-DSC-9, and every Part 5 clause was re-verified against it. What remains: none of the seven keychain-marked forms is producing records, and the absorb-or-API-connect exit is OBL-06."
     },
     {
       "id": "OBL-26", "title": "Mechanical sweep of the whole document registry",

@@ -55,6 +55,31 @@ const BOOKLETS = [
       + 'The question-by-question guide NSF auditors work from — the closest thing to the exam paper. Full text below.',
   },
   {
+    // THE CODE THE PLANT IS ACTUALLY CERTIFIED AGAINST. The Food Manufacturing
+    // code below carries a cover note referring dietary supplements to a
+    // related code, and this is it — "Food Safety Code: Dietary Supplement
+    // Manufacturing, Edition 9". Both are kept: the audit reports cite NSF/ANSI
+    // 455-2, the plant's own documents cite SQF, and a reader comparing a
+    // clause needs to see which book it came from.
+    //
+    // The System Elements clause numbering is IDENTICAL between the two
+    // (2.1.1 … 2.9.2), which is what makes citing one and reading the other so
+    // easy to do by accident. Two clauses genuinely differ and both matter:
+    // 2.2.3.3 drops the "or established by the site" retention fallback and
+    // adds an off-site backup requirement for software and electronic records;
+    // 2.4.3.17 extends to "food safety and/or dietary supplement regulations",
+    // which is what brings 21 CFR 111 explicitly inside the both-Codex-and-
+    // regulatory rule.
+    doc_number: 'REF-SQF-DSC-9',
+    title: 'SQF Food Safety Code: Dietary Supplement Manufacturing — Edition 9',
+    revision: 'Edition 9 (v3.2)',
+    file: 'sqf-dietary-supplements-code-ed9.txt',
+    description_intro:
+      'External reference standard (SQFI — the plant\'s licensed copy; do not distribute). '
+      + 'The SQF code for dietary supplement manufacturing — the one this facility is certified against. '
+      + 'Full text below, extracted for search and reading; page markers preserved.',
+  },
+  {
     doc_number: 'REF-SQF-FSC-9',
     // The revision is the document's OWN words. It carries no publication date
     // anywhere in its front matter, and inventing one would put a date on a
@@ -64,7 +89,7 @@ const BOOKLETS = [
     file: 'sqf-food-safety-code-ed9.txt',
     description_intro:
       'External reference standard (SQFI — the plant\'s licensed copy; do not distribute). '
-      + 'The SQF code the plant is audited against, covering Food Manufacturing including Dietary Supplements. '
+      + 'The SQF Food Manufacturing code. Kept for comparison — the code this facility is certified against is REF-SQF-DSC-9. '
       + 'Full text below, extracted for search and reading; page markers preserved.',
   },
   {
