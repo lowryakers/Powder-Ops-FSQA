@@ -98,9 +98,14 @@
         "W2-12",
         "W2-13",
         "W2-14",
-        "W2-15"
+        "W2-15",
+        "W2-33",
+        "W2-35",
+        "W2-36",
+        "W2-37",
+        "W2-38"
       ],
-      "note": "controlled.js is already a real gate for form definitions and acceptance criteria — widen it. Adds QC approval on every change, which the current DCR flow does not enforce. Software change control is required by this AND by OBL-04: build once. Wave 2 sized both halves. W2-12: SOP 434's title names chemicals, equipment AND services; ReadyDoc records only chemicals (approved_chemicals is a real approval record with approved_by/at and review_due) and has no equipment or services approval record at all — the software has the same scope gap the auditor found in the document. W2-13: controlled.js IS a working change-control gate with an approval and an audit trail, over exactly three things (QMS form definitions, scale tolerances, the ATP limit); it sees no process, utility, physical-plant or software change. W2-14: 111.130(e) wants QC approval and the DCR flow enforces Document Control only. W2-15: SOP 700 may also govern chemical approval. Interlock with OBL-04 — software change control is named in 4.4.39 too.",
+      "note": "controlled.js is already a real gate for form definitions and acceptance criteria — widen it. Adds QC approval on every change, which the current DCR flow does not enforce. Software change control is required by this AND by OBL-04: build once. Wave 2 sized both halves. W2-12: SOP 434's title names chemicals, equipment AND services; ReadyDoc records only chemicals (approved_chemicals is a real approval record with approved_by/at and review_due) and has no equipment or services approval record at all — the software has the same scope gap the auditor found in the document. W2-13: controlled.js IS a working change-control gate with an approval and an audit trail, over exactly three things (QMS form definitions, scale tolerances, the ATP limit); it sees no process, utility, physical-plant or software change. W2-14: 111.130(e) wants QC approval and the DCR flow enforces Document Control only. W2-15: SOP 700 may also govern chemical approval. Interlock with OBL-04 — software change control is named in 4.4.39 too. The wording pass confirmed the auditor needs no argument: SOP 434's scope is chemicals, equipment and services, written as one approval path each, and processes/software/utilities/physical plant appear NOWHERE (W2-35) — so closing this is a rewrite of the scope, not an addendum. W2-33 adds a complication found only by reading SOP 421: IT ALSO REQUIRES A CHANGE-CONTROL SYSTEM for qualified equipment and never cites 434, so widening change control has to reconcile the two documents. W2-36: the SOP is titled '...APPROVAL FORM' and the form it requires has no number, so a record cannot say which it was filed against. W2-37 is the closest ReadyDoc comes to satisfying a Wave 2 SOP as written — approved_chemicals is three columns short of the tracking number, approval number and expiry the SOP requires. W2-14 RESOLVED by reading: the SOP does make the QA/QC Manager the final approver, so the document is fine and the DCR flow is the gap.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md"
       ]
@@ -131,9 +136,16 @@
         "WALK-09",
         "W2-16",
         "W2-17",
-        "W2-18"
+        "W2-18",
+        "W2-39",
+        "W2-40",
+        "W2-41",
+        "W2-42",
+        "W2-43",
+        "W2-44",
+        "W2-45"
       ],
-      "note": "Three independent routes to one conclusion: the walk found no record path, the auditor found the testing was not done, SQF requires results tracked and trended. Schedule also needs location rotation and a documented method for elevated results (2.4.8.2). Wave 2 found the third gap and it is the decisive one. W2-16: completing a quality schedule writes work_orders and quality_schedules and NOTHING else, so a swab never taken and a swab whose result went nowhere are indistinguishable — the auditor's finding in software terms. W2-17: FORM 604-01's alert and action limits are transcribed faithfully in emp-site-list.js and graded against nothing, which is the ATP 35 RLU state exactly, and OBL-01 is now the working template for the fix. W2-18: the form's WATER section has no EMP schedule at all — monthly potable water (TAB, coliforms, free chlorine, each with limits) is served instead by a pre-existing 'Tap Water Testing' schedule that names no test, cites no limit and never references the form; the room-air row is the same story. Two mechanisms for one requirement is how one goes quiet.",
+      "note": "Three independent routes to one conclusion: the walk found no record path, the auditor found the testing was not done, SQF requires results tracked and trended. Schedule also needs location rotation and a documented method for elevated results (2.4.8.2). Wave 2 found the third gap and it is the decisive one. W2-16: completing a quality schedule writes work_orders and quality_schedules and NOTHING else, so a swab never taken and a swab whose result went nowhere are indistinguishable — the auditor's finding in software terms. W2-17: FORM 604-01's alert and action limits are transcribed faithfully in emp-site-list.js and graded against nothing, which is the ATP 35 RLU state exactly, and OBL-01 is now the working template for the fix. W2-18: the form's WATER section has no EMP schedule at all — monthly potable water (TAB, coliforms, free chlorine, each with limits) is served instead by a pre-existing 'Tap Water Testing' schedule that names no test, cites no limit and never references the form; the room-air row is the same story. Two mechanisms for one requirement is how one goes quiet. The wording pass found the most serious single finding in Wave 2 and it is not about software: FOUR BROKEN CROSS-REFERENCES INSIDE THE OOS ESCALATION (W2-39), including 5.3.5 citing itself — so the Zone 1 product-contact positive procedure instructs the reader to follow the Zone 1 procedure, and the water procedure is sent to Zone 1 rather than to the general escalation. Ten-minute fix. W2-40 is a hard dependency on any build here: the SOP states MONTHLY sampling for zones 2-4 while deferring frequency to FORM 604-01, which says semi-annual/annual/quarterly — and the six seeded EMP schedules follow the form, so if the SOP is right every zone schedule is at the wrong cadence. SETTLE THAT BEFORE BUILDING. W2-41: the OOS form is never named and the EMPRCA report has no controlled number. W2-42: 'the Quality Manager and Quality Manager' leaves the corrective-action decision authority unstated. W2-43/44/45: three roles used but never established, an annual verification written as 'should' and then relied on as fact, and two recurring obligations (semi-annual MRB trend review, annual baseline mapping) with no generator. NOTE the plant confirmed 27 Aug that the tap water sampling IS being done and logged in Quality Schedules — so this obligation buys the evidence, the grading and the trend the SOP itself demands (5.6, 5.7), not the work.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md"
       ]
@@ -151,9 +163,16 @@
         "W2-05",
         "W2-06",
         "W2-07",
-        "W2-08"
+        "W2-08",
+        "W2-24",
+        "W2-25",
+        "W2-26",
+        "W2-27",
+        "W2-28",
+        "W2-29",
+        "W2-30"
       ],
-      "note": "SOP 404 exists; the records do not. FORM 404-1/404-2 marked keychain and producing nothing. Expiring-certificate pattern exists in `certifications`; approval pattern in `qms_records`. FSP-25 (FSVP) rides here: if any ingredient is imported it is the same programme. Wave 2 measured the gap: there is no supplier record in ReadyDoc of ANY kind (W2-05) — approved_chemicals holds chemicals, certifications holds PEOPLE (person_name NOT NULL), supply_orders is office purchasing. The auditor's three named suppliers had nowhere to be filed. W2-06 adds the half the title now covers: no laboratory record at all, coa_requests.lab_name is free text, '17025' appears nowhere, and coa-grade.js already reasons from 'it is the accredited party' — a principle resting on a fact nothing holds. W2-07 is the decision to take before building (new table vs widening certifications) and W2-08 is Daniela's (do FORM 404-1/404-2 become ReadyDoc screens or stay with Keychain).",
+      "note": "SOP 404 exists; the records do not. FORM 404-1/404-2 marked keychain and producing nothing. Expiring-certificate pattern exists in `certifications`; approval pattern in `qms_records`. FSP-25 (FSVP) rides here: if any ingredient is imported it is the same programme. Wave 2 measured the gap: there is no supplier record in ReadyDoc of ANY kind (W2-05) — approved_chemicals holds chemicals, certifications holds PEOPLE (person_name NOT NULL), supply_orders is office purchasing. The auditor's three named suppliers had nowhere to be filed. W2-06 adds the half the title now covers: no laboratory record at all, coa_requests.lab_name is free text, '17025' appears nowhere, and coa-grade.js already reasons from 'it is the accredited party' — a principle resting on a fact nothing holds. W2-07 is the decision to take before building (new table vs widening certifications) and W2-08 is Daniela's (do FORM 404-1/404-2 become ReadyDoc screens or stay with Keychain). The wording pass found the document half is thinner than the software half. V4 puts laboratories in the title and adds a procedure section, and NEVER UPDATES THE SCOPE (W2-24), which still reads 'suppliers of raw materials and packaging'. The entire laboratory programme is TWO SENTENCES naming no standard, no scope of accreditation, no expiry, no owner and no record (W2-25) — 'ISO certification' is not a requirement, and ISO 9001 is not evidence a lab can run the test; ISO/IEC 17025 per scope is. The SOP also cites FORM 404-3 (Vendor Audit Summary), which exists in neither the Master Index nor the DCR log (W2-26), while requiring the vendor audits it records. Plus: V4's footer still carries the old title (W2-27), 'QVS' and 'Qualified Supplier Database' are named and never defined (W2-28), and an ANNUAL vendor review is required with no schedule behind it (W2-29) — that is the 'ongoing performance review' leg of the module.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md"
       ]
@@ -215,9 +234,12 @@
         "NC-455-4.5.8",
         "W2-09",
         "W2-10",
-        "W2-11"
+        "W2-11",
+        "W2-31",
+        "W2-32",
+        "W2-34"
       ],
-      "note": "Performing the qualification is engineering work. Holding it is three more derived steps on equipment-readiness.js, each satisfied by an attached protocol — which makes 'which machines are unqualified' answerable on a screen. Wave 2 confirmed the starting point: 'IQ', 'OQ' and 'PQ' appear NOWHERE in the codebase (W2-09), and equipment-readiness.js derives ten steps per machine of which none is qualification — so 'which machines are unqualified' is not a question the app can be asked. W2-10: no 421-series form number exists for a qualification protocol. W2-11: this is the cheapest of the four Wave 2 SOPs to close — three derived steps on a pattern that already carries its own roll-up and badges.",
+      "note": "Performing the qualification is engineering work. Holding it is three more derived steps on equipment-readiness.js, each satisfied by an attached protocol — which makes 'which machines are unqualified' answerable on a screen. Wave 2 confirmed the starting point: 'IQ', 'OQ' and 'PQ' appear NOWHERE in the codebase (W2-09), and equipment-readiness.js derives ten steps per machine of which none is qualification — so 'which machines are unqualified' is not a question the app can be asked. W2-10: no 421-series form number exists for a qualification protocol. W2-11: this is the cheapest of the four Wave 2 SOPs to close — three derived steps on a pattern that already carries its own roll-up and badges. The wording pass produced the finding that decides how NC 4.5.8 is answered: SOP 421's own scope is 'all NEW AND SIGNIFICANTLY MODIFIED facilities and equipment' (W2-31), so read strictly it does not require what the auditor found missing on equipment already in service. Either the SOP gains a retrospective-qualification clause or the plant argues scope against a finding already on the record — and no IQ/OQ/PQ checklist should be derived across 183 machines until that is decided. W2-32 sharpens W2-10: the SOP lists EIGHT record types and numbers none of them. W2-34: it requires approval from an 'Operations Manager' the document never establishes, and a periodic-review schedule with no interval stated.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md"
       ]
@@ -353,13 +375,14 @@
       "status": "drafted",
       "owner": "platform",
       "sources": [
-        "W2-19"
+        "W2-19",
+        "W2-46"
       ],
       "artifacts": [
         "docs/v2/queued/document-reference-graph.md",
         "docs/v2/queued/wave-2-sop-review.md"
       ],
-      "note": "BLOCKED ON OBL-15 AND OBL-17. Neither plan cites another document by number, so the graph would find nothing. The plan revision must land first — building the mechanism over an empty graph produces something indistinguishable from broken. W2-19 names the best candidate after the two plans: SOP 604 governs a programme carried out under SOP 600 (Air Monitoring V1), SOP 601 (Microbial Surface Testing V1) and SOP 608 (Surface ATP Swab Testing V4). 608 went V1 to V4 over ten months while 604 stayed at V2 and nothing in the register says whether 604 was re-checked. One governing document, three governed, an obvious question on every revision — but it still needs SOP 604's text to confirm it cites the other three by number, which is exactly what neither plan turned out to do (D-027)."
+      "note": "BLOCKED ON OBL-15 AND OBL-17. Neither plan cites another document by number, so the graph would find nothing. The plan revision must land first — building the mechanism over an empty graph produces something indistinguishable from broken. W2-19 names the best candidate after the two plans: SOP 604 governs a programme carried out under SOP 600 (Air Monitoring V1), SOP 601 (Microbial Surface Testing V1) and SOP 608 (Surface ATP Swab Testing V4). 608 went V1 to V4 over ten months while 604 stayed at V2 and nothing in the register says whether 604 was re-checked. One governing document, three governed, an obvious question on every revision — but it still needs SOP 604's text to confirm it cites the other three by number, which is exactly what neither plan turned out to do (D-027). W2-46 answers the [verify in source] on W2-19 and changes the sequencing question. SOP 604 CITES SOP 600 and SOP 601 BY NUMBER, and SOP 404 cites SOP 607 — so unlike Protocol 003 and Protocol 001, which cite nothing at all (D-027), the registry's SOPs are a usable corpus for the reference graph. 604 does NOT cite SOP 608, the one of its three spokes that has moved four revisions while 604 stayed at V2, and relies on the Material Review Board throughout without citing SOP 412. The graph may not have to wait on the plan revision after all."
     },
     {
       "id": "OBL-19",
@@ -451,13 +474,17 @@
         "W2-01",
         "W2-02",
         "W2-03",
-        "W2-04"
+        "W2-04",
+        "W2-20",
+        "W2-21",
+        "W2-22",
+        "W2-23"
       ],
       "artifacts": [
         "docs/v2/queued/document-review-at-scale.md",
         "docs/v2/queued/wave-2-sop-review.md"
       ],
-      "note": "Extend doc-consistency.js with the rules generalised from the plan red-line — approved-but-unsigned, revision disagreement, unspecified retention, cites-nothing, section and page arithmetic, spelling. Output is a queue with dismissals, not a document. Wave 2 gave this obligation its first concrete rules and they are not spelling rules. W2-01: two controlled documents the auditor read (SOP 421, SOP 434) have NO row in the 159-row DCR log — no new-document row, no revision row. W2-02: SOP 404 is V4 with a widened title in practice and V3 under the old title in the log. W2-03: SOP 604's effective date is eight months after its last change request. W2-04 is the structural cause of all three — the DCR log imports into the QMS register while documents live in sop_documents, two lists nothing reconciles in either direction. Add both directions as sweep rules ('in the log, absent from the registry' and its inverse); they would have caught W2-01 and W2-02 without anybody reading anything."
+      "note": "Extend doc-consistency.js with the rules generalised from the plan red-line — approved-but-unsigned, revision disagreement, unspecified retention, cites-nothing, section and page arithmetic, spelling. Output is a queue with dismissals, not a document. Wave 2 gave this obligation its first concrete rules and they are not spelling rules. W2-01: two controlled documents the auditor read (SOP 421, SOP 434) have NO row in the 159-row DCR log — no new-document row, no revision row. W2-02: SOP 404 is V4 with a widened title in practice and V3 under the old title in the log. W2-03: SOP 604's effective date is eight months after its last change request. W2-04 is the structural cause of all three — the DCR log imports into the QMS register while documents live in sop_documents, two lists nothing reconciles in either direction. Add both directions as sweep rules ('in the log, absent from the registry' and its inverse); they would have caught W2-01 and W2-02 without anybody reading anything. The wording pass added the rules the sweep should carry, and every one is now evidenced on four real documents rather than argued: NONE of the four is signed (W2-20 — both approval blocks empty in all four), EVERY one disagrees with its own revision history about its current revision date (W2-21 — SOP 434 by ten months, SOP 404 V3 by thirteen), the SOP 404 file holds TWO complete revisions in one document (W2-22), and section numbering is broken in three of four (W2-23). 'Approved but unsigned' and 'header vs revision-history disagreement' are now the two highest-yield sweep rules."
     },
     {
       "id": "OBL-27",

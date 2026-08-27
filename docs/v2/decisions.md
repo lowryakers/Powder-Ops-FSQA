@@ -1079,3 +1079,60 @@ change control — neither should start before its document is in hand.
 **One correction made in passing:** the audit triage said eight quality schedules are seeded from
 FORM 604-01. **Six are**; the other three predate the transcription and cite neither the form nor its
 limits — which is itself finding W2-18, so the error and the defect were the same fact.
+
+## D-038 · 2026-08-27 · decided — the four SOPs arrived, and the wording review confirmed the D-002 test rather than replacing it
+
+**What happened.** All four Wave 2 SOPs were supplied as .docx the same day D-037 recorded that they were
+missing. The wording review that D-037 called blocked is now done: **W2-20 to W2-46, 27 further findings,
+46 in total.** `wave-2-sop-review.md` was updated in place rather than forked, so there is one document per
+project — the same rule as one owner per fact.
+
+**The finding that matters most is about method, not about any one SOP.** Every D-002 finding held. What
+the documents added was worse than the tables suggested, in one repeated way: **where ReadyDoc has no
+record, the SOP usually has no form number either.** SOP 421 lists eight kinds of record and numbers none.
+SOP 434 requires a form that has no number and shares its name with the SOP. SOP 604 requires two forms,
+one of which is never even named. SOP 404 cites a FORM 404-3 that has never been issued.
+
+So the software did not fall behind the documents — **both are thin in the same places**, which is a
+stronger argument for the spine than either half alone. A wording red-line run first, without the D-002
+test, would have read these as clerical omissions rather than as the same defect twice.
+
+**Three findings an auditor would reach in ten minutes, none of them about software.** **None of the four
+documents is signed** — both approval blocks empty, four for four. **Every one disagrees with its own
+revision history about its current revision date**, SOP 434 by ten months. And **the SOP 404 file contains
+two complete revisions**, V3 and V4 one after the other, with nothing saying which is in force. These are
+now the two highest-yield rules for the mechanical sweep (OBL-26), evidenced rather than argued.
+
+**Two findings change what gets built and in what order.**
+- **W2-31.** SOP 421's own scope is "all **new and significantly modified** facilities and equipment", so
+  read strictly it does not require what the auditor found missing on machines already in service. That is
+  not a defence — 21 CFR 111.30 does not care what the scope says — but it decides how the CAPA is written,
+  and no IQ/OQ/PQ checklist should be derived across 183 machines until somebody has settled it.
+- **W2-40.** SOP 604 states a **monthly** cadence for zones 2–4 while deferring frequency to FORM 604-01,
+  which says semi-annual, annual and quarterly. The six seeded EMP schedules follow the form. **If the SOP
+  is right, every zone schedule is at the wrong frequency**, and building a result record on top of them
+  would file correct records against a wrong cadence. It is a question, not a build, and it comes first.
+
+**The most serious single finding is a typo.** Four cross-references inside SOP 604's OOS escalation point
+one section too high, including 5.3.5 citing itself — so the Zone 1 product-contact positive procedure
+instructs the reader to follow the Zone 1 procedure, and the water procedure is sent to Zone 1 instead of
+to the general escalation. A pathogen positive is the most serious result that programme can produce and
+its procedure does not resolve. Ten minutes to fix, and nothing but reading the document would have found
+it.
+
+**Two earlier `[verify in source]` markers resolved cleanly, which is the marker working.** W2-14: SOP 434
+*does* make the QA/QC Manager the final approver, so the document is fine and ReadyDoc's DCR flow is the
+gap. W2-15: SOP 434 and SOP 700 do not conflict — 434 is the approval process and FORM 700-01 is the list
+it maintains — though 434 never cites it by number.
+
+**And the reference graph may not have to wait.** D-027 stopped OBL-18 because Protocol 003 and Protocol
+001 cite **no** other document by number. **These SOPs do**: SOP 604 cites SOP 600 and SOP 601, SOP 404
+cites SOP 607. The registry's SOPs are a usable corpus even while the plans are not, which reopens a
+sequencing question D-027 had closed.
+
+**On the water sampling.** The plant confirmed the tap water testing is being done and logged in Quality
+Schedules. W2-18 was updated rather than withdrawn: the work is real and **the record is not**. A completed
+schedule is a work order that can carry an attached lab report; it cannot say "Total Coliforms, potable
+water, March, absent, within the Present/100 mL action limit" in a form anything can read — and SOP 604
+§ 5.6 and § 5.7 require exactly that to be tracked, trended and reviewed annually. The obligation buys the
+evidence, not the work.
