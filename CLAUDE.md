@@ -26,9 +26,70 @@ invent a new pattern.
 **Order that matters:** (1) one signature service, (2) a record interface before a record table,
 (3) limits out of code and into documents. Everything else waits. **Do not rebuild** (D-001).
 
-**Not started yet.** The first V2 project is a *document* project — walking the Food Safety Plan and
-Food Defense Plan against "does every preventive control resolve to a program, a form and a record?"
-(D-002, D-006). No code, no migration, no branch discipline needed.
+**Track B rebases on `main` weekly** (D-016) — and immediately after any Track A change to `shared/`,
+`server/db.js` or the form registry. D-005 keeps the collisions small; small is not none, and a branch
+that only meets `main` at the end is the big-bang merge in disguise. Two hard rebases in a row means
+Track B is touching shared code, which is Track A's job — move the change to `main`, don't push through.
+
+**Walked — `docs/v2/preventive-control-walk.md`. Read it before any V2 work.** The first V2 project
+was a *document* project: Protocol 003 (Food Safety Plan V4) and Protocol 001 (Food Defense Plan V2)
+against "does every preventive control resolve to a program, a form and a record?" (D-002, D-006).
+**The headline: the plan names four preventive controls and none of them resolves to a record in
+ReadyDoc** — all four name the batch production record or a document attached to it, and FORM 111-01,
+413-1 and 413-1 (X-Ray) are all `where: keychain`. **PC #1's critical limit is 35 RLU;
+`sanitation_records.atp_reading` is captured, never graded, and empty in every seeded row, while
+`cleaning_events.atp_swab` records the same fact as a boolean.** `haccp_ccps` holds zero rows and
+neither X-ray machine is linked to a CCP. D-013 records how the walk is conducted, D-009 that a program
+may be a trigger rather than a cadence (the one architectural finding — every generator is a calendar,
+and three of the four controls fire per production run), D-015 the open question of whether
+verification is a fourth leg. The plan format question in D-014 is answered: it is a **21 CFR 117
+preventive-controls plan**, though the plant's own documents also say HACCP/CCP.
+
+**The four controls are TRANSCRIBED, never typed** (`server/preventive-controls.js`, D-022) — a critical
+limit editable in a text box is what `scale-forms.js` has always refused. Verbatim from Protocol 003 V4,
+insert-only on the CCP name, `ccpDrift()` reports a stored row that has wandered from the document.
+Wording is a faithful draft pending Document Control's check; corrections go in that file, never in the DB.
+**`server/atp-limits.js` grades the ATP reading against PC #1's 35 RLU — SHIPPED** (D-020, D-036; the
+pilot for move 03). Grading is **asymmetric on purpose**: an over-limit reading forces `fail`, an in-limit
+one never upgrades what the filer chose, because a clean has reasons to fail that no swab sees. The number
+is registered with `controlled.js`, so changing it in source parks the change and the app goes on grading
+against the approved 35. **The limit travels with the record** (`sanitation_records.atp_limit`), so a record
+graded under 35 goes on saying 35 after the number moves. **A missing reading is a gap, not a failure** —
+it leaves the record exactly as filed.
+- **Two consecutive failed swabs raise the re-clean work order; one does not.** An ATP swab has real false
+  positives, so a single high reading can be the swab rather than the line: the first failure asks for a
+  re-clean and a second swab, and a passing graded reading resets the chain. A task raised on every stray
+  reading is one people learn to dismiss. `atpEscalation()` owns that rule — **the plant decided it, the
+  standard does not dictate it** (D-036).
+- **The escalation is on the FILE path only, never the edit path.** Both grade, or the limit is sidestepped
+  by filing blank and editing; but raising a task from an edit would create a second work order every time
+  somebody fixed a typo.
+- **`closeRecleanTasksFor` had to widen, and this is easy to break again.** It matched the 72-hour task by
+  its exact TITLE, so a passing clean closed the idle-rule task and left the ATP one open. It now also
+  closes via `reclean_actions`; the legacy title path is kept and regression-tested.
+- `AtpLimitHint.jsx` gives the operator live EN/ES feedback on both screens that take a reading and
+  **enforces nothing** — the server decides.
+- **The number itself is still unvalidated** (SQF 2.4.3.11 / 2.5.1.1(ii), OBL-27). ReadyDoc grades against
+  35 because Protocol 003 V4 says so; it cannot say 35 is right for these surfaces and this instrument, and
+  that study is QA's, outside ReadyDoc. An app enforcing an unvalidated limit is itself an audit finding.
+
+**`docs/v2/queued/` is work designed but deliberately not landed** (D-018). New construction sits on the
+Track B branch; anything touching live shared code is written out exactly, with its verification results,
+to land on `main` in one pass. **A file moves to `docs/v2/landed/` when it ships** (D-036) — leaving a
+landed item in `queued/` would make that directory mean two things, which is the defect the whole project
+is about. **Landed:** the ATP wiring. **Still queued:** the preventive-control seeder + its
+`api/haccp.js` edit guard, and the DCR for Document Control.
+**`docs/v2/obligations.json` is the single list of what must be true before V2 ships**, and
+`npm run check:obligations` (part of `npm run check`) fails if a finding in any of those documents is
+unclaimed, claimed twice, or cited but non-existent — so nothing found can be quietly forgotten.
+**Split an obligation rather than marking it done when only part of it landed**: OBL-01 shipped the grading
+and left the limit's validation to OBL-27, because an obligation half-discharged and marked done is worse
+than one still open.
+
+**Where the preventive-control records actually are (D-021):** on **paper**, logged in MRPEasy — none of
+the seven `where: keychain` forms is producing anything yet. `where` in `form-registry.js` conflates
+*produced today* with *intended destination*; for those seven the answers differ, and the first is what an
+auditor asks for. Small Track A fix, not yet made.
 
 ## Flavor approvals via SMS (Danny)
 `flavor_approval` QMS type + FlavorPanel ("Text for approval" row action) → magic link `/approve/<token>`
