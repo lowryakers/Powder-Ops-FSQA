@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { gradeAtp, applyGrade, atpEscalation } from '../atp-limits.js';
 import { recordGroupFor } from '../qa-records.js';
 import { activeChemicalNames } from '../chemicals.js';
 import { areaLabel } from '../../shared/rooms.js';
@@ -503,20 +504,50 @@ router.post('/', (req, res) => {
     when = raw;
   }
 
+  // PC #1's critical limit decides the result when a reading is present. The
+  // grade can FAIL a record and never PASS one — a clean has reasons to fail
+  // that no swab sees. A blank reading grades to null and changes nothing.
+  const grade = gradeAtp(atp_reading);
+  const decided = applyGrade(result, grade);
+  // Was the previous GRADED reading for this area also a failure? A pass in
+  // between resets it, which is the right reading of "we swabbed again and it
+  // came back clean".
+  const priorGradedFail = !!(grade && !grade.pass && db.prepare(
+    `SELECT result FROM sanitation_records WHERE area = ? AND atp_limit IS NOT NULL
+     ORDER BY COALESCE(performed_at, entered_at) DESC, rowid DESC LIMIT 1`).get(area)?.result === 'fail');
+  const escalation = atpEscalation(grade, priorGradedFail);
+
   db.prepare(`
-    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id, record_group, performed_at, entered_at, entered_late, late_entry_reason)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?)
+    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, atp_limit, notes, chemical_id, record_group, performed_at, entered_at, entered_late, late_entry_reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?)
   `).run(id, area, type, equipment_id || null, performed_by, chemicals_used || null,
     concentration || null, contact_time_minutes ?? null, rinse_verified ? 1 : 0,
-    result, atp_reading ?? null, notes || null, chemical_id || null, recordGroupFor(area),
+    decided.result, atp_reading ?? null, grade?.limit ?? null, notes || null, chemical_id || null, recordGroupFor(area),
     when, late, late ? String(late_entry_reason).trim() : null);
 
   const created = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
-  const closed = result === 'pass' ? closeRecleanTasksFor(db, area, req.user?.name || performed_by, created) : 0;
+  // Reads `decided.result`, not `result`: an over-limit swab must not close the
+  // re-clean task the failure should have raised.
+  const closed = decided.result === 'pass' ? closeRecleanTasksFor(db, area, req.user?.name || performed_by, created) : 0;
+  let recleanWorkOrderId = null;
+  if (escalation?.stage === 'escalate') {
+    // Best-effort: the record is already written and honest. A failure to raise
+    // the task must not fail the filing — losing the record is worse than
+    // losing the task, and the 72-hour rule still catches the room.
+    try {
+      recleanWorkOrderId = raiseAtpRecleanTask(db, {
+        area, record: created, grade, who: req.user?.name || performed_by,
+      });
+    } catch (e) { console.error('[sanitation] ATP re-clean task not raised:', e.message); }
+  }
   logAudit(req.user || performed_by, 'create', 'sanitation_record', id,
-    { area, type, result, entered_late: !!late, performed_at: created.performed_at, reclean_tasks_closed: closed },
+    { area, type, result: decided.result, atp_overridden: decided.overridden,
+      atp_stage: escalation?.stage || null, reclean_work_order_id: recleanWorkOrderId,
+      entered_late: !!late, performed_at: created.performed_at, reclean_tasks_closed: closed },
     null, created);
-  res.status(201).json(created);
+  res.status(201).json(escalation
+    ? { ...created, atp_stage: escalation.stage, atp_message: escalation.message, reclean_work_order_id: recleanWorkOrderId }
+    : created);
 });
 
 // Logging a passed clean closes the task the 72-hour rule raised for that room.
@@ -525,11 +556,66 @@ router.post('/', (req, res) => {
 // her list anyway — so she either leaves it open or completes it separately and
 // the two records disagree about when the work happened. The clean IS the
 // completion, so it completes the task and says which record did it.
+// A failed ATP reading must RAISE the re-clean, not merely fail to close one.
+//
+// `generateRecleanTasks` fires on the 72-hour idle rule and knows nothing about
+// a failed swab, so before this a graded failure stored `fail` and created no
+// work at all: the record said the line failed and nothing existed to fix it.
+// Same class as the QA inspections that completed and filed no record — the
+// system knew, and nobody was told.
+//
+// ONE FAILURE IS RE-SWABBED; TWO IN A ROW RAISE THE TASK (see atpEscalation).
+// This runs only on the second, and reuses the 72-hour machinery rather than a
+// parallel one: same `reclean_actions` idempotency, same work-order shape, same
+// `closeRecleanTasksFor` closes it when a passing clean is filed.
+//
+// The flag_key is the RECORD ID of the second failure, so one failure raises
+// one task; correcting that record cannot raise a second, and the next pair of
+// failures gets its own key.
+function raiseAtpRecleanTask(db, { area, record, grade, who }) {
+  const already = db.prepare('SELECT 1 FROM reclean_actions WHERE room = ? AND flag_key = ? LIMIT 1');
+  const flagKey = `atp_fail:${record.id}`;
+  if (already.get(area, flagKey)) return null;
+  const eq = db.prepare('SELECT id FROM equipment WHERE room = ? OR location = ? LIMIT 1').get(area, area);
+  const woId = uuid();
+  const label = areaLabel(area);
+  const title = `Re-clean — ${label} (2 failed ATP swabs)`;
+  db.prepare(`INSERT INTO work_orders (id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, 'high', ?, '[]', 'cleaning', 'open')`)
+    .run(woId, eq?.id || null, title,
+      `${label} failed two consecutive ATP swabs. Latest reading ${grade.value} ${grade.unit} against a `
+      + `limit of ${grade.limit} ${grade.unit} (${grade.source}). Re-cleaning has not brought it within `
+      + 'limit — check the procedure, the chemical dilution and the equipment before the next run. '
+      + 'Log the clean in Sanitation when done.',
+      new Date().toISOString().split('T')[0]);
+  db.prepare(`INSERT INTO reclean_actions (id, room, flag_key, action, work_order_id, created_by, created_by_id)
+    VALUES (?, ?, ?, 'assigned', ?, ?, NULL)`).run(uuid(), area, flagKey, woId, who || 'system');
+  logAudit(who || 'system', 'auto_generate', 'work_order', woId,
+    { room: area, source: 'atp_second_failure', reading: grade.value, limit: grade.limit }, null, null, title);
+  return woId;
+}
+
 function closeRecleanTasksFor(db, area, who, record) {
   try {
     const title = `72h Re-clean — ${areaLabel(area)}`;
-    const open = db.prepare(`SELECT id FROM work_orders
+    // TWO WAYS OF FINDING THE SAME TASK, and the second is the reliable one.
+    //
+    // The title match came first and is fragile: it depends on the work order
+    // being titled exactly `72h Re-clean — <label>`, so a task raised for any
+    // other reason — an ATP double failure, say — never closed, and the cleaner
+    // was left holding a job she had already done. `reclean_actions` already
+    // links room → work_order_id for BOTH kinds, so matching on it closes both
+    // and survives a renamed area label.
+    //
+    // The title query is kept rather than replaced: any historical task whose
+    // reclean_actions row was lost still closes the way it always did.
+    const linked = db.prepare(`SELECT w.id FROM reclean_actions ra
+      JOIN work_orders w ON w.id = ra.work_order_id
+      WHERE ra.room = ? AND ra.action = 'assigned'
+        AND w.status IN ('open','in_progress','overdue','missed')`).all(area);
+    const byTitle = db.prepare(`SELECT id FROM work_orders
       WHERE title = ? AND status IN ('open','in_progress','overdue','missed')`).all(title);
+    const open = [...new Map([...linked, ...byTitle].map(r => [r.id, r])).values()];
     if (!open.length) return 0;
     const upd = db.prepare(`UPDATE work_orders SET status = 'completed', completed_at = datetime('now'), completed_by = ?,
       notes = COALESCE(notes || char(10), '') || ?, updated_at = datetime('now') WHERE id = ?`);
@@ -651,9 +737,17 @@ router.put('/:id', (req, res) => {
     when = raw;
   }
 
+  // A correction is graded the same way a filing is, or the limit could be
+  // sidestepped by filing blank and editing the reading in afterwards.
+  // Deliberately no escalation here: raising a task from an EDIT would let one
+  // failure raise a second work order every time somebody fixed a typo.
+  const editReading = b.atp_reading === undefined ? before.atp_reading : (b.atp_reading ?? null);
+  const editGrade = gradeAtp(editReading);
+  const editDecided = applyGrade(pick('result', before.result), editGrade);
+
   db.prepare(`UPDATE sanitation_records SET area = ?, type = ?, equipment_id = ?, performed_by = ?,
       chemicals_used = ?, concentration = ?, contact_time_minutes = ?, rinse_verified = ?, result = ?,
-      atp_reading = ?, notes = ?, chemical_id = ?, record_group = ?, performed_at = ?
+      atp_reading = ?, atp_limit = ?, notes = ?, chemical_id = ?, record_group = ?, performed_at = ?
     WHERE id = ?`)
     .run(area, pick('type', before.type), pick('equipment_id', before.equipment_id) || null,
       pick('performed_by', before.performed_by),
@@ -661,8 +755,8 @@ router.put('/:id', (req, res) => {
       pick('concentration', before.concentration) || null,
       b.contact_time_minutes === undefined ? before.contact_time_minutes : (b.contact_time_minutes ?? null),
       b.rinse_verified === undefined ? before.rinse_verified : (b.rinse_verified ? 1 : 0),
-      pick('result', before.result),
-      b.atp_reading === undefined ? before.atp_reading : (b.atp_reading ?? null),
+      editDecided.result,
+      editReading, editGrade?.limit ?? null,
       pick('notes', before.notes) || null,
       pick('chemical_id', before.chemical_id) || null,
       // The group follows the area — moving a record between the Sanitation

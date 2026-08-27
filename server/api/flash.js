@@ -28,11 +28,12 @@ const mayRead = (u) => u?.role === 'admin';
  * delivered is indistinguishable from a broken job.
  */
 export function flashRecipients(db) {
-  const ids = (() => {
-    try {
-      return JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'flash_report_recipients'").get()?.value || 'null');
-    } catch { return null; }
-  })();
+  // Not initialised: every path below assigns it, and the initial null was
+  // never read. (Pre-existing lint error on main, fixed here in passing.)
+  let ids;
+  try {
+    ids = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'flash_report_recipients'").get()?.value || 'null');
+  } catch { ids = null; }
   if (Array.isArray(ids) && ids.length) {
     const ph = ids.map(() => '?').join(',');
     return db.prepare(`SELECT id, name FROM users WHERE id IN (${ph}) AND is_active = 1`).all(...ids);

@@ -2590,6 +2590,12 @@ function runMigrations() {
   addColumnIfMissing('sanitation_records', 'entered_at', 'TEXT');
   addColumnIfMissing('sanitation_records', 'entered_late', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('sanitation_records', 'late_entry_reason', 'TEXT');
+  // The critical limit the ATP reading was graded against, stamped at write
+  // time. A record graded against 35 RLU must go on saying 35 after Document
+  // Control issues a different number — the same rule a scale verification and
+  // a receiving checklist already follow. Never back-filled: a record filed
+  // before the limit was enforced was graded against nothing.
+  addColumnIfMissing('sanitation_records', 'atp_limit', 'REAL');
 
   // Chemical location tracking
   addColumnIfMissing('approved_chemicals', 'location_for_use', 'TEXT');

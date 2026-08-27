@@ -1,4 +1,5 @@
 import { useState, Fragment } from 'react';
+import AtpLimitHint from '../common/AtpLimitHint.jsx';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import RecordBackfillStrip from '../common/RecordBackfillStrip.jsx';
 import { useAuth } from '../../hooks/useAuth';
@@ -492,6 +493,7 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
           <label className="block text-xs font-medium text-gray-700 mb-1">ATP Reading (RLU)</label>
           <input type="number" step="0.1" value={form.atp_reading} onChange={e => setForm({ ...form, atp_reading: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          <AtpLimitHint value={form.atp_reading} />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Result *</label>

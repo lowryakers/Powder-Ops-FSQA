@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import AtpLimitHint from '../common/AtpLimitHint.jsx';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
@@ -37,7 +38,7 @@ const PRIORITY_RING = {
   high: 'ring-2 ring-orange-300 border-orange-300',
 };
 
-function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, isAdmin, batchMode, batchSelected, onBatchToggle, viewDept, t, tc = (s) => s }) {
+function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, isAdmin, batchMode, batchSelected, onBatchToggle, viewDept, t, lang = 'en', tc = (s) => s }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
@@ -772,6 +773,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('atp_reading')}</label>
                     <input type="number" step="any" value={readings.atp_reading || ''} onChange={e => updateReading('atp_reading', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 10" />
+                    <AtpLimitHint value={readings.atp_reading} lang={lang} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('sanitizer_contact')}</label>
@@ -1312,7 +1314,7 @@ export default function OperatorView() {
           {overdue.length > 0 && (!bucketFilter || bucketFilter === 'overdue') && (
             <SectionHeader icon={AlertTriangle} title={t('section_overdue')} count={overdue.length} color="bg-red-500" defaultOpen={true}>
               {overdue.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1320,7 +1322,7 @@ export default function OperatorView() {
           {today.length > 0 && (!bucketFilter || bucketFilter === 'today') && (
             <SectionHeader icon={CircleDot} title={t('section_due_today')} count={today.length} color="bg-powder-600" defaultOpen={true}>
               {today.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1328,7 +1330,7 @@ export default function OperatorView() {
           {thisWeek.length > 0 && (!bucketFilter || bucketFilter === 'thisWeek') && (
             <SectionHeader icon={CalendarDays} title={t('section_this_week')} count={thisWeek.length} color="bg-gray-500" defaultOpen={bucketFilter === 'thisWeek' || overdue.length + today.length < 10}>
               {thisWeek.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1336,7 +1338,7 @@ export default function OperatorView() {
           {upcoming.length > 0 && (!bucketFilter || bucketFilter === 'upcoming') && (
             <SectionHeader icon={Clock} title={t('section_upcoming')} count={upcoming.length} color="bg-gray-400" defaultOpen={bucketFilter === 'upcoming' || overdue.length + today.length + thisWeek.length < 5}>
               {upcoming.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
               ))}
             </SectionHeader>
           )}

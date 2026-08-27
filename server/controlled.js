@@ -23,6 +23,7 @@ import crypto from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { QMS_TYPES } from './qms-config.js';
 import { SCALE_FORMS } from './scale-forms.js';
+import { atpControlledEntry } from './atp-limits.js';
 
 // Stable hash of a definition: keys sorted, so a reordered object literal in
 // the source doesn't read as a change someone has to approve.
@@ -97,7 +98,7 @@ function scaleEntries() {
 }
 
 export function registry() {
-  return [...qmsEntries(), ...scaleEntries()];
+  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry()];
 }
 
 // ── Boot: baseline, detect, gate ────────────────────────────────────────────
