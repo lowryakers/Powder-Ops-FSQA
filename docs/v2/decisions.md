@@ -1180,3 +1180,38 @@ supplier link at all**; `coa_requests` records a laboratory but never a vendor. 
 answer *"which supplier's material failed this test"* — which is the question SOP 404 § V.E vendor
 monitoring is entirely built on. `supplier_materials` is that join, and it is a reason to build this module
 before the ones that look larger.
+
+## D-040 · 2026-08-27 · decided — the supplier sheet is good, and the number it cannot say is the finding
+
+**Jake's list was read with the repo's own `readTable()`, unchanged.** 67 vendors, one sheet, six real
+columns. It is accurate, current and small enough to trust, which is why it is brought over rather than
+replaced.
+
+**The finding is a number the sheet cannot produce: 24.** Forty-three vendors are actively used and
+nineteen have a completed questionnaire, so **twenty-four are being bought from without one** — and SOP 404
+§ V.A says *"Components ordered for Powder-Ops will be done through qualified vendors ONLY."* The auditor
+sampled three; **Mill Haven and M4 Dynamic are both among the 24**. So NC 4.3.1 is not three vendors, it is
+twenty-four with three named, and nobody could see that because the sheet holds the two halves in separate
+columns and never crosses them. **The derived state — actively using AND not qualified — is the single most
+valuable thing the module adds**, and it is a `WHERE` clause.
+
+**Bay State Milling, the auditor's third vendor, is not in the sheet at all.** Recorded as a question for
+Jake rather than resolved: either they are no longer used, or the list is incomplete, and those have very
+different consequences.
+
+**One column carries no information and it looks like it does.** `Questionnaire Requested` is set for
+exactly the 43 active vendors and no others — the two sets match exactly. It is a duplicate of
+`Actively Using` wearing a different name, which is this project's recurring defect in its smallest form.
+It becomes a **date**, because "when did we ask" is the only version that tells anybody to chase.
+
+**Completing a questionnaire is not approval.** SOP 404 § V.C.III requires a disposition — Approved,
+Conditionally Approved, Not Approved — decided by Quality after the seven-criterion risk evaluation. The
+questionnaire is an input to that decision. The sheet has no column for the decision, which is why 19
+"completed" reads as 19 qualified and is not.
+
+**Decided against: inferring contact roles at import.** Tested against the real addresses — only **4 of
+179** are recognisably quality or regulatory, **64 of 67 vendors have no obvious quality address**, and 143
+are named people whose role cannot be read from the address. So the import splits the 179 addresses into
+rows and **marks no roles**. The quality contact is learned the way `bank_rules` are: whoever sends FORM
+404-1 marks the address they sent it to. **A guessed role on a compliance contact is worse than a blank
+one**, and asking somebody to fill in 179 dropdowns is how a module stops being used.

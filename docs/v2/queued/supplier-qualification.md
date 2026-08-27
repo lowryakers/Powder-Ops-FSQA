@@ -140,6 +140,75 @@ importer rules this repo already enforces:
 
 ---
 
+## 3a · Jake's sheet, read — 67 vendors, and what it can and cannot say
+
+**Read 27 Aug with the repo's own `readTable()`, which handled it unchanged.** One sheet, 67 vendors, six
+real columns (`Actively Using`, `Vendor`, `Contact`, `Questionnaire Requested`, `Questionnaire Completed`,
+`Notes`) plus 21 empty ones Excel appended. **It is a good list** — accurate, current, and small enough to
+be trusted, which is why it should be brought over rather than replaced.
+
+### What it says
+
+| | |
+|---|---|
+| Vendors | **67** |
+| Actively using | **43** |
+| Questionnaire requested | **43** |
+| Questionnaire completed | **19** |
+| **Actively using, questionnaire NOT completed** | **24** |
+
+**That last number is the finding, and the sheet cannot show it.** SOP 404 § V.A: *"Components ordered for
+Powder-Ops will be done through qualified vendors ONLY."* **Twenty-four vendors are being bought from
+without a completed questionnaire** — a state the SOP forbids. The auditor sampled three; **Mill Haven and
+M4 Dynamic are both on that list of 24**, so NC 4.3.1 is not three vendors, it is twenty-four with three
+named.
+
+> **Bay State Milling — the auditor's third vendor — is not in the sheet at all.** Either they are no
+> longer used, or the list is incomplete. `[for Jake]`
+
+### Three columns that are not carrying what they look like they carry
+
+1. **`Questionnaire Requested` is identical to `Actively Using`** — verified, the two sets match exactly,
+   43 for 43. It records nothing independent. It should become **`questionnaire_requested_at`, a date**,
+   because "when did we ask" is the only version of that fact that tells you whether to chase.
+2. **`Questionnaire Completed` is a 1, and completing a questionnaire is not approval.** SOP 404 § V.C.III
+   requires a **disposition** — Approved, Conditionally Approved, or Not Approved — decided by Quality after
+   a risk evaluation. A received questionnaire is an input to that decision, not the decision.
+3. **`Notes` has two entries and neither is a note.** *"pinged Lowry for contact info 8/6"* is a follow-up
+   with a date; *"COAs received. Need questionnaire"* is a status. Both deserve to be the thing they are.
+
+### The contact cell
+
+**179 email addresses in 67 cells**, up to eight in one (Talus, GWI), 50 vendors with more than one, and a
+trailing-comma typo on HPS. Splitting them into rows is obvious and cheap.
+
+**What is NOT worth building: automatic role classification.** Tested against the real addresses — only
+**4 of 179** are recognisably quality or regulatory (`regulatory@`, `documents@`, `techdata@`), **64 of the
+67 vendors have no obvious quality address at all**, and 143 of the 179 are named people whose role cannot
+be read from the address. So the import splits the emails and **marks no roles**, and the quality contact
+is learned the way `bank_rules` are learned: **whoever sends FORM 404-1 marks the address they sent it to.**
+The app finds out by watching the work being done, rather than asking somebody to fill in 179 dropdowns.
+
+### The mapping
+
+| Jake's column | Becomes | Why |
+|---|---|---|
+| `Vendor` | `suppliers.name` + `legacy_names` | "Mill Haven" here, "Mill Haven Foods" in the NC report. The join must survive both. |
+| `Actively Using` | `suppliers.actively_using` | **Kept, and it stops meaning "qualified".** Two different facts that this sheet conflates. |
+| `Contact` | `supplier_contacts` rows | 179 addresses, one per row, no invented roles |
+| `Questionnaire Requested` | `questionnaire_requested_at` **(date)** | A boolean cannot tell you to chase |
+| `Questionnaire Completed` | `questionnaire_received_at` **(date)** + the file | The PDF is in the vendor's folder |
+| `Notes` | `notes`, and a follow-up where it is one | |
+| — | **`disposition`** (the SOP's three values) | The decision the sheet has no column for |
+| — | **`risk_criteria`** (the SOP's seven) | § V.C.B.I, and the basis of the disposition |
+| — | **`vendor_type`** | An ingredient supplier, a packaging supplier and a laboratory are not the same obligation. Eight of the 67 are plainly packaging or supplies. |
+| — | **`supplier_materials`** | Which ingredient. The auditor named one per vendor; the sheet names none. |
+| — | **`next_review_due`** | SOP 404 § IV.B annual reviews (W2-29) |
+| — | **derived: buying without qualification** | The 24. The number the whole list exists to surface, and the one thing it cannot say today. |
+
+**Nothing is dropped.** `Questionnaire Requested` is the only column that carries no information, and even
+it becomes a date rather than disappearing.
+
 ## 4 · Four rules that are load-bearing
 
 **1 · A vendor's spec sheet is EVIDENCE, not a specification.** `coa_specifications` is *our* approved
@@ -202,12 +271,12 @@ their lots. Worth a look at the listing before deciding.
 
 ## 6 · What I need from you
 
-| | Why |
+| | Status |
 |---|---|
-| **The path listing** (text, not the archive) | To write and test the parser against real folder names, and to report unreadable paths before any upload |
-| **Jake's spreadsheet** | It decides identity: one row per vendor, or one per vendor-material? |
+| ~~Jake's spreadsheet~~ | **Received 27 Aug.** Read, and § 3a is what it says. Identity is **one row per vendor** — `name` is enough. |
+| **The path listing** (text, not the archive) | **Still needed.** To write and test the parser against real folder names, and to report unreadable paths before any upload. |
 | **A decision on FORM 404-3** (W2-26) | Vendor audits are required by § V.C.B.II and IV.B and the form has never been issued. The module can hold the audit; it cannot number the form. |
-| **Nothing else** | The supplier half of SOP 404 is specified well enough to build from as it stands |
+| **A question for Jake** | Bay State Milling — cited in NC 4.3.1 for Cinnamon — is not in the sheet. No longer used, or missing? |
 
 ## 7 · What this closes
 
