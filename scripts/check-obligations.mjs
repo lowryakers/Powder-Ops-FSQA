@@ -30,6 +30,11 @@ const SOURCES = [
     re: /^### ((?:FSP|FDP|SQF|X)-\d{2})\b/gm,
   },
   {
+    file: 'docs/v2/queued/wave-2-sop-review.md',
+    // A finding is declared by its own heading: "### W2-01 · title"
+    re: /^### (W2-\d{2})\b/gm,
+  },
+  {
     file: 'docs/v2/queued/audit-nc-triage.md',
     // Nonconformances are cited by clause; the register names them NC-<audit>-<clause>.
     re: /^### (§?[\d.]+) — /gm,

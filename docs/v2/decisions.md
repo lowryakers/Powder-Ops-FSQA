@@ -1038,3 +1038,44 @@ day, and the next person to touch `atpEscalation()` should know it was decided r
 
 **Track B rebased on the new `main` the same hour** (D-016). The rebase dropped the Track B WIP commit
 as already upstream, which is the correct outcome: Wave 1 is `main`'s now, not Track B's.
+
+## D-037 · 2026-08-27 · decided — Wave 2 is the D-002 test, because the wording review is blocked
+
+**The situation.** The method (`document-review-at-scale.md`) named the four SOPs the auditor read and
+found wanting — 404, 421, 434, 604 — as the second review project after the two plans. **None of the four
+is in the repository**, and D-030 already says why that matters: the Reference Library is the production
+database, and adding a document to the app does not make it available to this work.
+
+**Decision: run the review anyway, on the half that is answerable, and say plainly which half that is.**
+`docs/v2/queued/wave-2-sop-review.md` is the D-002 test applied one SOP at a time — *does this SOP require
+something that has no program, no form and no record behind it?* — resting on two sources we do have: the
+auditor's own words about each document, and ReadyDoc's tables. It produced **19 findings**, and it is
+explicit at the top that nobody has read the four documents here and that this is not a wording red-line.
+
+**The blocked half turned out not to be the valuable half, which is worth recording.** The auditor read all
+four and found the same thing in each: the document requires something the plant cannot produce. That is a
+gap between a document and a record, which is what this project is for. A grammar pass would have found
+none of the nineteen.
+
+**Four findings came from the change log, not from any SOP** — and they are the most immediately
+actionable in the review. **SOP 421 and SOP 434 have no row at all in the 159-row DCR log** (W2-01), and
+**SOP 404 is V4 with a widened title in practice and V3 under the old title in the log** (W2-02). The
+structural cause is W2-04: the DCR log imports into the QMS register while documents live in
+`sop_documents`, and **nothing reconciles the two in either direction**. The recurring defect of this
+codebase, at the level of the document register itself.
+
+**The 19 findings are registered.** `wave-2-sop-review.md` was added as a fourth source to
+`scripts/check-obligations.mjs`, which promptly failed with all 19 unclaimed — the check doing its job.
+They now sit under six existing obligations (OBL-05, 07, 08, 13, 18, 26), two of which had no sources at
+all until now. **No new obligation was invented**: every Wave 2 finding sharpened an obligation the audit
+triage had already created, which is the register working rather than a gap in it.
+
+**Build order, decided by the same test.** SOP 604 first — it is the only one of the four where the program
+and the form are already right and the single missing leg is the record, and Wave 1 proved that exact
+pattern three days ago on the ATP limit. Then SOP 421 (three derived steps on `equipment-readiness.js`).
+SOP 404 is a module, not a field, and SOP 434's software half is the same build as § 4.4.39's software
+change control — neither should start before its document is in hand.
+
+**One correction made in passing:** the audit triage said eight quality schedules are seeded from
+FORM 604-01. **Six are**; the other three predate the transcription and cite neither the form nor its
+limits — which is itself finding W2-18, so the error and the defect were the same fact.

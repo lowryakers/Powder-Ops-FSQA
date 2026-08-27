@@ -182,7 +182,7 @@ Flavor Approval and Organoleptic already have.
 604 - Environmental Monitoring Program - V2 - 6/29/26.*
 
 **The walk found this from the software side and reached the same place.** FORM 604-01 is transcribed
-in full, eight quality schedules are seeded from it, and **a quality-schedule completion files no
+in full, six quality schedules are seeded from it, and **a quality-schedule completion files no
 record** — so a swab that never happened and a swab whose result went nowhere look identical.
 
 ReadyDoc cannot swab a surface (**C**). What it can do is make the miss loud: an **environmental result

@@ -94,9 +94,16 @@
       "status": "open",
       "owner": "Document Control + platform",
       "sources": [
-        "NC-455-4.3.9"
+        "NC-455-4.3.9",
+        "W2-12",
+        "W2-13",
+        "W2-14",
+        "W2-15"
       ],
-      "note": "controlled.js is already a real gate for form definitions and acceptance criteria — widen it. Adds QC approval on every change, which the current DCR flow does not enforce. Software change control is required by this AND by OBL-04: build once."
+      "note": "controlled.js is already a real gate for form definitions and acceptance criteria — widen it. Adds QC approval on every change, which the current DCR flow does not enforce. Software change control is required by this AND by OBL-04: build once. Wave 2 sized both halves. W2-12: SOP 434's title names chemicals, equipment AND services; ReadyDoc records only chemicals (approved_chemicals is a real approval record with approved_by/at and review_due) and has no equipment or services approval record at all — the software has the same scope gap the auditor found in the document. W2-13: controlled.js IS a working change-control gate with an approval and an audit trail, over exactly three things (QMS form definitions, scale tolerances, the ATP limit); it sees no process, utility, physical-plant or software change. W2-14: 111.130(e) wants QC approval and the DCR flow enforces Document Control only. W2-15: SOP 700 may also govern chemical approval. Interlock with OBL-04 — software change control is named in 4.4.39 too.",
+      "artifacts": [
+        "docs/v2/queued/wave-2-sop-review.md"
+      ]
     },
     {
       "id": "OBL-06",
@@ -121,9 +128,15 @@
       "sources": [
         "SQF-11",
         "NC-455-4.5.84",
-        "WALK-09"
+        "WALK-09",
+        "W2-16",
+        "W2-17",
+        "W2-18"
       ],
-      "note": "Three independent routes to one conclusion: the walk found no record path, the auditor found the testing was not done, SQF requires results tracked and trended. Schedule also needs location rotation and a documented method for elevated results (2.4.8.2)."
+      "note": "Three independent routes to one conclusion: the walk found no record path, the auditor found the testing was not done, SQF requires results tracked and trended. Schedule also needs location rotation and a documented method for elevated results (2.4.8.2). Wave 2 found the third gap and it is the decisive one. W2-16: completing a quality schedule writes work_orders and quality_schedules and NOTHING else, so a swab never taken and a swab whose result went nowhere are indistinguishable — the auditor's finding in software terms. W2-17: FORM 604-01's alert and action limits are transcribed faithfully in emp-site-list.js and graded against nothing, which is the ATP 35 RLU state exactly, and OBL-01 is now the working template for the fix. W2-18: the form's WATER section has no EMP schedule at all — monthly potable water (TAB, coliforms, free chlorine, each with limits) is served instead by a pre-existing 'Tap Water Testing' schedule that names no test, cites no limit and never references the form; the room-air row is the same story. Two mechanisms for one requirement is how one goes quiet.",
+      "artifacts": [
+        "docs/v2/queued/wave-2-sop-review.md"
+      ]
     },
     {
       "id": "OBL-08",
@@ -134,9 +147,16 @@
       "sources": [
         "FSP-25",
         "FSP-31",
-        "NC-455-4.3.1"
+        "NC-455-4.3.1",
+        "W2-05",
+        "W2-06",
+        "W2-07",
+        "W2-08"
       ],
-      "note": "SOP 404 exists; the records do not. FORM 404-1/404-2 marked keychain and producing nothing. Expiring-certificate pattern exists in `certifications`; approval pattern in `qms_records`. FSP-25 (FSVP) rides here: if any ingredient is imported it is the same programme."
+      "note": "SOP 404 exists; the records do not. FORM 404-1/404-2 marked keychain and producing nothing. Expiring-certificate pattern exists in `certifications`; approval pattern in `qms_records`. FSP-25 (FSVP) rides here: if any ingredient is imported it is the same programme. Wave 2 measured the gap: there is no supplier record in ReadyDoc of ANY kind (W2-05) — approved_chemicals holds chemicals, certifications holds PEOPLE (person_name NOT NULL), supply_orders is office purchasing. The auditor's three named suppliers had nowhere to be filed. W2-06 adds the half the title now covers: no laboratory record at all, coa_requests.lab_name is free text, '17025' appears nowhere, and coa-grade.js already reasons from 'it is the accredited party' — a principle resting on a fact nothing holds. W2-07 is the decision to take before building (new table vs widening certifications) and W2-08 is Daniela's (do FORM 404-1/404-2 become ReadyDoc screens or stay with Keychain).",
+      "artifacts": [
+        "docs/v2/queued/wave-2-sop-review.md"
+      ]
     },
     {
       "id": "OBL-09",
@@ -192,9 +212,15 @@
       "status": "open",
       "owner": "Maintenance + platform",
       "sources": [
-        "NC-455-4.5.8"
+        "NC-455-4.5.8",
+        "W2-09",
+        "W2-10",
+        "W2-11"
       ],
-      "note": "Performing the qualification is engineering work. Holding it is three more derived steps on equipment-readiness.js, each satisfied by an attached protocol — which makes 'which machines are unqualified' answerable on a screen."
+      "note": "Performing the qualification is engineering work. Holding it is three more derived steps on equipment-readiness.js, each satisfied by an attached protocol — which makes 'which machines are unqualified' answerable on a screen. Wave 2 confirmed the starting point: 'IQ', 'OQ' and 'PQ' appear NOWHERE in the codebase (W2-09), and equipment-readiness.js derives ten steps per machine of which none is qualification — so 'which machines are unqualified' is not a question the app can be asked. W2-10: no 421-series form number exists for a qualification protocol. W2-11: this is the cheapest of the four Wave 2 SOPs to close — three derived steps on a pattern that already carries its own roll-up and badges.",
+      "artifacts": [
+        "docs/v2/queued/wave-2-sop-review.md"
+      ]
     },
     {
       "id": "OBL-14",
@@ -326,11 +352,14 @@
       "bucket": "A",
       "status": "drafted",
       "owner": "platform",
-      "sources": [],
-      "artifacts": [
-        "docs/v2/queued/document-reference-graph.md"
+      "sources": [
+        "W2-19"
       ],
-      "note": "BLOCKED ON OBL-15 AND OBL-17. Neither plan cites another document by number, so the graph would find nothing. The plan revision must land first — building the mechanism over an empty graph produces something indistinguishable from broken."
+      "artifacts": [
+        "docs/v2/queued/document-reference-graph.md",
+        "docs/v2/queued/wave-2-sop-review.md"
+      ],
+      "note": "BLOCKED ON OBL-15 AND OBL-17. Neither plan cites another document by number, so the graph would find nothing. The plan revision must land first — building the mechanism over an empty graph produces something indistinguishable from broken. W2-19 names the best candidate after the two plans: SOP 604 governs a programme carried out under SOP 600 (Air Monitoring V1), SOP 601 (Microbial Surface Testing V1) and SOP 608 (Surface ATP Swab Testing V4). 608 went V1 to V4 over ten months while 604 stayed at V2 and nothing in the register says whether 604 was re-checked. One governing document, three governed, an obvious question on every revision — but it still needs SOP 604's text to confirm it cites the other three by number, which is exactly what neither plan turned out to do (D-027)."
     },
     {
       "id": "OBL-19",
@@ -418,11 +447,17 @@
       "bucket": "A",
       "status": "drafted",
       "owner": "platform + Document Control",
-      "sources": [],
-      "artifacts": [
-        "docs/v2/queued/document-review-at-scale.md"
+      "sources": [
+        "W2-01",
+        "W2-02",
+        "W2-03",
+        "W2-04"
       ],
-      "note": "Extend doc-consistency.js with the rules generalised from the plan red-line — approved-but-unsigned, revision disagreement, unspecified retention, cites-nothing, section and page arithmetic, spelling. Output is a queue with dismissals, not a document."
+      "artifacts": [
+        "docs/v2/queued/document-review-at-scale.md",
+        "docs/v2/queued/wave-2-sop-review.md"
+      ],
+      "note": "Extend doc-consistency.js with the rules generalised from the plan red-line — approved-but-unsigned, revision disagreement, unspecified retention, cites-nothing, section and page arithmetic, spelling. Output is a queue with dismissals, not a document. Wave 2 gave this obligation its first concrete rules and they are not spelling rules. W2-01: two controlled documents the auditor read (SOP 421, SOP 434) have NO row in the 159-row DCR log — no new-document row, no revision row. W2-02: SOP 404 is V4 with a widened title in practice and V3 under the old title in the log. W2-03: SOP 604's effective date is eight months after its last change request. W2-04 is the structural cause of all three — the DCR log imports into the QMS register while documents live in sop_documents, two lists nothing reconciles in either direction. Add both directions as sweep rules ('in the log, absent from the registry' and its inverse); they would have caught W2-01 and W2-02 without anybody reading anything."
     },
     {
       "id": "OBL-27",
