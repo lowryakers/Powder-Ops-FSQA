@@ -38,12 +38,17 @@ export default function SearchSelect({
   const inputRef = useRef(null);
 
   const grouped = Array.isArray(options) && options.some(o => o && typeof o === 'object' && Array.isArray(o.items));
+  // Callers pass `exclude` as an array literal, so it is a NEW array on every
+  // render and the memo below never actually held — the whole list was rebuilt
+  // on each keystroke and each parent render. Keyed on its contents instead.
+  const excludeKey = exclude.join('\u0000');
   const flat = useMemo(() => {
+    const skip = excludeKey ? new Set(excludeKey.split('\u0000')) : null;
     const list = grouped
       ? (options || []).flatMap(g => (g.items || []).map(o => ({ group: g.group, name: String(o) })))
       : (options || []).map(o => ({ group: null, name: String(o) }));
-    return exclude.length ? list.filter(o => !exclude.includes(o.name)) : list;
-  }, [options, grouped, exclude]);
+    return skip ? list.filter(o => !skip.has(o.name)) : list;
+  }, [options, grouped, excludeKey]);
 
   const needle = (q ?? '').trim().toLowerCase();
   const matches = useMemo(() => {

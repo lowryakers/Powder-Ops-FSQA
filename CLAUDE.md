@@ -1209,6 +1209,28 @@ with the controlled documents).
 - Rows of the Master Index that were not legible in the screenshots supplied (Series 300, rows past 62) are
   simply absent. Send the index as a file and they can be added.
 
+## A dropdown that closes on its own scroll (`PortalDropdown`)
+Reported as "the scrolling in the drop down lists on Sign In/Out is not working" — you could open the
+catalogue and see the first few rows and nothing would move it. `PortalDropdown` listened for `scroll` on
+`window` in the **capture** phase, which it must, because a modal's scroller is an ancestor and its scroll
+does not bubble. But capture sees EVERY scroll in the document, **including the menu's own** — so the first
+flick of the list closed it. Measured on the real catalogue: 4,504px of options in a 318px box.
+- **A scroll that starts inside the menu is the user reading it** (`menuEl.contains(e.target)`), and is
+  ignored.
+- **An ancestor scroll now RE-MEASURES instead of closing.** Scrolling the modal to see the field you are
+  filling in used to throw the list away, which was most of what "a little glitchy" meant. It closes only
+  once the anchor has actually left the viewport, where there is nothing to hang off.
+- **`onMouseDown` on the menu container `preventDefault`s**, so pressing the scrollbar cannot blur the
+  input — the blur handler closes the list 150ms later, so dragging the scrollbar threw the menu away
+  mid-drag. The option buttons pick on their own mousedown, so nothing in there needs the focus.
+- `overscroll-contain`, or a flick that reaches the end of the list carries on into the page behind it.
+- Height cap 224 → **320** where there is room. At six rows the list was almost all scroll, which made the
+  bug impossible to work around.
+- **`SearchSelect`'s `exclude` memo never held**: callers pass an array literal, so it was a new array every
+  render and the whole catalogue was rebuilt on every keystroke. Keyed on its contents now.
+- Verified in a real browser, 11 assertions, and the control matters: reverting the scroll handler makes
+  D-05/06/07 fail with "menu gone", which is precisely what was reported.
+
 ## Sign In/Out: one place, two controlled forms
 Forms **440-02** (knives/blades) and **703-01** (equipment/tools/chemicals) record the same transaction —
 a person takes an item, brings it back, condition checked both ways. They were separate modules only
