@@ -959,3 +959,50 @@ validate"* in one code and *"shall ensure"* in the other. SQF-06 does not depend
 requirement it rests on is 2.4.3.11, identical in both.
 
 Red-line now 92 findings, 37 must / 48 should / 7 consider. OBL-25's SQF half is answered.
+
+---
+
+## D-034 · 2026-08-27 · decided — Cleaning ships in two waves, and the first one does not wait for the plan revision
+
+Asked when updates to cleaning start. The dependency was checked rather than assumed, and it splits.
+
+**Wave 1 — the record and its limit. Nothing blocks it.** `OBL-01` is queued and verified end to end
+against a fresh database. Three things that look like blockers are not:
+
+- **The DCR does not block it.** FSP-04 may move the ATP swab from the verification leg to monitoring.
+  That changes the plan's wording, not the grading — the code compares a reading to the approved value
+  either way.
+- **SQF-06 does not block it.** The critical limit must be validated, and that is a QA activity running
+  in parallel. Grading against the value the approved document states today is correct today.
+- **The plan revision does not block it.** X-04 and SQF-01 add the Scope section, which the *reference
+  graph* waits on (D-027). The cleaning record does not.
+
+**Wave 2 — the rest of the cleaning spine — does wait.** The per-run trigger is deferred by D-019, and
+the SOP number the plan must cite does not exist in citable form until Protocol 003 is re-issued.
+
+**But cleaning is not the most urgent thing on the branch, and saying so is the point of checking.**
+The audit corrective actions are, and the honest recommendation is to land Wave 1 **in the same pass**
+as the receiving-checklist line that closes §6.2.3.2 — both are small, both are queued, and one of them
+answers a nonconformance. Landing cleaning alone first would be following the plan rather than the
+plant.
+
+---
+
+## D-035 · 2026-08-27 · decided — The V2 explainer leads with what does NOT change
+
+`docs/v2/v2-vs-today.artifact.html` is the picture for the team. Three figures: today's three writers
+and three stores for one fact, the spine with every screen as a lens on it, and the same 60 RLU reading
+before and after.
+
+**It opens by saying this is not a rebuild** — same app, same screens, same login, nobody learns a new
+system — because that is the first thing anybody on the floor wants to know and the thing most likely
+to be misheard. D-001 is the decision; this is how it gets communicated.
+
+**The figures show mechanism, not labels.** The "today" diagram is not an architecture drawing; it is
+one real question — *was the line clean before the run?* — traced through three doors into three
+tables, with the seam marked where the same fact lands twice ungraded. A reader can point at the
+problem. That is the test a diagram has to pass to be worth drawing.
+
+**And it ends with a per-person table**, because "what changes" is a different question for an operator
+than for Document Control. The honest answer for most of them is *almost nothing*, and for Document
+Control it is *the biggest change of anyone's* — re-issuing a document starts moving things by itself.

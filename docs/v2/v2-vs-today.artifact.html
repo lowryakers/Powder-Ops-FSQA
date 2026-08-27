@@ -1,0 +1,374 @@
+<title>One Spine, Not Fifty Logs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Asap:wght@400;500;600&family=Chivo:wght@600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --paper:#F3F5F7; --surface:#FFFFFF; --sunken:#E8ECF0;
+    --ink:#15171C; --ink-2:#454B56; --ink-3:#78808D;
+    --rule:#D8DEE5; --rule-2:#BCC5CF;
+    --spine:#4338A8;  --spine-soft:#E7E5F7;
+    --seam:#9E3B2C;   --seam-soft:#F8E5E1;
+    --ok:#1F6446;     --ok-soft:#E1EFE8;
+    --shadow:0 1px 2px rgba(21,23,28,.05),0 12px 30px -22px rgba(21,23,28,.35);
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --paper:#0F1216; --surface:#171B21; --sunken:#1F242B;
+    --ink:#E8ECF1; --ink-2:#AEB6C1; --ink-3:#7C848F;
+    --rule:#282E36; --rule-2:#3A424C;
+    --spine:#A7A0EE; --spine-soft:#1C1936;
+    --seam:#E29184;  --seam-soft:#2B1815;
+    --ok:#77C29C;    --ok-soft:#12251C;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 30px -22px rgba(0,0,0,.9);
+  }}
+  :root[data-theme="dark"]{
+    --paper:#0F1216; --surface:#171B21; --sunken:#1F242B;
+    --ink:#E8ECF1; --ink-2:#AEB6C1; --ink-3:#7C848F;
+    --rule:#282E36; --rule-2:#3A424C;
+    --spine:#A7A0EE; --spine-soft:#1C1936;
+    --seam:#E29184;  --seam-soft:#2B1815;
+    --ok:#77C29C;    --ok-soft:#12251C;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 30px -22px rgba(0,0,0,.9);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:Asap,ui-sans-serif,system-ui,sans-serif;font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px;margin:0 auto;padding:0 clamp(16px,4vw,44px) 92px}
+  code,.mono{font-family:"Spline Sans Mono",ui-monospace,monospace;font-size:.85em}
+  code{background:var(--sunken);padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+
+  header{padding:clamp(34px,6vw,66px) 0 0}
+  .kicker{font-family:"Spline Sans Mono",monospace;font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-3);margin-bottom:14px}
+  h1{font-family:Chivo,sans-serif;font-weight:800;font-size:clamp(34px,6vw,58px);
+    line-height:1.0;letter-spacing:-.03em;margin:0 0 16px;text-wrap:balance}
+  .sub{font-size:clamp(16px,2vw,19.5px);color:var(--ink-2);margin:0;max-width:62ch}
+
+  h2{font-family:Chivo,sans-serif;font-weight:700;font-size:clamp(24px,3.4vw,33px);
+    letter-spacing:-.02em;margin:62px 0 6px;padding-bottom:11px;border-bottom:2px solid var(--ink)}
+  h3{font-family:Chivo,sans-serif;font-weight:600;font-size:19.5px;margin:38px 0 0;color:var(--ink-2)}
+  p{max-width:68ch}
+  .lede{color:var(--ink-2);font-size:16px;margin:15px 0 0}
+
+  figure{margin:26px 0 0;padding:20px;background:var(--surface);border:1px solid var(--rule);
+    border-radius:11px;box-shadow:var(--shadow);overflow-x:auto}
+  figure svg{display:block;max-width:100%;height:auto;margin:0 auto;min-width:520px}
+  figcaption{margin-top:16px;font-size:14.6px;color:var(--ink-2);border-top:1px solid var(--rule);padding-top:13px}
+  figcaption b{color:var(--ink)}
+
+  .box{margin:24px 0 0;padding:18px 22px;border-radius:9px;border-left:3px solid var(--spine);
+    background:var(--sunken);color:var(--ink-2);font-size:15.4px}
+  .box.seam{border-left-color:var(--seam);background:var(--seam-soft)}
+  .box.ok{border-left-color:var(--ok);background:var(--ok-soft)}
+  .box b{color:var(--ink)} .box p{margin:0;max-width:none} .box p+p{margin-top:10px}
+
+  .tw{overflow-x:auto;margin-top:18px}
+  table{width:100%;border-collapse:collapse;font-size:15px;min-width:540px}
+  th{text-align:left;font-family:"Spline Sans Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink-3);font-weight:400;padding:9px 13px;border-bottom:1px solid var(--rule-2)}
+  td{padding:11px 13px;border-bottom:1px solid var(--rule);color:var(--ink-2);vertical-align:top}
+  td b{color:var(--ink)}
+  .who{white-space:nowrap;font-weight:600;color:var(--ink)}
+
+  footer{margin-top:72px;padding-top:18px;border-top:1px solid var(--rule);display:flex;flex-wrap:wrap;
+    gap:8px 22px;font-family:"Spline Sans Mono",monospace;font-size:11px;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--ink-3)}
+  .n{font-family:"Spline Sans Mono",monospace;font-size:12.5px;fill:currentColor}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="kicker">Powder Ops FSQA · V2 · what changes and what does not</div>
+  <h1>One Spine,<br>Not Fifty Logs</h1>
+  <p class="sub">What the system looks like today, what it becomes, and — the part worth saying first —
+    how little of it the floor will notice.</p>
+
+  <div class="box ok">
+    <p><b>This is not a rebuild.</b> Same app, same screens, same URL, same login. Nobody learns a new
+    system. The platform holds 7,662 FSQA records and years of the plant's own vocabulary, and V2 is a
+    direction to refactor toward — one control at a time — not a thing to start over on.</p>
+    <p><b>What changes is where a fact lives.</b> Today the same fact is written in several places and
+    they drift. V2 gives every fact exactly one owner.</p>
+  </div>
+</header>
+
+<h2>Today — a fact with three homes</h2>
+<p class="lede">Take one real question: <b>was the line clean before the run?</b> The plant answers it in
+three places, through three different doors, and none of the three carries the number the Food Safety
+Plan says it turns on.</p>
+
+<figure>
+<svg viewBox="0 0 880 400" role="img" aria-label="Three separate paths write cleanliness evidence into three separate stores, and the ATP fact exists in two of them, ungraded">
+  <defs>
+    <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--seam)"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="26" class="n" fill="currentColor" opacity=".55">WHO ACTS</text>
+  <text x="330" y="26" class="n" fill="currentColor" opacity=".55">WHAT THEY OPEN</text>
+  <text x="660" y="26" class="n" fill="currentColor" opacity=".55">WHERE IT LANDS</text>
+
+  <g stroke="currentColor" fill="none" stroke-width="1.5">
+    <rect x="20" y="52" width="180" height="52" rx="6"/>
+    <rect x="20" y="140" width="180" height="52" rx="6"/>
+    <rect x="20" y="228" width="180" height="52" rx="6"/>
+    <rect x="330" y="52" width="210" height="52" rx="6"/>
+    <rect x="330" y="140" width="210" height="52" rx="6"/>
+    <rect x="330" y="228" width="210" height="52" rx="6"/>
+    <rect x="660" y="52" width="200" height="52" rx="6"/>
+    <rect x="660" y="140" width="200" height="52" rx="6"/>
+    <rect x="660" y="228" width="200" height="52" rx="6"/>
+  </g>
+
+  <g fill="currentColor" font-family="Asap, sans-serif" font-size="13.5">
+    <text x="110" y="76" text-anchor="middle">Operator</text>
+    <text x="110" y="93" text-anchor="middle" opacity=".6" font-size="12">on the floor</text>
+    <text x="110" y="164" text-anchor="middle">Cleaner</text>
+    <text x="110" y="181" text-anchor="middle" opacity=".6" font-size="12">at a desk</text>
+    <text x="110" y="252" text-anchor="middle">Batching lead</text>
+    <text x="110" y="269" text-anchor="middle" opacity=".6" font-size="12">end of shift</text>
+
+    <text x="435" y="76" text-anchor="middle">Completes the task</text>
+    <text x="435" y="93" text-anchor="middle" opacity=".6" font-size="12">Task Center</text>
+    <text x="435" y="164" text-anchor="middle">Files a clean</text>
+    <text x="435" y="181" text-anchor="middle" opacity=".6" font-size="12">Sanitation log</text>
+    <text x="435" y="252" text-anchor="middle">Fills the EOD report</text>
+    <text x="435" y="269" text-anchor="middle" opacity=".6" font-size="12">Production Log</text>
+  </g>
+
+  <g font-family="Spline Sans Mono, monospace" font-size="12" fill="currentColor">
+    <text x="760" y="72" text-anchor="middle">work_orders</text>
+    <text x="760" y="160" text-anchor="middle">sanitation_records</text>
+    <text x="760" y="248" text-anchor="middle">cleaning_events</text>
+  </g>
+  <g font-family="Asap, sans-serif" font-size="11.5" fill="currentColor" opacity=".6">
+    <text x="760" y="90" text-anchor="middle">notes, step ticks</text>
+    <text x="760" y="178" text-anchor="middle">atp_reading — a number</text>
+    <text x="760" y="266" text-anchor="middle">atp_swab — yes / no</text>
+  </g>
+
+  <g stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#a1)">
+    <line x1="200" y1="78" x2="322" y2="78"/><line x1="200" y1="166" x2="322" y2="166"/>
+    <line x1="200" y1="254" x2="322" y2="254"/>
+    <line x1="540" y1="78" x2="652" y2="78"/><line x1="540" y1="166" x2="652" y2="166"/>
+    <line x1="540" y1="254" x2="652" y2="254"/>
+  </g>
+
+  <g stroke="var(--seam)" stroke-width="1.6" stroke-dasharray="5 4" fill="none">
+    <path d="M862 166 C 892 166, 892 254, 862 254" marker-end="url(#a2)"/>
+  </g>
+  <text x="876" y="214" class="n" fill="var(--seam)" text-anchor="start" font-size="11">one</text>
+  <text x="876" y="228" class="n" fill="var(--seam)" text-anchor="start" font-size="11">fact,</text>
+  <text x="876" y="242" class="n" fill="var(--seam)" text-anchor="start" font-size="11">two</text>
+  <text x="876" y="256" class="n" fill="var(--seam)" text-anchor="start" font-size="11">homes</text>
+
+  <rect x="20" y="322" width="840" height="56" rx="7" fill="var(--seam-soft)" stroke="var(--seam)" stroke-width="1.4"/>
+  <text x="40" y="345" font-family="Asap, sans-serif" font-size="13.5" fill="var(--seam)" font-weight="600">
+    Protocol 003 states the control as "No more than 35 RLU."
+  </text>
+  <text x="40" y="365" font-family="Asap, sans-serif" font-size="13.5" fill="currentColor">
+    That number appears in none of these three paths. A 60 RLU reading files as a pass and nothing objects.
+  </text>
+</svg>
+<figcaption><b>Three writers, three stores, one question.</b> The task path records that work happened
+but files no cleaning record. The Sanitation log holds a real ATP number that nothing grades. The
+Batching EOD holds the same fact as a yes/no tick. <b>The critical limit lives only in a PDF.</b></figcaption>
+</figure>
+
+<div class="box seam">
+  <p><b>This is not a cleaning problem. It is the shape of the whole system.</b> Counted across FSQA
+  scope: <b>34 files write a signature</b>, <b>57 tables</b> hold records, <b>~50 modules</b> each with
+  its own idea of what "done" means. Every recurring defect in four years reads the same way — a fact
+  that existed in more than one place, and the two copies disagreed.</p>
+</div>
+
+<h2>V2 — one path, and every screen is a lens on it</h2>
+<p class="lede">Nothing above disappears. The Task Center, the Sanitation log and the Production Log all
+stay exactly where they are. What changes is that they stop being <i>three sources of truth</i> and
+become <i>three views of one</i>.</p>
+
+<figure>
+<svg viewBox="0 0 880 430" role="img" aria-label="A single record spine from controlled document through program, obligation, work, record, verification to retrieval, with the document owning the limit that grades the record">
+  <defs>
+    <marker id="b1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--spine)"/>
+    </marker>
+    <marker id="b2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <g stroke="var(--spine)" stroke-width="1.8" fill="var(--spine-soft)">
+    <rect x="24" y="86" width="112" height="60" rx="7"/>
+    <rect x="164" y="86" width="112" height="60" rx="7"/>
+    <rect x="304" y="86" width="112" height="60" rx="7"/>
+    <rect x="444" y="86" width="112" height="60" rx="7"/>
+    <rect x="584" y="86" width="112" height="60" rx="7"/>
+    <rect x="724" y="86" width="132" height="60" rx="7"/>
+  </g>
+  <g font-family="Chivo, sans-serif" font-size="13" font-weight="600" fill="currentColor" text-anchor="middle">
+    <text x="80" y="112">Document</text><text x="220" y="112">Program</text><text x="360" y="112">Obligation</text>
+    <text x="500" y="112">Work</text><text x="640" y="112">Record</text><text x="790" y="112">Verification</text>
+  </g>
+  <g font-family="Asap, sans-serif" font-size="11.5" fill="currentColor" opacity=".65" text-anchor="middle">
+    <text x="80" y="131">Protocol 003</text><text x="220" y="131">what + how often</text><text x="360" y="131">dated, owned</text>
+    <text x="500" y="131">a person does it</text><text x="640" y="131">written BY the work</text><text x="790" y="131">second pair of eyes</text>
+  </g>
+
+  <g stroke="var(--spine)" stroke-width="1.8" fill="none" marker-end="url(#b1)">
+    <line x1="136" y1="116" x2="156" y2="116"/><line x1="276" y1="116" x2="296" y2="116"/>
+    <line x1="416" y1="116" x2="436" y2="116"/><line x1="556" y1="116" x2="576" y2="116"/>
+    <line x1="696" y1="116" x2="716" y2="116"/>
+  </g>
+
+  <path d="M80 146 L80 196 L640 196 L640 156" stroke="var(--spine)" stroke-width="1.8" fill="none"
+        stroke-dasharray="6 4" marker-end="url(#b1)"/>
+  <text x="360" y="189" font-family="Asap, sans-serif" font-size="12.5" fill="var(--spine)"
+        text-anchor="middle" font-weight="600">owns the limit — the record is graded against it, at the moment it is written</text>
+
+  <text x="24" y="248" class="n" fill="currentColor" opacity=".55">EVERY SCREEN IS A QUERY OVER THAT ONE PATH</text>
+  <g stroke="currentColor" stroke-width="1.4" fill="none" opacity=".85">
+    <rect x="24" y="262" width="150" height="46" rx="6"/>
+    <rect x="198" y="262" width="150" height="46" rx="6"/>
+    <rect x="372" y="262" width="150" height="46" rx="6"/>
+    <rect x="546" y="262" width="150" height="46" rx="6"/>
+    <rect x="720" y="262" width="136" height="46" rx="6"/>
+  </g>
+  <g font-family="Asap, sans-serif" font-size="13" fill="currentColor" text-anchor="middle">
+    <text x="99" y="290">Task Center</text><text x="273" y="290">Sanitation log</text>
+    <text x="447" y="290">Production Log</text><text x="621" y="290">QA Review</text><text x="788" y="290">Auditor view</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.3" fill="none" opacity=".5" marker-end="url(#b2)" stroke-dasharray="3 3">
+    <line x1="99" y1="262" x2="99" y2="212"/><line x1="273" y1="262" x2="273" y2="212"/>
+    <line x1="447" y1="262" x2="447" y2="212"/><line x1="621" y1="262" x2="621" y2="212"/>
+    <line x1="788" y1="262" x2="788" y2="212"/>
+  </g>
+
+  <rect x="24" y="342" width="832" height="66" rx="7" fill="var(--spine-soft)" stroke="var(--spine)" stroke-width="1.4"/>
+  <text x="44" y="366" font-family="Asap, sans-serif" font-size="13.5" fill="var(--spine)" font-weight="600">
+    Re-issue Protocol 003 with a different limit and every grading decision follows — because there is no second copy.
+  </text>
+  <text x="44" y="387" font-family="Asap, sans-serif" font-size="13.5" fill="currentColor">
+    A screen can no longer disagree with another screen. It can only disagree with itself, which is a bug you can find.
+  </text>
+</svg>
+<figcaption><b>The spine, and the lenses on it.</b> A record is created by <i>completing work</i>, never
+by typing into a log. Direct entry survives as a named exception — back-dated, reasoned, visibly marked
+— because a cleaner locked out for three days still has to record work she really did.</figcaption>
+</figure>
+
+<h2>The same reading, before and after</h2>
+<p class="lede">This is not a thought experiment. The grading module is built and was exercised over HTTP
+against a fresh database this week.</p>
+
+<figure>
+<svg viewBox="0 0 880 300" role="img" aria-label="A 60 RLU swab filed as a pass today; under V2 the same reading is forced to fail with the corrective action named">
+  <defs>
+    <marker id="c1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text x="24" y="26" class="n" fill="var(--seam)">TODAY</text>
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <rect x="24" y="42" width="150" height="50" rx="6"/>
+    <rect x="238" y="42" width="170" height="50" rx="6"/>
+  </g>
+  <rect x="472" y="42" width="180" height="50" rx="6" fill="var(--seam-soft)" stroke="var(--seam)" stroke-width="1.6"/>
+  <g font-family="Asap, sans-serif" font-size="13.5" fill="currentColor" text-anchor="middle">
+    <text x="99" y="65">Swab reads</text><text x="99" y="82" font-weight="700">60 RLU</text>
+    <text x="323" y="65">Filer picks</text><text x="323" y="82" font-weight="700">"pass"</text>
+  </g>
+  <text x="562" y="65" font-family="Asap, sans-serif" font-size="13.5" fill="var(--seam)" text-anchor="middle" font-weight="700">Stored: pass</text>
+  <text x="562" y="82" font-family="Asap, sans-serif" font-size="12" fill="currentColor" text-anchor="middle">nothing objects</text>
+  <g stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#c1)">
+    <line x1="174" y1="67" x2="230" y2="67"/><line x1="408" y1="67" x2="464" y2="67"/>
+  </g>
+  <text x="672" y="63" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".7">The line runs.</text>
+  <text x="672" y="80" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".7">The record says it was clean.</text>
+
+  <line x1="24" y1="126" x2="856" y2="126" stroke="currentColor" stroke-width="1" opacity=".25"/>
+
+  <text x="24" y="158" class="n" fill="var(--ok)">UNDER V2 — BUILT, TESTED, NOT YET DEPLOYED</text>
+  <g stroke="currentColor" stroke-width="1.5" fill="none">
+    <rect x="24" y="174" width="150" height="50" rx="6"/>
+    <rect x="238" y="174" width="170" height="50" rx="6"/>
+  </g>
+  <rect x="472" y="174" width="180" height="50" rx="6" fill="var(--ok-soft)" stroke="var(--ok)" stroke-width="1.6"/>
+  <g font-family="Asap, sans-serif" font-size="13.5" fill="currentColor" text-anchor="middle">
+    <text x="99" y="197">Swab reads</text><text x="99" y="214" font-weight="700">60 RLU</text>
+    <text x="323" y="191">Graded against</text><text x="323" y="207" font-weight="700">35 RLU</text>
+    <text x="323" y="221" font-size="11" opacity=".7">from Protocol 003 V4</text>
+  </g>
+  <text x="562" y="191" font-family="Asap, sans-serif" font-size="13.5" fill="var(--ok)" text-anchor="middle" font-weight="700">Stored: fail</text>
+  <text x="562" y="207" font-family="Asap, sans-serif" font-size="11.5" fill="currentColor" text-anchor="middle">limit 35 stamped on</text>
+  <text x="562" y="220" font-family="Asap, sans-serif" font-size="11.5" fill="currentColor" text-anchor="middle">the record itself</text>
+  <g stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#c1)">
+    <line x1="174" y1="199" x2="230" y2="199"/><line x1="408" y1="199" x2="464" y2="199"/>
+  </g>
+  <text x="672" y="188" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".8">Re-clean task raised.</text>
+  <text x="672" y="205" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".8">The filer is told why,</text>
+  <text x="672" y="222" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".8">naming the document.</text>
+
+  <rect x="24" y="250" width="832" height="38" rx="7" fill="var(--sunken)" stroke="var(--rule-2)" stroke-width="1.2"/>
+  <text x="44" y="274" font-family="Asap, sans-serif" font-size="13" fill="currentColor">
+    Asymmetric on purpose: over the limit forces a fail — under it never overrides the filer. A clean has reasons to fail that no swab sees.
+  </text>
+</svg>
+<figcaption><b>Change the number in the code and nothing happens.</b> Tested: the change was
+<i>parked</i> for Document Control and the app went on grading against the approved 35. That is the
+whole idea — the limit belongs to a document revision, not to a deploy.</figcaption>
+</figure>
+
+<h2>What each person actually notices</h2>
+<div class="tw"><table>
+  <thead><tr><th>Who</th><th>Today</th><th>Under V2</th></tr></thead>
+  <tbody>
+    <tr><td class="who">Operator<br><span style="font-weight:400;color:var(--ink-3);font-size:13px">on the floor</span></td>
+      <td>Opens the same task list, ticks the same steps.</td>
+      <td><b>Almost nothing.</b> One extra field where a reading is required, and a refusal that explains itself and names the next step instead of just saying no.</td></tr>
+    <tr><td class="who">Cleaner</td>
+      <td>Files a clean; the ATP box is optional and usually blank.</td>
+      <td>The reading is asked for and graded as it is typed. An over-limit swab raises the re-clean itself instead of waiting for somebody to notice.</td></tr>
+    <tr><td class="who">QA</td>
+      <td>Signs off in QA Review across seven queues.</td>
+      <td><b>Same screen.</b> But a queue is a query over record state, so a badge can no longer disagree with the list it summarises.</td></tr>
+    <tr><td class="who">Document<br>Control</td>
+      <td>Re-issues a document; whether anything downstream follows depends on somebody remembering.</td>
+      <td><b>The biggest change of anyone's.</b> Re-issuing a document moves every limit it owns, and everything that cites it lands in a review queue with a reason attached.</td></tr>
+    <tr><td class="who">Auditor</td>
+      <td>Is shown a binder assembled for the visit.</td>
+      <td>Is shown the same records under a different lens. <b>Nothing is prepared</b> — if it needs preparing, the layers beneath it failed.</td></tr>
+  </tbody>
+</table></div>
+
+<h2>How it actually arrives</h2>
+<p class="lede">Not a switchover. One control at a time, each taken the whole way down the spine — and
+the first one is cleaning, because it is daily, universal, and everybody already does it.</p>
+
+<div class="box">
+  <p><b>Vocabulary flips at once; records and habits do not.</b> Room names, form numbers, what
+  "complete" means — those cannot be half-migrated, because the schedule and the Production Log once
+  kept separate room lists long enough that a shift could be scheduled in a room it could not be
+  reported in.</p>
+  <p><b>Everything else moves one control at a time.</b> You learn the shape once, on the morning
+  clean. The second control is then a variation, not a new system — and that is the training story
+  too: <b>you train the spine, not fifty modules.</b></p>
+</div>
+
+<div class="box ok">
+  <p><b>Where it stands right now.</b> 26 obligations, 117 findings reconciled, nothing deployed. The
+  ATP grading is built and verified end to end. The four preventive controls are transcribed from
+  Protocol 003. Both plans are red-lined against the SQF Dietary Supplement code and the NSF audit.
+  <b>The next thing that ships is the cleaning record with its limit attached.</b></p>
+</div>
+
+<footer>
+  <span>Not a rebuild</span><span>One control at a time</span>
+  <span>26 obligations · 0 landed</span><span>27 Aug 2026</span>
+</footer>
+</div>
