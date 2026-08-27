@@ -1,6 +1,13 @@
 # Queued for `main` — grade the ATP reading against PC #1's 35 RLU
 
-**Status: designed, built, and VERIFIED END TO END on a fresh database · not deployed · 24 August 2026**
+**Status: server path built and verified · UI and the failed-clean trigger NOT yet built · not deployed**
+**24 August 2026, amended 27 August**
+
+> **What is actually tested, stated precisely.** The migration, the `controlled.js` registration and
+> both `sanitation.js` write paths were applied to a working copy, exercised over HTTP against a fresh
+> database, and reverted. **The live UI feedback (§5) was written out but never built or run**, and the
+> failed-clean trigger (§4) was found afterwards and is not in the tested diff. Neither is hard; both
+> are honest gaps between "specified" and "verified".
 
 Punch-list item 2 of `preventive-control-walk.md`, and the pilot for architecture move 03 (limits out
 of code and into documents). Scope decision, 24 Aug: **do the record and the limit now; the per-run
@@ -91,14 +98,36 @@ limit decides.
 **The QA Review sign path needs no change.** It calls `verifySanitationRecord`, which touches the
 verification columns and not the result — so a queue signature stays byte-for-byte the module's own.
 
-### 4. `src/components/compliance/SanitationPanel.jsx` + `OperatorView.jsx` — live feedback
+### 4. A failed clean must RAISE the re-clean, not merely fail to close one
+
+**Found 27 Aug, while checking a claim rather than assuming it. Not in the tested diff.**
+
+PC #1's corrective action is literally *"Re-clean line."* Today **nothing raises that work when a clean
+fails.** `generateRecleanTasks()` fires only on the 72-hour idle rule, keyed on `flag_key` from the last
+clean and last use; no handler anywhere keys off `result = 'fail'`. So with the grading change alone, a
+60 RLU swab stores `fail`, correctly does not close an open re-clean task — and creates nothing.
+
+**The record would say the line failed and no work would exist to fix it.** That is the same class as
+the QA inspections that completed and filed no record: the system knows, and nobody is told.
+
+The fix belongs in the same pass, and the existing machinery does most of it — `reclean_actions` already
+carries `flag_key`, `work_order_id` and a created-by, and `generateRecleanTasks` already builds the work
+order. What is needed is a second entry point keyed on the failed record rather than on the idle clock,
+using the record id as the `flag_key` so one failure raises one task and a correction does not raise a
+second.
+
+**Two rules to keep:** only a *graded* failure raises it, so a clean failed for a reason nobody recorded
+does not silently generate work; and the task names the reading and the limit, because "re-clean the
+line" without the number is an errand rather than an instruction.
+
+### 5. `src/components/compliance/SanitationPanel.jsx` + `OperatorView.jsx` — live feedback
 
 The ATP input shows in-limit / over-limit as it is typed, the way `ScaleKiosk` does. Over-limit says
 the corrective action the plan states — *re-clean line* — because a refusal that does not name the
 next step is an obstacle. Operator strings go in `i18n/operatorStrings.js` in **both** languages; a
 safety limit shown only in English is a limit half the shift cannot read.
 
-### 5. `shared/form-registry.js` — nothing
+### 6. `shared/form-registry.js` — nothing
 
 Deliberately. FORM 111-01 is `where: keychain` and that is correct (D-017). This change gives the
 ReadyDoc cleaning record a graded limit; it does not move a form number.

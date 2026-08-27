@@ -32,7 +32,7 @@
       "bucket": "A", "status": "queued", "owner": "platform + QA",
       "sources": ["FSP-04", "SQF-06", "SQF-09", "WALK-02"],
       "artifacts": ["server/atp-limits.js", "docs/v2/queued/atp-35-rlu.md"],
-      "note": "Module built and verified end to end; wiring queued for main. SQF-06 adds an obligation the build does NOT cover: the limit itself must be validated and re-validated annually (2.4.3.11, 2.5.1.1ii). Software grades against the number; it cannot justify it."
+      "note": "SERVER PATH built and verified end to end; the live UI feedback was specified but never built or run, and a third gap was found 27 Aug: nothing raises the re-clean when a clean FAILS — generateRecleanTasks fires only on the 72-hour idle rule, so a failed clean would create no work at all. All three are in the queued file. SQF-06 adds an obligation no build covers: the limit itself must be validated and re-validated annually (2.4.3.11, 2.5.1.1ii). Software grades against the number; it cannot justify it."
     },
     {
       "id": "OBL-02", "title": "Enter the four preventive controls into haccp_ccps and guard their limits",

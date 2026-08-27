@@ -310,9 +310,9 @@ against a fresh database this week.</p>
   <g stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#c1)">
     <line x1="174" y1="199" x2="230" y2="199"/><line x1="408" y1="199" x2="464" y2="199"/>
   </g>
-  <text x="672" y="188" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".8">Re-clean task raised.</text>
-  <text x="672" y="205" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".8">The filer is told why,</text>
-  <text x="672" y="222" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".8">naming the document.</text>
+  <text x="672" y="188" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".8">The clean does not count</text>
+  <text x="672" y="205" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".8">as done, and the filer is</text>
+  <text x="672" y="222" font-family="Asap, sans-serif" font-size="12.5" fill="currentColor" opacity=".8">told why, naming the document.</text>
 
   <rect x="24" y="250" width="832" height="38" rx="7" fill="var(--sunken)" stroke="var(--rule-2)" stroke-width="1.2"/>
   <text x="44" y="274" font-family="Asap, sans-serif" font-size="13" fill="currentColor">
@@ -321,7 +321,11 @@ against a fresh database this week.</p>
 </svg>
 <figcaption><b>Change the number in the code and nothing happens.</b> Tested: the change was
 <i>parked</i> for Document Control and the app went on grading against the approved 35. That is the
-whole idea — the limit belongs to a document revision, not to a deploy.</figcaption>
+whole idea — the limit belongs to a document revision, not to a deploy.
+<br><br><b>One thing this does not yet do.</b> PC #1's corrective action is literally <i>"Re-clean
+line"</i>, and today <b>nothing raises that work</b> — re-clean tasks come only from the 72-hour idle
+rule, not from a failed clean. A failed clean stops counting as done and leaves any open re-clean task
+open; it does not create one. That gap is now part of the queued build.</figcaption>
 </figure>
 
 <h2>What each person actually notices</h2>
