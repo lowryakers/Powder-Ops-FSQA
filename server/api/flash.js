@@ -28,10 +28,11 @@ const mayRead = (u) => u?.role === 'admin';
  * delivered is indistinguishable from a broken job.
  */
 export function flashRecipients(db) {
-  let ids = null;
-  try {
-    ids = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'flash_report_recipients'").get()?.value || 'null');
-  } catch { ids = null; }
+  const ids = (() => {
+    try {
+      return JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'flash_report_recipients'").get()?.value || 'null');
+    } catch { return null; }
+  })();
   if (Array.isArray(ids) && ids.length) {
     const ph = ids.map(() => '?').join(',');
     return db.prepare(`SELECT id, name FROM users WHERE id IN (${ph}) AND is_active = 1`).all(...ids);

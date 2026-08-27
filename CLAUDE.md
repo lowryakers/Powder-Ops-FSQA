@@ -1259,6 +1259,22 @@ a failure single-bundle didn't have — a deploy replaces hashed chunks under a 
 before it — so `ModuleBoundary` catches the failed import and offers a reload instead of a white screen.
 Adding a module means adding it to the lazy list, not a plain import.
 
+## Never push a red build again (`npm run verify` + `.githooks/pre-push`)
+Three consecutive releases went out with `main` red, every one the same rule (`no-useless-assignment`) and
+every one the same cause: the checks were run, then the code was edited again before the push. **"Run lint
+last" is a promise; a hook is a mechanism.**
+- **`npm run verify`** is the whole of CI as one command — lint, build, route order, fresh-DB boot, all 94
+  list endpoints — in that order, lint first because it is the fastest to fail.
+- **`.githooks/pre-push` runs it and refuses the push if anything fails.** Installed automatically by the
+  `prepare` script (`git config core.hooksPath .githooks`), so `npm install` in a fresh session wires it up
+  with nothing to remember. `git push --no-verify` is the emergency exit and should be rare enough to
+  explain.
+- **Proven by planting a deliberate error and watching the push be refused**, not by assuming the hook runs.
+  A guard nobody has seen fire is a guard nobody knows is broken.
+- **The rule that keeps catching me is one idiom**: `let x = null; try { x = … } catch { x = null; }` — the
+  initialiser is never read, because both branches assign. Write it as an IIFE returning the value
+  (`const x = (() => { try { return …; } catch { return null; } })();`) and it is correct by construction.
+
 ## Migration ordering (fresh-DB gotcha)
 `addColumnIfMissing()` runs `ALTER TABLE … ADD COLUMN`, which **throws** if the table doesn't exist yet —
 `PRAGMA table_info` on a missing table returns empty, so the "missing" check passes and the ALTER blows up.

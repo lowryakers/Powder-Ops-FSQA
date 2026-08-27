@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# Refuse a push that CI would reject.
+#
+# Three consecutive releases went out with main red, every one of them the same
+# lint rule, every one of them because the checks were run and then the code was
+# edited again before pushing. "Run lint last" is a promise; this is a
+# mechanism.
+#
+# Set up automatically by the `prepare` script on npm install
+# (git config core.hooksPath .githooks). To push past it in a genuine
+# emergency: git push --no-verify.
+set -e
+
+echo "[pre-push] running the same checks CI does…"
+npm run verify
+echo "[pre-push] clean — pushing."

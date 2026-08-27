@@ -18,7 +18,9 @@
     "check:boot": "node scripts/check-fresh-boot.mjs",
     "check:endpoints": "node scripts/check-endpoints.mjs",
     "check": "npm run lint && npm run build && npm run check:routes && npm run check:migrations && npm run check:boot && npm run check:endpoints",
-    "check:migrations": "node scripts/check-migrations.mjs"
+    "check:migrations": "node scripts/check-migrations.mjs",
+    "verify": "npm run lint && npm run build && npm run check:routes && npm run check:boot && npm run check:endpoints",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
