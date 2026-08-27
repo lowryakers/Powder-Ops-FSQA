@@ -1309,3 +1309,36 @@ our register must not be handed Prayon's Prop 65 statement. And not the folder t
 filenames — the expiry dates included — so a path listing answers the whole question at ~100 KB. The bytes
 matter only when they are being stored, which happens through the app. Disk here is not the constraint
 (30 GB free); relevance is.
+
+## D-043 · 2026-08-27 · decided — the supplier register landed, and OBL-08 split three ways
+
+**Landed on `main` as `ff384ca`.** The second thing this project has shipped, and the first whole module:
+five tables, the archive parser, the pure reconciliation, the import pipeline, the SOP transcription and
+the screen. `npm run check:suppliers` joined `npm run check`, so the rules are guarded for whoever touches
+this next.
+
+**OBL-08 split rather than being marked done, and the split is the honest part.** What landed is the
+RECORD; what did not land is the WORK and the DOCUMENT.
+- **OBL-08 → landed**: the register exists (FSP-25, FSP-31, W2-05, W2-07).
+- **OBL-29 → open**: collecting the 22 missing questionnaires and dispositioning the 21 that already have
+  their evidence. **NSF/ANSI 455-2 § 4.3.1 does not close until that happens** — ReadyDoc can raise the
+  obligation and catch the result; it cannot ask a supplier for a questionnaire. W2-29 rides with it:
+  `next_review_due` now records when an annual review is due and **nothing yet generates work from it**,
+  which is precisely the piece that stops this register going quiet the way the tracker did.
+- **OBL-30 → open**: SOP 404's own defects, none of them software. FORM 404-3 is required by § V.C.B.II,
+  cited by § VI, and has never been issued.
+
+**The headline number was split during the build, and that was the most useful change made.** After
+importing the real data the register read "42 buying without qualification" — true under § V.A and useless.
+It lumped a vendor whose questionnaire and certificates are all on file and merely lacks a recorded
+disposition together with one that has nothing at all. **21 awaiting a disposition** (Quality, a short job)
+and **22 with no questionnaire document on file** (Purchasing, weeks) are different work for different
+people, and they partition the active set.
+
+**The register counts EVIDENCE, not claims** — a tracker tick with no document behind it counts as no
+questionnaire, because "show me the questionnaire" is what an auditor asks. That is why the register says
+22 where the reconciliation said 16: the reconciliation accepted either source. It is a deliberate choice
+and a one-line change if the plant disagrees.
+
+**Track B rebased the same hour** (D-016). Every supplier commit dropped as already upstream, which is the
+correct outcome: the module is `main`'s now.

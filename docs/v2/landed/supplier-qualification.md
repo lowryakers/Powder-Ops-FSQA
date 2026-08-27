@@ -1,19 +1,30 @@
-# Supplier & Laboratory Qualification — the module, the seed, and the two importers
+# Landed on `main` — Supplier & Laboratory Qualification
 
-**Design · 27 August 2026 · nothing built · answers "can this be seeded, run on the V2 spine, and carry
-the files?"**
+**Status: LANDED. On `main` as `ff384ca`, 27 August 2026.**
+**Designed 27 August · built 27 August · landed the same day**
 
-**Short answer: yes, and almost none of it is new machinery.** The spreadsheet importer exists, the zip
-importer exists, the R2 file path exists, the expiring-certificate pattern exists, the approval-with-a-
-signature pattern exists. What does not exist is **a supplier** — W2-05 — and that is the whole build.
+> **Written in `docs/v2/queued/` and moved here when it shipped** (D-036). `queued/` means work designed
+> and deliberately NOT landed; leaving a shipped item in it would make the directory mean two things.
 
-**One correction to what Wave 2 said.** That review put SOP 404 last on the build order because W2-25 found
-the laboratory half unwritable. **That is true of the laboratory half only.** The *supplier* half of SOP 404
-V4 is the best-specified of the four Wave 2 documents: § V gives the pre-assessment steps, the seven risk
-criteria, three named dispositions, the QVL, emergency vendors, monitoring and disqualification. **The
-supplier module can be built from the document as it stands. Only the laboratory register waits on
-W2-24/W2-25.** Split the obligation rather than blocking both on one paragraph.
+**What shipped:** the five tables, `supplier-archive.js` (the folder parser), `supplier-reconcile.js` and
+`supplier-import.js` (both pure), `supplier-sop.js` (the SOP's values, transcribed), `api/suppliers.js`
+and `SuppliersPanel.jsx`. `npm run check:suppliers` is part of `npm run check`.
 
+**What did NOT ship, and is not pretending to:**
+
+| | |
+|---|---|
+| **Collecting the questionnaires** | **OBL-29.** The register makes the gap visible and countable — 21 awaiting a disposition, 22 with no questionnaire on file. It cannot ask a supplier for one. NC 4.3.1 does not close until they are collected. |
+| **The annual review generating work** | **OBL-29.** `next_review_due` records when one is due and nothing yet raises it. That is the piece that stops this register going quiet the way the tracker did. |
+| **SOP 404's document defects** | **OBL-30.** FORM 404-3 is cited by § VI and has never been issued; V4's footer still carries the old title; QVS is named and never defined. None is a software gap. |
+| **The laboratory register** | **OBL-28.** SOP 404's laboratory programme is two sentences naming no standard and no expiry. Building against it would encode "ISO certification" as a requirement, which is not one. |
+
+**Two things the build changed about the design below.** The archive's real shape killed four assumptions
+(§ 3b), and the headline number had to be **split in two** — "buying without qualification" lumped
+Quality's short sign-off queue together with Purchasing's weeks-long chase list, and one number told
+neither person what to do.
+
+**The design as written stands otherwise**, including every rule in § 0 and § 4.
 ---
 
 ## 0 · Best possible, not a better folder
