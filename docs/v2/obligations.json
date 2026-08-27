@@ -152,7 +152,7 @@
     },
     {
       "id": "OBL-08",
-      "title": "Supplier qualification records — questionnaire, certificate expiry, risk rating, approval",
+      "title": "Supplier qualification records — questionnaire, risk evaluation, disposition, certificate expiry",
       "bucket": "A",
       "status": "open",
       "owner": "platform + QA + Purchasing",
@@ -161,20 +161,18 @@
         "FSP-31",
         "NC-455-4.3.1",
         "W2-05",
-        "W2-06",
         "W2-07",
         "W2-08",
-        "W2-24",
-        "W2-25",
         "W2-26",
         "W2-27",
         "W2-28",
         "W2-29",
         "W2-30"
       ],
-      "note": "SOP 404 exists; the records do not. FORM 404-1/404-2 marked keychain and producing nothing. Expiring-certificate pattern exists in `certifications`; approval pattern in `qms_records`. FSP-25 (FSVP) rides here: if any ingredient is imported it is the same programme. Wave 2 measured the gap: there is no supplier record in ReadyDoc of ANY kind (W2-05) — approved_chemicals holds chemicals, certifications holds PEOPLE (person_name NOT NULL), supply_orders is office purchasing. The auditor's three named suppliers had nowhere to be filed. W2-06 adds the half the title now covers: no laboratory record at all, coa_requests.lab_name is free text, '17025' appears nowhere, and coa-grade.js already reasons from 'it is the accredited party' — a principle resting on a fact nothing holds. W2-07 is the decision to take before building (new table vs widening certifications) and W2-08 is Daniela's (do FORM 404-1/404-2 become ReadyDoc screens or stay with Keychain). The wording pass found the document half is thinner than the software half. V4 puts laboratories in the title and adds a procedure section, and NEVER UPDATES THE SCOPE (W2-24), which still reads 'suppliers of raw materials and packaging'. The entire laboratory programme is TWO SENTENCES naming no standard, no scope of accreditation, no expiry, no owner and no record (W2-25) — 'ISO certification' is not a requirement, and ISO 9001 is not evidence a lab can run the test; ISO/IEC 17025 per scope is. The SOP also cites FORM 404-3 (Vendor Audit Summary), which exists in neither the Master Index nor the DCR log (W2-26), while requiring the vendor audits it records. Plus: V4's footer still carries the old title (W2-27), 'QVS' and 'Qualified Supplier Database' are named and never defined (W2-28), and an ANNUAL vendor review is required with no schedule behind it (W2-29) — that is the 'ongoing performance review' leg of the module.",
+      "note": "SOP 404 exists; the records do not. FORM 404-1/404-2 marked keychain and producing nothing. Expiring-certificate pattern exists in `certifications`; approval pattern in `qms_records`. FSP-25 (FSVP) rides here: if any ingredient is imported it is the same programme. Wave 2 measured the gap: there is no supplier record in ReadyDoc of ANY kind (W2-05) — approved_chemicals holds chemicals, certifications holds PEOPLE (person_name NOT NULL), supply_orders is office purchasing. The auditor's three named suppliers had nowhere to be filed. W2-06 adds the half the title now covers: no laboratory record at all, coa_requests.lab_name is free text, '17025' appears nowhere, and coa-grade.js already reasons from 'it is the accredited party' — a principle resting on a fact nothing holds. W2-07 is the decision to take before building (new table vs widening certifications) and W2-08 is Daniela's (do FORM 404-1/404-2 become ReadyDoc screens or stay with Keychain). The wording pass found the document half is thinner than the software half. V4 puts laboratories in the title and adds a procedure section, and NEVER UPDATES THE SCOPE (W2-24), which still reads 'suppliers of raw materials and packaging'. The entire laboratory programme is TWO SENTENCES naming no standard, no scope of accreditation, no expiry, no owner and no record (W2-25) — 'ISO certification' is not a requirement, and ISO 9001 is not evidence a lab can run the test; ISO/IEC 17025 per scope is. The SOP also cites FORM 404-3 (Vendor Audit Summary), which exists in neither the Master Index nor the DCR log (W2-26), while requiring the vendor audits it records. Plus: V4's footer still carries the old title (W2-27), 'QVS' and 'Qualified Supplier Database' are named and never defined (W2-28), and an ANNUAL vendor review is required with no schedule behind it (W2-29) — that is the 'ongoing performance review' leg of the module. DESIGNED 27 Aug (docs/v2/queued/supplier-qualification.md) and the LABORATORY HALF SPLIT OUT to OBL-28. Wave 2 put SOP 404 last on the build order on the strength of W2-25; that is true of the laboratory half ONLY. The supplier half of SOP 404 V4 §V is the best-specified of the four Wave 2 documents — pre-assessment steps, seven named risk criteria, three named dispositions, QVL, emergency vendors, monitoring, disqualification — and is buildable from the document as it stands. Shape: suppliers + supplier_qualifications (one row per vendor PER PERIOD, which is what the plant's own vendor/2025 and vendor/2026 folders already are) + supplier_materials + supplier_files on R2. The risk criteria and dispositions are TRANSCRIBED from the SOP, not typed. on_qvl is a MIRROR of the disposition, never an input. Two importers, both existing patterns: Jake's spreadsheet is one TARGETS entry in imports.js; the per-vendor zip is the scanned-tests pattern with the PATH doing the work the filename did. THE ARCHIVE IS TOO BIG FOR ANY EXISTING PATH (media.js caps non-video at 25 MB, the training zip importer at 400 MB in memory) — the parser is built and tested against a PATH LISTING, and the bytes go in per vendor or per year through the app. Also closes a gap nothing had named: coa_specifications is keyed on item_number with NO supplier link and coa_requests records a lab but never a vendor, so ReadyDoc cannot today answer 'which supplier's material failed this test' — the question SOP 404 §V.E vendor monitoring is built on.",
       "artifacts": [
-        "docs/v2/queued/wave-2-sop-review.md"
+        "docs/v2/queued/wave-2-sop-review.md",
+        "docs/v2/queued/supplier-qualification.md"
       ]
     },
     {
@@ -497,6 +495,22 @@
       ],
       "artifacts": [],
       "note": "Split out of OBL-01 when the grading landed. SQF 2.4.3.11 and 2.5.1.1(ii) require the critical limit to be VALIDATED — evidence that 35 RLU is the right number for these surfaces and this instrument — and re-validated at least annually. ReadyDoc now grades against the number; it cannot justify it, and an app enforcing an unvalidated limit is precisely the finding. Two separate pieces of work: the validation study (outside ReadyDoc, QA with the instrument manufacturer's guidance), and then the annual re-validation, which once the study exists is a Quality Schedule like any other cadence. Until the study exists, atp-limits.js should say the limit is transcribed from Protocol 003 and not yet validated — which is what it says."
+    },
+    {
+      "id": "OBL-28",
+      "title": "Laboratory qualification — write the programme, then hold it",
+      "bucket": "doc",
+      "status": "open",
+      "owner": "Document Control + QA",
+      "sources": [
+        "W2-06",
+        "W2-24",
+        "W2-25"
+      ],
+      "artifacts": [
+        "docs/v2/queued/supplier-qualification.md"
+      ],
+      "note": "Split out of OBL-08 on 27 Aug because the two halves are blocked on different things. SOP 404 V4 added 'and Laboratory' to the title and a section G of TWO SENTENCES — 'Laboratories will be approved upon receipt of ISO certification. An audit report will be requested and kept on file.' It names no standard (ISO 9001 is a management-system certificate, not evidence a lab can run the test; ISO/IEC 17025 per SCOPE OF ACCREDITATION is the one that matters), no expiry, no re-approval, no owner, no form and no record — and V4 never updated §II SCOPE, which still covers only suppliers of raw materials and packaging (W2-24). Meanwhile coa_requests.lab_name is free text, '17025' appears nowhere in the codebase, and coa-grade.js already grades every result on the reasoning that 'it is the accredited party' (W2-06). BUILDING A REGISTER AGAINST THE CURRENT WORDING WOULD ENCODE 'ISO certification' AS A REQUIREMENT, WHICH IS NOT ONE. The document comes first; the register is small once it exists."
     }
   ]
 }

@@ -1136,3 +1136,47 @@ schedule is a work order that can carry an attached lab report; it cannot say "T
 water, March, absent, within the Present/100 mL action limit" in a form anything can read — and SOP 604
 § 5.6 and § 5.7 require exactly that to be tracked, trended and reviewed annually. The obligation buys the
 evidence, not the work.
+
+## D-039 · 2026-08-27 · decided — the supplier module is designed, and OBL-08 splits at the laboratory line
+
+**Decision.** `docs/v2/queued/supplier-qualification.md` designs the supplier register that W2-05 found
+missing, and **OBL-08 splits**: the supplier half stays there and is buildable now; the laboratory half
+becomes **OBL-28** and waits on the document.
+
+**Why the split.** Wave 2 put SOP 404 last on the build order on the strength of W2-25 — the laboratory
+programme being two sentences. Re-reading the document, **that is true of the laboratory half only.** The
+supplier half of § V is the best-specified thing in the whole Wave 2 set: pre-assessment steps, seven named
+risk criteria, three named dispositions with their full definitions, the QVL, emergency vendors, monitoring
+and disqualification. It can be built from the document as it stands. Keeping both halves under one
+obligation would have blocked a buildable module behind a paragraph somebody has to write — the same error
+as marking an obligation done when only part landed, in the other direction.
+
+**Almost none of this is new machinery, and that is the point.** The spreadsheet importer, the zip
+importer, the R2 file path, the expiring-certificate pattern and the approval-with-a-signature pattern all
+exist. **What does not exist is a supplier.** Jake's spreadsheet is one `TARGETS` entry in `imports.js`.
+The per-vendor archive is the scanned-tests pattern with **the path doing the work the filename did** —
+`vendor / year / kind / file` parses the same way `DATE (TOPIC) NAME.pdf` did, and the same rules apply: a
+path that yields no supplier, year or kind is reported and skipped, never guessed; the vendor name is
+suggested for a human to confirm rather than created blind; preview writes nothing.
+
+**Two boundaries that must not be crossed, and both are the same mistake in different clothes.**
+- **A vendor's spec sheet is evidence, not a specification.** `coa_specifications` is *our* approved
+  acceptance criteria, and NC 4.3.6 is about those not having existed. Letting a supplier's own document
+  become the criterion it is graded against is the wrong direction and would be a finding in itself. The
+  spec sheet files as evidence; a specification may *cite* it.
+- **A vendor CoA is not a COA request.** `coa_requests` is a test we commission on our lot; the CoA in the
+  vendor folder is the certificate they shipped, which SOP 404 § V.C.A.II requires at qualification. It
+  carries an optional lot number so it also resolves from the receiving record, rather than being copied
+  there.
+
+**The archive is too big for any path that exists** — `media.js` caps a non-video file at 25 MB and the
+training zip importer holds 400 MB in memory. So the parser is built and tested against **a path listing**,
+which is a few hundred KB of text and is everything it needs, and the bytes go in **per vendor or per year**
+through the app once the module exists. Sending the archive into a session would fail on size and would be
+the wrong place for it anyway (D-030).
+
+**A gap nothing had named until this design.** `coa_specifications` is keyed on `item_number` and has **no
+supplier link at all**; `coa_requests` records a laboratory but never a vendor. So ReadyDoc cannot today
+answer *"which supplier's material failed this test"* — which is the question SOP 404 § V.E vendor
+monitoring is entirely built on. `supplier_materials` is that join, and it is a reason to build this module
+before the ones that look larger.
