@@ -46,3 +46,13 @@ jobs:
       # This GETs everything the app opens on and fails on anything that errors.
       - name: Every screen's first request
         run: npm run check:endpoints
+
+      # 115 findings across four documents, and the SAME obligation appears in
+      # several of them — the ATP limit is a walk punch-list item, a red-line
+      # finding, an SQF clause and a queued build. That is a fact in more than
+      # one place, which is the defect this codebase keeps rediscovering, and it
+      # had started happening in our own prep work. The register gives each
+      # obligation one owner; this fails if a finding is added to a document and
+      # never claimed, or if the register cites one that no longer exists.
+      - name: Nothing found is lost
+        run: npm run check:obligations

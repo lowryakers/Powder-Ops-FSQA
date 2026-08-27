@@ -870,3 +870,47 @@ The largest single gap: **food fraud (2.7.2) is its own Mandatory clause** with 
 and annual review-with-corrective-actions. Protocol 001 carries the substance — eleven ingredients
 assessed for substitution and dilution — inside the food defense plan, without the structure the Code
 requires.
+
+---
+
+## D-032 · 2026-08-27 · decided — One obligations register, and a check that stops a finding being lost
+
+Asked directly: *are all these gaps, critical limits and fixes wired in, so that when we push V2 it will
+all be included?* **The honest answer was no**, and it is worth recording why, because the shape of the
+problem was familiar.
+
+**Recorded is not wired.** 115 findings sat across four documents — the plan red-line, the audit
+triage, the walk's punch list and five queued builds — plus 31 decisions. Every one was written into
+the repository, which is the thread and does survive a session. **Nothing reconciled them.** No list
+said "this is what must be true before V2", nothing could report how much was done, and nothing would
+notice a finding added to a document and never acted on.
+
+**Worse, the same obligation was named in several places under different names.** The ATP limit is a
+walk punch-list item, a red-line finding, an SQF clause and a queued build. Environmental monitoring is
+a walk item, a nonconformance and an SQF clause. **That is a fact existing in more than one place —
+the exact defect this whole architecture is a response to — and it had started happening in our own
+prep work.** Six months on, somebody would have closed one and believed they had closed all four.
+
+**So: `docs/v2/obligations.json` gives each obligation exactly one owner** and lists under `sources`
+every finding that points at it. 115 findings collapse to **26 obligations**, which is the number that
+actually matters and is small enough to work.
+
+**And `scripts/check-obligations.mjs` is what stops it drifting**, wired into `npm run check` and CI:
+
+- a finding declared in a document and claimed by no obligation **fails the build**;
+- a register entry citing a finding no document declares **fails the build**;
+- a finding claimed by two obligations **fails the build** — each gets one owner, or the register
+  reproduces the defect it exists to prevent.
+
+Verified by adding a deliberately unclaimed finding and watching CI reject it. The first run found
+three genuine duplicate claims, which is the check earning its keep on day one.
+
+**Grouping stays hand-maintained on purpose.** Deciding that four findings are one obligation is
+judgement, not parsing. Only the *reconciliation* is mechanical — the same split as the form registry,
+where the matching rules are code and the facts are Document Control's.
+
+**The status line is deliberately blunt.** With nothing landed, the check prints *"Nothing is landed.
+Every obligation is still ahead of you."* A register that reads like progress when nothing has shipped
+is worse than no register.
+
+Current state: **1 queued · 1 built · 5 drafted · 19 open · 0 landed.**

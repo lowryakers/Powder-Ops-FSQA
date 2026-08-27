@@ -1,0 +1,205 @@
+{
+  "_README": [
+    "THE OBLIGATIONS REGISTER — the single list of what must be true before V2 ships.",
+    "",
+    "Findings live in several documents and the SAME obligation appears in more than one of them:",
+    "the ATP limit is a walk punch-list item, a red-line finding, an SQF clause and a queued build.",
+    "That is the defect this whole architecture is about — a fact in more than one place — happening",
+    "in our own documentation. This file gives each obligation exactly ONE owner, and lists every",
+    "finding that points at it under `sources`.",
+    "",
+    "DERIVED FROM NOTHING. This register is hand-maintained on purpose: grouping findings into",
+    "obligations is judgement, not parsing. What IS mechanical is the check —",
+    "`node scripts/check-obligations.mjs` fails if any finding ID in the source documents is not",
+    "claimed by exactly one obligation here, or if this file claims an ID that does not exist.",
+    "So a new finding cannot be added to a document and quietly forgotten.",
+    "",
+    "STATUS values:",
+    "  open     — nothing built, nothing written. Needs a decision or a person.",
+    "  drafted  — the document or design exists and is reviewable; not landed.",
+    "  built    — code exists on the Track B branch, wired to nothing.",
+    "  queued   — written out exactly in docs/v2/queued/, ready to land on main in one pass.",
+    "  landed   — on main and deployed. NOTHING IS HERE YET.",
+    "",
+    "BUCKET (from audit-nc-triage.md):",
+    "  A — ReadyDoc is the fix.  B — ReadyDoc makes it stick.  C — outside ReadyDoc.",
+    "  doc — a change to a controlled document; no software involved."
+  ],
+  "generated": null,
+  "obligations": [
+    {
+      "id": "OBL-01", "title": "Grade the ATP reading against PC #1's 35 RLU, and validate the number",
+      "bucket": "A", "status": "queued", "owner": "platform + QA",
+      "sources": ["FSP-04", "SQF-06", "SQF-09", "WALK-02"],
+      "artifacts": ["server/atp-limits.js", "docs/v2/queued/atp-35-rlu.md"],
+      "note": "Module built and verified end to end; wiring queued for main. SQF-06 adds an obligation the build does NOT cover: the limit itself must be validated and re-validated annually (2.4.3.11, 2.5.1.1ii). Software grades against the number; it cannot justify it."
+    },
+    {
+      "id": "OBL-02", "title": "Enter the four preventive controls into haccp_ccps and guard their limits",
+      "bucket": "A", "status": "built",
+      "owner": "platform + Document Control (wording check)",
+      "sources": ["WALK-03"],
+      "artifacts": ["server/preventive-controls.js", "docs/v2/queued/preventive-controls-seed.md"],
+      "note": "Transcription pending verification against the PDF by Lowry, Daniela and Carol. Seeder call and the api/haccp.js edit guard are queued for main."
+    },
+    {
+      "id": "OBL-03", "title": "Banned and prohibited substance control — SOP, annual list review, purchasing check",
+      "bucket": "A + B + C", "status": "open", "owner": "Document Control + QA + Purchasing",
+      "sources": ["FSP-28", "NC-306-6.2.2", "NC-306-6.2.3.1", "NC-306-6.2.3.2"],
+      "note": "THREE NONCONFORMANCES, ONE SOP. The draft exists as SOP-DRAFT-BSC. Needs: the SOP written and numbered (C); an annual quality schedule for the list review (B); one line on FORM 204-01 for the purchasing check, which requires a DCR (A)."
+    },
+    {
+      "id": "OBL-04", "title": "21 CFR Part 11 validation package for ReadyDoc",
+      "bucket": "A", "status": "open", "owner": "platform + QA",
+      "sources": ["FSP-27", "NC-455-4.4.39"],
+      "note": "The only nonconformance that names ReadyDoc. Intended use and scope, a Part 11 gap assessment, IQ/OQ/PQ for the system, test scripts with recorded results approved by Quality, and software change control. Interlocks with OBL-05."
+    },
+    {
+      "id": "OBL-05", "title": "Change control covering processes, software, utility and physical plant",
+      "bucket": "A + C", "status": "open", "owner": "Document Control + platform",
+      "sources": ["NC-455-4.3.9"],
+      "note": "controlled.js is already a real gate for form definitions and acceptance criteria — widen it. Adds QC approval on every change, which the current DCR flow does not enforce. Software change control is required by this AND by OBL-04: build once."
+    },
+    {
+      "id": "OBL-06", "title": "Master manufacturing record per formulation and batch size, then the executed batch record",
+      "bucket": "A", "status": "open", "owner": "platform + QA",
+      "sources": ["FSP-08", "X-01", "NC-455-4.5.43", "WALK-01"],
+      "note": "The standing headline gap, now with a nonconformance. FORM 413-1 is the plant's own number, on paper in MRPEasy today. Sequence: MMR first (it is the finding), BPR second. Links to the Production Log rather than replacing it. Also decides the absorb-or-API-connect question."
+    },
+    {
+      "id": "OBL-07", "title": "Environmental monitoring result record, with trending",
+      "bucket": "B", "status": "open", "owner": "platform + QA",
+      "sources": ["SQF-11", "NC-455-4.5.84", "WALK-09"],
+      "note": "Three independent routes to one conclusion: the walk found no record path, the auditor found the testing was not done, SQF requires results tracked and trended. Schedule also needs location rotation and a documented method for elevated results (2.4.8.2)."
+    },
+    {
+      "id": "OBL-08", "title": "Supplier qualification records — questionnaire, certificate expiry, risk rating, approval",
+      "bucket": "A", "status": "open", "owner": "platform + QA + Purchasing",
+      "sources": ["FSP-25", "FSP-31", "NC-455-4.3.1"],
+      "note": "SOP 404 exists; the records do not. FORM 404-1/404-2 marked keychain and producing nothing. Expiring-certificate pattern exists in `certifications`; approval pattern in `qms_records`. FSP-25 (FSVP) rides here: if any ingredient is imported it is the same programme."
+    },
+    {
+      "id": "OBL-09", "title": "Raw material and finished product specifications as approved documents, with a release gate",
+      "bucket": "A", "status": "open", "owner": "QA + platform",
+      "sources": ["NC-455-4.3.6"],
+      "note": "Forward half only — the historical gap cannot be fixed by software. Same defect class as the ungraded ATP reading: a test with no active specification quietly passes. Identity by organoleptic alone is not acceptable."
+    },
+    {
+      "id": "OBL-10", "title": "Allergen management programme",
+      "bucket": "A + C", "status": "open", "owner": "QA",
+      "sources": ["FSP-30", "SQF-10"],
+      "note": "SQF 2.8.1 is Mandatory with a six-part content list, including workplace allergens from locker rooms, vending machines and lunchrooms, and food-grade lubricants. 2.8.1.5 requires validation AND verification of allergen cleaning — that is PC #2. 2.8.1.10 requires allergen rework to be identified and traceable."
+    },
+    {
+      "id": "OBL-11", "title": "Food fraud plan, separate from food defense",
+      "bucket": "C", "status": "open", "owner": "QA + Document Control",
+      "sources": ["SQF-21", "SQF-22"],
+      "note": "The largest single gap the SQF pass found. 2.7.2 is its own Mandatory clause: methods/responsibility/criteria, a mitigation plan, staff training, and an annual review with gaps and corrective actions documented. The substance is in Protocol 001 §3A; the structure is not."
+    },
+    {
+      "id": "OBL-12", "title": "GMP observation record, and footwear control in GMP areas",
+      "bucket": "C + B", "status": "open", "owner": "Operations + QA",
+      "sources": ["NC-455-4.2.9", "WALK-10-gmp"],
+      "note": "The only finding about behaviour rather than paperwork, and the only one about product safety today rather than evidence. The behaviour is fixed by Operations now. The record that catches recurrence is the dormant checklist_templates engine, already typed `gmp`."
+    },
+    {
+      "id": "OBL-13", "title": "IQ/OQ/PQ per equipment, surfaced on the readiness checklist",
+      "bucket": "B", "status": "open", "owner": "Maintenance + platform",
+      "sources": ["NC-455-4.5.8"],
+      "note": "Performing the qualification is engineering work. Holding it is three more derived steps on equipment-readiness.js, each satisfied by an attached protocol — which makes 'which machines are unqualified' answerable on a screen."
+    },
+    {
+      "id": "OBL-14", "title": "Stability study, and link each product's expiry to it",
+      "bucket": "C", "status": "open", "owner": "QA + the lab",
+      "sources": ["NC-455-4.6.21", "SQF-12"],
+      "note": "Laboratory work over real time. Interlocks with SQF-12: retention is at minimum the product shelf life, so the retention rule currently rests on a number under a nonconformance."
+    },
+    {
+      "id": "OBL-15", "title": "Reissue Protocol 003 — Food Safety Plan V5",
+      "bucket": "doc", "status": "drafted", "owner": "Document Control",
+      "sources": [
+        "FSP-01","FSP-05","FSP-06","FSP-07","FSP-09","FSP-10","FSP-11","FSP-12",
+        "FSP-13","FSP-14","FSP-15","FSP-16","FSP-17","FSP-18","FSP-19","FSP-20","FSP-21","FSP-22",
+        "FSP-23","FSP-24","FSP-26","FSP-29","FSP-32","FSP-33","FSP-34",
+        "SQF-01","SQF-02","SQF-03","SQF-04","SQF-05","SQF-07","SQF-08","SQF-13","SQF-14",
+        "X-02","X-03","X-04","WALK-04"
+      ],
+      "artifacts": ["docs/v2/queued/plan-redline.md", "docs/v2/queued/dcr-protocol-003.md"],
+      "note": "The document changes. Includes the three internal contradictions raised as a DCR (FSP-02/03 sit under OBL-16 because they change a control, not just wording). X-04 is the Scope and Normative References section, which OBL-18 depends on."
+    },
+    {
+      "id": "OBL-16", "title": "Correct the two preventive controls the plan states wrongly",
+      "bucket": "doc", "status": "drafted", "owner": "Document Control + QA",
+      "sources": ["FSP-02", "FSP-03"],
+      "artifacts": ["docs/v2/queued/dcr-protocol-003.md"],
+      "note": "Separated from OBL-15 because these change what a control IS, not how it reads: the Rework row cites a metal detector the plant does not have, and the screens frequency differs between the chart and the Process Description. Both must settle before OBL-02's transcription is final."
+    },
+    {
+      "id": "OBL-17", "title": "Reissue Protocol 001 — Food Defense Plan V3",
+      "bucket": "doc", "status": "drafted", "owner": "Document Control + Carol Rojas",
+      "sources": [
+        "FDP-01","FDP-02","FDP-03","FDP-04","FDP-05","FDP-06","FDP-07","FDP-08","FDP-09","FDP-10",
+        "FDP-11","FDP-12","FDP-13","FDP-14","FDP-15","FDP-16","FDP-17","FDP-18","FDP-19","FDP-20",
+        "FDP-21","FDP-22","FDP-23","FDP-24","FDP-27","FDP-28","FDP-29","FDP-30",
+        "SQF-15","SQF-16","SQF-17","SQF-18","SQF-20"
+      ],
+      "note": "SQF-19 (contractor access) is owned by OBL-21, which builds the record; the plan text follows from it. SQF-20 CORRECTS FDP-24: 2.7.1.4 requires the plan reviewed AND TESTED annually, and the plan commits to a mock incident every two years. SQF-15 (name the senior manager responsible) is required and trivially fixed."
+    },
+    {
+      "id": "OBL-18", "title": "Document reference graph and the fan-out on re-issue",
+      "bucket": "A", "status": "drafted", "owner": "platform",
+      "sources": [],
+      "artifacts": ["docs/v2/queued/document-reference-graph.md"],
+      "note": "BLOCKED ON OBL-15 AND OBL-17. Neither plan cites another document by number, so the graph would find nothing. The plan revision must land first — building the mechanism over an empty graph produces something indistinguishable from broken."
+    },
+    {
+      "id": "OBL-19", "title": "Food defense mock incident — annually, with a form and a record",
+      "bucket": "A", "status": "open", "owner": "QA + platform",
+      "sources": ["FDP-25", "WALK-05"],
+      "note": "mock_recalls with a different checklist. SQF 2.7.1.4 sets the cadence at ANNUAL, not the two years the plan states — see OBL-17. Records of both the review and the test are required."
+    },
+    {
+      "id": "OBL-20", "title": "Add a food defense section to Form 403-01",
+      "bucket": "A", "status": "open", "owner": "Document Control + QA",
+      "sources": ["FDP-26", "WALK-06"],
+      "note": "The internal audit is named as the food defense plan's verification and its nineteen sections contain none. Changing what an internal audit asks is a DCR — audit-checklist.js is not user-editable by design."
+    },
+    {
+      "id": "OBL-21", "title": "Visitor and contractor access log",
+      "bucket": "A", "status": "open", "owner": "platform + Operations",
+      "sources": ["SQF-19", "WALK-07"],
+      "note": "SQF 2.7.1.2(vii) names site personnel, CONTRACTORS and visitors. The kiosk pattern fits a lobby sign-in exactly. Contractors are the group most likely to be on site unescorted with tools."
+    },
+    {
+      "id": "OBL-22", "title": "A per-run trigger for run-boundary controls",
+      "bucket": "A", "status": "open", "owner": "platform",
+      "sources": ["WALK-08"],
+      "note": "DEFERRED BY DECISION (D-019). Every generator is a calendar and three of four preventive controls fire per production run. Architecture move 05, after the audit. The record leg (OBL-01) is what an auditor asks for; this is the refinement."
+    },
+    {
+      "id": "OBL-23", "title": "Rework and pest control programmes",
+      "bucket": "C", "status": "open", "owner": "QA",
+      "sources": ["WALK-10-rest"],
+      "note": "Two of the four absent programmes from the walk. Allergen is OBL-10 and GMP observation is OBL-12; these two have no home yet. Rework is a named process step in Protocol 003 with three controls applied to it."
+    },
+    {
+      "id": "OBL-24", "title": "Two single-leg fixes: a form number for calibration, a generator for mock recall",
+      "bucket": "A", "status": "open", "owner": "Document Control + platform",
+      "sources": ["WALK-11"],
+      "note": "Calibration has a record and no form number. Mock recall has a record and a form and no generator — its cadence is reported, not raised."
+    },
+    {
+      "id": "OBL-25", "title": "Confirm which SQF code applies, and which Keychain forms produce",
+      "bucket": "C", "status": "open", "owner": "Lowry + Carol",
+      "sources": ["WALK-01-exit"],
+      "note": "Two facts nothing in the repository can settle. (1) The Food Manufacturing code's own cover refers dietary supplements to a related code — confirm with the certification body before clause numbers go into print. (2) None of the seven keychain-marked forms is producing; the absorb-or-API-connect exit is OBL-06."
+    },
+    {
+      "id": "OBL-26", "title": "Mechanical sweep of the whole document registry",
+      "bucket": "A", "status": "drafted", "owner": "platform + Document Control",
+      "sources": [],
+      "artifacts": ["docs/v2/queued/document-review-at-scale.md"],
+      "note": "Extend doc-consistency.js with the rules generalised from the plan red-line — approved-but-unsigned, revision disagreement, unspecified retention, cites-nothing, section and page arithmetic, spelling. Output is a queue with dismissals, not a document."
+    }
+  ]
+}
