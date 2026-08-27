@@ -813,7 +813,10 @@ time**, and it is tied to corrective actions already due.
 
 ---
 
-## D-030 · 2026-08-27 · open — The SQF Food Safety Code is in the Reference Library, which this session cannot read
+## D-030 · 2026-08-27 · resolved 2026-08-27 — The SQF Food Safety Code was in the Reference Library, which this session could not read
+
+*Resolved the same day: the file was attached and the pass is done — see D-031. The working lesson
+below is the part worth keeping.*
 
 The SQF code Edition 9 was added to ReadyDoc's Reference Library so the plan red-line could be checked
 against it. **The Reference Library is the production database.** This repository holds only what
@@ -828,3 +831,42 @@ first unavailable.
 this work.* Anything a Track B session must read has to be in the repository or attached to the
 conversation. Worth remembering before the next "I've put it in ReadyDoc" — attaching the file makes it
 a mechanical second pass; leaving it in the Library makes it invisible.
+
+---
+
+## D-031 · 2026-08-27 · decided — The SQF pass adds 22 findings, corrects one, and answers the vocabulary question
+
+The **SQF Food Safety Code: Food Manufacturing, Edition 9** was supplied, closing D-030. Part 5 of
+`plan-redline.md` holds **22 new findings cited by clause**; the red-line stands at **90 findings, 36
+must / 47 should / 7 consider**. Additive throughout — nothing in Parts 1–4 was withdrawn or reworded.
+
+**Three results worth recording beyond the findings themselves.**
+
+**1. The vocabulary question is answered, and not the way it was framed.** Clause **2.4.3.17**: where
+regulation prescribes a methodology other than Codex, the plan *"shall … meet **both** Codex and food
+regulatory requirements."* SQF requires Codex HACCP (2.4.3.1, twelve steps); FDA prescribes 21 CFR 117
+preventive controls. **So Protocol 003 carrying preventive-control structure and CCP language may be
+exactly right rather than sloppy.** FSP-34's ask survives — be deliberate, say so under Scope — but the
+resolution is a sentence, not a purge. Supersedes the assumption behind D-014's framing that one
+vocabulary had to win.
+
+**2. One earlier finding was wrong and is corrected in place by a new one.** FDP-24 recorded the Food
+Defense Plan's annual review as *stricter than required*, true against Part 121's three-year reanalysis.
+**Clause 2.7.1.4 requires the plan to be reviewed AND TESTED at least annually**, and Protocol 001
+commits to a mock incident every **two** years — half the required frequency. SQF-20 states the
+correction rather than editing FDP-24, so the reasoning behind the original stays visible.
+
+**3. The plant's two plans each do something the other does not.** The Food Defense Plan has a
+documented risk matrix; the Food Safety Plan has no methodology for determining hazard significance
+(2.4.3.8). The Food Defense Plan has a product/process description; the Food Safety Plan has none
+(2.4.3.4). **Neither plan needs a new capability — each needs what the other already demonstrates.**
+
+**And a scoping caveat raised rather than assumed:** this is the *Food Manufacturing* Code and its own
+cover refers dietary supplements to a related manufacturing code. Every clause cited is a general
+System Elements clause, but **which code Powder Ops is certified against should be confirmed with the
+certification body** before the plan cites clause numbers in print.
+
+The largest single gap: **food fraud (2.7.2) is its own Mandatory clause** with its own plan, training
+and annual review-with-corrective-actions. Protocol 001 carries the substance — eleven ingredients
+assessed for substitution and dilution — inside the food defense plan, without the structure the Code
+requires.
