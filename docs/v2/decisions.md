@@ -1266,3 +1266,46 @@ spec sheets, whose filenames say only `425007-01, Inst WPI SF, GF`. **Reported, 
 **One for a human, not a rule:** `Dipotassium Phosphate.zip` contains `Disodium Phosphate Ingredient
 Composition.pdf`. Different chemical. Either a mis-filed document or a filename typo, and the difference
 matters.
+
+## D-042 · 2026-08-27 · decided — build the supplier register the best way, and the archive says what that is
+
+**The brief was explicit: best possible, not a mirror of how it is done today.** Recording what that means
+concretely, because "best possible" is otherwise a phrase everybody agrees with and nobody can check.
+
+**The unit of qualification is (material × manufacturer), not the vendor.** AIFI supplies three materials
+made by three different companies, so qualifying "AIFI" says nothing about whether the potassium citrate
+came from a qualified source — that answer is Daffodil Pharmachem's BRC certificate, expired 13 months. A
+vendor-level register mirrors the folders and inherits their blind spot. SOP 404 § V.C.E already requires a
+new risk evaluation per material even from an already-qualified vendor.
+
+**Forty-one of seventy-nine files are the same twenty questions asked again per material** — gluten, GMO,
+vegan, organic, allergen, Prop 65, country of origin, kosher, halal, heavy metals, sewage sludge, food
+fraud, lot code, recall, shelf life. **Mirroring makes those 41 documents to file; the right design makes
+them ~20 attributes on the material, each carrying the file that evidences it.** That is the single biggest
+gain and it is invisible if you reproduce the folder structure: it turns "which materials have no allergen
+statement?" from impossible into a filter, and answering a customer questionnaire from a scavenger hunt
+into an assembly. It is also a pattern the plant already trusts — `equipment-readiness.js` derives ten
+steps per machine from records rather than storing a checklist. **Nothing is ticked by hand; an attribute
+is answered because its evidence exists.**
+
+**A certificate is a dated obligation, not a PDF.** Five have lapsed unnoticed. `certifications` already
+does expiry-generates-work for people and `calibration_instruments` for instruments; the pattern has simply
+never been pointed at suppliers.
+
+**It has to reach the dock or it is still a filing cabinet.** SOP 404 § V.A says components are ordered
+through qualified vendors ONLY, and nothing checks that where it matters. FORM 204-01 is already worked at
+the truck and already escalates, so it gains a **derived** line naming a lapsed or absent qualification.
+**It warns and records; it never refuses** — the pallet is already on the dock, and a receiver blocked by a
+paperwork gap they cannot fix goes around the system rather than through it. Same asymmetry as the ATP
+grading: it can raise a fail, never quietly pass.
+
+**Three things deliberately not built.** Not a second Drive — evidence goes to R2 once, and after that
+arrives as a side effect of filing a qualification, not as an upload chore. Not a controlled-document
+register — these are the supplier's documents, they carry no revision of ours, and an auditor asking for
+our register must not be handed Prayon's Prop 65 statement. And not the folder taxonomy reproduced: 2025 /
+2026 / Customer Documents is how the evidence arrived, not how the questions get asked.
+
+**On the full archive: it is not needed and should not be sent.** Every fact the design turns on is in the
+filenames — the expiry dates included — so a path listing answers the whole question at ~100 KB. The bytes
+matter only when they are being stored, which happens through the app. Disk here is not the constraint
+(30 GB free); relevance is.

@@ -16,6 +16,112 @@ W2-24/W2-25.** Split the obligation rather than blocking both on one paragraph.
 
 ---
 
+## 0 · Best possible, not a better folder
+
+**The brief is explicit: build this the best possible way, not a mirror of how it is done today.** So this
+section is the part that would be missing if we simply put a database in front of Drive. Every move below
+is argued from the two real archives, not from taste.
+
+### 0.1 · The unit of qualification is a MATERIAL from a MANUFACTURER — not a vendor
+
+AIFI supplies three materials made by three different companies. **Qualifying "AIFI" tells you nothing
+about whether the potassium citrate came from a qualified source** — that answer lives in Daffodil
+Pharmachem's BRC certificate, which is currently 13 months expired.
+
+A vendor-level register mirrors the folders and inherits their blind spot. The unit that means something
+is **(material × manufacturer)**, with the vendor as the commercial relationship on top. That is also what
+SOP 404 § III.A says — *"a broker or agent, **or the actual manufacturer**"* — and what § V.C.E means when
+it requires a **new risk evaluation per material** even from an already-qualified vendor.
+
+### 0.2 · Forty-one of seventy-nine files are the SAME twenty questions, asked again per material
+
+Counted from the archive: gluten (3), GMO/bioengineered (5), vegan (2), organic (2), allergen (2), Prop 65
+(2), country of origin (3), kosher (2), halal (2), heavy metals/pesticides (2), sewage sludge (2), food
+fraud (1), lot code/traceability (5), recall (2), shelf life (1) — plus HACCP (7), specification (3), SDS
+(3), audit certificates (4).
+
+**Mirroring turns those into 41 documents to file. Best-possible turns them into ~20 attributes on the
+material, each carrying the file that evidences it.**
+
+That one move changes what the system can answer:
+
+| Today | With attributes |
+|---|---|
+| *"Is the potassium citrate gluten free?"* → open the folder, find the PDF, read it | a field |
+| *"Which materials have no allergen statement on file?"* | a filter — **impossible today** |
+| *"A customer sent us a questionnaire"* → a scavenger hunt across 43 folders | assembled from what is already held |
+| *"What is missing before this material is qualified?"* | the blanks, listed |
+
+**And it is the same pattern the plant already trusts** — `equipment-readiness.js` derives ten steps per
+machine from records rather than storing a checklist. This is that, for a material. **Nothing is ticked by
+hand: an attribute is answered because its evidence exists.**
+
+### 0.3 · A certificate is a dated obligation, not a PDF in a folder
+
+**Five have already lapsed and nobody knew** — including the BRC audit certificate of the company that
+makes the potassium citrate. That is the whole argument. A certificate with an expiry becomes a row with a
+due date that **raises work before it lapses**, exactly as `certifications` already does for people and
+`calibration_instruments` for instruments. The pattern exists; it has simply never been pointed at
+suppliers.
+
+**The expiry is read from the filename where the filename states it** (eight of AIFI's do), and is
+otherwise **blank and asked for** — never inferred from the year folder it happens to sit in.
+
+### 0.4 · A disposition, not a checkbox
+
+Jake's sheet records *questionnaire completed: 1*. SOP 404 § V.C.III requires **Approved / Conditionally
+Approved / Not Approved**, decided by Quality against seven named criteria. Nineteen "completed" currently
+reads as nineteen qualified, and it is not. **The decision is the record; the questionnaire is evidence for
+it.**
+
+### 0.5 · It has to reach the dock, or it is still a filing cabinet
+
+**This is the move that separates "best possible" from "a much better list."**
+
+SOP 404 § V.A: *"Components ordered for Powder-Ops will be done through qualified vendors ONLY."* Today
+nothing checks that at the moment it matters. **FORM 204-01 is already worked at the truck**, already
+refuses sign-off on a blank answer, and already escalates to named people — so the receiving checklist
+gains a **derived** line: *this material's supplier qualification has lapsed / has no questionnaire on
+file.*
+
+**It warns and records; it never refuses.** The pallet is already on the dock, and a receiver blocked by a
+paperwork gap they cannot fix will find a way around the system rather than through it. Same asymmetry as
+the ATP grading: it can raise a fail, it can never quietly pass, and the escalation is the honest record
+that somebody was told.
+
+### 0.6 · The year folder becomes a review cycle
+
+`vendor/2025` and `vendor/2026` are already an annual review — SOP 404 § IV.B requires one and nothing
+schedules it (W2-29). A qualification carries `next_review_due` and generates work. **Brown Rice Flour was
+refreshed in 2026; Potassium Citrate and Dipotassium Phosphate were not.** That distinction is invisible in
+Drive and is the first thing a review cycle would have raised.
+
+### 0.7 · What NOT to build
+
+- **Not a second Drive.** The evidence goes to R2 **once**, in bulk, and after that new files arrive as a
+  side effect of filing a qualification — not as a separate "upload documents" chore. Same reasoning as
+  artwork versions being a side effect of the proofing run.
+- **Not a controlled-document register.** These are the *supplier's* documents. They have no revision of
+  ours, they do not pass through our DCR, and putting them in `sop_documents` would mean an auditor asking
+  for our register gets Prayon's Prop 65 statement.
+- **Not the folder taxonomy, reproduced.** "2025 / 2026 / Customer Documents" is how the evidence arrived.
+  It is not how the questions get asked.
+
+### 0.8 · What this costs, honestly
+
+The mirror is a table and an importer — days. **Best-possible is that, plus the attribute model, plus the
+certificate clock, plus the receiving hook.** The sequencing that lands value earliest:
+
+1. **Suppliers + materials + files + the archive import.** The register exists; NC 4.3.1 has somewhere to
+   live; the 24 unqualified vendors become visible.
+2. **The certificate clock.** Smallest piece, immediate payoff — the five lapses stop being invisible.
+3. **The attribute model.** The biggest usability gain, and it can be backfilled from files already
+   imported without re-uploading anything.
+4. **The receiving line.** Last, because it touches a screen the warehouse depends on, and it should not
+   move until the register behind it is trustworthy.
+
+---
+
 ## 1 · Where it sits on the spine
 
 | Leg | Today | After |
