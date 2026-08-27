@@ -111,34 +111,106 @@ Two traps this codebase has already paid for and that apply here:
   — a vendor appears once — but if Jake's sheet is one row per vendor **per material**, identity becomes
   `name + item_number` and the vendor row is derived. **The sheet decides this, not I.**
 
-### The zip → the scanned-tests pattern, applied to paths instead of filenames
+### The archive → `server/supplier-archive.js`, **built and tested 27 Aug**
 
-`server/api/training.js` already reads a zip with `adm-zip`, parses each entry's **name** into a record,
-previews what it would create, and attaches the file as evidence on commit. **The supplier zip is the same
-shape with the path doing the work the filename did:**
+**My first guess at the structure was wrong, which is why I asked for real folders instead of designing
+against an imagined layout.** I assumed `vendor / year / kind / file`. The plant's actual archives — AIFI
+and Mill Haven, walked in full — look like this:
 
 ```
-Mill Haven Foods/2026/Completed Questionnaire/FORM 404-1 signed.pdf
-└── supplier ───┘ └yr┘ └──── kind ─────────┘ └──── the file ────┘
+AIFI/2025/RM VQ-filled-PTC.pdf                              ← loose file; the KIND is in the name
+AIFI/2025/Potassium Citrate.zip                             ← a nested zip named after a MATERIAL
+AIFI/2025/Potassium Citrate.zip/Daffodil Pharmachem BRC Audit Certificate exp 7-27-2025.pdf
+AIFI/2025/Customer Documents.zip                            ← a nested zip about the VENDOR
+Mill Haven/2025/                                            ← an empty year, which is itself a fact
 ```
 
-`parseSupplierPath()` returns `{ supplierName, periodLabel, kind, filename }`. Everything else follows the
-importer rules this repo already enforces:
+**There is no `kind` folder level.** The third segment is either a document or a **container named after
+what it is about**, and the classification comes from the filename either way. And there are **nested
+zips**, so the walk has to recurse.
 
-- **Nothing is invented.** A path that yields no supplier, no year, or no recognisable kind is **reported
-  with the reason and skipped**, never guessed. Same rule as the scanned tests, and the reason that
-  importer is trusted.
-- **The supplier name is matched, not created blind.** Exact match on a normalised key wins outright;
-  anything else is a **suggestion** ranked by bigram similarity with the whole list available for
-  hand-mapping — because "Mill Haven Foods" and "Mill Haven Foods, Inc." are the same vendor and only a
-  person can say so. Unmapped vendors are skipped and counted, mappable on a later run.
-- **Idempotent** on `supplierKey + period + kind + filename`, stored as `source_path`. Re-importing a
-  corrected folder updates in place rather than doubling it, and `already_imported` is counted **separately
-  from** `repeated_in_file`.
-- **Preview writes nothing.** A supplier register bulk-written from a zip nobody checked stops being the
-  thing that answers "show me their qualification".
+**Two corrections to what this document said before the archives arrived:**
 
----
+- **There are no COAs.** Not one file in either vendor is a certificate of analysis. The folders hold
+  **qualification evidence** — certificates, statements, specifications, SDS, HACCP plans, audit reports.
+  The rule about vendor CoAs in § 4 still stands for when one appears, but it is not what is in there.
+- **There are THREE subjects, not two.** The documents are about the **vendor** (AIFI's W9, FDA
+  registration, FSVP statement), the **material** (Potassium Citrate specification, SDS, allergen matrix),
+  and — the one nothing had allowed for — **the manufacturer behind the material**. Prayon makes the
+  dipotassium phosphate, Daffodil Pharmachem the potassium citrate, Dainty Foods the brown rice flour.
+  **AIFI is a distributor.**
+
+> **This is the finding that changes the schema, and SOP 404 anticipated it.** § III.A: *"This may be a
+> broker or agent, **or the actual manufacturer** of the packaging or starting raw material."* The
+> quality-system evidence qualification actually turns on — the BRC, SQF and FSSC audit certificates —
+> **belongs to the manufacturers, not to the vendor we buy from.** So `supplier_materials` gains
+> `manufacturer_name`, and certificates attach there. Without it, "is this material from a qualified
+> source?" is answered by looking at AIFI's W9 when the thing that matters is Daffodil's BRC certificate.
+
+**What the parser does, and the four rules in it.** `readSupplierArchive(entries, { today })` takes a flat
+list of paths — which is all a zip walk or a `find` produces — and returns `{ files, skipped, expired,
+vendors }`. It is **pure**: no Express, no database, no zip library.
+
+1. **The expiry is READ from the filename, never guessed.** Eight of AIFI's certificates carry it —
+   `exp 7-11-2027`, `exp. 01-11-2027`, `exp 10-31-2025`. A certificate whose name carries no date gets no
+   expiry, because an invented one puts a supplier's approval on a clock nobody chose.
+2. **A blank form is never evidence of a completed one.** `Raw Material Questionnaire Form.pdf` (the blank)
+   and `RM VQ-filled-PTC.pdf` (the returned one) sit in the same folder. Filing the first as a completed
+   questionnaire is exactly how 24 unqualified vendors would read as qualified.
+3. **A folder that is not a year is refused**, not assumed to be a period.
+4. **An unrecognised filename is reported with its path, never guessed.** Five of 79 came back unknown, and
+   all five genuinely need a person.
+
+**The manufacturer is deliberately NOT parsed out.** Prayon, Daffodil Pharmachem and Dainty Foods are
+legible in those filenames, but reading a company name out of a filename is a guess, and attaching a BRC
+certificate to the wrong manufacturer is a qualification record that is quietly false. The importer offers
+the distinct leading phrases as **candidates for a person to confirm** — the same rule the scanned-tests
+importer follows for people's names.
+
+### Verified — `npm run` `node scripts/check-supplier-archive.mjs`, 18 assertions, all passing
+
+Against `scripts/fixtures/supplier-archive-listing.json`, **the real 84-entry listing of both archives**
+(paths only, no file contents), with a fixed date so "expired" means the same thing on every run.
+
+| | AIFI | Mill Haven |
+|---|---|---|
+| Files classified | 77 | 2 |
+| Materials, from the container zips | Potassium Citrate, Dipotassium Phosphate, Brown Rice Flour | — |
+| Questionnaire on file | **yes** (`RM VQ-filled-PTC.pdf`) | **no** |
+| Empty year folders | — | **2025** |
+
+**Mill Haven has no questionnaire and an empty 2025 — the parser reproduces NC 4.3.1 from the folder
+structure alone**, and Jake's sheet says the same thing from the other side.
+
+**Five certificates on file have already expired**, and this is the first time anything has been able to
+say so:
+
+| Expired | Whose | What |
+|---|---|---|
+| 2025-07-27 | Daffodil Pharmachem | **BRC Audit Certificate** — 13 months ago, and this is the potassium citrate manufacturer's food-safety certification |
+| 2025-10-31 | Prayon – Augusta | Halal Certificate |
+| 2026-01-31 | Prayon | Dipotassium Phosphate Kosher Certificate |
+| 2026-01-31 | Daffodil Pharmachem | Kosher Certificate |
+| 2026-02-08 | Daffodil Pharmachem | Halal Certificate |
+
+**And note where they are: all five are in the 2025 folder, and neither Potassium Citrate nor Dipotassium
+Phosphate has a 2026 folder at all.** So those two materials' evidence has lapsed with no refresh on file,
+while Brown Rice Flour was refreshed in 2026. That is precisely the state an annual review exists to catch
+and the sheet has no way to show.
+
+### The five it could not read, and what they probably are
+
+| Path | Likely |
+|---|---|
+| `AIFI/2025/Powder Ops LOG.pdf`, `AIFI/2026/…` | AIFI's own log of what they have sent us — needs a name |
+| `AIFI/2025/Customer Documents.zip/AIFI Document Expiration.pdf` | AIFI's own register of what expires when. Worth reading — it may already answer the five above. |
+| `Mill Haven/2026/425007-01, Inst WPI SF, GF (1).pdf` | A product specification for Instant Whey Protein Isolate — **the material NC 4.3.1 names for Mill Haven** |
+| `Mill Haven/2026/Grassfed IWPI w-SFL  (1).pdf` | The same, grass-fed. Note the double space in the filename. |
+
+**One to check by eye, not by rule:** `Dipotassium Phosphate.zip` contains
+`Disodium Phosphate Ingredient Composition.pdf`. Disodium phosphate is a **different chemical** from
+dipotassium phosphate. Either a mis-filed document or a typo in the filename, and the difference matters.
+`[for Jake or Adam]`
 
 ## 3a · Jake's sheet, read — 67 vendors, and what it can and cannot say
 

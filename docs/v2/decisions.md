@@ -1215,3 +1215,54 @@ are named people whose role cannot be read from the address. So the import split
 rows and **marks no roles**. The quality contact is learned the way `bank_rules` are: whoever sends FORM
 404-1 marks the address they sent it to. **A guessed role on a compliance contact is worse than a blank
 one**, and asking somebody to fill in 179 dropdowns is how a module stops being used.
+
+## D-041 · 2026-08-27 · decided — the archive has three subjects, not two, and the third one is the manufacturer
+
+**My first guess at the folder structure was wrong, and asking for real folders rather than designing
+against an imagined layout is what caught it.** D-039 assumed `vendor / year / kind / file`. AIFI and Mill
+Haven, walked in full, are `vendor / year / <file or a nested zip named after its subject>` — there is no
+kind level, the classification is in the filename, and **the walk has to recurse into nested zips.**
+
+**Two corrections to D-039.**
+- **There are no COAs in the archive.** Not one file in either vendor. The folders hold *qualification
+  evidence* — certificates, statements, specifications, SDS, HACCP plans, audit reports. The rule about
+  vendor CoAs still stands for when one appears; it is not what is in there.
+- **There are three subjects, not two,** and the third is the one nothing had allowed for: the **manufacturer
+  behind the material**. Prayon makes the dipotassium phosphate, Daffodil Pharmachem the potassium citrate,
+  Dainty Foods the brown rice flour. **AIFI is a distributor.**
+
+**SOP 404 anticipated exactly this and we had read past it.** § III.A: *"This may be a broker or agent, or
+the actual manufacturer of the packaging or starting raw material."* **The quality-system evidence that
+qualification turns on — the BRC, SQF and FSSC audit certificates — belongs to the manufacturers, not to
+the vendor we buy from.** So `supplier_materials` gains `manufacturer_name` and certificates attach there.
+Without it, *"is this material from a qualified source?"* is answered by looking at AIFI's W9 when the
+thing that matters is Daffodil's BRC certificate.
+
+**`server/supplier-archive.js` is built, pure, and tested against the plant's own folder names** —
+`scripts/check-supplier-archive.mjs`, 18 assertions, against a fixture that is the **real 84-entry listing**
+(paths only, no file contents) so the parser stays honest to the real names rather than ones we invented.
+A **fixed date** is passed in rather than read from the clock: a parser whose report moves overnight cannot
+be tested.
+
+**One assertion failed on the first run and the code was right — I was wrong.** I had eyeballed two expired
+certificates from the filenames; the parser found **five**, and re-reading confirmed it. Recorded because
+the instinct to "fix" a parser that disagrees with a hand count is how a wrong hand count gets encoded.
+
+**What it can now say that nothing could before.** Five certificates on file have expired — Daffodil
+Pharmachem's **BRC Audit Certificate 13 months ago**, and four Kosher/Halal certificates. All five are in
+the **2025** folder, and **neither Potassium Citrate nor Dipotassium Phosphate has a 2026 folder at all**,
+while Brown Rice Flour was refreshed. Two materials' evidence has lapsed with no replacement on file. That
+is precisely the state an annual review exists to catch (W2-29) and Jake's sheet has no way to show.
+
+**And the parser reproduces NC 4.3.1 from the folder structure alone:** Mill Haven has no questionnaire and
+an empty 2025 folder. Jake's sheet says the same thing from the other side, which is the first time two
+independent sources in this project have agreed on a finding without either being derived from the other.
+
+**Five of 79 files came back unknown and all five genuinely need a person** — two "Powder Ops LOG.pdf",
+AIFI's own "Document Expiration.pdf" (which may already answer the five lapses above), and Mill Haven's two
+spec sheets, whose filenames say only `425007-01, Inst WPI SF, GF`. **Reported, never guessed**, which at
+6% is the rate that keeps an importer trusted.
+
+**One for a human, not a rule:** `Dipotassium Phosphate.zip` contains `Disodium Phosphate Ingredient
+Composition.pdf`. Different chemical. Either a mis-filed document or a filename typo, and the difference
+matters.
