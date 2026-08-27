@@ -2330,6 +2330,66 @@ deliberate scroller doesn't read as a bug. Run it on new screens.
 *behave* differently on a phone (CommsView's inline copy now imports it). A second copy is how a component
 and its own markup start disagreeing about which layout is on screen.
 
+## Supplier Qualification (`server/api/suppliers.js` + `SuppliersPanel.jsx`)
+Who we buy from and whether they are qualified to sell it to us — SOP 404 V4, and the record NSF/ANSI
+455-2 **NC 4.3.1** found missing. Before this there was **no supplier record in ReadyDoc of any kind**:
+`approved_chemicals` holds chemicals, `certifications` holds PEOPLE (`person_name NOT NULL`),
+`supply_orders` is office purchasing. Module id `suppliers`, Quality nav group.
+- **THE UNIT OF QUALIFICATION IS A MATERIAL FROM A MANUFACTURER, not a vendor.** AIFI supplies three
+  materials made by three different companies, so qualifying "AIFI" says nothing about whether the
+  potassium citrate is from a qualified source — that is Daffodil Pharmachem's BRC certificate, and it
+  expired 13 months ago. SOP 404 § III.A says so outright: *"a broker or agent, **or the actual
+  manufacturer**"*. `supplier_materials.manufacturer_name` is that dimension.
+- **NOTHING IS IMPORTED AS QUALIFIED.** Every supplier arrives `status = 'unqualified'` however
+  emphatically the tracker says otherwise: approval is a decision under § V.C.III taken against seven
+  named criteria, and a completed questionnaire is EVIDENCE for it, never it. The plant's tracker has 19
+  ticks; importing those as 19 approvals would be a false record on day one.
+- **`server/supplier-sop.js` transcribes the SOP's own values** — three dispositions with their full
+  definitions, seven risk criteria — the `preventive-controls.js` doctrine. A fourth disposition is a
+  Document Change Request. The endpoint refuses a partial risk evaluation ("minimum criteria" is the
+  SOP's own word) and refuses a conditional or not-approved verdict with no reason.
+- **`suppliers.status` MIRRORS the disposition** and is written in the same transaction and nowhere else.
+  `PUT /:id` **400s on `status`** rather than dropping it silently — the `NFP_OWNED` rule.
+- **THE IMPORT IS A RECONCILIATION, NOT A LOAD.** The tracker and the archive disagree about **48 of 75
+  vendors**: 26 have a questionnaire on file the tracker says they lack, 3 are ticked with nothing on
+  file, 11 active vendors have no folder at all. Loading either source alone imports a known-wrong answer
+  and makes it look authoritative, so the plan carries BOTH answers and flags the vendor; a person
+  resolves it. `server/supplier-reconcile.js` and `supplier-import.js` are **pure** — rows and paths in,
+  a plan out — and `applySupplierImport` writes THE PLAN and re-derives nothing.
+- **Name matching is deliberately conservative**: exact → suffix → contains, strongest first, four-character
+  minimum on containment. That is why "GNT" does NOT claim "Exberry-GNT" — a three-letter name matching
+  inside another is how a qualification gets filed against the wrong company. Only 4 of 54 matches are
+  non-exact and every one is surfaced for confirmation. `legacy_names` is never cleared (`legacy_sku` rule):
+  the tracker says "Mill Haven", the audit report says "Mill Haven Foods".
+- **`server/supplier-archive.js` reads the plant's own folders**, and four assumptions died against the
+  real 836-file listing: 228 files have **no year folder** (undated is a state, not an error); a container
+  zip is named after a material, a **manufacturer**, an item number, a questionnaire or nothing, so it is
+  a LABEL whose meaning is a suggestion for a person; **52 certificates never say "certificate"**
+  (`Kosher Exp. 12.31.2025.pdf`); and the expiry is written six ways including `Exp 18 Apr 2025` and a
+  month-only `Exp 12.2024` (read as the last day of that month, the retention-log rule).
+- **An expiry is READ from the filename, never guessed** — a lapsed certificate reading as current is
+  worse than one with no date at all. **Ten on file had already expired** and nothing knew.
+- **A blank form is never evidence of a completed one**: `Raw Material Questionnaire Form.pdf` (blank)
+  and `RM VQ-filled-PTC.pdf` (returned) sit in the same folder. And a questionnaire-NAMED container counts
+  even unexpanded, because ten vendors keep theirs inside a zip and reporting those as missing would put a
+  vendor on an unqualified list because of how somebody packed a folder.
+- **TWO GAPS, NOT ONE, and collapsing them is what made the old tracker unhelpful.** On the real data:
+  **21 awaiting a disposition** (evidence on file — Quality's queue, a short job) and **22 with no
+  questionnaire document on file** (Purchasing's chase list, weeks). They partition the active set. The
+  register counts **evidence, not claims** — a tracker tick with no document behind it counts as none,
+  because "show me the questionnaire" is what an auditor asks.
+- **No contact role is guessed.** Only 4 of 179 addresses are recognisably quality or regulatory and 64 of
+  67 vendors have none, so the import splits the addresses and marks no roles; the quality contact is
+  learned from whoever sends FORM 404-1. A guessed role on a compliance contact is worse than a blank one.
+- Every figure on the screen is **derived on read**; a stored count goes stale the first time somebody
+  files a questionnaire. The headline is a **button**, not a statistic.
+- **FORM 404-3 (Vendor Audit Summary) is cited by SOP 404 § VI and has never been issued** — absent from
+  the Master Index and all 159 rows of the DCR log. The module can hold a vendor audit; it cannot number
+  the form. Document Control's call.
+- Verified: 19 + 17 + 27 assertions in `npm run check:suppliers` (fixtures are the real tracker and the
+  real 836-path listing, paths only), plus `scripts/verify-suppliers.mjs` — **30 assertions executed
+  against a live server on a fresh database**, importing the real files over HTTP.
+
 ## Retention Samples (`server/api/retention.js` + `RetentionSamplesPanel.jsx`)
 The plant's physical library of what it made — a retain of every blend, intermediate and finished good, plus
 90 g of every raw material received. Transcribed from their own Retention Sample log. Nav entry in Quality;

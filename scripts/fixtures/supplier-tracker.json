@@ -1,0 +1,545 @@
+{
+  "_README": [
+    "Jake's Current Suppliers tracker as at 8/6/2026, read with the repo's own readTable().",
+    "Frozen so the reconciliation check is reproducible. 67 vendors, the six real columns."
+  ],
+  "read_at": "2026-08-27",
+  "rows": [
+    {
+      "Vendor": "A&B Ingredients",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "msnyder@abic-consulting.com, kkaspar@abingredients.com, tdozier@abingredients.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "AIFI",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "documents@americaninternationalfoods.com, maxk@americaninternationalfoods.com, ZacS@americaninternationalfoods.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Atlantis Ingredients",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "roy@collagensei.com, operation@atnutra.com, Peggy@atnutra.com, peggy@collagensei.com",
+      "Notes": "pinged Lowry for contact info 8/6"
+    },
+    {
+      "Vendor": "Boxt Packaging",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "keenan@boxtpackaging.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Casepak",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "chrisk@casepak.com, michelleh@casepak.com, tapping@casepak.com, darianb@casepak.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Compound Solutions",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "aevans@compoundsolutions.com, sabdallah@compoundsolutions.com, csiorders@compoundsolutions.com, jloflen@compoundsolutions.com, jguerrero@compoundsolutions.com, kdooley@compoundsolutions.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Continental Flavors",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "adeclark@continentalflavors.com, bdeclark@continentalflavors.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Custom Flavors",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "regulatory@customflavors.com, jeffd@customflavors.com, adam@customflavors.com, customerservice@customflavors.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Dawn Foods",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "Dave.Bradford@dawnfoods.com",
+      "Notes": "COAs received. Need questionnaire"
+    },
+    {
+      "Vendor": "Dutch Valley Foods",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "dhamm@dutchvalleyfoods.com, KRhen@dutchvalleyfoods.com, rreinhart@dutchvalleyfoods.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Flavor Producers",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "julie.laible@flavorproducers.com, customerservice@flavorproducers.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Forte Flavors",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "contact@forteflavors.com, nicky@forteflavors.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "GF Harvest",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "noriko@glutenfreeoats.com, sales@glutenfreeoats.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "GloryBee",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "jeri.short@glorybee.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "GNT",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "MCael@gntusa.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Golden Peanut",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "Madi.Jones@goldenpeanut.com, Lori.Mullinax@goldenpeanut.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "GWI",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "bira@ingredientsonline.com, wjin@ingredientsonline.com, service@ingredientsonline.com, bcromero@ingredientsonline.com, agelera@ingredientsonline.com, aprodelas@ingredientsonline.com, jchang@ingredientsonline.com, djsalonga@ingredientsonline.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Honeyville",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "HEIDIL@honeyville.com, SLCCOA@honeyville.com, BradenB@honeyville.com, CarmelitaS@honeyville.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "HPS",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "veronika@hpsfood.com, joanna@hpsfood.com, anndrea@hpsfood.com, admin@hpsfood.com,",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Impact",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "info@impactproducts.life, hudson@impactproducts.life, tanner@impactproducts.life, orders@impactproducts.life",
+      "Notes": ""
+    },
+    {
+      "Vendor": "M4 Dynamic",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "coordinator@m4dynamic.com, matt@m4dynamic.com, sophie@m4dynamic.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Mak Wood",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "olivia@makwood.com, ross@makwood.com, Ryan@makwood.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Metarom",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "jasmine.lopez@metaromusa.com, lauren.mcclanathan@metaromusa.com, john.hemmingsen@metaromusa.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Mill Haven",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "Isaac.LaBudda@millhavenfoods.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Mother Murphy's Flavors",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "agarcia@mothermurphys.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "National Measures",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "orders@nationalpolymersllc.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "NP Nutra",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "customerservice@npnutra.com, customerservice2@npnutra.com, customerservice3@npnutra.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Nu Packaging",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "ryan@nupackaging.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Pacific Bridge",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "monica@pacificbridgead.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Phlex Proteins",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "jheitz@phlexproteins.com, cservice@phlexproteins.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Prinova",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "beatriz.diazsantana@prinovausa.com, Justen.Straight@prinovausa.com, christen.fisher@prinovausa.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Relsus",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "suman.sharma@relsus.com, vineet@relsus.com, shalini@relsus.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Sabinsa",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "hari@sabinsa.com, asha@sabinsa.com, mahadevnayak@sami-sabinsagroup.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Scoular",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "MViznyuk@scoular.com, BSwanson@scoular.com, ACraciun@scoular.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Sensapure",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "customer.service@sensapure.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Stauber",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "travis.mitchell@stauberusa.com, Zoe.Martinez@stauberusa.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Stryka",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "michaelw@stryka.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Tastepoint",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "deona.spiller@tastepoint.com, patricia.acosta@tastepoint.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "The Cary Company",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "help@thecarycompany.com, sales@thecarycompany.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "UniChem Supply",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "kjordan@unichemsupply.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Virginia Dare",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "1",
+      "Contact": "CHarvey@virginiadare.com, ianishii@gmail.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Vivion",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "orders@vivion.com, cody.r@vivion.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Webstaurant",
+      "Actively Using": "1",
+      "Questionnaire Requested": "1",
+      "Questionnaire Completed": "0",
+      "Contact": "help@webstaurantstore.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "AIDP/VegD3",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "info@vegd3.com, t.wray@aidp.com, a.dacumos@aidp.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Anderson",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "kerrilynns@advancedingredients.com, johnp@andersonglobalgroup.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Bobert Group",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "robert@bobertgroup.com, info@richfield-food.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Bulk Supplement",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "cs@bulksupplements.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Centian",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "samantha@centianusa.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Flavor Waves",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "techdata@flavorwaves.com, info@flavorwaves.com, techdata@flavorwaves.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Foodarom",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "csw@foodarom.com, jjuhlin@glanbia.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Fortis",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "jwilson@fortissolutionsgroup.com, vgoodrich@fortissolutionsgroup.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Fuller",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "mkeery@fulleringredients.com, kbernal@fulleringredients.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Futureceuticals",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "Alyssa.Blake@futureceuticals.com, Angela.Macgillivray@futureceuticals.com, Andrew.Vermeer@futureceuticals.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Glanbia",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "orders@glanbianutritionals.com, brhansen@glanbia.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "GSO Extracts",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "cherrera@gsoextracts.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Industrial Container",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "justin.lund@industrialcontainer.com, Brian.Smedley@industrialcontainer.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "LiquaDry",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "Jon@liquadry.com, laura@liquadry.com, francise@liquadry.com, Stuart@liquadry.com, Orders@liquadry.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Mitsubishi",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "llance@mitsubishiingredients.com, allen.crock@evonik.com, julie.wind@evonik.com, efultz@mitsubishiingredients.com, mjnoll@mitsubishiingredients.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Monk Fruit Corp.",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "richard.whelan@monkfruitcorp.com, Orders@monkfruitcorp.com, paul.paslaski@monkfruitcorp.com, Melina.Ovassapian@monkfruitcorp.com, thomas.zhang@monkfruitcorp.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Osage",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "lisaz@osagefood.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Seppic",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "ww-ar-seppicinc@airliquide.com, jacqueline.sherrer@airliquide.com, michelle.ashton@airliquide.com, amey.desai@airliquide.com, jerry.truty@airliquide.com, christine.engelhardt-sc@airliquide.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Smirk's",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "zach@smirks.com, info@smirks.com, jennifer@smirks.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Sunland",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "michael@sunlandnutrition.com, Dulcie.Chou@sunlandnutrition.com, Sales@sunlandnutrition.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Synergy",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "LPlacek@synergytaste.com, dsowders@synergytaste.com, dparks@synergytaste.com, pmueller@synergytaste.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Talus",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "RRomero@actylis.com, apyne@actylis.com, CNapoli@actylis.com, sales.biotron@actylis.com, info.talus@aceto.com, orders@talusminerals.com, LWoodard@actylis.com, orders.biotron@actylis.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Top Health Ingredients",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "orders@tophealthingredients.com, ken@tophealthingredients.com, Amanda@tophealthingredients.com",
+      "Notes": ""
+    },
+    {
+      "Vendor": "Traco",
+      "Actively Using": "0",
+      "Questionnaire Requested": "0",
+      "Questionnaire Completed": "0",
+      "Contact": "christy@packagingutah.com, annette@packagingutah.com, hunter@packagingutah.com, csimmons@tracopackaging.com",
+      "Notes": ""
+    }
+  ]
+}

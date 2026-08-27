@@ -47,6 +47,7 @@ import internalAuditRoutes from './server/api/internal-audits.js';
 import docReviewRoutes from './server/api/doc-review.js';
 import formRoutes from './server/api/forms.js';
 import facilityRoutes from './server/api/facility.js';
+import supplierRoutes from './server/api/suppliers.js';
 import retentionRoutes from './server/api/retention.js';
 import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
@@ -1797,6 +1798,7 @@ app.use('/api/forms', formRoutes);
 // Read-only: the map shows facts from records the caller can already see.
 app.use('/api/facility', facilityRoutes);
 app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRoutes);
+app.use('/api/suppliers', requireModuleWrite('suppliers'), supplierRoutes);
 app.use('/api/partners', requireModuleWrite('partner-reconciliation'), partnerRoutes);
 // Public: token-scoped partner access, guarded inside the router.
 app.use('/api/partner-portal', partnerPortalRoutes);

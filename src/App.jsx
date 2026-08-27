@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Sliders, BookText, LifeBuoy, PenLine, ListTodo } from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, Sliders, BookText, LifeBuoy, PenLine, ListTodo } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -65,6 +65,7 @@ const DocReviewPanel = lazy(() => import('./components/compliance/DocReviewPanel
 const FormRegistryPanel = lazy(() => import('./components/compliance/FormRegistryPanel.jsx'));
 const FacilityMapPanel = lazy(() => import('./components/compliance/FacilityMapPanel.jsx'));
 const RetentionSamplesPanel = lazy(() => import('./components/compliance/RetentionSamplesPanel.jsx'));
+const SuppliersPanel = lazy(() => import('./components/compliance/SuppliersPanel.jsx'));
 const ProductionLog = lazy(() => import('./components/compliance/ProductionLog.jsx'));
 const ProductionSchedule = lazy(() => import('./components/compliance/ProductionSchedule.jsx'));
 const ProductionDashboard = lazy(() => import('./components/compliance/ProductionDashboard.jsx'));
@@ -165,6 +166,10 @@ const NAV_GROUPS = [
       // where a lab sample was actually tested, but its own module: see the
       // header of server/api/retention.js.
       { id: 'retention-samples', label: 'Retention Samples', icon: Archive, keywords: 'retains retention library box destruction date lab sample keep jar 90g' },
+      // Who we buy from, and whether they are qualified to sell it to us.
+      // NC 4.3.1 is the reason it exists; the screen leads with the derived
+      // pair SOP 404 § V.A forbids — actively used AND not qualified.
+      { id: 'suppliers', label: 'Suppliers', icon: Building2, keywords: 'supplier vendor qualification questionnaire 404 approved vendor list qvl raw material manufacturer certificate expiry' },
       { id: 'organoleptic', label: 'Organoleptic Sensory', icon: TestTubes },
       { id: 'flavor-approvals', label: 'Flavor Approvals', icon: Sparkles },
       { id: 'capa', label: 'CAPA / Complaints', icon: FileWarning },
@@ -2062,6 +2067,7 @@ function App() {
           {resolvedTab === 'doc-review' && <DocReviewPanel />}
           {resolvedTab === 'facility-map' && <FacilityMapPanel user={user} />}
           {resolvedTab === 'retention-samples' && <RetentionSamplesPanel user={user} />}
+          {resolvedTab === 'suppliers' && <SuppliersPanel user={user} />}
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}
