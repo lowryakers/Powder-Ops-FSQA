@@ -4,10 +4,10 @@
 
 | | Must fix | Should fix | Consider | Total |
 |---|---|---|---|---|
-| Protocol 003 — Food Safety Plan V4 | 9 | 21 | 4 | **34** |
+| Protocol 003 — Food Safety Plan V4 | 11 | 20 | 3 | **34** |
 | Protocol 001 — Food Defense Plan V2 | 9 | 17 | 4 | **30** |
 | Both documents | 2 | 1 | 1 | **4** |
-| | **20** | **39** | **9** | **68** |
+| | **22** | **38** | **8** | **68** |
 
 Every finding is numbered so it can be accepted, rejected or deferred one at a time. Nothing here has
 been applied. The intended path is: review this → decide each item → issue the DCR → Document Control
@@ -33,9 +33,20 @@ basis of several findings below:
 > **NSF/ANSI 455-2** → 21 CFR Part 111, 21 CFR Part 117, 21 CFR Part 11, 21 CFR Part 1.5 Subpart L,
 > 21 CFR Part 1.9 Subpart O.
 
-**Not on file and therefore not cited by clause: NSF/ANSI 455-2 itself, and the SQF Food Safety Code.**
-Where a finding rests on SQF, it is argued from substance and marked as unverified — the same rule
-`docs/SQF-NSF-gap-analysis.md` follows. Get both documents and the clause numbers can be added.
+**Not on file and therefore not cited by clause: NSF/ANSI 455-2 itself, and the SQF Food Safety Code
+Edition 9.** Where a finding rests on SQF, it is argued from substance and marked as unverified.
+
+> **On the SQF code, 27 Aug 2026.** It has been added to ReadyDoc's Reference Library, which is the
+> **production database** — not this repository, and not reachable from here. **The SQF pass on this
+> red-line has therefore not been done.** Attach the file (as the NSF documents were attached, and as
+> `reference-seed.js` holds them) and it becomes a mechanical second pass: everything below stays, and
+> only genuinely new SQF-derived findings are added.
+
+> **Audit outcome, 24–26 Aug 2026.** Two NSF audits, one visit: **zero critical, zero major, twelve
+> minor** — 3 on GMP for Sport, 9 on 455-2. Two findings below were promoted on the strength of them
+> (FSP-27, FSP-28) and several others are corroborated. The full triage of what technology closes and
+> what it cannot is `audit-nc-triage.md`. **Nothing in this red-line was withdrawn** — the audit added
+> weight, it did not contradict anything.
 
 **One caveat on the text.** Both plans were read from the PDF text layer, which splits table cells
 across columns. Anything that could be an extraction artefact rather than a real error is marked
@@ -233,13 +244,24 @@ imported, this is a named gap. If none is, one sentence saying so closes it.
 transport as a *security* vulnerability; neither plan addresses transport as a *sanitation* control —
 carrier requirements, temperature, cleanliness of the conveyance, records.
 
-### FSP-27 · Electronic records are not mentioned · **CONSIDER**
+### FSP-27 · Electronic records are not mentioned · **MUST** *(promoted 27 Aug 2026 — nonconformance 4.4.39)*
 **21 CFR Part 11 is a normative reference for 455-2**, and ReadyDoc is where a growing share of these
 records live, with e-signatures, an append-only audit trail and revocation. The plan should say that
-records may be maintained electronically and name the system. Silence invites the question at audit
-rather than answering it.
+records may be maintained electronically and name the system.
 
-### FSP-28 · Banned and prohibited substances are not referenced · **SHOULD**
+> **Confirmed by audit, and the wording is generous.** NSF/ANSI 455-2 finding **4.4.39**: *"While
+> software applications ReadyDoc and MRP Easy utilize functional compliance features such as unique
+> user logins and audit trails, formal documentation demonstrating validation of the systems was not
+> available."* The features are there; the documentation is not. Naming electronic records in the plan
+> is the document half; the validation package is the technology half — `audit-nc-triage.md` item 1.
+
+### FSP-28 · Banned and prohibited substances are not referenced · **MUST** *(promoted 27 Aug 2026 — three nonconformances)*
+
+> **Confirmed by audit.** The GMP for Sport audit of 24–26 Aug 2026 raised **three minor
+> nonconformances**, and they are exactly these three sections: **§6.2.2** (procedures prohibiting
+> banned substances not established), **§6.2.3.1** (annual review of the lists not established) and
+> **§6.2.3.2** (procedures ensuring purchased materials are not on the lists not established). See
+> `audit-nc-triage.md`.
 NSF GMP for Sport **§6.2.2** requires that references to the NSF 306 Annex C, NFL/NFLPA, MLB and WADA
 lists be *"incorporated as part of their applicable operating procedures"*, and **§6.2.3.1** requires a
 documented **annual review** of those lists. A draft *Banned and Prohibited Substance Control Program*
