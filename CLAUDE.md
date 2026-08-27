@@ -2640,6 +2640,33 @@ problem in a new place.
   another invoice while the screen was open the number moved, and paying against a stale figure is exactly
   the failure this tool exists to prevent.
 
+### The settlement line reads the way somebody explains it out loud
+`They owe us $30,582.51 (less manufacturing credit $26,877.49) = $3,705.02 − we owe them $78,280.00 =
+-$74,574.98`. Previously the credit was tacked on at the end (`R − P = Z, then − credit = Z'`), which made
+it look like a separate charge; it is not, it is part of what that side actually comes to.
+- **THE ARITHMETIC IS IDENTICAL — this only regroups it.** `(R − C) − P = R − P − C`. Asserted both ways in
+  the same test, so a future edit cannot quietly change the number while re-wording the sentence.
+- **Which side the credit attaches to follows `credit.direction`**, because the facility can be granted
+  against either: off the receivables it reduces what they owe us, off the payables what we owe them.
+  Hard-coding the receivable side would put the parenthesis on the wrong number for the other kind of
+  partner.
+- **`side_net_after_credit` is computed in `applyCredit`, not in the browser.** A screen that subtracts for
+  itself is a screen that can disagree with the settlement it is about to write.
+- The bracket is inside one span: a flex `gap-x` between the amount and the `)` renders `$26,877.49 )`.
+  Caught by the browser assertion, not by reading.
+
+### The two balance cards say what each invoice is FOR
+A column of numbers beside "1537" answers nothing when somebody is deciding whether a figure looks right.
+Each row now carries its **category chip** and the **description as written**.
+- The chip reads its label from the same `CATEGORY_OPTIONS` the picker offers — a second copy is how a
+  document starts saying "Manufacturing" on one screen and "manufacturing" on another. **Uncategorised is
+  shown, not hidden**: the credit cannot absorb what has no category, so a blank one is a fact worth seeing
+  next to the money.
+- The description is clamped through the shared `TextCell` (two lines, full text on `title`). It renders a
+  block, so the row's left column had to become a `<div>` — a `<div>` inside a `<span>` is invalid nesting.
+- Nothing new was queried: `reconcile()` spreads the whole document row, so `category` and `description`
+  already reached the client.
+
 **The partner portal** (`server/api/partner-portal.js`, `/partner/<token>`, `PartnerPortalPage.jsx`) is
 public and token-gated like the flavor-approval magic link — the person at M4 has no ReadyDoc account and
 shouldn't need one to see the number we're both settling against. The surface is deliberately narrow: read

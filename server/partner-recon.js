@@ -188,6 +188,15 @@ export function applyCredit(result, credit, appliedToDate = 0) {
     applied_to_date: round2(Number(appliedToDate || 0)),
     opening_balance: opening,
     drawn_this_period: drawn,
+    // What the credited SIDE comes to once the credit is taken off it — the
+    // "(less manufacturing credit) = $3,705.02" the settlement line shows.
+    // Computed here rather than in the browser: a screen that subtracts for
+    // itself is a screen that can disagree with the settlement it is about to
+    // write.
+    side_total: credit?.direction === 'payable' ? result.payable_total : result.receivable_total,
+    side_net_after_credit: round2(
+      (credit?.direction === 'payable' ? result.payable_total : result.receivable_total) - drawn,
+    ),
     // What is left AFTER this period settles — the running balance the card shows.
     remaining_balance: round2(Math.max(0, opening - drawn)),
     draws,

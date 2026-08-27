@@ -3,6 +3,7 @@ import { useApiGet, apiFetch, apiPost, apiPut, apiUpload, apiDelete } from '../.
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
+import TextCell from '../common/TextCell.jsx';
 import {
   Scale, Search, Check, FileText, Pencil, Plus, X, Link2,
   ArrowUpRight, ArrowDownLeft, Ban, Trash2, Copy, ExternalLink, History, Upload, CheckCircle2, Bell,
@@ -408,6 +409,82 @@ const CATEGORY_OPTIONS = [
   ['other', 'Other'],
 ];
 
+// Module level — a component created during render is remounted every render,
+// and the compiler rightly refuses it.
+function MathSide({ label, gross, credited, creditLabel, drawn, sideNet }) {
+  return (
+    <span className={credited ? 'inline-flex flex-wrap items-baseline gap-x-1.5' : undefined}>
+      <span className="text-gray-400">{label}</span> {money(gross)}
+      {credited && (
+        <>
+          {/* The bracket has to sit TIGHT against the number — the flex gap
+              would otherwise render "$26,877.49 )". */}
+          <span className="text-gray-400">
+            ({creditLabel} <span className="text-gray-500">{money(drawn)}</span>)
+          </span>
+          <span className="text-gray-400">=</span>
+          <span className="font-medium text-gray-800">{money(sideNet)}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The X − Y = Z under the headline.
+ *
+ * With no credit drawn it is exactly what it always was. With one, the credit
+ * is folded into the side it reduces, so the line reads the way somebody
+ * explains it out loud: "they owe us this, less the manufacturing credit,
+ * minus what we owe them."
+ *
+ * It renders numbers it is GIVEN. Nothing here re-derives a total — the server
+ * is the authority on every figure, and a second subtraction in the browser is
+ * how a screen starts disagreeing with the settlement it is about to write.
+ */
+function SettlementMath({ receivable, payable, credit, netBefore, netAfter }) {
+  const drawn = credit?.drawn_this_period > 0 ? credit.drawn_this_period : 0;
+  const onReceivable = credit?.direction !== 'payable';
+  // What that side comes to once the credit is taken off it — from the server,
+  // not subtracted here.
+  const sideNet = credit?.side_net_after_credit;
+  const creditLabel = `less ${credit?.applies_to || 'the'} credit`;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-gray-600">
+      <MathSide label="They owe us" gross={receivable} credited={!!drawn && onReceivable}
+        creditLabel={creditLabel} drawn={drawn} sideNet={sideNet} />
+      <span className="text-gray-400">−</span>
+      <MathSide label="we owe them" gross={payable} credited={!!drawn && !onReceivable}
+        creditLabel={creditLabel} drawn={drawn} sideNet={sideNet} />
+      <span className="text-gray-400">=</span>
+      <span className="font-semibold text-gray-900">{money(drawn ? netAfter : netBefore)}</span>
+    </div>
+  );
+}
+
+// The category as a chip, reading its label from the SAME list the picker
+// offers — a second copy is how a document starts saying "Manufacturing" on one
+// screen and "manufacturing" on another. Uncategorised is shown rather than
+// hidden: the credit cannot absorb what has no category, so a blank one is a
+// fact worth seeing next to the money.
+const CATEGORY_TONE = {
+  manufacturing: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  materials: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  freight: 'bg-sky-50 text-sky-700 border-sky-200',
+  other: 'bg-gray-100 text-gray-600 border-gray-200',
+};
+export function CategoryChip({ value }) {
+  const label = (CATEGORY_OPTIONS.find(([v]) => v === (value || ''))
+    || CATEGORY_OPTIONS[0])[1];
+  const tone = CATEGORY_TONE[value] || 'bg-amber-50 text-amber-700 border-amber-200';
+  return (
+    <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-medium ${tone}`}>
+      {label}
+    </span>
+  );
+}
+
 function CategoryPicker({ documentId, value, onChanged, disabled }) {
   const [busy, setBusy] = useState(false);
   const set = async (v) => {
@@ -676,24 +753,25 @@ function TheNumber({ recon, partner, canSettle, onSettle, busy, onCreditChanged 
             : `Powder Ops owes ${partner?.name}`}
       </p>
 
-      {/* How the number was reached, in one line — this is the X − Y = Z. */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-600">
-        <span><span className="text-gray-400">They owe us</span> {money(receivable_total)}</span>
-        <span className="text-gray-400">−</span>
-        <span><span className="text-gray-400">we owe them</span> {money(payable_total)}</span>
-        <span className="text-gray-400">=</span>
-        <span className={credit?.drawn_this_period ? 'text-gray-500' : 'font-semibold text-gray-900'}>
-          {money(recon.net_amount)}
-        </span>
-        {credit?.drawn_this_period > 0 && (
-          <>
-            <span className="text-gray-400">−</span>
-            <span><span className="text-gray-400">credit</span> {money(credit.drawn_this_period)}</span>
-            <span className="text-gray-400">=</span>
-            <span className="font-semibold text-gray-900">{money(net_amount)}</span>
-          </>
-        )}
-      </div>
+      {/* How the number was reached, in one line.
+          THE CREDIT IS SHOWN INSIDE THE SIDE IT REDUCES, not tacked on at the
+          end. "They owe us X − we owe them Y = Z, then minus the credit" made
+          the credit look like a separate charge; it is not, it is part of what
+          that side actually comes to. The arithmetic is identical either way —
+          this only regroups it — and the totals still come from the server.
+
+          Which side it attaches to follows `credit.direction`, because the
+          facility can be granted against either: drawn off the receivables it
+          reduces what they owe us, drawn off the payables it reduces what we
+          owe them. Assuming one of those would put the parenthesis on the
+          wrong number for the other kind of partner. */}
+      <SettlementMath
+        receivable={receivable_total}
+        payable={payable_total}
+        credit={credit}
+        netBefore={recon.net_amount}
+        netAfter={net_amount}
+      />
 
       <CreditCard credit={credit} pid={partner?.id} canSettle={canSettle} onChanged={onCreditChanged} />
 
@@ -1706,10 +1784,26 @@ function SideList({ title, rows, tone }) {
       <ul className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
         {(rows || []).map(r => (
           <li key={r.id} className="px-4 py-2 flex items-start justify-between gap-3">
-            <span className="min-w-0">
+            {/* A div, not a span: TextCell renders a block, and a <div> inside
+                a <span> is invalid nesting. */}
+            <div className="min-w-0">
               <span className="block text-sm text-gray-900 truncate">{r.doc_number || r.description || 'Document'}</span>
-              <span className="block text-xs text-gray-500">due {r.due_date || '—'}</span>
-            </span>
+              {/* WHAT THE INVOICE IS FOR, not only what it is called. A column
+                  of numbers beside "1537" answers nothing when somebody is
+                  deciding whether a figure looks right — and the category is
+                  also what decides whether the credit could absorb it, so it
+                  belongs where the money is being read. */}
+              <span className="mt-0.5 flex items-center gap-1.5">
+                <CategoryChip value={r.category} />
+                <span className="text-xs text-gray-500">due {r.due_date || '—'}</span>
+              </span>
+              {/* The description is what was keyed in, shown as given. A blank
+                  one stays blank rather than being filled from the filename. */}
+              {r.description && r.description !== r.doc_number && (
+                <TextCell value={r.description} lines={2} width="100%"
+                  className="mt-0.5 text-xs text-gray-600" />
+              )}
+            </div>
             <span className={`text-sm whitespace-nowrap ${r.signed < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(r.signed)}</span>
           </li>
         ))}
