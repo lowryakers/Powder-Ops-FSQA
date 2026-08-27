@@ -122,9 +122,9 @@
   </p>
 
   <div class="tally">
-    <div class="t must"><div class="v">20</div><div class="k">must fix</div></div>
-    <div class="t should"><div class="v">39</div><div class="k">should fix</div></div>
-    <div class="t consider"><div class="v">9</div><div class="k">consider</div></div>
+    <div class="t must"><div class="v">22</div><div class="k">must fix</div></div>
+    <div class="t should"><div class="v">38</div><div class="k">should fix</div></div>
+    <div class="t consider"><div class="v">8</div><div class="k">consider</div></div>
     <div class="t"><div class="v">68</div><div class="k">total findings</div></div>
   </div>
 
@@ -141,9 +141,18 @@
     four findings rest directly on that list:</p>
     <blockquote><b>NSF/ANSI 455-2</b> → 21 CFR Part 111, 21 CFR Part 117, <b>21 CFR Part 11</b>,
       <b>21 CFR Part 1.5 Subpart L</b>, <b>21 CFR Part 1.9 Subpart O</b>.</blockquote>
-    <p><b>Not on file: NSF/ANSI 455-2 itself, and the SQF Food Safety Code.</b> Anything resting on
-    those is argued from substance rather than cited by clause, and marked as unverified. Get both and
-    the clause numbers can be added.</p>
+    <p><b>Not on file: NSF/ANSI 455-2 itself, and the SQF Food Safety Code Edition 9.</b> Anything
+    resting on those is argued from substance rather than cited by clause, and marked as unverified.</p>
+    <p><b>On the SQF code, 27 Aug 2026.</b> It has been added to ReadyDoc's Reference Library, which is
+    the <b>production database</b> — not this repository, and not reachable from here.
+    <b>The SQF pass on this red-line has therefore not been done.</b> Attach the file and it becomes a
+    mechanical second pass: everything here stays, and only genuinely new SQF-derived findings are
+    added.</p>
+    <p><b>Audit outcome, 24–26 Aug 2026.</b> Two NSF audits, one visit: <b>zero critical, zero major,
+    twelve minor</b>. Two findings below were promoted on the strength of them — <b>FSP-27</b>
+    (electronic records: now nonconformance 4.4.39, which names ReadyDoc) and <b>FSP-28</b>
+    (banned substances: three nonconformances, exactly the sections this flagged). <b>Nothing was
+    withdrawn</b> — the audit added weight, it did not contradict anything.</p>
     <p><b>One caveat on the text.</b> Both plans were read from the PDF text layer, which splits table
     cells across columns. Anything that might be an extraction artefact rather than a real error is
     marked <span class="chip c-verify">verify in source</span> rather than asserted.</p>
@@ -261,8 +270,8 @@
   <p><b>21 CFR Part 1 Subpart O is also a normative reference for 455-2.</b> The Food Defense Plan discusses transport as a <i>security</i> vulnerability; neither plan addresses transport as a <i>sanitation</i> control — carrier requirements, temperature, cleanliness of the conveyance, records.</p>
 </div>
 
-<div class="f should">
-  <div class="fh"><span class="id">FSP-28</span><span class="ft">Banned and prohibited substances are not referenced</span><span class="chip c-should">should</span></div>
+<div class="f must">
+  <div class="fh"><span class="id">FSP-28</span><span class="ft">Banned and prohibited substances are not referenced</span><span class="chip c-must">must</span><span class="chip c-verify">3 nonconformances</span><span class="where">promoted 27 Aug 2026 — confirmed by the GMP for Sport audit</span></div><div class="rec"><b>Confirmed by audit.</b> The GMP for Sport audit of 24–26 Aug raised <b>three minor nonconformances</b>, and they are exactly these three sections: <b>§6.2.2</b>, <b>§6.2.3.1</b> and <b>§6.2.3.2</b> — raised here from the Audit Guide on file, before the reports arrived.</div>
   <p>NSF GMP for Sport <b>§6.2.2</b> requires that references to the NSF 306 Annex C, NFL/NFLPA, MLB and WADA lists be <i>"incorporated as part of their applicable operating procedures"</i>, and <b>§6.2.3.1</b> requires a documented <b>annual review</b> of those lists. A draft <i>Banned and Prohibited Substance Control Program</i> already sits in the registry (<code>SOP-DRAFT-BSC</code>) — reference it once Document Control assigns a number.</p>
 </div>
 
@@ -277,14 +286,19 @@
 </div>
 
 <div class="grid">
-  <div class="mini"><b>FSP-27 · Electronic records <span class="chip c-consider">consider</span></b>
-    21 CFR Part 11 is a normative reference for 455-2, and ReadyDoc holds a growing share of these records with e-signatures and an append-only audit trail. Say records may be kept electronically, and name the system.</div>
   <div class="mini"><b>FSP-30 · Allergen program <span class="chip c-consider">consider</span></b>
     PC #2 turns on allergen control and the Process Description describes real practice — end-of-batch scooping, gown changes, a full room clean verified by swab, a dedicated storage location. None of it is a referenced document.</div>
   <div class="mini"><b>FSP-31 · Supply-chain control <span class="chip c-consider">consider</span></b>
     Several rows justify "No" on supplier qualification and letters of guarantee — the reasoning behind a supply-chain preventive control, a category 117 names. The chart has none.</div>
   <div class="mini"><b>FSP-32 · "the missing ingredient" <span class="chip c-consider">consider</span></b>
     <i>"Rework … is allowed if the amount of the missing ingredient is known."</i> Read plainly this is about a spill. <b>Spilled</b> or <b>lost</b> would say it.</div>
+</div>
+
+<div class="f must">
+  <div class="fh"><span class="id">FSP-27</span><span class="ft">Electronic records are not mentioned</span><span class="chip c-must">must</span><span class="chip c-verify">nonconformance 4.4.39</span>
+  <span class="where">promoted 27 Aug 2026 — this one names ReadyDoc</span></div>
+  <p>21 CFR Part 11 is a normative reference for 455-2, and ReadyDoc holds a growing share of these records with e-signatures, an append-only audit trail and revocation. The plan should say records may be kept electronically, and name the system.</p>
+  <div class="rec"><b>Confirmed by audit, and the wording is generous.</b> Finding <b>4.4.39</b>: <i>"While software applications ReadyDoc and MRP Easy utilize functional compliance features such as unique user logins and audit trails, formal documentation demonstrating validation of the systems was not available."</i> The features are there; the documentation is not. Naming electronic records in the plan is the document half — the validation package is the technology half.</div>
 </div>
 
 <h2>Protocol 001 — Food Defense Plan V2</h2>
@@ -442,7 +456,7 @@
 </div>
 
 <footer>
-  <span>68 findings · 20 must · 39 should · 9 consider</span>
+  <span>68 findings · 22 must · 38 should · 8 consider</span>
   <span>Nothing changed in either document</span>
   <span>docs/v2/queued/plan-redline.md</span>
   <span>25 Aug 2026</span>

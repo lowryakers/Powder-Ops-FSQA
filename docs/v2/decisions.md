@@ -749,3 +749,82 @@ let QA inspections go unrecorded for three months against a list nobody was watc
 Red-line finding **X-04** is promoted from *consider* to **must** on this basis, and the eleven
 documents each plan already describes but does not name are listed in `document-reference-graph.md` —
 so the section is a transcription job for Document Control, not a research one.
+
+---
+
+## D-028 · 2026-08-27 · decided — The audit confirms the failure mode, and sorts the work into three buckets
+
+Two NSF audits in one visit, 24–26 Aug 2026: **zero critical, zero major, twelve minor** — 3 on GMP for
+Sport, 9 on NSF/ANSI 455-2. Triaged in `docs/v2/queued/audit-nc-triage.md`.
+
+**The finding that decides how to respond: eleven of the twelve are phrased as a document or a record
+that does not exist or was not available** — *"are not established"* ×4, *"was not available"* ×3,
+*"were not conducted"*, *"not prepared"*, *"not provided at the time of the audit"*, *"evidence … was
+not available"*. Only 4.2.9 (street shoes in GMP areas) describes something the plant *does* that it
+should not.
+
+That is the same defect the preventive control walk found from the other direction, now stated by an
+auditor: **work that happens and does not accumulate a record.** So the response is not "software
+versus people" but three buckets — **A** ReadyDoc is the fix (5), **B** ReadyDoc makes it stick (4),
+**C** outside ReadyDoc (3). Most sit in B, which is the honest place: software does not swab a surface
+or wear a shoe cover, but *"not adhered to"* and *"not available at the time of the audit"* are exactly
+what a system prevents.
+
+**Two red-line findings were promoted on the audit's evidence, and neither was withdrawn.**
+
+- **FSP-28** raised the three banned-substance sections from the GMP for Sport Audit Guide already on
+  file, *before the reports arrived*. The auditor raised exactly those three. → MUST.
+- **FSP-27** flagged 21 CFR Part 11 as a normative reference for 455-2. **Finding 4.4.39 names ReadyDoc
+  directly**, and the wording is generous: the compliance features are there, the validation
+  documentation is not. → MUST, and it is the highest-value technology deliverable on the list, because
+  every record the platform holds rests on it.
+
+**Two interlocks worth carrying forward.** Software change control is required by 4.4.39 *and* 4.3.9 —
+build it once. And 4.3.6 (a test with no established specification) is the same defect class as the
+ungraded ATP reading: grade against an approved value, refuse to record a pass without one.
+
+---
+
+## D-029 · 2026-08-27 · decided — The registry is reviewed by RULE; the slow red-line is reserved for control-bearing documents
+
+Asked whether the plan red-line should now be repeated for every SOP and WI. **Yes, but not the same
+way**, and the arithmetic is the argument: two documents produced 68 findings, so ~100 documents
+produce something near 3,400 — which is not a review anybody finishes, and which would bury the twenty
+findings that matter under three thousand that do not.
+
+**Sort the 68 by what kind of thing should have noticed them and the method falls out.** Roughly fifty
+are **mechanical** (spelling, grammar, a page numbered beyond the page count, two sections lettered D)
+or **structural** (an approved document with a blank signature block, a registry revision disagreeing
+with the document's own footer, a retention period never specified, a document citing nothing by
+number). Both classes are findable by rule, and **a rule costs the same over 100 documents as over 2**.
+Only the remaining third — the Rework row describing a metal detector the plant does not have, the ATP
+limit stated in a unit only its verification produces — needs a person who knows the plant.
+
+**So:** extend `doc-consistency.js`, which is already this instrument for four rules, and make its
+output a queue with dismissals rather than a document — the same shape as the form-registry coverage
+report. Then reserve the full red-line for documents that **state a limit, define a control, or have
+been touched by a nonconformance**.
+
+**And the audit named the first four.** SOP 404 (supplier qualification), SOP 421 (IQ/OQ/PQ), SOP 434
+(change approval) and SOP 604 (environmental monitoring) are each cited in a nonconformance with their
+revision and effective date — every one an SOP whose requirements outran the plant's ability to meet
+them. That is a better second project than "all the SOPs": it is **the D-002 test applied one SOP at a
+time**, and it is tied to corrective actions already due.
+
+---
+
+## D-030 · 2026-08-27 · open — The SQF Food Safety Code is in the Reference Library, which this session cannot read
+
+The SQF code Edition 9 was added to ReadyDoc's Reference Library so the plan red-line could be checked
+against it. **The Reference Library is the production database.** This repository holds only what
+`reference-seed.js` bundles — the NSF/ANSI 455 Certification Policies, the NSF 306 guideline and the
+GMP for Sport Audit Guide — and a Track B session has no route to the live data.
+
+**So the SQF pass has not been done, and the red-line says so** rather than implying a coverage it does
+not have. This is the same honesty rule `docs/SQF-NSF-gap-analysis.md` set when the standards were
+first unavailable.
+
+**The general lesson, which will recur:** *adding a document to the app does not make it available to
+this work.* Anything a Track B session must read has to be in the repository or attached to the
+conversation. Worth remembering before the next "I've put it in ReadyDoc" — attaching the file makes it
+a mechanical second pass; leaving it in the Library makes it invisible.
