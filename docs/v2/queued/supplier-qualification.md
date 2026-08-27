@@ -387,6 +387,58 @@ The app finds out by watching the work being done, rather than asking somebody t
 **Nothing is dropped.** `Questionnaire Requested` is the only column that carries no information, and even
 it becomes a date rather than disappearing.
 
+## 3b · The whole archive, parsed — and the tracker and the folders disagree about half the roster
+
+**836 files, 62 vendor folders, run 27 Aug against the full listing.** The two sample vendors had already
+corrected the design twice; the full set corrected it twice more.
+
+### What the full archive changed about the parser
+
+| Assumption | Reality |
+|---|---|
+| Every file sits under a year folder | **228 of 836 do not**, and 31 of 66 folders have never used one. Undated is a **state**, not an error — refusing them threw away a quarter of the archive. |
+| A container zip is named after a material | It is named after a material, a **manufacturer** (`DAFFODILPC.zip`, `KINGDOMWAY.zip` — GWI alone has nine), an **item number** (`23000002 Documents.zip`), a **questionnaire**, or nothing (`OneDrive_1_5-19-2025.zip`). The container is a **label**; what it labels is a suggestion for a person. |
+| A certificate says "certificate" | **52 do not.** `Kosher Exp. 12.31.2025.pdf`, `IM Non-GMO (Exp 8.20.25).pdf`, `BRCGS EN (Exp 7.2.2025).pdf`. |
+| An expiry is written one way | **Six ways**: `exp 7-11-2027`, `Exp. 12.31.2025`, `EXP 01.26.26`, `exp 12-31-25`, `Exp 18 Apr 2025`, `Exp 12.2024`. |
+| Vendors send per-material evidence | Some send **their entire quality system** — Bio-Cat 30 files of SOPs and manuals, Monk Fruit 31, GSO 29. That needs its own kind (`vendor_qms_document`) or it drowns everything else. |
+
+**Classification: 793 files, 268 unknown (34%), reported and never guessed.** Many of the unknowns are
+genuinely unreadable from a filename (`PGYS_DB261441.pdf`, product codes, a Chinese-titled pesticide
+report), and **40 nested zips are unexpanded in a filesystem listing**, so their contents are not counted
+at all — AIFI's one zip alone holds 79 files.
+
+### The finding: the tracker and the evidence disagree for 30 of 56 matched vendors
+
+Matching on name containment (`GNT` ↔ `Exberry-GNT`, `Talus` ↔ `Aceto-Talus`) gives **56 matched pairs, 6
+folders with no sheet row, 11 sheet rows with no folder.**
+
+| | |
+|---|---|
+| **Tracker says NOT done, a questionnaire is in the folder** | **27 vendors — 8 of them ACTIVE**: A&B Ingredients, Forte Flavors, GF Harvest, National Measures, Pacific Bridge, Sabinsa, Stauber, UniChem Supply |
+| **Tracker says done, no questionnaire found** | **3, all ACTIVE**: Dutch Valley Foods, Scoular (no unexpanded zips — genuinely absent), Mak Wood (one unexpanded zip, so probably a false negative) |
+| **Folder, no sheet row** | 6 — **Bio-Cat (30 files)**, Valrhona Selection, BioNeutra, Balchem, FlexPak, Pyure |
+| **Sheet row, no folder** | 11, **10 of them ACTIVE** — Boxt Packaging, GloryBee, HPS, **M4 Dynamic**, Phlex Proteins, Relsus, Stryka, The Cary Company, Vivion, Webstaurant |
+
+**So the sheet's "24 active vendors without a completed questionnaire" is wrong in both directions.** Eight
+of those 24 have a questionnaire sitting in their folder that nobody ticked off. Ten more active vendors
+have no folder at all, so there is nothing to check. **Neither source alone is right, and no one could have
+known** — which is the argument for the register in one sentence.
+
+> **M4 Dynamic — one of the three vendors NC 4.3.1 names — is active, has no completed questionnaire on
+> the tracker, and has no folder in the archive at all.** That one is real.
+
+### Two things this changes about the build
+
+1. **Importing the archive is a reconciliation, not a load.** The preview must show, per vendor, what the
+   sheet says and what the folder holds, and let a person resolve the 30 disagreements — the same shape as
+   the training-log importer's course mapping, where ~30 human decisions replaced 3,639.
+2. **`Signed-Completed Supplier Questionnaires/` is a 46-file folder that is not a vendor.** Completed
+   questionnaires for several vendors are filed there rather than under the vendor, so "does this vendor
+   have one?" cannot be answered from the vendor folder alone. The importer must read it and attribute each
+   file — by filename, with a human confirming.
+
+---
+
 ## 4 · Four rules that are load-bearing
 
 **1 · A vendor's spec sheet is EVIDENCE, not a specification.** `coa_specifications` is *our* approved
