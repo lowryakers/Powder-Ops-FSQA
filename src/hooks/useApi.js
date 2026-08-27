@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { notifyDataChanged } from '../lib/dataChanged';
 import {
   isNetworkError, mayQueue, queueWrite, flushQueue, cacheRead, cachedRead,
@@ -127,13 +127,31 @@ export function useApiGet(path, deps = []) {
   const [offline, setOffline] = useState(false);
   const [tick, setTick] = useState(0);
   const depsKey = JSON.stringify(deps);
+  // `refreshing` is a REFETCH OF THE SAME QUERY; `loading` is "there is nothing
+  // to show yet". Callers almost all render `loading ? spinner : content`, so
+  // while the two were the same thing every refresh() blanked the screen and
+  // remounted everything under it — which is how reacting to a message in the
+  // Threads inbox collapsed the card you were reading and wiped the reply you
+  // had half-typed. State that lives in those children (expanded, drafts,
+  // scroll position) cannot survive a remount, so the fix has to be that the
+  // remount does not happen.
+  //
+  // A DIFFERENT QUERY IS NOT A REFRESH. Switching channel must not show the
+  // previous channel's messages while the new ones load, so the data is
+  // cleared when the path or deps change and kept when only `tick` does.
+  const [refreshing, setRefreshing] = useState(false);
+  const queryKey = `${path}|${depsKey}`;
+  const lastQuery = useRef(null);
 
   useEffect(() => {
     let stale = false;
     // A null path means "nothing to fetch yet" (e.g. the caller isn't allowed
     // this endpoint), so callers can keep hooks unconditional.
     if (!path) { setLoading(false); return undefined; }
-    setLoading(true);
+    const sameQuery = lastQuery.current === queryKey;
+    lastQuery.current = queryKey;
+    if (sameQuery) setRefreshing(true);
+    else { setData(null); setLoading(true); }
     setError(null);
     apiFetch(path)
       .then(d => { if (!stale) { setData(d); setOffline(false); } })
@@ -147,14 +165,14 @@ export function useApiGet(path, deps = []) {
         }
         if (!stale) setError(e.message);
       })
-      .finally(() => { if (!stale) setLoading(false); });
+      .finally(() => { if (!stale) { setLoading(false); setRefreshing(false); } });
     return () => { stale = true; };
 
-  }, [path, depsKey, tick]);
+  }, [path, queryKey, tick]);
 
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
-  return { data, loading, error, offline, refresh };
+  return { data, loading, error, offline, refresh, refreshing };
 }
 
 export async function apiPost(path, body) {

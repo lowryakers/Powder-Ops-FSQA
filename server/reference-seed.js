@@ -67,6 +67,21 @@ const BOOKLETS = [
       + 'The SQF code the plant is audited against, covering Food Manufacturing including Dietary Supplements. '
       + 'Full text below, extracted for search and reading; page markers preserved.',
   },
+  {
+    doc_number: 'REF-SQF-DS-9',
+    // The file arrived named "v3.2" but the document calls itself Edition 9 on
+    // its cover and throughout — SQFI's own words win over a filename, the same
+    // rule the document importer follows when a revision suffix disagrees with
+    // what is inside.
+    title: 'SQF Food Safety Code: Dietary Supplements Manufacturing — Edition 9',
+    revision: 'Edition 9',
+    file: 'sqf-dietary-supplements-code-v3-2.txt',
+    description_intro:
+      'External reference standard (SQFI — the plant\'s licensed copy; do not distribute). '
+      + 'The dietary supplements manufacturing code. Read alongside REF-SQF-FSC-9 (Food Manufacturing): '
+      + 'this is the one that governs the supplement side of the plant. '
+      + 'Full text below, extracted for search and reading; page markers preserved.',
+  },
 ];
 
 export function seedReferenceLibrary(db) {

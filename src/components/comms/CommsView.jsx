@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
@@ -1143,9 +1144,15 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
     const caret = ta ? ta.selectionStart : body.length;
     const before = body.slice(0, caret).replace(/@([^\s@]*)$/, '@' + name + ' ');
     const after = body.slice(caret);
-    setBody(before + after);
-    setMQuery(null);
-    requestAnimationFrame(() => { if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); } });
+    // SYNCHRONOUSLY — see useFormatKeys. Deferring the caret to a
+    // requestAnimationFrame means anything typed inside that frame lands at the
+    // OLD caret and is then jumped over, so picking an @mention and carrying
+    // straight on typing scattered the next few characters back into the name.
+    // Only fast typists ever saw it, which is the worst kind of bug to be told
+    // about. flushSync lands the value in the DOM before this returns, so
+    // setSelectionRange has something real to aim at.
+    flushSync(() => { setBody(before + after); setMQuery(null); });
+    if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); }
   };
 
 
@@ -1322,9 +1329,15 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
     const caret = ta ? ta.selectionStart : body.length;
     const before = body.slice(0, caret).replace(/@([^\s@]*)$/, '@' + name + ' ');
     const after = body.slice(caret);
-    setBody(before + after);
-    setMQuery(null);
-    requestAnimationFrame(() => { if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); } });
+    // SYNCHRONOUSLY — see useFormatKeys. Deferring the caret to a
+    // requestAnimationFrame means anything typed inside that frame lands at the
+    // OLD caret and is then jumped over, so picking an @mention and carrying
+    // straight on typing scattered the next few characters back into the name.
+    // Only fast typists ever saw it, which is the worst kind of bug to be told
+    // about. flushSync lands the value in the DOM before this returns, so
+    // setSelectionRange has something real to aim at.
+    flushSync(() => { setBody(before + after); setMQuery(null); });
+    if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); }
   };
   const react = async (m, e) => { await apiPost(`/comms/messages/${m.id}/reactions`, { emoji: e }); refresh(); };
   const unreact = async (m, e) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(e)}`, { method: 'DELETE' }); refresh(); };
@@ -2785,9 +2798,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     const caret = ta ? ta.selectionStart : body.length;
     const before = body.slice(0, caret).replace(/@([^\s@]*)$/, '@' + name + ' ');
     const after = body.slice(caret);
-    setBody(before + after);
-    setMentionQuery(null);
-    requestAnimationFrame(() => { if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); } });
+    // Synchronously — the rAF version drops the next keystrokes at the old
+    // caret. Same rule as useFormatKeys and FormatBar.
+    flushSync(() => { setBody(before + after); setMentionQuery(null); });
+    if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); }
   };
 
   // One key handler for both composer layouts. The phone renders the textarea

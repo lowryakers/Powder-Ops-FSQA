@@ -369,6 +369,31 @@ task_group), assignee from the @mention, due tomorrow. `POST /comms/channels/:id
 order (original message kept as the description) and posts a ReadyBot note recording who assigned it and
 when. **Bot message bold is `*text*`, not `**text**`** — the chat renderer isn't markdown.
 
+## A refresh must not blank the screen (`useApiGet`'s `loading` vs `refreshing`)
+Reported as "in Threads, reacting to a message or hitting send does a full reset and marks the message
+closed". Both symptoms were one cause: `refresh()` set `loading = true`, and nearly every caller renders
+`loading ? spinner : content` — so a refetch unmounted the whole subtree and remounted it.
+- Everything living in those children died with them: `ThreadInboxCard`'s `expanded` state re-initialised
+  from `unread`, which after the read-marking is 0, so the card you were reading **collapsed** — that is
+  the "marks it closed". The half-typed reply in its composer went with it.
+- **`loading` now means "there is nothing to show yet"; `refreshing` means "refetching the same query".**
+  The DOM stays mounted across a refresh, so component state survives.
+- **A DIFFERENT QUERY IS NOT A REFRESH.** Switching channel must not show the previous channel's messages
+  while the new ones load, so `data` is cleared when the path or deps change and kept when only the
+  refresh tick does. That distinction is the whole of the fix.
+- **The test was vacuous before it was right.** The first version reacted by calling the API from
+  `page.evaluate()`, which never reaches the component's `refresh()` — so it passed with the bug present.
+  Verified by reverting the fix and watching T-03 fail: a reaction has to be a real CLICK.
+
+## The caret after picking an @mention (`flushSync`, again)
+Same bug as the FormatBar one, in the code path that never got the fix: all three mention inserts (channel
+composer, thread drawer, Threads-inbox reply) deferred `setSelectionRange` to a `requestAnimationFrame`.
+Anything typed inside that frame lands at the OLD caret and is then jumped over, so picking a name and
+carrying straight on typing scattered the next characters back into it. Only fast typists ever saw it.
+`flushSync(() => { setBody(...); setMQuery(null); })` then set the range synchronously — the value is in the
+DOM before the call returns, so there is something real to aim at. Asserted end to end: type `@name`, pick
+from the menu, type immediately with no pause, and the sentence must read straight through.
+
 ## Comms composer: rich text + reliable focus + resizable split screen
 **Formatting:** `renderBody()` is now block-aware — it splits into paragraphs and turns `- `/`* ` runs into a
 bullet `<ul>` and `1. ` runs into a numbered `<ol>`, so the message body renders inside a `<div>` (a `<p>`
