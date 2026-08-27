@@ -541,7 +541,7 @@ alone. Any future limit attached to a record that has independent reasons to fai
 same rule, and any limit attached to a record fully defined by its readings should follow the scale's.
 
 `architecture.md` Revision 2 names this pilot under move 03. The build is queued in
-`docs/v2/queued/atp-35-rlu.md`.
+`docs/v2/landed/atp-35-rlu.md`.
 
 ---
 
@@ -1006,3 +1006,35 @@ problem. That is the test a diagram has to pass to be worth drawing.
 **And it ends with a per-person table**, because "what changes" is a different question for an operator
 than for Document Control. The honest answer for most of them is *almost nothing*, and for Document
 Control it is *the biggest change of anyone's* — re-issuing a document starts moving things by itself.
+
+## D-036 · 2026-08-27 · decided — Wave 1 landed on `main`, and `queued/` gets a counterpart
+
+**Decision.** The ATP grading work shipped to `main` as `6f54afc`. Its design file moved from
+`docs/v2/queued/` to a new `docs/v2/landed/`, and `landed` became a status the obligations register
+actually uses.
+
+**Why the directory move rather than a status line in the file.** D-018 defines `docs/v2/queued/` as
+work designed and deliberately NOT landed — that is the whole meaning of the directory, and it is what
+tells a reader that everything in it is still ahead of them. Leaving a shipped item there, marked
+"landed" in its header, would make the directory mean two things and put the burden on whoever reads it
+to check each file. That is the recurring defect this project exists to remove, appearing in our own
+documentation for the second time (the first was the obligations register itself, D-032). A file moves
+when its state changes.
+
+**What actually landed, and what deliberately did not.** The grading, the asymmetry, the stored limit,
+the two-failed-swabs escalation, the live operator hint, and a fix to `closeRecleanTasksFor` that was
+not in the design at all. What did not land is **the number's validation** — SQF 2.4.3.11 and
+2.5.1.1(ii) require evidence that 35 RLU is right for these surfaces and this instrument, re-validated
+annually, and no software can produce that. It was split out of OBL-01 as **OBL-27**, owned by QA,
+because an obligation half-discharged and marked done is worse than one still open. Naming the ATP test
+method in the plan (SQF-09) moved to OBL-15, where Protocol 003 is reissued.
+
+**The escalation rule is the plant's, not the standard's.** One failed swab asks for a re-clean and a
+second swab; two consecutive failures raise the work order. The reasoning is about what a single
+reading can mean — an ATP swab has real false positives, so one failure could be the swab rather than
+the line, and a task raised on every stray reading is one people learn to dismiss. Two in a row is the
+line. Recorded here because it is a judgement about how much evidence justifies interrupting somebody's
+day, and the next person to touch `atpEscalation()` should know it was decided rather than assumed.
+
+**Track B rebased on the new `main` the same hour** (D-016). The rebase dropped the Track B WIP commit
+as already upstream, which is the correct outcome: Wave 1 is `main`'s now, not Track B's.

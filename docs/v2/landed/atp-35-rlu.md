@@ -1,18 +1,41 @@
-# Queued for `main` — grade the ATP reading against PC #1's 35 RLU
+# Landed on `main` — grade the ATP reading against PC #1's 35 RLU
 
-**Status: server path built and verified · UI and the failed-clean trigger NOT yet built · not deployed**
-**24 August 2026, amended 27 August**
+**Status: LANDED. On `main` as `6f54afc`, 27 August 2026.**
+**Written 24 August · amended 27 August · landed 27 August**
 
-> **What is actually tested, stated precisely.** The migration, the `controlled.js` registration and
-> both `sanitation.js` write paths were applied to a working copy, exercised over HTTP against a fresh
-> database, and reverted. **The live UI feedback (§5) was written out but never built or run**, and the
-> failed-clean trigger (§4) was found afterwards and is not in the tested diff. Neither is hard; both
-> are honest gaps between "specified" and "verified".
+> **This file was written in `docs/v2/queued/` and moved here when it shipped.** `queued/` means work
+> designed and deliberately NOT landed (D-018); leaving a landed item in it would make the directory
+> mean two things, which is the defect this whole project is about. The design below is unchanged —
+> what changed is that the gaps it named honestly ("the UI was specified but never built", "nothing
+> raises the re-clean when a clean fails") were closed before it shipped. §4 and §5 are now built.
 
 Punch-list item 2 of `preventive-control-walk.md`, and the pilot for architecture move 03 (limits out
 of code and into documents). Scope decision, 24 Aug: **do the record and the limit now; the per-run
-trigger leg waits** for move 05.
+trigger leg waits** for move 05 — that leg is still ahead (OBL-22).
 
+## What shipped, beyond what was queued
+
+- **The live UI feedback (§5) is built.** `src/components/common/AtpLimitHint.jsx`, EN and ES, mounted
+  in the Operator View and the Sanitation panel. It enforces nothing; the server decides.
+- **A failed clean now raises work, on the plant's rule (§4).** One failed swab asks for a re-clean and
+  a second swab; **two consecutive failures raise the re-clean work order immediately**, because a
+  single high reading can be the swab rather than the line and a task people learn to dismiss is worse
+  than no task. `atpEscalation()` owns that rule and the chain resets on a passing graded reading.
+- **A fix that was not in the design at all:** `closeRecleanTasksFor` matched the 72-hour task by its
+  exact title, so a passing clean closed the idle-rule task and left the ATP one open. It now also
+  closes via `reclean_actions`, with the legacy title path kept and regression-tested.
+- **Verified:** 24 unit assertions and seven end-to-end scenarios on a fresh database — first fail asks
+  for a re-swab and raises nothing, the second raises the task, a pass resets the chain, a fail after a
+  pass is back to asking, a different area does not inherit the chain, an in-limit reading never
+  upgrades a `reclean`, and no reading leaves the record untouched.
+
+## What did NOT ship with it
+
+**The number is still unvalidated** (SQF 2.4.3.11, 2.5.1.1(ii) — now **OBL-27**). ReadyDoc grades
+against 35 RLU because Protocol 003 V4 says so; it cannot say the number is right for these surfaces
+and this instrument. An app enforcing an unvalidated limit is precisely the audit finding, so the file
+says the limit is transcribed and not yet validated, and the validation study is QA's, outside
+ReadyDoc. **Naming the test method in the plan** (SQF-09) moved to OBL-15, the Protocol 003 reissue.
 ---
 
 ## Why this one first
