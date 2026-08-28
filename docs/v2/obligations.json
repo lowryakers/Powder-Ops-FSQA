@@ -512,18 +512,17 @@
     },
     {
       "id": "OBL-29",
-      "title": "Collect the missing supplier questionnaires, and put the annual review on a schedule",
+      "title": "Collect the missing supplier questionnaires — the annual review now generates work",
       "bucket": "B",
       "status": "open",
       "owner": "QA + Purchasing",
       "sources": [
-        "NC-455-4.3.1",
-        "W2-29"
+        "NC-455-4.3.1"
       ],
       "artifacts": [
         "docs/v2/landed/supplier-qualification.md"
       ],
-      "note": "Split out of OBL-08 when the register landed, because the register makes the gap VISIBLE and COUNTABLE and does not close it. On the real data at import: 21 vendors awaiting a disposition with their evidence already on file (Quality's queue, a short job each) and 22 actively used with no questionnaire document on file at all (Purchasing's chase list). NSF/ANSI 455-2 § 4.3.1 does not close until those are collected and dispositioned — ReadyDoc can raise the obligation and catch the result; it cannot ask a supplier for a questionnaire. W2-29 is the other half: SOP 404 § IV.B requires ANNUAL vendor reviews, supplier_qualifications.next_review_due now records when one is due, and NOTHING YET GENERATES WORK FROM IT. That is a quality schedule and a nudge, and it is the piece that stops this register going quiet the way the tracker did."
+      "note": "Split out of OBL-08 when the register landed, because the register makes the gap VISIBLE and COUNTABLE and does not close it. On the real data at import: 21 vendors awaiting a disposition with their evidence already on file (Quality's queue, a short job each) and 22 actively used with no questionnaire document on file at all (Purchasing's chase list). NSF/ANSI 455-2 § 4.3.1 does not close until those are collected and dispositioned — ReadyDoc can raise the obligation and catch the result; it cannot ask a supplier for a questionnaire. W2-29 is the other half: SOP 404 § IV.B requires ANNUAL vendor reviews, supplier_qualifications.next_review_due now records when one is due, and NOTHING YET GENERATES WORK FROM IT. That is a quality schedule and a nudge, and it is the piece that stops this register going quiet the way the tracker did. UPDATE 27 Aug: W2-29 (the annual review with no generator) SPLIT OUT AND LANDED on main as 8d16b97 — server/supplier-review.js raises a work order 30 days ahead of next_review_due, idempotent on (qualification, due date) so recording a review produces next year's task rather than suppressing it. A supplier that has NEVER been qualified is nudged rather than tasked: 22 work orders on the first boot is a queue nobody asked for, and a first qualification is a chase, not a recurring review. WHAT REMAINS HERE IS THE WORK ITSELF — collecting the 22 questionnaires and dispositioning the 21 with evidence already on file. ReadyDoc now raises the obligation, catches the result and chases QA and purchasing every third day; it cannot ask a supplier for a questionnaire."
     },
     {
       "id": "OBL-30",
@@ -542,6 +541,21 @@
         "docs/v2/queued/wave-2-sop-review.md"
       ],
       "note": "Split out of OBL-08 when the register landed: none of these is a software gap and none is closed by the module. W2-26 is the one that blocks work — FORM 404-3, Vendor Audit Summary, is cited by SOP 404 § VI and required by § V.C.B.II, and it appears in neither the Master Index nor any of the 159 rows of the DCR log. The register can HOLD a vendor audit; it cannot number the form. W2-08 is Daniela's call on whether FORM 404-1 and 404-2 become ReadyDoc screens or stay with Keychain. W2-27 (V4's footer still carries the old title), W2-28 (QVS and 'Qualified Supplier Database' named and never defined; QVL defined as one thing and used as another) and W2-30 (spelling) are corrections to the document itself."
+    },
+    {
+      "id": "OBL-31",
+      "title": "The annual vendor review generates work",
+      "bucket": "B",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [
+        "W2-29"
+      ],
+      "artifacts": [
+        "server/supplier-review.js",
+        "scripts/check-supplier-review.mjs"
+      ],
+      "note": "Split out of OBL-29 and LANDED on main 27 Aug 2026 as 8d16b97. SOP 404 § IV.B requires an annual review of each vendor; next_review_due had recorded when one was due since the register landed and nothing watched it. Raised from runPmHousekeeping beside generateRecleanTasks, 30 days ahead, high priority once overdue, carrying the SOP's own steps. Idempotence is (qualification, due date) via a supplier_qualification_id column on work_orders — the shape quality_schedule_id already uses — and the due date being part of the key is what makes next year's task a new one. Only the latest period per supplier can come due. 19 assertions."
     }
   ]
 }

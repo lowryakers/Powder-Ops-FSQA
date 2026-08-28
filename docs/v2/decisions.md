@@ -1342,3 +1342,35 @@ and a one-line change if the plant disagrees.
 
 **Track B rebased the same hour** (D-016). Every supplier commit dropped as already upstream, which is the
 correct outcome: the module is `main`'s now.
+
+## D-044 · 2026-08-27 · decided — a review that falls due raises its own work, a first qualification does not
+
+**Landed on `main` as `8d16b97`.** `next_review_due` had been recorded since the register shipped and
+nothing watched it. That is the defect this project keeps finding — the 72-hour re-clean that waited for a
+supervisor to press Assign, the QA inspection whose task completed and filed no record, the certificate
+that lapsed thirteen months ago in a folder.
+
+**The decision worth recording is the SPLIT, not the generator.** Two states look similar on the register
+and are different work:
+- **A review that has come due raises a work order.** Nobody is looking for an annual date, so it has to
+  land in a list.
+- **A supplier that has never been qualified is nudged and NOT tasked.** On the real data that is 22
+  vendors, and raising 22 work orders on the first boot is a queue nobody asked for — the same reasoning
+  that stops one stray ATP reading raising a re-clean. It is also not the same job: a review is a recurring
+  obligation with a date; a first qualification is a chase. The screen already counts them, the nudge
+  reaches QA, quality and **purchasing**, and the message says explicitly that no task was raised for the
+  second so nobody assumes one is sitting somewhere.
+
+**Idempotence is (qualification, due date)** on a `supplier_qualification_id` column — the shape
+`quality_schedule_id` and `pm_schedule_id` already use, rather than a generic key column or a side table
+like `reclean_actions`. **The due date being part of the key is the whole trick**: recording a review stamps
+next year's date, so next year's task is a NEW one instead of being suppressed as a duplicate of this
+year's. Both that and "a second run raises nothing" are asserted, because both fail silently.
+
+**Only the latest period per supplier can come due.** An older year's review is superseded by the one that
+replaced it, and raising work for both would put two tasks on one vendor for one obligation.
+
+**OBL-29 split again:** W2-29 became **OBL-31, landed**; what stays in OBL-29 is the work itself —
+collecting the 22 questionnaires and dispositioning the 21 whose evidence is already on file. ReadyDoc now
+raises the obligation, catches the result and chases every third day. **It cannot ask a supplier for a
+questionnaire**, and the register should not pretend otherwise.
