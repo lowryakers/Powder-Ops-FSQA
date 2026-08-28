@@ -3029,6 +3029,12 @@ function runMigrations() {
     );
   `);
   addColumnIfMissing('work_orders', 'quality_schedule_id', 'TEXT'); // link a QC task back to its schedule
+  // …and the same for an annual vendor review. Idempotence for the generator is
+  // (this column, due_date): recording a review stamps next year's date, so
+  // next year's task is a new one rather than a suppressed duplicate.
+  addColumnIfMissing('work_orders', 'supplier_qualification_id', 'TEXT');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_work_orders_supplier_qual
+    ON work_orders(supplier_qualification_id)`);
 
 
   // Material-level requirements narrative (Form 607-01 sections 2-5): packaging,

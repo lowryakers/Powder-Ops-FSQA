@@ -2383,10 +2383,24 @@ Who we buy from and whether they are qualified to sell it to us — SOP 404 V4, 
   learned from whoever sends FORM 404-1. A guessed role on a compliance contact is worse than a blank one.
 - Every figure on the screen is **derived on read**; a stored count goes stale the first time somebody
   files a questionnaire. The headline is a **button**, not a statistic.
+- **The annual review RAISES ITS OWN WORK ORDER** (`server/supplier-review.js`, SOP 404 § IV.B). A date
+  nothing watches is the defect this whole project keeps finding, and `next_review_due` was one until this
+  shipped. Idempotence is **(qualification, due date)** — the same shape `quality_schedule_id` already uses
+  — and the due date being part of it is what makes recording a review produce NEXT year's task instead of
+  suppressing it as a duplicate of this year's. Raised from `runPmHousekeeping`, 30 days ahead, high
+  priority once overdue.
+- **A supplier that has NEVER been qualified is nudged, not tasked**, and the split is deliberate. That is
+  22 vendors on the real data, and raising 22 work orders on the first boot is a queue nobody asked for —
+  the same reasoning that stops one stray ATP reading raising a re-clean. It is also different work: a
+  review is a recurring obligation with a date, a first qualification is a chase. `supplierReviewNudge`
+  DMs QA, quality and **purchasing** every third day with the two numbers stated separately, and says
+  explicitly that no task was raised for the second.
+- **Only the LATEST period per supplier can come due.** An older year's review is superseded by the one
+  that replaced it, and raising work for both would put two tasks on one vendor for one obligation.
 - **FORM 404-3 (Vendor Audit Summary) is cited by SOP 404 § VI and has never been issued** — absent from
   the Master Index and all 159 rows of the DCR log. The module can hold a vendor audit; it cannot number
   the form. Document Control's call.
-- Verified: 19 + 17 + 27 assertions in `npm run check:suppliers` (fixtures are the real tracker and the
+- Verified: 19 + 17 + 27 + 19 assertions in `npm run check:suppliers` (fixtures are the real tracker and the
   real 836-path listing, paths only), plus `scripts/verify-suppliers.mjs` — **30 assertions executed
   against a live server on a fresh database**, importing the real files over HTTP.
 

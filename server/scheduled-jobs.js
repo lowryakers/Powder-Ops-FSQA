@@ -155,6 +155,18 @@ async function runDue(db, deps) {
   // which is the same gap the re-clean badge had — so the pile is announced.
   // Every third day: it re-sends while the pile stands, and goes quiet by
   // itself once it is cleared, because the function finds nothing to say.
+  // The annual vendor review. Every third day, like the other chasers — a
+  // reminder people mute is worse than none — and it re-sends while the pile
+  // stays open, which is the state it exists to interrupt.
+  const lastSupplier = getFlag(db, 'last_supplier_review_nudge_at');
+  if (deps.supplierReviewNudge && (!lastSupplier || (now - new Date(lastSupplier)) >= 3 * 86400000)) {
+    try {
+      const r = await deps.supplierReviewNudge(db, deps);
+      setFlag(db, 'last_supplier_review_nudge_at', now.toISOString());
+      if (r.sent) console.log(`[jobs] supplier reviews: ${r.overdue} overdue, ${r.never_qualified} never qualified, told ${r.sent}`);
+    } catch (e) { console.warn('[jobs] supplier review nudge failed:', e.message); }
+  }
+
   const lastBackfill = getFlag(db, 'last_record_backfill_nudge_at');
   if (deps.recordBackfillNudge && (!lastBackfill || (now - new Date(lastBackfill)) >= 3 * 86400000)) {
     try {

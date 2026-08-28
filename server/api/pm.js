@@ -5,6 +5,7 @@ import { requireDepartment } from '../middleware/auth.js';
 import { generateDocumentReviewTasks, recomputeDocumentReview } from './documents.js';
 import { generateQualityScheduleTasks } from './quality-schedules.js';
 import { generateRecleanTasks } from './sanitation.js';
+import { generateSupplierReviewTasks } from '../supplier-review.js';
 import { getChannelByName, postMessageAs, botDm } from './comms.js';
 import { periodically, resetHousekeeping } from '../housekeeping.js';
 import { pushToUser } from '../push.js';
@@ -202,6 +203,9 @@ export function runPmHousekeeping(db, { force = false } = {}) {
   // A room flagged by the 72-hour rule raises its own cleaning task, so it
   // reaches the cleaner's Operator View without a supervisor triaging it first.
   periodically('reclean-tasks', generateRecleanTasks, db);
+  // An annual vendor review arrives with no other prompt — nobody is looking
+  // for it — so it has to land in somebody's list. SOP 404 § IV.B.
+  periodically('supplier-reviews', generateSupplierReviewTasks, db);
 }
 
 /**
