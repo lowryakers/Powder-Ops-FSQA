@@ -457,6 +457,25 @@ abbreviation on a pouch than on a stick and nothing ever joined them.
   `seedGenericSpecifications`, which filed zero rows when it ran too early.
 - Verified: 32 assertions end to end on a fresh database, plus the resolver run against the real 118 rows.
 
+### The preview column, and the bottle drafts
+- **`preferred_sku` is DERIVED on every read of the catalogue, never stored**, and the column header says
+  **"New standard (not in use)"**. It depends on the flavour register, which moves as collisions are broken,
+  and it is explicitly not the product's SKU — the existing 118 keep their codes. **66 of 118 resolve today**;
+  the rest name what is blocking them rather than showing a blank, because this column is the punch list for
+  the Shopify / ShipHero pass.
+- **`LINE_CODES` holds only WHY / BEF / PLT** — the three the standard was written against. The mixes have no
+  agreed first segment and one is NOT invented: a line code is the first three characters of every SKU in
+  that line forever, and a guess here is a guess somebody copies out of the table. 52 rows report
+  "no code agreed for Donut Mix" and similar, which is the next decision to make.
+- **`packCodeFor` reads `products.pack`, which already holds the code** (PLG / PSM / STK / BOX / CUP). The
+  first version re-derived it from the format string — a second derivation is how the column and the SKU
+  start disagreeing about which pouch a product is.
+- **`POST /products/bottle-drafts` files the bottling line as `status = 'Draft'` rows with NO GTIN.** The GS1
+  numbers are being allocated by hand and one invented here is one printed; readiness already reports "no
+  GS1 barcode", so each draft arrives carrying its own punch list. Preview and commit run the same
+  `planBottleDrafts`, so what is on screen cannot differ from what lands, and it is idempotent — a second
+  click creates nothing. **33 drafts today, 5 blocked** on the flavours that still owe a code.
+
 ### The SKU rename is a separate project, and it is not free
 The new standard is adopted for **new products only**; the existing 118 are untouched. A full cutover is
 costed in `Product-Management/docs/08`. The 3PL has confirmed the expensive half: scanning tolerates either

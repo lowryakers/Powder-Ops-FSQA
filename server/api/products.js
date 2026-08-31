@@ -14,6 +14,7 @@ import { Router } from 'express';
 import { createHash, timingSafeEqual, randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { resolveFlavorCodes } from '../flavor-codes.js';
+import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js';
 
 const router = Router();
 
@@ -70,6 +71,13 @@ const SELECT = `
 
 function hydrate(rows, db) {
   if (!rows.length) return [];
+  // The flavour register, read once for the whole list rather than per row.
+  let codeByFlavor = {};
+  try {
+    codeByFlavor = Object.fromEntries(db.prepare(
+      'SELECT flavor, code FROM flavor_codes WHERE is_active = 1'
+    ).all().map(r => [r.flavor, r.code]));
+  } catch { /* the column may not exist on a very old database */ }
   const colors = db.prepare('SELECT * FROM product_colors ORDER BY sku, slot').all();
   const bySku = new Map();
   for (const c of colors) {
@@ -78,7 +86,17 @@ function hydrate(rows, db) {
   }
   return rows.map((r) => {
     const withColors = { ...r, colors: bySku.get(r.sku) || [] };
-    return { ...withColors, readiness: readinessOf(withColors) };
+    // What this SKU would be under the new standard. Derived every read, never
+    // stored: it depends on the flavour register, which moves as collisions
+    // are broken. It is NOT this product's SKU — the existing catalogue keeps
+    // its codes and the rename is its own project.
+    const pref = preferredSku({ ...withColors, product_line: withColors.category }, codeByFlavor);
+    return {
+      ...withColors,
+      readiness: readinessOf(withColors),
+      preferred_sku: pref.sku,
+      preferred_sku_blocked_by: pref.blocked_by,
+    };
   });
 }
 
@@ -168,6 +186,91 @@ router.post('/flavor-codes', (req, res) => {
 
 // Retired, never deleted, and the code is never reissued — the controlled-form
 // rule. The row staying is what keeps its code out of circulation.
+/* ── Draft bottle SKUs ─────────────────────────────────────────────────────
+ *
+ * The bottling line, as rows in the catalogue rather than a spreadsheet. One
+ * draft per protein flavour that already has an agreed code.
+ *
+ * DRAFTS, NOT PRODUCTS. `status = 'Draft'` and no GTIN: the GS1 numbers are
+ * being allocated by hand and a barcode invented here would be a barcode
+ * printed. Readiness already reports "no GS1 barcode", so each draft arrives
+ * carrying its own punch list.
+ *
+ * Preview writes NOTHING and is computed by the same function that commits, so
+ * what is on screen cannot differ from what lands.
+ */
+function planBottleDrafts(db) {
+  const codes = Object.fromEntries(db.prepare(
+    'SELECT flavor, code FROM flavor_codes WHERE is_active = 1'
+  ).all().map(r => [r.flavor, r.code]));
+  // One row per flavour per protein line — a flavour made in both whey and
+  // plant is two bottles, not one. Read off what the plant already makes.
+  const src = db.prepare(`SELECT DISTINCT category, protein_type, base_flavor, flavor
+    FROM products WHERE category IN ('Whey Protein','Beef Protein','Plant Protein')
+    ORDER BY category, base_flavor`).all();
+  const existing = new Set(db.prepare('SELECT sku FROM products').all().map(r => r.sku));
+
+  const plan = [];
+  const blocked = [];
+  const seen = new Set();
+  for (const r of src) {
+    const lineCode = LINE_CODES[r.category];
+    const flavourCode = codes[r.base_flavor];
+    if (!lineCode || !flavourCode) {
+      const why = !lineCode ? `no code agreed for ${r.category}` : `${r.base_flavor} has no flavour code yet`;
+      if (!blocked.some(b => b.flavor === r.base_flavor && b.category === r.category)) {
+        blocked.push({ category: r.category, flavor: r.base_flavor, reason: why });
+      }
+      continue;
+    }
+    const sku = `${lineCode}-${PACK_CODES.Bottle}-${flavourCode}`;
+    if (seen.has(sku)) continue;
+    seen.add(sku);
+    // Idempotent: a second run creates nothing, so this is safe to click twice.
+    if (existing.has(sku)) continue;
+    plan.push({
+      sku,
+      category: r.category,
+      protein_type: r.protein_type,
+      pack: PACK_CODES.Bottle,
+      flavor: `${r.base_flavor} ${r.category} Bottle`,
+      base_flavor: r.base_flavor,
+      flavor_code: flavourCode,
+    });
+  }
+  return { plan, blocked };
+}
+
+router.get('/bottle-drafts/preview', (req, res) => {
+  const { plan, blocked } = planBottleDrafts(getDb());
+  res.json({ plan, blocked, can_edit: canManage(req.user) });
+});
+
+router.post('/bottle-drafts', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can add products.' });
+  const db = getDb();
+  const { plan, blocked } = planBottleDrafts(db);
+  if (!plan.length) return res.json({ created: 0, blocked, note: 'Nothing to add — every bottle SKU already exists.' });
+
+  const ins = db.prepare(`INSERT INTO products
+    (sku, gtin, gtin_valid, category, protein_type, pack, flavor, base_flavor, flavor_code,
+     status, spec_id, dieline_required, notes, created_by)
+    VALUES (@sku, NULL, 0, @category, @protein_type, @pack, @flavor, @base_flavor, @flavor_code,
+     'Draft', 'SPEC-BOTTLE', 1, @notes, @created_by)`);
+  const by = req.user?.name || null;
+  const tx = db.transaction(() => {
+    for (const p of plan) {
+      ins.run({ ...p, created_by: by,
+        notes: 'Draft for the bottling line. Needs a GS1 barcode, an MRP formula, an approved NFP and artwork.' });
+    }
+  });
+  tx();
+  logAudit(req.user, 'create', 'product', null,
+    { action: 'bottle_drafts', created: plan.length, skus: plan.map(p => p.sku) },
+    null, null, `${plan.length} bottle draft(s)`);
+  res.status(201).json({ created: plan.length, skus: plan.map(p => p.sku), blocked });
+});
+
 router.delete('/flavor-codes/:id', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can retire a flavour code.' });
   const db = getDb();

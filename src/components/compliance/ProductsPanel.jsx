@@ -25,6 +25,10 @@ import {
 // Columns as data, so the header and `useTableSort` cannot disagree.
 const COLUMNS = [
   { key: 'sku', label: 'SKU' },
+  // What this SKU would be under the new standard — NOT IN USE, and the header
+  // says so. Derived on read from the flavour register, so it moves as
+  // collisions are broken rather than needing a refresh.
+  { key: 'preferred_sku', label: 'New standard (not in use)' },
   { key: 'flavor', label: 'Product' },
   { key: 'gtin', label: 'GTIN' },
   { key: 'category', label: 'Category' },
@@ -35,7 +39,7 @@ const COLUMNS = [
 ];
 
 const PACK_LABEL = {
-  PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick', BOX: 'Carton', CUP: 'Cup',
+  PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick', BOX: 'Carton', CUP: 'Cup', BTL: 'Bottle',
 };
 
 const STATUS_STYLE = {
@@ -397,6 +401,18 @@ export default function ProductsPanel() {
               <tr key={p.sku} onClick={() => setOpen(p.sku)}
                 className="hover:bg-gray-50 cursor-pointer">
                 <td className="px-3 py-2"><code className="text-gray-900">{p.sku}</code></td>
+                <td className="px-3 py-2">
+                  {p.preferred_sku ? (
+                    <code className="text-gray-500">{p.preferred_sku}</code>
+                  ) : (
+                    // The gap is named rather than left blank: this column is
+                    // the punch list for the rename, and "—" says nothing about
+                    // what is stopping it.
+                    <span className="text-[11px] text-amber-700" title={(p.preferred_sku_blocked_by || []).join('; ')}>
+                      {(p.preferred_sku_blocked_by || [])[0] || '—'}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-gray-700">{p.flavor}</td>
                 <td className="px-3 py-2">
                   <span className={p.gtin && !p.gtin_valid ? 'text-red-600 font-medium' : 'text-gray-600'}>

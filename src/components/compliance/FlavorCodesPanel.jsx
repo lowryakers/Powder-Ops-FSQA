@@ -1,6 +1,90 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiDelete } from '../../hooks/useApi';
-import { AlertTriangle, Plus, Tag } from 'lucide-react';
+import { AlertTriangle, Plus, Tag, Package } from 'lucide-react';
+
+/**
+ * The bottling line as draft catalogue rows.
+ *
+ * PREVIEW FIRST, and the preview writes nothing — it is computed by the same
+ * function that commits, so what is on screen cannot differ from what lands.
+ * The flavours that still owe a code are listed as blocked rather than skipped
+ * silently: a bottle line missing four SKUs and not saying so is how somebody
+ * finds out at artwork.
+ */
+function BottleDrafts({ canEdit }) {
+  const { data, refresh } = useApiGet('/products/bottle-drafts/preview');
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+  const [error, setError] = useState(null);
+  const plan = data?.plan || [];
+  const blocked = data?.blocked || [];
+  if (!plan.length && !blocked.length && !done) return null;
+
+  const create = async () => {
+    setBusy(true); setError(null);
+    try { setDone(await apiPost('/products/bottle-drafts', {})); refresh(); }
+    catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="px-4 py-3 flex items-start gap-3">
+        <Package size={17} className="text-powder-600 mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-semibold text-gray-900">Bottle SKUs</h4>
+          <p className="text-xs text-gray-600 mt-0.5">
+            {plan.length > 0
+              ? `${plan.length} can be drafted now, one per protein flavour that has a code.`
+              : 'Every bottle SKU that can be drafted already exists.'}
+            {blocked.length > 0 && ` ${blocked.length} cannot yet — their flavour still needs a code.`}
+          </p>
+          {done && (
+            <p className="text-xs text-green-700 mt-1 font-medium">
+              Added {done.created} draft{done.created === 1 ? '' : 's'} to the catalogue.
+              They carry no GTIN — readiness will show that until the GS1 numbers are allocated.
+            </p>
+          )}
+          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+        </div>
+        {plan.length > 0 && (
+          <div className="flex gap-2 shrink-0">
+            <button type="button" onClick={() => setOpen(o => !o)}
+              className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">
+              {open ? 'Hide' : 'Preview'}
+            </button>
+            {canEdit && (
+              <button type="button" onClick={create} disabled={busy}
+                className="px-2.5 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 disabled:opacity-50">
+                {busy ? 'Adding…' : `Add ${plan.length} drafts`}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {open && plan.length > 0 && (
+        <ul className="border-t border-gray-100 divide-y divide-gray-50 max-h-72 overflow-y-auto">
+          {plan.map(p => (
+            <li key={p.sku} className="px-4 py-1.5 flex items-center gap-3 text-sm">
+              <code className="font-mono text-xs text-powder-800 w-32 shrink-0">{p.sku}</code>
+              <span className="text-gray-600 truncate">{p.base_flavor}</span>
+              <span className="ml-auto text-[11px] text-gray-400 shrink-0">{p.category}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {blocked.length > 0 && (
+        <ul className="border-t border-gray-100 bg-amber-50/50 divide-y divide-amber-100">
+          {blocked.map(b => (
+            <li key={`${b.category}-${b.flavor}`} className="px-4 py-1.5 text-xs text-amber-900">
+              <span className="font-medium">{b.flavor}</span> ({b.category}) — {b.reason}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 /**
  * The flavour register — one flavour, one abbreviation, for every pack.
@@ -138,6 +222,8 @@ export default function FlavorCodesPanel() {
           </div>
         </form>
       )}
+
+      <BottleDrafts canEdit={canEdit} />
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-3">
