@@ -164,6 +164,19 @@
   </div>
 </header>
 
+<div class="box">
+  <p><b>What this is.</b> A read of our Food Safety Plan and Food Defense Plan, line by line, against the
+  standards we are certified to. Nothing in either document has been changed — this is a list of
+  suggestions, and each one is yours to accept, reject or park.</p>
+  <p><b>How to work through it.</b> Every finding has a number so you can decide on them one at a time.
+  Start with the <b>MUST</b> ones: those are wrong as a matter of fact, or describe a control we do not
+  actually have — an auditor finds those by reading. <b>SHOULD</b> is spelling, grammar, a blank never
+  filled in, or a gap against a standard. <b>CONSIDER</b> is a judgement call and it is perfectly
+  reasonable to say no.</p>
+  <p><b>Where “[verify in source]” appears</b>, the PDF text may have been garbled when it was read —
+  check the real document before treating it as a finding.</p>
+</div>
+
 <h2>Protocol 003 — Food Safety Plan V4</h2>
 <h3>Must fix · 9</h3>
 
@@ -427,7 +440,7 @@
 
 <div class="f must">
   <div class="fh"><span class="id">X-01</span><span class="ft">Neither plan says where its records are kept</span><span class="chip c-must">must</span></div>
-  <p>See FSP-08 and FDP-06. <b>The single most consequential omission across both documents</b>, and it became more pressing this week: the preventive-control records are on paper in MRPEasy, mid-migration, and neither plan says so.</p>
+  <p>See FSP-08 and FDP-06. <b>The single most consequential omission across both documents</b>, and it became more pressing this week: the preventive-control records are on paper in MRPEasy, mid-a change to how data is stored, and neither plan says so.</p>
 </div>
 
 <div class="f should">
@@ -449,7 +462,7 @@
     <li><b>An auditor cannot follow the plan to its procedures.</b> <i>"Procedure as outline in cleaning SOP"</i> does not say which SOP, and the plant has roughly a hundred documents.</li>
     <li><b>The hub-and-spoke automation has nothing to work with.</b> Until the plans name their dependencies, re-issuing Protocol 003 can propagate to nothing — because nothing declares that it depends on it.</li>
   </ul>
-  <div class="rec"><b>Not a research task.</b> The eleven documents each plan already <i>describes</i> and does not <i>name</i> are listed in <code>document-reference-graph.md</code> under the coverage check. That list is the starting point for this section.</div>
+  <div class="rec"><b>Not a research task.</b> The eleven documents each plan already <i>describes</i> and does not <i>name</i> are listed in the document-links plan under the coverage check. That list is the starting point for this section.</div>
 </div>
 
 
@@ -588,7 +601,7 @@ punctuation</b>. Two differ substantively, and both add obligations.</p>
   <div class="fh"><span class="id">SQF-23</span><span class="ft">Software and electronic records: off-site backup is not documented</span><span class="chip c-must">must</span><span class="chip c-verify">2.2.3.3 · supplements only</span></div>
   <p>The Food Manufacturing code ends 2.2.3.3 at retention periods. <b>The supplements code adds a sentence the other does not have:</b></p>
   <div class="quote">"Software programs and electronic data and records shall be <b>backed-up on hard drives or cloud remote from the site's system</b>."</div>
-  <p><b>A new obligation, and it lands squarely on ReadyDoc.</b> The platform runs on a hosted volume and <code>scripts/backup-db.js</code> exists, so the control plausibly <i>is</i> in place — but nothing states it, and NSF finding <b>4.4.39</b> has already recorded that formal documentation of the system was not available.</p>
+  <p><b>A new obligation, and it lands squarely on ReadyDoc.</b> The platform runs on a hosted volume and the backup script exists, so the control plausibly <i>is</i> in place — but nothing states it, and NSF finding <b>4.4.39</b> has already recorded that formal documentation of the system was not available.</p>
   <div class="rec">It belongs <b>in the Part 11 validation package</b>, not as a separate project: intended use, gap assessment, IQ/OQ/PQ, test scripts — and now, explicitly, the backup arrangement and evidence that it is remote from the site's system. MRPEasy is in scope for the same clause and is the vendor's answer, not ours.</div>
 </div>
 

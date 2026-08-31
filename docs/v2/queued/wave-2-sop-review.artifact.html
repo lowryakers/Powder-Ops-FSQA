@@ -160,6 +160,18 @@
   </div>
 </header>
 
+<div class="box">
+  <p><b>What this is.</b> A read of the four SOPs the auditor picked up and found wanting. It asks one
+  question of each: <b>does this SOP require something we have no way to produce?</b></p>
+  <p><b>The three legs.</b> Every requirement needs three things to be real — a <b>programme</b> (the SOP
+  saying to do it), a <b>form</b> (a numbered form to record it on), and a <b>record</b> (the filled-in
+  evidence). If any leg is missing, the requirement exists on paper and nowhere else. That is what the
+  coloured boxes below show.</p>
+  <p><b>Severities work as in the plan red-line:</b> MUST is wrong as a matter of fact, SHOULD undermines
+  the document, CONSIDER is a judgement call you may decline. Every finding is numbered so you can take
+  them one at a time.</p>
+</div>
+
 <h2>Where each document stands</h2>
 <p class="lede">The three legs of D-002, one row per SOP — now judged against the documents rather than
 against the tables alone. Everything after this is the evidence.</p>
@@ -269,11 +281,11 @@ actionable findings here.</p>
 <div class="n should">
   <div class="nh"><span class="id">W2-04</span><span class="nt">Nothing reconciles the change log against the document registry</span><span class="sev should">Should</span></div>
   <p>The DCR log imports into the <b>QMS register</b> as change-request records. The document registry is
-  <code>sop_documents</code>, a <b>different table</b>, populated by upload. Nothing compares them, in
+  the document registry, a <b>different table</b>, populated by upload. Nothing compares them, in
   either direction.</p>
   <p>That is why W2-01 and W2-02 survived: a document can sit in the registry with no change history, or
   have a change history and never reach the registry, and no screen reports either. <b>The recurring
-  defect of this codebase — a fact in more than one place with no owner — at the level of the document
+  problem this whole project keeps finding — the same fact kept in two places, with nobody owning either — this time at the level of the document
   register itself.</b></p>
   <p>Two rules in the mechanical sweep close it: <i>in the log, absent from the registry</i>, and its
   inverse. Cheap, and it runs forever after.</p>
@@ -309,21 +321,21 @@ Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12), Bay State 
 
 <div class="n must">
   <div class="nh"><span class="id">W2-05</span><span class="nt">There is no supplier record in ReadyDoc of any kind</span><span class="sev must">Must</span></div>
-  <p>Not a thin one — none. <code>approved_chemicals</code> holds chemicals. <code>certifications</code>
+  <p>Not a thin one — none. the Approved Chemicals list holds chemicals. the Certifications module (which holds people’s certificates)
   holds <b>people</b> (<code>person_name NOT NULL</code>). <code>supply_orders</code> and
   <code>supply_invoices</code> are office purchasing. <b>Nothing anywhere holds a supplier, an ingredient
   it supplies, a risk evaluation, a qualification decision, an approver, or a certificate with an expiry
   date.</b></p>
   <p>So the finding is not “the questionnaire was misfiled”. There is no system it could have been filed
-  in. Three named suppliers of three named ingredients, and the answer to <i>“show me their
+  in. Three named the supplier register of three named ingredients, and the answer to <i>“show me their
   qualification”</i> is a question about somebody’s folders.</p>
 </div>
 
 <div class="n must">
   <div class="nh"><span class="id">W2-06</span><span class="nt">The laboratory half has no record at all — and the code already assumes otherwise</span><span class="sev must">Must</span></div>
-  <p><code>coa_requests.lab_name</code> is a <b>free-text field</b>. There is no laboratory record, no
-  accreditation, no scope, no expiry; the string <code>17025</code> appears nowhere in the codebase.</p>
-  <p>Worse, ReadyDoc already leans on an accreditation it does not hold. <code>coa-grade.js</code> decides
+  <p><code>the COA requests log.lab_name</code> is a <b>free-text field</b>. There is no laboratory record, no
+  accreditation, no scope, no expiry; ISO/IEC 17025 — the standard that actually matters for a testing laboratory — is not mentioned anywhere in ReadyDoc.</p>
+  <p>Worse, ReadyDoc already leans on an accreditation it does not hold. the step that grades a lab result decides
   how a lab result is graded on this reasoning:</p>
   <div class="quote">“The lab’s own verdict wins. It is the accredited party and it applied the …”</div>
   <p>A correct principle resting on a fact nothing records. An auditor asking <i>“how did you qualify CTLA,
@@ -333,9 +345,9 @@ Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12), Bay State 
 
 <div class="n should">
   <div class="nh"><span class="id">W2-07</span><span class="nt">The expiring-certificate pattern is bound to a person, and that decision is due now</span><span class="sev should">Should</span></div>
-  <p><code>certifications</code> already does most of what supplier certificates need — issuer, number,
-  issued and expiry dates, the file, and an expiry that generates work. But <code>person_name</code> is
-  <code>NOT NULL</code>, so an organic, kosher, GFSI or allergen certificate <b>cannot be filed against a
+  <p>the Certifications module (which holds people’s certificates) already does most of what supplier certificates need — issuer, number,
+  issued and expiry dates, the file, and an expiry that generates work. But a person’s name is
+  always required, so an organic, kosher, GFSI or allergen certificate <b>cannot be filed against a
   company</b> without widening that table or creating a second one.</p>
   <p>Decide before building, not during — it is the difference between supplier qualification being a new
   module and an extension of one that works. <i>My reading: a new table, because a supplier carries a risk
@@ -346,7 +358,7 @@ Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12), Bay State 
 <div class="n consider">
   <div class="nh"><span class="id">W2-08</span><span class="nt">FORM 404-1 and 404-2 exist and produce nothing; settle where they live before building</span><span class="sev consider">Consider</span></div>
   <p>Both are numbered, revised (404-1 is at V2, DCR 0022) and real — two of the seven forms D-021 found
-  marked <code>where: keychain</code> while in fact being worked on paper. Building a supplier module
+  marked marked as living in Keychain while in fact being worked on paper. Building a supplier module
   without deciding whether these are its screens, or whether Keychain keeps them and ReadyDoc holds the
   qualification decision, produces a third place the same fact can live. <b>That is Daniela’s decision,
   not a build decision.</b></p>
@@ -355,12 +367,12 @@ Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12), Bay State 
 
 <div class="n must">
   <div class="nh"><span class="id">W2-24</span><span class="nt">V4 puts laboratories in the title and the procedure, and never in the Scope</span><span class="sev must">Must</span></div>
-  <p>V4’s only substantive change is a new section G, <i>Laboratory Qualification</i>, and a new title. <b>Section II, SCOPE, is untouched:</b></p><div class="quote">“The procedure described here applies to all suppliers of raw materials and packaging that comes in contact with raw materials, in-process materials or final products.”</div><p>A laboratory supplies neither. <b>The document’s stated scope excludes the thing its title now promises</b>, and anyone applying it as written may leave laboratories out. One sentence to fix, and it has to happen before the finding below means anything.</p>
+  <p>V4’s only substantive change is a new section G, <i>Laboratory Qualification</i>, and a new title. <b>Section II, SCOPE, is untouched:</b></p><div class="quote">“The procedure described here applies to all the supplier register of raw materials and packaging that comes in contact with raw materials, in-process materials or final products.”</div><p>A laboratory supplies neither. <b>The document’s stated scope excludes the thing its title now promises</b>, and anyone applying it as written may leave laboratories out. One sentence to fix, and it has to happen before the finding below means anything.</p>
 </div>
 
 <div class="n must">
   <div class="nh"><span class="id">W2-25</span><span class="nt">The entire laboratory qualification programme is two sentences</span><span class="sev must">Must</span></div>
-  <p>Verbatim, in full:</p><div class="quote">“Laboratories will be approved upon receipt of ISO certification.<br>An audit report will be requested and kept on file to ensure continued improvement.”</div><p>That is all of it. It names <b>no standard</b> — “ISO certification” is not a requirement, and <b>ISO 9001 is a management-system certificate, not evidence a laboratory can run the test</b>; the one that matters is <b>ISO/IEC 17025</b>, and it matters <i>per scope of accreditation</i> (a lab accredited for heavy metals is not thereby accredited for Salmonella). <b>No scope check. No expiry and no re-approval</b>, though accreditations lapse. <b>No owner, no form, no record</b> — “an audit report will be requested” by whom, by when, filed where.</p><p>This is the document half of W2-06, and the more serious half. <code>coa-grade.js</code> grades every lab result on the reasoning that <i>“it is the accredited party”</i> — <b>and this is the document that was supposed to establish that.</b></p>
+  <p>Verbatim, in full:</p><div class="quote">“Laboratories will be approved upon receipt of ISO certification.<br>An audit report will be requested and kept on file to ensure continued improvement.”</div><p>That is all of it. It names <b>no standard</b> — “ISO certification” is not a requirement, and <b>ISO 9001 is a management-system certificate, not evidence a laboratory can run the test</b>; the one that matters is <b>ISO/IEC 17025</b>, and it matters <i>per scope of accreditation</i> (a lab accredited for heavy metals is not thereby accredited for Salmonella). <b>No scope check. No expiry and no re-approval</b>, though accreditations lapse. <b>No owner, no form, no record</b> — “an audit report will be requested” by whom, by when, filed where.</p><p>This is the document half of W2-06, and the more serious half. the step that grades a lab result grades every lab result on the reasoning that <i>“it is the accredited party”</i> — <b>and this is the document that was supposed to establish that.</b></p>
 </div>
 
 <div class="n must">
@@ -380,7 +392,7 @@ Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12), Bay State 
 
 <div class="n should">
   <div class="nh"><span class="id">W2-29</span><span class="nt">An annual vendor review is required and nothing schedules it</span><span class="sev should">Should</span></div>
-  <p>IV.B makes QA responsible for <i>“performing annual vendor reviews and reports”</i>; V.F.A refers to <i>“annual vendor monitoring”</i>. A stated cadence with no quality schedule, no work order and no record — the same shape as the EMP obligations in W2-45.</p><p>Pair it with the supplier module: this is the ongoing-performance-review leg, and <code>quality_schedules</code> already generates exactly this kind of dated work.</p>
+  <p>IV.B makes QA responsible for <i>“performing annual vendor reviews and reports”</i>; V.F.A refers to <i>“annual vendor monitoring”</i>. A stated cadence with no quality schedule, no work order and no record — the same shape as the EMP obligations in W2-45.</p><p>Pair it with the supplier module: this is the ongoing-performance-review leg, and Quality Schedules already generates exactly this kind of dated work.</p>
 </div>
 
 <div class="n consider">
@@ -397,7 +409,7 @@ example, mixers and stick pack machines.”
   <div class="nh"><span class="id">W2-09</span><span class="nt">“IQ”, “OQ” and “PQ” appear nowhere in ReadyDoc</span><span class="sev must">Must</span></div>
   <p>Searched across the server and the client: no installation qualification, no operational
   qualification, no performance qualification, in any spelling.</p>
-  <p><code>equipment-readiness.js</code> derives <b>ten</b> steps for every machine — PM schedule,
+  <p>the machine setup checklist derives <b>ten</b> steps for every machine — PM schedule,
   assignee, maintenance tasks, LOTO, hygienic design verification, training course, training material,
   work instruction, calibration, HACCP CCP. <b>Qualification is not one of them.</b> So <i>“which machines
   are unqualified?”</i> is not a question the application can be asked, which is precisely why the answer
@@ -414,7 +426,7 @@ example, mixers and stick pack machines.”
 
 <div class="n consider">
   <div class="nh"><span class="id">W2-11</span><span class="nt">This is the cheapest of the four to close, and the pattern is already built</span><span class="sev consider">Consider</span></div>
-  <p>Three more derived steps in <code>equipment-readiness.js</code>, each satisfied by an attached
+  <p>Three more worked out fresh steps in the machine setup checklist, each satisfied by an attached
   protocol — the roll-up, the per-machine panel and the list badges all follow with no new machinery,
   which is how the existing ten already work.</p>
   <p>It does not perform the qualification; that is engineering work and outside ReadyDoc. It makes the gap
@@ -450,9 +462,9 @@ procedures that include processes, software, utility, and physical plant changes
 
 <div class="n must">
   <div class="nh"><span class="id">W2-12</span><span class="nt">The title names three things and ReadyDoc records one</span><span class="sev must">Must</span></div>
-  <p><code>approved_chemicals</code> is genuinely good: category, manufacturer, product code, SDS number,
+  <p>the Approved Chemicals list is genuinely good: category, manufacturer, product code, SDS number,
   food-grade flag, NSF rating, approved applications, maximum concentration, contact time, and
-  <b><code>approved_by</code>, <code>approved_at</code> and a <code>review_due</code></b>. An approval
+  <b>who approved it, when it was approved and a the review-due date</b>. An approval
   record with a name and a date on it.</p>
   <p>There is <b>no equipment approval record and no services or contractor approval record at all.</b> The
   auditor’s finding is about scope, and the same scope gap exists in the software — worth saying plainly,
@@ -461,8 +473,8 @@ procedures that include processes, software, utility, and physical plant changes
 </div>
 
 <div class="n must">
-  <div class="nh"><span class="id">W2-13</span><span class="nt">controlled.js is a real change-control gate, over a very narrow slice</span><span class="sev must">Must</span></div>
-  <p>This is the good news and the exact size of it. <code>controlled.js</code> parks a changed <b>QMS form
+  <div class="nh"><span class="id">W2-13</span><span class="nt">the change-control gate is a real change-control gate, over a very narrow slice</span><span class="sev must">Must</span></div>
+  <p>This is the good news and the exact size of it. the change-control gate parks a changed <b>QMS form
   definition</b>, a changed <b>scale tolerance</b> and — since Wave 1 — the <b>ATP limit</b>, serving the
   last approved version until Document Control approves the new one, and raising a DCR automatically.</p>
   <p>A working change-control mechanism with an approval gate and an audit trail. It is also the <i>whole</i>
@@ -504,7 +516,7 @@ procedures that include processes, software, utility, and physical plant changes
 
 <div class="n should">
   <div class="nh"><span class="id">W2-37</span><span class="nt">Three identifiers are required and none has anywhere to live</span><span class="sev should">Should</span></div>
-  <p>The procedure requires a <b>unique tracking number</b> on the request (§ 2), and an <b>approval number</b> and an <b>expiration date</b> on approval (§ 9).</p><p><code>approved_chemicals</code> carries <code>approved_by</code>, <code>approved_at</code> and <code>review_due</code> — close, but <b>no approval number, no tracking number, and no expiry that generates work.</b> <code>review_due</code> is a date nothing watches, so an expired approval looks exactly like a current one.</p><p><i>This is the closest ReadyDoc comes to satisfying a Wave 2 SOP as written — three columns short.</i></p>
+  <p>The procedure requires a <b>unique tracking number</b> on the request (§ 2), and an <b>approval number</b> and an <b>expiration date</b> on approval (§ 9).</p><p>the Approved Chemicals list carries who approved it, when it was approved and the review-due date — close, but <b>no approval number, no tracking number, and no expiry that generates work.</b> the review-due date is a date nothing watches, so an expired approval looks exactly like a current one.</p><p><i>This is the closest ReadyDoc comes to satisfying a Wave 2 SOP as written — three columns short.</i></p>
 </div>
 
 <div class="n consider">
@@ -519,8 +531,8 @@ established per SOP 604 — Environmental Monitoring Program — V2 — 6/29/26.
 
 <div class="n must">
   <div class="nh"><span class="id">W2-16</span><span class="nt">Completing a quality schedule files no record</span><span class="sev must">Must</span></div>
-  <p><code>quality-schedules.js</code> writes exactly two tables: <code>work_orders</code> and
-  <code>quality_schedules</code>. There is no result record — no site, no test, no number, no pass or
+  <p><code>quality-schedules.js</code> writes exactly two tables: work orders and
+  Quality Schedules. There is no result record — no site, no test, no number, no pass or
   fail, no lab report tied to a requirement.</p>
   <p><b>So a swab that was never taken and a swab whose result went nowhere are indistinguishable.</b> That
   is the auditor’s finding stated in software terms, and it is the same defect that put QA’s Light
@@ -530,7 +542,7 @@ established per SOP 604 — Environmental Monitoring Program — V2 — 6/29/26.
 
 <div class="n must">
   <div class="nh"><span class="id">W2-17</span><span class="nt">The form’s alert and action limits are transcribed, and nothing is graded against them</span><span class="sev must">Must</span></div>
-  <p><code>emp-site-list.js</code> carries the real numbers, faithfully: potable water TAB alert
+  <p>the transcribed FORM 604-01 carries the real numbers, faithfully: potable water TAB alert
   <code>&gt;500 CFU/mL</code> / action <code>&gt;1000</code>; total coliforms <code>Present/100 mL</code>;
   free chlorine <code>&gt;2.0 ppm</code>; Zone 1 surfaces TAB <code>&gt;300</code> / <code>&gt;1000
   CFU/cm²</code>, yeast and mould <code>&gt;150</code> / <code>&gt;500</code>; Salmonella and Listeria
@@ -618,7 +630,7 @@ established per SOP 604 — Environmental Monitoring Program — V2 — 6/29/26.
 
 <div class="n should">
   <div class="nh"><span class="id">W2-45</span><span class="nt">Two recurring obligations, neither with a generator</span><span class="sev should">Should</span></div>
-  <p>5.6.3 requires OOS and overall trending to be <b>reviewed twice a year by the MRB</b>. 5.7 requires the <b>annual baseline mapping</b> of 20–50 samples. Both have a cadence, an owner and an output, and <b>neither exists as a quality schedule</b> — so a year can pass without either and nothing says so. Two rows in <code>SEED_SCHEDULES</code>, once someone confirms the cadences.</p>
+  <p>5.6.3 requires OOS and overall trending to be <b>reviewed twice a year by the MRB</b>. 5.7 requires the <b>annual baseline mapping</b> of 20–50 samples. Both have a cadence, an owner and an output, and <b>neither exists as a quality schedule</b> — so a year can pass without either and nothing says so. Two rows in the seeded Quality Schedules, once someone confirms the cadences.</p>
 </div>
 
 <div class="n should">
@@ -658,7 +670,7 @@ demands. Wave 1’s ATP grading is the pattern, one level up.</p>
   building a result record on top of them would file correct records against a wrong cadence. <b>Settle
   W2-40 first — it is a question, not a build.</b></p>
 </div>
-<p class="lede"><b>Then SOP 421</b>, still three derived steps on <code>equipment-readiness.js</code> — but
+<p class="lede"><b>Then SOP 421</b>, still three worked out fresh steps on the machine setup checklist — but
 W2-31 now sits in front of it. There is no point deriving an IQ/OQ/PQ checklist across 183 machines until
 somebody has decided whether the SOP reaches equipment already in service.</p>
 <p class="lede"><b>SOP 404 is a module, not a field</b>, and W2-25 says the laboratory half needs writing
@@ -667,7 +679,7 @@ before it can be built at all. <b>SOP 434’s software half is the § 4.4.39 sof
 
 <footer>
   Draft for review — nothing in any controlled document has been changed. All forty-six findings are
-  registered in <code>docs/v2/obligations.json</code>, so none can be quietly dropped.
+  registered in <code>docs/v2/obligations.stored list</code>, so none can be quietly dropped.
   <br>One correction made in passing: the audit triage said eight quality schedules are seeded from
   FORM 604-01. Six are — which is itself finding W2-18.
 </footer>

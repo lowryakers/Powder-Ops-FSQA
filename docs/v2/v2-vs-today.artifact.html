@@ -86,7 +86,7 @@
   <div class="box ok">
     <p><b>This is not a rebuild.</b> Same app, same screens, same URL, same login. Nobody learns a new
     system. The platform holds 7,662 FSQA records and years of the plant's own vocabulary, and V2 is a
-    direction to refactor toward — one control at a time — not a thing to start over on.</p>
+    direction to move toward — one control at a time — not a thing to start over on.</p>
     <p><b>What changes is where a fact lives.</b> Today the same fact is written in several places and
     they drift. V2 gives every fact exactly one owner.</p>
   </div>
@@ -141,8 +141,8 @@ Plan says it turns on.</p>
   </g>
 
   <g font-family="Spline Sans Mono, monospace" font-size="12" fill="currentColor">
-    <text x="760" y="72" text-anchor="middle">work_orders</text>
-    <text x="760" y="160" text-anchor="middle">sanitation_records</text>
+    <text x="760" y="72" text-anchor="middle">work orders</text>
+    <text x="760" y="160" text-anchor="middle">the cleaning and inspection records</text>
     <text x="760" y="248" text-anchor="middle">cleaning_events</text>
   </g>
   <g font-family="Asap, sans-serif" font-size="11.5" fill="currentColor" opacity=".6">
@@ -293,7 +293,7 @@ against a fresh database this week.</p>
 
   <line x1="24" y1="126" x2="856" y2="126" stroke="currentColor" stroke-width="1" opacity=".25"/>
 
-  <text x="24" y="158" class="n" fill="var(--ok)">UNDER V2 — BUILT, TESTED, NOT YET DEPLOYED</text>
+  <text x="24" y="158" class="n" fill="var(--ok)">UNDER V2 — LIVE SINCE 27 AUGUST</text>
   <g stroke="currentColor" stroke-width="1.5" fill="none">
     <rect x="24" y="174" width="150" height="50" rx="6"/>
     <rect x="238" y="174" width="170" height="50" rx="6"/>
@@ -322,10 +322,12 @@ against a fresh database this week.</p>
 <figcaption><b>Change the number in the code and nothing happens.</b> Tested: the change was
 <i>parked</i> for Document Control and the app went on grading against the approved 35. That is the
 whole idea — the limit belongs to a document revision, not to a deploy.
-<br><br><b>One thing this does not yet do.</b> PC #1's corrective action is literally <i>"Re-clean
-line"</i>, and today <b>nothing raises that work</b> — re-clean tasks come only from the 72-hour idle
-rule, not from a failed clean. A failed clean stops counting as done and leaves any open re-clean task
-open; it does not create one. That gap is now part of the queued build.</figcaption>
+<br><br><b>And the failed swab now asks for the re-clean.</b> PC #1's corrective action is
+literally <i>"Re-clean line"</i>, and until this shipped nothing raised that work. <b>Two failed swabs
+in a row raise it; one does not.</b> An ATP swab has real false positives, so a single high reading can
+be the swab rather than the line — the first failure asks for a re-clean and a second swab, and a
+passing reading resets the count. A task raised on every stray reading is one people learn to dismiss.
+<b>That rule is the plant's decision, not the standard's</b>, and it is written down as such.</figcaption>
 </figure>
 
 <h2>What each person actually notices</h2>
@@ -365,14 +367,16 @@ the first one is cleaning, because it is daily, universal, and everybody already
 </div>
 
 <div class="box ok">
-  <p><b>Where it stands right now.</b> 26 obligations, 117 findings reconciled, nothing deployed. The
-  ATP grading is built and verified end to end. The four preventive controls are transcribed from
+  <p><b>Where it stands right now.</b> 31 obligations, 163 findings reconciled, <b>three of them
+  already shipped</b>. The ATP grading is live — a swab over 35 RLU files as a fail, and two in a row
+  raise the re-clean. Supplier Qualification is live, and the annual vendor review raises its own task
+  instead of relying on a date nobody watches. The four preventive controls are transcribed from
   Protocol 003. Both plans are red-lined against the SQF Dietary Supplement code and the NSF audit.
   <b>The next thing that ships is the cleaning record with its limit attached.</b></p>
 </div>
 
 <footer>
   <span>Not a rebuild</span><span>One control at a time</span>
-  <span>26 obligations · 0 landed</span><span>27 Aug 2026</span>
+  <span>31 obligations · 3 landed</span><span>31 Aug 2026</span>
 </footer>
 </div>

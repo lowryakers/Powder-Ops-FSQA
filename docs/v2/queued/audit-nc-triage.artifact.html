@@ -134,6 +134,18 @@
   </div>
 </header>
 
+<div class="box">
+  <p><b>What this is.</b> All twelve findings from the August audit, sorted by <i>who fixes it and how</i>
+  rather than by which standard they came from.</p>
+  <p><b>The three groups.</b> <b>A</b> — the missing thing is a record or a control, and building it in
+  ReadyDoc closes the finding. <b>B</b> — a person has to do the work; ReadyDoc’s job is to ask for it,
+  catch the result, and make a miss obvious instead of silent. <b>C</b> — outside ReadyDoc entirely: a
+  document to write, a study to run, or a habit to change on the floor.</p>
+  <p><b>The one thing to take away:</b> eleven of the twelve findings are phrased as a document or a record
+  that did not exist, or could not be produced when asked for. Only one is about something we <i>do</i>
+  that we should not.</p>
+</div>
+
 <h2>GMP for Sport — 3 minor, all one subject</h2>
 <p class="lede">All three are the banned/prohibited substance requirements, and all three share a root:
   <b>the procedure does not exist</b>. A draft already sits in the registry — <code>SOP-DRAFT-BSC</code>,
@@ -148,8 +160,8 @@
 <div class="n c">
   <div class="nh"><span class="id">§6.2.2</span><span class="nt">Procedures prohibiting banned substances not established</span><span class="chip k-c">C → B</span></div>
   <p>Writing the SOP is Document Control's job. Once written, ReadyDoc versions it, trains against it
-    and evidences the training — <code>training_courses.sop_id</code> and
-    <code>retrain_on_doc_change</code> already do this. The procedure must cite the four lists by name:
+    and evidences the training — a training course linked to its SOP and
+    the “retrain when the document changes” setting already do this. The procedure must cite the four lists by name:
     <b>NSF 306 Annex C, NFL/NFLPA, MLB, WADA</b>.</p>
 </div>
 
@@ -157,7 +169,7 @@
   <div class="nh"><span class="id">§6.2.3.1</span><span class="nt">No documented annual review of the lists</span><span class="chip k-b">B</span></div>
   <p>Two halves, and the second is ours. The procedure is a document. <b>The review actually happening
     every year is a program that generates dated work and a record</b> — the exact shape
-    <code>quality_schedules</code> already provides for tap water and the EMP swabs.</p>
+    Quality Schedules already provides for tap water and the EMP swabs.</p>
   <div class="rec">One annual schedule, one record per review, and <b>"when did you last review the WADA
     list"</b> has an answer with a date and a name on it.</div>
 </div>
@@ -189,7 +201,7 @@
     <li><b>Intended use and scope</b> — which records ReadyDoc holds that are GMP records</li>
     <li><b>A Part 11 gap assessment</b> — audit trail, e-signature components, retention and retrieval,
       access control. Much of this exists and has simply never been written down as a claim with
-      evidence: append-only <code>audit_log</code> with actor, role and department; signature revocation;
+      evidence: append-only the audit trail with actor, role and department; signature revocation;
       records retired rather than deleted; signed records closed to edit</li>
     <li><b>IQ/OQ/PQ for the system</b>, and test scripts with recorded results, approved by Quality</li>
     <li><b>Change control over the software</b> — which is also finding 4.3.9</li>
@@ -205,12 +217,12 @@
     for: Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12), Bay State Milling
     (Cinnamon)."</div>
   <p><b>The SOP exists; the records do not.</b> FORM 404-1 and 404-2 sit in the Master Index marked
-    <code>where: keychain</code> and producing nothing — exactly the state the walk predicted.</p>
+    marked as living in Keychain and producing nothing — exactly the state the walk predicted.</p>
   <div class="rec">A <b>supplier qualification module</b> is a real build and a well-understood one:
     supplier, ingredient, risk evaluation, qualification activity determined by risk, certificate with
     an expiry that generates a task, the approval decision with a signature, ongoing performance review.
-    The expiring-certificate pattern already exists in <code>certifications</code>; the approval pattern
-    in <code>qms_records</code>.</div>
+    The expiring-certificate pattern already exists in the Certifications module (which holds people’s certificates); the approval pattern
+    in the QMS records.</div>
 </div>
 
 <div class="n a">
@@ -220,12 +232,12 @@
     specs on 7/9/26 and finished-product specs on 8/21/26, and submitted samples in August with results
     not yet back. The finding is about the period <i>before</i> that, which no software fixes
     retroactively.</p>
-  <p>Forward it is <b>A</b>: <code>coa_specifications</code> already grades a result against a spec per
+  <p>Forward it is <b>A</b>: the COA specification list already grades a result against a spec per
     item and test. What is missing is <b>raw-material specifications as approved documents</b> covering
     identity, purity, strength, composition and contaminants — and <b>a release gate that refuses a lot
     with no active spec</b>.</p>
   <div class="rec"><b>Same defect class as the ungraded ATP reading.</b> A test with no specification
-    quietly passes, exactly as a 60 RLU swab quietly passed before <code>atp-limits.js</code>. Same fix:
+    quietly passes, exactly as a 60 RLU swab quietly passed before the ATP limit rule. Same fix:
     grade against an approved value, refuse to record a pass without one.</div>
 </div>
 
@@ -234,7 +246,7 @@
   <div class="find">"While requirements for equipment changes were defined per SOP 434 … change control
     procedures that include processes, software, utility, and physical plant changes were not
     established." [111.130(e)]</div>
-  <p>The procedure is a document. But note what already exists: <code>controlled.js</code> is a
+  <p>The procedure is a document. But note what already exists: the change-control gate is a
     <b>real change control gate</b> — a changed form definition or acceptance criterion is parked until
     Document Control approves it, and raises a DCR automatically. Narrower than this asks, and the right
     foundation to widen. The requirement adds one thing the current flow does not enforce:
@@ -246,9 +258,9 @@
 <div class="n b">
   <div class="nh"><span class="id">4.5.8</span><span class="nt">IQ/OQ/PQ not provided for any equipment</span><span class="chip k-b">B</span></div>
   <p>Performing the qualification is engineering work. <b>Holding it is nearly free.</b>
-    <code>equipment-readiness.js</code> already derives a per-machine checklist from records — PM
+    the machine setup checklist already derives a per-machine checklist from records — PM
     schedule, team, LOTO, hygienic design verification, course, work instruction.</p>
-  <div class="rec">Add <b>IQ, OQ and PQ as three more derived steps</b>, each satisfied by an attached
+  <div class="rec">Add <b>IQ, OQ and PQ as three more worked out fresh steps</b>, each satisfied by an attached
     protocol, and <b>"which machines are unqualified"</b> becomes answerable on a screen instead of at an
     audit. The pattern, the roll-up and the badges already exist.</div>
 </div>
@@ -293,7 +305,7 @@
   <div class="rec">What ReadyDoc can add is the thing the red-line already lists as absent: a <b>GMP
     observation record</b> — the routine walk-through where somebody checks gowning, hairnets, jewellery,
     handwashing and footwear, and signs it. That turns a recurring behaviour into a trend somebody owns.
-    The dormant <code>checklist_templates</code> engine is typed <code>gmp</code> already.</div>
+    The dormant the checklist engine engine is typed GMP already.</div>
 </div>
 
 <div class="n c">
