@@ -76,6 +76,21 @@ export const PACK_CODES = {
   Cup: 'CUP',
 };
 
+/**
+ * Lines whose products genuinely have no flavour.
+ *
+ * A PRODUCT WITH NO FLAVOUR GETS A TWO-PART SKU — `GFF-PSM`, not a made-up
+ * third segment. Gluten Free Flour is flour; inventing `ORG` or `NAT` for it
+ * would put a flavour on the label's join key that the product does not have,
+ * and somebody would eventually ask what it tasted like.
+ *
+ * Kept as an explicit list rather than inferred from a missing code, because
+ * "this has no flavour" and "nobody has issued its code yet" are different
+ * facts and collapsing them is how a real gap gets hidden. Remove a line from
+ * here the day it gains a flavoured variant.
+ */
+export const FLAVOURLESS_LINES = new Set(['Gluten Free Flour']);
+
 // LETTERS ONLY, and that is what tells the new shape from the old one. The
 // legacy codes end in a serial (`PP-BLM-23`), so allowing digits here made
 // parseSku() accept a legacy SKU and report its serial as a flavour code —
@@ -88,8 +103,13 @@ export const SKU_PART = /^[A-Z]{2,4}$/;
  * is worse than none.
  */
 export function buildSku(protein, pack, flavorCode) {
-  const parts = [protein, pack, flavorCode].map(p => String(p ?? '').trim().toUpperCase());
-  return parts.every(p => SKU_PART.test(p)) ? parts.join('-') : null;
+  const head = [protein, pack].map(p => String(p ?? '').trim().toUpperCase());
+  if (!head.every(p => SKU_PART.test(p))) return null;
+  const flav = String(flavorCode ?? '').trim().toUpperCase();
+  // No flavour is a legitimate answer, not a missing argument — see
+  // FLAVOURLESS_LINES. An empty third segment yields a two-part SKU.
+  if (!flav) return head.join('-');
+  return SKU_PART.test(flav) ? [...head, flav].join('-') : null;
 }
 
 /**
@@ -138,12 +158,13 @@ export function preferredSku(product, codeByFlavor = {}) {
   const lineCode = LINE_CODES[line] || null;
   const pack = packCodeFor(product);
   const flavour = String(product?.base_flavor || product?.flavor || '').trim();
-  const flavourCode = codeByFlavor[flavour] || null;
+  const flavourless = FLAVOURLESS_LINES.has(line);
+  const flavourCode = flavourless ? '' : (codeByFlavor[flavour] || null);
 
   const missing = [
     !lineCode && (line ? `no code agreed for ${line}` : 'no product line'),
     !pack && `no pack code for ${product?.pack || product?.format || 'this format'}`,
-    !flavourCode && (flavour ? `${flavour} has no flavour code yet` : 'no flavour'),
+    flavourCode === null && (flavour ? `${flavour} has no flavour code yet` : 'no flavour'),
   ].filter(Boolean);
 
   if (missing.length) return { sku: null, blocked_by: missing };
@@ -161,6 +182,8 @@ export function preferredSku(product, codeByFlavor = {}) {
 /** The inverse, for reading a code back. Unknown parts come back as written. */
 export function parseSku(sku) {
   const parts = String(sku ?? '').trim().toUpperCase().split('-');
-  if (parts.length !== 3 || !parts.every(p => SKU_PART.test(p))) return null;
-  return { protein: parts[0], pack: parts[1], flavor: parts[2] };
+  // Two parts is a flavourless product; three is the ordinary case.
+  if (parts.length < 2 || parts.length > 3) return null;
+  if (!parts.every(p => SKU_PART.test(p))) return null;
+  return { protein: parts[0], pack: parts[1], flavor: parts[2] || null };
 }

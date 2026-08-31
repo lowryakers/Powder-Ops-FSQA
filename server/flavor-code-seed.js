@@ -75,7 +75,57 @@ const DECIDED = [
     note: 'CM stays with Chocolate Mousse — whey is the larger line and CM reads with '
       + 'the rest of the chocolate family (CH, CPB, CCC, DCH).',
   },
+  // The CS pair, which only became visible once the oatmeal cups' trailing
+  // serials were stripped and POC-CS3 could be read as CS.
+  {
+    flavor: 'Cinnamon Swirl', code: 'CS', legacy: [],
+    note: 'Keeps CS. Cinnamon Spice moves to CSP.',
+  },
+  {
+    flavor: 'Cinnamon Spice', code: 'CSP', legacy: ['CS'],
+    note: 'Moved off CS, which Cinnamon Swirl keeps — it has more SKUs (pancake and cupcake).',
+  },
+  {
+    // `PCCM-V-04` carried a one-letter code, which the SKU format does not
+    // accept: 26 combinations is not an abbreviation space.
+    flavor: 'Vanilla', code: 'VAN', legacy: ['V'],
+    note: 'V was a single letter, which the SKU format refuses. VB, VC, VCR and VNL '
+      + 'are all taken by other vanillas, so VAN.',
+  },
+  {
+    // Daily Recharge's rows carried the PRODUCT NAME in the flavour field
+    // ("Daily Recharge", "Daily Recharge 20ct"). Its actual flavour is Tropical
+    // Paradise, which is what the artwork says.
+    flavor: 'Tropical Paradise', code: 'TRP', legacy: [],
+    note: 'Daily Recharge\'s flavour. The rows previously carried the product name '
+      + 'in the flavour field, which is why it had no code.',
+  },
 ];
+
+/**
+ * Two Daily Recharge rows named the PRODUCT in their flavour field.
+ *
+ * `base_flavor` is what the flavour register joins on, so "Daily Recharge 20ct"
+ * being in it meant the product's real flavour — Tropical Paradise, as printed
+ * on both the stick and the pouch — had no code and neither row could resolve.
+ *
+ * Idempotent and targeted: it matches only the exact wrong values, so a row
+ * somebody has since corrected by hand is left alone, and re-running changes
+ * nothing. The DISPLAY name in `flavor` is untouched — that is what the
+ * catalogue shows and it reads correctly already.
+ */
+const BASE_FLAVOR_FIXES = [
+  { sku: 'DR-20', from: 'Daily Recharge 20ct', to: 'Tropical Paradise' },
+  { sku: 'DR-SP', from: 'Daily Recharge', to: 'Tropical Paradise' },
+];
+
+export function repairBaseFlavors(db) {
+  const upd = db.prepare('UPDATE products SET base_flavor = ? WHERE sku = ? AND base_flavor = ?');
+  let fixed = 0;
+  for (const f of BASE_FLAVOR_FIXES) fixed += upd.run(f.to, f.sku, f.from).changes;
+  if (fixed) console.log(`[seed] Products: corrected ${fixed} base_flavor value(s) that held a product name`);
+  return fixed;
+}
 
 export function seedFlavorCodes(db) {
   const rows = db.prepare(

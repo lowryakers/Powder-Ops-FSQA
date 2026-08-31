@@ -473,6 +473,18 @@ abbreviation on a pouch than on a stick and nothing ever joined them.
   recorded in `DECIDED` with the reasoning. Filing those settled the other side of each pair automatically —
   Chocolate Mousse takes CM and Vanilla Cone takes VC with no further input, which is the issued-codes
   feedback working.
+- **Every flavour now has a code and all 118 rows resolve.** The plant settled seven collisions in two
+  passes: SLC / VCR / CFM, then CS for Cinnamon Swirl, CSP for Cinnamon Spice, VAN for Vanilla (its `V` was
+  one letter, which the format refuses) and TRP for Tropical Paradise.
+- **Two Daily Recharge rows held the PRODUCT NAME in `base_flavor`** ("Daily Recharge 20ct"), which is what
+  the register joins on — so its real flavour, Tropical Paradise, had no code and neither row could resolve.
+  `repairBaseFlavors` corrects exactly those two values and leaves the DISPLAY name alone. Both levels
+  legitimately have their own GTIN (the stick `…72648`, the 20ct pouch `…72649`); the stick-into-pouch
+  relationship is a bill of materials and lives in the MRP, not here.
+- **A PRODUCT WITH NO FLAVOUR GETS A TWO-PART SKU** — Gluten Free Flour is `GFF-PSM`, not an invented
+  `GFF-PSM-NAT`. `FLAVOURLESS_LINES` is an explicit list rather than an inference from a missing code,
+  because "has no flavour" and "nobody issued its code yet" are different facts and collapsing them hides a
+  real gap. `parseSku` accepts two or three parts.
 - **A trailing serial is stripped from a legacy code** (`POC-AC1` → `AC`). Reading the whole thing rejected
   all three oatmeal cups, so those flavours had no code at all — and stripping it **surfaced a real
   collision that had been invisible**: Cinnamon Spice (`CS3`, oatmeal) against Cinnamon Swirl (`CS`,

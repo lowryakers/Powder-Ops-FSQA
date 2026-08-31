@@ -100,7 +100,7 @@ import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api
 import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
-import { seedFlavorCodes, seedBottleSpec } from './server/flavor-code-seed.js';
+import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedDilutionLog } from './server/dilution-log-seed.js';
@@ -1116,6 +1116,9 @@ try {
   // is in. Same ordering trap as seedGenericSpecifications, which filed zero
   // rows when it ran before the COA seed.
   seedBottleSpec(db);
+  // Before the codes are derived: the register joins on base_flavor, so a row
+  // holding a product name there cannot resolve.
+  repairBaseFlavors(db);
   seedFlavorCodes(db);
 
   // Sticks + Hand Fill → Filling. Runs after every seed, because the historical
