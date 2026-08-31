@@ -141,7 +141,7 @@ function NewPanelForm({ sku, formulaRev, onDone, onCancel }) {
   );
 }
 
-function VersionCard({ v, canEdit, onChanged }) {
+function VersionCard({ v, canEdit, onChanged, storage = true }) {
   const [link, setLink] = useState('');
   const [sentTo, setSentTo] = useState(v.sent_to || '');
   const [busy, setBusy] = useState('');
@@ -284,10 +284,20 @@ function VersionCard({ v, canEdit, onChanged }) {
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2 pt-2">
-              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium cursor-pointer hover:bg-gray-50">
-                <Upload size={13} /> {busy === 'upload' ? 'Uploading…' : 'Attach panel'}
-                <input type="file" className="hidden" multiple onChange={upload} />
-              </label>
+              {/* OFFERED ONLY WHEN A FILE CAN ACTUALLY BE STORED. Without R2 the
+                  upload 503s, and a button that fails on click is worse than one
+                  that says why — the Drive link below still works, so there is a
+                  real way through rather than a dead end. */}
+              {storage ? (
+                <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium cursor-pointer hover:bg-gray-50">
+                  <Upload size={13} /> {busy === 'upload' ? 'Uploading…' : 'Attach panel'}
+                  <input type="file" className="hidden" multiple onChange={upload} />
+                </label>
+              ) : (
+                <span className="text-[11px] text-gray-500 italic">
+                  File storage is off — add a Drive link instead.
+                </span>
+              )}
               <input value={sentTo} onChange={(e) => setSentTo(e.target.value)} placeholder="Send to (name)"
                 className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs w-40" />
               <button onClick={send} disabled={busy === 'send' || !v.has_panel}
@@ -352,7 +362,7 @@ export function NfpForSku({ sku, formulaRev, canEdit, onChanged }) {
       )}
 
       {versions.map((v) => (
-        <VersionCard key={v.id} v={v} canEdit={canEdit} onChanged={changed} />
+        <VersionCard key={v.id} v={v} canEdit={canEdit} onChanged={changed} storage={data?.storage !== false} />
       ))}
     </div>
   );

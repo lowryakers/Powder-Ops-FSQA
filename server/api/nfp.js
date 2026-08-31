@@ -136,7 +136,12 @@ router.get('/', (_req, res) => {
 router.get('/sku/:sku', (req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM nfp_versions WHERE sku = ? ORDER BY created_at DESC').all(req.params.sku);
-  res.json({ versions: hydrate(db, rows) });
+  // Whether a file can be attached at all. The list endpoint already reported
+  // this and the per-SKU one did not, so the product drawer offered an "Attach
+  // panel" button that 503'd on click when R2 was not configured — the caller
+  // could not know until they tried. Same contract as storageEnabled() gating
+  // the comms paperclip.
+  res.json({ versions: hydrate(db, rows), storage: storageEnabled() });
 });
 
 /** Short-lived download URL, issued only to a signed-in reader of the module. */
