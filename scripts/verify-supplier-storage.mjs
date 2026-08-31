@@ -114,6 +114,35 @@ console.log('\n── the text inside the PDFs ──');
   t('...and it is real text, not an empty string', chars > 2000, `${chars} chars`);
 }
 
+console.log('\n── a folder the register spells differently ──');
+// The archive says "Bio-Cat", the tracker says "Bio-Cat Inc". A fuzzy match is
+// NEVER attached — it is named, and linking it is one deliberate act.
+{
+  const db = new Database(process.env.DBPATH);
+  const sup = db.prepare("SELECT id, name FROM suppliers LIMIT 1").get();
+  db.close();
+  // Build a zip whose folder is a near-miss of a real supplier name.
+  const AdmZip = (await import('adm-zip')).default;
+  const z = new AdmZip();
+  z.addFile(`${sup.name} Inc/2025/Kosher Certificate Exp. 12.31.2027.pdf`, Buffer.from('%PDF-1.4 test'));
+  const fd = new FormData();
+  fd.append('files', new Blob([z.toBuffer()]), 'near-miss.zip');
+  const nm = await J(await up('/suppliers/files/archive/analyze', fd));
+  t('a near-miss folder is NOT attached on a guess', nm?.plan?.counts?.store === 0,
+    JSON.stringify(nm?.plan?.counts));
+  const sug = (nm?.plan?.suggestions || []).find(g => g.supplier_id);
+  t('...it NAMES the supplier it probably belongs to', !!sug && sug.supplier_name === sup.name,
+    JSON.stringify(nm?.plan?.suggestions || []).slice(0, 200));
+
+  // Link the name — the deliberate act — and the same zip now lands.
+  await req(`/suppliers/${sug.supplier_id}/link-name`, { method: 'POST', body: JSON.stringify({ name: sug.folder }) });
+  const fd2 = new FormData();
+  fd2.append('files', new Blob([z.toBuffer()]), 'near-miss.zip');
+  const after = await J(await up('/suppliers/files/archive/analyze', fd2));
+  t('once linked, the SAME zip is recognised', after?.plan?.counts?.store === 1,
+    JSON.stringify(after?.plan?.counts));
+}
+
 console.log('\n── permissions ──');
 const anon = await fetch(`${B}/suppliers/files/archive/commit`, { method: 'POST', body: new FormData() });
 t('an unauthenticated archive upload is refused', anon.status === 401 || anon.status === 403, `${anon.status}`);

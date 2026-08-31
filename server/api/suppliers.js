@@ -36,6 +36,7 @@ import { readTable } from '../tabular.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage, MAX_ARCHIVE_BYTES } from '../media.js';
 import { planSupplierImport, applySupplierImport } from '../supplier-import.js';
 import { DISPOSITIONS, RISK_CRITERIA } from '../supplier-sop.js';
+import { matchStrength, nameKey } from '../supplier-reconcile.js';
 import { readFileSync, createReadStream, writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join as joinPath } from 'path';
@@ -446,10 +447,16 @@ function guessType(filename) {
 function adoptUnmatched(db, plan, { write = false, actor = null } = {}) {
   if (!plan.unmatched.length) return plan;
 
+  // KEYED THE SAME WAY THE RECONCILER KEYS, not by lowercasing. nameKey strips
+  // punctuation, and Google Drive rewrites it: the folder is "Monk Fruit Corp"
+  // where the register says "Monk Fruit Corp.", and "Smirk_s" where it says
+  // "Smirk's" (Drive will not put an apostrophe in a folder name). Those are
+  // exact matches under the module's own definition of exact, and a plain
+  // toLowerCase missed 54 real documents on the plant's own archive.
   const byName = new Map();
   for (const r of db.prepare('SELECT id, name, legacy_names FROM suppliers').all()) {
-    byName.set(r.name.toLowerCase(), r.id);
-    for (const n of JSON.parse(r.legacy_names || '[]')) byName.set(String(n).toLowerCase(), r.id);
+    byName.set(nameKey(r.name), r.id);
+    for (const n of JSON.parse(r.legacy_names || '[]')) byName.set(nameKey(n), r.id);
   }
 
   // TWO CANDIDATE PATHS, and taking only one is wrong in a way that is easy to
@@ -481,7 +488,7 @@ function adoptUnmatched(db, plan, { write = false, actor = null } = {}) {
     let doc = null, supplierId = null, chosen = null;
     for (const cand of [full, rel]) {
       const d = byRelPath.get(cand);
-      const id = d && byName.get(String(d.vendor).toLowerCase());
+      const id = d && byName.get(nameKey(d.vendor));
       if (d && id) { doc = d; supplierId = id; chosen = cand; break; }
     }
     if (!doc || !supplierId) { stillUnmatched.push(u); continue; }
@@ -500,6 +507,43 @@ function adoptUnmatched(db, plan, { write = false, actor = null } = {}) {
   plan.counts.store = plan.store.length;
   plan.counts.unmatched = stillUnmatched.length;
   plan.counts.adopted = plan.store.filter(x => x.how === 'catalogued now').length;
+
+  // "NOT RECOGNISED" IS A DEAD END; a named likely vendor is a next step.
+  //
+  // 16 of the archive's 58 folders — 223 files — carry a name the register
+  // spells differently: the folder says "Bio-Cat", the tracker says "Bio-Cat
+  // Inc". supplier-reconcile.js already knows how to see that, and its rule is
+  // deliberate: an EXACT key match is safe to take outright, anything weaker is
+  // a SUGGESTION a person confirms — because the same rule that correctly reads
+  // "GNT" as "Exberry-GNT" would happily read "Talus" as "Aceto-Talus", and
+  // that is wrong exactly once and files a qualification against the wrong
+  // company.
+  //
+  // So a weaker match is NEVER attached here. It is reported with the supplier
+  // it probably belongs to, and linking the folder name is one deliberate act
+  // on the register (POST /:id/link-name) that this same walk then honours,
+  // because legacy_names are matched exactly.
+  const suppliers = db.prepare('SELECT id, name FROM suppliers').all();
+  const byFolder = new Map();
+  for (const { u, full, rel } of candidates) {
+    if (!stillUnmatched.includes(u)) continue;
+    const doc = byRelPath.get(full) || byRelPath.get(rel);
+    const folder = doc?.vendor || String(u.path).split('/')[0];
+    if (!byFolder.has(folder)) byFolder.set(folder, 0);
+    byFolder.set(folder, byFolder.get(folder) + 1);
+  }
+  plan.suggestions = [];
+  for (const [folder, files] of byFolder) {
+    let best = null;
+    for (const sup of suppliers) {
+      const how = matchStrength(folder, sup.name);
+      if (!how || how === 'exact') continue;   // exact would already have adopted
+      const rank = how === 'suffix' ? 2 : 1;
+      if (!best || rank > best.rank) best = { rank, how, supplier_id: sup.id, supplier_name: sup.name };
+    }
+    plan.suggestions.push({ folder, files, ...(best || {}), rank: undefined });
+  }
+  plan.suggestions.sort((a, b) => b.files - a.files);
   return plan;
 }
 

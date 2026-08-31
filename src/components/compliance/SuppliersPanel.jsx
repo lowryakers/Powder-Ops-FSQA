@@ -489,6 +489,7 @@ function ArchiveStep({ onDone }) {
   const [pct, setPct] = useState(0);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
+  const [linked, setLinked] = useState([]);
   const { data: cov, refresh: refreshCov } = useApiGet('/suppliers/files/coverage');
 
   const send = async (path, setResult) => {
@@ -558,19 +559,60 @@ function ArchiveStep({ onDone }) {
             {plan.counts.skip ? <> · <b>{plan.counts.skip}</b> skipped</> : null}
             {plan.counts.unmatched ? <> · <b className="text-amber-600">{plan.counts.unmatched}</b> not recognised</> : null}
           </p>
-          {!!plan.counts.unmatched && (
-            <details className="rounded border border-amber-200 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950/30">
-              {/* Named, never filed somewhere plausible. Attaching a
-                  certificate to the wrong company is worse than not attaching
-                  it — so an unrecognised path is reported and left alone. */}
-              <summary className="cursor-pointer text-amber-900 dark:text-amber-200">
-                {plan.counts.unmatched} files in the zip match no catalogued document
-              </summary>
-              <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto text-xs text-slate-600 dark:text-slate-300">
-                {plan.unmatched.slice(0, 200).map(u => (
-                  <li key={u.path}><code>{u.path}</code> — {u.reason}</li>
+          {/* A folder the register spells differently is not a dead end — name
+              the supplier it probably belongs to and offer the one act that
+              fixes it. Linking is deliberate and audited; nothing is attached
+              on a fuzzy match. */}
+          {!!(plan.suggestions || []).filter(g => g.supplier_id).length && (
+            <div className="rounded border border-blue-200 bg-blue-50 p-2 dark:border-blue-900 dark:bg-blue-950/30">
+              <p className="text-blue-900 dark:text-blue-200">
+                Some folders are named differently on the register. Link the name and review again —
+                nothing is attached on a guess.
+              </p>
+              <ul className="mt-2 space-y-1">
+                {plan.suggestions.filter(g => g.supplier_id).map(g => (
+                  <li key={g.folder} className="flex flex-wrap items-center gap-2 text-xs">
+                    <code className="rounded bg-white px-1 dark:bg-slate-900">{g.folder}</code>
+                    <span className="text-slate-500">{g.files} files → probably</span>
+                    <b>{g.supplier_name}</b>
+                    <button type="button" disabled={busy || linked.includes(g.folder)}
+                      onClick={async () => {
+                        try {
+                          await apiPost(`/suppliers/${g.supplier_id}/link-name`, { name: g.folder });
+                          setLinked(l => [...l, g.folder]);
+                        } catch (e) { setError(e.message || 'Could not link that name'); }
+                      }}
+                      className="rounded border border-blue-400 px-2 py-0.5 text-blue-700 disabled:opacity-40 dark:text-blue-300">
+                      {linked.includes(g.folder) ? 'Linked' : 'Link this name'}
+                    </button>
+                  </li>
                 ))}
               </ul>
+              {!!linked.length && (
+                <p className="mt-2 text-xs text-blue-900 dark:text-blue-200">
+                  {linked.length} linked — press <b>Review the zip</b> again to pick those documents up.
+                </p>
+              )}
+            </div>
+          )}
+          {/* Grouped BY FOLDER, not as 169 loose paths. "Bio-Cat, 30 files,
+              no supplier of that name" is something a person can act on; a
+              list of every path is something they scroll past. */}
+          {!!(plan.suggestions || []).filter(g => !g.supplier_id).length && (
+            <details className="rounded border border-amber-200 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950/30">
+              <summary className="cursor-pointer text-amber-900 dark:text-amber-200">
+                {plan.suggestions.filter(g => !g.supplier_id).reduce((n, g) => n + g.files, 0)} files
+                under {plan.suggestions.filter(g => !g.supplier_id).length} folder names that are not on the register
+              </summary>
+              <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto text-xs text-slate-600 dark:text-slate-300">
+                {plan.suggestions.filter(g => !g.supplier_id).map(g => (
+                  <li key={g.folder}><code>{g.folder}</code> — {g.files} files, no supplier of that name</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-slate-500">
+                Add the supplier, or link this spelling to an existing one, then review again.
+                Nothing is filed against a company that is not on the register.
+              </p>
             </details>
           )}
           <p className="text-xs text-slate-500">Reviewing writes nothing and uploads nothing.</p>
