@@ -33,9 +33,20 @@ export function codesInUse(rows) {
     if (!flavour || !sku || /^\d+$/.test(sku)) continue;
     const parts = sku.split('-');
     if (parts.length < 2) continue;
-    const code = parts[1].trim().toUpperCase();
-    // A code is letters. A serial ("01") is not a flavour abbreviation.
-    if (!/^[A-Z]{1,4}$/.test(code)) continue;
+    const raw = parts[1].trim().toUpperCase();
+    // A TRAILING SERIAL IS NOT PART OF THE CODE. The oatmeal cups are written
+    // `POC-AC1`, `POC-MBS5`, `POC-CS3` — letters plus a position marker — and
+    // reading the whole thing as the abbreviation rejected all three, so those
+    // flavours came back with no code at all. The letters are the code; the
+    // digits are the same kind of serial the new standard drops.
+    const code = /^[A-Z]{1,4}\d*$/.test(raw) ? raw.replace(/\d+$/, '') : raw;
+    // TWO TO FOUR LETTERS, matching what the SKU format and the issue endpoint
+    // both accept. A one-letter code was being read in here (`PCCM-V-04`) and
+    // then silently rejected by buildSku, which produced a catalogue row that
+    // was blocked with no reason shown — three rules disagreeing about what a
+    // code is. A bare serial ("01", "20") contributes nothing rather than
+    // being guessed at.
+    if (!/^[A-Z]{2,4}$/.test(code)) continue;
     if (!out.has(flavour)) out.set(flavour, new Set());
     out.get(flavour).add(code);
   }

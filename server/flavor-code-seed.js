@@ -47,13 +47,60 @@ const BOTTLE_SPEC = {
     + 'tier and one purchase order, which is why the pouches are already split large/small.',
 };
 
+/**
+ * The collisions the plant broke, recorded verbatim with the reason.
+ *
+ * These are DECISIONS, not derivations — three codes each meant two flavours
+ * and no amount of reading the existing SKUs could say which one moves. Filed
+ * here so they survive a fresh database, and insert-only like everything else,
+ * so a later correction by hand is never overwritten.
+ *
+ * Filing these also settles the OTHER side of each pair: once Café Mocha is
+ * CFM, Chocolate Mousse is the only claimant left on CM and the derivation
+ * picks it up on its own. That is why this runs before the derived pass.
+ */
+const DECIDED = [
+  {
+    flavor: 'Salted Caramel', code: 'SLC', legacy: ['SCR', 'SC'],
+    note: 'Chosen over SCR because SC stays with Sugar Cookie, and SC/SCR differ by '
+      + 'one character and sort adjacent — a misread waiting to happen on a PO line.',
+  },
+  {
+    flavor: 'Vanilla Cream', code: 'VCR', legacy: ['VC'],
+    note: 'VC stays with Vanilla Cone, which has more SKUs and sits in a protein line. '
+      + 'VNL is Frosted Vanilla and VB is Vanilla Bean, so VCR was free.',
+  },
+  {
+    flavor: 'Café Mocha', code: 'CFM', legacy: ['CM'],
+    note: 'CM stays with Chocolate Mousse — whey is the larger line and CM reads with '
+      + 'the rest of the chocolate family (CH, CPB, CCC, DCH).',
+  },
+];
+
 export function seedFlavorCodes(db) {
   const rows = db.prepare(
     'SELECT sku, flavor, base_flavor FROM products'
   ).all();
   if (!rows.length) return { skipped: 'no products yet' };
 
-  const { resolved, needs_decision } = resolveFlavorCodes(rows);
+  const seen = db.prepare('SELECT 1 FROM flavor_codes WHERE flavor = ? OR code = ?');
+  const insDecided = db.prepare(`INSERT INTO flavor_codes (id, flavor, code, source, legacy_codes, note, created_by)
+    VALUES (?, ?, ?, 'decided', ?, ?, 'seed')`);
+  let decided = 0;
+  db.transaction(() => {
+    for (const d of DECIDED) {
+      if (seen.get(d.flavor, d.code)) continue;
+      insDecided.run(uuid(), d.flavor, d.code, JSON.stringify(d.legacy), d.note);
+      decided++;
+    }
+  })();
+  if (decided) console.log(`[seed] Flavour codes: filed ${decided} decided collision-break(s)`);
+
+  // The codes now on file are fed back in, so the flavours those decisions
+  // freed (Chocolate Mousse on CM, Vanilla Cone on VC) resolve by themselves.
+  const issued = Object.fromEntries(
+    db.prepare('SELECT flavor, code FROM flavor_codes WHERE is_active = 1').all().map(r => [r.flavor, r.code]));
+  const { resolved, needs_decision } = resolveFlavorCodes(rows, { issued });
   const has = db.prepare('SELECT 1 FROM flavor_codes WHERE flavor = ? OR code = ?');
   const ins = db.prepare(`INSERT INTO flavor_codes (id, flavor, code, source, legacy_codes, note, created_by)
     VALUES (?, ?, ?, 'derived', ?, ?, 'seed')`);

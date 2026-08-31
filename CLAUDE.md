@@ -463,7 +463,27 @@ abbreviation on a pouch than on a stick and nothing ever joined them.
   and it is explicitly not the product's SKU — the existing 118 keep their codes. **66 of 118 resolve today**;
   the rest name what is blocking them rather than showing a blank, because this column is the punch list for
   the Shopify / ShipHero pass.
-- **`LINE_CODES` holds only WHY / BEF / PLT** — the three the standard was written against. The mixes have no
+- **`LINE_CODES` covers all ten lines.** WHY / BEF / PLT were the standard's own; DNT, PNC, CPK, CRP, OAT,
+  DRC and GFF were proposed when the column was extended, each mirroring the legacy prefix with the leading
+  "P" dropped (PDM→DNT, PCCM→CPK, GFFB→GFF). **A line code is a different kind of thing from a flavour
+  code**: a flavour code is read off film already printing, so there is evidence and a wrong one is a wrong
+  pack; no SKU exists in the new format yet, so a line code is a free choice right up until the first is
+  minted. `CPK` deliberately avoids `CUP`, which is the oatmeal cup's PACK code.
+- **The plant broke the three collisions: Salted Caramel → SLC, Vanilla Cream → VCR, Café Mocha → CFM**,
+  recorded in `DECIDED` with the reasoning. Filing those settled the other side of each pair automatically —
+  Chocolate Mousse takes CM and Vanilla Cone takes VC with no further input, which is the issued-codes
+  feedback working.
+- **A trailing serial is stripped from a legacy code** (`POC-AC1` → `AC`). Reading the whole thing rejected
+  all three oatmeal cups, so those flavours had no code at all — and stripping it **surfaced a real
+  collision that had been invisible**: Cinnamon Spice (`CS3`, oatmeal) against Cinnamon Swirl (`CS`,
+  pancake and cupcake).
+- **Three rules disagreed about what a code is, and a catalogue row was blocked with no reason shown.**
+  `codesInUse` accepted one letter, `SKU_PART` and the issue endpoint require two to four — so `PCCM-V-04`
+  had a code the SKU builder then silently refused. All three now say 2–4, and `preferredSku` reports a
+  failure to assemble rather than returning an empty `blocked_by`. **112 of 118 resolve**; the six left are
+  the two Cinnamon flavours, Vanilla (cupcake), and two products whose "flavour" is a pack count or the
+  product name — a genuine modelling question, not a missing code.
+- **`LINE_CODES` (old note) held only WHY / BEF / PLT** — the three the standard was written against. The mixes have no
   agreed first segment and one is NOT invented: a line code is the first three characters of every SKU in
   that line forever, and a guess here is a guess somebody copies out of the table. 52 rows report
   "no code agreed for Donut Mix" and similar, which is the next decision to make.

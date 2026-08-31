@@ -21,17 +21,40 @@
 /**
  * The first segment: the product line.
  *
- * ONLY THE THREE THAT HAVE BEEN AGREED. The bottling line is whey, beef and
- * plant, and `WHY-PLG-BLM` is the worked example the standard was written
- * against. The mixes (donut, pancake, cupcake, crepe, oatmeal, flour) have no
- * agreed code, and one is NOT invented here: a line code is the first three
- * characters of every SKU in that line forever, and guessing it produces a
- * preview somebody copies. A product on an uncoded line reports the gap.
+ * A LINE CODE IS A DIFFERENT KIND OF THING FROM A FLAVOUR CODE, which is why
+ * these could be proposed here while the contested flavours could not. A
+ * flavour code is read off film the plant is already printing, so there is
+ * evidence to derive it from and a wrong one is a wrong pack. No SKU exists in
+ * the new format yet, so a line code has no evidence behind it either way — it
+ * is a choice, and it is free to change right up until the first SKU is minted.
+ *
+ * A line code is still the first three characters of every SKU in that line
+ * forever, so changing one after the cutover is the rename project again. Agree
+ * them before minting.
  */
 export const LINE_CODES = {
+  // The three the standard was written against.
   'Whey Protein': 'WHY',
   'Beef Protein': 'BEF',
   'Plant Protein': 'PLT',
+  // The mixes, added when the preview column was extended to the whole
+  // catalogue. UNLIKE A FLAVOUR CODE, THESE ARE NOT READ OFF EXISTING FILM —
+  // no SKU is printed in the new format yet, so there is nothing to derive
+  // from and they are a proposal. Each mirrors the legacy prefix with the
+  // leading "P" (for protein) dropped, since the line segment now says what
+  // the product is: PDM→DNT, PPM→PNC, PCCM→CPK, PCM→CRP, POC→OAT, DR→DRC,
+  // GFFB→GFF. They are cheap to change while nothing is minted; a flavour
+  // code is not.
+  'Donut Mix': 'DNT',
+  'Pancake Mix': 'PNC',
+  // NOT "CUP" — that is the pack code for the oatmeal cup, and while the two
+  // segments are positional and could not actually be confused by the parser,
+  // a person reading CUP-CUP-AC would rightly stop and check.
+  'Cupcake Mix': 'CPK',
+  'Crepe Mix': 'CRP',
+  'Oatmeal Cup': 'OAT',
+  'Daily Recharge': 'DRC',
+  'Gluten Free Flour': 'GFF',
 };
 
 // The old name, kept because the bottling work reads it that way.
@@ -124,7 +147,15 @@ export function preferredSku(product, codeByFlavor = {}) {
   ].filter(Boolean);
 
   if (missing.length) return { sku: null, blocked_by: missing };
-  return { sku: buildSku(lineCode, pack, flavourCode), blocked_by: [] };
+  const sku = buildSku(lineCode, pack, flavourCode);
+  // Belt and braces: every part was present and it STILL would not assemble,
+  // which means one of them is malformed for this format. A row that is blocked
+  // with nothing in blocked_by renders as an empty cell and tells nobody
+  // anything, which is worse than the gap itself.
+  if (!sku) {
+    return { sku: null, blocked_by: [`"${lineCode}-${pack}-${flavourCode}" is not a valid SKU — each part must be 2–4 letters`] };
+  }
+  return { sku, blocked_by: [] };
 }
 
 /** The inverse, for reading a code back. Unknown parts come back as written. */
