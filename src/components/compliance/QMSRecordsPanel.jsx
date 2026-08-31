@@ -947,6 +947,11 @@ function ConfirmDeleteModal({ count, noun, onConfirm, onClose }) {
 // `rowAction` (optional): { label, icon, show(rec), run(rec) } renders an extra
 // per-row button in the log — e.g. Flavor Approvals' "Text for approval".
 export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null }) {
+  // One action or several — a record can be at different points in a flow and
+  // owe a different next step (score it, then send it). Normalized once here so
+  // the card layout and the table layout cannot offer different buttons for the
+  // same record, which is how the two drift.
+  const rowActions = (Array.isArray(rowAction) ? rowAction : [rowAction]).filter(Boolean);
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, moduleId);
   const isAdmin = user?.role === 'admin';
@@ -1211,12 +1216,12 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
                       {c1 && <div className="text-xs text-gray-600 leading-snug">{displayValue(cfg, rec, c1)}</div>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {rowAction && canEdit && (!rowAction.show || rowAction.show(rec)) && (
-                        <button onClick={e => { e.stopPropagation(); rowAction.run(rec); }}
-                          className="flex items-center gap-1 px-2 py-1 bg-powder-600 text-white rounded-lg text-[11px] font-medium hover:bg-powder-700">
-                          {rowAction.icon && <rowAction.icon size={11} />} {rowAction.label}
+                      {canEdit && rowActions.filter(a => !a.show || a.show(rec)).map(a => (
+                        <button key={a.label} onClick={e => { e.stopPropagation(); a.run(rec); }}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium ${a.tone === 'quiet' ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' : 'bg-powder-600 text-white hover:bg-powder-700'}`}>
+                          {a.icon && <a.icon size={11} />} {a.label}
                         </button>
-                      )}
+                      ))}
                       {badgeCol === 'status' && <StatusBadge cfg={cfg} rec={rec} />}
                       {badgeCol === 'approvals' && <ApprovalBadge cfg={cfg} rec={rec} />}
                       {badgeCol === 'result' && <ResultBadge cfg={cfg} rec={rec} />}
@@ -1252,7 +1257,7 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
                     </th>
                   )}
                   {cfg.logColumns.map(col => <SortTh key={col} label={fieldLabel(cfg, col)} field={col} {...sh} align={(col === 'approvals' || col === 'status' || col === 'result') ? 'center' : 'left'} />)}
-                  {rowAction && canEdit && <th className="px-2 py-2" />}
+                  {rowActions.length > 0 && canEdit && <th className="px-2 py-2" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
@@ -1282,14 +1287,16 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
                         </td>
                       );
                     })}
-                    {rowAction && canEdit && (
+                    {rowActions.length > 0 && canEdit && (
                       <td className="px-2 py-2 whitespace-nowrap text-right" onClick={e => e.stopPropagation()}>
-                        {(!rowAction.show || rowAction.show(rec)) && (
-                          <button onClick={() => rowAction.run(rec)}
-                            className="flex items-center gap-1 px-2 py-1 bg-powder-600 text-white rounded-lg text-[11px] font-medium hover:bg-powder-700 ml-auto">
-                            {rowAction.icon && <rowAction.icon size={11} />} {rowAction.label}
-                          </button>
-                        )}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {rowActions.filter(a => !a.show || a.show(rec)).map(a => (
+                            <button key={a.label} onClick={() => a.run(rec)}
+                              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium ${a.tone === 'quiet' ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' : 'bg-powder-600 text-white hover:bg-powder-700'}`}>
+                              {a.icon && <a.icon size={11} />} {a.label}
+                            </button>
+                          ))}
+                        </div>
                       </td>
                     )}
                   </tr>

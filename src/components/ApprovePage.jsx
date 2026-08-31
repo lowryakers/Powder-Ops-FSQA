@@ -1,5 +1,63 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { SENSORY_LABELS as SENSORY } from '../../shared/sensory.js';
+
+
+/**
+ * QA's scores, as the approver sees them.
+ *
+ * READ-ONLY AND DELIBERATELY SO. The approver is deciding whether to ship a
+ * batch, not running the test — the tasting was done in the plant by the PCQI
+ * and this is the evidence it produced. A page that asked the person holding a
+ * phone for five scores would get five numbers whether or not they had the
+ * sample in front of them, and a fabricated sensory record is worse than none.
+ *
+ * Drawn as filled pips rather than "4/5" because the whole panel is read at a
+ * glance on a phone: five rows of dots show the shape of the evaluation — where
+ * it is strong, where it is soft — in one look, and the numeral is still there
+ * for anyone who wants the exact value.
+ */
+function SensoryPanel({ s }) {
+  if (!s || !s.overall) return null;
+  const when = s.at ? new Date(s.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null;
+  return (
+    <section className="rounded-xl border border-gray-200 bg-gray-50/70 overflow-hidden">
+      <header className="px-4 py-2.5 border-b border-gray-200 bg-white">
+        <h2 className="text-[13px] font-semibold text-gray-900">QA sensory evaluation</h2>
+        <p className="text-[11px] text-gray-500 mt-0.5">
+          {s.by ? <>Tasted and scored by <span className="font-medium text-gray-700">{s.by}</span></> : 'Recorded by QA'}
+          {when ? ` · ${when}` : ''}
+        </p>
+      </header>
+      <dl className="divide-y divide-gray-200/70">
+        {SENSORY.map(([k, label]) => {
+          const n = Number(s[k]) || 0;
+          return (
+            <div key={k} className="flex items-center gap-3 px-4 py-2">
+              <dt className="text-[13px] text-gray-600 w-24 shrink-0">{label}</dt>
+              <dd className="flex items-center gap-2 ml-auto">
+                <span className="flex gap-1" aria-hidden="true">
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <span key={i}
+                      className={`h-2 w-2 rounded-full ${i <= n ? 'bg-powder-600' : 'bg-gray-300'}`} />
+                  ))}
+                </span>
+                <span className="text-[13px] font-semibold text-gray-900 tabular-nums w-7 text-right">
+                  {n || '—'}<span className="text-gray-400 font-normal">/5</span>
+                </span>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      {s.notes && (
+        <p className="px-4 py-2.5 border-t border-gray-200 bg-white text-[12px] text-gray-700 whitespace-pre-line">
+          <span className="font-medium text-gray-500">QA note: </span>{s.notes}
+        </p>
+      )}
+    </section>
+  );
+}
 
 // Public flavor-approval page opened from a texted magic link — no login.
 // Shows the sample details; one tap approves or denies, then the link is done.
@@ -72,15 +130,40 @@ export default function ApprovePage({ token }) {
         </div>
         {!info ? <p className="text-center text-gray-400">Loading…</p> : (
           <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4">
+            {/* The product leads, at the size it deserves — it is the one thing
+                that must be unmistakable before anyone taps Approve. */}
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 leading-snug">{info.product_name || 'Untitled batch'}</h2>
+              <p className="text-[13px] text-gray-500 mt-0.5">
+                {/* Don't re-prefix a value that already carries its own label —
+                    the plant writes work orders both ways ("76736" and
+                    "WO76736") and "WO WO76736" is the sort of thing that makes
+                    a careful reader distrust the rest of the page. */}
+                {[info.lot_number && `Lot ${String(info.lot_number).replace(/^lot\s*/i, '')}`,
+                  info.work_order && (/^wo/i.test(String(info.work_order).trim())
+                    ? String(info.work_order).trim() : `WO ${info.work_order}`)]
+                  .filter(Boolean).join(' · ') || 'No lot or work order recorded'}
+              </p>
+            </div>
             <dl className="space-y-2">
-              {[['Product', info.product_name], ['Lot Number', info.lot_number], ['Work Order', info.work_order],
-                ['Batched On', info.batched_on], ['Sample Quantity', info.sample_quantity]].map(([k, v]) => (
+              {[['Batched on', info.batched_on], ['Sample quantity', info.sample_quantity]].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-3 text-sm">
                   <dt className="text-gray-500">{k}</dt>
                   <dd className="font-semibold text-gray-900 text-right">{v || '—'}</dd>
                 </div>
               ))}
             </dl>
+
+            <SensoryPanel s={info.sensory} />
+
+            {/* What was changed to get the batch here is a different fact from
+                the scores, and it changes what "approved" means. */}
+            {info.batch_adjustments && (
+              <p className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-900">
+                <span className="font-semibold">Adjusted before this tasting: </span>{info.batch_adjustments}
+              </p>
+            )}
+
             <input value={name} onChange={e => setName(e.target.value)} type="text"
               autoComplete="name" placeholder="Your name"
               className="w-full px-3 py-2 border border-gray-300 rounded-xl text-base" />

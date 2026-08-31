@@ -697,6 +697,39 @@ one-line summary** (parent preview + "N replies · last from X", Expand to reope
 the ring + "N new"; a thread you've replied to shows a muted "Replied" chip — so the list is scannable for
 what still needs you.
 
+## One tasting, two people: QA scores it, the approver decides
+The plant does a single tasting that is simultaneously a flavor approval (a decision about a batch) and an
+organoleptic evaluation (a rated sensory test) — but they are made by **two different people at two
+different moments**, and the first build assumed one. The texted approval page asks for a decision, a name
+and comments; it never asked for a score. So `syncFlavorOrganoleptic` filed a sensory record carrying **no
+sensory data**, and the Organoleptic log filled with records asserting a tasting that has no evidence.
+**The flow is now: anyone files the approval → ReadyBot asks QA to taste it → QA scores it → only then can
+it be texted → the approver sees those scores and decides.**
+- **The approver is NEVER asked to score.** A page that demands five numbers from somebody holding a phone
+  gets five numbers whether or not they have the sample — and **a fabricated sensory record is worse than a
+  missing one.** Same refusal as an editable critical limit.
+- **`sensoryComplete` lives in `shared/sensory.js`** and both sides import it: the server refuses to send,
+  the log decides which button to offer. Two copies would let the app offer an action it then refuses.
+  **All five scores or none of it counts** — a part-scored tasting is not an evaluation.
+- **`POST /qms/flavor_approval/:id/sensory` is its own endpoint, not the ordinary record edit**, because the
+  point is WHO tasted it. `sensory_by` / `sensory_at` are written by the server and are deliberately **not
+  declared in `qms-config` `fields`** — they record an act rather than asking a question, which also keeps
+  them out of the controlled-change gate a new form field would (correctly) trip.
+- **The organoleptic record's `evaluator` is `sensory_by`, not `decided_by`.** Those are two people now, and
+  naming the approver would put a person three hundred miles away on a sensory record.
+- **`syncFlavorOrganoleptic` files nothing without scores**, the backstop for records predating the gate.
+- The send refusal returns `needs_sensory: true` so the UI can act on it rather than parsing prose.
+- **The approval page shows the scores as pips plus the numeral** — five rows read at a glance on a phone
+  show where the batch is strong and where it is soft, which is what the decision actually turns on. The
+  batch adjustment is called out separately: what was changed to get here changes what "approved" means.
+- **Don't re-prefix a value that carries its own label** — the plant writes work orders as `76736` and
+  `WO76736`, and "WO WO76736" is what makes a careful reader distrust the rest of the page.
+- `QMSRecordsPanel`'s `rowAction` now takes an array; the card and table layouts render from the same list
+  so they cannot offer different buttons for one record.
+- Verified: 29 API assertions end to end (the DM, the refusal before scoring, QA-only, part-scored and
+  off-scale refused, the evaluator being Adam, an unscored approval filing nothing) and 11 in a real browser
+  at 390 and 360px.
+
 ## One taste test, two records (Flavor Approval → Organoleptic)
 The plant does a single tasting and it is simultaneously a flavor approval (a decision about a batch) and an
 organoleptic evaluation (a rated sensory test). `syncFlavorOrganoleptic` in api/qms.js files the second

@@ -14,6 +14,9 @@ import { createReadStream } from 'fs';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
+import { botDm, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
+import { SENSORY_KEYS, SENSORY_SCORES, sensoryComplete } from '../../shared/sensory.js';
 
 const router = Router();
 
@@ -382,12 +385,77 @@ router.delete('/sms-contacts/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * Record the sensory evaluation — the QA half of one tasting.
+ *
+ * ITS OWN ENDPOINT, NOT THE ORDINARY RECORD EDIT, because the point is WHO
+ * tasted it. The five scores are a rated QA test and the evaluator's name is
+ * part of the record; editing the same fields through the generic form would
+ * fill them in without ever saying whose palate they came from, and the
+ * organoleptic record would then name the approver — a person who may have been
+ * three hundred miles away.
+ */
+const canRecordSensory = (u) => u?.role === 'admin'
+  || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase());
+
+router.post('/flavor_approval/:id/sensory', (req, res) => {
+  if (!canRecordSensory(req.user)) {
+    return res.status(403).json({ error: 'Recording a sensory evaluation is QA\'s — ask Adam or a QA lead.' });
+  }
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM qms_records WHERE id = ? AND record_type = 'flavor_approval'").get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (row.status !== 'pending') {
+    // A decision has been made; the tasting that informed it is history.
+    return res.status(400).json({ error: 'This approval has already been decided — its evaluation cannot be changed.' });
+  }
+  const data = parseJson(row.data, {});
+  const scores = {};
+  for (const k of SENSORY_KEYS) {
+    const v = String(req.body?.[k] ?? '').trim();
+    // The form's own 1–5 scale. Anything else is refused rather than stored —
+    // a sensory record grading on an invented scale is not comparable to the
+    // ones beside it in the log.
+    if (!SENSORY_SCORES.includes(v)) {
+      return res.status(400).json({ error: `Score all five: appearance, texture, aroma, flavor and overall (1–5). Missing or invalid: ${k}.` });
+    }
+    scores[k] = v;
+  }
+  Object.assign(data, scores);
+  if (req.body?.sensory_notes !== undefined) data.sensory_notes = String(req.body.sensory_notes || '').slice(0, 500);
+  // WHO AND WHEN. Written by the server, never typed, and deliberately NOT
+  // declared in qms-config's `fields`: they are a record of an act, not
+  // questions on the form — which also keeps this out of the controlled-change
+  // gate that a new form field would (correctly) trip.
+  data.sensory_by = req.user?.name || null;
+  data.sensory_at = new Date().toISOString();
+  db.prepare("UPDATE qms_records SET data = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify(data), row.id);
+  logAudit(req.user, 'qms_updated', 'flavor_approval', row.id,
+    { action: 'sensory_evaluation', record_number: row.record_number, ...scores }, row, null, row.record_number);
+  res.json(flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(row.id)));
+});
+
 router.post('/flavor_approval/:id/send', async (req, res) => {
   const db = getDb();
   const row = db.prepare("SELECT * FROM qms_records WHERE id = ? AND record_type = 'flavor_approval'").get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   if (row.status !== 'pending') return res.status(400).json({ error: 'This request has already been decided.' });
   const data = parseJson(row.data, {});
+  // THE EVALUATION COMES BEFORE THE DECISION.
+  //
+  // The approver is deciding whether to ship a batch; the scores are what they
+  // are deciding on, and the link is the only thing they will see. Sending
+  // before the tasting is recorded asks somebody to approve a batch nobody has
+  // rated, and leaves the paired Organoleptic record permanently empty —
+  // which is the gap this whole flow exists to close. Refused here, on the
+  // server, because a rule the client alone applies is a suggestion.
+  if (!sensoryComplete(data)) {
+    return res.status(400).json({
+      error: 'This needs its sensory evaluation first — appearance, texture, aroma, flavor and overall. QA records it, then it can go out.',
+      needs_sensory: true,
+    });
+  }
   if (!data.approval_token) {
     data.approval_token = crypto.randomBytes(24).toString('base64url');
     db.prepare("UPDATE qms_records SET data = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(data), row.id);
@@ -631,7 +699,66 @@ function syncKnifeMaster(db, cfg, rec) {
   return syncKnifeStatus(db, toolId);
 }
 
-const SENSORY_KEYS = ['appearance', 'texture', 'aroma', 'flavor', 'overall'];
+
+/**
+ * Who ReadyBot asks for the sensory evaluation.
+ *
+ * By NAME with a QA-department fallback — the receiving-escalation precedent.
+ * Naming Adam is the plant's decision (he is the PCQI); falling back to QA is
+ * what stops a rename, a holiday or a leaver silencing the request and leaving
+ * approvals stuck unsendable with nobody told why.
+ */
+export function sensoryEvaluators(db) {
+  const found = new Map();
+  for (const n of ['Adam']) {
+    for (const r of db.prepare(
+      "SELECT id, name FROM users WHERE is_active = 1 AND name LIKE ? AND name != 'ReadyBot'"
+    ).all(`${n}%`)) found.set(r.id, r);
+  }
+  if (found.size === 0) {
+    for (const r of db.prepare(
+      `SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'
+       AND (LOWER(department) IN ('qa','quality') OR role = 'admin')
+       ORDER BY CASE WHEN role = 'admin' THEN 1 ELSE 0 END LIMIT 5`
+    ).all()) found.set(r.id, r);
+  }
+  return [...found.values()];
+}
+
+/**
+ * Tell the evaluator a batch is waiting to be tasted.
+ *
+ * The approval cannot be texted until this is done, so a request nobody sees is
+ * a batch that silently never ships — the same failure as the 72-hour re-clean
+ * badge only the supervisor could see. Fire-and-forget: the record is already
+ * filed and a comms outage must never fail it.
+ */
+export async function notifySensoryNeeded(db, rec, from) {
+  const people = sensoryEvaluators(db);
+  if (!people.length) return { sent: [] };
+  const what = [rec.product_name, rec.lot_number && `Lot ${rec.lot_number}`, rec.mo_number && `MO ${rec.mo_number}`]
+    .filter(Boolean).join(' · ') || rec.record_number;
+  const link = `${readyDocOrigin()}/?tab=flavor-approvals`;
+  const sent = [];
+  for (const p of people) {
+    try {
+      const { bot, dm } = botDm(db, p.id);
+      // Bot bold is *text*, not **text** — the chat renderer isn't markdown.
+      await postMessageAs(db, dm, bot,
+        `👅 *Sensory evaluation needed*\n*${what}*\n`
+        + `${rec.record_number} was filed by ${from?.name || 'the batching team'}.\n`
+        + `Score appearance, texture, aroma, flavor and overall — the approval cannot be texted out until you do.\n`
+        + `Open it: ${link}`);
+      pushToUser(p.id, {
+        title: 'Sensory evaluation needed',
+        body: what.slice(0, 120),
+        tag: `sensory-${rec.id}`, renotify: true, url: '/?tab=flavor-approvals',
+      }).catch(() => {});
+      sent.push(p.name);
+    } catch { /* one failure must not lose the others */ }
+  }
+  return { sent };
+}
 
 export function syncFlavorOrganoleptic(db, cfg, rec, user) {
   if (cfg.key !== 'flavor_approval') return null;
@@ -640,13 +767,27 @@ export function syncFlavorOrganoleptic(db, cfg, rec, user) {
   if (!['approved', 'denied'].includes(String(rec.status || ''))) return null;
   const org = getType('organoleptic');
   if (!org) return null;
+  // NO SCORES MEANS NO EVALUATION HAPPENED, AND NOTHING IS FILED.
+  //
+  // This used to file whatever it had, so a flavour decided from a texted link
+  // — where the approver is asked for a decision and never for a score — put a
+  // sensory record in the Organoleptic log containing no sensory data at all.
+  // A rated test with no ratings is not evidence of a tasting; it is a record
+  // asserting one took place. The send gate above means a decided approval
+  // normally has its scores, so this is the backstop for anything filed before
+  // that gate existed or imported from paper.
+  if (!sensoryComplete(rec)) return null;
 
   const data = {
     product: rec.product_name || null,
     mo_number: rec.mo_number || null,
     lot: rec.lot_number || null,
     quantity: rec.sample_quantity || null,
-    evaluator: rec.decided_by || user?.name || null,
+    // THE EVALUATOR IS WHO TASTED IT, not who approved it. Those are two people
+    // now: QA scores the sample in the plant, the approver decides from a phone.
+    // Falling back to the decider keeps records filed before this flow honest.
+    evaluator: rec.sensory_by || rec.decided_by || user?.name || null,
+    evaluated_at: rec.sensory_at || null,
     lab_testing: 'No',
     note: [
       `Recorded from Flavor Approval ${rec.record_number || ''}`.trim(),
@@ -716,6 +857,13 @@ router.post('/:type', (req, res) => {
   try { syncOrganolepticDisposal(db, cfg, created, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
   try { syncFlavorOrganoleptic(db, cfg, created, req.user); } catch (e) { console.error('[flavor→organoleptic]', e.message); }
   try { syncKnifeMaster(db, cfg, created); } catch (e) { console.error('[knife→master]', e.message); }
+  // A new flavour approval is a batch waiting to be tasted. Anyone can file it;
+  // QA is told, because until they score it the approval cannot be sent and
+  // nothing on anyone else's screen would say why. Fire-and-forget — the record
+  // is written and a comms outage must not fail it.
+  if (cfg.key === 'flavor_approval' && created.status === 'pending' && !sensoryComplete(created)) {
+    notifySensoryNeeded(db, created, req.user).catch(e => console.error('[flavor→sensory notify]', e.message));
+  }
   // Re-read: the sync hooks can write back to this record (the flavor approval
   // gets its organoleptic_record_id), and the caller should get the row as it
   // now stands rather than as it was a moment before.

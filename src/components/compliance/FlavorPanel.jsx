@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiPost, apiDelete, useApiGet } from '../../hooks/useApi';
-import { Send, Copy, Check, MessageSquare, X, Trash2, Star } from 'lucide-react';
+import { Send, Copy, Check, MessageSquare, X, Trash2, Star, ClipboardList } from 'lucide-react';
 import QMSRecordsPanel from './QMSRecordsPanel.jsx';
+import { SENSORY_LABELS as SENSORY, SENSORY_SCORES, sensoryComplete } from '../../../shared/sensory.js';
 
 // Flavor Approvals: the log (generic QMS panel) plus "text it for approval".
 //
@@ -171,11 +172,100 @@ function SendModal({ onClose, onSend, sending, record }) {
   );
 }
 
+
+/**
+ * QA records the tasting. Five scores, all required.
+ *
+ * The scale is 1–5 and it is drawn as five buttons rather than a dropdown: this
+ * is filled in at a bench with a sample in hand, and a five-way choice you can
+ * hit in one tap beats a select you have to open, scroll and dismiss. The same
+ * scale the Organoleptic form has always used, because the record this produces
+ * IS an organoleptic record.
+ */
+function SensoryModal({ record, onClose, onSaved }) {
+  const [scores, setScores] = useState(() =>
+    Object.fromEntries(SENSORY.map(([k]) => [k, String(record?.[k] ?? '')])));
+  const [notes, setNotes] = useState(record?.sensory_notes || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const complete = SENSORY.every(([k]) => scores[k]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      await apiPost(`/qms/flavor_approval/${record.id}/sensory`, { ...scores, sensory_notes: notes });
+      onSaved();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()}
+        className="bg-white rounded-xl w-full max-w-md max-h-[92vh] overflow-y-auto p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-gray-900">Sensory evaluation</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {record?.product_name || record?.record_number}
+              {record?.lot_number ? ` · Lot ${record.lot_number}` : ''}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={16} /></button>
+        </div>
+
+        <div className="space-y-2.5">
+          {SENSORY.map(([k, label]) => (
+            <div key={k} className="flex items-center gap-3">
+              <span className="text-sm text-gray-700 w-24 shrink-0">{label}</span>
+              <div className="flex gap-1.5 ml-auto">
+                {SENSORY_SCORES.map(v => (
+                  <button key={v} type="button" onClick={() => setScores(s => ({ ...s, [k]: v }))}
+                    aria-pressed={scores[k] === v}
+                    className={`h-9 w-9 rounded-lg border text-sm font-semibold transition-colors ${
+                      scores[k] === v
+                        ? 'border-powder-600 bg-powder-600 text-white'
+                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</span>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+            placeholder="Slightly thin on aroma, acceptable"
+            className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        </label>
+
+        <p className="text-[11px] text-gray-500">
+          Your name and the date are recorded with these scores. They go to the approver with the
+          batch, and they become the Organoleptic record when the decision is made.
+        </p>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex gap-2">
+          <button type="submit" disabled={!complete || busy}
+            className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save evaluation'}
+          </button>
+          <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm">Cancel</button>
+        </div>
+        {!complete && <p className="text-[11px] text-gray-500">Score all five to save — a part-scored tasting is not an evaluation.</p>}
+      </form>
+    </div>
+  );
+}
+
 export default function FlavorPanel() {
   const [sendResult, setSendResult] = useState(null);
   const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pending, setPending] = useState(null); // the record awaiting a number
+  const [scoring, setScoring] = useState(null); // the record awaiting its sensory evaluation
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => { setCopied(false); }, [sendResult]);
@@ -193,6 +283,11 @@ export default function FlavorPanel() {
 
   return (
     <div className="space-y-3">
+      {scoring && (
+        <SensoryModal record={scoring} onClose={() => setScoring(null)}
+          onSaved={() => { setScoring(null); setRefreshKey(k => k + 1); }} />
+      )}
+
       {pending && (
         <SendModal onClose={() => setPending(null)} sending={sending} record={pending}
           onSend={(to) => sendForApproval(pending.id, to)} />
@@ -222,16 +317,27 @@ export default function FlavorPanel() {
       {sendResult?.error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{sendResult.error}</div>}
 
       <QMSRecordsPanel key={refreshKey} recordType="flavor_approval" moduleId="flavor-approvals"
-        rowAction={{
-          label: 'Text for approval',
-          icon: Send,
-          show: (r) => r.status === 'pending',
-          // Opens the picker rather than sending blind — the whole point is
-          // that the approver is chosen, and recorded, per request.
-          // The whole record, not just its id: the modal shows which number
-          // this approval was last texted to.
-          run: (r) => { setSendResult(null); setPending(r); },
-        }} />
+        rowAction={[
+          {
+            // THE EVALUATION COMES FIRST, so it is the only button offered until
+            // it exists. Two buttons side by side would let somebody send an
+            // unrated batch and only find out from a server error.
+            label: 'Record evaluation',
+            icon: ClipboardList,
+            show: (r) => r.status === 'pending' && !sensoryComplete(r),
+            run: (r) => { setSendResult(null); setScoring(r); },
+          },
+          {
+            label: 'Text for approval',
+            icon: Send,
+            show: (r) => r.status === 'pending' && sensoryComplete(r),
+            // Opens the picker rather than sending blind — the whole point is
+            // that the approver is chosen, and recorded, per request.
+            // The whole record, not just its id: the modal shows which number
+            // this approval was last texted to.
+            run: (r) => { setSendResult(null); setPending(r); },
+          },
+        ]} />
     </div>
   );
 }

@@ -208,6 +208,18 @@ router.get('/flavor-approval/:token', (req, res) => {
     record_number: row.record_number,
     product_name: d.product_name, lot_number: d.lot_number, work_order: d.work_order,
     batched_on: d.batched_on, sample_quantity: d.sample_quantity,
+    // QA'S EVALUATION, SHOWN TO THE APPROVER — read-only, and the reason the
+    // page is worth opening rather than replying to the text. The approver is
+    // deciding whether to ship a batch; the scores are what that decision is
+    // made on, and until now the page showed a product name and two buttons.
+    // The name and date travel with them: an unattributed score is an opinion,
+    // an attributed one is a record.
+    sensory: {
+      appearance: d.appearance || null, texture: d.texture || null, aroma: d.aroma || null,
+      flavor: d.flavor || null, overall: d.overall || null,
+      by: d.sensory_by || null, at: d.sensory_at || null, notes: d.sensory_notes || null,
+    },
+    batch_adjustments: d.batch_adjustments || null,
   });
 });
 
