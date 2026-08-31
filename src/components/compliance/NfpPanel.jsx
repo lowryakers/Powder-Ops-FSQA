@@ -65,7 +65,7 @@ function LinkBox({ link }) {
   );
 }
 
-function NewPanelForm({ sku, formulaRev, onDone, onCancel }) {
+function NewPanelForm({ sku, formulaRev, onDone, onCancel, storage = true }) {
   const [f, setF] = useState({
     version: '', serving_size: '', servings_per_container: '',
     formula_rev: formulaRev || '', drive_url: '', change_summary: '',
@@ -73,12 +73,32 @@ function NewPanelForm({ sku, formulaRev, onDone, onCancel }) {
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // THE FILE IS PICKED HERE AND UPLOADED WITH THE PANEL. It used to be a second
+  // step on the version card after filing, which meant filing a panel, finding
+  // it in the list and attaching — while the PNG has been sitting in the
+  // downloads folder the whole time. One action.
+  const [files, setFiles] = useState([]);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   const submit = async () => {
     setBusy(true); setError('');
     try {
       const created = await apiFetch('/nfp', { method: 'POST', body: { ...f, sku } });
+      if (files.length) {
+        // The panel is already filed. If the upload fails the record still
+        // exists and says so, rather than the whole thing rolling back and
+        // losing what was typed — the file can be attached from the card.
+        try {
+          const fd = new FormData();
+          for (const file of files) fd.append('files', file);
+          fd.append('kind', 'panel');
+          await apiUpload(`/nfp/${created.id}/files`, fd);
+        } catch (e) {
+          setError(`Panel filed, but the file did not upload: ${e.message}`);
+          setBusy(false);
+          return;
+        }
+      }
       onDone(created);
     } catch (e) { setError(e.message); }
     setBusy(false);
@@ -97,11 +117,32 @@ function NewPanelForm({ sku, formulaRev, onDone, onCancel }) {
           </label>
         ))}
       </div>
+      {storage && (
+        <label className="block">
+          <span className="text-xs font-medium text-gray-600">Panel file (PNG, JPG or PDF)</span>
+          <input type="file" multiple accept="image/*,application/pdf"
+            onChange={(e) => setFiles([...(e.target.files || [])])}
+            className="mt-1 w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:text-xs file:font-medium hover:file:bg-gray-50" />
+          {files.length > 0 && (
+            <span className="text-[11px] text-gray-500 mt-1 block">
+              {files.map(x => x.name).join(', ')}
+            </span>
+          )}
+        </label>
+      )}
       <label className="block">
-        <span className="text-xs font-medium text-gray-600">Drive link (if the panel lives there)</span>
+        <span className="text-xs font-medium text-gray-600">
+          {storage ? 'Drive link (instead of, or as well as, a file)' : 'Drive link (if the panel lives there)'}
+        </span>
         <input value={f.drive_url} onChange={set('drive_url')}
           className="mt-1 w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm" />
       </label>
+      {!storage && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+          File upload is off on this server, so a Drive link is the only way to attach the panel.
+          Uploading needs the R2 storage variables set.
+        </p>
+      )}
       <label className="block">
         <span className="text-xs font-medium text-gray-600">What changed</span>
         <textarea value={f.change_summary} onChange={set('change_summary')} rows={2}
@@ -351,7 +392,7 @@ export function NfpForSku({ sku, formulaRev, canEdit, onChanged }) {
       </div>
 
       {adding && (
-        <NewPanelForm sku={sku} formulaRev={formulaRev}
+        <NewPanelForm sku={sku} formulaRev={formulaRev} storage={data?.storage !== false}
           onDone={() => { setAdding(false); changed(); }} onCancel={() => setAdding(false)} />
       )}
 
