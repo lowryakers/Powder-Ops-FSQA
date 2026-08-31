@@ -1544,6 +1544,61 @@ into, so hand-added and registry chemicals share one group instead of two near-i
 **CheckedOutPanel read only `maintenance_sign_out`**, so a knife signed out on 440-02 never appeared in
 "what's out" — the one question that screen exists to answer. It queries both now.
 
+## Part of an order arrives, and the invoice already says what it cost
+Three barstools ordered and one delivered is the ordinary case, and `status` alone could not say it — an
+order was either wholly outstanding or wholly received, so the office marked it received and lost the two
+that never came. Separately, every total was hand-typed off a file the app had already read.
+
+### `qty_received` is the fact; "partially received" is DERIVED
+`supply_orders.qty_received` / `received_at` / `received_by` / `receipt_history`, and
+`POST /office/supply/orders/:id/receive` `{qty, note}` (admin).
+- **No fifth `status` value.** Adding one would mean rebuilding the CHECK constraint and would give one
+  truth two owners — the shape that makes a badge and its queue disagree. `orderShape()` computes
+  `qty_received` / `outstanding` / `receipt_state` (`none` / `partial` / `complete`) / `qty_known` on
+  every read, and the status simply follows the count: `received` when everything ordered has arrived,
+  `ordered` while any of it is outstanding.
+- **Quantity ACCUMULATES; each delivery is its own event.** The second lorry is not an edit of the first,
+  so every receipt is appended to `receipt_history` (the `review_history` JSON-array shape) with who took
+  it in — "when did the rest turn up" is then answerable from the record.
+- **A CORRECTION IS A NEGATIVE ENTRY, NOT AN ERASURE**, and it needs a reason. Miscounting a delivery is
+  ordinary; rewriting the count so the mistake never happened is the difference between a log and a
+  number. The running total can never go below zero or above what was ordered.
+- **An order with no quantity written down cannot be part-received** — there is nothing to be a part OF.
+  It reports `qty_known: false` and receiving closes it outright rather than inventing a denominator.
+- **Marking received from the STATUS control moves the count with it** (`PUT`), or the row reads
+  "received" beside "1 of 3 arrived" and neither figure can be trusted. The Receive button on the row
+  opens the form instead, defaulted to everything still outstanding.
+
+### The total is READ off the invoice, and the line it was read from travels with it
+`server/invoice-figures.js` is **pure** — text in, candidates out, no Express and no database — reading
+the text `invoice-text.js` already extracts for search.
+- **ORDER OF THE LABELS IS THE WHOLE ALGORITHM.** An invoice carries several money figures and picking the
+  largest is how a statement's *previous balance* becomes the total. `TOTAL_LABELS` is most-specific-first
+  (`amount due` → `invoice total` → a bare `total`) and `NOT_TOTAL` drops subtotal / tax / shipping /
+  previous balance lines before the labels are even tried. Among equal labels the LAST wins, because a
+  running total appears before the final one on a multi-page document.
+- **NOTHING LABELLED YIELDS NULL, never the largest number on the page.** An invoice whose total cannot be
+  read is a gap somebody fills in by looking at it, which is what they were doing anyway.
+- **A figure read off a document may fill a BLANK; it may never overwrite one somebody typed.**
+  `supply_invoices.total_source` (`typed` / `read`) is what keeps those apart, and editing the total makes
+  it typed whatever it was before. `POST /supply/invoices/:id/read` re-reads a file already on the shelf
+  and is therefore safe to run over the whole repository. **Proven by a control run:** removing that guard
+  makes four assertions fail, including a hand-entered $12.34 being replaced by the scan.
+- **`figures` stores the EVIDENCE LINES beside the values**, shown on the row and in the edit modal, so
+  the number on the record can be checked against the document without opening the document.
+- **The ORDER's total is SUGGESTED, never applied.** One invoice routinely covers several orders, so
+  copying its total onto each would state one cost three times. Linking an invoice offers
+  `suggested_total` with the file it came from and a person clicks to accept; an order that already has a
+  total is left completely alone.
+- `extracted_text` is now dropped from every invoice read (`invoiceShape`) — megabytes of OCR, searched
+  and never shipped, the rule the equipment manuals and policies already follow. `searchable` says
+  whether there was any text at all, so a scan with no text layer reads as "no text" rather than as a
+  failure.
+- Verified: 27 assertions on the pure reader (`npm run check:invoices`, in `npm run check`) and **42
+  executed against a live server on a fresh database** (`scripts/verify-supply-receiving.mjs`), covering
+  the part-delivery, the reasoned correction, all four refusals, the operator 403, and the
+  suggested-total round trip.
+
 ## "It ran out" is an outcome, not a missing return
 A chemical that runs out never comes back, so "Returned" can't be the only way to close a
 `maintenance_sign_out`. `return_reason` (`RETURN_REASONS` in qms-config.js: Returned / **Used up / ran out** /

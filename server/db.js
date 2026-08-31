@@ -3870,6 +3870,25 @@ function runMigrations() {
       );
       CREATE INDEX IF NOT EXISTS idx_time_adjustments_emp ON time_adjustments(employee_name, adjustment_date);
     `);
+
+    // PART OF AN ORDER CAN ARRIVE. Three barstools ordered and one delivered is
+    // the ordinary case, and `status` alone could not say it — an order was
+    // either wholly outstanding or wholly received.
+    //
+    // `qty_received` is the fact; "partially received" is DERIVED from it
+    // against `qty` on every read. Adding a fifth status value would mean
+    // rebuilding the CHECK constraint and would give the same truth two owners,
+    // which is how a badge and its queue start disagreeing.
+    //
+    // Inside this block and after the CREATE, not in runMigrations(): these
+    // tables are made here and an ALTER before them kills a fresh boot.
+    addColumnIfMissing('supply_orders', 'qty_received', 'REAL NOT NULL DEFAULT 0');
+    addColumnIfMissing('supply_orders', 'received_at', 'TEXT');
+    addColumnIfMissing('supply_orders', 'received_by', 'TEXT');
+    // Every receipt appended, the review_history shape: a back-order that
+    // arrives in three deliveries is three entries, so "when did the rest
+    // turn up" is answerable.
+    addColumnIfMissing('supply_orders', 'receipt_history', 'TEXT');
   } catch (e) {
     console.warn('[db] office ops tables unavailable:', e.message);
   }
@@ -3877,6 +3896,15 @@ function runMigrations() {
   // Invoice content search: text pulled from the uploaded file (PDF text layer
   // or vision OCR). NULL = not yet indexed; '' = indexed, nothing extractable.
   addColumnIfMissing('supply_invoices', 'extracted_text', 'TEXT');
+  // What was read off the invoice, and the LINES it was read from. A figure
+  // taken off a scan carries no authority on its own; stored with its evidence
+  // it can be checked against the document without opening the document.
+  // `total_source` says whether the number on the record was typed by a person
+  // or read from the file — a blank filled from the document is not the same
+  // fact as one somebody entered, and only the first may be overwritten by a
+  // later read.
+  addColumnIfMissing('supply_invoices', 'figures', 'TEXT');
+  addColumnIfMissing('supply_invoices', 'total_source', 'TEXT');
 
   // Payroll follow-through: once Marnee has reviewed an absence/tardy she still
   // has to enter it in ADP, per pay period. These columns track that last mile

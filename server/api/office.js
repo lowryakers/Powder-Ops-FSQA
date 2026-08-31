@@ -5,6 +5,7 @@ import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { aiEnabled, translateText } from '../ai.js';
 import { extractInvoiceText } from '../invoice-text.js';
+import { readInvoiceFigures } from '../invoice-figures.js';
 import { USED_UP_REASON } from '../qms-config.js';
 
 // Office Ops: supply ordering + time tracking (replaces two Monday boards).
@@ -44,6 +45,75 @@ function requireAdmin(req, res) {
 
 function saveInvoiceText(db, id, text) {
   try { db.prepare('UPDATE supply_invoices SET extracted_text = ? WHERE id = ?').run(text ?? '', id); } catch { /* column optional */ }
+  applyInvoiceFigures(db, id, text);
+}
+
+/**
+ * Read the total and the date off the invoice, and fill the record's BLANKS.
+ *
+ * A figure read off a document may fill a field nobody answered; it may never
+ * overwrite one somebody typed. `total_source` is what keeps those two apart —
+ * re-reading a file can move a figure it supplied itself, and can never touch
+ * one that came from a person. The evidence lines are stored beside the values,
+ * so the number on the record can be checked against the document without
+ * opening the document.
+ */
+function applyInvoiceFigures(db, id, text) {
+  let row;
+  try { row = db.prepare('SELECT total, invoice_date, total_source FROM supply_invoices WHERE id = ?').get(id); } catch { return null; }
+  if (!row) return null;
+  const figures = readInvoiceFigures(text);
+  const typed = row.total_source === 'typed' || (row.total != null && !row.total_source);
+  const total = (figures.total != null && !typed) ? figures.total : row.total;
+  const source = total == null ? null : (typed ? 'typed' : (figures.total != null ? 'read' : row.total_source));
+  const invoiceDate = row.invoice_date || figures.invoice_date || null;
+  try {
+    db.prepare('UPDATE supply_invoices SET figures = ?, total = ?, total_source = ?, invoice_date = ? WHERE id = ?')
+      .run(JSON.stringify(figures), total, source, invoiceDate, id);
+  } catch { /* columns optional on an older database */ }
+  return figures;
+}
+
+// A JSON column that will not parse is a column with nothing in it — written
+// as an IIFE returning the value, because the initialise-then-assign shape has
+// an initialiser no branch ever reads.
+function parseJson(raw, fallback) {
+  return (() => { try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } })();
+}
+
+function invoiceShape(r) {
+  const figures = parseJson(r.figures, null);
+  const { extracted_text, ...rest } = r;   // megabytes of OCR: searched, never shipped
+  return { ...rest, figures, searchable: extracted_text == null ? null : !!extracted_text };
+}
+
+/**
+ * What has actually arrived.
+ *
+ * `qty_received` is the only stored fact; everything the screen shows about a
+ * part-delivered order is derived from it against `qty` on every read. An order
+ * with no quantity written down cannot be part-received — there is nothing to
+ * be a part OF — so it reports `qty_known: false` and receiving closes it
+ * outright rather than inventing a denominator.
+ */
+function orderShape(row, extra = {}) {
+  const qty = Number(row.qty);
+  const qtyKnown = Number.isFinite(qty) && qty > 0;
+  const received = Number(row.qty_received) || 0;
+  const history = parseJson(row.receipt_history, []);
+  const outstanding = qtyKnown ? Math.max(0, +(qty - received).toFixed(4)) : null;
+  const state = received <= 0 ? 'none'
+    : (!qtyKnown || received >= qty) ? 'complete'
+      : 'partial';
+  return {
+    ...row,
+    qty_received: received,
+    qty_known: qtyKnown,
+    outstanding,
+    receipt_state: state,
+    receipt_history: Array.isArray(history) ? history : [],
+    ...extra,
+  };
 }
 
 // Index any invoices uploaded before content indexing existed (or whose
@@ -91,7 +161,7 @@ router.post('/supply/orders', (req, res) => {
       notes || null, req.user.name, req.user.id);
   const created = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'supply_order', id, { item_name, qty, supplier, urgent: !!urgent }, null, created, item_name);
-  res.status(201).json(created);
+  res.status(201).json(orderShape(created));
 });
 
 // Admin log, filterable by status/search.
@@ -104,7 +174,97 @@ router.get('/supply/orders', (req, res) => {
   if (status) { sql += ' AND status = ?'; params.push(status); }
   if (q) { sql += ' AND (item_name LIKE ? OR supplier LIKE ? OR label LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   sql += " ORDER BY CASE status WHEN 'new' THEN 0 WHEN 'ordered' THEN 1 WHEN 'received' THEN 2 ELSE 3 END, urgent DESC, submitted_at DESC LIMIT 1000";
-  res.json(db.prepare(sql).all(...params));
+  const rows = db.prepare(sql).all(...params);
+  // One lookup for every linked invoice rather than a query per row.
+  const ids = [...new Set(rows.map(r => r.invoice_id).filter(Boolean))];
+  const invoices = new Map();
+  if (ids.length) {
+    const marks = ids.map(() => '?').join(',');
+    for (const inv of db.prepare(`SELECT id, filename, total, total_source, figures FROM supply_invoices WHERE id IN (${marks})`).all(...ids)) {
+      invoices.set(inv.id, inv);
+    }
+  }
+  res.json(rows.map(r => orderShape(r, suggestedTotal(r, invoices.get(r.invoice_id)))));
+});
+
+/**
+ * The total the linked invoice says, offered when the order has none.
+ *
+ * SUGGESTED, NEVER APPLIED. One invoice routinely covers several orders, so
+ * copying its total onto each of them would state a cost three times over. The
+ * screen offers the figure with the file it came from and a person accepts it;
+ * an order that already has a total is left completely alone.
+ */
+function suggestedTotal(order, invoice) {
+  if (!invoice || order.total != null) return {};
+  if (invoice.total == null) return {};
+  const evidence = parseJson(invoice.figures, null)?.total_evidence ?? null;
+  return {
+    suggested_total: invoice.total,
+    suggested_total_from: invoice.filename,
+    suggested_total_source: invoice.total_source || 'typed',
+    suggested_total_evidence: invoice.total_source === 'read' ? evidence : null,
+  };
+}
+
+/**
+ * Receiving part of an order.
+ *
+ * Three barstools ordered and one delivered is the ordinary case. `qty` is
+ * accumulated rather than set, because the second delivery is a separate event
+ * and each one is appended to `receipt_history` with who took it in — "when did
+ * the rest turn up" is then answerable from the record.
+ *
+ * A CORRECTION IS A NEGATIVE ENTRY, NOT AN ERASURE. Miscounting a delivery is
+ * ordinary; rewriting the count so the mistake never happened is not, and it
+ * is the difference between a log and a number. A correction needs a note, and
+ * the running total can never go below zero or the record would describe
+ * something impossible.
+ */
+router.post('/supply/orders/:id/receive', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Order not found' });
+
+  const qty = Number(req.body?.qty);
+  if (!Number.isFinite(qty) || qty === 0) return res.status(400).json({ error: 'How many arrived?' });
+  const note = String(req.body?.note || '').trim();
+  if (qty < 0 && note.length < 3) return res.status(400).json({ error: 'A correction needs a reason.' });
+
+  const before = Number(existing.qty_received) || 0;
+  const after = +(before + qty).toFixed(4);
+  if (after < 0) return res.status(400).json({ error: `Only ${before} recorded as received — that correction would take it below zero.` });
+
+  const ordered = Number(existing.qty);
+  const qtyKnown = Number.isFinite(ordered) && ordered > 0;
+  if (qtyKnown && after > ordered) {
+    return res.status(400).json({ error: `${ordered} ${existing.uom || ''}`.trim() + ` ordered — receiving ${after} would be more than that. Correct the order quantity first.` });
+  }
+
+  const history = parseJson(existing.receipt_history, []);
+  const entries = Array.isArray(history) ? history : [];
+  entries.push({ at: new Date().toISOString(), by: req.user.name, qty, note: note || null, total_after: after });
+
+  // The status follows the count and is never set by hand here: an order is
+  // received when everything ordered has arrived, and stays 'ordered' while
+  // any of it is outstanding. Without a quantity there is nothing to be a part
+  // of, so any receipt closes it.
+  const complete = !qtyKnown || after >= ordered;
+  const status = after <= 0 ? (existing.status === 'received' ? 'ordered' : existing.status)
+    : complete ? 'received' : 'ordered';
+
+  db.prepare(`UPDATE supply_orders SET qty_received = ?, receipt_history = ?, status = ?,
+              received_at = ?, received_by = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(after, JSON.stringify(entries), status,
+      complete && after > 0 ? new Date().toISOString() : null,
+      complete && after > 0 ? req.user.name : null, req.params.id);
+
+  const updated = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(req.params.id);
+  logAudit(req.user, 'update', 'supply_order', req.params.id,
+    { received: qty, total_received: after, of: qtyKnown ? ordered : null, note: note || null },
+    existing, updated, existing.item_name);
+  res.json(orderShape(updated));
 });
 
 router.put('/supply/orders/:id', (req, res) => {
@@ -115,12 +275,29 @@ router.put('/supply/orders/:id', (req, res) => {
   const fields = ['item_name', 'qty', 'uom', 'link', 'supplier', 'urgent', 'label', 'status', 'total', 'eta', 'invoice_link', 'invoice_id', 'notes'];
   const patch = {};
   for (const f of fields) if (req.body[f] !== undefined) patch[f] = f === 'urgent' ? (req.body[f] ? 1 : 0) : req.body[f];
-  if (!Object.keys(patch).length) return res.json(existing);
+  if (!Object.keys(patch).length) return res.json(orderShape(existing));
   const sets = Object.keys(patch).map(k => `${k} = ?`).join(', ');
   db.prepare(`UPDATE supply_orders SET ${sets}, updated_at = datetime('now') WHERE id = ?`).run(...Object.values(patch), req.params.id);
+
+  // Marking the whole order received from the status control has to move the
+  // count with it, or the row reads "received" beside "1 of 3 arrived" and
+  // neither figure can be trusted. The count is the fact; this keeps the
+  // shorthand honest rather than giving it a second answer.
+  if (patch.status === 'received') {
+    const ordered = Number(existing.qty);
+    const target = Number.isFinite(ordered) && ordered > 0 ? ordered : (Number(existing.qty_received) || 0);
+    if (target > (Number(existing.qty_received) || 0)) {
+      const history = parseJson(existing.receipt_history, []);
+      const entries = Array.isArray(history) ? history : [];
+      entries.push({ at: new Date().toISOString(), by: req.user.name, qty: +(target - (Number(existing.qty_received) || 0)).toFixed(4), note: 'Marked received in full', total_after: target });
+      db.prepare('UPDATE supply_orders SET qty_received = ?, receipt_history = ?, received_at = ?, received_by = ? WHERE id = ?')
+        .run(target, JSON.stringify(entries), new Date().toISOString(), req.user.name, req.params.id);
+    }
+  }
+
   const updated = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'supply_order', req.params.id, patch, existing, updated, existing.item_name);
-  res.json(updated);
+  res.json(orderShape(updated));
 });
 
 // One-click reorder: clone a past order as a fresh "new" request.
@@ -136,7 +313,7 @@ router.post('/supply/orders/:id/reorder', (req, res) => {
     .run(id, src.item_name, qty, src.uom, src.link, src.supplier, req.body?.urgent ? 1 : 0, src.label, req.body?.notes || null, req.user.name, req.user.id);
   const created = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'supply_order', id, { reorder_of: src.id, item_name: src.item_name }, null, created, src.item_name);
-  res.status(201).json(created);
+  res.status(201).json(orderShape(created));
 });
 
 router.delete('/supply/orders/:id', (req, res) => {
@@ -160,8 +337,26 @@ router.get('/supply/invoices', async (req, res) => {
   if (q) { sql += ' AND (filename LIKE ? OR supplier LIKE ? OR notes LIKE ? OR extracted_text LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   sql += ' ORDER BY COALESCE(invoice_date, created_at) DESC LIMIT 500';
   const rows = db.prepare(sql).all(...params);
-  const out = await Promise.all(rows.map(async r => ({ ...r, url: await presignGet(r.storage_key, r.filename).catch(() => null) })));
+  const out = await Promise.all(rows.map(async r => ({ ...invoiceShape(r), url: await presignGet(r.storage_key, r.filename).catch(() => null) })));
   res.json(out);
+});
+
+// Re-read the figures off a file already on the shelf — the invoices uploaded
+// before this existed, and any whose text arrived after the first pass. It
+// fills blanks only, so running it over the whole repository can never move a
+// figure somebody typed.
+router.post('/supply/invoices/:id/read', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM supply_invoices WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Invoice not found' });
+  if (existing.extracted_text == null) {
+    return res.status(409).json({ error: 'The contents of this file have not been read yet. It is indexed in the background after upload.' });
+  }
+  const figures = applyInvoiceFigures(db, req.params.id, existing.extracted_text);
+  const updated = db.prepare('SELECT * FROM supply_invoices WHERE id = ?').get(req.params.id);
+  logAudit(req.user, 'update', 'supply_invoice', req.params.id, { read: figures }, existing, updated, existing.filename);
+  res.json(invoiceShape(updated));
 });
 
 router.post('/supply/invoices', invoiceUpload.array('files', 20), async (req, res) => {
@@ -175,11 +370,17 @@ router.post('/supply/invoices', invoiceUpload.array('files', 20), async (req, re
     const id = uuid();
     const key = `invoices/${id}/${f.originalname}`;
     await putObject(key, f.buffer, f.mimetype);
+    const typedTotal = req.body.total ? Number(req.body.total) : null;
     db.prepare(`INSERT INTO supply_invoices (id, filename, storage_key, size, content_type, supplier, invoice_date, total, notes, uploaded_by)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, f.originalname, key, f.size, f.mimetype, req.body.supplier || null, req.body.invoice_date || null,
-        req.body.total ? Number(req.body.total) : null, req.body.notes || null, req.user.name);
-    created.push(db.prepare('SELECT * FROM supply_invoices WHERE id = ?').get(id));
+        typedTotal, req.body.notes || null, req.user.name);
+    // A total given at upload is a person's answer and is protected from every
+    // later read of the file.
+    if (typedTotal != null) {
+      try { db.prepare("UPDATE supply_invoices SET total_source = 'typed' WHERE id = ?").run(id); } catch { /* older database */ }
+    }
+    created.push(invoiceShape(db.prepare('SELECT * FROM supply_invoices WHERE id = ?').get(id)));
     // Index the file's contents in the background so upload stays snappy.
     extractInvoiceText(f.buffer, f.mimetype, f.originalname)
       .then(text => saveInvoiceText(getDb(), id, text))
@@ -197,7 +398,14 @@ router.put('/supply/invoices/:id', (req, res) => {
   const { supplier, invoice_date, total, notes } = req.body || {};
   db.prepare('UPDATE supply_invoices SET supplier = ?, invoice_date = ?, total = ?, notes = ? WHERE id = ?')
     .run(supplier ?? existing.supplier, invoice_date ?? existing.invoice_date, total ?? existing.total, notes ?? existing.notes, req.params.id);
-  res.json(db.prepare('SELECT * FROM supply_invoices WHERE id = ?').get(req.params.id));
+  // Editing the total makes it a typed figure, whatever it was before — a
+  // person has now answered, and no later read of the file may move it.
+  if (total !== undefined && Number(total) !== Number(existing.total)) {
+    try { db.prepare("UPDATE supply_invoices SET total_source = 'typed' WHERE id = ?").run(req.params.id); } catch { /* older database */ }
+  }
+  const updated = db.prepare('SELECT * FROM supply_invoices WHERE id = ?').get(req.params.id);
+  logAudit(req.user, 'update', 'supply_invoice', req.params.id, { total: updated.total }, existing, updated, existing.filename);
+  res.json(invoiceShape(updated));
 });
 
 router.delete('/supply/invoices/:id', (req, res) => {

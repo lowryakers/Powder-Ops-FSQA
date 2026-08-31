@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Search, Repeat, Trash2, Upload, FileText, Download, AlertTriangle, ExternalLink, Pencil, X, ChevronUp, ChevronDown, Lightbulb, Plus } from 'lucide-react';
+import { Search, Repeat, Trash2, Upload, FileText, Download, AlertTriangle, ExternalLink, Pencil, X, ChevronUp, ChevronDown, Lightbulb, Plus, PackageCheck, ScanLine } from 'lucide-react';
 import FilePreview from '../FilePreview.jsx';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
@@ -202,6 +202,78 @@ export function QuickReorder({ items, onCreated }) {
   );
 }
 
+const money = (v) => `$${Number(v).toFixed(2)}`;
+
+// "1 of 3 received" — the part-delivered state, derived server-side and only
+// rendered here. Nothing shows for an order where nothing has arrived, or one
+// that came in complete: a chip on every row is a chip nobody reads.
+function ReceivedChip({ o, className = '' }) {
+  if (o.receipt_state === 'none' || !o.qty_known) return null;
+  const partial = o.receipt_state === 'partial';
+  return (
+    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${partial ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'} ${className}`}>
+      {o.qty_received} of {o.qty} {partial ? 'received' : 'received'}
+    </span>
+  );
+}
+
+// Taking in a delivery. Defaults to everything still outstanding, because the
+// whole order arriving is the common case and the partial one is what needed a
+// form at all.
+function ReceiveModal({ order, onClose, onSaved }) {
+  const outstanding = order.qty_known ? order.outstanding : null;
+  const [qty, setQty] = useState(outstanding != null ? String(outstanding) : '');
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true); setErr(null);
+    try {
+      await apiPost(`/office/supply/orders/${order.id}/receive`, { qty: Number(qty), note });
+      onSaved(); onClose();
+    } catch (e2) { setErr(e2.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-3 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900 truncate">Receive {order.item_name}</h3>
+          <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        {order.qty_known ? (
+          <p className="text-xs text-gray-500">
+            {order.qty} {order.uom || ''} ordered · {order.qty_received} already received · <span className="font-medium text-gray-700">{outstanding} still outstanding</span>
+          </p>
+        ) : (
+          <p className="text-xs text-amber-700">No quantity was recorded on this order, so it can only be received in full. Add a quantity first if part of it arrived.</p>
+        )}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">How many arrived?</label>
+          <input type="number" step="any" autoFocus required value={qty} onChange={e => setQty(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          <p className="mt-1 text-[11px] text-gray-400">A negative number corrects an earlier miscount — it needs a reason, and the correction stays on the record.</p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Note{Number(qty) < 0 ? ' *' : ''}</label>
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Back-ordered, damaged, short shipped…"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        {err && <p className="text-sm text-red-600">{err}</p>}
+        <div className="flex gap-2">
+          <button type="submit" disabled={saving} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
+            {saving ? 'Saving…' : 'Record delivery'}
+          </button>
+          <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function EditOrderModal({ order, onClose, onSaved }) {
   const [form, setForm] = useState({ qty: order.qty ?? '', total: order.total ?? '', eta: order.eta || '', supplier: order.supplier || '', link: order.link || '', notes: order.notes || '' });
   const save = async () => {
@@ -219,7 +291,14 @@ function EditOrderModal({ order, onClose, onSaved }) {
           <div><label className="block text-xs font-medium text-gray-700 mb-1">Qty</label>
             <input type="number" step="any" value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
           <div><label className="block text-xs font-medium text-gray-700 mb-1">Total ($)</label>
-            <input type="number" step="0.01" value={form.total} onChange={e => setForm({ ...form, total: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+            <input type="number" step="0.01" value={form.total} onChange={e => setForm({ ...form, total: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            {order.suggested_total != null && form.total === '' && (
+              <button type="button" onClick={() => setForm(f => ({ ...f, total: String(order.suggested_total) }))}
+                className="mt-1 text-[11px] text-powder-700 hover:underline text-left">
+                Use {money(order.suggested_total)} from {order.suggested_total_from}
+              </button>
+            )}
+          </div>
           <div><label className="block text-xs font-medium text-gray-700 mb-1">ETA</label>
             <input type="date" value={form.eta} onChange={e => setForm({ ...form, eta: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
           <div><label className="block text-xs font-medium text-gray-700 mb-1">Supplier</label>
@@ -266,6 +345,7 @@ function OrdersLog({ refreshKey, onChanged }) {
   const query = statusFilter === 'open' ? '' : statusFilter === 'all' ? '' : `status=${statusFilter}`;
   const { data: orders, refresh } = useApiGet(`/office/supply/orders?${query}${q ? `&q=${encodeURIComponent(q)}` : ''}`, [statusFilter, q, refreshKey]);
   const [editing, setEditing] = useState(null);
+  const [receiving, setReceiving] = useState(null);
   const expand = useRowExpand();
   const onSort = (f) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir(f === 'submitted_at' || f === 'total' ? 'desc' : 'asc'); } };
   const list = useMemo(() => {
@@ -297,10 +377,18 @@ function OrdersLog({ refreshKey, onChanged }) {
     });
   }, [orders, statusFilter, labelFilter, sortField, sortDir]);
 
+  // Advancing to "received" goes through the receive form, so what arrived is
+  // counted rather than assumed — for an order with no quantity written down
+  // there is nothing to count and the status control still marks it in full.
   const advance = async (o) => {
     const next = STATUS_META[o.status]?.next;
     if (!next) return;
+    if (next === 'received' && o.qty_known) { setReceiving(o); return; }
     await apiPut(`/office/supply/orders/${o.id}`, { status: next });
+    refresh(); onChanged?.();
+  };
+  const applySuggestedTotal = async (o) => {
+    await apiPut(`/office/supply/orders/${o.id}`, { total: o.suggested_total });
     refresh(); onChanged?.();
   };
   const del = async (o) => {
@@ -338,11 +426,19 @@ function OrdersLog({ refreshKey, onChanged }) {
                 <div className="font-medium text-gray-900 break-words">{o.item_name}{o.urgent ? <span className="ml-1.5 text-[10px] font-bold text-red-600">URGENT</span> : null}</div>
                 <div className="text-xs text-gray-500">{[o.qty && `${o.qty} ${o.uom || ''}`.trim(), o.supplier, o.label].filter(Boolean).join(' · ')}</div>
               </div>
-              <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_META[o.status].tone}`}>{STATUS_META[o.status].label}</span>
+              <div className="shrink-0 flex flex-col items-end gap-1">
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_META[o.status].tone}`}>{STATUS_META[o.status].label}</span>
+                <ReceivedChip o={o} />
+              </div>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
               <span>{o.requested_by || '—'} · {(o.submitted_at || '').slice(0, 10)}</span>
-              {o.total != null && <span>${Number(o.total).toFixed(2)}</span>}
+              {o.total != null && <span>{money(o.total)}</span>}
+              {o.total == null && o.suggested_total != null && (
+                <button onClick={() => applySuggestedTotal(o)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-powder-50 text-powder-700 font-medium hover:bg-powder-100">
+                  Use {money(o.suggested_total)} from invoice
+                </button>
+              )}
               {externalUrl(o.link) && (
                 <a href={externalUrl(o.link)} target="_blank" rel="noreferrer"
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-powder-50 text-powder-700 font-medium hover:bg-powder-100">
@@ -352,7 +448,9 @@ function OrdersLog({ refreshKey, onChanged }) {
             </div>
             <div className="mt-2 flex items-center gap-2">
               {STATUS_META[o.status].next && (
-                <button onClick={() => advance(o)} className="px-2.5 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium">{STATUS_META[o.status].nextLabel}</button>
+                <button onClick={() => advance(o)} className="px-2.5 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium">
+                  {STATUS_META[o.status].next === 'received' && o.qty_known ? (o.receipt_state === 'partial' ? 'Receive more…' : 'Receive…') : STATUS_META[o.status].nextLabel}
+                </button>
               )}
               <button onClick={() => setEditing(o)} className="px-2 py-1 text-gray-500 text-xs rounded-lg hover:bg-gray-100">Edit</button>
               <button onClick={() => del(o)} className="px-2 py-1 text-red-500 text-xs rounded-lg hover:bg-red-50">Delete</button>
@@ -397,16 +495,35 @@ function OrdersLog({ refreshKey, onChanged }) {
                     {o.urgent && (o.status === 'new' || o.status === 'ordered') && <span className="ml-1.5 text-[10px] font-bold text-red-600">URGENT</span>}
                     {o.notes && <div className="text-[11px] text-gray-400">{o.notes}</div>}
                   </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{o.qty ?? '—'} {o.uom || ''}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">
+                    {o.qty ?? '—'} {o.uom || ''}
+                    {o.receipt_state === 'partial' && <div className="text-[11px] font-semibold text-amber-700">{o.qty_received} in · {o.outstanding} to come</div>}
+                  </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{o.supplier || '—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{o.label || '—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{o.requested_by || '—'}<div className="text-gray-400">{(o.submitted_at || '').slice(0, 10)}</div></td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{o.total != null ? `$${Number(o.total).toFixed(2)}` : '—'}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_META[o.status].tone}`}>{STATUS_META[o.status].label}</span></td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">
+                    {o.total != null ? money(o.total) : (o.suggested_total == null ? '—' : null)}
+                    {o.total == null && o.suggested_total != null && (
+                      <button onClick={(e) => { stopRowClick(e); applySuggestedTotal(o); }}
+                        title={`From ${o.suggested_total_from}${o.suggested_total_evidence ? ` — read from "${o.suggested_total_evidence}"` : ''}`}
+                        className="px-1.5 py-0.5 rounded-md bg-powder-50 text-powder-700 text-xs font-medium hover:bg-powder-100">
+                        Use {money(o.suggested_total)}
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_META[o.status].tone}`}>{STATUS_META[o.status].label}</span>
+                    <ReceivedChip o={o} className="ml-1" />
+                  </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-right" onClick={stopRowClick}>
                     <div className="flex items-center gap-1 justify-end">
                       {STATUS_META[o.status].next && (
-                        <button onClick={() => advance(o)} className="px-2 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700">{STATUS_META[o.status].nextLabel}</button>
+                        <button onClick={() => advance(o)} className="px-2 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 inline-flex items-center gap-1">
+                          {STATUS_META[o.status].next === 'received' && o.qty_known
+                            ? <><PackageCheck size={12} /> {o.receipt_state === 'partial' ? 'Receive more' : 'Receive'}</>
+                            : STATUS_META[o.status].nextLabel}
+                        </button>
                       )}
                       <button onClick={() => setEditing(o)} className="p-1.5 text-gray-400 hover:text-powder-600" data-tip="Edit"><Pencil size={14} /></button>
                       <button onClick={() => del(o)} className="p-1.5 text-gray-400 hover:text-red-500" data-tip="Delete"><Trash2 size={14} /></button>
@@ -418,6 +535,8 @@ function OrdersLog({ refreshKey, onChanged }) {
                     <DetailFields fields={[
                       { label: 'Item', value: o.item_name },
                       { label: 'Quantity', value: `${o.qty ?? ''} ${o.uom || ''}`.trim() },
+                      { label: 'Received', value: o.receipt_state === 'none' ? '' : `${o.qty_received}${o.qty_known ? ` of ${o.qty}` : ''} ${o.uom || ''}`.trim() },
+                      { label: 'Outstanding', value: o.receipt_state === 'partial' ? `${o.outstanding} ${o.uom || ''}`.trim() : '' },
                       { label: 'Supplier', value: o.supplier },
                       { label: 'For', value: o.label },
                       { label: 'Requested by', value: o.requested_by },
@@ -427,10 +546,24 @@ function OrdersLog({ refreshKey, onChanged }) {
                       { label: 'Status', value: STATUS_META[o.status].label },
                       { label: 'Urgent', value: o.urgent ? 'Yes' : '' },
                       { label: 'Ordered', value: (o.ordered_at || '').slice(0, 10) },
-                      { label: 'Received', value: (o.received_at || '').slice(0, 10) },
+                      { label: 'Received in full', value: (o.received_at || '').slice(0, 10) },
                       { label: 'Link', value: o.link, wide: true },
                       { label: 'Notes', value: o.notes, wide: true },
                     ]} />
+                    {o.receipt_history?.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Deliveries</p>
+                        <ul className="mt-1 space-y-0.5 text-xs text-gray-600">
+                          {o.receipt_history.map((h, k) => (
+                            <li key={k}>
+                              <span className={`font-medium ${h.qty < 0 ? 'text-red-600' : 'text-gray-900'}`}>{h.qty > 0 ? `+${h.qty}` : h.qty}</span>
+                              {' '}{o.uom || ''} · {(h.at || '').slice(0, 10)} · {h.by}
+                              {h.note ? ` — ${h.note}` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </DetailRow>
                 )}
                 </Fragment>
@@ -441,6 +574,7 @@ function OrdersLog({ refreshKey, onChanged }) {
         </div>
       </div>
       {editing && <EditOrderModal order={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
+      {receiving && <ReceiveModal order={receiving} onClose={() => setReceiving(null)} onSaved={() => { refresh(); onChanged?.(); }} />}
     </div>
   );
 }
@@ -467,6 +601,19 @@ function EditInvoiceModal({ inv, onClose, onSaved }) {
             <input type="number" step="0.01" value={form.total} onChange={e => setForm({ ...form, total: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
           <div><label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
             <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+          {/* The line the figure was read from, so it can be checked against the
+              document without opening the document. Editing the total makes it
+              a typed figure and no later read will move it. */}
+          {inv.total_source === 'read' && inv.figures?.total_evidence && (
+            <p className="col-span-2 text-[11px] text-gray-500">
+              Total read from the file: <span className="font-mono text-gray-700">“{inv.figures.total_evidence}”</span>
+            </p>
+          )}
+          {inv.figures?.invoice_date_evidence && !inv.figures?.total_evidence && (
+            <p className="col-span-2 text-[11px] text-gray-500">
+              Date read from the file: <span className="font-mono text-gray-700">“{inv.figures.invoice_date_evidence}”</span>
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           <button onClick={save} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">Save</button>
@@ -525,6 +672,18 @@ function InvoiceRepo() {
     await apiFetch(`/office/supply/invoices/${inv.id}`, { method: 'DELETE' });
     refresh();
   };
+  // Read the figures off a file already on the shelf. Blanks only — a total
+  // somebody typed is never moved by this.
+  const [reading, setReading] = useState('');
+  const readFigures = async (inv) => {
+    setReading(inv.id);
+    try {
+      const out = await apiPost(`/office/supply/invoices/${inv.id}/read`, {});
+      if (out.total == null) alert(`Nothing on "${inv.filename}" is labelled as a total — enter it by hand.`);
+      refresh();
+    } catch (e) { alert(e.message || 'Could not read the file'); }
+    finally { setReading(''); }
+  };
 
   // In-app preview overlay: clicking a filename opens the file right here
   // (arrow through neighbors) instead of jumping to a browser tab.
@@ -565,7 +724,16 @@ function InvoiceRepo() {
               <FileText size={18} className="text-powder-600 shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
                 <button onClick={() => inv.url ? openPreview(inv) : null} className="text-sm font-medium text-gray-900 break-all text-left">{inv.filename}</button>
-                <div className="text-xs text-gray-400 mt-0.5">{[inv.supplier, inv.invoice_date, inv.total != null ? `$${Number(inv.total).toFixed(2)}` : null].filter(Boolean).join(' · ') || 'No details tagged'}</div>
+                <div className="text-xs text-gray-400 mt-0.5">
+                  {[inv.supplier, inv.invoice_date, inv.total != null ? money(inv.total) : null].filter(Boolean).join(' · ') || 'No details tagged'}
+                  {inv.total_source === 'read' && <span className="ml-1 text-powder-600">· read from the file</span>}
+                </div>
+                {inv.total == null && inv.searchable && (
+                  <button onClick={() => readFigures(inv)} disabled={reading === inv.id}
+                    className="mt-1 px-2 py-0.5 rounded-md bg-powder-50 text-powder-700 text-[11px] font-medium disabled:opacity-50">
+                    {reading === inv.id ? 'Reading…' : 'Read total from file'}
+                  </button>
+                )}
                 <div className="text-[11px] text-gray-400">{inv.uploaded_by} · {(inv.created_at || '').slice(0, 10)}</div>
               </div>
               <div className="flex items-center gap-0.5 shrink-0">
@@ -603,7 +771,24 @@ function InvoiceRepo() {
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{inv.supplier || '—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{inv.invoice_date || (inv.created_at || '').slice(0, 10)}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{inv.total != null ? `$${Number(inv.total).toFixed(2)}` : '—'}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">
+                    {inv.total != null ? money(inv.total) : '—'}
+                    {inv.total_source === 'read' && (
+                      <span className="ml-1 inline-flex items-center align-middle text-powder-600"
+                        title={inv.figures?.total_evidence ? `Read from the file: "${inv.figures.total_evidence}"` : 'Read from the file'}>
+                        <ScanLine size={12} />
+                      </span>
+                    )}
+                    {inv.total == null && inv.searchable && (
+                      <button onClick={() => readFigures(inv)} disabled={reading === inv.id}
+                        className="ml-1 px-1.5 py-0.5 rounded-md bg-powder-50 text-powder-700 text-xs font-medium hover:bg-powder-100 disabled:opacity-50">
+                        {reading === inv.id ? 'Reading…' : 'Read from file'}
+                      </button>
+                    )}
+                    {inv.total == null && inv.searchable === false && (
+                      <span className="ml-1 text-[11px] text-gray-400" title="No text could be read out of this file, so nothing could be picked up automatically.">no text</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{inv.uploaded_by || '—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-right">
                     <div className="flex items-center gap-1 justify-end">
