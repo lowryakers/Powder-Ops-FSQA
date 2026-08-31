@@ -487,22 +487,57 @@ function ArchiveStep({ onDone }) {
   const [plan, setPlan] = useState(null);
   const [busy, setBusy] = useState(false);
   const [pct, setPct] = useState(0);
+  const [stage, setStage] = useState(null);
+  const [uploadId, setUploadId] = useState(null);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
   const [linked, setLinked] = useState([]);
   const { data: cov, refresh: refreshCov } = useApiGet('/suppliers/files/coverage');
 
-  const send = async (path, setResult) => {
+  const review = async () => {
     if (!file) return setError('Attach a .zip of the supplier folders.');
-    setBusy(true); setError(null); setPct(0);
+    setBusy(true); setError(null); setPct(0); setStage('Uploading');
     try {
       const fd = new FormData();
       fd.append('files', file);
-      const r = await apiUpload(`/suppliers/files/archive/${path}`, fd, 'POST', setPct);
-      setResult(r);
+      const r = await apiUpload('/suppliers/files/archive/analyze', fd, 'POST', setPct);
+      setPlan(r.plan); setUploadId(r.upload_id); setDone(null);
       refreshCov();
     } catch (e) { setError(e.message || 'Upload failed'); }
-    finally { setBusy(false); setPct(0); }
+    finally { setBusy(false); setPct(0); setStage(null); }
+  };
+
+  // STORING LOOPS, because one request cannot hold hundreds of uploads to
+  // object storage — that is minutes of wall time and the proxy closes it,
+  // which is the 502. The zip is already held server-side, so each pass sends
+  // only its id; a pass that fails loses nothing, because what stored is
+  // stored and the next pass skips it.
+  const store = async () => {
+    if (!uploadId) return setError('Review the zip again — the held upload has expired.');
+    setBusy(true); setError(null);
+    const tally = { stored: 0, failed: 0, skipped: 0, unmatched: 0, total: 0 };
+    try {
+      for (let pass = 0; pass < 200; pass++) {
+        const fd = new FormData();
+        fd.append('upload_id', uploadId);
+        const r = await apiUpload('/suppliers/files/archive/commit', fd, 'POST');
+        const res = r.result || {};
+        tally.stored += res.stored || 0;
+        tally.failed += (res.failed || []).length;
+        tally.skipped = res.skipped || 0;
+        tally.unmatched = res.unmatched || 0;
+        tally.total = tally.total || res.total || 0;
+        setStage(`Stored ${tally.stored} of ${tally.total || '?'}`);
+        setDone({ ...tally });
+        refreshCov();
+        if (!res.remaining) break;
+        // A pass that stored nothing but still reports work left would spin.
+        if (!res.stored && (res.failed || []).length === 0) break;
+      }
+      setPlan(null);
+      onDone?.();
+    } catch (e) { setError(`${e.message || 'Upload failed'} — press Store again to carry on; nothing already stored is repeated.`); }
+    finally { setBusy(false); setStage(null); }
   };
 
   const off = cov && cov.storage_enabled === false;
@@ -530,22 +565,26 @@ function ArchiveStep({ onDone }) {
       ) : (
         <>
           <input type="file" accept=".zip" disabled={busy}
-            onChange={e => { setFile(e.target.files?.[0] || null); setPlan(null); setDone(null); }}
+            onChange={e => { setFile(e.target.files?.[0] || null); setPlan(null); setDone(null); setUploadId(null); }}
             className="mt-3 block w-full text-sm" />
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button type="button" disabled={busy || !file}
-              onClick={() => send('analyze', r => setPlan(r.plan))}
+              onClick={review}
               className="inline-flex items-center gap-1.5 rounded bg-slate-800 px-3 py-1.5 text-sm text-white disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Review the zip
             </button>
             {plan && !!plan.counts.store && (
               <button type="button" disabled={busy}
-                onClick={() => send('commit', r => { setDone(r.result); setPlan(null); onDone?.(); })}
+                onClick={store}
                 className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">
                 <Upload className="h-4 w-4" /> Store {plan.counts.store} documents
               </button>
             )}
-            {busy && pct > 0 && <span className="text-sm tabular-nums text-slate-500">{pct}%</span>}
+            {busy && (stage || pct > 0) && (
+              <span className="text-sm tabular-nums text-slate-500">
+                {stage}{stage && pct > 0 && pct < 100 ? ' · ' : ''}{pct > 0 && pct < 100 ? `${pct}%` : ''}
+              </span>
+            )}
           </div>
         </>
       )}
@@ -625,8 +664,8 @@ function ArchiveStep({ onDone }) {
         <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900 dark:bg-emerald-950/30">
           <p><b>{done.stored}</b> documents stored.</p>
           {!!done.skipped && <p className="text-slate-600 dark:text-slate-300">{done.skipped} skipped (already stored, or not a document).</p>}
-          {!!done.failed?.length && (
-            <p className="text-rose-600">{done.failed.length} failed — run it again; what stored already is skipped.</p>
+          {!!done.failed && (
+            <p className="text-rose-600">{done.failed} failed — press Store again; what stored already is skipped.</p>
           )}
         </div>
       )}

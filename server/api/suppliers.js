@@ -37,7 +37,7 @@ import { mediaUpload, cleanupTemp, uploadErrorMessage, MAX_ARCHIVE_BYTES } from 
 import { planSupplierImport, applySupplierImport } from '../supplier-import.js';
 import { DISPOSITIONS, RISK_CRITERIA } from '../supplier-sop.js';
 import { matchStrength, nameKey } from '../supplier-reconcile.js';
-import { readFileSync, createReadStream, writeFileSync, unlinkSync } from 'fs';
+import { readFileSync, createReadStream, writeFileSync, unlinkSync, renameSync } from 'fs';
 import { tmpdir } from 'os';
 import { join as joinPath } from 'path';
 import AdmZip from 'adm-zip';
@@ -382,6 +382,56 @@ router.post('/:id/disposition', (req, res) => {
 // the plant's own folder export, which is what "I couldn't upload the zip"
 // turned out to be.
 const archiveUpload = mediaUpload({ files: 1, maxBytes: MAX_ARCHIVE_BYTES });
+
+// ── The zip crosses the wire ONCE, and storing is done in batches ───────────
+//
+// A 502. Storing 419 documents means 419 sequential uploads to object storage,
+// which is minutes of wall time in a single request, and the proxy in front of
+// the app cuts it long before that — so the work was lost and the whole
+// multi-hundred-megabyte zip had to be sent again to retry.
+//
+// Neither half of that is acceptable, and the fix is the same shape the rest of
+// this module uses: bound the work, and make repeating it cheap. Reviewing
+// stashes the file and hands back an id; each store call does a bounded number
+// of documents and says how many are left. Nothing is lost when one call fails
+// — what stored is stored, and the next call skips it.
+const STASH = new Map();
+const STASH_TTL_MS = 2 * 60 * 60 * 1000;
+const STORE_BATCH = 60;          // documents per request
+const STORE_PARALLEL = 4;        // concurrent uploads within a batch
+
+function stashArchive(file, user) {
+  const id = uuid();
+  const dest = joinPath(tmpdir(), `sup-archive-${id}.zip`);
+  renameSync(file.path, dest);
+  STASH.set(id, { path: dest, user: user?.id || null, at: Date.now() });
+  return id;
+}
+
+function takeStash(id, user) {
+  const e = STASH.get(id);
+  if (!e) return null;
+  // The stash holds one person's upload; another account must not be able to
+  // commit it by guessing an id.
+  if (e.user && user?.id && e.user !== user.id) return null;
+  return e;
+}
+
+function sweepStash() {
+  const now = Date.now();
+  for (const [id, e] of STASH) {
+    if (now - e.at < STASH_TTL_MS) continue;
+    try { unlinkSync(e.path); } catch { /* already gone */ }
+    STASH.delete(id);
+  }
+}
+
+function dropStash(id) {
+  const e = STASH.get(id);
+  if (!e) return;
+  try { unlinkSync(e.path); } catch { /* already gone */ }
+  STASH.delete(id);
+}
 const fileUpload = mediaUpload({ files: 20 });
 
 /** The catalogued rows an archive can attach to. */
@@ -592,6 +642,8 @@ function adoptUnmatched(db, plan, { write = false, actor = null } = {}) {
 router.post('/files/archive/analyze', archiveUpload.array('files', 1), (req, res) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Attaching the archive is admin only' });
   if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+  sweepStash();
+  let stashed = null;
   try {
     const f = (req.files || [])[0];
     if (!f) return res.status(400).json({ error: 'Attach a .zip of the supplier folders' });
@@ -600,11 +652,14 @@ router.post('/files/archive/analyze', archiveUpload.array('files', 1), (req, res
     const plan = adoptUnmatched(db,
       planArchiveUpload(walkZip(f.path), catalogueRows(db), { replace: req.body?.replace === 'true' }),
       { write: false });
-    res.json({ plan, filename: f.originalname });
+    // Keep the file so storing does not have to send it again.
+    stashed = stashArchive(f, req.user);
+    res.json({ plan, filename: f.originalname, upload_id: stashed, batch: STORE_BATCH });
   } catch (e) {
     res.status(400).json({ error: uploadErrorMessage(e, MAX_ARCHIVE_BYTES) || e.message });
   } finally {
-    cleanupTemp(req.files);
+    // stashArchive moved the file; anything left is ours to clean up.
+    if (!stashed) cleanupTemp(req.files);
   }
 });
 
@@ -612,14 +667,20 @@ router.post('/files/archive/commit', archiveUpload.array('files', 1), async (req
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Attaching the archive is admin only' });
   if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
   const db = getDb();
+  const uploadId = req.body?.upload_id || null;
+  const stash = uploadId ? takeStash(uploadId, req.user) : null;
+  if (uploadId && !stash) {
+    return res.status(410).json({ error: 'That upload is no longer held. Review the zip again.' });
+  }
   const f = (req.files || [])[0];
+  const zipPath = stash ? stash.path : f?.path;
   try {
-    if (!f) return res.status(400).json({ error: 'Attach a .zip of the supplier folders' });
-    if (!/\.zip$/i.test(f.originalname)) return res.status(400).json({ error: 'That is not a .zip' });
+    if (!zipPath) return res.status(400).json({ error: 'Attach a .zip of the supplier folders' });
+    if (f && !/\.zip$/i.test(f.originalname)) return res.status(400).json({ error: 'That is not a .zip' });
 
     // ONE walk, used for both the plan and the bytes — a commit that re-walked
     // could store something the plan never showed.
-    const entries = walkZip(f.path);
+    const entries = walkZip(zipPath);
     const plan = adoptUnmatched(db,
       planArchiveUpload(entries, catalogueRows(db), { replace: req.body?.replace === 'true' }),
       { write: true, actor: req.user.name });
@@ -631,14 +692,18 @@ router.post('/files/archive/commit', archiveUpload.array('files', 1), async (req
       SET storage_key = ?, content_type = ?, size = ?, extracted_text = ?, text_status = ?, uploaded_by = ?
       WHERE id = ?`);
 
-    const result = { stored: 0, failed: [], skipped: plan.counts.skip, unmatched: plan.counts.unmatched, bytes: 0 };
+    const limit = Math.max(1, Math.min(Number(req.body?.limit) || STORE_BATCH, 500));
+    const batch = plan.store.slice(0, limit);
+    const result = {
+      stored: 0, failed: [], skipped: plan.counts.skip, unmatched: plan.counts.unmatched,
+      bytes: 0, remaining: Math.max(0, plan.store.length - batch.length), total: plan.store.length,
+    };
 
-    for (const item of plan.store) {
+    // A few at a time. Sequential is minutes of wall time for a few hundred
+    // documents; unbounded concurrency is a different way to fall over.
+    const one = async (item) => {
       const entry = byPath.get(normalizePath(item.path));
-      if (!entry) { result.failed.push({ path: item.path, error: 'entry vanished from the zip' }); continue; }
-      // One temp file per entry, so the bytes go to R2 as a STREAM rather than
-      // sitting in the heap. adm-zip decompresses per entry, which is the
-      // smallest unit available without a second zip library.
+      if (!entry) { result.failed.push({ path: item.path, error: 'entry vanished from the zip' }); return; }
       const tmp = joinPath(tmpdir(), `sup-${item.file_id}`);
       try {
         const buf = entry.read();
@@ -646,7 +711,6 @@ router.post('/files/archive/commit', archiveUpload.array('files', 1), async (req
         const key = storageKeyFor(item.supplier_id, item.file_id, item.path);
         const type = guessType(item.path);
         await putStream(key, createReadStream(tmp), type);
-        // Searched, never shipped — the same rule equipment manuals follow.
         // extractInvoiceText returns a STRING (or '' when a scan has no text
         // layer), never a wrapper object. Reading `.text` off it silently
         // discarded every word — check the signature, don't copy a caller.
@@ -661,15 +725,21 @@ router.post('/files/archive/commit', archiveUpload.array('files', 1), async (req
       } finally {
         try { unlinkSync(tmp); } catch { /* already gone */ }
       }
+    };
+    for (let i = 0; i < batch.length; i += STORE_PARALLEL) {
+      await Promise.all(batch.slice(i, i + STORE_PARALLEL).map(one));
     }
 
+    if (stash && result.remaining === 0) dropStash(uploadId);
     logAudit(req.user, 'supplier_archive_stored', 'supplier_file', null,
-      { filename: f.originalname, ...result, failed: result.failed.length }, null, null, f.originalname);
-    res.json({ result, plan: { counts: plan.counts, unmatched: plan.unmatched.slice(0, 200) } });
+      { filename: f?.originalname || 'held upload', stored: result.stored,
+        remaining: result.remaining, failed: result.failed.length }, null, null,
+      f?.originalname || 'archive');
+    res.json({ result, upload_id: uploadId, plan: { counts: plan.counts, unmatched: plan.unmatched.slice(0, 200) } });
   } catch (e) {
     res.status(400).json({ error: uploadErrorMessage(e, MAX_ARCHIVE_BYTES) || e.message });
   } finally {
-    cleanupTemp(req.files);
+    if (!stash) cleanupTemp(req.files);
   }
 });
 

@@ -40,17 +40,42 @@ t('storage reports itself enabled', cov.storage_enabled === true);
 
 console.log('\n── attaching a real vendor zip ──');
 const zipFd = (name) => { const fd = new FormData(); fd.append('files', new Blob([readFileSync(U + name)]), name.replace(/^[0-9a-f]+-/, '')); return fd; };
+
+// Storing is BATCHED, so the client loops until nothing is left. The test does
+// the same thing — asserting a single call finishes would be asserting the
+// behaviour that caused the 502.
+const commitAll = async (name) => {
+  const first = await J(await up('/suppliers/files/archive/commit', zipFd(name)));
+  const total = { stored: first?.result?.stored || 0, failed: [...(first?.result?.failed || [])],
+                  passes: 1, plan: first?.plan };
+  let id = first?.upload_id, remaining = first?.result?.remaining || 0;
+  // A commit sent with the file rather than a held id has nothing to resume
+  // from, so re-send it; the already-stored skip makes that cheap and correct.
+  while (remaining > 0 && total.passes < 60) {
+    const r = await J(await up('/suppliers/files/archive/commit', id
+      ? (() => { const f = new FormData(); f.append('upload_id', id); return f; })()
+      : zipFd(name)));
+    total.stored += r?.result?.stored || 0;
+    total.failed.push(...(r?.result?.failed || []));
+    remaining = r?.result?.remaining || 0;
+    id = r?.upload_id || id;
+    total.passes += 1;
+    if (!r?.result?.stored) break;
+  }
+  return total;
+};
 const an = await J(await up('/suppliers/files/archive/analyze', zipFd('a6011ded-AIFI20260827T204145Z1001.zip')));
 t('analyze returns a plan', !!an?.plan, JSON.stringify(an).slice(0, 200));
 t('analyze matched real documents', an?.plan?.counts?.store > 0, JSON.stringify(an?.plan?.counts));
 t('ANALYZE STORED NOTHING', (await J(await req('/suppliers/files/coverage')))?.stored === 0);
 
-const co = await J(await up('/suppliers/files/archive/commit', zipFd('a6011ded-AIFI20260827T204145Z1001.zip')));
-t('commit stored what it planned', co?.result?.stored === an?.plan?.counts?.store,
-  `${co?.result?.stored} vs ${an?.plan?.counts?.store}`);
-t('nothing failed', !(co?.result?.failed || []).length, JSON.stringify(co?.result?.failed || []).slice(0, 200));
+const co = await commitAll('a6011ded-AIFI20260827T204145Z1001.zip');
+t('commit stored what it planned, across batches', co.stored === an?.plan?.counts?.store,
+  `${co.stored} vs ${an?.plan?.counts?.store} in ${co.passes} passes`);
+t('it really did take more than one batch', co.passes > 1, `${co.passes}`);
+t('nothing failed', !co.failed.length, JSON.stringify(co.failed).slice(0, 200));
 cov = await J(await req('/suppliers/files/coverage'));
-t('coverage moved', cov.stored === co.result.stored, `${cov.stored}`);
+t('coverage moved', cov.stored === co.stored, `${cov.stored}`);
 t('the byte total is real', cov.bytes > 1000, `${cov.bytes}`);
 
 console.log('\n── re-uploading the SAME zip is safe ──');
@@ -58,15 +83,15 @@ const again = await J(await up('/suppliers/files/archive/analyze', zipFd('a6011d
 t('a second review plans NOTHING to store', again?.plan?.counts?.store === 0, JSON.stringify(again?.plan?.counts));
 t('...and says "already stored" by name',
   (again?.plan?.skip || []).some(s => s.reason === 'already stored'));
-const recommit = await J(await up('/suppliers/files/archive/commit', zipFd('a6011ded-AIFI20260827T204145Z1001.zip')));
-t('a re-commit stores nothing and does not duplicate', recommit?.result?.stored === 0);
+const recommit = await commitAll('a6011ded-AIFI20260827T204145Z1001.zip');
+t('a re-commit stores nothing and does not duplicate', recommit.stored === 0, `${recommit.stored}`);
 t('coverage is unchanged', (await J(await req('/suppliers/files/coverage')))?.stored === cov.stored);
 
 console.log('\n── a second vendor adds to it, it does not replace ──');
-const mh = await J(await up('/suppliers/files/archive/commit', zipFd('e67fe1b2-Mill_Haven20260827T204157Z1001.zip')));
+const mh = await commitAll('e67fe1b2-Mill_Haven20260827T204157Z1001.zip');
 const cov2 = await J(await req('/suppliers/files/coverage'));
 t('the second vendor added documents', cov2.stored > cov.stored, `${cov.stored} → ${cov2.stored}`);
-t('the first vendor is still stored', cov2.stored === cov.stored + mh.result.stored);
+t('the first vendor is still stored', cov2.stored === cov.stored + mh.stored);
 
 console.log('\n── the bytes actually come back ──');
 const withFiles = (await J(await req('/suppliers')))?.suppliers?.find(s => /aifi/i.test(s.name));
@@ -208,6 +233,47 @@ console.log('\n── the zip in STEP ONE creates the vendors the tracker never 
   const now2 = await J(await up('/suppliers/files/archive/analyze', fdC));
   t('step two now recognises the same documents', now2?.plan?.counts?.store === 2,
     JSON.stringify(now2?.plan?.counts));
+}
+
+console.log('\n── the zip crosses the wire once, and storing is batched ──');
+// The 502: hundreds of sequential uploads in one request is minutes of wall
+// time and the proxy closes it, losing the work and forcing the whole zip to
+// be sent again.
+{
+  const AdmZip = (await import('adm-zip')).default;
+  const db0 = new Database(process.env.DBPATH);
+  const vend = db0.prepare("SELECT name FROM suppliers WHERE name LIKE 'AIFI%'").get().name;
+  db0.close();
+  const z = new AdmZip();
+  for (let i = 0; i < 25; i++) z.addFile(`Wrap/${vend}/2027/Batched ${i} Exp. 12.31.2028.pdf`, Buffer.from(`%PDF-1.4 ${i}`));
+  const fd = new FormData();
+  fd.append('files', new Blob([z.toBuffer()]), 'batched.zip');
+  const an = await J(await up('/suppliers/files/archive/analyze', fd));
+  t('review hands back an id for the held upload', !!an?.upload_id);
+  t('review plans all of them', an?.plan?.counts?.store === 25, JSON.stringify(an?.plan?.counts));
+
+  // Store in small passes, sending only the id — no re-upload.
+  const pass = async (limit) => {
+    const f = new FormData();
+    f.append('upload_id', an.upload_id);
+    f.append('limit', String(limit));
+    return J(await up('/suppliers/files/archive/commit', f));
+  };
+  const p1 = await pass(10);
+  t('a bounded pass stores exactly its limit', p1?.result?.stored === 10, JSON.stringify(p1?.result));
+  t('...and reports what is left', p1?.result?.remaining === 15, `${p1?.result?.remaining}`);
+  const p2 = await pass(10);
+  t('the next pass skips what is stored and does the next ten',
+    p2?.result?.stored === 10 && p2?.result?.remaining === 5, JSON.stringify(p2?.result));
+  const p3 = await pass(10);
+  t('the last pass finishes and reports nothing left',
+    p3?.result?.stored === 5 && p3?.result?.remaining === 0, JSON.stringify(p3?.result));
+  const p4 = await pass(10);
+  t('a pass after the end is refused, not a silent no-op', p4 === null || p4?.error || p4?.result?.stored === 0,
+    JSON.stringify(p4).slice(0, 120));
+  t('an unknown id is refused', (await (async () => {
+    const f = new FormData(); f.append('upload_id', 'nope');
+    return (await up('/suppliers/files/archive/commit', f)).status; })()) === 410);
 }
 
 console.log('\n── permissions ──');
