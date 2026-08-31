@@ -143,6 +143,36 @@ console.log('\n── a folder the register spells differently ──');
     JSON.stringify(after?.plan?.counts));
 }
 
+console.log('\n── a Drive zip with a root folder over the vendors ──');
+// Exactly the shape Drive produces: everything under one wrapper folder. Both
+// readings of the path parse — the wrapper reads as the vendor and the year as
+// the period — so the WRONG one names a company that does not exist.
+{
+  const AdmZip = (await import('adm-zip')).default;
+  const db = new Database(process.env.DBPATH);
+  const known = db.prepare("SELECT name FROM suppliers WHERE name LIKE 'AIFI%' OR name LIKE 'Mill Haven%'").all();
+  db.close();
+  const root = 'Supplier Qualification Questionnaire';
+  const z = new AdmZip();
+  for (const k of known) z.addFile(`${root}/${k.name}/2025/Wrapped ${k.name} Kosher Exp. 12.31.2027.pdf`, Buffer.from('%PDF-1.4 a'));
+  // Two files under a folder that is NOT a supplier — these are the ones whose
+  // reported name matters.
+  z.addFile(`${root}/Nowhere Ingredients/2025/Spec.pdf`, Buffer.from('%PDF-1.4 b'));
+  z.addFile(`${root}/Nowhere Ingredients/2025/SDS.pdf`, Buffer.from('%PDF-1.4 c'));
+  const fd = new FormData();
+  fd.append('files', new Blob([z.toBuffer()]), `${root}-20260831T214728Z-1-001.zip`);
+  const w = await J(await up('/suppliers/files/archive/analyze', fd));
+  t('the root folder is stripped and real vendors are found',
+    w?.plan?.counts?.store === known.length, JSON.stringify(w?.plan?.counts));
+  const folders = (w?.plan?.suggestions || []).map(g => g.folder);
+  t('the leftovers are named by their OWN folder, not the zip root',
+    folders.includes('Nowhere Ingredients'), JSON.stringify(folders));
+  t('...and the zip root is never reported as a company',
+    !folders.includes(root), JSON.stringify(folders));
+  t('the count under that folder is right',
+    (w?.plan?.suggestions || []).find(g => g.folder === 'Nowhere Ingredients')?.files === 2);
+}
+
 console.log('\n── permissions ──');
 const anon = await fetch(`${B}/suppliers/files/archive/commit`, { method: 'POST', body: new FormData() });
 t('an unauthenticated archive upload is refused', anon.status === 401 || anon.status === 403, `${anon.status}`);

@@ -483,10 +483,30 @@ function adoptUnmatched(db, plan, { write = false, actor = null } = {}) {
     VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(supplier_id, source_path) DO NOTHING`);
   const findFile = db.prepare('SELECT id FROM supplier_files WHERE supplier_id = ? AND source_path = ?');
 
+  // WHICH READING OF THE PATH TO BELIEVE, and it is not "whichever parses".
+  //
+  // A zip downloaded from Drive has a root folder — "Supplier Qualification
+  // Questionnaire" — and under it the vendor folders. Both readings parse:
+  // the full path reads that root as the vendor and AIFI as the year, and the
+  // stripped path reads AIFI as the vendor, which is the true one. So when a
+  // prefix was detected, THE STRIPPED READING WINS; the prefix is by
+  // definition shared by every file and therefore cannot be a vendor.
+  //
+  // Getting this backwards does not lose documents — the loop below tries the
+  // other reading — but it reports them under the wrong name, which is worse
+  // than useless: 293 files across a dozen real vendors were all blamed on the
+  // zip's own root folder, so the one screen that says what still needs doing
+  // named a company that does not exist.
+  const preferred = (full, rel) => (plan.prefix ? [rel, full] : [full, rel]);
+  const docFor = (full, rel) => {
+    for (const cand of preferred(full, rel)) { const d = byRelPath.get(cand); if (d) return d; }
+    return null;
+  };
+
   const stillUnmatched = [];
   for (const { u, full, rel } of candidates) {
     let doc = null, supplierId = null, chosen = null;
-    for (const cand of [full, rel]) {
+    for (const cand of preferred(full, rel)) {
       const d = byRelPath.get(cand);
       const id = d && byName.get(nameKey(d.vendor));
       if (d && id) { doc = d; supplierId = id; chosen = cand; break; }
@@ -525,10 +545,13 @@ function adoptUnmatched(db, plan, { write = false, actor = null } = {}) {
   // because legacy_names are matched exactly.
   const suppliers = db.prepare('SELECT id, name FROM suppliers').all();
   const byFolder = new Map();
+  const unresolved = new Set(stillUnmatched);
   for (const { u, full, rel } of candidates) {
-    if (!stillUnmatched.includes(u)) continue;
-    const doc = byRelPath.get(full) || byRelPath.get(rel);
-    const folder = doc?.vendor || String(u.path).split('/')[0];
+    if (!unresolved.has(u)) continue;
+    const doc = docFor(full, rel);
+    // The fallback names the first segment of the STRIPPED path for the same
+    // reason — never the zip's root folder.
+    const folder = doc?.vendor || (plan.prefix ? rel : full).split('/')[0];
     if (!byFolder.has(folder)) byFolder.set(folder, 0);
     byFolder.set(folder, byFolder.get(folder) + 1);
   }

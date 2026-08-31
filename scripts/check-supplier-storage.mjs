@@ -39,13 +39,24 @@ const rows = [
 t('an exact path matches', matchArchiveFile('AIFI/2025/Kosher Exp. 12.31.2025.pdf', rows).row?.id === 'f1');
 t('a zip root is stripped',
   matchArchiveFile('Supplier Docs/AIFI/2025/Kosher Exp. 12.31.2025.pdf', rows, { prefix: 'Supplier Docs' }).row?.id === 'f1');
-// The one that matters: "Certificate.pdf" exists under two vendors, so a
-// filename match would be a coin toss between them.
-const amb = matchArchiveFile('Somewhere Else/Certificate.pdf', rows);
+// A filename only matches WITHIN its own vendor folder. "SDS.pdf" under a
+// company we have never heard of must not land on whichever supplier happens
+// to be the only one with a row of that name — that is a document filed
+// against a company that did not send it.
+const cross = matchArchiveFile('Nowhere Ingredients/2025/Certificate.pdf', rows);
+t('A FILENAME NEVER CROSSES A VENDOR FOLDER', cross.row === null, JSON.stringify(cross));
+t('a filename matches within the SAME vendor folder',
+  matchArchiveFile('AIFI/elsewhere/Kosher Exp. 12.31.2025.pdf', rows).row?.id === 'f1');
+// Two rows with one filename under ONE vendor is a real coin toss, and refused.
+const twin = [
+  { id: 'g1', supplier_id: 's9', source_path: 'Twin/2025/Certificate.pdf', filename: 'Certificate.pdf' },
+  { id: 'g2', supplier_id: 's9', source_path: 'Twin/2026/Certificate.pdf', filename: 'Certificate.pdf' },
+];
+const amb = matchArchiveFile('Twin/somewhere/Certificate.pdf', twin);
 t('AN AMBIGUOUS FILENAME IS REFUSED, not guessed', amb.row === null && /ambiguous/.test(amb.reason), JSON.stringify(amb));
-t('an unambiguous filename still matches',
-  matchArchiveFile('Elsewhere/Kosher Exp. 12.31.2025.pdf', rows).row?.id === 'f1');
 t('an unknown file is reported, not attached', matchArchiveFile('Nothing/at/all.pdf', rows).row === null);
+t('a loose file with no vendor folder is refused',
+  matchArchiveFile('Certificate.pdf', rows).row === null);
 
 console.log('\n── the plan ──');
 const entries = [
@@ -75,7 +86,7 @@ t('replace:true stores it again when asked',
 
 // Two entries for one catalogued row: the second must not overwrite the first.
 const dupe = planArchiveUpload(
-  [{ path: 'A/Kosher Exp. 12.31.2025.pdf', size: 1 }, { path: 'B/Kosher Exp. 12.31.2025.pdf', size: 2 }],
+  [{ path: 'AIFI/a/Kosher Exp. 12.31.2025.pdf', size: 1 }, { path: 'AIFI/b/Kosher Exp. 12.31.2025.pdf', size: 2 }],
   [rows[0]]);
 t('one catalogued row is claimed once', dupe.counts.store === 1 && dupe.counts.skip === 1);
 

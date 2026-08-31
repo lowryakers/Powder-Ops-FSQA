@@ -56,15 +56,32 @@ export function stripPrefix(path, prefix) {
  *
  *   1. the path, exactly as catalogued
  *   2. the path with the zip's own root folder removed
- *   3. the filename, but ONLY when exactly one catalogued row carries it —
- *      an ambiguous filename ("Certificate.pdf" under four vendors) is refused
+ *   3. the filename — but ONLY within the SAME VENDOR FOLDER, and only when
+ *      exactly one row there carries it
+ *
+ * THE VENDOR SCOPE ON PASS 3 IS LOAD-BEARING. Without it, a file called
+ * "SDS.pdf" sitting under a company we have never heard of attaches to
+ * whichever supplier happens to be the only one with a row of that name — a
+ * document filed against a company that did not send it, which is precisely
+ * the failure this module exists to prevent. Filenames in this archive are
+ * generic by nature ("SDS.pdf", "Spec.pdf", "Certificate.pdf"); it is the
+ * folder that says whose they are. Caught by a test, not by reading.
  *
  * `rows` is [{ id, supplier_id, source_path, filename, storage_key }].
  */
+const vendorFolder = (path) => normalizePath(path).split('/')[0] || '';
+
 export function matchArchiveFile(entryPath, rows, { prefix = '' } = {}) {
   const full = normalizePath(entryPath);
   const rel = stripPrefix(full, prefix);
   const base = full.split('/').pop();
+  // BOTH READINGS OF THE VENDOR, for the same reason the path pass tries both.
+  // A zip of one vendor has that vendor's folder as its common prefix, so the
+  // stripped path's first segment is a YEAR — scoping to that alone would
+  // compare "2025" against "AIFI" and refuse every filename match inside a
+  // per-vendor zip, which is the shape people actually upload.
+  const vendors = [...new Set([vendorFolder(rel), vendorFolder(full)]
+    .map(v => v.toLowerCase()).filter(Boolean))];
 
   const byPath = new Map();
   const byName = new Map();
@@ -73,16 +90,24 @@ export function matchArchiveFile(entryPath, rows, { prefix = '' } = {}) {
     if (sp) byPath.set(sp, r);
     const n = String(r.filename || '').toLowerCase();
     if (!n) continue;
-    if (byName.has(n)) byName.set(n, null);   // ambiguous — poisoned on purpose
-    else byName.set(n, r);
+    // Keyed on vendor folder + filename, so two vendors' "Certificate.pdf"
+    // never collide with each other and never reach the other's documents.
+    const key = `${vendorFolder(sp).toLowerCase()}/${n}`;
+    if (byName.has(key)) byName.set(key, null);   // ambiguous — poisoned on purpose
+    else byName.set(key, r);
   }
 
   const hit = byPath.get(full) || byPath.get(rel);
   if (hit) return { row: hit, how: byPath.get(full) ? 'path' : 'path-relative' };
 
-  const named = byName.get(String(base || '').toLowerCase());
-  if (named) return { row: named, how: 'filename' };
-  if (named === null) return { row: null, reason: 'ambiguous filename' };
+  if (!vendors.length) return { row: null, reason: 'not filed under a vendor folder' };
+  let poisoned = false;
+  for (const v of vendors) {
+    const named = byName.get(`${v}/${String(base || '').toLowerCase()}`);
+    if (named) return { row: named, how: 'filename' };
+    if (named === null) poisoned = true;
+  }
+  if (poisoned) return { row: null, reason: 'ambiguous filename within the vendor folder' };
   return { row: null, reason: 'no catalogued row for this path' };
 }
 
