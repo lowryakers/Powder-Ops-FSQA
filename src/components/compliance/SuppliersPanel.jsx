@@ -703,6 +703,18 @@ function ImportTab({ onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
+  const [linked, setLinked] = useState([]);
+
+  // Linking is a deliberate act on the register, audited — it is not part of
+  // the import, and it happens BEFORE one so the import sees a single company.
+  const linkPair = async (k) => {
+    setError(null);
+    try {
+      await apiPost('/suppliers/link-name-by-name',
+        { supplier_name: k.on_register, name: k.archive_folder });
+      setLinked(l => [...l, k.archive_folder]);
+    } catch (e) { setError(e.message || 'Could not link that name'); }
+  };
 
   const send = async (path, setResult) => {
     if (!files.length) return setError('Attach the tracker, the archive, or both.');
@@ -753,12 +765,12 @@ function ImportTab({ onDone }) {
         </div>
       )}
 
-      {plan && <PlanReview plan={plan} />}
+      {plan && <PlanReview plan={plan} linked={linked} onLink={linkPair} />}
     </div>
   );
 }
 
-function PlanReview({ plan }) {
+function PlanReview({ plan, linked = [], onLink }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -779,6 +791,41 @@ function PlanReview({ plan }) {
           Quality decides afterwards.
         </p>
       </div>
+
+      {/* Two lists that are one company. Named, never joined automatically —
+          the matcher refuses a three-character name inside another on purpose,
+          and importing without linking makes a second record for a company
+          already on the register. */}
+      {!!(plan.reconciliation.likely_same || []).length && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm dark:border-blue-900 dark:bg-blue-950/30">
+          <p className="font-medium text-blue-900 dark:text-blue-200">
+            Possibly the same company, in both lists
+          </p>
+          <p className="mt-0.5 text-xs text-blue-900/80 dark:text-blue-200/80">
+            Link the folder name first, or importing files this evidence under a second record.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {plan.reconciliation.likely_same.map(k => (
+              <li key={k.archive_folder} className="flex flex-wrap items-center gap-2 text-xs">
+                <b>{k.on_register}</b>
+                <span className="text-slate-500">on the register ·</span>
+                <code className="rounded bg-white px-1 dark:bg-slate-900">{k.archive_folder}</code>
+                <span className="text-slate-500">in the archive</span>
+                <button type="button" disabled={linked.includes(k.archive_folder)}
+                  onClick={() => onLink?.(k)}
+                  className="rounded border border-blue-400 px-2 py-0.5 text-blue-700 disabled:opacity-40 dark:text-blue-300">
+                  {linked.includes(k.archive_folder) ? 'Linked' : 'Link this name'}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!!linked.length && (
+            <p className="mt-2 text-xs text-blue-900 dark:text-blue-200">
+              {linked.length} linked — press <b>Review</b> again before importing.
+            </p>
+          )}
+        </div>
+      )}
 
       {plan.reconciliation.disagreements.map(d => (
         <section key={d.kind}>

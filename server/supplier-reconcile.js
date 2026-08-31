@@ -145,6 +145,37 @@ export function reconcileSuppliers(sheetRows, archive, opts = {}) {
   vendors.sort((a, b) => (b.issues.length - a.issues.length)
     || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
+  // ── The two buckets that pair up ──────────────────────────────────────────
+  //
+  // "GNT, actively used, no folder" and "Exberry-GNT, folder with no tracker
+  // row" are one company appearing in both lists, and matchStrength refuses to
+  // join them on purpose: a three-character name matching inside another is how
+  // a qualification gets filed against the wrong company, and that refusal is
+  // load-bearing.
+  //
+  // But leaving the pair unremarked is its own wrong answer — importing then
+  // creates a SECOND record for a company already on the register, splitting
+  // its evidence across two rows. So the pairing is offered as a suggestion for
+  // a person to confirm, which is what the rest of this module does with a
+  // match it will not take: named, never applied.
+  const short = (a, b) => {
+    const ka = nameKey(a), kb = nameKey(b);
+    if (!ka || !kb || ka === kb) return false;
+    const [long, brief] = ka.length >= kb.length ? [ka, kb] : [kb, ka];
+    // Below matchStrength's four-character floor — deliberately, since that is
+    // the whole reason these two never paired.
+    return brief.length >= 3 && long.includes(brief);
+  };
+  const activeNoFolder = vendors.filter(v => (v.issues || []).includes('active_with_no_folder'));
+  const folderNoRow = vendors.filter(v => (v.issues || []).includes('folder_with_no_tracker_row'));
+  const likelySame = [];
+  for (const a of activeNoFolder) {
+    for (const f of folderNoRow) {
+      if (!short(a.name, f.name)) continue;
+      likelySame.push({ on_register: a.name, archive_folder: f.name });
+    }
+  }
+
   const disagreements = Object.keys(DISAGREEMENTS).map(k => ({
     kind: k, ...DISAGREEMENTS[k],
     vendors: vendors.filter(v => v.issues.includes(k)).map(v => v.name),
@@ -156,6 +187,7 @@ export function reconcileSuppliers(sheetRows, archive, opts = {}) {
   // goes stale the first time somebody files a questionnaire.
   const active = vendors.filter(v => v.actively_using);
   return {
+    likely_same: likelySame,
     vendors, disagreements,
     counts: {
       vendors: vendors.length,

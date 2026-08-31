@@ -289,7 +289,26 @@ router.post('/import/commit', importUpload.array('files', 2), (req, res) => {
 // of 75 vendors, and the two resolutions that matter are "these two names are
 // one vendor" and "this row is not a vendor at all".
 
-router.post('/:id/link-name', (req, res) => {
+// Link an archive folder spelling to a supplier BY NAME. The import review
+// knows both names and no ids — it is reading a plan, not the register — and
+// making the browser resolve one first is a second lookup that can disagree
+// with the one the server would do.
+router.post('/link-name-by-name', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const target = clean(req.body?.supplier_name, 200);
+  const alias = clean(req.body?.name, 200);
+  if (!target || !alias) return res.status(400).json({ error: 'Both names are required' });
+  const key = (n) => String(n).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const s = db.prepare('SELECT id FROM suppliers').all()
+    .map(r => db.prepare('SELECT * FROM suppliers WHERE id = ?').get(r.id))
+    .find(r => key(r.name) === key(target));
+  if (!s) return res.status(404).json({ error: `${target} is not on the register` });
+  req.params.id = s.id;
+  return linkName(req, res);
+});
+
+function linkName(req, res) {
   if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
   const db = getDb();
   const s = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id);
@@ -319,7 +338,9 @@ router.post('/:id/link-name', (req, res) => {
   // "Exberry-GNT". A name that changes must still resolve on an old record.
   logAudit(req.user, 'supplier_name_linked', 'supplier', s.id, { alias }, null, null, s.name);
   res.json({ ok: true, legacy_names: names });
-});
+}
+
+router.post('/:id/link-name', linkName);
 
 router.put('/:id', (req, res) => {
   if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });

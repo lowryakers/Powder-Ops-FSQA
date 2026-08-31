@@ -356,6 +356,49 @@ console.log('\n── the archive alone is compared against the REGISTER ──'
     (an?.notes || []).some(n => /already on the register/i.test(n)), JSON.stringify(an?.notes));
 }
 
+console.log('\n── one company appearing in both lists ──');
+// GNT is on the register with no folder; the archive folder is Exberry-GNT.
+// matchStrength refuses a three-character name inside another ON PURPOSE, so
+// importing would create a SECOND record and split the evidence.
+{
+  const AdmZip = (await import('adm-zip')).default;
+  const db0 = new Database(process.env.DBPATH);
+  // Names chosen so nothing earlier in this run can already have created them —
+  // the first version of this check used GNT/Exberry-GNT and an earlier section
+  // had already imported the folder, so linking was (correctly) refused as a
+  // merge and the premise never held.
+  db0.prepare("INSERT OR IGNORE INTO suppliers (id, name, actively_using, status) VALUES ('zzq-x','ZZQ',1,'unqualified')").run();
+  db0.close();
+  const z = new AdmZip();
+  z.addFile('Wrap/Alpha-ZZQ/2031/Colour Spec.pdf', Buffer.from('%PDF-1.4 g'));
+  z.addFile('Wrap/Some Other Vendor/2031/Spec.pdf', Buffer.from('%PDF-1.4 h'));
+  const fd = new FormData();
+  fd.append('files', new Blob([z.toBuffer()]), 'pair.zip');
+  const an = await J(await up('/suppliers/import/analyze', fd));
+  const pair = (an?.plan?.reconciliation?.likely_same || [])
+    .find(k => k.archive_folder === 'Alpha-ZZQ');
+  t('THE PAIR IS NAMED, not joined automatically', !!pair && pair.on_register === 'ZZQ',
+    JSON.stringify(an?.plan?.reconciliation?.likely_same || []));
+  t('an unrelated new folder is not paired with anything',
+    !(an?.plan?.reconciliation?.likely_same || []).some(k => k.archive_folder === 'Some Other Vendor'));
+
+  // Linking is the deliberate act; afterwards the folder resolves to GNT.
+  const lk = await req('/suppliers/link-name-by-name', { method: 'POST',
+    body: JSON.stringify({ supplier_name: 'ZZQ', name: 'Alpha-ZZQ' }) });
+  t('linking by name succeeds', lk.status === 200, `${lk.status}`);
+  const fd2 = new FormData();
+  fd2.append('files', new Blob([z.toBuffer()]), 'pair.zip');
+  const an2 = await J(await up('/suppliers/import/analyze', fd2));
+  t('...and the pair is gone from the review',
+    !(an2?.plan?.reconciliation?.likely_same || []).some(k => k.archive_folder === 'Exberry-GNT'));
+  t('...and the folder is no longer unknown',
+    !(an2?.plan?.reconciliation?.vendors || [])
+      .some(v => v.name === 'Exberry-GNT' && (v.issues || []).includes('folder_with_no_tracker_row')));
+  const bad = await req('/suppliers/link-name-by-name', { method: 'POST',
+    body: JSON.stringify({ supplier_name: 'Nobody At All', name: 'x' }) });
+  t('linking to a company not on the register is refused', bad.status === 404, `${bad.status}`);
+}
+
 console.log('\n── permissions ──');
 const anon = await fetch(`${B}/suppliers/files/archive/commit`, { method: 'POST', body: new FormData() });
 t('an unauthenticated archive upload is refused', anon.status === 401 || anon.status === 403, `${anon.status}`);
