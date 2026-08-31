@@ -33,11 +33,17 @@ import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { readTable } from '../tabular.js';
-import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
+import { mediaUpload, cleanupTemp, uploadErrorMessage, MAX_ARCHIVE_BYTES } from '../media.js';
 import { planSupplierImport, applySupplierImport } from '../supplier-import.js';
 import { DISPOSITIONS, RISK_CRITERIA } from '../supplier-sop.js';
-import { readFileSync } from 'fs';
+import { readFileSync, createReadStream, writeFileSync, unlinkSync } from 'fs';
+import { tmpdir } from 'os';
+import { join as joinPath } from 'path';
 import AdmZip from 'adm-zip';
+import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
+import { extractInvoiceText } from '../invoice-text.js';
+import { planArchiveUpload, storageKeyFor, normalizePath } from '../supplier-storage.js';
+import { classifyDocument, expiryFromFilename, readSupplierArchive } from '../supplier-archive.js';
 
 const router = Router();
 
@@ -133,8 +139,11 @@ router.get('/:id', (req, res) => {
     materials: db.prepare('SELECT * FROM supplier_materials WHERE supplier_id = ? ORDER BY item_description').all(s.id),
     qualifications: db.prepare(`SELECT * FROM supplier_qualifications WHERE supplier_id = ?
       ORDER BY IFNULL(period_label, '') DESC`).all(s.id),
-    files: db.prepare(`SELECT id, kind, period_label, expires_on, filename, source_path, lot_number,
-      CASE WHEN expires_on IS NOT NULL AND expires_on < date('now') THEN 1 ELSE 0 END AS expired
+    // `stored` says whether the BYTES are here, which is a different fact from
+    // the row existing. extracted_text is searched, never shipped.
+    files: db.prepare(`SELECT id, kind, period_label, expires_on, filename, source_path, lot_number, size,
+      CASE WHEN expires_on IS NOT NULL AND expires_on < date('now') THEN 1 ELSE 0 END AS expired,
+      CASE WHEN storage_key IS NOT NULL THEN 1 ELSE 0 END AS stored, text_status
       FROM supplier_files WHERE supplier_id = ? ORDER BY period_label DESC, kind, filename`).all(s.id),
   });
 });
@@ -147,7 +156,7 @@ router.get('/:id', (req, res) => {
 // separate preview would compute the same plan twice and invite the two to
 // drift.
 
-const importUpload = mediaUpload(2);
+const importUpload = mediaUpload({ files: 2 });
 
 /** The tracker (xlsx/csv) and the archive (a .zip, or a text listing). */
 function readImportFiles(files) {
@@ -331,6 +340,362 @@ router.post('/:id/disposition', (req, res) => {
   logAudit(req.user, 'supplier_disposition_set', 'supplier', s.id,
     { disposition, period_label }, prev, { status: disposition }, s.name);
   res.json({ ok: true });
+});
+
+// ── The bytes behind the catalogue ──────────────────────────────────────────
+//
+// The import records that a BRC certificate exists, where it was found and
+// when it expires. It stores no bytes, so "show me the certificate" ended at a
+// filename — and a register that can name a document it cannot produce is the
+// same defect as a limit that lives only in a PDF.
+//
+// Three things shape this and none of them is negotiable:
+//
+//  1. THE ARCHIVE IS TOO BIG FOR ONE REQUEST, so re-uploading must be safe.
+//     A file whose bytes are already stored is skipped, and the plan says so
+//     by name — a transfer that dies at 60% is recovered by doing it again,
+//     not by working out what got through.
+//  2. NOTHING IS READ INTO MEMORY. The zip is opened from the temp file multer
+//     already wrote, one entry at a time, and each entry is streamed to R2.
+//     A buffered read of a multi-hundred-megabyte archive is an outage.
+//  3. AN UNMATCHED FILE IS REPORTED, NEVER FILED SOMEWHERE PLAUSIBLE.
+//     supplier-storage.js refuses an ambiguous filename outright.
+
+// The archive is gigabytes, not megabytes. Multer is disk-backed, so this
+// costs temp disk rather than heap — and the 200 MB default silently refused
+// the plant's own folder export, which is what "I couldn't upload the zip"
+// turned out to be.
+const archiveUpload = mediaUpload({ files: 1, maxBytes: MAX_ARCHIVE_BYTES });
+const fileUpload = mediaUpload({ files: 20 });
+
+/** The catalogued rows an archive can attach to. */
+function catalogueRows(db) {
+  return db.prepare(
+    'SELECT id, supplier_id, source_path, filename, storage_key FROM supplier_files'
+  ).all();
+}
+
+/**
+ * Every document in a zip, INCLUDING the ones inside nested zips.
+ *
+ * Ten vendors keep their questionnaire inside a container zip named after a
+ * material, and readImportFiles() above recurses into those when it builds the
+ * catalogue — so a walk that did not recurse here would catalogue a document
+ * and then be unable to attach its bytes. Two walks of one archive that
+ * disagree about what is in it is the defect this whole module is about.
+ *
+ * The nested path is `outer.zip/inner.pdf`, byte for byte what the catalogue
+ * recorded, because both use the same `prefix + entryName` convention.
+ *
+ * `read` is a thunk: nothing is decompressed while merely listing.
+ */
+function walkZip(source, prefix = '') {
+  const out = [];
+  const zip = new AdmZip(source);
+  for (const e of zip.getEntries()) {
+    const p = prefix + e.entryName;
+    if (e.isDirectory) { out.push({ path: p, isDirectory: true, size: 0 }); continue; }
+    if (/\.zip$/i.test(e.entryName)) {
+      // The container itself is a catalogued row in its own right, and it is
+      // also a folder. Record both — a vendor who sent one zip and a vendor who
+      // sent its contents loose must end up with the same documents on file.
+      out.push({ path: p, isDirectory: false, size: e.header?.size || 0, read: () => e.getData() });
+      try { out.push(...walkZip(e.getData(), p + '/')); } catch { /* a corrupt container is not a reason to lose the rest */ }
+      continue;
+    }
+    out.push({ path: p, isDirectory: false, size: e.header?.size || 0, read: () => e.getData() });
+  }
+  return out;
+}
+
+function guessType(filename) {
+  const ext = String(filename || '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  return ({
+    pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', txt: 'text/plain', csv: 'text/csv',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })[ext] || 'application/octet-stream';
+}
+
+/**
+ * Adopt what the zip knows and the listing did not.
+ *
+ * THE ZIP KNOWS MORE THAN THE LISTING DID, and that is not an edge case. The
+ * catalogue is usually built from a text listing produced by `find`, which sees
+ * a container zip as ONE file — so every certificate inside
+ * `Potassium Citrate.zip` is absent from it. Ten vendors keep their
+ * questionnaire that way. Reporting those as "not recognised" would refuse to
+ * store the very documents an auditor asks for, on the grounds that a directory
+ * listing did not mention them.
+ *
+ * Classification goes through readSupplierArchive — THE SAME walker the import
+ * uses — so a document is classified identically whichever door it came in.
+ *
+ * A path whose vendor does not resolve to a supplier already on the register is
+ * still reported and left alone. An unknown vendor is a real gap, and inventing
+ * a supplier row from a folder name would put a company on the register that
+ * nobody approved.
+ *
+ * `write` is what separates the preview from the commit, and it is the ONLY
+ * difference — both call this, so what analyze shows cannot differ from what
+ * commit does.
+ */
+function adoptUnmatched(db, plan, { write = false, actor = null } = {}) {
+  if (!plan.unmatched.length) return plan;
+
+  const byName = new Map();
+  for (const r of db.prepare('SELECT id, name, legacy_names FROM suppliers').all()) {
+    byName.set(r.name.toLowerCase(), r.id);
+    for (const n of JSON.parse(r.legacy_names || '[]')) byName.set(String(n).toLowerCase(), r.id);
+  }
+
+  // TWO CANDIDATE PATHS, and taking only one is wrong in a way that is easy to
+  // miss. A zip of the whole archive has a wrapper folder that must be stripped
+  // before parseArchivePath sees a vendor; a zip of ONE vendor has that
+  // vendor's own folder as its common prefix, and stripping it leaves a path
+  // whose first segment is the YEAR. The parser would then file every
+  // certificate under a supplier called "2025".
+  //
+  // So both forms are walked and whichever resolves to a supplier already on
+  // the register wins — the same two-pass shape matchArchiveFile uses, for the
+  // same reason. Neither resolving means the file is genuinely unrecognised.
+  const esc = (v) => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const relOf = (path) => (plan.prefix
+    ? String(path).replace(new RegExp('^' + esc(plan.prefix) + '/'), '')
+    : String(path));
+  const candidates = plan.unmatched.map(u => ({ u, full: normalizePath(u.path), rel: relOf(normalizePath(u.path)) }));
+  const walked = readSupplierArchive(
+    [...new Set(candidates.flatMap(c => [c.full, c.rel]))], { today: today() });
+  const byRelPath = new Map(walked.files.map(f => [f.source_path, f]));
+
+  const insFile = db.prepare(`INSERT INTO supplier_files
+    (id, supplier_id, kind, period_label, expires_on, filename, source_path, uploaded_by)
+    VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(supplier_id, source_path) DO NOTHING`);
+  const findFile = db.prepare('SELECT id FROM supplier_files WHERE supplier_id = ? AND source_path = ?');
+
+  const stillUnmatched = [];
+  for (const { u, full, rel } of candidates) {
+    let doc = null, supplierId = null, chosen = null;
+    for (const cand of [full, rel]) {
+      const d = byRelPath.get(cand);
+      const id = d && byName.get(String(d.vendor).toLowerCase());
+      if (d && id) { doc = d; supplierId = id; chosen = cand; break; }
+    }
+    if (!doc || !supplierId) { stillUnmatched.push(u); continue; }
+    if (!write) {
+      plan.store.push({ path: u.path, file_id: null, supplier_id: supplierId, how: 'catalogued now', size: u.size || 0 });
+      continue;
+    }
+    insFile.run(uuid(), supplierId, doc.kind, doc.period || null, doc.expires_on || null,
+      doc.filename, chosen, actor);
+    const row = findFile.get(supplierId, chosen);
+    if (row) plan.store.push({ path: u.path, file_id: row.id, supplier_id: supplierId, how: 'catalogued now', size: u.size || 0 });
+    else stillUnmatched.push(u);
+  }
+
+  plan.unmatched = stillUnmatched;
+  plan.counts.store = plan.store.length;
+  plan.counts.unmatched = stillUnmatched.length;
+  plan.counts.adopted = plan.store.filter(x => x.how === 'catalogued now').length;
+  return plan;
+}
+
+// Reviewing an archive WRITES NOTHING and uploads nothing — it opens the zip's
+// index, matches it against the catalogue and hands back the plan. The commit
+// re-plans from the same function, so what is on screen cannot differ from what
+// happens.
+router.post('/files/archive/analyze', archiveUpload.array('files', 1), (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Attaching the archive is admin only' });
+  if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+  try {
+    const f = (req.files || [])[0];
+    if (!f) return res.status(400).json({ error: 'Attach a .zip of the supplier folders' });
+    if (!/\.zip$/i.test(f.originalname)) return res.status(400).json({ error: 'That is not a .zip' });
+    const db = getDb();
+    const plan = adoptUnmatched(db,
+      planArchiveUpload(walkZip(f.path), catalogueRows(db), { replace: req.body?.replace === 'true' }),
+      { write: false });
+    res.json({ plan, filename: f.originalname });
+  } catch (e) {
+    res.status(400).json({ error: uploadErrorMessage(e, MAX_ARCHIVE_BYTES) || e.message });
+  } finally {
+    cleanupTemp(req.files);
+  }
+});
+
+router.post('/files/archive/commit', archiveUpload.array('files', 1), async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Attaching the archive is admin only' });
+  if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+  const db = getDb();
+  const f = (req.files || [])[0];
+  try {
+    if (!f) return res.status(400).json({ error: 'Attach a .zip of the supplier folders' });
+    if (!/\.zip$/i.test(f.originalname)) return res.status(400).json({ error: 'That is not a .zip' });
+
+    // ONE walk, used for both the plan and the bytes — a commit that re-walked
+    // could store something the plan never showed.
+    const entries = walkZip(f.path);
+    const plan = adoptUnmatched(db,
+      planArchiveUpload(entries, catalogueRows(db), { replace: req.body?.replace === 'true' }),
+      { write: true, actor: req.user.name });
+
+    const byPath = new Map();
+    for (const e of entries) if (!e.isDirectory) byPath.set(normalizePath(e.path), e);
+
+    const stamp = db.prepare(`UPDATE supplier_files
+      SET storage_key = ?, content_type = ?, size = ?, extracted_text = ?, text_status = ?, uploaded_by = ?
+      WHERE id = ?`);
+
+    const result = { stored: 0, failed: [], skipped: plan.counts.skip, unmatched: plan.counts.unmatched, bytes: 0 };
+
+    for (const item of plan.store) {
+      const entry = byPath.get(normalizePath(item.path));
+      if (!entry) { result.failed.push({ path: item.path, error: 'entry vanished from the zip' }); continue; }
+      // One temp file per entry, so the bytes go to R2 as a STREAM rather than
+      // sitting in the heap. adm-zip decompresses per entry, which is the
+      // smallest unit available without a second zip library.
+      const tmp = joinPath(tmpdir(), `sup-${item.file_id}`);
+      try {
+        const buf = entry.read();
+        writeFileSync(tmp, buf);
+        const key = storageKeyFor(item.supplier_id, item.file_id, item.path);
+        const type = guessType(item.path);
+        await putStream(key, createReadStream(tmp), type);
+        // Searched, never shipped — the same rule equipment manuals follow.
+        // extractInvoiceText returns a STRING (or '' when a scan has no text
+        // layer), never a wrapper object. Reading `.text` off it silently
+        // discarded every word — check the signature, don't copy a caller.
+        const text = await extractInvoiceText(buf, type, item.path).catch(() => null);
+        stamp.run(key, type, buf.length,
+          text || null, text ? 'ok' : (text === null ? 'failed' : 'empty'),
+          req.user.name, item.file_id);
+        result.stored += 1;
+        result.bytes += buf.length;
+      } catch (e) {
+        result.failed.push({ path: item.path, error: e.message });
+      } finally {
+        try { unlinkSync(tmp); } catch { /* already gone */ }
+      }
+    }
+
+    logAudit(req.user, 'supplier_archive_stored', 'supplier_file', null,
+      { filename: f.originalname, ...result, failed: result.failed.length }, null, null, f.originalname);
+    res.json({ result, plan: { counts: plan.counts, unmatched: plan.unmatched.slice(0, 200) } });
+  } catch (e) {
+    res.status(400).json({ error: uploadErrorMessage(e, MAX_ARCHIVE_BYTES) || e.message });
+  } finally {
+    cleanupTemp(req.files);
+  }
+});
+
+// The manual door: attach documents to ONE supplier. This is how a vendor who
+// emails a questionnaire next week gets it on the record without an archive.
+router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+  const db = getDb();
+  try {
+    const supplier = db.prepare('SELECT id, name FROM suppliers WHERE id = ?').get(req.params.id);
+    if (!supplier) return res.status(404).json({ error: 'No such supplier' });
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: 'Attach at least one file' });
+
+    const ins = db.prepare(`INSERT INTO supplier_files
+      (id, supplier_id, kind, expires_on, filename, storage_key, content_type, size,
+       extracted_text, text_status, source_path, uploaded_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+
+    const saved = [];
+    for (const f of files) {
+      const id = uuid();
+      const type = f.mimetype || guessType(f.originalname);
+      const key = storageKeyFor(supplier.id, id, f.originalname);
+      await putStream(key, createReadStream(f.path), type);
+      const buf = readFileSync(f.path);
+      const text = await extractInvoiceText(buf, type, f.originalname).catch(() => null);   // a string
+      // The kind and the expiry are read from the NAME by the same functions
+      // the archive walk uses, so a file attached by hand is classified the
+      // same way as one that arrived in the zip.
+      ins.run(id, supplier.id, req.body?.kind || classifyDocument(f.originalname) || 'other',
+        req.body?.expires_on || expiryFromFilename(f.originalname) || null,
+        f.originalname, key, type, f.size,
+        text || null, text ? 'ok' : (text === null ? 'failed' : 'empty'),
+        `uploaded/${f.originalname}`, req.user.name);
+      saved.push({ id, filename: f.originalname });
+    }
+    logAudit(req.user, 'supplier_files_added', 'supplier', supplier.id,
+      { count: saved.length, files: saved.map(s => s.filename) }, null, null, supplier.name);
+    res.json({ saved });
+  } catch (e) {
+    res.status(400).json({ error: uploadErrorMessage(e) || e.message });
+  } finally {
+    cleanupTemp(req.files);
+  }
+});
+
+// Downloads go through OUR OWN ORIGIN, not the presigned URL. A browser
+// following a plain <a download> to a different origin ignores the attribute
+// and opens a tab instead — the comms-attachment lesson, and the same reason
+// /uploads needed a cookie.
+router.get('/files/:fileId/download', async (req, res) => {
+  const db = getDb();
+  const f = db.prepare('SELECT id, filename, storage_key, content_type FROM supplier_files WHERE id = ?')
+    .get(req.params.fileId);
+  if (!f || !f.storage_key) return res.status(404).json({ error: 'No stored file' });
+  try {
+    const buf = await getObjectBuffer(f.storage_key);
+    res.setHeader('Content-Type', f.content_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${String(f.filename).replace(/"/g, '')}"`);
+    res.send(buf);
+  } catch {
+    res.status(404).json({ error: 'The stored file could not be read' });
+  }
+});
+
+// A short-lived signed URL, for RENDERING a PDF or an image inline.
+router.get('/files/:fileId/url', async (req, res) => {
+  const db = getDb();
+  const f = db.prepare('SELECT filename, storage_key FROM supplier_files WHERE id = ?').get(req.params.fileId);
+  if (!f || !f.storage_key) return res.status(404).json({ error: 'No stored file' });
+  res.json({ url: await presignGet(f.storage_key, f.filename) });
+});
+
+// Removing the BYTES is not removing the record. The catalogue row survives
+// with its expiry and its provenance — "we held this certificate and it
+// expired" must stay answerable after somebody tidies up a bucket.
+router.delete('/files/:fileId/stored', async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  const db = getDb();
+  const f = db.prepare('SELECT id, supplier_id, filename, storage_key FROM supplier_files WHERE id = ?')
+    .get(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'No such file' });
+  if (f.storage_key) { try { await deleteObject(f.storage_key); } catch { /* already gone */ } }
+  db.prepare('UPDATE supplier_files SET storage_key = NULL, extracted_text = NULL, text_status = NULL WHERE id = ?')
+    .run(f.id);
+  logAudit(req.user, 'supplier_file_bytes_removed', 'supplier_file', f.id,
+    { filename: f.filename }, { storage_key: f.storage_key }, { storage_key: null }, f.filename);
+  res.json({ ok: true });
+});
+
+// What the archive step is FOR: how much of the catalogue actually has a
+// document behind it. Derived on read — a stored count goes stale the moment
+// somebody uploads.
+router.get('/files/coverage', (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`SELECT COUNT(*) AS total,
+      SUM(CASE WHEN storage_key IS NOT NULL THEN 1 ELSE 0 END) AS stored,
+      SUM(CASE WHEN storage_key IS NOT NULL THEN COALESCE(size, 0) ELSE 0 END) AS bytes
+    FROM supplier_files`).get();
+  const gaps = db.prepare(`SELECT s.id, s.name, COUNT(*) AS missing
+    FROM supplier_files f JOIN suppliers s ON s.id = f.supplier_id
+    WHERE f.storage_key IS NULL GROUP BY s.id, s.name ORDER BY missing DESC LIMIT 100`).all();
+  res.json({
+    total: row?.total || 0, stored: row?.stored || 0, bytes: row?.bytes || 0,
+    storage_enabled: storageEnabled(), gaps,
+  });
 });
 
 export default router;

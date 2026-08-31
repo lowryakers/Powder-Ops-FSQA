@@ -10,6 +10,7 @@ import ShowMore from '../common/ShowMore.jsx';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import TextCell from '../common/TextCell.jsx';
 import { formatDate } from '../../lib/datetime';
+import { downloadFile } from '../../lib/downloadFile.js';
 import {
   Building2, Search, AlertTriangle, Upload, Check, X, ShieldCheck,
   CalendarClock, FileWarning, Link2, Loader2,
@@ -203,9 +204,8 @@ export default function SuppliersPanel({ user }) {
               <tbody>
                 {capped.items.map(s => (
                   <Fragment key={s.id}>
-                    <tr {...expand.rowProps(s.id)}
-                      className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
-                      <ExpandCell open={expand.isOpen(s.id)} />
+                    <tr {...expand.rowProps(s.id, 'border-t border-slate-100 dark:border-slate-800')}>
+                      <td className="px-2 py-2"><ExpandCell open={expand.isExpanded(s.id)} /></td>
                       <td className="px-3 py-2 font-medium">
                         {s.name}
                         {!!(s.legacy_names || []).length && (
@@ -226,7 +226,7 @@ export default function SuppliersPanel({ user }) {
                       </td>
                       <td className="px-3 py-2 text-slate-500">{s.next_expiry ? formatDate(s.next_expiry) : '—'}</td>
                     </tr>
-                    {expand.isOpen(s.id) && (
+                    {expand.isExpanded(s.id) && (
                       <DetailRow colSpan={COLUMNS.length}>
                         <SupplierDetail id={s.id} user={user} onDecide={() => setDecide(s)} />
                       </DetailRow>
@@ -241,12 +241,12 @@ export default function SuppliersPanel({ user }) {
               </tbody>
             </table>
           </div>
-          <ShowMore {...capped} />
+          <ShowMore view={capped} noun="suppliers" />
         </>
       )}
 
       {tab === 'attention' && <AttentionTab summary={summary} suppliers={suppliers} onPick={(s) => { setTab('register'); setQ(s.name); }} />}
-      {tab === 'import' && <ImportTab onDone={refresh} />}
+      {tab === 'import' && <><ImportTab onDone={refresh} /><ArchiveStep onDone={refresh} /></>}
 
       {decide && <DispositionModal supplier={decide} data={data} onClose={() => setDecide(null)} onSaved={() => { setDecide(null); refresh(); }} />}
     </div>
@@ -350,7 +350,20 @@ function SupplierDetail({ id, user, onDecide }) {
                   <tr key={f.id} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
                     <td className="px-2 py-1 text-slate-500">{f.period_label || '—'}</td>
                     <td className="px-2 py-1 text-slate-500">{f.kind.replace(/_/g, ' ')}</td>
-                    <td className="px-2 py-1"><TextCell value={f.filename} width={340} lines={1} /></td>
+                    <td className="px-2 py-1">
+                      {f.stored
+                        ? <button type="button" onClick={e => { stopRowClick(e); downloadSupplierFile(f); }}
+                            className="text-left text-blue-600 hover:underline dark:text-blue-400">
+                            <TextCell value={f.filename} width={340} lines={1} />
+                          </button>
+                        : <TextCell value={f.filename} width={340} lines={1} />}
+                    </td>
+                    <td className="px-2 py-1 whitespace-nowrap text-slate-400">
+                      {/* Catalogued and stored are different facts. A row that
+                          named a document ReadyDoc cannot produce would read
+                          exactly like one it can. */}
+                      {f.stored ? '' : 'catalogued only'}
+                    </td>
                     <td className="px-2 py-1 whitespace-nowrap">
                       {f.expires_on
                         ? <span className={f.expired ? 'font-medium text-rose-600 dark:text-rose-400' : 'text-slate-500'}>
@@ -450,6 +463,128 @@ function AttentionTab({ summary, suppliers, onPick }) {
         <p className="text-xs text-slate-400">
           Every figure here is derived on read — nothing on this screen is a stored count.
         </p>
+      )}
+    </div>
+  );
+}
+
+// The download goes through our own origin — a presigned R2 URL is a different
+// origin, where the browser ignores `download` and opens a tab instead.
+const downloadSupplierFile = (f) => downloadFile(`/suppliers/files/${f.id}/download`, f.filename);
+
+// ── Step two: the documents themselves ──────────────────────────────────────
+//
+// The import above catalogues WHAT EXISTS. This attaches the bytes, and the
+// two are deliberately separate steps: the catalogue is built from a listing
+// that takes a second to upload, while the documents are gigabytes and will
+// arrive over several sittings.
+//
+// The property that makes that bearable is that RE-UPLOADING IS SAFE. Anything
+// already stored is skipped by name, so a transfer that dies at 60% is
+// recovered by doing it again — nobody has to work out what got through.
+function ArchiveStep({ onDone }) {
+  const [file, setFile] = useState(null);
+  const [plan, setPlan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [pct, setPct] = useState(0);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(null);
+  const { data: cov, refresh: refreshCov } = useApiGet('/suppliers/files/coverage');
+
+  const send = async (path, setResult) => {
+    if (!file) return setError('Attach a .zip of the supplier folders.');
+    setBusy(true); setError(null); setPct(0);
+    try {
+      const fd = new FormData();
+      fd.append('files', file);
+      const r = await apiUpload(`/suppliers/files/archive/${path}`, fd, 'POST', setPct);
+      setResult(r);
+      refreshCov();
+    } catch (e) { setError(e.message || 'Upload failed'); }
+    finally { setBusy(false); setPct(0); }
+  };
+
+  const off = cov && cov.storage_enabled === false;
+
+  return (
+    <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+      <h3 className="font-semibold">Attach the documents</h3>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+        The step above records that a certificate exists. This puts the file itself behind it, so
+        &ldquo;show me the questionnaire&rdquo; ends in a document rather than a filename.
+      </p>
+
+      {cov && (
+        <p className="mt-2 text-sm">
+          <b className="tabular-nums">{cov.stored}</b> of <b className="tabular-nums">{cov.total}</b> catalogued
+          documents are stored{cov.total ? ` (${Math.round((cov.stored / cov.total) * 100)}%)` : ''}.
+        </p>
+      )}
+
+      {off ? (
+        <p className="mt-3 rounded bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          File storage is not configured on this server, so documents cannot be attached yet.
+          The catalogue still works — this step turns on once storage is set up.
+        </p>
+      ) : (
+        <>
+          <input type="file" accept=".zip" disabled={busy}
+            onChange={e => { setFile(e.target.files?.[0] || null); setPlan(null); setDone(null); }}
+            className="mt-3 block w-full text-sm" />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" disabled={busy || !file}
+              onClick={() => send('analyze', r => setPlan(r.plan))}
+              className="inline-flex items-center gap-1.5 rounded bg-slate-800 px-3 py-1.5 text-sm text-white disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Review the zip
+            </button>
+            {plan && !!plan.counts.store && (
+              <button type="button" disabled={busy}
+                onClick={() => send('commit', r => { setDone(r.result); setPlan(null); onDone?.(); })}
+                className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50">
+                <Upload className="h-4 w-4" /> Store {plan.counts.store} documents
+              </button>
+            )}
+            {busy && pct > 0 && <span className="text-sm tabular-nums text-slate-500">{pct}%</span>}
+          </div>
+        </>
+      )}
+
+      {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
+
+      {plan && (
+        <div className="mt-3 space-y-2 text-sm">
+          <p>
+            <b>{plan.counts.store}</b> to store
+            {plan.counts.skip ? <> · <b>{plan.counts.skip}</b> skipped</> : null}
+            {plan.counts.unmatched ? <> · <b className="text-amber-600">{plan.counts.unmatched}</b> not recognised</> : null}
+          </p>
+          {!!plan.counts.unmatched && (
+            <details className="rounded border border-amber-200 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950/30">
+              {/* Named, never filed somewhere plausible. Attaching a
+                  certificate to the wrong company is worse than not attaching
+                  it — so an unrecognised path is reported and left alone. */}
+              <summary className="cursor-pointer text-amber-900 dark:text-amber-200">
+                {plan.counts.unmatched} files in the zip match no catalogued document
+              </summary>
+              <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto text-xs text-slate-600 dark:text-slate-300">
+                {plan.unmatched.slice(0, 200).map(u => (
+                  <li key={u.path}><code>{u.path}</code> — {u.reason}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+          <p className="text-xs text-slate-500">Reviewing writes nothing and uploads nothing.</p>
+        </div>
+      )}
+
+      {done && (
+        <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900 dark:bg-emerald-950/30">
+          <p><b>{done.stored}</b> documents stored.</p>
+          {!!done.skipped && <p className="text-slate-600 dark:text-slate-300">{done.skipped} skipped (already stored, or not a document).</p>}
+          {!!done.failed?.length && (
+            <p className="text-rose-600">{done.failed.length} failed — run it again; what stored already is skipped.</p>
+          )}
+        </div>
       )}
     </div>
   );

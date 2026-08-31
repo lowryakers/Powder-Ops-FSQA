@@ -47,15 +47,21 @@ fs.mkdirSync(TEMP_DIR, { recursive: true });
 // A disk-backed multer instance. fileSize is the video ceiling because multer
 // enforces one limit for the whole request; per-file rules are applied after
 // the fact by rejectOversize(), which can tell video from everything else.
-export function mediaUpload({ files = 10 } = {}) {
+export function mediaUpload({ files = 10, maxBytes = MAX_VIDEO_BYTES } = {}) {
   return multer({
     storage: multer.diskStorage({
       destination: (_req, _file, cb) => cb(null, TEMP_DIR),
       filename: (_req, file, cb) => cb(null, `${uuid()}${path.extname(file.originalname || '').slice(0, 12)}`),
     }),
-    limits: { fileSize: MAX_VIDEO_BYTES, files },
+    limits: { fileSize: maxBytes, files },
   });
 }
+
+// A whole document archive is not a video and is not a 25 MB attachment — the
+// plant's supplier folders are a few gigabytes, and one vendor's zip is already
+// 28 MB. Multer writes to disk, so a large ceiling costs disk rather than
+// memory. It is opt-in per route, never the default.
+export const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024;
 
 // Enforce the smaller non-video limit. Returns an error message, or null when
 // everything is within bounds.
@@ -78,8 +84,11 @@ export function cleanupTemp(files) {
 
 // Multer signals an over-limit upload with a MulterError rather than a plain
 // throw; translate it into a message a person can act on.
-export function uploadErrorMessage(err) {
-  if (err?.code === 'LIMIT_FILE_SIZE') return `Files must be under ${humanSize(MAX_VIDEO_BYTES)}.`;
+export function uploadErrorMessage(err, maxBytes = MAX_VIDEO_BYTES) {
+  // The ceiling is per ROUTE now (the archive raises it), so a message naming
+  // the video limit on an archive upload would send somebody to split a zip
+  // that was never too big.
+  if (err?.code === 'LIMIT_FILE_SIZE') return `Files must be under ${humanSize(maxBytes)}.`;
   if (err?.code === 'LIMIT_FILE_COUNT') return 'Too many files in one upload.';
   return err?.message || 'Upload failed.';
 }
