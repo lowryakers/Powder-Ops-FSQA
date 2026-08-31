@@ -331,6 +331,31 @@ console.log('\n── undoing a mistaken import ──');
   t('A SUPPLIER WITH STORED EVIDENCE IS REFUSED', refused.status === 409, `${refused.status}`);
 }
 
+console.log('\n── the archive alone is compared against the REGISTER ──');
+// Uploading the archive without the tracker left the tracker side empty, so
+// every folder read as "a vendor the tracker has never heard of" — 72 of them,
+// when 45 were already on the register.
+{
+  const AdmZip = (await import('adm-zip')).default;
+  const db0 = new Database(process.env.DBPATH);
+  const known = db0.prepare("SELECT name FROM suppliers WHERE name LIKE 'AIFI%' OR name LIKE 'Mill Haven%'").all();
+  db0.close();
+  const z = new AdmZip();
+  for (const k of known) z.addFile(`Wrap/${k.name}/2031/Reg ${k.name} Exp. 12.31.2032.pdf`, Buffer.from('%PDF-1.4 r'));
+  z.addFile('Wrap/Totally Unknown Vendor/2031/Spec.pdf', Buffer.from('%PDF-1.4 s'));
+  const fd = new FormData();
+  fd.append('files', new Blob([z.toBuffer()]), 'archive-only.zip');
+  const an = await J(await up('/suppliers/import/analyze', fd));
+  const unknown = (an?.plan?.reconciliation?.vendors || [])
+    .filter(v => v.has_folder && !v.on_tracker).map(v => v.name);
+  t('a vendor already on the register is NOT called unknown',
+    !known.some(k => unknown.includes(k.name)), JSON.stringify(unknown));
+  t('...while a genuinely new folder still is',
+    unknown.includes('Totally Unknown Vendor'), JSON.stringify(unknown));
+  t('the review says what it compared against',
+    (an?.notes || []).some(n => /already on the register/i.test(n)), JSON.stringify(an?.notes));
+}
+
 console.log('\n── permissions ──');
 const anon = await fetch(`${B}/suppliers/files/archive/commit`, { method: 'POST', body: new FormData() });
 t('an unauthenticated archive upload is refused', anon.status === 401 || anon.status === 403, `${anon.status}`);

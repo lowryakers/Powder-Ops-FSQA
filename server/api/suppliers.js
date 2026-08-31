@@ -164,6 +164,34 @@ router.get('/:id', (req, res) => {
 const importUpload = mediaUpload({ files: 2, maxBytes: MAX_ARCHIVE_BYTES });
 
 /** The tracker (xlsx/csv) and the archive (a .zip, or a text listing). */
+/**
+ * The register standing in for the tracker, when no tracker was attached.
+ *
+ * "Folder exists, not on the tracker" means the archive knows a vendor the
+ * spreadsheet does not — a real and useful finding. But uploading the ARCHIVE
+ * ALONE left the tracker side empty, so all 72 folders read as unknown when 45
+ * of them were already on the register. A review that calls a supplier you
+ * imported last week "a vendor the tracker has never heard of" is telling you
+ * something false about your own records, and it is the screen people decide
+ * from.
+ *
+ * The register was built from the tracker and is the accumulated answer, so it
+ * is what the archive should be compared against when the spreadsheet is not in
+ * the room. Shaped as tracker rows rather than taught to the reconciler as a
+ * third kind of input — reconcileSuppliers stays pure and stays a two-sided
+ * comparison.
+ */
+function registerAsTrackerRows(db) {
+  return db.prepare('SELECT name, legacy_names, actively_using FROM suppliers').all()
+    .flatMap(r => [
+      { Vendor: r.name, 'Actively Using': r.actively_using ? '1' : '', Notes: '' },
+      // A vendor may sit on the register under the tracker's spelling while the
+      // archive folder uses another; both must pair.
+      ...JSON.parse(r.legacy_names || '[]').map(n => (
+        { Vendor: n, 'Actively Using': r.actively_using ? '1' : '', Notes: '' })),
+    ]);
+}
+
 function readImportFiles(files) {
   let trackerRows = [], archiveEntries = [], notes = [];
   for (const f of files || []) {
@@ -209,12 +237,17 @@ function readImportFiles(files) {
 router.post('/import/analyze', importUpload.array('files', 2), (req, res) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Import is admin only' });
   try {
+    const db0 = getDb();
     const { trackerRows, archiveEntries, notes } = readImportFiles(req.files);
     if (!trackerRows.length && !archiveEntries.length) {
       return res.status(400).json({ error: 'Attach the supplier tracker, the archive, or both' });
     }
+    const known = trackerRows.length ? trackerRows : registerAsTrackerRows(db0);
+    if (!trackerRows.length && known.length) {
+      notes.push(`No tracker attached — compared against the ${known.length} name(s) already on the register.`);
+    }
     const plan = planSupplierImport({
-      trackerRows, archiveEntries, today: today(),
+      trackerRows: known, archiveEntries, today: today(),
       resolutions: req.body?.resolutions ? JSON.parse(req.body.resolutions) : {},
     });
     // NOTHING WAS WRITTEN. The plan is the review document.
@@ -231,9 +264,12 @@ router.post('/import/commit', importUpload.array('files', 2), (req, res) => {
   try {
     const { trackerRows, archiveEntries } = readImportFiles(req.files);
     // Re-planned from the same inputs and the SAME function analyze used, so
-    // what commits cannot differ from what was reviewed.
+    // what commits cannot differ from what was reviewed — the register fallback
+    // included, or the commit would reconcile against a different tracker side
+    // than the review showed.
     const plan = planSupplierImport({
-      trackerRows, archiveEntries, today: today(),
+      trackerRows: trackerRows.length ? trackerRows : registerAsTrackerRows(getDb()),
+      archiveEntries, today: today(),
       resolutions: req.body?.resolutions ? JSON.parse(req.body.resolutions) : {},
     });
     const result = applySupplierImport(getDb(), plan, {
