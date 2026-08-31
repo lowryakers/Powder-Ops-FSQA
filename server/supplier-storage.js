@@ -39,6 +39,36 @@ export function commonPrefix(paths) {
   return out.join('/');
 }
 
+/**
+ * How much of the front of these paths is the zip's WRAPPER rather than a
+ * vendor folder — the one judgement a zip walk has to make, and the one that
+ * is wrong in two opposite directions if you take the shared prefix literally.
+ *
+ * A zip of the whole archive is `Supplier Qualification Questionnaire/AIFI/…`,
+ * where the first segment must go. A zip of ONE vendor is `AIFI/2025/…`, where
+ * every path shares "AIFI" and stripping it leaves the YEAR standing where the
+ * vendor should be — which files every document under a supplier called 2025.
+ * Commonality alone cannot tell those apart.
+ *
+ * The archive's own shape can: a path is `vendor/year/file` or `vendor/file`,
+ * so the segment left at the front must not be a year and there must be at
+ * least two segments left. Take the longest prefix that satisfies both, which
+ * is nothing at all for a single-vendor zip and the wrapper for a whole-archive
+ * one.
+ */
+const YEAR = /^(19|20)\d{2}$/;
+
+export function archiveRoot(paths) {
+  const lists = (paths || []).map(p => normalizePath(p).split('/')).filter(l => l.length > 1);
+  if (!lists.length) return '';
+  const shared = commonPrefix(paths).split('/').filter(Boolean);
+  for (let n = shared.length; n > 0; n--) {
+    const ok = lists.every(l => l.length - n >= 2 && !YEAR.test(l[n]));
+    if (ok) return shared.slice(0, n).join('/');
+  }
+  return '';
+}
+
 /** Drop `prefix` from the front of `path` when it is there. */
 export function stripPrefix(path, prefix) {
   const p = normalizePath(path);
@@ -144,7 +174,7 @@ export function planArchiveUpload(entries, rows, { replace = false } = {}) {
   // which none of them do. One stray OS artefact silently unmatching an entire
   // archive is exactly the kind of failure this module has to not have.
   const real = (entries || []).filter(e => !isSkippable(e.path, e));
-  const prefix = commonPrefix(real.map(e => e.path));
+  const prefix = archiveRoot(real.map(e => e.path));
 
   const plan = { prefix, store: [], skip: [], unmatched: [] };
   const claimed = new Set();

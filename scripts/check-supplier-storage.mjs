@@ -2,7 +2,7 @@
 // real folders actually produce.
 import {
   normalizePath, commonPrefix, stripPrefix, matchArchiveFile,
-  isSkippable, storageKeyFor, planArchiveUpload,
+  isSkippable, storageKeyFor, planArchiveUpload, archiveRoot,
 } from '../server/supplier-storage.js';
 
 let pass = 0, fail = 0;
@@ -20,6 +20,22 @@ t('no shared root yields none', commonPrefix(['AIFI/a.pdf', 'Mill/b.pdf']) === '
 t('a shared PREFIX of a name is not a shared segment',
   commonPrefix(['Millhaven/a.pdf', 'Mill/b.pdf']) === '', commonPrefix(['Millhaven/a.pdf', 'Mill/b.pdf']));
 t('the filename is never consumed', commonPrefix(['A/x.pdf', 'A/x.pdf']) === 'A');
+
+// The wrapper question: commonality alone cannot tell a download folder from a
+// vendor folder, and getting it wrong files everything under one bogus company
+// or under a year.
+t('a whole-archive zip: the wrapper is stripped',
+  archiveRoot(['Root/AIFI/2025/a.pdf', 'Root/Dawn/2025/b.pdf']) === 'Root');
+t('A SINGLE-VENDOR ZIP IS NOT STRIPPED — the year must not become the vendor',
+  archiveRoot(['AIFI/2025/a.pdf', 'AIFI/2026/b.pdf']) === '',
+  archiveRoot(['AIFI/2025/a.pdf', 'AIFI/2026/b.pdf']));
+t('one vendor under a wrapper still strips exactly the wrapper',
+  archiveRoot(['Root/AIFI/2025/a.pdf', 'Root/AIFI/2026/b.pdf']) === 'Root',
+  archiveRoot(['Root/AIFI/2025/a.pdf', 'Root/AIFI/2026/b.pdf']));
+t('an undated vendor folder is left alone',
+  archiveRoot(['AIFI/a.pdf', 'AIFI/b.pdf']) === '');
+t('nothing shared means nothing stripped',
+  archiveRoot(['AIFI/2025/a.pdf', 'Dawn/2025/b.pdf']) === '');
 t('a flat zip yields no prefix', commonPrefix(['a.pdf', 'b.pdf']) === '');
 t('stripPrefix only strips a whole segment', stripPrefix('Millhaven/a.pdf', 'Mill') === 'Millhaven/a.pdf');
 

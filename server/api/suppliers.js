@@ -43,7 +43,7 @@ import { join as joinPath } from 'path';
 import AdmZip from 'adm-zip';
 import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
-import { planArchiveUpload, storageKeyFor, normalizePath } from '../supplier-storage.js';
+import { planArchiveUpload, storageKeyFor, normalizePath, archiveRoot, stripPrefix } from '../supplier-storage.js';
 import { classifyDocument, expiryFromFilename, readSupplierArchive } from '../supplier-archive.js';
 
 const router = Router();
@@ -157,20 +157,26 @@ router.get('/:id', (req, res) => {
 // separate preview would compute the same plan twice and invite the two to
 // drift.
 
-const importUpload = mediaUpload({ files: 2 });
+// The tracker is a spreadsheet, but readImportFiles also accepts the ARCHIVE
+// as a zip — and that is gigabytes. Same ceiling as the archive step, or the
+// one route that can create the missing vendors refuses the only file that
+// names them.
+const importUpload = mediaUpload({ files: 2, maxBytes: MAX_ARCHIVE_BYTES });
 
 /** The tracker (xlsx/csv) and the archive (a .zip, or a text listing). */
 function readImportFiles(files) {
   let trackerRows = [], archiveEntries = [], notes = [];
   for (const f of files || []) {
-    const buf = readFileSync(f.path);
     if (/\.(xlsx|xlsm|csv|tsv)$/i.test(f.originalname)) {
-      trackerRows = readTable(buf, f.originalname).rows.filter(r => String(r.Vendor ?? '').trim());
+      trackerRows = readTable(readFileSync(f.path), f.originalname).rows.filter(r => String(r.Vendor ?? '').trim());
       notes.push(`${f.originalname}: ${trackerRows.length} tracker rows`);
     } else if (/\.zip$/i.test(f.originalname)) {
       // Recurse into nested zips — the archive keeps material and manufacturer
       // bundles inside the year folders, and a shallow walk would report every
       // one of them as an unexpanded container.
+      // From the PATH, so a multi-gigabyte archive is indexed off disk rather
+      // than read into the heap first. Nested containers still decompress one
+      // at a time, which is the smallest unit adm-zip offers.
       const walk = (b, prefix = '') => {
         for (const e of new AdmZip(b).getEntries()) {
           const p = prefix + e.entryName;
@@ -178,13 +184,22 @@ function readImportFiles(files) {
           if (/\.zip$/i.test(e.entryName) && !e.isDirectory) walk(e.getData(), p + '/');
         }
       };
-      walk(buf);
-      notes.push(`${f.originalname}: ${archiveEntries.length} archive entries`);
+      walk(f.path);
+      // STRIP THE ZIP'S WRAPPER, the same way the archive step does. Without
+      // this the first segment of every path is the folder Drive was told to
+      // download, and readSupplierArchive reads it as the vendor — so a whole
+      // archive imports as ONE supplier named after the download.
+      const root = archiveRoot(archiveEntries);
+      if (root) archiveEntries = archiveEntries.map(p => stripPrefix(p, root));
+      notes.push(`${f.originalname}: ${archiveEntries.length} archive entries`
+        + (root ? ` under "${root}"` : ''));
     } else {
       // A plain listing — one path per line, absolute or relative.
-      const lines = buf.toString('utf8').split(/\r?\n/).filter(Boolean);
-      const common = lines.length ? lines[0].replace(/[^/]*$/, '') : '';
-      archiveEntries.push(...lines.map(l => (common && l.startsWith(common) ? l.slice(common.length) : l)));
+      const lines = readFileSync(f.path).toString('utf8').split(/\r?\n/).filter(Boolean);
+      // The same chooser, rather than a prefix guessed from the first line —
+      // two ways of deciding what the wrapper is, is two answers.
+      const root = archiveRoot(lines);
+      archiveEntries.push(...lines.map(l => stripPrefix(l, root)));
       notes.push(`${f.originalname}: ${lines.length} listed paths`);
     }
   }
@@ -205,7 +220,7 @@ router.post('/import/analyze', importUpload.array('files', 2), (req, res) => {
     // NOTHING WAS WRITTEN. The plan is the review document.
     res.json({ notes, plan });
   } catch (e) {
-    res.status(400).json({ error: uploadErrorMessage(e) || e.message });
+    res.status(400).json({ error: uploadErrorMessage(e, MAX_ARCHIVE_BYTES) || e.message });
   } finally {
     cleanupTemp(req.files);
   }
@@ -226,7 +241,7 @@ router.post('/import/commit', importUpload.array('files', 2), (req, res) => {
     });
     res.json({ result, counts: plan.counts });
   } catch (e) {
-    res.status(400).json({ error: uploadErrorMessage(e) || e.message });
+    res.status(400).json({ error: uploadErrorMessage(e, MAX_ARCHIVE_BYTES) || e.message });
   } finally {
     cleanupTemp(req.files);
   }

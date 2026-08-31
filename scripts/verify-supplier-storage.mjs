@@ -173,6 +173,43 @@ console.log('\n── a Drive zip with a root folder over the vendors ──');
     (w?.plan?.suggestions || []).find(g => g.folder === 'Nowhere Ingredients')?.files === 2);
 }
 
+console.log('\n── the zip in STEP ONE creates the vendors the tracker never had ──');
+// 25 folders on the plant's archive have no supplier row, because step one was
+// run with the spreadsheet alone. The same zip in step one creates them
+// through the normal reconciliation, and then step two matches them.
+{
+  const AdmZip = (await import('adm-zip')).default;
+  const z = new AdmZip();
+  z.addFile('Root/Brand New Vendor Co/2025/Kosher Exp. 12.31.2027.pdf', Buffer.from('%PDF-1.4 n'));
+  z.addFile('Root/Brand New Vendor Co/2025/SDS.pdf', Buffer.from('%PDF-1.4 m'));
+  const before = (await J(await req('/suppliers')))?.suppliers?.length;
+
+  // Step two alone cannot place it — no supplier of that name.
+  const fdA = new FormData();
+  fdA.append('files', new Blob([z.toBuffer()]), 'archive.zip');
+  const only2 = await J(await up('/suppliers/files/archive/analyze', fdA));
+  t('step two alone reports the unknown vendor', only2?.plan?.counts?.store === 0
+    && (only2?.plan?.suggestions || []).some(g => g.folder === 'Brand New Vendor Co'),
+    JSON.stringify(only2?.plan?.suggestions || []));
+
+  // Step one with the SAME zip creates it.
+  const fdB = new FormData();
+  fdB.append('files', new Blob([z.toBuffer()]), 'archive.zip');
+  const imp = await J(await up('/suppliers/import/commit', fdB));
+  const after = (await J(await req('/suppliers')))?.suppliers;
+  t('step one with the zip created the vendor', after.length > before,
+    `${before} → ${after.length}`);
+  const made = after.find(x => x.name === 'Brand New Vendor Co');
+  t('...and it is NOT qualified', !!made && made.status === 'unqualified', made?.status);
+
+  // Now step two places its documents.
+  const fdC = new FormData();
+  fdC.append('files', new Blob([z.toBuffer()]), 'archive.zip');
+  const now2 = await J(await up('/suppliers/files/archive/analyze', fdC));
+  t('step two now recognises the same documents', now2?.plan?.counts?.store === 2,
+    JSON.stringify(now2?.plan?.counts));
+}
+
 console.log('\n── permissions ──');
 const anon = await fetch(`${B}/suppliers/files/archive/commit`, { method: 'POST', body: new FormData() });
 t('an unauthenticated archive upload is refused', anon.status === 401 || anon.status === 403, `${anon.status}`);

@@ -610,8 +610,10 @@ function ArchiveStep({ onDone }) {
                 ))}
               </ul>
               <p className="mt-2 text-xs text-slate-500">
-                Add the supplier, or link this spelling to an existing one, then review again.
-                Nothing is filed against a company that is not on the register.
+                These are companies you hold documents for that are not on the register — which is a
+                finding, not a matching failure. <b>Put this same zip through the step above</b> and it
+                adds them (as unqualified, like every import), then review here again. Nothing is ever
+                filed against a company that is not on the register.
               </p>
             </details>
           )}
