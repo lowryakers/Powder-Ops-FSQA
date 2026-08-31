@@ -1338,6 +1338,39 @@ stopped the month the paper import ended.
 - Verified end to end on the production-scale DB: 21 assertions — all three types file, land on QA's list
   with the right area, keep their readings, and a maintenance PM files nothing.
 
+### Three conditions raise a re-clean, and only one of them is the 72-hour rule
+QA asked how often the 72-hour clean is *scheduled*, because tasks appeared on days that were not the
+designated day. **It is not scheduled at all** — there is no cadence and no PM schedule. It is a condition
+`generateRecleanTasks` re-checks on ordinary page loads (throttled to once per five minutes), so a task
+appears within minutes of a room meeting it, at whatever hour that happens.
+- **`expired_72h`** — a passing clean on record and 72+ hours since it.
+- **`dirty`** — the room was **used in production after its last passing clean**. Fires immediately; no
+  hours involved. This is what makes tasks appear "on the wrong day", and it is correct.
+- **`no_clean_on_record`** — used in production with no passing clean at all. The worst of the three.
+
+**Every one of them was titled `72h Re-clean — Room 7`**, with the real reason buried in the description —
+so a task raised because the room ran yesterday was *labelled* as a 72-hour lapse and the floor reasonably
+read the rule as misfiring. The reason is in the title now: `Re-clean — Room 6 (used since last clean)`,
+`Re-clean — Room 7 (no clean on record)`.
+- **The 72-hour case keeps its old title deliberately.** It is the name the plant knows, it is accurate
+  there, and `closeRecleanTasksFor`'s legacy exact-title match is written against that string — which is
+  now legacy-only, since the other two close through `reclean_actions` as the ATP one always did.
+- **THE PARENTHETICAL MUST NOT CONTAIN PARENTHESES.** `recordAreaForTask()` reads the area back out of a
+  completed task's title with `\([^()]*\)`, and that is the only route from a finished task to the cleaning
+  record it files. Asserted for all three titles.
+- **`shared/reclean-reasons.js` is the one vocabulary** and the wording had grown **four** copies. Two were
+  already wrong: the manual *Assign to Cleaning* button titled the task with the raw room TOKEN
+  (`72h Re-clean — 7`, which is not an instruction) and printed **"idle nullh since last clean"** for a room
+  with no clean at all; and the Sanitation strip described `no_clean_on_record` as "used after last clean",
+  a statement about a clean that does not exist.
+- **`handled` in the Sanitation strip filtered on two of the three statuses**, so a room with no clean on
+  record that had been assigned or dismissed dropped off the list entirely and looked unhandled.
+- The audit detail said `source: 'reclean_72h'` on all three — the same misnaming. It is `source: 'reclean'`
+  with `reason: <status>` now; rows written before this keep the old value.
+- Verified: `npm run check:reclean` builds all three states on a temporary database, runs the real
+  generator, and asserts the titles, the round trip back to the room, the negative control, and idempotence.
+  **The control matters:** restoring the single title makes 3 of the 18 fail.
+
 ### Completing a 72-hour re-clean filed no record either (the third instance)
 Reported as "Zuleika logged a 72-hour cleaning on Thursday and it didn't save, so she had to add it
 manually". **It was a bug, not user error**, and it is the same defect as the two above wearing different

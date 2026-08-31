@@ -5,6 +5,7 @@ import { gradeAtp, applyGrade, atpEscalation } from '../atp-limits.js';
 import { recordGroupFor } from '../qa-records.js';
 import { activeChemicalNames } from '../chemicals.js';
 import { areaLabel } from '../../shared/rooms.js';
+import { recleanTaskText as recleanText } from '../../shared/reclean-reasons.js';
 import { canonicalArea, previewAreaNormalization, NON_PRODUCTION_AREAS } from '../sanitation-areas.js';
 import { canVerifySanitation } from '../qa-signing.js';
 import { recordEditPolicy, mayRevokeSignature } from '../record-permissions.js';
@@ -266,24 +267,19 @@ export function generateRecleanTasks(db) {
   const tx = db.transaction(() => {
     for (const entry of rooms) {
       if (already.get(entry.room, entry.flag_key)) continue;
-      const why = entry.status === 'dirty'
-        ? 'used after its last passed clean'
-        : entry.status === 'no_clean_on_record'
-          // Said plainly rather than dressed as a 72-hour lapse: these are
-          // different problems and the second is worse.
-          ? 'the room has been used in production and there is no passing clean on record'
-          : `idle ${entry.hours_since_clean}h since last clean (72h rule)`;
       const woId = uuid();
       const eq = findEq.get(entry.room, entry.room);
       // The stored area is the Production Log's token ("7"), which is right for
-      // the join and wrong on a task card. `72h Re-clean — 7` is not an
-      // instruction. closeRecleanTasksFor() labels it the same way, so the
-      // clean still finds and closes its own task.
-      const title = `72h Re-clean — ${areaLabel(entry.room)}`;
-      insWo.run(woId, eq?.id || null, title,
-        `${areaLabel(entry.room)} needs a full re-clean before next use: ${why}. Log the clean in Sanitation when done.`, today);
+      // the join and wrong on a task card — `Re-clean — 7` is not an
+      // instruction. recleanTaskText() labels it, and closeRecleanTasksFor()
+      // finds the task through reclean_actions, so the clean still closes it.
+      const { title, description } = recleanText(entry, areaLabel(entry.room));
+      insWo.run(woId, eq?.id || null, title, description, today);
       insAction.run(uuid(), entry.room, entry.flag_key, woId);
-      logAudit('system', 'auto_generate', 'work_order', woId, { room: entry.room, source: 'reclean_72h' }, null, null, title);
+      // `source` used to read 'reclean_72h' on all three, which is the same
+      // misnaming as the title. Rows written before this say the old value.
+      logAudit('system', 'auto_generate', 'work_order', woId,
+        { room: entry.room, source: 'reclean', reason: entry.status }, null, null, title);
       created++;
     }
   });
@@ -354,17 +350,19 @@ router.post('/reclean-assign', (req, res) => {
   if (!entry) return res.status(404).json({ error: 'Room not found' });
   const woId = uuid();
   const today = new Date().toISOString().split('T')[0];
-  const why = entry.status === 'dirty' ? 'used after its last passed clean' : `idle ${entry.hours_since_clean}h since last clean (72h rule)`;
+  // The same words the automatic generator uses. This had its own copy, which
+  // titled the task with the raw room token and printed "idle nullh" for a room
+  // with no clean at all — two screens describing one job differently.
+  const { title, description } = recleanText(entry, areaLabel(entry.room));
   const eq = db.prepare('SELECT id FROM equipment WHERE room = ? OR location = ? LIMIT 1').get(room, room);
   db.prepare(`INSERT INTO work_orders (id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status)
               VALUES (?, ?, ?, ?, 'high', ?, '[]', 'cleaning', 'open')`)
-    .run(woId, eq?.id || null, `72h Re-clean — ${room}`,
-      `Room "${room}" needs a full re-clean before next use: ${why}. Log the clean in Sanitation when done.`, today);
+    .run(woId, eq?.id || null, title, description, today);
   const id = uuid();
   db.prepare(`INSERT INTO reclean_actions (id, room, flag_key, action, work_order_id, created_by, created_by_id)
               VALUES (?, ?, ?, 'assigned', ?, ?, ?)`)
     .run(id, room, entry.flag_key, woId, req.user.name, req.user.id);
-  logAudit(req.user, 'create', 'work_order', woId, { room, source: 'reclean_72h' }, null, null, `72h Re-clean — ${room}`);
+  logAudit(req.user, 'create', 'work_order', woId, { room, source: 'reclean', reason: entry.status }, null, null, title);
   res.status(201).json({ ok: true, work_order_id: woId, rooms: recleanRooms(db) });
 });
 
@@ -608,7 +606,10 @@ function closeRecleanTasksFor(db, area, who, record) {
     // and survives a renamed area label.
     //
     // The title query is kept rather than replaced: any historical task whose
-    // reclean_actions row was lost still closes the way it always did.
+    // reclean_actions row was lost still closes the way it always did. It is
+    // LEGACY ONLY — since the reason moved into the title, only the genuine
+    // 72-hour case is titled this way, and the other two are found through
+    // reclean_actions like the ATP one always was.
     const linked = db.prepare(`SELECT w.id FROM reclean_actions ra
       JOIN work_orders w ON w.id = ra.work_order_id
       WHERE ra.room = ? AND ra.action = 'assigned'

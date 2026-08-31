@@ -10,6 +10,11 @@ import SortHeader from '../common/SortHeader.jsx';
 import ShowMore from '../common/ShowMore.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
 import { areaLabel } from '../../../shared/rooms.js';
+import { recleanReasonLine, RECLEAN_REASONS } from '../../../shared/reclean-reasons.js';
+
+// The three conditions that flag a room. Server-side `needs_attention` is the
+// authority on what is open; this is only for grouping what has been handled.
+const RECLEAN_STATUSES = new Set(Object.keys(RECLEAN_REASONS));
 import FormChip from '../common/FormChip';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
@@ -62,7 +67,10 @@ function RecleanSection() {
 
   const rooms = data?.rooms || [];
   const open = rooms.filter(r => r.needs_attention);
-  const handled = rooms.filter(r => (r.status === 'expired_72h' || r.status === 'dirty') && r.applicable && r.action);
+  // Every FLAGGED status, not two of the three. `no_clean_on_record` was
+  // missing, so a room with no clean that had been assigned or dismissed
+  // dropped off this list altogether and looked like nothing had happened.
+  const handled = rooms.filter(r => RECLEAN_STATUSES.has(r.status) && r.applicable && r.action);
 
   const assign = async (room) => {
     setBusyRoom(room);
@@ -112,7 +120,7 @@ function RecleanSection() {
                 <div className="min-w-[140px] flex-1">
                   <span className="text-sm font-medium text-gray-800">{areaLabel(r.room)}</span>
                   <span className="block text-[11px] text-gray-500">
-                    {r.status === 'expired_72h' ? `idle ${r.hours_since_clean}h since clean (72h rule)` : 'used after last clean'}
+                    {recleanReasonLine(r)}
                   </span>
                 </div>
                 {canManage && (
