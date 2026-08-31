@@ -5,9 +5,10 @@ import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductDataHealth from './ProductDataHealth.jsx';
+import FlavorCodesPanel from './FlavorCodesPanel.jsx';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import {
-  Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope,
+  Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope, Tag,
   FileText,
 } from 'lucide-react';
 
@@ -267,6 +268,10 @@ export default function ProductsPanel() {
   // Same reason as `health`: fetched here so the tab badge and the board it
   // opens are the same number, not two queries that can drift.
   const { data: nfp, refresh: refreshNfp } = useApiGet('/nfp');
+  // The flavours that still owe a code. Derived server-side from the live
+  // catalogue, so it shrinks as decisions are made rather than needing a tick.
+  const { data: flavorCodes } = useApiGet('/products/flavor-codes');
+  const pendingCodes = flavorCodes?.needs_decision?.length || 0;
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const [pack, setPack] = useState('');
@@ -328,7 +333,14 @@ export default function ProductsPanel() {
         // so it is counted live and shrinks as the data is fixed.
         { id: 'health', label: 'Data health', icon: Stethoscope,
           badge: health?.affected || undefined, badgeTone: health?.affected ? 'alert' : undefined },
+        // The register the new SKU standard is built on. Badged with the
+        // flavours that still owe a decision, because those are the ones whose
+        // SKUs cannot be minted.
+        { id: 'flavor-codes', label: 'Flavour codes', icon: Tag,
+          badge: pendingCodes || undefined, badgeTone: pendingCodes ? 'alert' : undefined },
       ]} />
+
+      {view === 'flavor-codes' && <FlavorCodesPanel />}
 
       {view === 'nfp' && <NfpBoard data={nfp} onOpenSku={(s) => { setView('list'); setOpen(s); }}
         canManage={canEdit} onChanged={refreshNfp} />}

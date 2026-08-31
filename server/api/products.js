@@ -11,8 +11,9 @@
 //     function is the contract: renaming a column here breaks proofing there,
 //     silently, because its parser skips headers it does not recognise.
 import { Router } from 'express';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash, timingSafeEqual, randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
+import { resolveFlavorCodes } from '../flavor-codes.js';
 
 const router = Router();
 
@@ -99,6 +100,83 @@ router.get('/specs', (_req, res) => {
 // The handler and its helpers live at the bottom of the file with the rest of
 // the proofing-feed code; only the registration has to be up here.
 router.get('/master.csv', (req, res) => masterCsv(req, res));
+
+/* ── Flavour codes ─────────────────────────────────────────────────────────
+ *
+ * The register that makes `WHY-BTL-BLM` mean one thing. Declared before
+ * `/:sku`, or Express reads "flavor-codes" as a product code.
+ *
+ * Reading is open to the module — anyone minting a SKU needs the code — and
+ * only `canManage` may add one, because these get printed.
+ */
+router.get('/flavor-codes', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM flavor_codes ORDER BY is_active DESC, flavor').all();
+  // The unresolved collisions are DERIVED on read from the live products, never
+  // stored: resolve one by filing its code and this list shortens by itself. A
+  // stored to-do list would go stale the moment somebody acted on it.
+  let pending = [];
+  try {
+    const products = db.prepare('SELECT sku, flavor, base_flavor FROM products').all();
+    // The codes already on file are fed BACK IN, so a collision somebody has
+    // broken stops being reported for the other side of it too.
+    const issued = Object.fromEntries(rows.filter(r => r.is_active).map(r => [r.flavor, r.code]));
+    pending = resolveFlavorCodes(products, { issued }).needs_decision;
+  } catch { /* advisory only */ }
+  res.json({
+    codes: rows.map(r => ({ ...r, is_active: !!r.is_active, legacy_codes: JSON.parse(r.legacy_codes || 'null') })),
+    needs_decision: pending,
+    can_edit: canManage(req.user),
+  });
+});
+
+router.post('/flavor-codes', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can issue a flavour code.' });
+  const db = getDb();
+  const flavor = String(req.body?.flavor || '').trim();
+  const code = String(req.body?.code || '').trim().toUpperCase();
+  if (!flavor) return res.status(400).json({ error: 'A flavour name is required.' });
+  if (!/^[A-Z]{2,4}$/.test(code)) return res.status(400).json({ error: 'A code is two to four letters — it is printed on film.' });
+
+  // BOTH DIRECTIONS ARE REFUSED, and the message says which, because the two
+  // mistakes need different fixes: a flavour that already has a code needs
+  // nobody's attention, while a code already meaning something else needs a
+  // different abbreviation chosen.
+  const byFlavor = db.prepare('SELECT * FROM flavor_codes WHERE flavor = ?').get(flavor);
+  if (byFlavor) {
+    return res.status(409).json({
+      error: `${flavor} already carries "${byFlavor.code}". A code is never changed once issued — it is on film and on every PO. Retire it and issue a new one only as a deliberate rename.`,
+    });
+  }
+  const byCode = db.prepare('SELECT * FROM flavor_codes WHERE code = ?').get(code);
+  if (byCode) {
+    return res.status(409).json({
+      error: `"${code}" is already ${byCode.flavor}${byCode.is_active ? '' : ' (retired — a code is never reissued)'}. Pick a different abbreviation.`,
+    });
+  }
+
+  const id = uuid();
+  db.prepare(`INSERT INTO flavor_codes (id, flavor, code, source, legacy_codes, note, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, flavor, code, req.body?.source === 'new' ? 'new' : 'decided',
+      Array.isArray(req.body?.legacy_codes) && req.body.legacy_codes.length ? JSON.stringify(req.body.legacy_codes) : null,
+      req.body?.note || null, req.user?.name || null);
+  const row = db.prepare('SELECT * FROM flavor_codes WHERE id = ?').get(id);
+  logAudit(req.user, 'create', 'flavor_code', id, { flavor, code }, null, row, `${flavor} → ${code}`);
+  res.status(201).json({ ...row, is_active: !!row.is_active });
+});
+
+// Retired, never deleted, and the code is never reissued — the controlled-form
+// rule. The row staying is what keeps its code out of circulation.
+router.delete('/flavor-codes/:id', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can retire a flavour code.' });
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM flavor_codes WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  db.prepare('UPDATE flavor_codes SET is_active = 0 WHERE id = ?').run(row.id);
+  logAudit(req.user, 'update', 'flavor_code', row.id, { action: 'retired' }, row, null, `${row.flavor} → ${row.code}`);
+  res.json({ ok: true });
+});
 
 /**
  * What is wrong with the catalogue right now.

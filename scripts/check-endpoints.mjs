@@ -67,7 +67,7 @@ const PATHS = [
   '/office/time', '/office/supply/orders', '/finance/ap', '/finance/ar',
   '/partners/documents', '/banking/accounts', '/banking/transactions',
   '/reimbursements', '/pay/employees', '/pay/reviewers', '/newsletter/issues',
-  '/products', '/artwork', '/nfp/versions', '/procurement',
+  '/products', '/products/flavor-codes', '/artwork', '/nfp/versions', '/procurement',
   // comms + structure
   '/comms/channels', '/comms/threads/unread', '/comms/activity/unread',
   '/structure/lists', '/imports/targets', '/integrations',

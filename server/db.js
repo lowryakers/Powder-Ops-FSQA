@@ -2445,6 +2445,37 @@ function runMigrations() {
   // (api/products.js -> GET /master.csv), so a column rename here is a contract
   // change over there.
   db.exec(`
+    -- One flavour, one abbreviation, for the whole plant and every pack.
+    --
+    -- APPEND-ONLY BY CONSTRUCTION: no endpoint updates the code column.
+    -- The code is printed on film with a nine-month lead time and is a join key
+    -- on every PO, so changing one is a rename project (see the SKU rename in
+    -- Product-Management/docs/08), never a field edit. A flavour that must be
+    -- re-coded is retired here and re-added under its new code.
+    --
+    -- UNIQUE on BOTH columns, which is the whole point: a flavour cannot have
+    -- two codes (the pouch/stick drift) and a code cannot mean two flavours
+    -- (CC, CM, SC and VC each did).
+    CREATE TABLE IF NOT EXISTS flavor_codes (
+      id TEXT PRIMARY KEY,
+      flavor TEXT NOT NULL UNIQUE,
+      code TEXT NOT NULL UNIQUE,
+      -- 'derived'  — read off the codes already printed on legacy SKUs
+      -- 'decided'  — a collision a person broke
+      -- 'new'      — a flavour that had no SKU yet
+      source TEXT NOT NULL DEFAULT 'derived',
+      -- What it replaces. Never cleared, the legacy_sku rule: a two-year-old PO
+      -- says BM and has to still resolve to Blueberry Muffin.
+      legacy_codes TEXT,
+      note TEXT,
+      -- Retired, never deleted and NEVER REISSUED — the controlled-form rule.
+      -- A retired row keeps its code out of circulation, which is exactly what
+      -- the UNIQUE index is doing for us.
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS packaging_specs (
       spec_id TEXT PRIMARY KEY,
       name TEXT NOT NULL,

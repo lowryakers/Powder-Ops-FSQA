@@ -416,6 +416,47 @@ whose buttons have nowhere to land is worse than no triage screen.
    real record with a real owner; the captured note becomes its origin and is **never edited**. "I get lost
    after triage" was a correct reading of a screen where nothing was produced.
 
+### The flavour register, and why it had to exist before the bottling line
+`flavor_codes` (append-only) + `server/flavor-codes.js` (pure) + `shared/sku-format.js`. The new standard is
+**`<PROTEIN>-<PACK>-<FLAVOUR>`** — `WHY-BTL-BLM` is whey, bottle, Blueberry Muffin — and putting the flavour
+code in the middle of every SKU means it has to mean exactly one thing across every pack. The legacy shape
+hid the problem: the pack was in the PREFIX (`PP-`/`PSP-`), so a flavour could carry a different
+abbreviation on a pouch than on a stick and nothing ever joined them.
+- **The live catalogue breaks both ways, and it was measured not guessed:** ten flavours carry two codes
+  (Blueberry Muffin is `BLM` on a pouch, `BM` on a stick; Salted Caramel is `SC`, `SCR` *and* `SLC`), and
+  **four codes mean two flavours each** — `CC`, `CM`, `SC` and `VC`. `VC` (Vanilla Cone / Vanilla Cream) was
+  only found by running the resolver over all 118 rows; reading the whey list by eye missed it.
+- **The codes are DERIVED from the SKUs already on film, never re-keyed.** Every one is a code the plant is
+  printing today; a hand-typed list is a list with a typo in it. **57 of 62 flavours resolve automatically.**
+- **THE TIEBREAK IS LENGTH, AND IT IS EVIDENCE, NOT TASTE.** Two letters gives 676 combinations, three gives
+  17,576 — and all four collisions are two-letter codes. So where a flavour carries both a short and a long
+  form the long one wins: it is what somebody already reached for when the short one stopped being
+  distinctive. That frees `CC` for **Cheesecake Crumble**, its one remaining claimant.
+- **WHERE THAT DOES NOT DECIDE, NOTHING IS INVENTED.** Café Mocha vs Chocolate Mousse (both only `CM`),
+  Vanilla Cone vs Vanilla Cream (both only `VC`) and Salted Caramel (`SCR` vs `SLC`, same length) are
+  reported in `needs_decision` with the options laid out. A code chosen by a tiebreak nobody agreed to is a
+  code that gets printed and then argued about. **Those flavours' bottle SKUs cannot be minted until a
+  person decides**, and the screen says so.
+- **`needs_decision` is DERIVED on every read and the issued codes are fed back in**, so breaking the `CM`
+  collision removes *both* sides from the list. A stored to-do list would go stale the moment somebody acted
+  on it, and the first version reported Chocolate Mousse as still contested after Café Mocha had moved —
+  caught by the test.
+- **Append-only by construction: no endpoint updates `code`.** It is on film with a nine-month lead time and
+  is a join key on every PO. Both directions 409 with different messages, because the two mistakes need
+  different fixes. **Retired, never reissued** (the controlled-form rule) — the row staying is what keeps the
+  code out of circulation. `legacy_codes` is never cleared: a two-year-old PO says `BM` and must still
+  resolve.
+- **`SKU_PART` is letters only**, and that is what tells the new shape from the old: allowing digits made
+  `parseSku('PP-BLM-23')` succeed and report the serial `23` as a flavour code.
+- **`SPEC-BOTTLE` is opened with every film field NULL** — a bottle has no trim, gusset or wind direction, and
+  zeros would read as though somebody measured one in millimetres of film. Vendor, cost and closure are named
+  as unknown in `notes` rather than guessed. **A second bottle size gets its own spec**, because one spec is
+  one component, one price tier and one PO — which is why the pouches are already split large/small.
+- **Seed ordering: `seedFlavorCodes` must run AFTER `seedProducts`** — the codes are read off the product
+  rows, and on a fresh database there is nothing to read until the catalogue is in. Same trap as
+  `seedGenericSpecifications`, which filed zero rows when it ran too early.
+- Verified: 32 assertions end to end on a fresh database, plus the resolver run against the real 118 rows.
+
 ### The SKU rename is a separate project, and it is not free
 The new standard is adopted for **new products only**; the existing 118 are untouched. A full cutover is
 costed in `Product-Management/docs/08`. The 3PL has confirmed the expensive half: scanning tolerates either

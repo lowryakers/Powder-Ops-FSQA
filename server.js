@@ -100,6 +100,7 @@ import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api
 import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
+import { seedFlavorCodes, seedBottleSpec } from './server/flavor-code-seed.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedDilutionLog } from './server/dilution-log-seed.js';
@@ -1110,6 +1111,12 @@ try {
   // The finished-goods catalogue. Insert-only and skipped entirely once the
   // table has rows, so a redeploy can never overwrite a corrected GTIN.
   seedProducts();
+  // AFTER seedProducts, always: the flavour codes are DERIVED from the product
+  // rows, so on a fresh database there is nothing to read until the catalogue
+  // is in. Same ordering trap as seedGenericSpecifications, which filed zero
+  // rows when it ran before the COA seed.
+  seedBottleSpec(db);
+  seedFlavorCodes(db);
 
   // Sticks + Hand Fill → Filling. Runs after every seed, because the historical
   // production seed still speaks the pre-merge team names on a fresh database.
