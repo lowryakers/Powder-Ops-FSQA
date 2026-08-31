@@ -31,7 +31,34 @@ invent a new pattern.
 that only meets `main` at the end is the big-bang merge in disguise. Two hard rebases in a row means
 Track B is touching shared code, which is Track A's job — move the change to `main`, don't push through.
 
-**Walked — `docs/v2/preventive-control-walk.md`. Read it before any V2 work.** The first V2 project
+> ### ⚠ THIS SECTION CURRENTLY OVER-CLAIMS. Verified against `main` on 2026-08-31.
+>
+> Much of what follows describes work that exists **only in a Track B session's working tree** — it is
+> on neither `main` nor `origin/claude/v2-foundation`. A fresh session that trusts these lines will look
+> for files that are not there and run a command that does not exist. What is actually on `main`:
+>
+> | Cited below | On `main`? |
+> |---|---|
+> | `server/atp-limits.js`, `AtpLimitHint.jsx`, `sanitation_records.atp_limit` | **yes — shipped** (`6f54afc`) |
+> | `docs/v2/architecture.md`, `docs/v2/decisions.md` | **yes**, but decisions.md stops at **D-012** |
+> | `server/preventive-controls.js`, `ccpDrift()` | **no — does not exist anywhere** |
+> | `docs/v2/preventive-control-walk.md` | **no** |
+> | `docs/v2/obligations.json`, `npm run check:obligations`, OBL-01 / OBL-27 | **no** |
+> | `docs/v2/queued/`, `docs/v2/landed/` | **no** |
+>
+> **Nine decisions are cited here and absent from `decisions.md`: D-013, D-014, D-015, D-016, D-018,
+> D-020, D-021, D-022, D-036.** That is precisely the failure the rule at the top of this section exists
+> to prevent — the reasoning behind them lives in one session's context and dies with it. The summaries
+> below are all that survived, and a summary is not the reasoning. **Whoever owns Track B: land those
+> `D-nnn` entries in `decisions.md` before anything else.** They are not reconstructed here, because
+> inventing a decision record is worse than a missing one.
+>
+> **`origin/claude/v2-foundation` is badly stale** — its last commit is `d3d25bf` and it is roughly
+> 26,000 lines behind `main`. D-016 says Track B rebases weekly; it has not. Rebase it or restart it from
+> `main` before building on it. `server/supplier-sop.js` also cites `preventive-controls.js` in a comment
+> as though it exists.
+
+**Walked (Track B session, NOT in the repo — see the warning above).** The first V2 project
 was a *document* project: Protocol 003 (Food Safety Plan V4) and Protocol 001 (Food Defense Plan V2)
 against "does every preventive control resolve to a program, a form and a record?" (D-002, D-006).
 **The headline: the plan names four preventive controls and none of them resolves to a record in
@@ -45,9 +72,10 @@ and three of the four controls fire per production run), D-015 the open question
 verification is a fourth leg. The plan format question in D-014 is answered: it is a **21 CFR 117
 preventive-controls plan**, though the plant's own documents also say HACCP/CCP.
 
-**The four controls are TRANSCRIBED, never typed** (`server/preventive-controls.js`, D-022) — a critical
-limit editable in a text box is what `scale-forms.js` has always refused. Verbatim from Protocol 003 V4,
-insert-only on the CCP name, `ccpDrift()` reports a stored row that has wandered from the document.
+**The four controls are TRANSCRIBED, never typed** (`server/preventive-controls.js`, D-022 — **NOT IN THE
+REPOSITORY**, design only) — a critical limit editable in a text box is what `scale-forms.js` has always
+refused. Verbatim from Protocol 003 V4, insert-only on the CCP name, `ccpDrift()` reports a stored row that
+has wandered from the document.
 Wording is a faithful draft pending Document Control's check; corrections go in that file, never in the DB.
 **`server/atp-limits.js` grades the ATP reading against PC #1's 35 RLU — SHIPPED** (D-020, D-036; the
 pilot for move 03). Grading is **asymmetric on purpose**: an over-limit reading forces `fail`, an in-limit
@@ -73,18 +101,20 @@ it leaves the record exactly as filed.
   35 because Protocol 003 V4 says so; it cannot say 35 is right for these surfaces and this instrument, and
   that study is QA's, outside ReadyDoc. An app enforcing an unvalidated limit is itself an audit finding.
 
-**`docs/v2/queued/` is work designed but deliberately not landed** (D-018). New construction sits on the
-Track B branch; anything touching live shared code is written out exactly, with its verification results,
-to land on `main` in one pass. **A file moves to `docs/v2/landed/` when it ships** (D-036) — leaving a
-landed item in `queued/` would make that directory mean two things, which is the defect the whole project
-is about. **Landed:** the ATP wiring. **Still queued:** the preventive-control seeder + its
-`api/haccp.js` edit guard, and the DCR for Document Control.
-**`docs/v2/obligations.json` is the single list of what must be true before V2 ships**, and
-`npm run check:obligations` (part of `npm run check`) fails if a finding in any of those documents is
-unclaimed, claimed twice, or cited but non-existent — so nothing found can be quietly forgotten.
-**Split an obligation rather than marking it done when only part of it landed**: OBL-01 shipped the grading
-and left the limit's validation to OBL-27, because an obligation half-discharged and marked done is worse
-than one still open.
+**The intended `queued/` → `landed/` convention (D-018, D-036 — the directories DO NOT EXIST on `main`).**
+New construction sits on the Track B branch; anything touching live shared code is written out exactly,
+with its verification results, to land on `main` in one pass. A file moves from `docs/v2/queued/` to
+`docs/v2/landed/` when it ships — leaving a landed item in `queued/` would make that directory mean two
+things, which is the defect the whole project is about. **Landed:** the ATP wiring (this one is genuinely
+on `main`). **Still designed-only:** the preventive-control seeder + its `api/haccp.js` edit guard, and the
+DCR for Document Control.
+**`docs/v2/obligations.json` and `npm run check:obligations` are DESIGNED, NOT BUILT** — neither the file
+nor the script exists, and `npm run check` does not reference them, so **nothing is currently enforcing
+that a finding cannot be forgotten**. The intent: one list of what must be true before V2 ships, with the
+check failing if a finding is unclaimed, claimed twice, or cited but non-existent. **Split an obligation
+rather than marking it done when only part of it landed** — OBL-01 was to cover the grading and OBL-27 the
+limit's validation, because an obligation half-discharged and marked done is worse than one still open.
+Until this is built, the ATP limit's missing validation study is tracked **only** by the paragraph above.
 
 **Where the preventive-control records actually are (D-021):** on **paper**, logged in MRPEasy — none of
 the seven `where: keychain` forms is producing anything yet. `where` in `form-registry.js` conflates
