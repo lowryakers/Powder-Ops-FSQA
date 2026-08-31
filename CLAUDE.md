@@ -485,6 +485,16 @@ abbreviation on a pouch than on a stick and nothing ever joined them.
   `GFF-PSM-NAT`. `FLAVOURLESS_LINES` is an explicit list rather than an inference from a missing code,
   because "has no flavour" and "nobody issued its code yet" are different facts and collapsing them hides a
   real gap. `parseSku` accepts two or three parts.
+- **Two beef codes were derived from SKUs minted under SUPERSEDED NAMES**, so the derivation was faithful
+  to the SKU and wrong about the product: `HBF-CHU` was issued when Cinnamon Sugar was going to be Churro,
+  `HBF-DDL` when Toffee Cream was going to be Dulce de Leche. They are **CSG** and **TFC** now (`TC` was
+  unavailable — it is Toasted Coconut); the legacy SKUs keep CHU/DDL because those are on film, carried in
+  `legacy_codes`.
+- **CORRECTING A DERIVATION IS NOT CHANGING AN ISSUED CODE, and `source` is the difference.** The seeder may
+  move a `source = 'derived'` row when a `DECIDED` entry names that flavour — nothing is printed in the new
+  format yet, so no such code is in circulation. A row a PERSON decided is **never** touched: it is reported
+  at boot and left alone. Proven by hand-setting Cinnamon Sugar to CNS, redeploying, and watching the
+  seeder refuse. Once the first new-format SKU is minted the register is frozen and this stops being safe.
 - **A trailing serial is stripped from a legacy code** (`POC-AC1` → `AC`). Reading the whole thing rejected
   all three oatmeal cups, so those flavours had no code at all — and stripping it **surfaced a real
   collision that had been invisible**: Cinnamon Spice (`CS3`, oatmeal) against Cinnamon Swirl (`CS`,

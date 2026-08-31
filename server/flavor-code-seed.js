@@ -100,6 +100,21 @@ const DECIDED = [
     note: 'Daily Recharge\'s flavour. The rows previously carried the product name '
       + 'in the flavour field, which is why it had no code.',
   },
+  // TWO BEEF CODES WERE DERIVED FROM SKUs MINTED UNDER SUPERSEDED NAMES. The
+  // derivation was faithful to the SKU and wrong about the product: HBF-CHU was
+  // issued when Cinnamon Sugar was going to be called Churro, and HBF-DDL when
+  // Toffee Cream was going to be Dulce de Leche. The legacy SKUs keep those
+  // codes — they are on film — and the new standard uses the current names.
+  {
+    flavor: 'Cinnamon Sugar', code: 'CSG', legacy: ['CHU'],
+    note: 'CHU was Churro, the name this flavour was going to have when HBF-CHU was '
+      + 'issued. CSG fits the cinnamon family (CS Swirl, CSP Spice, CRL Roll).',
+  },
+  {
+    flavor: 'Toffee Cream', code: 'TFC', legacy: ['DDL'],
+    note: 'DDL was Dulce de Leche, the name this flavour was going to have when '
+      + 'HBF-DDL was issued. TC was unavailable — it is Toasted Coconut.',
+  },
 ];
 
 /**
@@ -133,18 +148,57 @@ export function seedFlavorCodes(db) {
   ).all();
   if (!rows.length) return { skipped: 'no products yet' };
 
-  const seen = db.prepare('SELECT 1 FROM flavor_codes WHERE flavor = ? OR code = ?');
+  const byFlavor = db.prepare('SELECT * FROM flavor_codes WHERE flavor = ?');
+  const byCode = db.prepare('SELECT * FROM flavor_codes WHERE code = ?');
   const insDecided = db.prepare(`INSERT INTO flavor_codes (id, flavor, code, source, legacy_codes, note, created_by)
     VALUES (?, ?, ?, 'decided', ?, ?, 'seed')`);
-  let decided = 0;
+  const updDecided = db.prepare(`UPDATE flavor_codes
+    SET code = ?, source = 'decided', legacy_codes = ?, note = ? WHERE id = ?`);
+  let decided = 0, corrected = 0;
   db.transaction(() => {
     for (const d of DECIDED) {
-      if (seen.get(d.flavor, d.code)) continue;
-      insDecided.run(uuid(), d.flavor, d.code, JSON.stringify(d.legacy), d.note);
-      decided++;
+      const existing = byFlavor.get(d.flavor);
+      if (!existing) {
+        // A different flavour already holds this code — refuse rather than
+        // collide. Nothing is issued twice, ever.
+        if (byCode.get(d.code)) {
+          console.warn(`[seed] Flavour codes: "${d.code}" for ${d.flavor} is held by ${byCode.get(d.code).flavor} — skipped`);
+          continue;
+        }
+        insDecided.run(uuid(), d.flavor, d.code, JSON.stringify(d.legacy), d.note);
+        decided++;
+        continue;
+      }
+      if (existing.code === d.code) continue; // already as decided
+
+      // CORRECTING A DERIVATION IS NOT CHANGING AN ISSUED CODE, and the
+      // difference is `source`. A DERIVED row was read off a legacy SKU by this
+      // seeder — and a SKU minted under a name the flavour no longer has gives a
+      // faithful reading of the wrong thing (HBF-CHU was Churro before the
+      // flavour became Cinnamon Sugar). Nothing is printed in the new format
+      // yet, so no such code is in circulation.
+      //
+      // A row a PERSON decided or added is never touched here; it is reported
+      // and left alone. That is what keeps the append-only guarantee real —
+      // this is the register still being established, not a rename.
+      if (existing.source !== 'derived') {
+        console.warn(`[seed] Flavour codes: ${d.flavor} is ${existing.code} by decision, not ${d.code} — left alone`);
+        continue;
+      }
+      const clash = byCode.get(d.code);
+      if (clash && clash.flavor !== d.flavor) {
+        console.warn(`[seed] Flavour codes: cannot move ${d.flavor} to "${d.code}" — held by ${clash.flavor}`);
+        continue;
+      }
+      // The superseded code travels with the row, so a legacy SKU still resolves.
+      const legacy = [...new Set([...(d.legacy || []), existing.code,
+        ...(JSON.parse(existing.legacy_codes || '[]') || [])])].filter(c => c !== d.code);
+      updDecided.run(d.code, JSON.stringify(legacy), d.note, existing.id);
+      corrected++;
     }
   })();
   if (decided) console.log(`[seed] Flavour codes: filed ${decided} decided collision-break(s)`);
+  if (corrected) console.log(`[seed] Flavour codes: corrected ${corrected} derived code(s) read from a superseded flavour name`);
 
   // The codes now on file are fed back in, so the flavours those decisions
   // freed (Chocolate Mousse on CM, Vanilla Cone on VC) resolve by themselves.
