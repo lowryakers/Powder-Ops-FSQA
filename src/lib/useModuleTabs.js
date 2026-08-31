@@ -45,6 +45,21 @@ export function useModuleTabs({ id, tabs, user, initial = null }) {
   const valid = tab && shown.some(t => t.id === tab);
   const current = valid ? tab : (shown[0]?.id ?? null);
 
+  // A strip that renders buttons but resolves to no tab is ALWAYS a bug, and it
+  // fails silently: every pane is gated on `tab === '…'`, so the module comes up
+  // with a header, a row of dead buttons and nothing under them. That is exactly
+  // what a tab defined with `value:` instead of `id:` does — ModuleTabs then
+  // calls onChange(undefined) too, so clicking cannot recover it either.
+  // Say so loudly in development rather than leaving it to be reported as
+  // "the button isn't clickable".
+  if (import.meta.env?.DEV && shown.length > 0 && current === null) {
+    const bad = shown.filter(t => !t.id).length;
+    console.error(
+      `useModuleTabs(${id || '?'}): ${shown.length} visible tabs but none resolved` +
+      (bad ? ` — ${bad} of them have no \`id\` (a tab is keyed on \`id\`, not \`value\`).` : '.')
+    );
+  }
+
   // Spend the deep link once it has actually landed, so navigating away and
   // back doesn't keep dragging you to the linked tab.
   useEffect(() => { consumeParam('view'); }, []);

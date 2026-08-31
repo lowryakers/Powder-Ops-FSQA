@@ -81,10 +81,10 @@ export default function SuppliersPanel({ user }) {
   const { tabs, tab, setTab } = useModuleTabs({
     id: 'suppliers', user,
     tabs: [
-      { value: 'register', label: 'Register' },
-      { value: 'attention', label: 'Needs attention',
+      { id: 'register', label: 'Register' },
+      { id: 'attention', label: 'Needs attention',
         badge: data?.summary?.buying_without_qualification || undefined, badgeTone: 'alert' },
-      { value: 'import', label: 'Import', visible: (u) => u?.role === 'admin' },
+      { id: 'import', label: 'Import', visible: (u) => u?.role === 'admin' },
     ],
   });
 
@@ -107,7 +107,13 @@ export default function SuppliersPanel({ user }) {
   }, [suppliers, q, only]);
 
   // Sort BEFORE the render cap, or only the hundred rows on screen get ordered.
-  const sorted = useTableSort(filtered, COLUMNS, { key: 'name', dir: 'asc' });
+  // useTableSort takes the initial key and direction POSITIONALLY and returns
+  // { sorted, sortCol, sortDir, toggleSort } — passing an options object left
+  // the table unsorted, and assigning the whole result to `sorted` handed
+  // useCappedList an object, whose `.items` is not an array. The register
+  // crashed on render; nothing caught it because the dead tab strip meant
+  // this pane never mounted.
+  const { sorted, sortCol, sortDir, toggleSort } = useTableSort(filtered, COLUMNS, 'name', 'asc');
   const capped = useCappedList(sorted);
 
   if (loading && !data) {
@@ -190,7 +196,8 @@ export default function SuppliersPanel({ user }) {
             <table className="w-full min-w-[720px] text-sm">
               <thead className="bg-slate-50 dark:bg-slate-800">
                 <tr>{COLUMNS.map((c, i) => (
-                  <SortHeader key={c.key || `c${i}`} column={c} sort={sorted.sort} className={c.className} />
+                  <SortHeader key={c.key || `c${i}`} col={c}
+                    sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} className={c.className} />
                 ))}</tr>
               </thead>
               <tbody>
