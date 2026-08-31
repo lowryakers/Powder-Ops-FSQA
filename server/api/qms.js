@@ -393,7 +393,11 @@ router.post('/flavor_approval/:id/send', async (req, res) => {
     db.prepare("UPDATE qms_records SET data = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(data), row.id);
   }
   const link = `${readyDocOrigin()}/approve/${data.approval_token}`;
-  const summary = [data.product_name, data.lot_number && `Lot ${data.lot_number}`, data.work_order && `WO ${data.work_order}`].filter(Boolean).join(' · ');
+  // Comma-separated, not " · ": the middle dot is outside GSM-03.38 and on its
+  // own forces the whole text message to 16-bit encoding, which more than
+  // halves how much fits in a segment. sendSms() would transliterate it anyway
+  // — it is written plainly here so the composed string reads as what is sent.
+  const summary = [data.product_name, data.lot_number && `Lot ${data.lot_number}`, data.work_order && `WO ${data.work_order}`].filter(Boolean).join(', ');
   // WHO IT GOES TO IS CHOSEN AT SEND TIME.
   //
   // It used to be one number in an env var, so the only way to text a second
@@ -414,7 +418,10 @@ router.post('/flavor_approval/:id/send', async (req, res) => {
       // on recurring traffic, and it costs the reader nothing. The reply
       // keywords keep the approver in Messages — the link stays for anyone
       // who prefers a screen with the batch details on it.
-      await sendSms(to, `Powder Ops — flavor approval needed: ${summary}. Tap to approve or deny: ${link} Or just reply "Approve ${row.record_number}" or "Deny ${row.record_number}". ${OPT_OUT_LINE}`);
+      // Plain ASCII, deliberately. This message carries a link, and a long
+      // multi-segment text containing a URL is what carriers filter — see the
+      // encoding note in sms.js. Measured: 4 segments before, 2 after.
+      await sendSms(to, `Powder Ops flavor approval: ${summary}. Approve or deny: ${link} Or reply "Approve ${row.record_number}" or "Deny ${row.record_number}". ${OPT_OUT_LINE}`);
       texted = true;
       // The number is recorded ON THE RECORD, not only in the audit log: the
       // reply-by-text path must verify the decision comes from the number the

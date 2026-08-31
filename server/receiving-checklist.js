@@ -46,6 +46,17 @@ export const NOTIFY_TARGETS = {
     fallbackDepartments: ['qa'],
     subject: 'QA inspection needed on a receipt',
   },
+  // Raised by the ARRIVAL of an item on QA's standing lab-test list, not by an
+  // answer on the checklist — so it has no `notify` line on any question. It
+  // reaches the same people as the other QA escalations; only the subject
+  // differs, because "pull a sample off this pallet" and "we may have received
+  // contaminated product" should not read the same on a phone.
+  qa_lab_test: {
+    label: 'Adam and Maria',
+    names: ['Adam', 'Maria'],
+    fallbackDepartments: ['qa'],
+    subject: 'Lab sample due on a receipt',
+  },
   purchasing: {
     label: 'Jake (Purchasing)',
     // Jake Waits is the procurement manager (user's routing decision,

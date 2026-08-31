@@ -5,6 +5,7 @@ import {
   FileCheck2, Clock, AlertTriangle,
 } from 'lucide-react';
 import { PRODUCTION_TEAMS as TEAMS, CLEAN_SCOPE } from '../../constants/productionLines';
+import { CLEAN_LEVELS, swabsExpected } from '../../../shared/clean-levels.js';
 
 // The running day — what Bernardo was keeping in his phone.
 //
@@ -90,8 +91,14 @@ function ItemSheet({ kind, initial, moOptions, rooms = [], defaultRoom = '', onC
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
                 <span className="block text-[11px] text-gray-600 mb-0.5">Level</span>
-                <select value={d.level} onChange={e => set('level', e.target.value)} className={cls}>
-                  <option>Full Clean</option><option>Partial Clean</option>
+                <select value={d.level} className={cls}
+                  onChange={e => {
+                    set('level', e.target.value);
+                    // A level that takes no swab must not carry a tick made
+                    // under the previous one.
+                    if (swabsExpected(e.target.value) === 'none') { set('atp_swab', false); set('allergen_swab', false); }
+                  }}>
+                  {CLEAN_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
                 </select>
               </label>
               <label className="block">
@@ -114,12 +121,18 @@ function ItemSheet({ kind, initial, moOptions, rooms = [], defaultRoom = '', onC
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-4">
-              <label className="flex items-center gap-1.5 text-xs text-gray-700">
-                <input type="checkbox" checked={!!d.atp_swab} onChange={e => set('atp_swab', e.target.checked)} /> ATP swab
-              </label>
-              <label className="flex items-center gap-1.5 text-xs text-gray-700">
-                <input type="checkbox" checked={!!d.allergen_swab} onChange={e => set('allergen_swab', e.target.checked)} /> Allergen swab
-              </label>
+              {/* Not asked for on a level that does not call for one — two
+                  unticked boxes read as work skipped. */}
+              {swabsExpected(d.level) === 'none' ? (
+                <span className="text-xs text-gray-500 italic">No swab on this level.</span>
+              ) : (<>
+                <label className="flex items-center gap-1.5 text-xs text-gray-700">
+                  <input type="checkbox" checked={!!d.atp_swab} onChange={e => set('atp_swab', e.target.checked)} /> ATP swab
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-700">
+                  <input type="checkbox" checked={!!d.allergen_swab} onChange={e => set('allergen_swab', e.target.checked)} /> Allergen swab
+                </label>
+              </>)}
             </div>
           </>)}
 
@@ -235,7 +248,8 @@ function ItemRow({ item, onEdit, onRemove }) {
   const body = item.kind === 'note' ? d.note
     : item.kind === 'clean'
       ? [d.level, d.room, d.scope?.join(', '), d.sifter_no && `Sifter ${d.sifter_no}`,
-        [d.atp_swab && 'ATP', d.allergen_swab && 'Allergen'].filter(Boolean).join(' + ') || null,
+        [d.atp_swab && 'ATP', d.allergen_swab && 'Allergen'].filter(Boolean).join(' + ')
+          || (swabsExpected(d.level) === 'none' ? 'no swab on this level' : null),
         d.mo_number && `for ${d.mo_number}`].filter(Boolean).join(' · ')
       : [d.mo_number, d.room, d.lot_number && `Lot ${d.lot_number}`, d.product_name,
         d.work_stages?.length && `${d.work_stages.join(', ')}${d.portion ? ` ${d.portion}` : ''}`,

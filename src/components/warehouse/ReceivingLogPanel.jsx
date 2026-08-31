@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, Fragment } from 'react';
-import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 import {
   PackageCheck, Plus, ClipboardList, Search, Filter, Pencil,
   CheckCircle, Clock, AlertTriangle, ChevronUp, ChevronDown, ExternalLink, Upload, ClipboardCheck,
-  ScanLine,
+  ScanLine, FlaskConical,
 } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
@@ -23,6 +23,150 @@ import { getParam, consumeParam } from '../../lib/deepLink';
 // Log Builder rather than asking for a deploy.
 
 const SCOPE = 'receiving_log';
+
+// ── QA's standing lab-test list ──────────────────────────────────────────────
+//
+// The items that must have a sample pulled whenever they arrive. QA keeps this;
+// the warehouse can read it, because a receiver whose line raised an alert
+// should be able to see the rule that raised it rather than wondering why their
+// phone buzzed.
+//
+// Adding an item here is a QA decision that fires automatically forever after,
+// so the screen says what it will do in plain words rather than leaving it to
+// be discovered on the next delivery.
+function LabTestItemsTab() {
+  const { data, refresh } = useApiGet('/receiving/lab-test-items');
+  const [form, setForm] = useState({ part_number: '', part_description: '', tests: '', note: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const items = data?.items || [];
+  const canEdit = !!data?.can_edit;
+  const active = items.filter(i => i.is_active);
+  const retired = items.filter(i => !i.is_active);
+
+  const add = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      await apiPost('/receiving/lab-test-items', form);
+      setForm({ part_number: '', part_description: '', tests: '', note: '' });
+      refresh();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+
+  const retire = async (id) => {
+    setError(null);
+    try { await apiDelete(`/receiving/lab-test-items/${id}`); refresh(); }
+    catch (err) { setError(err.message); }
+  };
+
+  const cls = 'w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm';
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+          <FlaskConical size={17} className="text-purple-600" /> Items that need a lab test on arrival
+        </h3>
+        <p className="text-sm text-gray-600 mt-1">
+          When one of these is filed on the Receiving Log, QA is messaged straight away so the sample
+          can be pulled before the pallet is put away. Matched on the <strong>part #</strong>.
+        </p>
+        {!canEdit && (
+          <p className="text-xs text-gray-500 mt-2 italic">
+            Read-only — QA decides what is on this list.
+          </p>
+        )}
+      </div>
+
+      {canEdit && (
+        <form onSubmit={add} className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="block">
+              <span className="block text-[11px] text-gray-600 mb-0.5">Part # <span className="text-red-500">*</span></span>
+              <input value={form.part_number} required className={cls} placeholder="RM-WHEY-01"
+                onChange={e => setForm(f => ({ ...f, part_number: e.target.value }))} />
+            </label>
+            <label className="block">
+              <span className="block text-[11px] text-gray-600 mb-0.5">Description</span>
+              <input value={form.part_description} className={cls} placeholder="Whey Protein Isolate"
+                onChange={e => setForm(f => ({ ...f, part_description: e.target.value }))} />
+            </label>
+            <label className="block">
+              <span className="block text-[11px] text-gray-600 mb-0.5">Tests to run</span>
+              {/* Free text on purpose: "HM & Micro" is how QA writes it and how
+                  1,150 of the real COA requests are written. A picker here
+                  would quietly expand a panel into named tests. */}
+              <input value={form.tests} className={cls} placeholder="HM &amp; Micro"
+                onChange={e => setForm(f => ({ ...f, tests: e.target.value }))} />
+            </label>
+            <label className="block">
+              <span className="block text-[11px] text-gray-600 mb-0.5">Note (optional)</span>
+              <input value={form.note} className={cls} placeholder="Every lot — supplier on watch"
+                onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+            </label>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button type="submit" disabled={busy || !form.part_number.trim()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            <Plus size={14} /> {busy ? 'Adding…' : 'Add to the list'}
+          </button>
+        </form>
+      )}
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-semibold text-gray-700">
+          On the list ({active.length})
+        </div>
+        {active.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-gray-500 text-center">
+            Nothing on the list yet — no receipt will raise a lab request until an item is added.
+          </p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {active.map(i => (
+              <li key={i.id} className="px-4 py-2.5 flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-gray-900">{i.part_number}</span>
+                  {i.part_description && <span className="text-gray-600"> — {i.part_description}</span>}
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {i.tests ? <>Tests: {i.tests}</> : <span className="italic">No tests named</span>}
+                    {i.note && <> · {i.note}</>}
+                  </div>
+                </div>
+                {canEdit && (
+                  <button type="button" onClick={() => retire(i.id)}
+                    className="shrink-0 text-xs font-medium text-gray-500 hover:text-red-600">
+                    Take off the list
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {retired.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-semibold text-gray-500">
+            Taken off the list ({retired.length})
+          </div>
+          {/* Kept visible rather than deleted: a receipt filed in March says a
+              lab sample was due, and the rule that made it due has to still be
+              readable. Adding the code again puts it back. */}
+          <ul className="divide-y divide-gray-100">
+            {retired.map(i => (
+              <li key={i.id} className="px-4 py-2 text-sm text-gray-500">
+                <span className="line-through">{i.part_number}</span>
+                {i.part_description && <span> — {i.part_description}</span>}
+                <span className="text-xs"> · no longer raises a request</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const fmtDate = (d) => {
   if (!d) return '';
@@ -464,7 +608,18 @@ function ReceivingTable({ user }) {
                       <td className="px-3 py-2 text-sm text-gray-900 whitespace-nowrap">{fmtDate(r.date_received)}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{r.po_number}</td>
                       <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{r.part_number}</td>
-                      <td className="px-3 py-2 text-sm text-gray-700 min-w-[200px]">{r.part_description}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700 min-w-[200px]">
+                        {r.part_description}
+                        {/* The receipt says a sample was due off this pallet.
+                            On the row, not only in the detail panel: it is the
+                            thing somebody scanning the log is looking for. */}
+                        {r.lab_test_required && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 text-[10px] font-semibold whitespace-nowrap"
+                            title={r.lab_test_notified_to ? `QA notified: ${r.lab_test_notified_to}` : 'QA could not be reached'}>
+                            LAB
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{r.vendor_lot}</td>
                       <td className="px-3 py-2 text-sm whitespace-nowrap">
                         {fmtDate(r.expiration_date)}
@@ -509,6 +664,16 @@ function ReceivingTable({ user }) {
                           { label: 'Status of release', value: r.status_of_release },
                           { label: 'Release date', value: fmtDate(r.release_date) },
                           { label: 'In MRPEasy', value: `Part ${r.part_in_mrp ? 'yes' : 'no'} · Receipt ${r.received_in_mrp ? 'yes' : 'no'}` },
+                          // Says WHO was told and WHEN, or says plainly that
+                          // nobody was reached — "lab sample due" with nothing
+                          // behind it would be worse than no line at all.
+                          ...(r.lab_test_required ? [{
+                            label: 'Lab sample',
+                            value: r.lab_test_notified_at
+                              ? `Due — QA notified ${fmtDate(r.lab_test_notified_at)} (${r.lab_test_notified_to})`
+                              : 'Due — but nobody could be notified. Tell QA.',
+                            wide: true,
+                          }] : []),
                           { label: 'Notes', value: r.notes, wide: true },
                         ]}>
                           {r.packing_slip_url && (
@@ -698,7 +863,7 @@ export default function ReceivingLogPanel({ user }) {
   // the effect below clears them so a later remount doesn't replay the link.
   const [tab, setTab] = useState(() => {
     const v = getParam('view');
-    if (v && ['inspections', 'film', 'log', 'form', 'import'].includes(v)) return v;
+    if (v && ['inspections', 'film', 'log', 'form', 'import', 'lab-tests'].includes(v)) return v;
     return canFile(user) ? 'inspections' : 'log';
   });
   const [refreshKey, setRefreshKey] = useState(0);
@@ -730,6 +895,9 @@ export default function ReceivingLogPanel({ user }) {
     { id: 'film', label: 'Packaging QA', icon: ScanLine },
     { id: 'log', label: 'Receiving Log', icon: ClipboardList },
     ...(canLog ? [{ id: 'form', label: 'New Record', icon: Plus }] : []),
+    // QA's standing list. Visible to the warehouse read-only, because the
+    // receiver whose line raised an alert should be able to see the rule.
+    { id: 'lab-tests', label: 'Lab Tests', icon: FlaskConical },
     ...(canImport ? [{ id: 'import', label: 'Import', icon: Upload }] : []),
   ];
 
@@ -762,6 +930,7 @@ export default function ReceivingLogPanel({ user }) {
         <ImportPanel target="receiving_log" targetLabel="Receiving Log"
           fields={importTarget.fields} onDone={() => setRefreshKey(k => k + 1)} />
       )}
+      {tab === 'lab-tests' && <LabTestItemsTab />}
       {tab === 'log' && <ReceivingTable key={refreshKey} user={user} />}
     </div>
   );

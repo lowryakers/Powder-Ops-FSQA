@@ -732,6 +732,76 @@ UI: a **Select** toggle in the schedule toolbar (desktop, admins) puts the grid 
 checkboxes, drag and inline edit suspended — and ticking items raises `BulkMoveBar` (This week / Next week +
 the five weekdays). Moving into next week advances `weekOffset` so the items don't appear to vanish.
 
+## The Thursday clean had nowhere to go (`shared/clean-levels.js`)
+Thursday's clean is the **end-of-week clean**: the whole area, and **no ATP or allergen swab** — the room
+is not run again until Monday, and by then the 72-hour rule has raised a re-clean that carries the swabs
+anyway. It is not a Full Clean (which is defined by its swabs) and not a Partial Clean (nothing partial
+about it), so filing it as either one misstated the shift — the same defect the per-event cleaning list
+was built to fix one level up.
+- **The level list was in THREE places** — a private `LEVELS` array in `api/production.js` deciding what
+  is accepted, plus two hand-written `<option>` lists (the EOD entry form and the running day log). A
+  level added to the form and not the server is **silently dropped on save**: the operator picks it and
+  the record comes back blank. One definition in `shared/`, both sides import it.
+- **WHETHER A SWAB IS EXPECTED IS PART OF THE LEVEL** (`swabs: 'required' | 'optional' | 'none'`), and
+  that is why this is objects rather than an array of strings. A Full Clean with no ATP swab is a gap; the
+  end-of-week clean with no ATP swab is CORRECT. As bare booleans those two records are identical, so
+  nobody reading the log later — an auditor, or anyone counting missing swabs — could tell the compliant
+  one from the hole. The form stops asking, and the record reads "no swab on this level".
+- **Switching level clears a tick already made**, or the record claims a swab the level does not call for.
+- **An unknown or historic level answers `'optional'`**, never 'required': history is not re-judged by a
+  rule written after it.
+- The schedule grid's own `CLEANING_LEVELS` (`N/A` / `Partial` / `Full Clean`) is deliberately untouched —
+  that is a **plan** for a cell, with its own vocabulary, not a record of what was done.
+
+## QA is told when something arriving needs a lab test (`server/lab-test-items.js`)
+A standing list of part numbers QA wants a sample pulled from; filing a matching receiving line DMs and
+pushes to Adam and Maria with the item, lot, quantity, PO and the tests to run. Receiving → **Lab Tests**
+tab; `receiving_lab_test_items`.
+- **NOT a tick on the receiving form.** The receiver at the dock does not know which raws need testing —
+  that is a standing QA decision made once per item, not a judgement made per truck at 6am. A checkbox
+  would ask the wrong person the wrong question every time, and the day it is missed is the day the sample
+  is not pulled and the pallet has gone to the racking.
+- **NOT a flag on `coa_specifications` either**, which is the other obvious home: a spec is the number a
+  RESULT is graded against, and having one is not the same fact as "sample this every time it arrives".
+  One column answering two questions is the defect this codebase keeps unpicking.
+- **TWO DOORS.** `canSetLabTests` is QA/admin only and deliberately **excludes `hasExplicitEdit`** on the
+  receiving module. The first cut included it, so a warehouse operator with an edit grant — a grant that
+  exists to correct a receiving record — could quietly take an item off the list and nothing would ever
+  sample it again. **Caught by the test, not by reading.** Same shape as `canInspect` on film inspection.
+  Reading the list stays open to the module: a receiver whose line raised an alert should see the rule.
+- **Matched on part number only**, case- and space-insensitive. Never on description — "Whey Protein
+  Isolate" appears in a dozen distinct parts and an alert on the wrong pallet is one QA learns to dismiss.
+  A part received under two codes gets two rows, which is a deliberate act by somebody who knows.
+- **FILE PATH ONLY, and stamped on the line** (`lab_test_required` / `lab_test_notified_at` / `_to`).
+  Correcting a typo next week must not send a second person to the dock for a sample already pulled —
+  the same asymmetry the ATP escalation draws. Fire-and-forget: a comms outage never fails a receipt that
+  physically happened.
+- **`lab_test_required` is coerced to a boolean in `shape()`** — `{r.flag && <span/>}` renders a literal
+  "0" for SQLite's integer.
+- **A gap is named, never filled**: a receipt with no vendor lot alerts as `Vendor lot NOT RECORDED`.
+  Tests are printed **verbatim** ("HM & Micro"), never expanded into named tests — the COA composer's rule.
+- **Retired, never deleted.** A receipt filed in March says a sample was due; the rule that made it due has
+  to still be readable. Re-adding a retired code revives that row rather than duplicating it.
+
+## A tidy em-dash costs three extra SMS segments (`gsmSafe` in `server/sms.js`)
+Matt was not receiving flavor-approval texts although Twilio reported them **Delivered**. The Twilio log
+showed every message at **4 and 5 segments**, which is the tell: SMS carries GSM-03.38, a 128-character
+alphabet, and **one character outside it pushes the WHOLE message to UCS-2**, where a concatenated segment
+holds 67 characters instead of 153. The message had an em-dash, `·` separators and curly quotes — measured
+**4 segments UCS-2, 2 segments after**. A long multi-segment message carrying a URL is a well-known carrier
+spam-filter trigger, and the segments are reassembled by the handset, which is exactly how a message
+Twilio calls delivered fails to appear on a phone.
+- **Fixed at the ONE boundary every message passes through** (`sendSms`), not at the eight call sites.
+  Several of those reach for an em-dash, and a rule each of them has to remember is one the ninth forgets.
+- **ONLY PUNCTUATION IS TRANSLITERATED, NEVER LETTERS.** "—" → "-" loses nothing. Stripping the accent off
+  "está" to save a segment would rewrite somebody's language to save money, so an accented character stays
+  and the message goes as UCS-2, correctly. Emoji likewise.
+- `segmentInfo()` is exported and the server **warns above three segments**, so an expensive or
+  filter-prone message is visible in the log rather than only on a Twilio bill.
+- **The other half of "delivered but never arrived" is the wrong number**, and the app now answers it: the
+  send modal shows *"Last texted to (801) 836-8494"* from `data.last_texted_to`, so the number can be
+  checked against the person's actual mobile without a Twilio login.
+
 ## Multi-MO entries (Batching runs several MOs a shift)
 `production_entries.mo_lines` is a JSON array of
 `{product_name, mo_number, lot_number, batches, batch_weights, quantity}`. **Line 0 is mirrored into the

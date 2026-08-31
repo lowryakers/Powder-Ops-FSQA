@@ -7,6 +7,7 @@ import { getChannelByName, postMessageAs, getModuleLinks, botDm } from './comms.
 import { pushToUser } from '../push.js';
 import { readyDocOrigin } from '../links.js';
 import { roomLabel } from '../../shared/rooms.js';
+import { CLEAN_LEVEL_VALUES } from '../../shared/clean-levels.js';
 
 // Production teams whose schedule gets published to a matching comms channel.
 // Team name (as stored on assignments) → the channel it maps to.
@@ -194,10 +195,13 @@ function normalizeMoLines(raw) {
 // rather than one blurred answer.
 export function normalizeCleaningEvents(raw) {
   if (!Array.isArray(raw)) return [];
-  const LEVELS = ['Partial Clean', 'Full Clean'];
   return raw
     .map(c => ({
-      level: LEVELS.includes(c?.level) ? c.level : '',
+      // The accepted levels come from shared/clean-levels.js, which the two
+      // forms render from as well. This used to be a private array here, so a
+      // level offered on screen and not listed here was silently dropped on
+      // save: the operator picked it and the record came back blank.
+      level: CLEAN_LEVEL_VALUES.includes(c?.level) ? c.level : '',
       // What was cleaned, as separate ticks — the room and the equipment are
       // cleaned to different levels, which is the whole reason this is a list.
       scope: Array.isArray(c?.scope) ? c.scope.map(x => text(x, 60)).filter(Boolean) : [],

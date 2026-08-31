@@ -4,6 +4,7 @@ import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCi
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { hasExplicitGrant } from '../../utils/permissions';
 import { PRODUCTION_LINES, lineLabel, FILLING_TEAM, PRODUCTION_TEAMS as TEAMS, PRODUCTION_ROOMS, RETIRED_ROOMS, CLEAN_SCOPE } from '../../constants/productionLines';
+import { CLEAN_LEVELS, cleanLevel, swabsExpected } from '../../../shared/clean-levels.js';
 import { keepCurrent } from '../../lib/selectOptions';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
@@ -221,10 +222,18 @@ function CleaningEventsField({ events, setEvents, moOptions, defaultRoom = '', r
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label className="block text-[11px] text-gray-600 mb-0.5">Level</label>
-              <select value={c.level} onChange={e => setEvent(i, { level: e.target.value })} className={cls}>
-                <option value="Full Clean">Full Clean</option>
-                <option value="Partial Clean">Partial Clean</option>
+              {/* Switching to a level that takes no swab clears any tick
+                  already made, or the record claims a swab the level does not
+                  call for — a stale tick nobody can see is worse than none. */}
+              <select value={c.level} className={cls}
+                onChange={e => setEvent(i, swabsExpected(e.target.value) === 'none'
+                  ? { level: e.target.value, atp_swab: false, allergen_swab: false }
+                  : { level: e.target.value })}>
+                {CLEAN_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
               </select>
+              {cleanLevel(c.level)?.hint && (
+                <p className="text-[10px] text-gray-400 mt-0.5">{cleanLevel(c.level).hint}</p>
+              )}
             </div>
             <div>
               <label className="block text-[11px] text-gray-600 mb-0.5">Sifter # (if one was used)</label>
@@ -261,12 +270,22 @@ function CleaningEventsField({ events, setEvents, moOptions, defaultRoom = '', r
               <input type="time" value={c.end_time} onChange={e => setEvent(i, { end_time: e.target.value })} className={cls} />
             </div>
             <div className="sm:col-span-2 flex flex-wrap items-center gap-4">
-              <label className="flex items-center gap-1.5 text-xs text-gray-700">
-                <input type="checkbox" checked={!!c.atp_swab} onChange={e => setEvent(i, { atp_swab: e.target.checked })} /> ATP swab taken
-              </label>
-              <label className="flex items-center gap-1.5 text-xs text-gray-700">
-                <input type="checkbox" checked={!!c.allergen_swab} onChange={e => setEvent(i, { allergen_swab: e.target.checked })} /> Allergen swab taken
-              </label>
+              {/* A level that does not call for a swab does not ask for one.
+                  Two unticked boxes on the end-of-week clean read as work not
+                  done; saying the level takes no swab is the same fact stated
+                  correctly, and it is what the record will say later. */}
+              {swabsExpected(c.level) === 'none' ? (
+                <span className="text-xs text-gray-500 italic">No swab on this level.</span>
+              ) : (
+                <>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-700">
+                    <input type="checkbox" checked={!!c.atp_swab} onChange={e => setEvent(i, { atp_swab: e.target.checked })} /> ATP swab taken
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-700">
+                    <input type="checkbox" checked={!!c.allergen_swab} onChange={e => setEvent(i, { allergen_swab: e.target.checked })} /> Allergen swab taken
+                  </label>
+                </>
+              )}
               {moOptions?.length > 0 && (
                 <label className="flex items-center gap-1.5 text-xs text-gray-700 ml-auto">
                   For
@@ -296,6 +315,11 @@ function CleaningSummary({ events }) {
     <div className="mt-1.5 space-y-1">
       {events.map((c, i) => {
         const swabs = [c.atp_swab && 'ATP', c.allergen_swab && 'Allergen'].filter(Boolean);
+        // No swab on a level that takes none is the record being RIGHT, and it
+        // says so. Rendering it the same as a Full Clean with the swab missing
+        // makes a compliant clean indistinguishable from a gap — the reason
+        // the level carries this at all.
+        const noSwabByLevel = !swabs.length && swabsExpected(c.level) === 'none';
         return (
           <div key={i} className="text-xs text-gray-700">
             <span className="font-medium text-gray-900">{c.level || 'Clean'}</span>
@@ -303,6 +327,7 @@ function CleaningSummary({ events }) {
             {c.scope?.length ? <span> · {c.scope.join(', ')}</span> : null}
             {c.sifter_no && <span className="text-gray-500"> · Sifter {c.sifter_no}</span>}
             {swabs.length ? <span className="text-gray-500"> · {swabs.join(' + ')} swab</span> : null}
+            {noSwabByLevel ? <span className="text-gray-500"> · no swab on this level</span> : null}
             {(c.start_time || c.end_time) && <span className="text-gray-500"> · {c.start_time || '?'}–{c.end_time || '?'}</span>}
             {c.mo_number && <span className="text-gray-500"> · for {c.mo_number}</span>}
           </div>

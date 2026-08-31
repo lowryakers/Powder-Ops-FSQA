@@ -73,7 +73,7 @@ function PhoneBoxes({ value, onChange }) {
   );
 }
 
-function SendModal({ onClose, onSend, sending }) {
+function SendModal({ onClose, onSend, sending, record }) {
   const { data: contacts, refresh } = useApiGet('/qms/sms-contacts');
   const [parts, setParts] = useState(['', '', '']);
   const [save, setSave] = useState(false);
@@ -104,6 +104,17 @@ function SendModal({ onClose, onSend, sending }) {
           <h3 className="font-semibold text-gray-900">Text this for approval</h3>
           <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
+
+        {/* WHERE IT WENT LAST TIME, on the screen where the number is chosen.
+            "It says delivered but he never got it" is nearly always one of two
+            things, and this answers the first of them without a Twilio login:
+            the message went to a number that is not his. */}
+        {record?.last_texted_to && (
+          <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2">
+            Last texted to <strong>{prettyPhone(record.last_texted_to)}</strong>.
+            {' '}If that is not the right phone, the message was delivered to somebody else.
+          </p>
+        )}
 
         {!!contacts?.length && (
           <div>
@@ -183,8 +194,8 @@ export default function FlavorPanel() {
   return (
     <div className="space-y-3">
       {pending && (
-        <SendModal onClose={() => setPending(null)} sending={sending}
-          onSend={(to) => sendForApproval(pending, to)} />
+        <SendModal onClose={() => setPending(null)} sending={sending} record={pending}
+          onSend={(to) => sendForApproval(pending.id, to)} />
       )}
 
       {sendResult && !sendResult.error && (
@@ -217,7 +228,9 @@ export default function FlavorPanel() {
           show: (r) => r.status === 'pending',
           // Opens the picker rather than sending blind — the whole point is
           // that the approver is chosen, and recorded, per request.
-          run: (r) => { setSendResult(null); setPending(r.id); },
+          // The whole record, not just its id: the modal shows which number
+          // this approval was last texted to.
+          run: (r) => { setSendResult(null); setPending(r); },
         }} />
     </div>
   );

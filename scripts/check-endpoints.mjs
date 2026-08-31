@@ -57,7 +57,8 @@ const PATHS = [
   '/coa/requests', '/coa/specifications',
   // warehouse
   '/receiving', '/receiving/stats', '/receiving/checklists', '/receiving/next-inspection-no',
-  '/receiving/checklist/form', '/film-inspection', '/film-inspection/form',
+  '/receiving/checklist/form', '/receiving/lab-test-items',
+  '/film-inspection', '/film-inspection/form',
   // documents + training
   '/documents', '/documents?doc_type=reference', '/doc-review', '/doc-review/consistency', '/controlled',
   '/training/courses', '/training', '/training/matrix', '/training/due',

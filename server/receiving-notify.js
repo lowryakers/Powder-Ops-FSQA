@@ -53,10 +53,17 @@ export function resolveTarget(db, targetKey, excludeUserId = null) {
  * Returns who it actually reached, which is what gets written onto the record —
  * "notified QA" with nobody behind it would be worse than no record at all.
  */
-export async function sendEscalation(db, { item, target, inspectionNo, detail, from, path }) {
+export async function sendEscalation(db, { item, target, inspectionNo, detail, from, path, origin, icon = '📦' }) {
   const people = resolveTarget(db, target, from?.id);
   if (!people.length) return { sent: [], reason: 'nobody to notify' };
   const t = NOTIFY_TARGETS[target];
+  // WHERE THE ALERT CAME FROM IS PART OF IT. Most escalations here are a person
+  // pressing a button on FORM 204-01, and saying so tells the reader somebody
+  // is standing at the dock. The lab-sample alert is raised by the arrival
+  // itself against QA's standing list — nobody decided anything — and printing
+  // the checklist sentence on it would name a person who never acted.
+  const raisedBy = origin
+    || `Raised by ${from?.name || 'Receiving'} on the Receiving Inspection Checklist.`;
   // `path` deep-links to the thing the recipient must ACT on — the draft film
   // inspection, or the checklist itself. A link that lands on a module's front
   // page hands the reader a search job; the alert already knows the record.
@@ -68,9 +75,9 @@ export async function sendEscalation(db, { item, target, inspectionNo, detail, f
       const { bot, dm } = botDm(db, p.id);
       // Bot bold is *text*, not **text** — the chat renderer isn't markdown.
       await postMessageAs(db, dm, bot,
-        `📦 *${t.subject}*\nInspection *${inspectionNo}* — ${item}\n`
+        `${icon} *${t.subject}*\nInspection *${inspectionNo}* — ${item}\n`
         + `${detail ? `${detail}\n` : ''}`
-        + `Raised by ${from?.name || 'Receiving'} on the Receiving Inspection Checklist.\n`
+        + `${raisedBy}\n`
         + `Open it: ${link}`);
       pushToUser(p.id, {
         title: t.subject,

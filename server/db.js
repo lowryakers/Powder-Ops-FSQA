@@ -1085,6 +1085,28 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_receiving_date ON receiving_log(date_received DESC);
     CREATE INDEX IF NOT EXISTS idx_receiving_po ON receiving_log(po_number);
     CREATE INDEX IF NOT EXISTS idx_receiving_part ON receiving_log(part_number);
+
+    -- The standing list of received items QA wants a lab sample pulled from.
+    -- Maintained by QA, matched on receipt — see server/lab-test-items.js for
+    -- why this is its own list rather than a tick on the receiving form or a
+    -- flag on coa_specifications.
+    CREATE TABLE IF NOT EXISTS receiving_lab_test_items (
+      id TEXT PRIMARY KEY,
+      -- Compared case-insensitively after trimming; UNIQUE on the stored form
+      -- so the list cannot hold the same code twice and fire twice.
+      part_number TEXT NOT NULL UNIQUE,
+      part_description TEXT,
+      -- What to run, in QA's own words ("HM & Micro"). Never expanded into
+      -- named tests — see the COA submission composer for the same rule.
+      tests TEXT,
+      note TEXT,
+      -- Retired, not deleted: a rule that was in force still explains why an
+      -- alert fired on a receipt filed last March.
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE INDEX IF NOT EXISTS idx_receiving_lot ON receiving_log(vendor_lot);
 
     -- FORM 204-01 — the Receiving Inspection Checklist.
@@ -2255,6 +2277,14 @@ function dropColumnIfPresent(table, column) {
 }
 
 function runMigrations() {
+  // A receipt records that QA was told a lab sample was due, and who was told.
+  // Stamped on the LINE rather than kept only in the audit log: "was anybody
+  // asked to pull a sample off that pallet" is a question about the receipt,
+  // and it must be answerable from the receipt. It also makes the alert
+  // idempotent — a correction to the line cannot fire a second request.
+  addColumnIfMissing('receiving_log', 'lab_test_required', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('receiving_log', 'lab_test_notified_at', 'TEXT');
+  addColumnIfMissing('receiving_log', 'lab_test_notified_to', 'TEXT');
   addColumnIfMissing('calibration_instruments', 'room', 'TEXT');
   addColumnIfMissing('calibration_instruments', 'asset_number', 'TEXT');
   addColumnIfMissing('calibration_instruments', 'max_capacity', 'TEXT');

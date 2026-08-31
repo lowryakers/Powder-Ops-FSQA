@@ -17,6 +17,7 @@ import {
 import { sendEscalation } from '../receiving-notify.js';
 import { FILM_REVISION } from '../film-pouch-checklist.js';
 import { nextInspectionNo } from '../inspection-no.js';
+import { labTestFor, alertDetail, itemKey } from '../lab-test-items.js';
 
 const router = Router();
 const MODULE = 'receiving-log';
@@ -26,10 +27,28 @@ const canLog = (u) => u?.role === 'admin' || u?.role === 'supervisor'
   || u?.department === 'warehouse' || hasExplicitGrant(u, MODULE);
 const canEdit = (u) => u?.role === 'admin' || hasExplicitEdit(u, MODULE);
 
+// WHICH ITEMS NEED A LAB SAMPLE IS QA's CALL, so maintaining the list is a QA
+// right and not a receiving one. Warehouse files against the list; it does not
+// get to decide what is on it. Reading it is open to anyone who can see the
+// module — the receiver should be able to see why an alert fired on their line.
+//
+// DELIBERATELY NOT `hasExplicitEdit(u, MODULE)`. That grant exists so somebody
+// can correct a receiving record, and the first version of this let it change
+// QA's testing decisions too — a warehouse operator with an edit grant could
+// quietly take an item off the list and nothing would ever sample it again.
+// Caught by the test, not by reading. Same two-doors reasoning as `canInspect`
+// on the film inspection: the module gets you to the screen, the second check
+// decides whose judgement this is. `quality` is a DEPARTMENT, never a role.
+const canSetLabTests = (u) => u?.role === 'admin'
+  || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase());
+
 const shape = (r) => ({
   ...r,
   part_in_mrp: !!r.part_in_mrp,
   received_in_mrp: !!r.received_in_mrp,
+  // Coerced here rather than left as SQLite's 0/1, because `{r.flag && <span/>}`
+  // in JSX renders a literal "0" for the integer and nothing for false.
+  lab_test_required: !!r.lab_test_required,
   custom_data: parseJson(r.custom_data, null),
 });
 
@@ -418,6 +437,64 @@ router.delete('/checklist/:inspectionNo/review', (req, res) => {
   res.json({ ok: true });
 });
 
+/* ── QA's standing lab-test list ───────────────────────────────────────────
+ *
+ * Declared BEFORE `/:id`, or Express reads "lab-test-items" as a record id and
+ * the whole list 404s.
+ *
+ * Reading is open to the module: the receiver whose line raised an alert should
+ * be able to see the rule that raised it. Writing is QA's.
+ */
+router.get('/lab-test-items', (req, res) => {
+  const rows = getDb().prepare(
+    'SELECT * FROM receiving_lab_test_items ORDER BY is_active DESC, part_number'
+  ).all();
+  res.json({ items: rows.map(r => ({ ...r, is_active: !!r.is_active })), can_edit: canSetLabTests(req.user) });
+});
+
+router.post('/lab-test-items', (req, res) => {
+  if (!canSetLabTests(req.user)) return res.status(403).json({ error: 'Only QA can change which items need a lab test.' });
+  const db = getDb();
+  const part = String(req.body?.part_number || '').trim();
+  if (!part) return res.status(400).json({ error: 'A part # is required — the list is matched on the item code.' });
+
+  // Adding a code that is on the list but retired REVIVES it. People think
+  // "put whey isolate back on the list", not "resurrect a row" — the same rule
+  // the managed lists follow.
+  const existing = db.prepare('SELECT * FROM receiving_lab_test_items WHERE UPPER(TRIM(part_number)) = ?').get(itemKey(part));
+  if (existing) {
+    db.prepare(`UPDATE receiving_lab_test_items
+      SET part_description = ?, tests = ?, note = ?, is_active = 1, updated_at = datetime('now') WHERE id = ?`)
+      .run(req.body.part_description || existing.part_description || null,
+        req.body.tests || existing.tests || null, req.body.note ?? existing.note ?? null, existing.id);
+    const row = db.prepare('SELECT * FROM receiving_lab_test_items WHERE id = ?').get(existing.id);
+    logAudit(req.user, 'update', 'receiving_lab_test_item', row.id, { revived: !existing.is_active }, existing, row, part);
+    return res.json({ ...row, is_active: !!row.is_active });
+  }
+
+  const id = uuid();
+  db.prepare(`INSERT INTO receiving_lab_test_items (id, part_number, part_description, tests, note, created_by)
+    VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(id, part, req.body.part_description || null, req.body.tests || null, req.body.note || null,
+      req.user?.name || null);
+  const row = db.prepare('SELECT * FROM receiving_lab_test_items WHERE id = ?').get(id);
+  logAudit(req.user, 'create', 'receiving_lab_test_item', id, req.body, null, row, part);
+  res.status(201).json({ ...row, is_active: !!row.is_active });
+});
+
+// RETIRED, NEVER DELETED. A receipt filed last March says a lab sample was due;
+// the rule that made it due has to still be readable, or the record cites
+// something that no longer exists.
+router.delete('/lab-test-items/:id', (req, res) => {
+  if (!canSetLabTests(req.user)) return res.status(403).json({ error: 'Only QA can change which items need a lab test.' });
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM receiving_lab_test_items WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not on the list.' });
+  db.prepare("UPDATE receiving_lab_test_items SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(row.id);
+  logAudit(req.user, 'update', 'receiving_lab_test_item', row.id, { action: 'retired' }, row, null, row.part_number);
+  res.json({ ok: true });
+});
+
 router.post('/', (req, res) => {
   if (!canLog(req.user)) return res.status(403).json({ error: 'You do not have access to file receiving records.' });
   const db = getDb();
@@ -447,8 +524,51 @@ router.post('/', (req, res) => {
   const created = db.prepare('SELECT * FROM receiving_log WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'receiving_record', id, req.body, null, created,
     `${created.part_number || created.part_description || ''} · PO ${created.po_number || '—'}`);
+
+  // The arrival is what raises the lab request. Fire-and-forget, and the row is
+  // already written: a comms outage must never fail a receipt that physically
+  // happened — the same rule the QA-action DM and the temp excursion follow.
+  notifyLabTest(db, created, req.user).catch(() => {});
+
   res.status(201).json(shape(created));
 });
+
+/**
+ * Tell QA a sample is due off this pallet, if the item is on their list.
+ *
+ * ON THE CREATE PATH ONLY, and stamped on the line so it cannot fire twice.
+ * Correcting a typo in a quantity next week must not send a second person to
+ * the dock for a sample that was already pulled — the same asymmetry the ATP
+ * escalation draws between filing and editing.
+ */
+async function notifyLabTest(db, line, user) {
+  const rules = db.prepare('SELECT * FROM receiving_lab_test_items WHERE is_active = 1').all();
+  const rule = labTestFor(line, rules);
+  if (!rule) return;
+  // Recorded on the line BEFORE the send. The requirement is a fact about the
+  // receipt whether or not the message got out; writing it only on success
+  // would leave a receipt that needed a sample looking like one that did not.
+  db.prepare('UPDATE receiving_log SET lab_test_required = 1 WHERE id = ?').run(line.id);
+
+  const item = [line.part_number, line.part_description].filter(Boolean).join(' — ');
+  const { sent } = await sendEscalation(db, {
+    target: 'qa_lab_test',
+    icon: '🧪',
+    item,
+    inspectionNo: line.inspection_no || '—',
+    detail: alertDetail(rule, line),
+    from: user,
+    path: `/?tab=receiving-log&inspection=${encodeURIComponent(line.inspection_no || '')}`,
+    // Nobody pressed a button here — the item arriving is the whole trigger.
+    origin: 'On QA\'s standing lab-test list — raised automatically when this was received.',
+  });
+  if (sent?.length) {
+    db.prepare("UPDATE receiving_log SET lab_test_notified_at = datetime('now'), lab_test_notified_to = ? WHERE id = ?")
+      .run(sent.join(', '), line.id);
+  }
+  logAudit(user, 'update', 'receiving_record', line.id,
+    { action: 'lab_test_requested', part_number: line.part_number, tests: rule.tests, notified: sent || [] });
+}
 
 router.put('/:id', (req, res) => {
   const db = getDb();
