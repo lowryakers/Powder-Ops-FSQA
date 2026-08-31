@@ -15,6 +15,11 @@ import { createHash, timingSafeEqual, randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { resolveFlavorCodes } from '../flavor-codes.js';
 import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js';
+import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
+import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+import fs from 'fs';
+
+const barcodeUpload = mediaUpload({ files: 1 }).array('files', 1);
 
 const router = Router();
 
@@ -96,6 +101,13 @@ function hydrate(rows, db) {
       readiness: readinessOf(withColors),
       preferred_sku: pref.sku,
       preferred_sku_blocked_by: pref.blocked_by,
+      has_barcode_image: !!r.barcode_key,
+      // A barcode image encodes ONE number. If the GTIN has moved since the
+      // image was uploaded, the file on record no longer matches the product
+      // and must not go to artwork — said out loud rather than left to be
+      // discovered on a printed pack.
+      barcode_stale: !!r.barcode_key && !!r.gtin && r.barcode_gtin !== r.gtin,
+      barcode_gtin: r.barcode_gtin || null,
     };
   });
 }
@@ -269,6 +281,136 @@ router.post('/bottle-drafts', (req, res) => {
     { action: 'bottle_drafts', created: plan.length, skus: plan.map(p => p.sku) },
     null, null, `${plan.length} bottle draft(s)`);
   res.status(201).json({ created: plan.length, skus: plan.map(p => p.sku), blocked });
+});
+
+/* ── The GS1 barcode image ──────────────────────────────────────────────────
+ *
+ * The PNG that comes off the GS1 site. The GTIN is the number; this is the
+ * artwork the designer places, and until now there was nowhere to keep it —
+ * so it lived in somebody's downloads folder and was re-fetched each time.
+ *
+ * One image per product, replaced rather than versioned: a barcode is not a
+ * document with a revision history, it is a rendering of a number. If the
+ * number changes the image is simply wrong, which is what `barcode_gtin`
+ * exists to catch.
+ */
+router.post('/:sku/barcode', barcodeUpload, async (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalogue.' });
+  const db = getDb();
+  const files = req.files || [];
+  try {
+    const p = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+    if (!p) return res.status(404).json({ error: 'Product not found.' });
+    // NOTHING TO ENCODE. Storing a barcode image against a product with no
+    // GTIN would leave a file nobody could check against anything.
+    if (!p.gtin) return res.status(400).json({ error: 'This product has no GS1 barcode number yet — assign the GTIN first.' });
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured — set the R2 variables.' });
+    if (!files.length) return res.status(400).json({ error: 'No file received.' });
+
+    const f = files[0];
+    const filename = (f.originalname || `${p.gtin}.png`).slice(0, 255);
+    const key = `barcodes/${p.sku}/${p.gtin}-${filename.replace(/[^\w.-]+/g, '_')}`;
+    await putStream(key, fs.createReadStream(f.path), f.mimetype || null);
+    // Replacing: the previous object is removed, since nothing references it.
+    if (p.barcode_key && p.barcode_key !== key) {
+      try { await deleteObject(p.barcode_key); } catch { /* orphan beats a failed upload */ }
+    }
+    db.prepare(`UPDATE products SET barcode_key = ?, barcode_filename = ?, barcode_content_type = ?,
+      barcode_size = ?, barcode_gtin = ?, barcode_uploaded_at = datetime('now'), barcode_uploaded_by = ?,
+      updated_at = datetime('now') WHERE sku = ?`)
+      .run(key, filename, f.mimetype || null, f.size || null, p.gtin, req.user?.name || null, p.sku);
+    logAudit(req.user, 'update', 'product', p.sku,
+      { action: 'barcode_image', filename, gtin: p.gtin }, null, null, p.sku);
+    res.status(201).json({ ok: true, filename, gtin: p.gtin });
+  } catch (err) {
+    res.status(500).json({ error: uploadErrorMessage(err) });
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+/* ── Bringing drafts into line with the register ───────────────────────────
+ *
+ * A draft minted before a flavour code was corrected carries the old code —
+ * BEF-BTL-CHU sitting beside a preferred SKU of BEF-BTL-CSG, which is exactly
+ * the disagreement the preview column exists to make impossible.
+ *
+ * ONLY DRAFTS, AND THAT IS THE WHOLE SAFETY ARGUMENT. An active SKU is a join
+ * key on open purchase orders, ShipHero inventory locations and every Shopify
+ * order line ever placed — renaming one is the costed migration project, never
+ * a button. A draft has been nowhere: no barcode, no artwork, no order.
+ *
+ * `legacy_sku` is deliberately NOT set. It exists so a code that shipped still
+ * resolves on a two-year-old PO; a draft code never shipped, and recording it
+ * would put a SKU into the "must still resolve" set that never existed.
+ */
+function planDraftRealign(db) {
+  const rows = hydrate(db.prepare(`${SELECT} WHERE LOWER(p.status) = 'draft'`).all(), db);
+  const taken = new Set(db.prepare('SELECT sku FROM products').all().map(r => r.sku));
+  const plan = [];
+  const blocked = [];
+  for (const p of rows) {
+    if (!p.preferred_sku) { blocked.push({ sku: p.sku, reason: (p.preferred_sku_blocked_by || [])[0] || 'cannot be worked out' }); continue; }
+    if (p.preferred_sku === p.sku) continue;
+    // Another product already holds the target. Reported, never overwritten.
+    if (taken.has(p.preferred_sku)) { blocked.push({ sku: p.sku, reason: `${p.preferred_sku} already exists` }); continue; }
+    plan.push({ from: p.sku, to: p.preferred_sku, product: p.flavor });
+  }
+  return { plan, blocked };
+}
+
+router.get('/drafts/realign/preview', (req, res) => {
+  const { plan, blocked } = planDraftRealign(getDb());
+  res.json({ plan, blocked, can_edit: canManage(req.user) });
+});
+
+router.post('/drafts/realign', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalogue.' });
+  const db = getDb();
+  const { plan, blocked } = planDraftRealign(db);
+  if (!plan.length) return res.json({ renamed: 0, blocked });
+  db.transaction(() => {
+    // Same defer_foreign_keys reasoning as the rename endpoint: product_colors
+    // points at the SKU, and the check moves to COMMIT when both agree again.
+    db.pragma('defer_foreign_keys = ON');
+    const upd = db.prepare("UPDATE products SET sku = ?, updated_at = datetime('now') WHERE sku = ?");
+    const col = db.prepare('UPDATE product_colors SET sku = ? WHERE sku = ?');
+    for (const r of plan) { upd.run(r.to, r.from); col.run(r.to, r.from); }
+  })();
+  for (const r of plan) {
+    logAudit(req.user, 'product_renamed', 'product', r.to,
+      { from: r.from, to: r.to, reason: 'draft realigned to the flavour register' }, null, null, `${r.from} → ${r.to}`);
+  }
+  res.json({ renamed: plan.length, plan, blocked });
+});
+
+router.get('/:sku/barcode', async (req, res) => {
+  const db = getDb();
+  const p = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!p) return res.status(404).json({ error: 'Product not found.' });
+  if (!p.barcode_key) return res.status(404).json({ error: 'No barcode image on file.' });
+  const url = await presignGet(p.barcode_key, p.barcode_filename);
+  if (!url) return res.status(503).json({ error: 'File storage unavailable.' });
+  res.json({
+    url, filename: p.barcode_filename, content_type: p.barcode_content_type,
+    gtin: p.barcode_gtin, uploaded_at: p.barcode_uploaded_at, uploaded_by: p.barcode_uploaded_by,
+    // The reader is told before they hand it to a designer, not after.
+    stale: !!p.gtin && p.barcode_gtin !== p.gtin,
+    current_gtin: p.gtin,
+  });
+});
+
+router.delete('/:sku/barcode', async (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalogue.' });
+  const db = getDb();
+  const p = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!p?.barcode_key) return res.status(404).json({ error: 'No barcode image on file.' });
+  try { await deleteObject(p.barcode_key); } catch { /* the row is the record */ }
+  db.prepare(`UPDATE products SET barcode_key = NULL, barcode_filename = NULL, barcode_content_type = NULL,
+    barcode_size = NULL, barcode_gtin = NULL, barcode_uploaded_at = NULL, barcode_uploaded_by = NULL,
+    updated_at = datetime('now') WHERE sku = ?`).run(p.sku);
+  logAudit(req.user, 'update', 'product', p.sku, { action: 'barcode_image_removed' }, null, null, p.sku);
+  res.json({ ok: true });
 });
 
 router.delete('/flavor-codes/:id', (req, res) => {

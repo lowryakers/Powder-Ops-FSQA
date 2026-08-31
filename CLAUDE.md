@@ -518,6 +518,35 @@ abbreviation on a pouch than on a stick and nothing ever joined them.
   `planBottleDrafts`, so what is on screen cannot differ from what lands, and it is idempotent — a second
   click creates nothing. **33 drafts today, 5 blocked** on the flavours that still owe a code.
 
+### The GS1 barcode image, and the number it encodes
+`products.barcode_key` + `barcode_gtin` (and filename / type / size / who / when), `POST|GET|DELETE
+/products/:sku/barcode`, in the product drawer beside the GTIN. The catalogue has always held the GS1
+**number**; this is the **PNG off the GS1 site**, which is what a designer actually places — and there was
+nowhere to keep it, so it lived in somebody's downloads folder and was re-fetched every revision.
+- **`barcode_gtin` is the load-bearing column.** A barcode image encodes ONE number, so if the GTIN is
+  corrected afterwards the stored file is silently wrong and a wrong barcode reaching print is a relabel.
+  The record remembers which GTIN the image was made for and says so — on the row (`barcode_stale`) and in
+  red on the drawer, naming both numbers. Same doctrine as `sanitation_records.atp_limit`.
+- **Replaced, not versioned**: a barcode is a rendering of a number, not a document with a revision history.
+  The old object is deleted on replace.
+- **A product with no GTIN refuses a barcode** — there would be nothing to check the file against.
+- **The columns go immediately after the `products` CREATE, not in `runMigrations()`** — that runs long
+  before this block and the ALTER killed a fresh boot the first time. The migration-ordering trap, fired
+  and fixed.
+
+### Bringing draft SKUs into line with the register (`/products/drafts/realign`)
+A draft minted before a flavour code was corrected carries the old code — `BEF-BTL-CHU` sitting beside a
+preferred SKU of `BEF-BTL-CSG`, which is exactly the disagreement the preview column exists to prevent.
+- **ONLY `status = 'Draft'`, and that is the whole safety argument.** An active SKU is a join key on open
+  POs, ShipHero inventory locations and every Shopify order line ever placed; renaming one is the costed
+  migration project, never a button. A draft has been nowhere. **The test asserts the 118 active rows are
+  left alone**, which is the control that matters.
+- **`legacy_sku` is deliberately NOT set.** It exists so a code that shipped still resolves on a two-year-old
+  PO; a draft code never shipped, and recording it would put a SKU into the must-still-resolve set that
+  never existed.
+- Preview and commit share `planDraftRealign`, it is idempotent, and a target SKU another product already
+  holds is reported rather than overwritten.
+
 ### The SKU rename is a separate project, and it is not free
 The new standard is adopted for **new products only**; the existing 118 are untouched. A full cutover is
 costed in `Product-Management/docs/08`. The 3PL has confirmed the expensive half: scanning tolerates either

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useApiGet, apiFetch } from '../../hooks/useApi';
+import { useApiGet, apiFetch, apiUpload, apiDelete } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader';
@@ -9,6 +9,7 @@ import FlavorCodesPanel from './FlavorCodesPanel.jsx';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope, Tag,
+  Barcode, Upload, ExternalLink,
   FileText,
 } from 'lucide-react';
 
@@ -69,6 +70,105 @@ function ReadyBar({ readiness }) {
     </span>
   );
 }
+
+/**
+ * The GS1 barcode ARTWORK — the PNG that comes off the GS1 site.
+ *
+ * The GTIN is the number and the catalogue has always held it; this is the
+ * image a designer actually places on a pack, and until now there was nowhere
+ * to keep it, so it lived in somebody's downloads folder and was re-fetched
+ * every time artwork was revised.
+ *
+ * THE STALE WARNING IS THE POINT. A barcode image encodes ONE number, so if the
+ * GTIN is corrected after the image was uploaded the file on record is wrong —
+ * and a wrong barcode reaching print is a relabel. The record remembers which
+ * GTIN it was made for and says so rather than serving it as though it still
+ * matched.
+ */
+function BarcodeImage({ sku, gtin, canEdit, has, stale, forGtin, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [meta, setMeta] = useState(null);
+
+  const upload = async (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    if (!files.length) return;
+    setBusy(true); setError('');
+    try {
+      const fd = new FormData();
+      fd.append('files', files[0]);
+      await apiUpload(`/products/${encodeURIComponent(sku)}/barcode`, fd);
+      setMeta(null);
+      onChanged?.();
+    } catch (err) { setError(err.message); }
+    setBusy(false);
+  };
+
+  const view = async () => {
+    setError('');
+    try {
+      const r = await apiFetch(`/products/${encodeURIComponent(sku)}/barcode`);
+      setMeta(r);
+      window.open(r.url, '_blank', 'noopener');
+    } catch (err) { setError(err.message); }
+  };
+
+  const remove = async () => {
+    if (!window.confirm('Remove the barcode image?')) return;
+    setBusy(true); setError('');
+    try { await apiDelete(`/products/${encodeURIComponent(sku)}/barcode`); setMeta(null); onChanged?.(); }
+    catch (err) { setError(err.message); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="pt-2 border-t border-gray-100 space-y-2">
+      <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+        <Barcode size={15} className="text-powder-600" /> GS1 barcode image
+      </h4>
+
+      {!gtin ? (
+        <p className="text-xs text-gray-500">
+          No GS1 number on this product yet — assign the GTIN before attaching its barcode.
+        </p>
+      ) : (<>
+        {stale && (
+          <p className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+            <strong>This image is for a different number.</strong> It was made for {forGtin}, and this
+            product is now {gtin}. Do not send it to artwork — upload the barcode for {gtin}.
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {has && (
+            <button type="button" onClick={view}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50">
+              <ExternalLink size={13} /> View barcode
+            </button>
+          )}
+          {canEdit && (
+            <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium cursor-pointer hover:bg-gray-50">
+              <Upload size={13} /> {busy ? 'Uploading…' : has ? 'Replace' : 'Attach barcode'}
+              <input type="file" className="hidden" accept="image/*,application/pdf" onChange={upload} />
+            </label>
+          )}
+          {has && canEdit && (
+            <button type="button" onClick={remove} disabled={busy}
+              className="text-xs font-medium text-gray-400 hover:text-red-600">Remove</button>
+          )}
+          {!has && <span className="text-xs text-gray-500">Nothing on file.</span>}
+        </div>
+        {meta?.uploaded_by && (
+          <p className="text-[11px] text-gray-500">
+            {meta.filename} — uploaded by {meta.uploaded_by} for {meta.gtin}
+          </p>
+        )}
+      </>)}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 
 function Detail({ sku, canEdit, onClose, onSaved }) {
   const { data, refresh } = useApiGet(`/products/${encodeURIComponent(sku)}`);
@@ -227,6 +327,10 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     that is where someone already is when they need it. The
                     refresh carries back up so the readiness bar moves the
                     moment a panel is approved. */}
+                <BarcodeImage sku={sku} gtin={p.gtin} canEdit={canEdit}
+                  has={p.has_barcode_image} stale={p.barcode_stale} forGtin={p.barcode_gtin}
+                  onChanged={() => { refresh(); onSaved?.(); }} />
+
                 <div className="pt-2 border-t border-gray-100">
                   <NfpForSku sku={sku} formulaRev={p.formula_rev} canEdit={canEdit}
                     onChanged={() => { refresh(); onSaved?.(); }} />

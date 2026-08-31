@@ -87,6 +87,68 @@ function BottleDrafts({ canEdit }) {
 }
 
 /**
+ * Drafts minted before a flavour code was corrected.
+ *
+ * A draft carrying BEF-BTL-CHU beside a preferred SKU of BEF-BTL-CSG is the
+ * exact disagreement the preview column exists to prevent, and for a DRAFT
+ * there is no reason to live with it: it has no barcode, no artwork and no
+ * order behind it. Active SKUs are never offered here — those are join keys on
+ * open POs, ShipHero locations and every Shopify order line ever placed.
+ */
+function DraftRealign({ canEdit }) {
+  const { data, refresh } = useApiGet('/products/drafts/realign/preview');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+  const [error, setError] = useState(null);
+  const plan = data?.plan || [];
+  if (!plan.length && !done) return null;
+
+  const run = async () => {
+    setBusy(true); setError(null);
+    try { setDone(await apiPost('/products/drafts/realign', {})); refresh(); }
+    catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bg-white border border-amber-200 rounded-xl overflow-hidden">
+      <div className="px-4 py-3 flex items-start gap-3">
+        <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-semibold text-gray-900">
+            {plan.length > 0 ? `${plan.length} draft${plan.length === 1 ? '' : 's'} carry an old flavour code` : 'Drafts realigned'}
+          </h4>
+          <p className="text-xs text-gray-600 mt-0.5">
+            {plan.length > 0
+              ? 'These were created before their code was corrected, so their SKU no longer matches the register. Nothing references a draft, so they can simply be renamed.'
+              : 'Every draft SKU matches the register.'}
+          </p>
+          {done && <p className="text-xs text-green-700 mt-1 font-medium">Renamed {done.renamed}.</p>}
+          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+        </div>
+        {plan.length > 0 && canEdit && (
+          <button type="button" onClick={run} disabled={busy}
+            className="shrink-0 px-2.5 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 disabled:opacity-50">
+            {busy ? 'Renaming…' : 'Bring into line'}
+          </button>
+        )}
+      </div>
+      {plan.length > 0 && (
+        <ul className="border-t border-amber-100 divide-y divide-amber-50 max-h-56 overflow-y-auto">
+          {plan.map(r => (
+            <li key={r.from} className="px-4 py-1.5 flex items-center gap-2 text-xs">
+              <code className="font-mono text-gray-500 line-through">{r.from}</code>
+              <span className="text-gray-400">→</span>
+              <code className="font-mono text-gray-900 font-semibold">{r.to}</code>
+              <span className="ml-auto text-gray-400 truncate">{r.product}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
  * The flavour register — one flavour, one abbreviation, for every pack.
  *
  * WHY THIS SCREEN EXISTS AT ALL. Under the legacy SKU the pack was in the
@@ -224,6 +286,7 @@ export default function FlavorCodesPanel() {
       )}
 
       <BottleDrafts canEdit={canEdit} />
+      <DraftRealign canEdit={canEdit} />
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-3">

@@ -2643,6 +2643,29 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_artwork_checks_version ON artwork_checks(version_id);
   `);
 
+  // The GS1 barcode ARTWORK — the PNG downloaded from GS1, which is what a
+  // designer actually places on a pack. The GTIN number alone is not that file,
+  // and there was nowhere to keep it.
+  //
+  // `barcode_gtin` is the load-bearing column: a barcode image ENCODES one
+  // specific number, so if the product's GTIN is later corrected the stored
+  // image is silently wrong, and a wrong barcode reaching artwork is a relabel
+  // at best. Recording which GTIN the image was made for lets the app say so
+  // rather than serving it as though it still matched — the same doctrine as
+  // sanitation_records.atp_limit travelling with the record it graded.
+  //
+  // IMMEDIATELY AFTER the products CREATE, not in runMigrations(): that runs
+  // long before this block, and ALTER TABLE on a table that does not exist yet
+  // kills a fresh database at boot. Exactly the trap the migration-ordering
+  // note warns about, and it fired the first time this was written.
+  addColumnIfMissing('products', 'barcode_key', 'TEXT');
+  addColumnIfMissing('products', 'barcode_filename', 'TEXT');
+  addColumnIfMissing('products', 'barcode_content_type', 'TEXT');
+  addColumnIfMissing('products', 'barcode_size', 'INTEGER');
+  addColumnIfMissing('products', 'barcode_gtin', 'TEXT');
+  addColumnIfMissing('products', 'barcode_uploaded_at', 'TEXT');
+  addColumnIfMissing('products', 'barcode_uploaded_by', 'TEXT');
+
   // ── Nutrition Facts Panels ────────────────────────────────────────────────
   // The panel that is printed on the pack, as an approvable record rather than
   // a version string somebody typed.
