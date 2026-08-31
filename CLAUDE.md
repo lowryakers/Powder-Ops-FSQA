@@ -1144,6 +1144,31 @@ stopped the month the paper import ended.
 - Verified end to end on the production-scale DB: 21 assertions — all three types file, land on QA's list
   with the right area, keep their readings, and a maintenance PM files nothing.
 
+### Completing a 72-hour re-clean filed no record either (the third instance)
+Reported as "Zuleika logged a 72-hour cleaning on Thursday and it didn't save, so she had to add it
+manually". **It was a bug, not user error**, and it is the same defect as the two above wearing different
+clothes: `recordAreaForTask()` maps a completed task's TITLE to the record it should file, and the two
+re-clean tasks **this app raises itself** were never in the map.
+- `generateRecleanTasks` writes `72h Re-clean — Room 7` and `raiseAtpRecleanTask` writes
+  `Re-clean — Room 1 (2 failed ATP swabs)`. Every other entry in `AREA_FROM_TITLE` answers a title a
+  **seeder** wrote, which is why these two were missed — they are generated at runtime.
+- **The room then stays flagged, and no replacement task is raised.** The 72-hour rule reads
+  `sanitation_records`, so with no record the room is still expired; and `reclean_actions` already holds a
+  row for that `flag_key`, which only moves when the last clean does — so `generateRecleanTasks` raises
+  nothing new. The room sits flagged with the task closed and nothing to do about it. Filing the clean by
+  hand is the only way out, which is exactly what she did.
+- **The title carries the LABEL, the record needs the TOKEN.** `areaToken()` (the inverse of `areaLabel`,
+  and next to it in `shared/rooms.js` so they cannot drift) puts `Room 7` back to `7` — file it under the
+  label and the rule joins a clean of "Room 7" against a run in "7" and finds neither, which is the same
+  bug one layer down. Round-tripping every room token is asserted.
+- **The old records are recoverable and nothing needs redoing**: the completions are in `work_orders` with
+  their date, person and readings, and the backfill's SQL prefilter (`LIKE '%Clean%'`) already covers
+  "Re-clean" — **the prefilter-wider-than-the-map rule paying off exactly as written**. Run the amber strip
+  on QA Inspections / Sanitation and they file as `entered_late` with the real completion date.
+- Reproduced end to end before fixing (task completes, sanitation log gains nothing, room still
+  `expired_72h`), then the identical script passes on all 7. The negative controls matter as much: a
+  maintenance PM, a lubrication PM and `Clean the auger housing` must still file **nothing**.
+
 ### Backfilling the checks that were done and never recorded (`server/qa-record-backfill.js`)
 The work happened — the completions are in `work_orders` with their date, person and readings — so asking
 the plant to redo months of checks would be absurd. `GET|POST /sanitation/qa-backfill[/preview]` (QA/

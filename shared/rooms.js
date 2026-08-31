@@ -53,3 +53,24 @@ export function areaLabel(area) {
   const s = String(area ?? '').trim();
   return ROOM_TOKENS.has(s) ? roomLabel(s) : s;
 }
+
+/**
+ * The inverse: a label as a person reads it, back to the token records store.
+ *
+ * IT LIVES HERE, NEXT TO `areaLabel`, BECAUSE IT HAS TO ROUND-TRIP. A generated
+ * work-order title carries the LABEL ("72h Re-clean — Room 7") — that is the
+ * whole reason the title is built with `areaLabel` — but the sanitation record
+ * that completing it files must carry the TOKEN ("7"), or the 72-hour rule
+ * joins a clean of "Room 7" against a run in "7" and finds neither. That is the
+ * failure `areaLabel`'s own note warns about, arrived at from the other side.
+ *
+ * A leading "Room " is stripped only when what is left is a real token, so an
+ * area genuinely called "Room Service" passes through as written rather than
+ * becoming "Service".
+ */
+export function areaToken(label) {
+  const s = String(label ?? '').trim();
+  if (ROOM_TOKENS.has(s)) return s;
+  const m = /^Room\s+(.+)$/i.exec(s);
+  return m && ROOM_TOKENS.has(m[1].trim()) ? m[1].trim() : s;
+}

@@ -16,6 +16,8 @@
 // correctly on QA's list while the tasks that produce them still sat under
 // Cleaning. Both live here now so they cannot drift again.
 
+import { areaToken } from '../shared/rooms.js';
+
 export const QA_RECORD_AREA = /^(brittle plastic|light inspection|temp\s*\/?\s*humidity|temperature\s*(&|and)?\s*humidity)/i;
 
 export function recordGroupFor(area) {
@@ -110,6 +112,22 @@ const AREA_FROM_TITLE = [
   [/^Warehouse\s*[&/]\s*Grounds.*cleaning/i, () => 'Warehouse & Grounds'],
   [/^Restroom.*cleaning/i, () => 'Restroom'],
   [/^Production Line Pre-?Op|^.*Changeover Clean/i, () => 'Production'],
+  // THE RE-CLEAN TASKS THIS APP RAISES ITSELF, and the reason they were missing
+  // for so long: every other entry here answers a title a SEEDER wrote, and
+  // these two are generated at runtime by `generateRecleanTasks` (the 72-hour
+  // rule) and `raiseAtpRecleanTask` (two failed swabs). So the cleaner did the
+  // work, completed the task, and the sanitation log gained nothing — she then
+  // had to file the clean a second time by hand, and until she did, the room
+  // went on reading as overdue because the 72-hour rule reads the RECORDS.
+  //
+  // Worse than a lost record: `reclean_actions` already held a row for that
+  // flag_key and the key only moves when the last clean does, so no replacement
+  // task was raised either. The room sat flagged with nothing to do about it.
+  //
+  // The title carries the LABEL ("Room 7"); `areaToken` puts it back to the
+  // token the log stores, or the record files under an area the rule cannot
+  // join. The trailing "(2 failed ATP swabs)" is stripped.
+  [/^(?:72h\s+)?Re-?clean\s*[—–-]\s*(.+?)\s*(?:\([^()]*\))?$/i, label => areaToken(label)],
 ];
 
 /**
