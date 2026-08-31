@@ -850,4 +850,53 @@ router.get('/files/coverage', (req, res) => {
   });
 });
 
+// ── Undoing an import that filed under the wrong name ───────────────────────
+//
+// A supplier created by a mistaken import is not a record of anything — the
+// plant's whole archive once imported as ONE company named after the download
+// folder — and leaving it on the register is worse than removing it: an
+// auditor reading "Supplier Qualification Questionnaire, 1,191 documents"
+// learns something false about who we buy from.
+//
+// But a supplier Quality has DECIDED about is a record, and the rule everywhere
+// else here is retire, never delete. So this refuses the moment anything real
+// has happened to it: a qualification, a disposition off "unqualified", or a
+// stored document. What is left it can remove is exactly a filing mistake.
+router.delete('/:id', (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  const db = getDb();
+  const s = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Not found' });
+  const reason = clean(req.body?.reason, 400);
+  if (!reason || reason.length < 3) return res.status(400).json({ error: 'A reason is required' });
+
+  // A QUALIFICATION ROW IS NOT A DECISION. The import writes one per vendor per
+  // period to hold the evidence it found, so counting rows would refuse every
+  // supplier the import ever created — including the mistaken one this exists
+  // to remove. What makes it a record is a DISPOSITION, or a signature.
+  const decided = db.prepare(`SELECT COUNT(*) c FROM supplier_qualifications
+    WHERE supplier_id = ? AND (disposition IS NOT NULL OR decided_at IS NOT NULL)`).get(s.id).c;
+  if (decided) return res.status(409).json({ error: `${s.name} carries ${decided} recorded disposition(s). A decided supplier is retired, not deleted.` });
+  if (s.status && s.status !== 'unqualified') {
+    return res.status(409).json({ error: `${s.name} carries a disposition (${s.status}). A decided supplier is retired, not deleted.` });
+  }
+  const stored = db.prepare('SELECT COUNT(*) c FROM supplier_files WHERE supplier_id = ? AND storage_key IS NOT NULL').get(s.id).c;
+  if (stored) {
+    return res.status(409).json({ error: `${s.name} has ${stored} stored document(s). Those are real evidence — move or remove them before deleting the supplier.` });
+  }
+
+  const files = db.prepare('SELECT COUNT(*) c FROM supplier_files WHERE supplier_id = ?').get(s.id).c;
+  const materials = db.prepare('SELECT COUNT(*) c FROM supplier_materials WHERE supplier_id = ?').get(s.id).c;
+  db.transaction(() => {
+    db.prepare('DELETE FROM supplier_qualifications WHERE supplier_id = ?').run(s.id);
+    db.prepare('DELETE FROM supplier_files WHERE supplier_id = ?').run(s.id);
+    db.prepare('DELETE FROM supplier_materials WHERE supplier_id = ?').run(s.id);
+    db.prepare('DELETE FROM supplier_contacts WHERE supplier_id = ?').run(s.id);
+    db.prepare('DELETE FROM suppliers WHERE id = ?').run(s.id);
+  })();
+  logAudit(req.user, 'supplier_deleted', 'supplier', s.id,
+    { reason, catalogued_files: files, materials }, s, null, s.name);
+  res.json({ ok: true, deleted: { supplier: s.name, catalogued_files: files, materials } });
+});
+
 export default router;

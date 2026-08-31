@@ -36,6 +36,26 @@ t('an undated vendor folder is left alone',
   archiveRoot(['AIFI/a.pdf', 'AIFI/b.pdf']) === '');
 t('nothing shared means nothing stripped',
   archiveRoot(['AIFI/2025/a.pdf', 'Dawn/2025/b.pdf']) === '');
+// The one that cost a whole import: a single spreadsheet at the top of the
+// archive is under no vendor, and it must not cancel the wrapper for the rest.
+{
+  const root = 'Supplier Qualification Questionnaire';
+  const many = [];
+  for (const v of ['AIFI', 'Dawn', 'Bio-Cat', 'GSO', 'Talus']) {
+    many.push(`${root}/${v}/2025/a.pdf`, `${root}/${v}/b.pdf`);
+  }
+  t('ONE LOOSE FILE AT THE TOP DOES NOT VETO THE STRIP',
+    archiveRoot([...many, `${root}/Current Suppliers.xlsx`]) === root,
+    archiveRoot([...many, `${root}/Current Suppliers.xlsx`]));
+  t('...and the year rule still wins over it',
+    archiveRoot(['AIFI/2025/a.pdf', 'AIFI/2026/b.pdf', 'AIFI/notes.txt']) === '');
+  // Loose files are orphaned by the strip and reported as not filed under a
+  // vendor, which is what they are — so the strip is still right here.
+  t('loose files are orphaned, not allowed to cancel the strip',
+    archiveRoot([`${root}/a.pdf`, `${root}/b.pdf`, `${root}/c.pdf`, `${root}/AIFI/2025/d.pdf`]) === root);
+  t('a single-vendor zip with no year folders is still not stripped',
+    archiveRoot(['AIFI/a.pdf', 'AIFI/b.pdf']) === '');
+}
 t('a flat zip yields no prefix', commonPrefix(['a.pdf', 'b.pdf']) === '');
 t('stripPrefix only strips a whole segment', stripPrefix('Millhaven/a.pdf', 'Mill') === 'Millhaven/a.pdf');
 

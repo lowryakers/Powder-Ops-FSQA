@@ -61,10 +61,28 @@ const YEAR = /^(19|20)\d{2}$/;
 export function archiveRoot(paths) {
   const lists = (paths || []).map(p => normalizePath(p).split('/')).filter(l => l.length > 1);
   if (!lists.length) return '';
+  // A HANDFUL OF LOOSE FILES MUST NOT VETO THE STRIP FOR EVERYTHING ELSE.
+  // Requiring every path to survive it meant one spreadsheet sitting at the top
+  // of the archive — "Current Suppliers.xlsx", which is genuinely under no
+  // vendor — cancelled the wrapper for the other 1,280 paths, and the whole
+  // archive imported as a single supplier named after the download folder.
+  // Same shape as the __MACOSX entry that once destroyed the shared prefix.
+  //
+  // So: the strip must never leave a YEAR at the front of a path deep enough to
+  // have one, and it must still leave a vendor and a filename for the great
+  // majority. Files it orphans are reported by parseArchivePath as not filed
+  // under a vendor, which is exactly what they are.
   const shared = commonPrefix(paths).split('/').filter(Boolean);
   for (let n = shared.length; n > 0; n--) {
-    const ok = lists.every(l => l.length - n >= 2 && !YEAR.test(l[n]));
-    if (ok) return shared.slice(0, n).join('/');
+    // THE YEAR TEST IS THE DISCRIMINATOR, and it is the only one needed. A
+    // percentage of surviving paths was a second, arbitrary rule that made the
+    // answer depend on how many loose files an archive happens to carry — five
+    // paths with one loose file behaved differently from a thousand with one.
+    // A path the strip orphans is reported as not filed under a vendor, which
+    // is exactly what a spreadsheet at the top of the archive is.
+    const noYear = lists.every(l => l.length <= n + 1 || !YEAR.test(l[n]));
+    const kept = lists.filter(l => l.length - n >= 2).length;
+    if (noYear && kept > 0) return shared.slice(0, n).join('/');
   }
   return '';
 }

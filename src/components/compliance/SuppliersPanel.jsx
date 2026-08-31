@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment } from 'react';
-import { useApiGet, apiPost, apiUpload } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiDelete, apiUpload } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow } from '../common/RowDetail';
 import { useCappedList } from '../../lib/useCappedList';
@@ -13,7 +13,7 @@ import { formatDate } from '../../lib/datetime';
 import { downloadFile } from '../../lib/downloadFile.js';
 import {
   Building2, Search, AlertTriangle, Upload, Check, X, ShieldCheck,
-  CalendarClock, FileWarning, Link2, Loader2,
+  CalendarClock, FileWarning, Link2, Loader2, Trash2,
 } from 'lucide-react';
 
 // Supplier and laboratory qualification — SOP 404 V4.
@@ -228,7 +228,7 @@ export default function SuppliersPanel({ user }) {
                     </tr>
                     {expand.isExpanded(s.id) && (
                       <DetailRow colSpan={COLUMNS.length}>
-                        <SupplierDetail id={s.id} user={user} onDecide={() => setDecide(s)} />
+                        <SupplierDetail id={s.id} user={user} onDecide={() => setDecide(s)} onRemoved={refresh} />
                       </DetailRow>
                     )}
                   </Fragment>
@@ -255,7 +255,7 @@ export default function SuppliersPanel({ user }) {
 
 // ── One supplier, expanded ──────────────────────────────────────────────────
 
-function SupplierDetail({ id, user, onDecide }) {
+function SupplierDetail({ id, user, onDecide, onRemoved }) {
   const { data, loading } = useApiGet(`/suppliers/${id}`);
   if (loading || !data) return <div className="py-4 text-sm text-slate-500">Loading…</div>;
   const { supplier, contacts, materials, qualifications, files } = data;
@@ -330,6 +330,27 @@ function SupplierDetail({ id, user, onDecide }) {
             ))}
           </ul>
         ) : <p className="text-sm text-slate-400">None.</p>}
+        {/* Only offered where it can succeed: nothing decided, nothing stored.
+            An import that filed under the wrong name is a mistake to undo; a
+            supplier Quality has ruled on is retired, never deleted. */}
+        {user?.role === 'admin' && !qualifications.length && supplier.status === 'unqualified'
+          && !files.some(f => f.stored) && (
+          <button type="button"
+            onClick={async (e) => {
+              stopRowClick(e);
+              const reason = window.prompt(
+                `Remove "${supplier.name}" from the register?\n\nThis deletes its ${files.length} catalogued document row(s). `
+                + 'It is refused if anything has been decided or stored.\n\nWhy?');
+              if (!reason) return;
+              try {
+                await apiDelete(`/suppliers/${supplier.id}`, { reason });
+                onRemoved?.();
+              } catch (err) { window.alert(err.message || 'Could not remove that supplier'); }
+            }}
+            className="mt-2 inline-flex items-center gap-1.5 rounded border border-rose-300 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40">
+            <Trash2 className="h-4 w-4" /> Remove — filed by mistake
+          </button>
+        )}
         {canDecide && (
           <button type="button" onClick={(e) => { stopRowClick(e); onDecide(); }}
             className="mt-2 inline-flex items-center gap-1.5 rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700 dark:bg-slate-200 dark:text-slate-900">

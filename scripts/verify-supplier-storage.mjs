@@ -276,6 +276,61 @@ console.log('\n── the zip crosses the wire once, and storing is batched ─�
     return (await up('/suppliers/files/archive/commit', f)).status; })()) === 410);
 }
 
+console.log('\n── a loose file at the top of the archive ──');
+// The one that cost a whole import: step one filed 1,191 documents under a
+// single supplier named after the download folder, because one spreadsheet
+// sitting at the top of the archive vetoed the wrapper strip for everything.
+{
+  const AdmZip = (await import('adm-zip')).default;
+  const db0 = new Database(process.env.DBPATH);
+  const vends = db0.prepare("SELECT name FROM suppliers WHERE name LIKE 'AIFI%' OR name LIKE 'Mill Haven%'").all();
+  db0.close();
+  const root = 'Supplier Qualification Questionnaire';
+  const z = new AdmZip();
+  for (const v of vends) {
+    z.addFile(`${root}/${v.name}/2029/Loose ${v.name} Kosher Exp. 12.31.2030.pdf`, Buffer.from('%PDF-1.4 x'));
+    z.addFile(`${root}/${v.name}/Loose ${v.name} Spec.pdf`, Buffer.from('%PDF-1.4 y'));
+  }
+  z.addFile(`${root}/Current Suppliers.xlsx`, Buffer.from('loose'));   // under no vendor
+  const before = (await J(await req('/suppliers')))?.suppliers?.length;
+  const fd = new FormData();
+  fd.append('files', new Blob([z.toBuffer()]), `${root}.zip`);
+  const imp = await J(await up('/suppliers/import/commit', fd));
+  const after = (await J(await req('/suppliers')))?.suppliers;
+  t('STEP ONE DOES NOT INVENT A SUPPLIER NAMED AFTER THE DOWNLOAD',
+    !after.some(x => x.name === root), after.filter(x => x.name === root).length + ' found');
+  t('...and creates no new suppliers for vendors it already knows',
+    after.length === before, `${before} → ${after.length}`);
+  const fd2 = new FormData();
+  fd2.append('files', new Blob([z.toBuffer()]), `${root}.zip`);
+  const an2 = await J(await up('/suppliers/files/archive/analyze', fd2));
+  t('step two places the documents under the real vendors',
+    an2?.plan?.counts?.store === vends.length * 2, JSON.stringify(an2?.plan?.counts));
+}
+
+console.log('\n── undoing a mistaken import ──');
+{
+  const AdmZip = (await import('adm-zip')).default;
+  const z = new AdmZip();
+  z.addFile('Mistake Co/2025/a.pdf', Buffer.from('%PDF-1.4 q'));
+  const fd = new FormData();
+  fd.append('files', new Blob([z.toBuffer()]), 'mistake.zip');
+  await up('/suppliers/import/commit', fd);
+  const made = (await J(await req('/suppliers')))?.suppliers?.find(x => x.name === 'Mistake Co');
+  t('a mistaken supplier exists to remove', !!made);
+
+  const noReason = await req(`/suppliers/${made.id}`, { method: 'DELETE', body: JSON.stringify({}) });
+  t('a delete with no reason is refused', noReason.status === 400, `${noReason.status}`);
+  const ok = await req(`/suppliers/${made.id}`, { method: 'DELETE', body: JSON.stringify({ reason: 'filed under the download folder by mistake' }) });
+  t('an undecided, unstored supplier can be removed', ok.status === 200, `${ok.status}`);
+  t('...and it is gone', !(await J(await req('/suppliers')))?.suppliers?.some(x => x.name === 'Mistake Co'));
+
+  // A supplier with documents actually stored is NOT removable.
+  const withBytes = (await J(await req('/suppliers')))?.suppliers?.find(x => /aifi/i.test(x.name));
+  const refused = await req(`/suppliers/${withBytes.id}`, { method: 'DELETE', body: JSON.stringify({ reason: 'testing the guard' }) });
+  t('A SUPPLIER WITH STORED EVIDENCE IS REFUSED', refused.status === 409, `${refused.status}`);
+}
+
 console.log('\n── permissions ──');
 const anon = await fetch(`${B}/suppliers/files/archive/commit`, { method: 'POST', body: new FormData() });
 t('an unauthenticated archive upload is refused', anon.status === 401 || anon.status === 403, `${anon.status}`);
