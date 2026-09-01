@@ -6,10 +6,16 @@ import { Check, AlertTriangle, Circle, ArrowRight, RefreshCw, HelpCircle, MinusC
  * "What does this machine still need?" — rendered from the server's readiness
  * check, never from anything ticked by hand.
  *
- * The steps are DERIVED, so there is nothing to save and nothing that can go
- * stale: a step is done when its record exists. That also means this works on
- * the hundred pieces of equipment added long before it shipped, which a
- * one-shot "new equipment wizard" never could.
+ * The steps are DERIVED — a step is done when its record exists — which is what
+ * makes this work on the hundred pieces of equipment added long before it
+ * shipped, where a one-shot "new equipment wizard" never could. Retire the LOTO
+ * procedure and the step goes back to outstanding by itself.
+ *
+ * TWO OF THEM CAN STILL BE OUT OF DATE, and those read AMBER. A hygienic design
+ * verification and a LOTO procedure are assertions about the machine as it was;
+ * change the model, the serial or the food-contact flag and what was signed off
+ * is not what is standing there. Those steps come back onto the list naming
+ * what moved. Everything else here is a live count and cannot go stale.
  *
  * Each step LINKS to the module that owns it rather than offering to create it
  * here. A PM schedule written by a checklist is a PM schedule with a guessed
@@ -24,11 +30,15 @@ const TONE = {
   // A waived step stays on the list, greyed rather than gone — the decision is
   // the record, and one that vanished could never be questioned or undone.
   waived: { ring: 'border-gray-200 bg-gray-50', icon: MinusCircle, iconClass: 'text-gray-400' },
+  // Done, but the machine moved underneath it. Distinct from never-done: the
+  // work happened and needs looking at again, not doing from scratch.
+  stale: { ring: 'border-amber-300 bg-amber-50', icon: RefreshCw, iconClass: 'text-amber-600' },
 };
 
 function toneFor(step) {
   if (step.waived) return 'waived';
   if (step.unknown) return 'unknown';
+  if (step.stale) return 'stale';
   if (step.done) return 'done';
   return step.weight === 'required' ? 'blocking' : 'optional';
 }
@@ -159,7 +169,7 @@ export default function EquipmentSetupChecklist({ equipmentId, initial, compact 
                     <span className="text-[10px] text-gray-400">optional</span>
                   )}
                 </div>
-                <p className="text-[11px] text-gray-500">{step.detail}</p>
+                <p className={`text-[11px] ${step.stale ? 'text-amber-800 font-medium' : 'text-gray-500'}`}>{step.detail}</p>
                 {step.waived && step.waived_by && (
                   <p className="text-[11px] text-gray-400">Marked by {step.waived_by}</p>
                 )}

@@ -2978,6 +2978,15 @@ function runMigrations() {
   // equipment's PM schedules and open work orders when set.
   addColumnIfMissing('equipment', 'task_group', 'TEXT');
 
+  // WHAT EACH READY STEP WAS TRUE AGAINST — see server/equipment-readiness.js.
+  //
+  // Most of that checklist is a live count of records and cannot go stale, but
+  // three steps are an assertion about the machine as it was: the hygienic
+  // design verification, the LOTO procedure, and the schedules generated from
+  // the maintenance tasks. This records the facts each was satisfied against so
+  // a machine that has changed underneath them says so.
+  addColumnIfMissing('equipment', 'readiness_basis', 'TEXT');
+
   // Make work_orders.equipment_id nullable so departments (e.g. Document
   // Control) can be assigned free-form tasks that aren't tied to a machine.
   // One-time, transactional table rebuild — guarded so it only runs once.

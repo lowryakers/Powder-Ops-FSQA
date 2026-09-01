@@ -2949,6 +2949,35 @@ concluded the composer couldn't do it. Three additions, all on the existing gram
 - Wired into the comms composer, both thread reply boxes, the newsletter intro + section bodies, and meeting
   minutes. Verified in the browser — 21 assertions across the three modules.
 
+### Two of the ten setup steps can be out of date, and eight cannot
+The same question as the product checklist, and **the answer is much smaller here — which is the finding**.
+Every equipment step is a LIVE COUNT of records ("is there a LOTO procedure right now"), so retiring the
+procedure flips the step back by itself. Nothing to expire. Two are different: they are an assertion about
+**the machine as it was**, and the machine can change underneath them.
+- **`hygienic_design` depends on `machine` + `food_contact`**, `loto` on `machine`
+  (`type|model_number|serial_number`). A verification says this equipment is cleanable and a LOTO procedure
+  lists this machine's isolation points; swap the model and neither describes what is standing there. A
+  relabel and a replacement are indistinguishable from here, so both read as "look at this again" — the
+  honest side to err on for a lockout procedure.
+- **The PM schedule was a candidate and is DELIBERATELY NOT ONE.** Schedules are generated from
+  `maintenance_tasks`, but `syncMaintenanceTasksToPM` already pushes an edit into every active schedule and
+  its open work orders — so the step really is up to date and flagging it would be a warning that fires
+  when nothing is wrong. **Checked before adding the edge, not assumed.**
+- **That check found a real hole next door:** `stepsForFrequency` returns null both when a machine has no
+  tasks at that cadence and when somebody has just deleted them all, and the sync skipped on null — so
+  emptying the Weekly tasks left the Weekly schedule, and every open work order under it, still handing the
+  technician a list that no longer exists on the equipment record. An empty list is written through now.
+- **`stampEquipmentReadiness` is called from three write paths** — the equipment edit, a LOTO procedure
+  being written, a design verification being decided. Only the last two pass the step's own key, so an
+  ordinary equipment edit adopts a baseline and never clears staleness.
+- **The first-sight rule again**: a machine whose work predates all this has no recorded basis and reads as
+  **done, never stale**, or the deploy lights up the whole plant at once. Asserted.
+- **`stale` is reported separately from `outstanding`** — "three things were never done" and "three were
+  done and something moved underneath them" are different problems. Amber with `RefreshCw`, naming what
+  changed; a stale step is not done and drops out of the ready count.
+- Verified: 21 assertions (`npm run check:eqready`, in `npm run check`), and **the control matters** —
+  removing the leave-it-alone clause makes 2 fail, because nothing can ever go stale.
+
 ### Marking a setup step "not applicable"
 Nobody writes a work instruction for switching on an A/C, and a checklist that can't be told so is one people
 learn to ignore — which costs more than the step it was nagging about. `equipment_step_waivers`.

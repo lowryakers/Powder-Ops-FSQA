@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { stampEquipmentReadiness } from '../equipment-readiness.js';
 
 const router = Router();
 
@@ -41,6 +42,10 @@ router.post('/procedures', (req, res) => {
     JSON.stringify(energy_sources), JSON.stringify(steps),
     required_locks ?? 1, required_tags ?? 1, verification_method || 'try_start');
 
+  // The LOTO step has just been re-done, so it records the machine it was
+  // written for. Change the model afterwards and the readiness checklist says
+  // the procedure needs looking at again rather than showing a green tick.
+  stampEquipmentReadiness(db, equipment_id, ['loto'], req.user?.name);
   const created = db.prepare('SELECT * FROM loto_procedures WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'loto_procedure', id, { title, equipment_id }, null, created);
   res.status(201).json(created);

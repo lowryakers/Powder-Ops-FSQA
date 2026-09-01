@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { stampEquipmentReadiness } from '../equipment-readiness.js';
 
 const router = Router();
 
@@ -84,6 +85,11 @@ router.put('/:id/approve', (req, res) => {
     UPDATE design_verifications SET overall_result=?, conditions=?, approved_by=?, approved_at=datetime('now'), notes=?, updated_at=datetime('now')
     WHERE id=?
   `).run(overall_result, conditions || null, approved_by, notes ?? existing.notes, req.params.id);
+  // Deciding the verification records WHAT was verified — the model, the serial
+  // and whether it is food-contact as they stand right now. Swap the machine
+  // afterwards and the checklist says the verification is against something
+  // else, instead of a green tick over equipment nobody has looked at.
+  if (existing.equipment_id) stampEquipmentReadiness(db, existing.equipment_id, ['hygienic_design'], req.user?.name);
   logAudit(req.user, `design_verification_${overall_result}`, 'design_verification', req.params.id, `${overall_result}: ${conditions || 'No conditions'}`);
   res.json({ success: true });
 });

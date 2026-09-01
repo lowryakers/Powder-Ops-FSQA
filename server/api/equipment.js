@@ -9,7 +9,7 @@ import { extractInvoiceText } from '../invoice-text.js';
 import { repairTasks, repairConfidence } from '../task-text-repair.js';
 import { trueDuplicates, sameNameDifferentAsset, crossRegistryMatches } from '../registry-dupes.js';
 import { aiEnabled, compareManualToTasks } from '../ai.js';
-import { equipmentReadiness, readinessSummary, READINESS_STEPS } from '../equipment-readiness.js';
+import { equipmentReadiness, readinessSummary, READINESS_STEPS, stampEquipmentReadiness } from '../equipment-readiness.js';
 import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
 
 // The status vocabulary the table's CHECK-free column actually uses.
@@ -62,8 +62,13 @@ function syncMaintenanceTasksToPM(db, equipmentId) {
   const schedules = db.prepare('SELECT id, frequency_type FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(equipmentId);
   let updated = 0;
   for (const s of schedules) {
-    const steps = stepsForFrequency(tasks, s.frequency_type);
-    if (!steps) continue;
+    // EMPTYING A FREQUENCY IS AN EDIT TOO. `stepsForFrequency` returns null
+    // both when the machine has no tasks at that cadence and when somebody has
+    // just deleted them all, and skipping on null left the schedule — and every
+    // open work order under it — still handing the technician a list that no
+    // longer exists on the equipment record. An empty list is written through,
+    // which is the honest state: the schedule runs, and it says so.
+    const steps = stepsForFrequency(tasks, s.frequency_type) || [];
     updated += 1;
     const stepsJson = JSON.stringify(steps);
     db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?").run(stepsJson, s.id);
@@ -904,6 +909,11 @@ router.put('/:id', (req, res) => {
     syncMaintenanceTasksToPM(db, req.params.id);
   }
 
+  // Adopt the current facts for any step already satisfied and not yet
+  // recorded (the first-sight rule), and leave a recorded basis alone so a
+  // changed model or food-contact flag leaves the verification behind it.
+  // Nothing here is a step's OWN column, so an edit never clears staleness.
+  stampEquipmentReadiness(db, req.params.id, [], req.user?.name);
   const updated = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'equipment', req.params.id, null, existing, updated);
   res.json(updated);

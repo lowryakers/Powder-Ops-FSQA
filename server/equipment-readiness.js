@@ -38,6 +38,115 @@
  */
 import { needsLoto, needsTraining, needsCalibration, isZone } from '../shared/equipment-types.js';
 
+/* ── What a step was true against ─────────────────────────────────────────────
+ *
+ * MOST OF THIS CHECKLIST CANNOT GO STALE, and that is why the dependency model
+ * here is three edges rather than the seven the product one needs. Every step
+ * below is a LIVE COUNT of records — "is there a LOTO procedure right now",
+ * "is there an active schedule right now" — so retiring the procedure flips the
+ * step back to outstanding by itself. Nothing to remember, nothing to expire.
+ *
+ * Three of them are different: they are an assertion made ABOUT THE MACHINE AS
+ * IT WAS, and the machine can change underneath them.
+ *
+ *   · A hygienic design verification says this equipment is cleanable. Swap the
+ *     model, or start calling it food-contact, and what was verified is not
+ *     what is standing there.
+ *   · A LOTO procedure lists this machine's energy isolation points. A
+ *     different model is different points.
+ * The PM schedule was a candidate and is DELIBERATELY NOT ONE: schedules are
+ * generated from `maintenance_tasks`, but `syncMaintenanceTasksToPM` already
+ * pushes an edit straight into every active schedule and its open work orders,
+ * so the step genuinely is up to date and flagging it would be a warning that
+ * fires when nothing is wrong. Checked before adding the edge, not assumed.
+ *
+ * The rules are the ones product readiness already follows: a fact absent from
+ * what was recorded can never read as changed (the first-sight rule), a step
+ * that stops being satisfied drops its basis, and a stale step is NOT done.
+ */
+const FACTS = {
+  // What the machine IS. A relabel and a replacement are indistinguishable from
+  // here, so both are treated as "look at this again" — the honest side to err
+  // on for a lockout procedure.
+  machine: (eq) => `${eq.type || ''}|${eq.model_number || ''}|${eq.serial_number || ''}`,
+  food_contact: (eq) => (eq.is_food_contact ? '1' : '0'),
+};
+
+const FACT_LABEL = {
+  machine: 'the model or serial number',
+  food_contact: 'whether it is food-contact',
+};
+
+/** Only the steps that can be out of date, and what puts them there. */
+const DEPENDS = {
+  hygienic_design: ['machine', 'food_contact'],
+  loto: ['machine'],
+};
+
+function parseBasis(raw) {
+  return (() => {
+    try {
+      const v = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return v && typeof v === 'object' ? v : {};
+    } catch { return {}; }
+  })();
+}
+
+function fingerprint(stepId, eq) {
+  const out = {};
+  for (const f of DEPENDS[stepId] || []) out[f] = FACTS[f](eq);
+  return out;
+}
+
+/** Which recorded dependencies have moved. Absent ones are never "changed". */
+function movedSince(stepId, eq, recorded) {
+  const out = [];
+  for (const f of DEPENDS[stepId] || []) {
+    if (!recorded || !(f in recorded)) continue;
+    if (FACTS[f](eq) !== recorded[f]) out.push(f);
+  }
+  return out;
+}
+
+/**
+ * Record what each satisfied step is true against.
+ *
+ * Called from the four write paths that can satisfy one of the three: the
+ * equipment edit itself, a LOTO procedure being written, a design verification
+ * being decided, and schedules being generated from the tasks. `changedColumns`
+ * is what makes it precise — writing a column the step OWNS means the work was
+ * re-done and the basis moves with it; writing anything else leaves the basis
+ * alone so the step can go stale.
+ *
+ * A step already satisfied with NO recorded basis adopts the current facts
+ * silently. That is the first-sight rule, and it is what stops the deploy that
+ * ships this lighting up every machine in the plant at once.
+ */
+const OWNS = {
+  hygienic_design: ['hygienic_design'],
+  loto: ['loto'],
+};
+
+export function stampEquipmentReadiness(db, equipmentId, changedColumns = [], who = null) {
+  let eq;
+  try { eq = db.prepare('SELECT * FROM equipment WHERE id = ?').get(equipmentId); } catch { return; }
+  if (!eq) return;
+  const basis = parseBasis(eq.readiness_basis);
+  const touched = new Set(changedColumns);
+  const now = new Date().toISOString();
+  for (const step of STEPS) {
+    if (!DEPENDS[step.id]) continue;
+    if (!step.applies(eq)) { delete basis[step.id]; continue; }
+    const done = (() => { try { return !!step.check(db, eq).done; } catch { return false; } })();
+    if (!done) { delete basis[step.id]; continue; }
+    const redone = (OWNS[step.id] || []).some((c) => touched.has(c));
+    if (basis[step.id] && !redone) continue;   // leave it, so it can go stale
+    basis[step.id] = { at: basis[step.id] && !redone ? basis[step.id].at : now, by: who, deps: fingerprint(step.id, eq) };
+  }
+  try { db.prepare('UPDATE equipment SET readiness_basis = ? WHERE id = ?').run(JSON.stringify(basis), equipmentId); }
+  catch { /* column optional on an older database */ }
+}
+
 
 // `required` steps are what "ready" means. `recommended` ones are real, but a
 // plant can reasonably run without them, and marking everything required is how
@@ -229,6 +338,8 @@ export function equipmentReadiness(db, equipment) {
     }
   } catch { waivers = {}; }
 
+  const basis = parseBasis(equipment.readiness_basis);
+
   const steps = STEPS.filter(s => s.applies(equipment)).map(s => {
     const waiver = waivers[s.id];
     // A waived step is NOT removed from the list. It stays, reading "not
@@ -238,7 +349,7 @@ export function equipmentReadiness(db, equipment) {
     if (waiver) {
       return {
         id: s.id, label: s.label, why: s.why, weight: s.weight, link: s.link,
-        done: false, unknown: false, waived: true,
+        done: false, unknown: false, waived: true, stale: false, changed: [], changed_labels: [],
         waiver_reason: waiver.reason, waived_by: waiver.waived_by, waived_at: waiver.waived_at,
         detail: `Not applicable — ${waiver.reason}`,
       };
@@ -246,9 +357,20 @@ export function equipmentReadiness(db, equipment) {
     let result;
     try { result = s.check(db, equipment); }
     catch (e) { result = { done: false, unknown: true, detail: `Could not check (${e.message})` }; }
+    // Done, but something it was recorded against has since moved. A STALE STEP
+    // IS NOT DONE: it goes back on the outstanding list naming what changed,
+    // because that is the only way anyone finds out.
+    const moved = result.done ? movedSince(s.id, equipment, basis[s.id]?.deps) : [];
     return {
       id: s.id, label: s.label, why: s.why, weight: s.weight, link: s.link,
-      done: !!result.done, unknown: !!result.unknown, waived: false, detail: result.detail || '',
+      done: !!result.done && moved.length === 0,
+      unknown: !!result.unknown, waived: false,
+      stale: moved.length > 0,
+      changed: moved,
+      changed_labels: moved.map((f) => FACT_LABEL[f] || f),
+      detail: moved.length
+        ? `Needs re-checking — ${moved.map((f) => FACT_LABEL[f] || f).join(' and ')} changed since`
+        : (result.detail || ''),
     };
   });
   // Waived steps are not outstanding — that is the whole point of waiving one —
@@ -267,6 +389,10 @@ export function equipmentReadiness(db, equipment) {
     done: steps.filter(s => s.done).length,
     applicable: steps.length - waived,
     outstanding: outstanding.length,
+    // Named separately from the rest of the outstanding work: "three things
+    // were never done" and "three things were done and something moved
+    // underneath them" are different problems needing different attention.
+    stale: steps.filter(s => s.stale).map(s => s.label),
     // What "ready" means. A machine missing only recommended steps is running
     // legitimately; one missing a required step is not.
     blocking: outstanding.filter(s => s.weight === 'required').length,
