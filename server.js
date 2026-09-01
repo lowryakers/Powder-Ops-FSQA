@@ -101,6 +101,7 @@ import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
 import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
+import { seedProductShelf } from './server/product-shelf.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedDilutionLog } from './server/dilution-log-seed.js';
@@ -1120,6 +1121,9 @@ try {
   // holding a product name there cannot resolve.
   repairBaseFlavors(db);
   seedFlavorCodes(db);
+  // The reference-document slots. Insert-only per key, so a cadence somebody
+  // changed or a slot they retired survives every redeploy.
+  seedProductShelf(db);
 
   // Sticks + Hand Fill → Filling. Runs after every seed, because the historical
   // production seed still speaks the pre-merge team names on a fresh database.

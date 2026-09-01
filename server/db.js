@@ -2806,6 +2806,57 @@ function runMigrations() {
       FOREIGN KEY (version_id) REFERENCES nfp_versions(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_nfp_files_version ON nfp_files(version_id, kind);
+
+    -- ── The product shelf ────────────────────────────────────────────────────
+    --
+    -- The reference documents the product and artwork work runs on: the brand
+    -- guide a proof is checked against, the GS1 licence a retailer asks for,
+    -- the Shopify and ShipHero exports the catalogue is reconciled against.
+    -- Today they live in somebody's Drive and are re-found each time.
+    --
+    -- DELIBERATELY NOT CONTROLLED DOCUMENTS. An SOP has a revision, an approval
+    -- and a Document Change Request; a brand guide is a reference asset, and
+    -- putting Document Control in front of replacing one is how people stop
+    -- putting it here at all. Same reasoning that keeps Policies separate.
+    --
+    -- TWO TABLES, because "what we should have" and "what we have" are
+    -- different facts. A slot with a cadence and nothing filed against it in
+    -- time is REPORTED — that is what makes a monthly Shopify export something
+    -- other than a good intention.
+    CREATE TABLE IF NOT EXISTS product_doc_slots (
+      key          TEXT PRIMARY KEY,
+      label        TEXT NOT NULL,
+      description  TEXT,
+      -- NULL = keep the latest, no cadence. A number = a fresh copy is due
+      -- this often, and the shelf says when it is overdue.
+      cadence_days INTEGER,
+      sort_order   INTEGER NOT NULL DEFAULT 100,
+      is_active    INTEGER NOT NULL DEFAULT 1,
+      updated_by   TEXT,
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS product_documents (
+      id             TEXT PRIMARY KEY,
+      slot_key       TEXT NOT NULL,
+      title          TEXT NOT NULL,
+      filename       TEXT,
+      storage_key    TEXT,
+      content_type   TEXT,
+      size           INTEGER,
+      -- Searched, never shipped — the equipment-manual rule.
+      extracted_text TEXT,
+      text_status    TEXT,
+      -- When the document is FROM, which is not when it was uploaded. A
+      -- Shopify export pulled on the 1st and filed on the 4th is a 1st export.
+      effective_date TEXT,
+      link_url       TEXT,
+      notes          TEXT,
+      uploaded_by    TEXT,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (slot_key) REFERENCES product_doc_slots(key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_documents_slot
+      ON product_documents(slot_key, effective_date DESC);
   `);
 
   // Post-repair hygiene clearance

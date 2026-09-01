@@ -16,9 +16,11 @@ import { getDb, logAudit } from '../db.js';
 import { resolveFlavorCodes } from '../flavor-codes.js';
 import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js';
 import { READINESS, TICKABLE, readinessOf, nextBasis } from '../../shared/product-readiness.js';
+import { shelfState, gtinPrefixes } from '../product-shelf.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import fs from 'fs';
+import { extractInvoiceText } from '../invoice-text.js';
 
 const barcodeUpload = mediaUpload({ files: 1 }).array('files', 1);
 
@@ -130,6 +132,187 @@ router.get('/', (_req, res) => {
   const rows = hydrate(db.prepare(`${SELECT} ORDER BY p.sku`).all(), db);
   const specs = db.prepare('SELECT * FROM packaging_specs ORDER BY spec_id').all();
   res.json({ products: rows, specs, readinessSteps: READINESS.map((s) => ({ key: s.key, label: s.label })) });
+});
+
+/**
+ * The text inside a shelf document, for search.
+ *
+ * Returns '' when the file has no readable text and null when reading it threw
+ * — the row records which, so nobody assumes a search covered a scan it could
+ * not read. Never blocks the upload: losing the file is worse than losing the
+ * index.
+ */
+async function extractShelfText(f, slot) {
+  try {
+    const buf = await fs.promises.readFile(f.path);
+    return (await extractInvoiceText(buf, f.mimetype, f.originalname)) || '';
+  } catch (e) {
+    console.warn(`[products] shelf text not indexed (${slot}):`, e.message);
+    return null;
+  }
+}
+
+/* ── The shelf ─────────────────────────────────────────────────────────────
+ *
+ * The reference documents this work runs on — the brand guide a proof is
+ * checked against, the GS1 licence a retailer asks for, the Shopify export the
+ * catalogue is reconciled against. Declared before `/:sku`.
+ *
+ * Reading is open to the module: anyone proofing artwork needs the brand guide.
+ * Filing and retiring is `canManage`, the same as the catalogue itself.
+ */
+router.get('/shelf', (_req, res) => {
+  res.json(shelfState(getDb()));
+});
+
+// Upload a document into a slot. The file's text is indexed for search the way
+// equipment manuals and policies are — searched, never shipped.
+router.post('/shelf/:slot', mediaUpload().array('files', 1), async (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  const db = getDb();
+  const files = req.files || [];
+  try {
+    const slot = db.prepare('SELECT * FROM product_doc_slots WHERE key = ? AND is_active = 1').get(req.params.slot);
+    if (!slot) return res.status(404).json({ error: 'No such document slot.' });
+    const title = String(req.body?.title || '').trim() || files[0]?.originalname || slot.label;
+    const linkUrl = String(req.body?.link_url || '').trim() || null;
+    // A LINK IS A REAL ANSWER for a document that lives somewhere else and is
+    // meant to. Refusing both is the only thing worth refusing: a row with
+    // neither a file nor an address is a note, not a document.
+    if (!files.length && !linkUrl) {
+      return res.status(400).json({ error: 'Attach a file or give a link — a slot needs something to open.' });
+    }
+    if (files.length && !storageEnabled()) {
+      return res.status(503).json({ error: 'File storage is not configured — set the R2 variables.' });
+    }
+
+    const id = uuid();
+    let key = null, text = null, textStatus = null;
+    const f = files[0];
+    if (f) {
+      key = `product-shelf/${req.params.slot}/${id}-${(f.originalname || 'file').replace(/[^\w.-]+/g, '_')}`;
+      await putStream(key, fs.createReadStream(f.path), f.mimetype || null);
+      // A file whose text will not read is still a file — the row says which,
+      // rather than letting somebody assume a search covered it.
+      text = await extractShelfText(f, req.params.slot);
+      textStatus = text == null ? 'failed' : (text ? 'ok' : 'empty');
+    }
+    db.prepare(`INSERT INTO product_documents
+      (id, slot_key, title, filename, storage_key, content_type, size, extracted_text, text_status,
+       effective_date, link_url, notes, uploaded_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, req.params.slot, title, f?.originalname || null, key, f?.mimetype || null, f?.size || null,
+        text ?? null, textStatus,
+        // Dated from the document, not from the upload.
+        String(req.body?.effective_date || '').trim() || new Date().toISOString().slice(0, 10),
+        linkUrl, String(req.body?.notes || '').trim() || null, req.user?.name || null);
+    logAudit(req.user, 'create', 'product_document', id, { slot: req.params.slot, title }, null, null, title);
+    res.status(201).json(shelfState(db));
+  } catch (e) {
+    res.status(400).json({ error: uploadErrorMessage(e) || e.message });
+  } finally { cleanupTemp(files); }
+});
+
+// Everything filed in one slot, newest first — the history, which is the point
+// of a slot with a cadence.
+router.get('/shelf/:slot/documents', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`SELECT id, slot_key, title, filename, content_type, size, effective_date,
+    link_url, notes, uploaded_by, created_at, storage_key, text_status, extracted_text
+    FROM product_documents WHERE slot_key = ?
+    ORDER BY COALESCE(effective_date, created_at) DESC, created_at DESC LIMIT 200`).all(req.params.slot);
+  res.json({
+    documents: rows.map(({ extracted_text, storage_key, ...r }) => ({
+      ...r, has_file: !!storage_key,
+      searchable: extracted_text == null ? null : !!extracted_text,
+    })),
+  });
+});
+
+router.get('/shelf/documents/:id/file', async (req, res) => {
+  const db = getDb();
+  const d = db.prepare('SELECT * FROM product_documents WHERE id = ?').get(req.params.id);
+  if (!d) return res.status(404).json({ error: 'Not found.' });
+  if (!d.storage_key) return res.status(404).json({ error: 'This entry is a link, not a file.' });
+  const url = await presignGet(d.storage_key, d.filename);
+  if (!url) return res.status(503).json({ error: 'File storage unavailable.' });
+  res.json({ url, filename: d.filename, content_type: d.content_type });
+});
+
+router.delete('/shelf/documents/:id', async (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  const db = getDb();
+  const d = db.prepare('SELECT * FROM product_documents WHERE id = ?').get(req.params.id);
+  if (!d) return res.status(404).json({ error: 'Not found.' });
+  if (d.storage_key) { try { await deleteObject(d.storage_key); } catch { /* the row is the record */ } }
+  db.prepare('DELETE FROM product_documents WHERE id = ?').run(req.params.id);
+  logAudit(req.user, 'delete', 'product_document', req.params.id, { slot: d.slot_key }, d, null, d.title);
+  res.json(shelfState(db));
+});
+
+// The cadence is the plant's to set. "Monthly" here is a recommendation the
+// first time the row is created and a decision afterwards — hence editable,
+// and hence the seeder never touching a row that exists.
+router.put('/shelf/:slot', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  const db = getDb();
+  const slot = db.prepare('SELECT * FROM product_doc_slots WHERE key = ?').get(req.params.slot);
+  if (!slot) return res.status(404).json({ error: 'No such document slot.' });
+  const b = req.body || {};
+  const cadence = b.cadence_days === undefined ? slot.cadence_days
+    : (b.cadence_days === null || b.cadence_days === '' ? null : Math.max(1, Number(b.cadence_days) || 0) || null);
+  db.prepare(`UPDATE product_doc_slots SET label = ?, description = ?, cadence_days = ?, is_active = ?,
+    updated_by = ?, updated_at = datetime('now') WHERE key = ?`)
+    .run(String(b.label || slot.label).trim(), b.description ?? slot.description, cadence,
+      b.is_active === undefined ? slot.is_active : (b.is_active ? 1 : 0),
+      req.user?.name || null, req.params.slot);
+  logAudit(req.user, 'update', 'product_doc_slot', req.params.slot, { cadence_days: cadence }, slot, null, slot.label);
+  res.json(shelfState(db));
+});
+
+/* ── The barcode board ─────────────────────────────────────────────────────
+ *
+ * The same question the Nutrition panels tab answers, for the other file that
+ * has to be right before anything prints. Declared before `/:sku`, or Express
+ * reads "barcodes" as a product code.
+ *
+ * THE NUMBER AND THE LIST COME FROM THE SAME WALK — the counts are `.length`
+ * of the rows returned, never a second query, so the headline and the list it
+ * opens cannot disagree about the same SKU.
+ */
+router.get('/barcodes', (_req, res) => {
+  const db = getDb();
+  const rows = hydrate(db.prepare(`${SELECT} ORDER BY p.sku`).all(), db)
+    .map((p) => ({
+      sku: p.sku, flavor: p.flavor, category: p.category, pack: p.pack, status: p.status,
+      gtin: p.gtin, gtin_valid: !!p.gtin_valid,
+      has_barcode_image: p.has_barcode_image, barcode_gtin: p.barcode_gtin,
+      barcode_stale: p.barcode_stale,
+      barcode_filename: p.barcode_filename, barcode_uploaded_at: p.barcode_uploaded_at,
+      barcode_uploaded_by: p.barcode_uploaded_by,
+      // The one that decides what a person does next.
+      state: !p.gtin ? 'no_gtin'
+        : !p.gtin_valid ? 'bad_gtin'
+          : p.barcode_stale ? 'stale'
+            : p.has_barcode_image ? 'ok' : 'no_image',
+    }));
+  const by = (st) => rows.filter((r) => r.state === st);
+  res.json({
+    products: rows,
+    counts: {
+      total: rows.length,
+      ok: by('ok').length,
+      // A file that encodes a number the product no longer carries. The worst
+      // of these, because it LOOKS done — the doctrine behind barcode_gtin.
+      stale: by('stale').length,
+      no_image: by('no_image').length,
+      no_gtin: by('no_gtin').length,
+      bad_gtin: by('bad_gtin').length,
+    },
+    // GS1 numbers are finite and one block is nearly full. Counted from the
+    // catalogue, because the GTINs in use ARE the allocation.
+    prefixes: gtinPrefixes(db),
+  });
 });
 
 router.get('/specs', (_req, res) => {

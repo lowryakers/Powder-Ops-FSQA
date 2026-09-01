@@ -6,10 +6,12 @@ import SortHeader from '../common/SortHeader';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductDataHealth from './ProductDataHealth.jsx';
 import FlavorCodesPanel, { DraftRealign } from './FlavorCodesPanel.jsx';
+import ProductBarcodes from './ProductBarcodes.jsx';
+import ProductShelf from './ProductShelf.jsx';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope, Tag,
-  Barcode, Upload, ExternalLink, RefreshCw,
+  Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
   FileText,
 } from 'lucide-react';
 
@@ -453,6 +455,12 @@ export default function ProductsPanel() {
   // catalogue, so it shrinks as decisions are made rather than needing a tick.
   const { data: flavorCodes } = useApiGet('/products/flavor-codes');
   const pendingCodes = flavorCodes?.needs_decision?.length || 0;
+  // Fetched here so the tab badge and the board it opens are the same number,
+  // the rule the other three tabs already follow.
+  const { data: barcodes } = useApiGet('/products/barcodes');
+  const barcodeGaps = barcodes ? barcodes.counts.stale + barcodes.counts.bad_gtin : 0;
+  const { data: shelf } = useApiGet('/products/shelf');
+  const shelfOwed = shelf ? shelf.due.length + shelf.missing.length : 0;
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const [pack, setPack] = useState('');
@@ -519,9 +527,18 @@ export default function ProductsPanel() {
         // SKUs cannot be minted.
         { id: 'flavor-codes', label: 'Flavour codes', icon: Tag,
           badge: pendingCodes || undefined, badgeTone: pendingCodes ? 'alert' : undefined },
+        // Badged on what must NOT print — a wrong number or a barcode image
+        // encoding one. "No image yet" is a punch list item and lives on the
+        // board; putting it in the badge would make the badge permanent.
+        { id: 'barcodes', label: 'GTIN barcodes', icon: Barcode,
+          badge: barcodeGaps || undefined, badgeTone: barcodeGaps ? 'alert' : undefined },
+        { id: 'shelf', label: 'Registry', icon: FolderOpen,
+          badge: shelfOwed || undefined, badgeTone: shelfOwed ? 'alert' : undefined },
       ]} />
 
       {view === 'flavor-codes' && <FlavorCodesPanel />}
+      {view === 'barcodes' && <ProductBarcodes onOpenSku={(sku) => { setView('list'); setOpen(sku); }} />}
+      {view === 'shelf' && <ProductShelf canEdit={canEdit} />}
 
       {view === 'nfp' && <NfpBoard data={nfp} onOpenSku={(s) => { setView('list'); setOpen(s); }}
         canManage={canEdit} onChanged={refreshNfp} />}

@@ -611,6 +611,44 @@ preferred SKU of `BEF-BTL-CSG`, which is exactly the disagreement the preview co
   assertions — the strip appears on the Catalogue, names both renames, the click renames them, the old
   codes leave the SKU column, and after a reload the strip is gone and the new codes stand.
 
+### Two more Products tabs: GTIN barcodes, and the shelf
+- **GTIN barcodes** is the Nutrition-panels tab for the other file that has to be right before anything
+  prints. **Five states and the ORDER is the point**: `stale` (the image on file encodes a number the
+  product no longer carries) sorts first and is red, because it is the only one that looks *finished* from
+  every other screen — a relabel waiting to happen. Then `bad_gtin`, `no_gtin`, `no_image`, `ok`. The row
+  names **both numbers**; "stale" alone does not tell anyone which one the file actually encodes.
+- **The counts are `.length` of the rows the endpoint returned**, never a second query, and the test
+  asserts every card reconciles and that the five states partition the catalogue — the `activity-metrics`
+  rule.
+- **GS1 capacity finally has a home.** A UPC-A here is a 9-digit prefix + 2-digit item + check digit, so a
+  prefix holds exactly 100 numbers, and running out is a purchase with a lead time. `gtinPrefixes()` counts
+  from the catalogue, because **the GTINs in use ARE the allocation** — a stored tally would be wrong the
+  first time somebody corrected a number. Verified against the real data: `850046726` at 76/100, 24 free,
+  flagged low (`PREFIX_WARN_FREE = 25`).
+- **The Registry ("shelf") is NOT the controlled-document registry**, and that is the whole design
+  decision. An SOP has a revision, an approval and a DCR; a brand guide is a reference asset, and putting
+  Document Control in front of replacing one is how people stop filing it here and go back to a Drive
+  folder. Same line Policies draws.
+- **TWO TABLES: `product_doc_slots` is "what we should have", `product_documents` is "what we have".**
+  Keeping them apart is what lets the shelf say a monthly Shopify export is two months old; a folder of
+  files can only ever say what is in it. Seven slots seeded — brand guide, Shopify export, ShipHero export,
+  GS1 licence, packaging vendor specs, dielines, label review.
+- **A CADENCE IS ONLY SET WHERE THE DOCUMENT GENUINELY GOES OUT OF DATE.** A brand guide is current until
+  replaced; a Shopify export is a photograph of a moving thing. Putting a cadence on everything would give
+  a shelf permanently in the red. Seeded insert-only per key and **editable after** — the first value is a
+  recommendation, every value after it is the plant's decision.
+- **`missing` and `due` are reported separately** — one is a chase, the other a refresh, and they reach
+  different people. Both derived on every read.
+- **Age is measured from the DOCUMENT's date, not the upload's.** An export pulled on the 1st and filed on
+  the 4th is a 1st export; dating it from the upload quietly buys three days that do not exist.
+- **A link is a real answer** for a document that lives elsewhere and is meant to; only a row with *neither*
+  a file nor an address is refused. Uploaded files are indexed for search and `extracted_text` never leaves
+  the server (the equipment-manual rule); a file whose text will not read says "no text" rather than
+  letting somebody assume a search covered it.
+- Verified: **43 assertions against a live server on a fresh database** (`scripts/verify-product-tabs.mjs`,
+  which needs a genuinely fresh DB — it asserts the opening state then files into it) and 16 in a real
+  browser.
+
 ### The SKU rename is a separate project, and it is not free
 The new standard is adopted for **new products only**; the existing 118 are untouched. A full cutover is
 costed in `Product-Management/docs/08`. The 3PL has confirmed the expensive half: scanning tolerates either
