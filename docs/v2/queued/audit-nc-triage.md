@@ -266,3 +266,31 @@ Items 2 and 3 are quarter-sized projects and should be planned rather than start
 - **4.3.6 and the ATP work share a defect class.** A test with no active specification quietly passes,
   exactly as a 60 RLU swab quietly passed before `atp-limits.js`. The fix is the same shape: grade
   against an approved value, and refuse to record a pass without one.
+
+## Progress against this list — 1 September 2026
+
+**0 of 12 closed. 1 with work landed.**
+
+### 4.3.1 · Supplier qualification questionnaires — REGISTER BUILT, FINDING STILL OPEN
+
+Built and on `main`: a Supplier Qualification register (there was no supplier record in ReadyDoc of any
+kind before it), 75 suppliers reconciled between Purchasing's tracker and the document archive — which
+disagreed about 48 of them — 938 documents stored and searchable by the text inside each PDF, expiry
+dates read from the filenames (ten certificates on file had already expired and nothing knew), and the
+annual review raising its own work order 30 days ahead. Nothing was imported as qualified.
+
+**It did not close the finding, and this is the part to say out loud before an auditor does.** NSF named
+three suppliers. Checked against the archive as loaded: **Mill Haven Foods** has two documents on file
+and both are specification sheets, not a questionnaire; **M4 Dynamic** and **Bay State Milling** have no
+folder in the archive at all. All three gaps are still open. What changed is that they are now provable
+rather than unknown.
+
+Register-wide: 43 suppliers actively used with no approved disposition — **22 that can be dispositioned
+today** (evidence already on file, now queued in-app with each supplier's documents beside the decision)
+and **21 with no questionnaire to decide against**. The second pile, and the three NSF named, are a
+purchasing chase. No software can ask a supplier for a questionnaire.
+
+### The other eleven
+
+Not started. Tracked in `docs/v2/obligations.json`; a finding is marked closed here only when the
+corrective action is complete and its evidence can be produced on request.
