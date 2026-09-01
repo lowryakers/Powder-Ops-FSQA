@@ -77,6 +77,7 @@ export default function SuppliersPanel({ user }) {
   const [q, setQ] = useState('');
   const [only, setOnly] = useState(null);   // null | 'gap' | 'expired'
   const [decide, setDecide] = useState(null);
+  const [queue, setQueue] = useState([]);
   const expand = useRowExpand();
 
   const { tabs, tab, setTab } = useModuleTabs({
@@ -245,10 +246,28 @@ export default function SuppliersPanel({ user }) {
         </>
       )}
 
-      {tab === 'attention' && <AttentionTab summary={summary} suppliers={suppliers} onPick={(s) => { setTab('register'); setQ(s.name); }} />}
+      {tab === 'attention' && (
+        <AttentionTab summary={summary} suppliers={suppliers}
+          canDecide={user?.role === 'admin'
+            || (['qa', 'quality'].includes((user?.department || '').toLowerCase()) && user?.role === 'supervisor')}
+          onWorkQueue={(list) => { if (list.length) { setDecide(list[0]); setQueue(list.slice(1)); } }}
+          onPick={(s) => { setTab('register'); setQ(s.name); }} />
+      )}
       {tab === 'import' && <><ImportTab onDone={refresh} /><ArchiveStep onDone={refresh} /></>}
 
-      {decide && <DispositionModal supplier={decide} data={data} onClose={() => setDecide(null)} onSaved={() => { setDecide(null); refresh(); }} />}
+      {/* Keyed on the supplier so advancing through the queue REMOUNTS the
+          form. Resetting four pieces of state in an effect is the same thing
+          done worse, and it leaves a frame where the last supplier's answers
+          are on screen against the next supplier's name. */}
+      {decide && (
+        <DispositionModal
+          key={decide.id}
+          supplier={decide} data={data} queue={queue}
+          onClose={() => { setDecide(null); setQueue([]); refresh(); }}
+          onSaved={() => { setDecide(null); setQueue([]); refresh(); }}
+          onAdvance={(next, rest) => { setDecide(next); setQueue(rest); }}
+        />
+      )}
     </div>
   );
 }
@@ -405,9 +424,11 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
 
 // ── Needs attention ─────────────────────────────────────────────────────────
 
-function AttentionTab({ summary, suppliers, onPick }) {
+function AttentionTab({ summary, suppliers, onPick, canDecide, onWorkQueue }) {
   const { data } = useApiGet('/suppliers/documents/expiring?days=120');
   const gaps = suppliers.filter(s => s.buying_without_qualification);
+  const withEvidence = gaps.filter(s => s.questionnaire_files);
+  const noEvidence = gaps.filter(s => !s.questionnaire_files);
   const expired = data?.expired || [];
   const expiring = data?.expiring || [];
 
@@ -432,6 +453,26 @@ function AttentionTab({ summary, suppliers, onPick }) {
           vendors only, so each of these is either a decision waiting to be made or a supplier to stop
           buying from.
         </p>
+        {/* TWO PILES, NOT ONE — the same split the register headline makes.
+            One is a decision Quality can take today because the evidence is
+            already on file; the other cannot be decided at all until somebody
+            asks the supplier for a questionnaire. A single list of 44 tells
+            neither person what their next action is. */}
+        {!!gaps.length && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+            <span>
+              <b className="tabular-nums">{withEvidence.length}</b> can be decided now
+              {' · '}
+              <b className="tabular-nums">{noEvidence.length}</b> have no questionnaire to decide against
+            </span>
+            {canDecide && !!withEvidence.length && (
+              <button type="button" onClick={() => onWorkQueue?.(withEvidence)}
+                className="inline-flex items-center gap-1.5 rounded bg-slate-800 px-3 py-1.5 text-sm text-white dark:bg-slate-200 dark:text-slate-900">
+                <ShieldCheck className="h-4 w-4" /> Work through the {withEvidence.length} with evidence
+              </button>
+            )}
+          </div>
+        )}
         {gaps.length ? (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800">
             {gaps.map(s => (
@@ -845,7 +886,13 @@ function PlanReview({ plan, linked = [], onLink }) {
 
 // ── The disposition — SOP 404 § V.C.III, transcribed ────────────────────────
 
-function DispositionModal({ supplier, data, onClose, onSaved }) {
+// `queue` is the rest of the suppliers being worked in this sitting. Deciding
+// 44 suppliers one navigation at a time is how a queue stops being worked, so
+// saving advances to the next — but NOTHING about the decision itself is
+// batched. Every disposition is still seven criteria and a person, because a
+// disposition is a judgement under SOP 404 § V.C.III and a "approve all" button
+// would be 44 compliance records nobody made.
+function DispositionModal({ supplier, data, onClose, onSaved, queue = [], onAdvance }) {
   const [disposition, setDisposition] = useState('');
   const [criteria, setCriteria] = useState({});
   const [notes, setNotes] = useState('');
@@ -853,19 +900,28 @@ function DispositionModal({ supplier, data, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
+  // The evidence, in the same window as the decision. Deciding from a supplier
+  // name alone is the rubber stamp this module exists to prevent, and in a
+  // queue nobody is going to open another screen 44 times.
+  const { data: detail } = useApiGet(`/suppliers/${supplier.id}`);
+  const files = detail?.files || [];
+  const questionnaires = files.filter(f => /questionnaire/.test(f.kind) && !/blank/.test(f.kind));
+  const expired = files.filter(f => f.expired);
+
   const CRITERIA = data?.risk_criteria || [];
   const DISPOSITIONS = data?.dispositions || [];
   const unanswered = CRITERIA.filter(c => !(c.key in criteria));
   const needsReason = disposition && disposition !== 'approved';
   const ready = disposition && !unanswered.length && (!needsReason || notes.trim().length > 2);
 
-  const save = async () => {
+  const save = async (advance) => {
     setBusy(true); setError(null);
     try {
       await apiPost(`/suppliers/${supplier.id}/disposition`, {
         disposition, period_label: period || null, risk_criteria: criteria, notes,
       });
-      onSaved();
+      if (advance && queue.length) onAdvance(queue[0], queue.slice(1));
+      else onSaved();
     } catch (e) { setError(e.message || 'Could not save'); }
     finally { setBusy(false); }
   };
@@ -881,6 +937,38 @@ function DispositionModal({ supplier, data, onClose, onSaved }) {
           <button type="button" onClick={onClose} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-800">
             <X className="h-5 w-5" />
           </button>
+        </div>
+
+        <div className="mb-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/50">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">What is on file</p>
+          {files.length ? (
+            <>
+              <p className="mt-1">
+                <b>{files.length}</b> document{files.length === 1 ? '' : 's'}
+                {questionnaires.length
+                  ? <> · <b className="text-emerald-700 dark:text-emerald-400">{questionnaires.length} completed questionnaire{questionnaires.length === 1 ? '' : 's'}</b></>
+                  : <> · <b className="text-rose-600 dark:text-rose-400">no completed questionnaire</b></>}
+                {expired.length ? <> · <b className="text-rose-600 dark:text-rose-400">{expired.length} expired</b></> : null}
+              </p>
+              <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto text-xs">
+                {files.slice(0, 40).map(f => (
+                  <li key={f.id} className="flex flex-wrap items-baseline gap-2">
+                    <span className="text-slate-500">{f.period_label || '—'}</span>
+                    <span className="text-slate-500">{String(f.kind).replace(/_/g, ' ')}</span>
+                    {f.stored
+                      ? <button type="button" onClick={() => downloadSupplierFile(f)}
+                          className="text-blue-600 hover:underline dark:text-blue-400">{f.filename}</button>
+                      : <span>{f.filename}</span>}
+                    {f.expired && <span className="text-rose-600 dark:text-rose-400">expired {formatDate(f.expires_on)}</span>}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="mt-1 text-rose-600 dark:text-rose-400">
+              Nothing on file. There is no evidence here to approve against.
+            </p>
+          )}
         </div>
 
         <label className="mb-3 block text-sm">
@@ -954,7 +1042,20 @@ function DispositionModal({ supplier, data, onClose, onSaved }) {
           )}
           <button type="button" onClick={onClose}
             className="rounded border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600">Cancel</button>
-          <button type="button" disabled={!ready || busy} onClick={save}
+          {!!queue.length && (
+            <button type="button" disabled={busy}
+              onClick={() => onAdvance(queue[0], queue.slice(1))}
+              className="rounded border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600">
+              Skip
+            </button>
+          )}
+          {!!queue.length && (
+            <button type="button" disabled={!ready || busy} onClick={() => save(true)}
+              className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-40">
+              Record &amp; next ({queue.length} left)
+            </button>
+          )}
+          <button type="button" disabled={!ready || busy} onClick={() => save(false)}
             className="inline-flex items-center gap-1.5 rounded bg-slate-800 px-3 py-1.5 text-sm text-white disabled:opacity-40 dark:bg-slate-200 dark:text-slate-900">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />} Record decision
           </button>
