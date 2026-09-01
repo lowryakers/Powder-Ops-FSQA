@@ -95,7 +95,15 @@ function BottleDrafts({ canEdit }) {
  * order behind it. Active SKUs are never offered here — those are join keys on
  * open POs, ShipHero locations and every Shopify order line ever placed.
  */
-function DraftRealign({ canEdit }) {
+// Exported because it is mounted on the CATALOGUE as well.
+//
+// The disagreement it fixes is visible on the catalogue — `BEF-BTL-CHU` in the
+// SKU column beside `BEF-BTL-CSG` under "New standard" — and the button that
+// resolves it lived one tab away, so the obvious reading of that screen was
+// that the app had simply got it wrong. A fix that is not where the problem is
+// seen is a fix nobody runs. One definition, two mounts; it renders nothing
+// when every draft already matches the register.
+export function DraftRealign({ canEdit, onDone }) {
   const { data, refresh } = useApiGet('/products/drafts/realign/preview');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
@@ -105,7 +113,7 @@ function DraftRealign({ canEdit }) {
 
   const run = async () => {
     setBusy(true); setError(null);
-    try { setDone(await apiPost('/products/drafts/realign', {})); refresh(); }
+    try { setDone(await apiPost('/products/drafts/realign', {})); refresh(); onDone?.(); }
     catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 

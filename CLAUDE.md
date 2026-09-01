@@ -546,6 +546,20 @@ preferred SKU of `BEF-BTL-CSG`, which is exactly the disagreement the preview co
   never existed.
 - Preview and commit share `planDraftRealign`, it is idempotent, and a target SKU another product already
   holds is reported rather than overwritten.
+- **THE STRIP IS MOUNTED ON THE CATALOGUE AS WELL, and that is the fix that mattered.** The mechanism was
+  built and correct and had never been run once, because the disagreement is visible on the **Catalogue**
+  (`BEF-BTL-CHU` in the SKU column beside `BEF-BTL-CSG` under *New standard*) while the button that
+  resolves it sat on the **Flavour codes** tab. The obvious reading of that screen was that the app had got
+  it wrong. Same class as the 72-hour re-clean badge the cleaner could not see: **a fix that is not where
+  the problem is seen is a fix nobody runs.** `DraftRealign` is exported from `FlavorCodesPanel` and
+  rendered in both places rather than copied — two copies is how the two screens start offering different
+  renames — and it renders nothing once every draft matches the register.
+- **New drafts have been correct since the codes were decided**: `planBottleDrafts` reads the register, so
+  a fresh database mints `BEF-BTL-CSG` / `BEF-BTL-TFC` outright. Only drafts committed *before* the
+  correction carry the old code, which is why this is a one-off strip and not a recurring job.
+- Verified in a real browser against the plant's actual state (both drafts renamed back to CHU/DDL): 9
+  assertions — the strip appears on the Catalogue, names both renames, the click renames them, the old
+  codes leave the SKU column, and after a reload the strip is gone and the new codes stand.
 
 ### The SKU rename is a separate project, and it is not free
 The new standard is adopted for **new products only**; the existing 118 are untouched. A full cutover is

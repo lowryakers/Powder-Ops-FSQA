@@ -5,7 +5,7 @@ import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductDataHealth from './ProductDataHealth.jsx';
-import FlavorCodesPanel from './FlavorCodesPanel.jsx';
+import FlavorCodesPanel, { DraftRealign } from './FlavorCodesPanel.jsx';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope, Tag,
@@ -455,6 +455,11 @@ export default function ProductsPanel() {
       {view === 'health' && <ProductDataHealth data={health} />}
 
       {view === 'list' && (<>
+      {/* A draft whose SKU disagrees with the New standard column, fixable here.
+          The strip renders nothing once every draft matches the register, and
+          the same component sits on the Flavour codes tab — a second copy is
+          how the two screens would start offering different renames. */}
+      <DraftRealign canEdit={canEdit} onDone={refresh} />
       {badGtin > 0 && (
         <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
