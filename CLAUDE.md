@@ -680,6 +680,50 @@ carrying straight on typing scattered the next characters back into it. Only fas
 DOM before the call returns, so there is something real to aim at. Asserted end to end: type `@name`, pick
 from the menu, type immediately with no pause, and the sentence must read straight through.
 
+## The caret drifted away from the words (`MarkupOverlay`), and it was italics
+Reported twice as "there's lots of space between where I'm actually typing and where the cursor is showing".
+The composer draws formatting on a layer behind a transparent textarea, so the caret belongs to the FIELD
+and the words belong to the LAYER — if the two lay text out differently they walk apart. **Measured, not
+guessed:** a mirror of the field built from its own computed style, compared character by character against
+the layer. Three defects, all now covered by `npm run check:composer` (44 assertions at 1280/1000/900/800px).
+- **`transform` does not apply to a non-replaced INLINE box**, so the italic slant needed `display:
+  inline-block` — and an inline-block cannot break across lines. A long italic run therefore wrapped as one
+  unit while the field wrapped it word by word: **316px of horizontal drift in a 900px composer**. It is one
+  inline-block **per word** now, with the spaces left outside as ordinary inline text, so the line breaks
+  exactly where the field breaks it. **This is invisible on a wide screen** — at 1280px the run fitted on one
+  line and measured 0 — which is why it kept coming back.
+- **The layer's box is taken from the FIELD, not inferred from the wrapper.** `inset-0` trusts the parent to
+  be exactly the field's size; the composer grows to fit its content and the wrapper picked up 7px, so the
+  layer could not scroll as far and slid **149px** out of register once a message passed the 240px cap.
+  `sync()` copies the field's own offset box (padding and border classes are already identical, so matching
+  the outer box matches the inner one) and a `ResizeObserver` re-runs it, because the composer resizing
+  itself is not a scroll.
+- **No trailing newline after the LAST line.** The field's value has none, so emitting one made the layer's
+  content a line taller — which is what changed how far it could scroll.
+- **The control matters:** restoring the single-span italic makes 3 of the 44 fail, at exactly 1000/900/800px
+  and not at 1280.
+
+## Who reacted, and links with a label (`ReactionChip`, `[label](url)`)
+- **A reaction names its reactors** on hover (desktop) and long-press (mobile). The server always returned
+  the reactor ids on every reaction — this names what was already in the payload. **A name that cannot be
+  resolved is COUNTED, never guessed**: the roster is the channel's members, so somebody who has since left
+  reads as "and 1 other" rather than a UUID or a silently short list. Drawn through `MenuPortal` for the
+  reason the message menu is — the card has `overflow-hidden` for its corners and the list is its own
+  scroller. The long-press sets the same `suppressClick` guard the message long-press uses, or reading who
+  reacted would also toggle your own reaction.
+- **`[label](url)` is the link grammar**, added to `shared/rich-markup.js` so the chat renderer, the
+  composer's live overlay and the server's PDF renderer all read one definition. It is listed **FIRST** in
+  the alternation: a URL is full of characters this grammar uses (`_` above all), and letting italics chew
+  into one produces a link that does not resolve. **The scheme is required** — `[x](y)` where y is not a URL
+  is somebody typing brackets, and turning it into an `<a>` would be a broken link nobody asked for.
+  `parseSpans` covers every character including the address, so the overlay still reproduces the typed text
+  one for one.
+- **The address is asked for, never inferred.** Toolbar button and **Ctrl/Cmd+K**; the prompt is pre-filled
+  when the selection already is a URL, cancelling leaves the text untouched, and the caret lands on the
+  LABEL so it can be typed over. A selected URL becomes the address and its own label — highlighting a link
+  you already pasted and pressing Ctrl+K means "give this a name".
+- A ReadyDoc link still opens in-app (`parseAppLink`) rather than reloading the site in a new tab.
+
 ## Comms composer: rich text + reliable focus + resizable split screen
 **Formatting:** `renderBody()` is now block-aware — it splits into paragraphs and turns `- `/`* ` runs into a
 bullet `<ul>` and `1. ` runs into a numbered `<ol>`, so the message body renders inside a `<div>` (a `<p>`

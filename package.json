@@ -22,6 +22,7 @@
     "check:invoices": "node scripts/check-invoice-figures.mjs",
     "check:reclean": "node scripts/check-reclean-titles.mjs",
     "check:readiness": "node scripts/check-product-readiness.mjs",
+    "check:composer": "node scripts/verify-composer-caret.mjs",
     "verify": "npm run lint && npm run build && npm run check:routes && npm run check:boot && npm run check:endpoints",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "check:suppliers": "node scripts/check-supplier-archive.mjs && node scripts/check-supplier-reconcile.mjs && node scripts/check-supplier-import.mjs && node scripts/check-supplier-review.mjs && node scripts/check-supplier-storage.mjs"

@@ -1,6 +1,6 @@
-import { Bold, Italic, Underline, Strikethrough, List, ListOrdered } from 'lucide-react';
+import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Link2 } from 'lucide-react';
 import { flushSync } from 'react-dom';
-import { wrapSelection, prefixLines } from '../../lib/textFormat';
+import { wrapSelection, prefixLines, wrapLink } from '../../lib/textFormat';
 
 // The B / I / U / S + list toolbar that sits above a plain <textarea>.
 //
@@ -36,6 +36,17 @@ export default function FormatBar({ getEl, value, onChange, disabled = false }) 
       {btn('Italic', Italic, (el, v) => wrapSelection(el, v, '_'))}
       {btn('Underline', Underline, (el, v) => wrapSelection(el, v, '__'))}
       {btn('Strikethrough', Strikethrough, (el, v) => wrapSelection(el, v, '~'))}
+      {/* The address is ASKED FOR, not invented. A link button that guessed a
+          URL from the selection would produce broken links most of the time,
+          and the prompt is pre-filled when the selection already is one. */}
+      {btn('Link', Link2, (el, v) => {
+        const sel = v.slice(el?.selectionStart ?? 0, el?.selectionEnd ?? 0).trim();
+        const guess = /^(?:https?:\/\/|mailto:)\S+$/.test(sel) ? sel : '';
+        const url = window.prompt('Link to:', guess || 'https://');
+        // Cancel leaves the text exactly as it was.
+        return url === null ? { next: v, selStart: el?.selectionStart ?? 0, selEnd: el?.selectionEnd ?? 0 }
+          : wrapLink(el, v, url);
+      })}
       <span className="w-px h-4 bg-gray-200 mx-0.5" />
       {btn('Bulleted list', List, (el, v) => prefixLines(el, v, false))}
       {btn('Numbered list', ListOrdered, (el, v) => prefixLines(el, v, true))}

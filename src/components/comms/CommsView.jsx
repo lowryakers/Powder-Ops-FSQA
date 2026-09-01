@@ -119,7 +119,12 @@ function renderInline(s, users, me, keyBase = '') {
   const names = [...new Set((users || []).flatMap(u => [chatName(u), u.name]).filter(Boolean))]
     .sort((a, b) => b.length - a.length);
   const parts = [
-    'https?:\\/\\/[^\\s<]+',                       // clickable URL (matched first)
+    // A LABELLED LINK COMES FIRST, before the bare-URL pattern — otherwise the
+    // URL inside the brackets is matched on its own and the label is left as
+    // stray text around it. Same grammar as shared/rich-markup.js, which is
+    // what the composer's live overlay and the PDF renderer read.
+    '\\[[^\\]\\n]+\\]\\((?:https?:\\/\\/|mailto:)[^)\\s]+\\)',
+    'https?:\\/\\/[^\\s<]+',                       // clickable URL
     names.length ? '@(?:' + names.map(escapeRe).join('|') + ')' : null,
     '@channel', '@here',
     '\\*(?=\\S)[^*\\n]*?\\S\\*',                    // *bold*
@@ -135,6 +140,26 @@ function renderInline(s, users, me, keyBase = '') {
   while ((m = re.exec(s)) !== null) {
     if (m.index > last) out.push(s.slice(last, m.index));
     let tok = m[0];
+    // [label](url) — the address is carried, the label is what is read.
+    const labelled = /^\[([^\]\n]+)\]\((.+)\)$/.exec(tok);
+    if (labelled) {
+      const [, label, href] = labelled;
+      const inApp = parseAppLink(href);
+      if (inApp) {
+        out.push(
+          <button key={key()} type="button"
+            onClick={(e) => { e.stopPropagation(); openAppLink(inApp); }}
+            className="inline-flex items-center gap-1 align-baseline text-powder-700 underline font-medium hover:text-powder-800">
+            {label}
+          </button>
+        );
+      } else {
+        out.push(<a key={key()} href={href} target="_blank" rel="noopener noreferrer"
+          className="text-powder-700 underline hover:text-powder-800">{label}</a>);
+      }
+      last = m.index + tok.length;
+      continue;
+    }
     if (/^https?:\/\//.test(tok)) {
       // Don't swallow trailing sentence punctuation into the link.
       let trail = '';
@@ -961,6 +986,98 @@ function MenuPortal({ style, onClose, children }) {
       </div>
     </>,
     document.body,
+  );
+}
+
+/**
+ * WHO REACTED — on hover on a desktop, on a long press on a phone.
+ *
+ * The count alone answers the wrong question. "Six people liked this" is not
+ * useful; "did the person I asked actually see it" is, and that is what a
+ * reaction is usually being read for. The server already returns the reactor
+ * ids on every reaction, so this is naming what was always in the payload.
+ *
+ * A NAME WE CANNOT RESOLVE IS COUNTED, NEVER GUESSED. The roster here is the
+ * channel's members, so anyone who has since left it comes back as an id — the
+ * tooltip says "and 1 other" rather than printing a UUID or silently dropping
+ * a person out of the total.
+ *
+ * Drawn through MenuPortal for the reason the message menu is: the card has
+ * `overflow-hidden` for its corners and the list is its own scroller, so an
+ * absolutely-positioned tooltip is clipped by one or the other.
+ */
+const TOOLTIP_WIDTH = 208;
+
+function reactorNames(r, users, me) {
+  const byId = new Map((users || []).map((u) => [u.id, u]));
+  const named = [];
+  let unknown = 0;
+  for (const id of r.users || []) {
+    if (id === me?.id) { named.unshift('You'); continue; }
+    const u = byId.get(id);
+    if (u) named.push(chatName(u)); else unknown++;
+  }
+  return { named, unknown };
+}
+
+function ReactionChip({ r, m, me, users, onReact, onUnreact }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const pressRef = useRef(null);
+  const movedRef = useRef(false);
+
+  const reacted = (r.users || []).includes(me?.id);
+  const { named, unknown } = reactorNames(r, users, me);
+
+  const show = () => {
+    const el = btnRef.current;
+    if (!el) return;
+    const b = el.getBoundingClientRect();
+    const gap = 6, margin = 8;
+    const above = b.top - gap;
+    setPos({
+      left: Math.max(margin, Math.min(b.left, window.innerWidth - TOOLTIP_WIDTH - margin)),
+      // Above the chip by default — a reaction sits at the bottom of a message
+      // and the space below it is the next message.
+      ...(above > 90 ? { bottom: window.innerHeight - b.top + gap } : { top: b.bottom + gap }),
+      maxHeight: Math.max(90, (above > 90 ? above : window.innerHeight - b.bottom - gap) - margin),
+    });
+    setOpen(true);
+  };
+  const hide = () => { setOpen(false); setPos(null); };
+
+  // A long press on a phone, and it must not also fire the tap that toggles the
+  // reaction — the same rule the message long-press follows.
+  const onTouchStart = () => {
+    movedRef.current = false;
+    pressRef.current = setTimeout(() => { movedRef.current = true; show(); }, 450);
+  };
+  const endPress = () => { clearTimeout(pressRef.current); };
+  const onTouchMove = () => { clearTimeout(pressRef.current); movedRef.current = true; };
+
+  return (
+    <>
+      <button ref={btnRef} type="button"
+        onClick={() => { if (movedRef.current) { movedRef.current = false; return; } (reacted ? onUnreact : onReact)(m, r.emoji); }}
+        onMouseEnter={show} onMouseLeave={hide}
+        onTouchStart={onTouchStart} onTouchEnd={endPress} onTouchCancel={endPress} onTouchMove={onTouchMove}
+        onContextMenu={(e) => e.preventDefault()}
+        className={`px-2 py-1 text-sm md:px-1.5 md:py-0.5 md:text-xs rounded-full border ${reacted ? 'bg-powder-50 border-powder-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
+        {r.emoji} {r.count}
+      </button>
+      {open && pos && (
+        <MenuPortal style={pos} onClose={hide}>
+          <div className="px-2.5 py-1.5">
+            <div className="text-lg leading-none mb-1">{r.emoji}</div>
+            <ul className="text-xs text-gray-700 space-y-0.5">
+              {named.map((n, i) => <li key={i} className={n === 'You' ? 'font-medium text-powder-700' : ''}>{n}</li>)}
+              {unknown > 0 && <li className="text-gray-400">and {unknown} {unknown === 1 ? 'other' : 'others'}</li>}
+            </ul>
+          </div>
+        </MenuPortal>
+      )}
+    </>
   );
 }
 
@@ -2003,15 +2120,10 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
         )}
         {m.reactions?.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
-            {m.reactions.map(r => {
-              const reacted = r.users.includes(me.id);
-              return (
-                <button key={r.emoji} onClick={() => reacted ? onUnreact(m, r.emoji) : onReact(m, r.emoji)}
-                  className={`px-2 py-1 text-sm md:px-1.5 md:py-0.5 md:text-xs rounded-full border ${reacted ? 'bg-powder-50 border-powder-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
-                  {r.emoji} {r.count}
-                </button>
-              );
-            })}
+            {m.reactions.map(r => (
+              <ReactionChip key={r.emoji} r={r} m={m} me={me} users={mentionUsers}
+                onReact={onReact} onUnreact={onUnreact} />
+            ))}
           </div>
         )}
         {onReply && m.reply_count > 0 && (

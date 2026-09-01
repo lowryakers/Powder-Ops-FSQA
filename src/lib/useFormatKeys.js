@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import { listPrefix } from '../../shared/rich-markup.js';
-import { wrapSelection } from './textFormat';
+import { wrapSelection, wrapLink } from './textFormat';
 
 /**
  * The keyboard half of the composer's formatting.
@@ -12,6 +12,7 @@ import { wrapSelection } from './textFormat';
  *
  * Three behaviours:
  *   Ctrl/Cmd + B / I / U      wrap the selection, exactly as the toolbar does
+ *   Ctrl/Cmd + K              link the selection
  *   Enter on a list line      continue the list; on an EMPTY item, end it
  *   Tab / Shift+Tab           indent / outdent, but only on a list line
  *
@@ -58,6 +59,17 @@ export function formatKeyHandler({ getEl, value, onChange, enabled = true }) {
       if (marker) {
         e.preventDefault();
         apply(wrapSelection(el, v, marker));
+        return true;
+      }
+      // Ctrl/Cmd+K — the reflex for "make this a link", same as Slack. The
+      // address is asked for rather than guessed; cancelling leaves the text
+      // untouched, and the caret lands on the label so it can be typed over.
+      if (k === 'k') {
+        e.preventDefault();
+        const sel = v.slice(el.selectionStart, el.selectionEnd).trim();
+        const guess = /^(?:https?:\/\/|mailto:)\S+$/.test(sel) ? sel : '';
+        const url = window.prompt('Link to:', guess || 'https://');
+        if (url !== null) apply(wrapLink(el, v, url));
         return true;
       }
       return false;

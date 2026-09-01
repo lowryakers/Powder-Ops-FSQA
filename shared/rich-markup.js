@@ -8,7 +8,7 @@
 // what the author saw.
 //
 //   *bold*        _italic_        __underline__        ~strike~        `code`
-//   - bullet      1. numbered
+//   - bullet      1. numbered     [label](https://…)
 //
 // Deliberately flat: one mark per run, no nesting. That's what the chat
 // renderer does, and combining marks is not something anyone has asked for.
@@ -16,7 +16,17 @@
 // Inline marks. Order matters: __underline__ is listed before _italic_ so the
 // two-underscore form wins, and the lookbehind/lookahead guards keep
 // snake_case identifiers (MO_4471_lot) from turning into italics.
+// A LABELLED LINK, and it is listed FIRST so it wins at a position where the
+// other marks could also start — a URL is full of characters this grammar uses
+// (`_` most of all), and letting italics chew into one produces a link that
+// does not resolve. The scheme is required rather than guessed: `[x](y)` where
+// y is not a URL is somebody typing brackets, not a link, and turning it into
+// an <a href="y"> would be a broken link the author never asked for.
+const LINK = '\\[[^\\]\\n]+\\]\\((?:https?:\\/\\/|mailto:)[^)\\s]+\\)';
+const LINK_PARTS = /^\[([^\]\n]+)\]\((.+)\)$/;
+
 const INLINE = [
+  ['link', LINK, 0],
   ['code', '`[^`\\n]+`', 1],
   ['bold', '\\*(?=\\S)[^*\\n]*?\\S\\*', 1],
   ['underline', '(?<![A-Za-z0-9_])__(?=\\S)[^_\\n]*?\\S__(?![A-Za-z0-9_])', 2],
@@ -37,7 +47,12 @@ export function parseRuns(line) {
     // Which mark matched? Test each in order and take the first that fits the
     // whole token — the alternation already resolved the ambiguity.
     const hit = INLINE.find(([, re]) => new RegExp('^(?:' + re + ')$').test(tok));
-    if (hit) {
+    if (hit && hit[0] === 'link') {
+      const [, label, href] = LINK_PARTS.exec(tok) || [];
+      // A token that matched but will not split is text, never a half-link.
+      if (label) out.push({ text: label, link: href });
+      else out.push({ text: tok });
+    } else if (hit) {
       const [kind, , pad] = hit;
       out.push({ text: tok.slice(pad, -pad), [kind]: true });
     } else {
@@ -70,7 +85,18 @@ export function parseSpans(line) {
     if (m.index > last) out.push({ text: s.slice(last, m.index) });
     const tok = m[0];
     const hit = INLINE.find(([, re]) => new RegExp('^(?:' + re + ')$').test(tok));
-    if (hit) {
+    if (hit && hit[0] === 'link') {
+      // EVERY CHARACTER IS COVERED, including the URL — the overlay reproduces
+      // what was typed, so the address is faded rather than hidden.
+      const [, label] = LINK_PARTS.exec(tok) || [];
+      if (label) {
+        out.push({ text: '[', kind: 'link', marker: true });
+        out.push({ text: label, kind: 'link' });
+        out.push({ text: tok.slice(label.length + 1), kind: 'link', marker: true });
+      } else {
+        out.push({ text: tok });
+      }
+    } else if (hit) {
       const [kind, , pad] = hit;
       out.push({ text: tok.slice(0, pad), kind, marker: true });
       out.push({ text: tok.slice(pad, -pad), kind });
