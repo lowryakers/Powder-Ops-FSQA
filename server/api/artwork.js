@@ -23,6 +23,7 @@ import fs from 'fs';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
+import { stampReadiness } from './products.js';
 
 const router = Router();
 
@@ -312,11 +313,20 @@ router.post('/versions/:id/status', (req, res) => {
       }
       // The product's own summary fields follow the released version, so the
       // catalogue and the readiness checklist cannot disagree with this table.
+      const before = db.prepare('SELECT * FROM products WHERE sku = ?').get(v.sku);
       db.prepare("UPDATE products SET artwork_status = 'print_ready', artwork_version = ?, updated_at = datetime('now') WHERE sku = ?")
         .run(String(v.version), v.sku);
+      // Releasing records WHAT this film was drawn against — the GTIN, the
+      // spec, the panel, the name and the colours as they stand right now. A
+      // later change to any of them leaves this basis behind, which is how the
+      // checklist can say the film on file is no longer the film this product
+      // needs instead of showing a green tick over a pack that must not print.
+      if (before) stampReadiness(db, v.sku, before, ['artwork_status', 'artwork_version'], req.user?.name);
     } else if (v.component === 'primary') {
+      const before = db.prepare('SELECT * FROM products WHERE sku = ?').get(v.sku);
       db.prepare("UPDATE products SET artwork_status = ?, updated_at = datetime('now') WHERE sku = ?")
         .run(next, v.sku);
+      if (before) stampReadiness(db, v.sku, before, ['artwork_status'], req.user?.name);
     }
   })();
 

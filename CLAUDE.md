@@ -518,6 +518,56 @@ abbreviation on a pouch than on a stick and nothing ever joined them.
   `planBottleDrafts`, so what is on screen cannot differ from what lands, and it is idempotent — a second
   click creates nothing. **33 drafts today, 5 blocked** on the flavours that still owe a code.
 
+### The readiness checklist is the control, and a change upstream un-ticks what depended on it
+Nine steps, and until now every one was an independent tick read off a field. Two problems, both visible on
+one drawer: three of them were free-text boxes for facts that are yes/no, and **correcting a GTIN left eight
+green ticks over a pack that must not print**. `shared/product-readiness.js` is the whole model — steps,
+dependencies and the staleness rule — imported by the server and the drawer so the catalogue's Ready column
+and the checklist cannot disagree.
+- **THE CHECKLIST IS THE CONTROL.** "MRP formula" and "Shopify SKU" were text boxes holding `Yes` and a
+  number the product's own SKU column already carried; the step just asked whether the box was non-empty.
+  That is a tick wearing a text field's clothes — slower to fill in, impossible to un-set, recording neither
+  who said so nor when. The three steps that record work done in **another system** (a formula approved in
+  the MRP, a listing in Shopify, a sync to ShipHero) are now ticked in the checklist itself and stamped with
+  a name and a date. `POST /products/:sku/confirm/:step`; their columns are **not** in `WRITABLE`, the same
+  doctrine that keeps `nfp_version` off the ordinary edit form.
+- **"MRP formula" → "Approved formula".** The label named the system, and the system is being replaced
+  (MRPEasy → Keychain). What matters is that a recipe was approved, wherever it lives.
+- **ONLY THE THREE EXTERNAL STEPS ARE TICKABLE.** NFP and artwork are evidence — a panel approved by
+  somebody ticking a box is the fabricated-sensory-record refusal again — so `confirm` **400s** on them and
+  the UI renders no checkbox. They clear through their own flows.
+- **THREE STATES, NOT TWO.** `todo` / `done` / **`stale`** — done, but something it was signed off against
+  has since changed. **A stale step is not done**: it is amber, it names what moved, it comes back onto the
+  punch list, and the Ready count drops. The dependency graph is small and every edge is a thing printed or
+  keyed somewhere: `gtin → artwork, shopify, shiphero`; `sku → shopify, shiphero`; `spec → artwork`;
+  `flavor → nfp, artwork`; `formula → nfp` (the panel is computed FROM the recipe); `nfp → artwork`;
+  `colors → artwork`. Generalises `barcode_gtin`, which was this idea for one file.
+- **THE FIRST-SIGHT RULE IS THE ONE THAT MATTERS.** A step satisfied before any of this existed has no
+  recorded basis and reads as **done, never stale** — otherwise the deploy that shipped this would light up
+  all 118 products amber at once, which is how a warning becomes wallpaper. Same reasoning as
+  `controlled.js` recording a never-seen definition as the approved baseline silently. **A dependency added
+  to a step later behaves the same way**: it is absent from what was recorded, so it cannot read as moved.
+  Asserted end to end against the seeded catalogue.
+- **`nextBasis` re-stamps a step only when it has just become satisfied, or when a column it OWNS was
+  written in that same edit.** That second clause is what "I have redone it" means, and it is the whole
+  mechanism: editing the notes leaves a stale step stale; re-releasing the artwork clears it. **Proven by a
+  control run** — removing it makes 2 assertions fail, because nothing can ever go stale.
+- **Every write path that satisfies a step calls `stampReadiness`** — the product PUT, the confirm endpoint,
+  `applyApproval` in nfp.js and the release in artwork.js. A step satisfied without recording what it was
+  satisfied against sits green through every subsequent change.
+- A step that stops being satisfied **drops its basis**, or it would read as stale the moment it is
+  satisfied again.
+- **The legacy fields are carried over ONCE**, guarded in `app_settings` (not by "are any rows set", or
+  deliberately unticking everything would be undone by the next deploy). It must not write its marker on an
+  empty table — on a fresh database the catalogue is seeded later, the `linkOrgPositionsToUsers` rule.
+- `shopify_sku` and `mrp_formula_id` stay as columns for the importer and for a Shopify SKU that genuinely
+  differs; the drawer shows the Shopify SKU **only when it differs from the product's own**, since for most
+  of the catalogue it is the same string printed one line above.
+- Verified: 37 assertions on the pure model (`npm run check:readiness`, in `npm run check`), **30 executed
+  against a live server on a fresh database**, and 12 in a real browser — including that the checkbox exists
+  for exactly the three tickable steps, that a stale step renders as an empty box to re-tick, and that
+  re-confirming clears the amber line without a reload.
+
 ### The GS1 barcode image, and the number it encodes
 `products.barcode_key` + `barcode_gtin` (and filename / type / size / who / when), `POST|GET|DELETE
 /products/:sku/barcode`, in the product drawer beside the GTIN. The catalogue has always held the GS1

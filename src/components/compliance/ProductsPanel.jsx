@@ -9,7 +9,7 @@ import FlavorCodesPanel, { DraftRealign } from './FlavorCodesPanel.jsx';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope, Tag,
-  Barcode, Upload, ExternalLink,
+  Barcode, Upload, ExternalLink, RefreshCw,
   FileText,
 } from 'lucide-react';
 
@@ -51,6 +51,86 @@ const STATUS_STYLE = {
   discontinued: 'bg-red-100 text-red-800',
 };
 const pretty = (s) => (s || '').replace(/_/g, ' ');
+
+/**
+ * What this product still owes — and what stopped being true.
+ *
+ * THE CHECKLIST IS THE CONTROL, which is the whole simplification. The three
+ * steps that record work done elsewhere (a formula approved in the MRP, a
+ * listing in Shopify, a sync to ShipHero) are ticked right here. They used to
+ * be free-text boxes further down the form holding "Yes" and a number this
+ * product's own SKU already carried: slower to fill in, impossible to un-set,
+ * and recording neither who said so nor when.
+ *
+ * THREE STATES, NOT TWO. A step whose inputs have since moved is neither done
+ * nor untouched — it is amber, it names what changed, and it does not count
+ * towards the total. Correcting a GTIN used to leave eight green ticks over a
+ * pack that must not print.
+ */
+function ReadinessChecklist({ readiness, sku, canEdit, onChanged }) {
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const { steps, missing, stale } = readiness;
+
+  const toggle = async (step, on) => {
+    setBusy(step.key); setError('');
+    try {
+      await apiFetch(`/products/${encodeURIComponent(sku)}/confirm/${step.key}`, { method: 'POST', body: { on } });
+      onChanged?.();
+    } catch (e) { setError(e.message); }
+    setBusy('');
+  };
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+      <p className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
+        <AlertTriangle size={15} /> {missing.length} still outstanding
+      </p>
+      {stale.length > 0 && (
+        <p className="mt-1 text-xs text-amber-800">
+          {stale.length === 1 ? '1 step needs' : `${stale.length} steps need`} re-checking — something they
+          were signed off against has changed since.
+        </p>
+      )}
+      {error && <p className="mt-1 text-xs text-red-700">{error}</p>}
+      <ul className="mt-2 space-y-1">
+        {steps.map((s) => {
+          const stale_ = s.state === 'stale';
+          return (
+            <li key={s.key} className="text-sm">
+              <div className="flex items-start gap-2">
+                {/* A tickable step is a real checkbox; everything else is
+                    evidence-driven and must never be clickable, or the record
+                    would say a panel was approved because somebody ticked it. */}
+                {s.tick && canEdit ? (
+                  <input type="checkbox" checked={s.state === 'done'} disabled={busy === s.key}
+                    onChange={(e) => toggle(s, e.target.checked)}
+                    aria-label={s.label}
+                    className="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-powder-600 shrink-0 cursor-pointer" />
+                ) : stale_ ? <RefreshCw size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                  : s.state === 'done' ? <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
+                    : <Circle size={14} className="text-gray-300 shrink-0 mt-0.5" />}
+                <div className="min-w-0">
+                  <span className={s.state === 'done' ? 'text-gray-500 line-through'
+                    : stale_ ? 'text-amber-900 font-medium' : 'text-gray-900'}>{s.label}</span>
+                  {stale_ && (
+                    <span className="ml-1.5 text-xs text-amber-800">
+                      · {s.changed_labels.join(' and ')} changed{s.tick ? ' — confirm again' : ''}
+                    </span>
+                  )}
+                  {stale_ && s.redo && <div className="text-xs text-amber-700">{s.redo}</div>}
+                  {s.state === 'done' && s.tick && s.by && (
+                    <span className="ml-1.5 text-xs text-gray-400">{s.by}{s.at ? ` · ${s.at.slice(0, 10)}` : ''}</span>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 function ReadyBar({ readiness }) {
   if (!readiness) return null;
@@ -182,7 +262,6 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
     setForm({
       gtin: p.gtin || '', flavor: p.flavor || '', base_flavor: p.base_flavor || '',
       status: p.status || 'active', eyemark_color: p.eyemark_color || '',
-      shopify_sku: p.shopify_sku || '', mrp_formula_id: p.mrp_formula_id || '',
       // nfp_version / nfp_approved_at are deliberately absent. They are the
       // artwork print gate, and they are written by approving a panel — see the
       // Nutrition panel section below. The server refuses them on PUT.
@@ -219,21 +298,8 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
         {!p ? <p className="text-sm text-gray-500">Loading…</p> : (
           <>
             {p.readiness.missing.length > 0 && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                <p className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
-                  <AlertTriangle size={15} /> {p.readiness.missing.length} still outstanding
-                </p>
-                <ul className="mt-2 space-y-1">
-                  {p.readiness.steps.map((s) => (
-                    <li key={s.key} className="text-sm flex items-center gap-2">
-                      {s.done
-                        ? <CheckCircle2 size={14} className="text-green-600 shrink-0" />
-                        : <Circle size={14} className="text-gray-300 shrink-0" />}
-                      <span className={s.done ? 'text-gray-500 line-through' : 'text-gray-900'}>{s.label}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <ReadinessChecklist readiness={p.readiness} sku={sku} canEdit={canEdit}
+                onChanged={() => { refresh(); onSaved?.(); }} />
             )}
 
             {!p.gtin_valid && p.gtin && (
@@ -247,8 +313,11 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                 {error && <p className="text-sm text-red-700 bg-red-50 rounded p-2">{error}</p>}
                 {[
                   ['flavor', 'Product name'], ['base_flavor', 'Base flavour'], ['gtin', 'GTIN'],
-                  ['eyemark_color', 'Eyemark colour'], ['shopify_sku', 'Shopify SKU'],
-                  ['mrp_formula_id', 'MRP formula'], ['drive_url', 'Drive link'],
+                  // Shopify SKU and MRP formula are gone from here on purpose:
+                  // they were text boxes holding "Yes" and a number this
+                  // product's own SKU already carried, and the checklist above
+                  // now ticks both with a name and a date against them.
+                  ['eyemark_color', 'Eyemark colour'], ['drive_url', 'Drive link'],
                 ].map(([k, label]) => (
                   <label key={k} className="block">
                     <span className="text-xs font-medium text-gray-600">{label}</span>
@@ -295,8 +364,12 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     ['Pack count', p.pack_count], ['Spec', p.spec_name], ['Material', p.material_structure],
                     ['Zipper', p.zipper], ['Print', p.print_process],
                     ['Trim', p.trim_length_mm ? `${p.trim_length_mm} × ${p.trim_width_mm} mm` : null],
-                    ['Eyemark', p.eyemark_color], ['Shopify SKU', p.shopify_sku],
-                    ['MRP formula', p.mrp_formula_id],
+                    ['Eyemark', p.eyemark_color],
+                    // Only worth showing when Shopify calls it something else —
+                    // for most of the catalogue it is this product's own SKU,
+                    // printed one line above.
+                    ['Shopify SKU', p.shopify_sku && p.shopify_sku !== p.sku ? p.shopify_sku : null],
+                    ['Formula ref', p.mrp_formula_id],
                     ['NFP version', p.nfp_version && `${p.nfp_version}${p.nfp_approved_at ? ` — approved ${p.nfp_approved_at}` : ' — not approved'}`],
                     ['Artwork', pretty(p.artwork_status)],
                   ].filter(([, v]) => v !== null && v !== undefined && v !== '').map(([label, v]) => (

@@ -2666,6 +2666,39 @@ function runMigrations() {
   addColumnIfMissing('products', 'barcode_uploaded_at', 'TEXT');
   addColumnIfMissing('products', 'barcode_uploaded_by', 'TEXT');
 
+  // WORK DONE IN ANOTHER SYSTEM, CONFIRMED BY A PERSON HERE.
+  //
+  // "MRP formula" and "Shopify SKU" were free-text boxes holding "Yes" and a
+  // number the product's own SKU column already carried, and the readiness step
+  // simply asked whether the box was non-empty. That is a tick wearing a text
+  // field's clothes: it takes longer to fill in, it cannot be un-set, and it
+  // records neither who said so nor when. ReadyDoc cannot see into the MRP,
+  // Shopify or ShipHero, so a person confirms — and the confirmation is stamped
+  // with their name and the date, the same shape as every other assertion here.
+  //
+  // `shiphero_synced_at` already worked this way; these two make the three
+  // external-system steps identical.
+  addColumnIfMissing('products', 'formula_approved_at', 'TEXT');
+  addColumnIfMissing('products', 'formula_approved_by', 'TEXT');
+  addColumnIfMissing('products', 'shopify_listed_at', 'TEXT');
+  addColumnIfMissing('products', 'shopify_listed_by', 'TEXT');
+  addColumnIfMissing('products', 'shiphero_synced_by', 'TEXT');
+
+  // WHAT EACH READY STEP WAS TRUE AGAINST.
+  //
+  // A step signed off print-ready is not print-ready once the GTIN moves — the
+  // barcode on that film is now the wrong number. The old checklist could not
+  // say that: every step was an independent tick, so correcting a GTIN left
+  // eight green ticks and a pack that must not print. This records, per step,
+  // the facts it was satisfied against; `shared/product-readiness.js` compares
+  // them on every read and a step whose inputs have moved comes back onto the
+  // punch list naming what changed. Generalises `barcode_gtin`, which is the
+  // same idea for one file.
+  addColumnIfMissing('products', 'readiness_basis', 'TEXT');
+
+  // The confirmation backfill needs app_settings for its done-marker, so it
+  // runs further down, directly after that table is created.
+
   // ── Nutrition Facts Panels ────────────────────────────────────────────────
   // The panel that is printed on the pack, as an approvable record rather than
   // a version string somebody typed.
@@ -3567,6 +3600,39 @@ function runMigrations() {
   // nothing, declines to mark itself done, and server.js runs it again after
   // the seeders — which is why it must not write the marker on an empty pass.
   linkOrgPositionsToUsers();
+
+  // Carrying the two legacy fields over as confirmations. Here rather than
+  // beside the products columns because it stores its done-marker in
+  // app_settings, which is created directly above — the same reason
+  // linkOrgPositionsToUsers() sits here.
+  //
+  // ONE-TIME, and it must be one-time. `mrp_formula_id` and `shopify_sku` are
+  // the only evidence we have that a formula was approved or a product listed,
+  // so they become the confirmation — dated to the row's own last update and
+  // attributed to the import rather than to a person who never clicked
+  // anything. Guarded on the marker rather than on "are any rows set", because
+  // deliberately unticking every product must not be undone by the next deploy
+  // (the equipment_asset_kind_backfilled precedent).
+  try {
+    const done = db.prepare("SELECT value FROM app_settings WHERE key = 'product_confirmations_backfilled'").get();
+    // On a FRESH database the catalogue has not been seeded yet, so this pass
+    // would find nothing and mark itself done for good. It must not write the
+    // marker on an empty table — same rule as linkOrgPositionsToUsers above.
+    const anyProducts = db.prepare('SELECT 1 FROM products LIMIT 1').get();
+    if (!done && anyProducts) {
+      const a = db.prepare(`UPDATE products SET formula_approved_at = COALESCE(updated_at, created_at),
+        formula_approved_by = 'catalogue import'
+        WHERE formula_approved_at IS NULL AND mrp_formula_id IS NOT NULL AND TRIM(mrp_formula_id) != ''`).run();
+      const b = db.prepare(`UPDATE products SET shopify_listed_at = COALESCE(updated_at, created_at),
+        shopify_listed_by = 'catalogue import'
+        WHERE shopify_listed_at IS NULL AND shopify_sku IS NOT NULL AND TRIM(shopify_sku) != ''`).run();
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('product_confirmations_backfilled', ?)")
+        .run(new Date().toISOString());
+      if (a.changes || b.changes) {
+        console.log(`[products] Confirmations carried over from the catalogue: ${a.changes} formula, ${b.changes} Shopify`);
+      }
+    }
+  } catch (e) { console.warn('[products] confirmation backfill skipped:', e.message); }
 
   // Generic content-translation cache: reusable across modules (operator task
   // titles/steps, etc.). Keyed by a hash of the source text + target language so

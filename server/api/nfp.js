@@ -30,6 +30,7 @@ import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { readyDocOrigin } from '../links.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
+import { stampReadiness } from './products.js';
 
 const router = Router();
 
@@ -197,7 +198,7 @@ router.post('/', (req, res) => {
       b.drive_url || null, b.change_summary || null,
       paper ? approvedBy : null, paper ? approvedAt : null, paper ? 'paper' : null,
       req.user.name);
-    if (paper) applyApproval(db, id, sku, version, approvedAt);
+    if (paper) applyApproval(db, id, sku, version, approvedAt, approvedBy);
   })();
 
   logAudit(req.user, 'nfp_version_created', 'nfp', id,
@@ -452,15 +453,21 @@ router.post('/:id/revoke', (req, res) => {
  * products.nfp_version / nfp_approved_at are written, which is what stops the
  * print gate and this table from ever telling different stories.
  */
-function applyApproval(db, id, sku, version, approvedAt) {
+function applyApproval(db, id, sku, version, approvedAt, approvedBy) {
   const others = db.prepare(
     "SELECT id FROM nfp_versions WHERE sku = ? AND id != ? AND status = 'approved'").all(sku, id);
   for (const o of others) {
     db.prepare("UPDATE nfp_versions SET status = 'superseded', superseded_by = ?, updated_at = datetime('now') WHERE id = ?")
       .run(id, o.id);
   }
+  const before = db.prepare('SELECT * FROM products WHERE sku = ?').get(sku);
   db.prepare("UPDATE products SET nfp_version = ?, nfp_approved_at = ?, updated_at = datetime('now') WHERE sku = ?")
     .run(version, approvedAt, sku);
+  // The NFP step has just been re-done, so its basis moves to the recipe and
+  // the product name as they stand now. Without this the panel would be
+  // approved with nothing recorded about what it was computed FROM, and a
+  // later formula change could never make it read as needing a new panel.
+  if (before) stampReadiness(db, sku, before, ['nfp_version', 'nfp_approved_at'], approvedBy || null);
 }
 
 /**
@@ -490,7 +497,7 @@ function decide(db, v, { decision, by, comments, via }) {
       db.prepare(`UPDATE nfp_versions SET status = 'approved', approved_by = ?, approved_at = ?,
         decided_via = ?, decision_comments = ?, token_hash = NULL, updated_at = datetime('now')
         WHERE id = ?`).run(by, now.slice(0, 10), via, comments || null, v.id);
-      applyApproval(db, v.id, v.sku, v.version, now.slice(0, 10));
+      applyApproval(db, v.id, v.sku, v.version, now.slice(0, 10), by);
     } else {
       db.prepare(`UPDATE nfp_versions SET status = 'rejected', rejected_reason = ?, approved_by = ?,
         decided_via = ?, token_hash = NULL, updated_at = datetime('now') WHERE id = ?`)

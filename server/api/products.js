@@ -15,6 +15,7 @@ import { createHash, timingSafeEqual, randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { resolveFlavorCodes } from '../flavor-codes.js';
 import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js';
+import { READINESS, TICKABLE, readinessOf, nextBasis } from '../../shared/product-readiness.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import fs from 'fs';
@@ -44,27 +45,13 @@ export function gtinValid(gtin) {
 }
 
 // ── Readiness ────────────────────────────────────────────────────────────────
-
-// The checklist, in the order a product actually has to clear it. Each entry
-// reads one field and says what is missing in the words you would use out loud
-// — "no GS1 barcode", not "gtin is null". Adding a step is one row here.
-const READINESS = [
-  { key: 'sku', label: 'SKU assigned', ok: (p) => !!p.sku && !/^\d{8,}$/.test(p.sku) },
-  { key: 'gtin', label: 'GS1 barcode', ok: (p) => !!p.gtin && !!p.gtin_valid },
-  { key: 'spec', label: 'Packaging spec', ok: (p) => !!p.spec_id && !!p.material_structure },
-  { key: 'formula', label: 'MRP formula', ok: (p) => !!p.mrp_formula_id },
-  { key: 'nfp', label: 'NFP approved', ok: (p) => !!p.nfp_version && !!p.nfp_approved_at },
-  { key: 'artwork', label: 'Artwork print-ready', ok: (p) => p.artwork_status === 'print_ready' },
-  { key: 'colors', label: 'Brand colours', ok: (p) => (p.colors || []).length > 0 },
-  { key: 'shopify', label: 'In Shopify', ok: (p) => !!p.shopify_sku },
-  { key: 'shiphero', label: 'Synced to ShipHero', ok: (p) => !!p.shiphero_synced_at },
-];
-
-function readinessOf(p) {
-  const steps = READINESS.map((s) => ({ key: s.key, label: s.label, done: !!s.ok(p) }));
-  const done = steps.filter((s) => s.done).length;
-  return { steps, done, total: steps.length, missing: steps.filter((s) => !s.done).map((s) => s.label) };
-}
+//
+// The checklist and its dependency rules live in `shared/product-readiness.js`
+// so the drawer renders exactly what the server counted. Adding a step is one
+// entry there. `nextBasis` is called from every write path that can satisfy a
+// step — this file's PUT, the barcode upload, the NFP approval in nfp.js and
+// the artwork release in artwork.js — because a step that is satisfied without
+// recording what it was satisfied against can never be found stale.
 
 // ── Shaping ──────────────────────────────────────────────────────────────────
 
@@ -73,6 +60,30 @@ const SELECT = `
          s.trim_length_mm, s.trim_width_mm, s.gusset_mm, s.front_panel_mm,
          s.wind_direction, s.vendor_spec_string
   FROM products p LEFT JOIN packaging_specs s ON s.spec_id = p.spec_id`;
+
+/**
+ * Record what each satisfied step is true against, after a write.
+ *
+ * EXPORTED because three other write paths satisfy a step: the NFP approval in
+ * nfp.js, the artwork release in artwork.js, and the barcode upload below. A
+ * step satisfied without recording its basis can never be found stale — it
+ * would sit green through every subsequent change — so every one of them calls
+ * this, with the columns it wrote, in the same transaction.
+ *
+ * `changedColumns` is what makes it precise: writing a step's OWN column means
+ * the work was re-done and the basis moves with it; writing anything else
+ * leaves the basis alone so the step can go stale.
+ */
+export function stampReadiness(db, sku, before, changedColumns = [], who = null) {
+  const row = db.prepare(`${SELECT} WHERE p.sku = ?`).get(sku);
+  if (!row) return;
+  // Colours are a dependency of artwork and live in their own table.
+  const colors = db.prepare('SELECT * FROM product_colors WHERE sku = ? ORDER BY slot').all(sku);
+  const after = { ...row, colors };
+  const beforeWithColors = before ? { ...before, colors: before.colors || colors } : after;
+  db.prepare('UPDATE products SET readiness_basis = ? WHERE sku = ?')
+    .run(nextBasis(beforeWithColors, after, changedColumns, who), sku);
+}
 
 function hydrate(rows, db) {
   if (!rows.length) return [];
@@ -585,7 +596,7 @@ router.get('/:sku', (req, res) => {
 const WRITABLE = [
   'legacy_sku', 'gtin', 'category', 'protein_type', 'pack', 'pack_count', 'flavor',
   'base_flavor', 'flavor_code', 'status', 'spec_id', 'eyemark_color', 'dieline_required',
-  'shopify_sku', 'shopify_variant_id', 'shiphero_synced_at', 'mrp_formula_id', 'formula_rev',
+  'shopify_sku', 'shopify_variant_id', 'mrp_formula_id', 'formula_rev',
   'artwork_version', 'artwork_status', 'drive_url', 'notes',
 ];
 
@@ -605,6 +616,48 @@ const WRITABLE = [
  * able to send these would otherwise look like it saved and quietly not have.
  */
 const NFP_OWNED = ['nfp_version', 'nfp_approved_at'];
+
+/**
+ * The three steps that record work done in another system.
+ *
+ * A formula approved in the MRP, a listing in Shopify, a sync to ShipHero —
+ * ReadyDoc cannot see into any of them, so a person says so. They were free
+ * text ("Yes", and a number the SKU column already carried), which is a tick
+ * that takes longer to fill in, cannot be un-set, and records neither who said
+ * so nor when.
+ *
+ * Their columns are NOT in WRITABLE. A confirmation is an act with a name on
+ * it, not a field to patch — the same doctrine that keeps `nfp_version` off the
+ * ordinary edit form.
+ */
+const CONFIRMATIONS = {
+  formula: { at: 'formula_approved_at', by: 'formula_approved_by', label: 'Approved formula' },
+  shopify: { at: 'shopify_listed_at', by: 'shopify_listed_by', label: 'Listed in Shopify' },
+  shiphero: { at: 'shiphero_synced_at', by: 'shiphero_synced_by', label: 'Synced to ShipHero' },
+};
+
+router.post('/:sku/confirm/:step', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  const c = CONFIRMATIONS[req.params.step];
+  if (!c || !TICKABLE.includes(req.params.step)) {
+    return res.status(400).json({ error: `${req.params.step} is not something a person confirms here.` });
+  }
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!existing) return res.status(404).json({ error: 'No such SKU' });
+
+  const on = req.body?.on !== false;
+  db.prepare(`UPDATE products SET ${c.at} = ?, ${c.by} = ?, updated_at = datetime('now') WHERE sku = ?`)
+    .run(on ? new Date().toISOString() : null, on ? (req.user?.name || null) : null, existing.sku);
+  // The step's own column, so re-confirming a STALE step is what clears it —
+  // the basis moves to the facts as they stand now. That is the whole way back
+  // for these three: somebody looks at Shopify again and says yes.
+  stampReadiness(db, existing.sku, existing, [c.at], req.user?.name);
+  logAudit(req.user, 'product_updated', 'product', existing.sku,
+    { step: req.params.step, confirmed: on }, existing,
+    db.prepare('SELECT * FROM products WHERE sku = ?').get(existing.sku), existing.sku);
+  res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
+});
 
 router.post('/', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
@@ -667,8 +720,13 @@ router.put('/:sku', (req, res) => {
   const sets = Object.keys(patch).map((c) => `${c} = ?`).join(', ');
   db.prepare(`UPDATE products SET ${sets}, updated_at = datetime('now') WHERE sku = ?`)
     .run(...Object.values(patch), existing.sku);
+  // What each satisfied step is now true against. Editing the GTIN here is
+  // exactly the case this exists for: the step's own basis moves, and every
+  // step that DEPENDED on the GTIN — the artwork, the Shopify listing — keeps
+  // the old one and comes back onto the punch list saying so.
+  stampReadiness(db, existing.sku, existing, Object.keys(patch), req.user?.name);
   logAudit(req.user, 'product_updated', 'product', existing.sku, { changed: Object.keys(patch) }, null, null, existing.sku);
-  res.json(db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku));
+  res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
 });
 
 /**
