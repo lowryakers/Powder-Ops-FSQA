@@ -36,7 +36,9 @@
     "check:dupreadings": "node scripts/check-duplicate-readings.mjs",
     "verify:backdate": "node scripts/verify-backdated-recurrence.mjs",
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
-    "verify:sanareas": "node scripts/verify-sanitation-areas.mjs"
+    "verify:sanareas": "node scripts/verify-sanitation-areas.mjs",
+    "verify:storage": "node scripts/verify-supplier-storage.mjs",
+    "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

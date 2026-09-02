@@ -30,6 +30,7 @@
 // the first time somebody files a questionnaire.
 
 import { Router } from 'express';
+import { moduleLevel } from '../module-access.js';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { readTable } from '../tabular.js';
@@ -52,9 +53,14 @@ const router = Router();
 // the Receiving Log uses. Importing in bulk is admin, because it writes across
 // the whole register in one transaction.
 const canRead = (u) => !!u;
+// The module-grant branch used to read `u.modules`, a property req.user has
+// never carried, so an explicit Suppliers grant in Settings conferred nothing
+// here — a grant that could not be granted. moduleLevel() is the one rule for
+// what a map means (see shared/module-access.js for why an empty map is not
+// "everything").
 const canEdit = (u) => ['admin', 'supervisor'].includes(u?.role)
   || ['qa', 'quality', 'purchasing'].includes((u?.department || '').toLowerCase())
-  || u?.modules?.includes?.('suppliers');
+  || moduleLevel(u, 'suppliers') === 'edit';
 const canDecide = (u) => u?.role === 'admin'
   || (['qa', 'quality'].includes((u?.department || '').toLowerCase()) && u?.role === 'supervisor');
 
@@ -135,6 +141,10 @@ router.get('/:id', (req, res) => {
   const s = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id);
   if (!s) return res.status(404).json({ error: 'Not found' });
   res.json({
+    // The client renders what it is told. A second copy of canEdit in the
+    // drawer is how the button and the 403 start disagreeing.
+    can_edit: canEdit(req.user),
+
     supplier: { ...s, legacy_names: JSON.parse(s.legacy_names || '[]') },
     contacts: db.prepare('SELECT * FROM supplier_contacts WHERE supplier_id = ? ORDER BY is_primary DESC, email').all(s.id),
     materials: db.prepare('SELECT * FROM supplier_materials WHERE supplier_id = ? ORDER BY item_description').all(s.id),
@@ -828,8 +838,16 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
       // The kind and the expiry are read from the NAME by the same functions
       // the archive walk uses, so a file attached by hand is classified the
       // same way as one that arrived in the zip.
-      ins.run(id, supplier.id, req.body?.kind || classifyDocument(f.originalname) || 'other',
-        req.body?.expires_on || expiryFromFilename(f.originalname) || null,
+      // classifyDocument returns { kind, expires_on, filled } — an OBJECT. The
+      // first version bound the whole object as `kind`; better-sqlite3 reads a
+      // plain object argument as a named-parameter bag, so the positional count
+      // came up one short and this route 400'd with "Too few parameter values"
+      // on its very first real call. Same shape as the documented
+      // extractInvoiceText mistake: a return type nobody checked because the
+      // path had never been exercised.
+      const classified = classifyDocument(f.originalname) || {};
+      ins.run(id, supplier.id, req.body?.kind || classified.kind || 'other',
+        req.body?.expires_on || classified.expires_on || expiryFromFilename(f.originalname) || null,
         f.originalname, key, type, f.size,
         text || null, text ? 'ok' : (text === null ? 'failed' : 'empty'),
         `uploaded/${f.originalname}`, req.user.name);

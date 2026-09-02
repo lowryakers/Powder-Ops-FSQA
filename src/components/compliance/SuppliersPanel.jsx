@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, Fragment, useRef} from 'react';
 import { useApiGet, apiPost, apiDelete, apiUpload } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow } from '../common/RowDetail';
@@ -274,8 +274,55 @@ export default function SuppliersPanel({ user }) {
 
 // ── One supplier, expanded ──────────────────────────────────────────────────
 
+// Attach one or more documents to a single supplier. The server classifies the
+// kind and reads an expiry from the FILENAME with the same functions the
+// archive walk uses, so a file attached by hand is catalogued exactly as one
+// that arrived in the zip — and if the name says nothing it lands as "other",
+// visibly, rather than being guessed at.
+function AttachSupplierFiles({ supplierId, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const inputRef = useRef(null);
+
+  const send = async (fileList) => {
+    const picked = [...(fileList || [])];
+    if (!picked.length) return;
+    setBusy(true); setMsg(null);
+    try {
+      const fd = new FormData();
+      for (const f of picked) fd.append('files', f);
+      const r = await apiUpload(`/suppliers/${supplierId}/files`, fd, 'POST');
+      const n = r?.saved?.length || 0;
+      setMsg({ ok: true, text: `${n} document${n === 1 ? '' : 's'} attached.` });
+      onDone?.();
+    } catch (e) {
+      setMsg({ ok: false, text: e?.message || 'Upload failed.' });
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      {msg && (
+        <span className={`text-xs ${msg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+          {msg.text}
+        </span>
+      )}
+      <input ref={inputRef} type="file" multiple className="hidden"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip"
+        onChange={e => send(e.target.files)} />
+      <button type="button" disabled={busy} onClick={e => { stopRowClick(e); inputRef.current?.click(); }}
+        className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">
+        <Upload size={12} /> {busy ? 'Attaching…' : 'Attach documents'}
+      </button>
+    </div>
+  );
+}
+
 function SupplierDetail({ id, user, onDecide, onRemoved }) {
-  const { data, loading } = useApiGet(`/suppliers/${id}`);
+  const { data, loading, refresh } = useApiGet(`/suppliers/${id}`);
   if (loading || !data) return <div className="py-4 text-sm text-slate-500">Loading…</div>;
   const { supplier, contacts, materials, qualifications, files } = data;
   const canDecide = user?.role === 'admin'
@@ -379,9 +426,20 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
       </section>
 
       <section className="md:col-span-2">
-        <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Documents on file ({files.length})
-        </h4>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Documents on file ({files.length})
+          </h4>
+          {/* THE MANUAL DOOR. POST /suppliers/:id/files has existed since the
+              archive import shipped — its own comment says it is for "a vendor
+              who emails a questionnaire next week" — and nothing in the client
+              ever called it, so the only way a single document reached a
+              supplier was inside a zip of the whole Drive. The Import tab is for
+              reconciling an archive; one file for one vendor belongs on that
+              vendor's record, here, where the person holding the email is
+              already looking. */}
+          {data.can_edit && <AttachSupplierFiles supplierId={id} onDone={refresh} />}
+        </div>
         {files.length ? (
           <div className="max-h-64 overflow-y-auto rounded border border-slate-200 dark:border-slate-700">
             <table className="w-full text-xs">

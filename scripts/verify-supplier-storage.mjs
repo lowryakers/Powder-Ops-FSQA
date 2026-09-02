@@ -404,4 +404,49 @@ const anon = await fetch(`${B}/suppliers/files/archive/commit`, { method: 'POST'
 t('an unauthenticated archive upload is refused', anon.status === 401 || anon.status === 403, `${anon.status}`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
+
+console.log('\n── the manual door: attach a document to ONE supplier ──');
+{
+  // The server has had POST /suppliers/:id/files since the archive import
+  // shipped; the drawer never called it. This drives it the way the new button
+  // does, and asserts the file is catalogued like an archived one.
+  const before = await J(await req(`/suppliers/${withFiles.id}`));
+  t('the detail says whether the caller may attach', before?.can_edit === true, `can_edit=${before?.can_edit}`);
+  const nBefore = (before?.files || []).length;
+
+  const fd = new FormData();
+  fd.append('files', new Blob(['%PDF-1.4 questionnaire'], { type: 'application/pdf' }), 'Supplier Questionnaire Exp 12.31.2027.pdf');
+  const r = await up(`/suppliers/${withFiles.id}/files`, fd);
+  const b = await J(r);
+  t('one file attaches', r.ok && b?.saved?.length === 1, `got ${r.status} ${JSON.stringify(b || {}).slice(0, 80)}`);
+
+  const after = await J(await req(`/suppliers/${withFiles.id}`));
+  const row = (after?.files || []).find(f => f.filename === 'Supplier Questionnaire Exp 12.31.2027.pdf');
+  t('it appears on that supplier, and only that supplier', !!row && (after.files.length === nBefore + 1));
+  t('it is STORED, not merely catalogued', !!row?.stored, `stored=${row?.stored}`);
+  t('the kind was read from the filename, same as the archive walk', row?.kind === 'questionnaire', `kind=${row?.kind}`);
+  t('the expiry was read from the filename', String(row?.expires_on || '').startsWith('2027-12-31'), `expires_on=${row?.expires_on}`);
+
+  // No file at all is refused, not silently accepted.
+  const empty = await up(`/suppliers/${withFiles.id}/files`, new FormData());
+  t('attaching nothing is refused', empty.status === 400, `got ${empty.status}`);
+
+  // A person outside the edit ladder gets a 403 and — the same fact — no button.
+  const d = new Database(process.env.DBPATH);
+  d.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
+    VALUES ('sup-op','Sup Operator','Sup Operator','operator','warehouse',1,'SC-SOP',datetime('now','+7 day'),'{"suppliers":"view"}')`).run();
+  d.close();
+  await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: 'sup-op', password: 'OpSecret2026', setup_code: 'SC-SOP' }) });
+  const opTok = (await J(await req('/users/login', { method: 'POST', body: JSON.stringify({ name: 'Sup Operator', password: 'OpSecret2026' }) })))?.token;
+  t('the viewer could sign in', !!opTok, 'no token — set-password or login failed');
+  const opRes = await fetch(`${B}/suppliers/${withFiles.id}`, { headers: { Authorization: `Bearer ${opTok}` } });
+  const opDetail = await J(opRes);
+  t('a viewer can READ the supplier', opRes.ok, `got ${opRes.status} ${JSON.stringify(opDetail || {}).slice(0, 80)}`);
+  t('and is told they may NOT attach', opDetail?.can_edit === false, `can_edit=${opDetail?.can_edit}`);
+  const fd2 = new FormData(); fd2.append('files', new Blob(['x']), 'x.pdf');
+  const denied = await fetch(`${B}/suppliers/${withFiles.id}/files`, { method: 'POST', headers: { Authorization: `Bearer ${opTok}` }, body: fd2 });
+  t('and the server refuses them too', denied.status === 403, `got ${denied.status}`);
+}
+
+console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);
