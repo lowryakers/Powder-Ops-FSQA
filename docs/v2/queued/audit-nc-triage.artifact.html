@@ -1,0 +1,468 @@
+<title>Audit Nonconformance Triage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=Work+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+  :root{
+    --paper:#F7F8F7; --surface:#FFFFFF; --sunken:#ECEFEC;
+    --ink:#131614; --ink-2:#464C48; --ink-3:#767E79;
+    --rule:#DCE1DD; --rule-2:#C2C9C4;
+    --a:#155E52;  --a-bg:#E0EFEB;
+    --b:#8A5A0F;  --b-bg:#F8EEDA;
+    --c:#5B4A7A;  --c-bg:#EEE9F5;
+    --alert:#9C3327; --alert-bg:#FAE7E4;
+    --accent:#155E52;
+    --shadow:0 1px 2px rgba(19,22,20,.05),0 10px 26px -20px rgba(19,22,20,.3);
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --paper:#101312; --surface:#181C1A; --sunken:#202523;
+    --ink:#E9EDEA; --ink-2:#AFB6B2; --ink-3:#7F8783;
+    --rule:#2A302D; --rule-2:#3B423E;
+    --a:#6FC4B2; --a-bg:#12241F;
+    --b:#DDA95F; --b-bg:#2A2114;
+    --c:#AC9BD1; --c-bg:#211B2E;
+    --alert:#E28D80; --alert-bg:#2C1917;
+    --accent:#6FC4B2;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 26px -20px rgba(0,0,0,.9);
+  }}
+  :root[data-theme="dark"]{
+    --paper:#101312; --surface:#181C1A; --sunken:#202523;
+    --ink:#E9EDEA; --ink-2:#AFB6B2; --ink-3:#7F8783;
+    --rule:#2A302D; --rule-2:#3B423E;
+    --a:#6FC4B2; --a-bg:#12241F;
+    --b:#DDA95F; --b-bg:#2A2114;
+    --c:#AC9BD1; --c-bg:#211B2E;
+    --alert:#E28D80; --alert-bg:#2C1917;
+    --accent:#6FC4B2;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 26px -20px rgba(0,0,0,.9);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Work Sans",ui-sans-serif,system-ui,sans-serif;font-size:16.5px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:920px;margin:0 auto;padding:0 clamp(16px,4vw,44px) 90px}
+  code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.85em}
+  code{background:var(--sunken);padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+
+  header{padding:clamp(34px,6vw,64px) 0 0}
+  .kicker{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin-bottom:14px}
+  h1{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(33px,5.6vw,54px);
+    line-height:1.03;letter-spacing:-.025em;margin:0 0 15px;text-wrap:balance}
+  .sub{font-size:clamp(16px,1.9vw,19px);color:var(--ink-2);margin:0;max-width:62ch}
+
+  .scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:28px 0 0}
+  .sc{background:var(--surface);border:1px solid var(--rule);border-radius:9px;padding:15px 17px;box-shadow:var(--shadow)}
+  .sc .v{font-family:"Space Grotesk",sans-serif;font-size:33px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+  .sc .k{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-top:6px}
+  .sc.zero .v{color:var(--a)} .sc.minor .v{color:var(--b)}
+
+  .box{margin:26px 0 0;padding:18px 22px;border-radius:9px;border-left:3px solid var(--accent);
+    background:var(--sunken);color:var(--ink-2);font-size:15.4px}
+  .box b{color:var(--ink)} .box p{margin:0} .box p+p{margin-top:11px}
+  .box.hot{border-left-color:var(--alert);background:var(--alert-bg)}
+  .quotes{font-family:"IBM Plex Mono",monospace;font-size:13.5px;line-height:1.9;color:var(--ink);
+    background:var(--surface);border-radius:7px;padding:12px 16px;margin-top:11px}
+
+  h2{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(24px,3.3vw,32px);
+    letter-spacing:-.018em;margin:58px 0 6px;padding-bottom:11px;border-bottom:2px solid var(--ink)}
+  h3{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:19px;margin:38px 0 0;color:var(--ink-2)}
+  .lede{color:var(--ink-2);font-size:15.5px;margin:14px 0 0;max-width:66ch}
+
+  .n{background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--rule-2);
+    border-radius:8px;padding:15px 19px;margin-top:11px;box-shadow:var(--shadow)}
+  .n.a{border-left-color:var(--a)} .n.b{border-left-color:var(--b)} .n.c{border-left-color:var(--c)}
+  .nh{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px 11px}
+  .id{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;color:var(--ink-3)}
+  .nt{font-weight:600;font-size:16.5px;flex:1 1 240px}
+  .chip{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .k-a{background:var(--a-bg);color:var(--a)} .k-b{background:var(--b-bg);color:var(--b)}
+  .k-c{background:var(--c-bg);color:var(--c)} .k-hot{background:var(--alert-bg);color:var(--alert)}
+  .n p{margin:9px 0 0;color:var(--ink-2);font-size:15.2px}
+
+  /* Where a finding stands. Deliberately not another chip: bucket (A/B/C) and
+     status are different dimensions, and three chips in a row would read as one
+     classification. A dot plus a line reads as state. */
+  .st{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 9px;margin-top:8px;
+    font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.04em;color:var(--ink-3)}
+  .st .dot{width:9px;height:9px;border-radius:50%;flex:none;align-self:center;
+    border:1.5px solid currentColor;background:transparent}
+  .st.part{color:var(--b)} .st.part .dot{background:currentColor;
+    box-shadow:inset 0 -4px 0 var(--surface)}
+  .st.done{color:var(--a)} .st.done .dot{background:currentColor}
+  .st .what{font-family:Karla,sans-serif;font-size:14px;letter-spacing:0;color:var(--ink-2)}
+  .st .what b{color:var(--ink)}
+
+  .prog{margin:26px 0 0;border:1px solid var(--rule);border-radius:9px;background:var(--surface);
+    box-shadow:var(--shadow);overflow:hidden}
+  .prog>.hd{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;
+    padding:14px 18px;border-bottom:1px solid var(--rule);background:var(--sunken)}
+  .prog>.hd h3{margin:0;font-family:Karla,sans-serif;font-size:17px}
+  .prog>.bd{padding:16px 18px;display:flex;flex-direction:column;gap:12px;font-size:15.4px;color:var(--ink-2)}
+  .prog b{color:var(--ink)}
+  .tally{display:flex;flex-wrap:wrap;gap:10px;margin:0}
+  .tally .t{display:flex;align-items:baseline;gap:7px;padding:7px 13px;border-radius:7px;
+    background:var(--sunken);font-size:14px;color:var(--ink-2)}
+  .tally .t .v{font-family:"IBM Plex Mono",monospace;font-size:19px;color:var(--ink);
+    font-variant-numeric:tabular-nums}
+  .tally .t.warn{background:var(--b-bg);color:var(--b)} .tally .t.warn .v{color:var(--b)}
+  .tally .t.ok{background:var(--a-bg);color:var(--a)} .tally .t.ok .v{color:var(--a)}
+  .ev{margin:0;padding:11px 15px;border-left:2px solid var(--b);background:var(--b-bg);
+    border-radius:0 5px 5px 0;font-size:14.6px;color:var(--ink-2)}
+  .ev b{color:var(--ink)}
+  .did{margin:0;padding-left:19px} .did li{margin:5px 0}
+  .find{margin:9px 0 0;padding:10px 15px;background:var(--sunken);border-radius:6px;font-size:14.8px;font-style:italic;color:var(--ink-2)}
+  .n ul{margin:9px 0 0;padding-left:19px;color:var(--ink-2);font-size:15.2px} .n li{margin:4px 0}
+  .rec{margin-top:10px;padding:9px 14px;border-left:2px solid var(--a);background:var(--a-bg);
+    border-radius:0 5px 5px 0;font-size:15px;color:var(--ink-2)} .rec b{color:var(--ink)}
+
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-size:15px}
+  .tw{overflow-x:auto}
+  th{text-align:left;font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink-3);font-weight:500;padding:8px 12px;border-bottom:1px solid var(--rule-2)}
+  td{padding:10px 12px;border-bottom:1px solid var(--rule);color:var(--ink-2);vertical-align:top}
+  td b{color:var(--ink)}
+  footer{margin-top:70px;padding-top:18px;border-top:1px solid var(--rule);display:flex;flex-wrap:wrap;
+    gap:8px 22px;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="kicker">Powder Ops · NSF audits 24–26 Aug 2026 · auditor Sonya Hess · status as of 1 Sep 2026</div>
+  <h1>Audit Nonconformance Triage</h1>
+  <p class="sub">All twelve findings, sorted by what technology closes and what it cannot — and what has
+    actually been done against each since. Both reports are marked DRAFT; the final report and corrective
+    action report arrive in NSF Connect within 10 business days.</p>
+
+  <div class="scores">
+    <div class="sc zero"><div class="v">0</div><div class="k">critical</div></div>
+    <div class="sc zero"><div class="v">0</div><div class="k">major</div></div>
+    <div class="sc minor"><div class="v">12</div><div class="k">minor · 3 + 9</div></div>
+    <div class="sc"><div class="v">2</div><div class="k">audits, one visit</div></div>
+    <div class="sc"><div class="v">0</div><div class="k">closed so far</div></div>
+  </div>
+
+  <div class="box hot">
+    <p><b>The headline, and it decides the plan. Eleven of the twelve findings are phrased as a document
+    or a record that does not exist, or was not available.</b> In the auditor's own words:</p>
+    <div class="quotes">
+      "…are not established" × 4<br>
+      "was not available" × 3<br>
+      "were not conducted" · "not prepared" · "not provided at the time of the audit" · "evidence … was not available"
+    </div>
+    <p>Only one — <b>4.2.9, street shoes in GMP areas</b> — describes something the plant <i>does</i>
+    that it should not. Everything else is work whose evidence is missing, or a procedure nobody has
+    written down. <b>That is precisely the failure mode this platform exists to prevent</b>, and it is
+    the same thing the preventive-control walk found from the other direction.</p>
+  </div>
+
+  <div class="box">
+    <p><b>So the split is not "software versus people". It is three buckets.</b></p>
+    <p><span class="chip k-a">A</span> &nbsp;<b>ReadyDoc is the fix.</b> The missing thing <i>is</i> a
+      record, a gate or a program. Build it and the finding closes. — <b>5 findings</b></p>
+    <p><span class="chip k-b">B</span> &nbsp;<b>ReadyDoc makes it stick.</b> A person must do the work.
+      ReadyDoc raises the obligation, catches the result, and makes a miss visible instead of silent.
+      — <b>4 findings</b></p>
+    <p><span class="chip k-c">C</span> &nbsp;<b>Outside ReadyDoc.</b> A document to write, a study to
+      run, a behaviour to change. — <b>3 findings</b></p>
+  </div>
+</header>
+
+<div class="box">
+  <p><b>What this is.</b> All twelve findings from the August audit, sorted by <i>who fixes it and how</i>
+  rather than by which standard they came from.</p>
+  <p><b>The three groups.</b> <b>A</b> — the missing thing is a record or a control, and building it in
+  ReadyDoc closes the finding. <b>B</b> — a person has to do the work; ReadyDoc’s job is to ask for it,
+  catch the result, and make a miss obvious instead of silent. <b>C</b> — outside ReadyDoc entirely: a
+  document to write, a study to run, or a habit to change on the floor.</p>
+  <p><b>The one thing to take away:</b> eleven of the twelve findings are phrased as a document or a record
+  that did not exist, or could not be produced when asked for. Only one is about something we <i>do</i>
+  that we should not.</p>
+</div>
+
+<h2>GMP for Sport — 3 minor, all one subject</h2>
+<p class="lede">All three are the banned/prohibited substance requirements, and all three share a root:
+  <b>the procedure does not exist</b>. A draft already sits in the registry — <code>SOP-DRAFT-BSC</code>,
+  <i>Banned and Prohibited Substance Control Program</i>, unnumbered and unapproved.</p>
+
+<div class="box">
+  <p><b>This was predicted.</b> Red-line finding <b>FSP-28</b> raised exactly these three sections from
+  the GMP for Sport Audit Guide already on file — before the reports arrived. It is now promoted to
+  MUST.</p>
+</div>
+
+<div class="n c">
+  <div class="nh"><span class="id">§6.2.2</span><span class="nt">Procedures prohibiting banned substances not established</span><span class="chip k-c">C → B</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <p>Writing the SOP is Document Control's job. Once written, ReadyDoc versions it, trains against it
+    and evidences the training — a training course linked to its SOP and
+    the “retrain when the document changes” setting already do this. The procedure must cite the four lists by name:
+    <b>NSF 306 Annex C, NFL/NFLPA, MLB, WADA</b>.</p>
+</div>
+
+<div class="n b">
+  <div class="nh"><span class="id">§6.2.3.1</span><span class="nt">No documented annual review of the lists</span><span class="chip k-b">B</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <p>Two halves, and the second is ours. The procedure is a document. <b>The review actually happening
+    every year is a program that generates dated work and a record</b> — the exact shape
+    Quality Schedules already provides for tap water and the EMP swabs.</p>
+  <div class="rec">One annual schedule, one record per review, and <b>"when did you last review the WADA
+    list"</b> has an answer with a date and a name on it.</div>
+</div>
+
+<div class="n a">
+  <div class="nh"><span class="id">§6.2.3.2</span><span class="nt">Purchased materials not checked against the lists</span><span class="chip k-a">A</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <p>Note the requirement's own wording: <i>"and <b>document execution</b> of those procedures."</i>
+    A record per receipt is what this asks for — <b>and there is already a form that catches every
+    receipt.</b></p>
+  <div class="rec"><b>FORM 204-01</b>, the Receiving Inspection Checklist, is worked at the truck and
+    refuses sign-off on a blank answer. <b>One added line</b> — "Materials checked against the
+    banned/prohibited substance lists" — closes this with a dated, signed record per arrival, and the
+    escalation machinery already exists for a YES. A Document Change Request first: the checklist is
+    not user-editable by design.</div>
+</div>
+
+<h2>NSF/ANSI 455-2 — 9 minor</h2>
+
+<div class="n a">
+  <div class="nh"><span class="id">4.4.39</span><span class="nt">Electronic records are not validated</span><span class="chip k-a">A</span><span class="chip k-hot">names ReadyDoc</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <div class="find">"While software applications ReadyDoc and MRP Easy utilize functional compliance
+    features such as unique user logins and audit trails, formal documentation demonstrating validation
+    of the systems was not available." [21 CFR 11]</div>
+  <p><b>The only finding that names ReadyDoc directly, and the wording is generous — the features are
+    there, the documentation is not.</b> 21 CFR Part 11 is a normative reference for 455-2, which
+    red-line FSP-27 flagged as <i>consider</i>; it is now a live nonconformance and promoted to MUST.</p>
+  <p>What is missing is a <b>validation package</b>, not features:</p>
+  <ul>
+    <li><b>Intended use and scope</b> — which records ReadyDoc holds that are GMP records</li>
+    <li><b>A Part 11 gap assessment</b> — audit trail, e-signature components, retention and retrieval,
+      access control. Much of this exists and has simply never been written down as a claim with
+      evidence: append-only the audit trail with actor, role and department; signature revocation;
+      records retired rather than deleted; signed records closed to edit</li>
+    <li><b>IQ/OQ/PQ for the system</b>, and test scripts with recorded results, approved by Quality</li>
+    <li><b>Change control over the software</b> — which is also finding 4.3.9</li>
+  </ul>
+  <div class="rec"><b>The highest-value technology deliverable on the list</b>, because every record the
+    platform holds rests on it. <b>MRPEasy's half is not ours</b> — vendor documentation, and the plant
+    is migrating off it.</div>
+</div>
+
+<div class="n a">
+  <div class="nh"><span class="id">4.3.1</span><span class="nt">Supplier qualification questionnaires missing</span><span class="chip k-a">A</span></div>
+  <div class="st part"><span class="dot"></span><span class="what">Register built and the whole archive loaded — <b>the finding is still open</b></span></div>
+  <div class="find">"The Supplier Qualification Questionnaire required per SOP 404 … was not available
+    for: Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12), Bay State Milling
+    (Cinnamon)."</div>
+  <p><b>The SOP exists; the records do not.</b> FORM 404-1 and 404-2 sit in the Master Index marked
+    marked as living in Keychain and producing nothing — exactly the state the walk predicted.</p>
+  <div class="rec">A <b>supplier qualification module</b> is a real build and a well-understood one:
+    supplier, ingredient, risk evaluation, qualification activity determined by risk, certificate with
+    an expiry that generates a task, the approval decision with a signature, ongoing performance review.
+    The expiring-certificate pattern already exists in the Certifications module (which holds people’s certificates); the approval pattern
+    in the QMS records.</div>
+</div>
+
+<div class="n a">
+  <div class="nh"><span class="id">4.3.6</span><span class="nt">Specifications not established before July 2026</span><span class="chip k-a">A forward</span><span class="chip k-c">C historical</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <p><b>Read the auditor's note carefully — it is unusually favourable.</b> They record that the facility
+    had already identified specifications and testing as a gap, built templates, approved raw-material
+    specs on 7/9/26 and finished-product specs on 8/21/26, and submitted samples in August with results
+    not yet back. The finding is about the period <i>before</i> that, which no software fixes
+    retroactively.</p>
+  <p>Forward it is <b>A</b>: the COA specification list already grades a result against a spec per
+    item and test. What is missing is <b>raw-material specifications as approved documents</b> covering
+    identity, purity, strength, composition and contaminants — and <b>a release gate that refuses a lot
+    with no active spec</b>.</p>
+  <div class="rec"><b>Same defect class as the ungraded ATP reading.</b> A test with no specification
+    quietly passes, exactly as a 60 RLU swab quietly passed before the ATP limit rule. Same fix:
+    grade against an approved value, refuse to record a pass without one.</div>
+</div>
+
+<div class="n a">
+  <div class="nh"><span class="id">4.3.9</span><span class="nt">Change control covers equipment only</span><span class="chip k-a">A + C</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <div class="find">"While requirements for equipment changes were defined per SOP 434 … change control
+    procedures that include processes, software, utility, and physical plant changes were not
+    established." [111.130(e)]</div>
+  <p>The procedure is a document. But note what already exists: the change-control gate is a
+    <b>real change control gate</b> — a changed form definition or acceptance criterion is parked until
+    Document Control approves it, and raises a DCR automatically. Narrower than this asks, and the right
+    foundation to widen. The requirement adds one thing the current flow does not enforce:
+    <b>QC approval on every change</b>.</p>
+  <div class="rec"><b>Interlock:</b> software change control is named in this finding <i>and</i> in
+    4.4.39. Build it once, satisfy both.</div>
+</div>
+
+<div class="n b">
+  <div class="nh"><span class="id">4.5.8</span><span class="nt">IQ/OQ/PQ not provided for any equipment</span><span class="chip k-b">B</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <p>Performing the qualification is engineering work. <b>Holding it is nearly free.</b>
+    the machine setup checklist already derives a per-machine checklist from records — PM
+    schedule, team, LOTO, hygienic design verification, course, work instruction.</p>
+  <div class="rec">Add <b>IQ, OQ and PQ as three more worked out fresh steps</b>, each satisfied by an attached
+    protocol, and <b>"which machines are unqualified"</b> becomes answerable on a screen instead of at an
+    audit. The pattern, the roll-up and the badges already exist.</div>
+</div>
+
+<div class="n a">
+  <div class="nh"><span class="id">4.5.43</span><span class="nt">No MMR per formulation and batch size</span><span class="chip k-a">A</span><span class="chip k-hot">the big one</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <div class="find">"A blank MMR template is established, 413-1 Packaging Batch Production Record;
+    however, there is not an MMR established and approved by Quality for each formula and batch size."
+    [21 CFR 111.205(a)]</div>
+  <p>The standing headline of the gap analysis, now confirmed by an auditor. Note the precise finding:
+    the <b>template</b> exists, the <b>per-formula approved masters</b> do not.</p>
+  <p><b>MMR</b> — per formulation and batch size: components with identity and weight, theoretical yield,
+    specifications at each control point, the procedure for each step, approved and signed by Quality
+    <i>before use</i>. <b>BPR</b> — the executed version: actual weights, component lots, who performed
+    and who verified each step at the time, in-process results against spec, actual versus theoretical
+    yield, and the release decision.</p>
+  <div class="rec"><b>Sequence matters.</b> The MMR is the smaller build and it is the finding. The BPR
+    is larger and depends on it. It should link to the Production Log rather than replace it — the same
+    relationship Flavor Approval and Organoleptic already have.</div>
+</div>
+
+<div class="n b">
+  <div class="nh"><span class="id">4.5.84</span><span class="nt">The environmental monitoring program is not adhered to</span><span class="chip k-b">B</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <div class="find">"Surface testing results were not available … as testing had not been conducted as
+    established per SOP 604 - Environmental Monitoring Program - V2 - 6/29/26."</div>
+  <p><b>The walk found this from the software side and reached the same place.</b> FORM 604-01 is
+    transcribed in full, six quality schedules are seeded from it, and <b>a quality-schedule completion
+    files no record</b> — so a swab that never happened and a swab whose result went nowhere look
+    identical.</p>
+  <div class="rec">ReadyDoc cannot swab a surface. What it can do is make the miss loud: an
+    <b>environmental result record</b> with its site, its limit, its pass/fail and its trend, so "testing
+    had not been conducted" is visible on a dashboard in week one rather than at an audit in month three.
+    <b>Punch-list item 9 of the walk, which just acquired a nonconformance.</b></div>
+</div>
+
+<div class="n c">
+  <div class="nh"><span class="id">4.2.9</span><span class="nt">Street shoes worn in GMP areas</span><span class="chip k-c">C → B</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <div class="find">"Gaps in hygienic practices/procedures were observed … street shoes were worn in GMP
+    areas without covers or appropriate cleaning." [21 CFR 111.10(b)]</div>
+  <p><b>The only finding about behaviour rather than paperwork, and the only one that is about product
+    safety right now rather than evidence.</b> No software prevents it.</p>
+  <div class="rec">What ReadyDoc can add is the thing the red-line already lists as absent: a <b>GMP
+    observation record</b> — the routine walk-through where somebody checks gowning, hairnets, jewellery,
+    handwashing and footwear, and signs it. That turns a recurring behaviour into a trend somebody owns.
+    The dormant the checklist engine engine is typed GMP already.</div>
+</div>
+
+<div class="n c">
+  <div class="nh"><span class="id">4.6.21</span><span class="nt">Shelf life not supported by data</span><span class="chip k-c">C</span></div>
+  <div class="st open"><span class="dot"></span><span class="what">Not started</span></div>
+  <p>A stability study is laboratory work over real time; nothing about it is a software problem.
+    ReadyDoc's part is afterwards — hold the study, and link each product's expiry to the study that
+    justifies it, so the answer to <b>"why 24 months?"</b> is a document rather than a convention.</p>
+</div>
+
+<h2>Progress against this list</h2>
+<p class="lede">Updated 1 September 2026. This section exists so the twelve findings and the work done
+against them can be read side by side — and so nothing is described as closed that an auditor could
+open and find otherwise.</p>
+
+<div class="tally">
+  <div class="t"><span class="v">12</span> findings on the auditor's list</div>
+  <div class="t warn"><span class="v">1</span> with work landed</div>
+  <div class="t ok"><span class="v">0</span> closed</div>
+  <div class="t"><span class="v">11</span> not started</div>
+</div>
+
+<div class="prog">
+  <div class="hd">
+    <h3>4.3.1 · Supplier qualification questionnaires</h3>
+    <span class="chip k-a">A</span>
+    <span class="st part" style="margin:0"><span class="dot"></span>
+      <span class="what">Register built · finding still open</span></span>
+  </div>
+  <div class="bd">
+    <p><b>What was built, and it is real.</b> Before this there was no supplier record in ReadyDoc of any
+      kind — the chemical registry holds chemicals, the certifications module holds people. There is now
+      a Supplier Qualification register carrying the SOP's own three dispositions and seven risk
+      criteria, transcribed rather than paraphrased.</p>
+    <ul class="did">
+      <li><b>75 suppliers</b> on the register, reconciled between Purchasing's tracker and the document
+        archive — which disagreed about 48 of them.</li>
+      <li><b>938 documents</b> uploaded from the Drive archive and stored, searchable by the text inside
+        each PDF. "Show me the questionnaire" now ends in a document.</li>
+      <li><b>Expiry dates read from the documents themselves.</b> Ten certificates on file had already
+        expired and nothing knew.</li>
+      <li><b>The annual review raises its own work order</b> 30 days before it is due, so a review date
+        is no longer a date nobody watches.</li>
+      <li><b>Nothing was imported as qualified.</b> Every supplier arrives "not qualified"; a completed
+        questionnaire is evidence for a disposition, not the disposition.</li>
+    </ul>
+
+    <p class="ev"><b>And it did not close the finding.</b> The auditor named three suppliers. Checked
+      against the archive as loaded: <b>Mill Haven Foods</b> has two documents on file and both are
+      specification sheets, not a questionnaire. <b>M4 Dynamic</b> and <b>Bay State Milling</b> have no
+      folder in the archive at all. All three gaps the auditor recorded are still open — what has changed
+      is that they are now provable rather than unknown.</p>
+
+    <p><b>Where the register stands as a whole.</b> 43 suppliers are actively used with no approved
+      disposition. That splits two ways, and the split is the useful part:</p>
+    <div class="tally">
+      <div class="t warn"><span class="v">22</span> can be dispositioned today — evidence already on file</div>
+      <div class="t warn"><span class="v">21</span> have no questionnaire to decide against</div>
+    </div>
+    <p>The first 22 are a working session for Quality, now queued in the app with each supplier's
+      documents in the same window as the decision. The second 21 — and the three the auditor named —
+      are a chase Purchasing has to run with the suppliers themselves. <b>No software can ask a supplier
+      for a questionnaire.</b></p>
+  </div>
+</div>
+
+<div class="box">
+  <p><b>What we would tell the auditor today.</b> One of twelve findings has had substantial work, and it
+  is not closed. The systemic half — a register, the evidence retrievable, expiries watched, the annual
+  review generating work — is done and can be demonstrated live. The half that closes 4.3.1 is
+  collecting questionnaires from named suppliers, and that is a purchasing activity with a date on it,
+  not a build.</p>
+  <p><b>Why this section says "0 closed".</b> A finding is closed when the corrective action is complete
+  and the evidence is in front of somebody who asks for it. Marking 4.3.1 closed because the register
+  exists would be exactly the kind of record this platform is being built to stop us keeping.</p>
+</div>
+
+<h2>The order I would take them in</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>When</th><th>What</th><th>Why now</th></tr></thead>
+  <tbody>
+    <tr><td><b>This week</b></td><td><b>Write and approve the banned-substance SOP</b> <span class="chip k-c">C</span></td>
+      <td>A draft away from closing <b>three</b> nonconformances</td></tr>
+    <tr><td><b>This week</b></td><td><b>Footwear control in GMP areas</b> <span class="chip k-c">C</span></td>
+      <td>The only finding about product safety today rather than evidence</td></tr>
+    <tr><td><b>Next</b></td><td><b>One line on FORM 204-01</b> <span class="chip k-a">A</span></td>
+      <td>Small, contained, closes §6.2.3.2 outright with a record per arrival</td></tr>
+    <tr><td><b>Then</b></td><td><b>Part 11 validation package</b> <span class="chip k-a">A</span></td>
+      <td>Names ReadyDoc, and every record the platform holds rests on it</td></tr>
+    <tr><td><b>Plan, don't start</b></td><td><b>MMR</b>, then the <b>supplier qualification module</b></td>
+      <td>Quarter-sized projects. Worth real planning</td></tr>
+  </tbody>
+</table></div>
+
+<h2>Interlocks — read before scheduling any of it</h2>
+<div class="box">
+  <p><b>4.4.39 and 4.3.9 both require software change control.</b> Build it once.</p>
+  <p><b>§6.2.2, §6.2.3.1 and §6.2.3.2 are one SOP with three obligations.</b> One document, one schedule,
+    one checklist line — not three projects.</p>
+  <p><b>4.5.43 and the Keychain question are the same fact from two directions.</b> FORM 413-1 is the
+    plant's own number for the batch production record, it is on paper in MRPEasy today, and the auditor
+    has now recorded that the per-formula masters do not exist. The "absorb or API-connect" decision is
+    no longer open-ended.</p>
+  <p><b>4.3.6 and the ATP work share a defect class.</b> A test with no active specification quietly
+    passes. Same fix, same shape.</p>
+</div>
+
+<footer>
+  <span>12 minor · 0 major · 0 critical</span>
+  <span>A:5 · B:4 · C:3</span>
+  <span>0 closed · 1 with work landed</span>
+  <span>Status 1 Sep 2026 — final report within 10 business days</span>
+  <span>docs/v2/queued/audit-nc-triage.md</span>
+</footer>
+</div>

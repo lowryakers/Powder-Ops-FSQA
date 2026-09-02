@@ -1,0 +1,686 @@
+<title>The Four SOPs the Auditor Named</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=Work+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+  :root{
+    --paper:#F7F8F7; --surface:#FFFFFF; --sunken:#ECEFEC;
+    --ink:#131614; --ink-2:#464C48; --ink-3:#767E79;
+    --rule:#DCE1DD; --rule-2:#C2C9C4;
+    --must:#9C3327;   --must-bg:#FAE7E4;
+    --should:#8A5A0F; --should-bg:#F8EEDA;
+    --consider:#5B4A7A; --consider-bg:#EEE9F5;
+    --ok:#155E52;     --ok-bg:#E0EFEB;
+    --accent:#155E52;
+    --shadow:0 1px 2px rgba(19,22,20,.05),0 10px 26px -20px rgba(19,22,20,.3);
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --paper:#101312; --surface:#181C1A; --sunken:#202523;
+    --ink:#E9EDEA; --ink-2:#AFB6B2; --ink-3:#7F8783;
+    --rule:#2A302D; --rule-2:#3B423E;
+    --must:#E28D80;   --must-bg:#2C1917;
+    --should:#DDA95F; --should-bg:#2A2114;
+    --consider:#AC9BD1; --consider-bg:#211B2E;
+    --ok:#6FC4B2;     --ok-bg:#12241F;
+    --accent:#6FC4B2;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 26px -20px rgba(0,0,0,.9);
+  }}
+  :root[data-theme="dark"]{
+    --paper:#101312; --surface:#181C1A; --sunken:#202523;
+    --ink:#E9EDEA; --ink-2:#AFB6B2; --ink-3:#7F8783;
+    --rule:#2A302D; --rule-2:#3B423E;
+    --must:#E28D80;   --must-bg:#2C1917;
+    --should:#DDA95F; --should-bg:#2A2114;
+    --consider:#AC9BD1; --consider-bg:#211B2E;
+    --ok:#6FC4B2;     --ok-bg:#12241F;
+    --accent:#6FC4B2;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 26px -20px rgba(0,0,0,.9);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Work Sans",ui-sans-serif,system-ui,sans-serif;font-size:16.5px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:920px;margin:0 auto;padding:0 clamp(16px,4vw,44px) 90px}
+  code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.85em}
+  code{background:var(--sunken);padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+  a{color:var(--accent)}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  header{padding:clamp(34px,6vw,64px) 0 0}
+  .kicker{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin-bottom:14px}
+  h1{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(33px,5.6vw,54px);
+    line-height:1.03;letter-spacing:-.025em;margin:0 0 15px;text-wrap:balance}
+  .sub{font-size:clamp(16px,1.9vw,19px);color:var(--ink-2);margin:0;max-width:62ch}
+
+  .scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:28px 0 0}
+  .sc{background:var(--surface);border:1px solid var(--rule);border-radius:9px;padding:15px 17px;box-shadow:var(--shadow)}
+  .sc .v{font-family:"Space Grotesk",sans-serif;font-size:33px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+  .sc .k{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-top:6px}
+  .sc.must .v{color:var(--must)} .sc.should .v{color:var(--should)} .sc.consider .v{color:var(--consider)}
+
+  .box{margin:26px 0 0;padding:18px 22px;border-radius:9px;border-left:3px solid var(--accent);
+    background:var(--sunken);color:var(--ink-2);font-size:15.4px}
+  .box b{color:var(--ink)} .box p{margin:0} .box p+p{margin-top:11px}
+  .box.hot{border-left-color:var(--must);background:var(--must-bg)}
+  .quote{font-family:"IBM Plex Mono",monospace;font-size:13.4px;line-height:1.85;color:var(--ink);
+    background:var(--surface);border-radius:7px;padding:12px 16px;margin-top:12px}
+  .quote .src{display:block;margin-top:8px;color:var(--ink-3);font-size:12px;letter-spacing:.04em}
+
+  h2{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(24px,3.3vw,32px);
+    letter-spacing:-.018em;margin:60px 0 6px;padding-bottom:11px;border-bottom:2px solid var(--ink);text-wrap:balance}
+  .lede{color:var(--ink-2);font-size:15.5px;margin:14px 0 0;max-width:66ch}
+
+  /* The D-002 verdict: three legs, shown as three legs. */
+  .legs{margin:26px 0 0;display:flex;flex-direction:column;gap:9px}
+  .legrow{background:var(--surface);border:1px solid var(--rule);border-radius:9px;padding:14px 17px;box-shadow:var(--shadow);
+    display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+  .legrow .doc{min-width:0}
+  .legrow .num{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;color:var(--ink-3);letter-spacing:.03em}
+  .legrow .ttl{font-weight:600;font-size:16px;margin-top:2px}
+  .trio{display:flex;gap:7px}
+  .leg{min-width:74px;border-radius:7px;padding:7px 9px;text-align:center;border:1px solid var(--rule)}
+  .leg .lk{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .leg .lv{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:15px;line-height:1.3;margin-top:2px}
+  .leg.yes{background:var(--ok-bg);border-color:var(--ok)} .leg.yes .lv{color:var(--ok)}
+  .leg.no{background:var(--must-bg);border-color:var(--must)} .leg.no .lv{color:var(--must)}
+  .leg.part{background:var(--should-bg);border-color:var(--should)} .leg.part .lv{color:var(--should)}
+  @media (max-width:620px){.legrow{grid-template-columns:1fr}.trio{flex-wrap:wrap}.leg{flex:1 1 74px}}
+
+  .n{background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--rule-2);
+    border-radius:8px;padding:15px 19px;margin-top:11px;box-shadow:var(--shadow)}
+  .n.must{border-left-color:var(--must)} .n.should{border-left-color:var(--should)} .n.consider{border-left-color:var(--consider)}
+  .nh{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px 11px}
+  .id{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;color:var(--ink-3)}
+  .nt{font-weight:600;font-size:16.5px;flex:1 1 240px}
+  .sev{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .sev.must{background:var(--must-bg);color:var(--must)}
+  .sev.should{background:var(--should-bg);color:var(--should)}
+  .sev.consider{background:var(--consider-bg);color:var(--consider)}
+  .n p{margin:10px 0 0;font-size:15.3px;color:var(--ink-2)}
+  .n p b,.n p strong{color:var(--ink)}
+  .rec{margin-top:10px;padding:10px 15px;border-left:2px solid var(--ok);background:var(--ok-bg);
+    border-radius:0 5px 5px 0;font-size:15px;color:var(--ink-2)} .rec b{color:var(--ink)}
+  .vs{display:inline-block;margin-top:9px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+    color:var(--ink-3);background:var(--sunken);border-radius:5px;padding:3px 8px}
+
+  .tw{overflow-x:auto;margin:20px 0 0;border:1px solid var(--rule);border-radius:9px;background:var(--surface);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;font-size:14.6px;min-width:520px}
+  th,td{text-align:left;padding:11px 15px;border-bottom:1px solid var(--rule);vertical-align:top}
+  thead th{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--ink-3);background:var(--sunken);border-bottom:1px solid var(--rule-2)}
+  tbody tr:last-child td{border-bottom:0}
+  td.n-col{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .who{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--accent);white-space:nowrap}
+
+  footer{margin-top:70px;padding-top:22px;border-top:1px solid var(--rule);color:var(--ink-3);font-size:13.4px}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="kicker">Wave 2 · Draft for review · 27 August 2026</div>
+  <h1>The four SOPs the auditor named</h1>
+  <p class="sub">Forty-six findings across SOP 404, 421, 434 and 604 — the D-002 test applied to each,
+  and then the wording review, once all four documents were in hand.
+  <b>Nothing in any document has been changed.</b></p>
+
+  <div class="scores">
+    <div class="sc must"><div class="v">24</div><div class="k">Must fix</div></div>
+    <div class="sc should"><div class="v">18</div><div class="k">Should fix</div></div>
+    <div class="sc consider"><div class="v">4</div><div class="k">Consider</div></div>
+    <div class="sc"><div class="v">4</div><div class="k">Documents</div></div>
+    <div class="sc"><div class="v">0</div><div class="k">Changes applied</div></div>
+  </div>
+
+  <div class="box">
+    <p><b>This review ran in two passes.</b> The first was the <b>D-002 test</b> — <i>does this SOP require
+    something that has no program, no form and no record behind it?</i> — answerable from the auditor’s
+    words and ReadyDoc’s tables alone. That produced W2-01 to W2-19. The second pass, added once all four
+    documents were supplied, is the <b>wording review</b> the first could not do: W2-20 to W2-46.</p>
+    <p><b>The second pass did not overturn the first.</b> Every D-002 finding held. What the documents added
+    is worse than the tables suggested, in one repeated way: <b>where ReadyDoc has no record, the SOP
+    usually has no form number either.</b> The gap is not that the software fell behind the documents — both
+    are thin in the same places.</p>
+  </div>
+
+  <div class="box hot">
+    <p><b>Three findings would be found by an auditor in the first ten minutes, and none of them is about
+    software.</b></p>
+    <p><b>None of the four documents is signed</b> — every Dept. Approval and Q.A. Approval block is empty,
+    four for four (W2-20). <b>Every one disagrees with its own revision history about its current revision
+    date</b> — SOP 434 by ten months (W2-21). And <b>the SOP 404 file contains two complete revisions</b>,
+    V3 and V4, one after the other, with nothing saying which is in force (W2-22).</p>
+  </div>
+
+  <div class="box">
+    <p><b>And one piece of genuinely good news.</b> These SOPs cite other documents <b>by number</b> — SOP
+    404 cites SOP 607; SOP 604 cites SOP 600 and SOP 601. D-027 stopped the document reference graph because
+    the two plans cite nothing at all. <b>The registry’s SOPs are a better starting corpus for that graph
+    than the plans were.</b></p>
+  </div>
+</header>
+
+<div class="box">
+  <p><b>What this is.</b> A read of the four SOPs the auditor picked up and found wanting. It asks one
+  question of each: <b>does this SOP require something we have no way to produce?</b></p>
+  <p><b>The three legs.</b> Every requirement needs three things to be real — a <b>programme</b> (the SOP
+  saying to do it), a <b>form</b> (a numbered form to record it on), and a <b>record</b> (the filled-in
+  evidence). If any leg is missing, the requirement exists on paper and nowhere else. That is what the
+  coloured boxes below show.</p>
+  <p><b>Severities work as in the plan red-line:</b> MUST is wrong as a matter of fact, SHOULD undermines
+  the document, CONSIDER is a judgement call you may decline. Every finding is numbered so you can take
+  them one at a time.</p>
+</div>
+
+<h2>Where each document stands</h2>
+<p class="lede">The three legs of D-002, one row per SOP — now judged against the documents rather than
+against the tables alone. Everything after this is the evidence.</p>
+
+<div class="legs">
+  <div class="legrow">
+    <div class="doc">
+      <div class="num">SOP 404 · V4 · 8/4/26</div>
+      <div class="ttl">Supplier and Laboratory Qualification</div>
+    </div>
+    <div class="trio">
+      <div class="leg part"><div class="lk">Program</div><div class="lv">Thin</div></div>
+      <div class="leg no"><div class="lk">Form</div><div class="lv">Idle</div></div>
+      <div class="leg no"><div class="lk">Record</div><div class="lv">None</div></div>
+    </div>
+  </div>
+  <div class="legrow">
+    <div class="doc">
+      <div class="num">SOP 421 · V2 · 8/11/26</div>
+      <div class="ttl">Design/Qualification of Facility &amp; Equipment (IQ, OQ, PQ)</div>
+    </div>
+    <div class="trio">
+      <div class="leg part"><div class="lk">Program</div><div class="lv">Narrow</div></div>
+      <div class="leg no"><div class="lk">Form</div><div class="lv">None</div></div>
+      <div class="leg no"><div class="lk">Record</div><div class="lv">None</div></div>
+    </div>
+  </div>
+  <div class="legrow">
+    <div class="doc">
+      <div class="num">SOP 434 · V2 · 6/25/26</div>
+      <div class="ttl">Chemical, Equipment and Services Approval</div>
+    </div>
+    <div class="trio">
+      <div class="leg part"><div class="lk">Program</div><div class="lv">Narrow</div></div>
+      <div class="leg no"><div class="lk">Form</div><div class="lv">Unnumbered</div></div>
+      <div class="leg part"><div class="lk">Record</div><div class="lv">⅓</div></div>
+    </div>
+  </div>
+  <div class="legrow">
+    <div class="doc">
+      <div class="num">SOP 604 · V2 · 6/29/26</div>
+      <div class="ttl">Environmental Monitoring Program</div>
+    </div>
+    <div class="trio">
+      <div class="leg yes"><div class="lk">Program</div><div class="lv">Yes</div></div>
+      <div class="leg yes"><div class="lk">Form</div><div class="lv">Yes</div></div>
+      <div class="leg no"><div class="lk">Record</div><div class="lv">None</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="box">
+  <p><b>What the documents changed in this picture.</b> SOP 404’s program leg dropped to <i>thin</i>: its
+  laboratory programme is two sentences and its scope still excludes laboratories entirely. SOP 421’s
+  dropped to <i>narrow</i>: its scope is “new and significantly modified” equipment, which does not reach
+  the machines the auditor asked about. Both form legs got worse — SOP 404 cites a FORM 404-3 that has
+  never been issued, and SOP 421 lists eight kinds of record and numbers none of them.</p>
+</div>
+
+<div class="box">
+  <p><b>SOP 604 is the one to build first</b> — it is the only one of the four where the program and the
+  form are already right and the single missing leg is the record. Smallest build, largest effect, and
+  Wave 1 proved the exact pattern on the ATP limit three days ago.</p>
+  <p><b>To unblock the wording review, attach these four files.</b> PDF is fine — the same route the two
+  plans took.</p>
+</div>
+
+<h2>Part 1 · Document control</h2>
+<p class="lede">These four came out of comparing the auditor’s citations against the plant’s own Document
+Change Request log — 159 rows, read in full. They needed no SOP text, and they are the most immediately
+actionable findings here.</p>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-01</span><span class="nt">Neither SOP 421 nor SOP 434 appears anywhere in the DCR log</span><span class="sev must">Must</span></div>
+  <p>The auditor read both and cited each by revision and effective date. The change log — every new
+  document and every revision since May 2025 — has <b>no row for either</b>. Not a <i>New Document</i>
+  row, not a <i>New Revision</i> row.</p>
+  <p>Two explanations, both of which matter. Either they were issued outside the DCR process, which is a
+  document-control nonconformance waiting to be written; or the log is incomplete, which means it cannot
+  answer the question it exists to answer. <b>An auditor who asks to see the change history for SOP 434
+  gets nothing today.</b></p>
+  <p><i>I would fix this one first. It costs a morning, and it is the kind of gap an auditor finds in five
+  minutes.</i></p>
+  <span class="vs">Verified — all 159 rows read; the only “421” and “434” in that file are digits inside a phone number and a product code</span>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-02</span><span class="nt">SOP 404 is V4 in practice, V3 in the log, and its title has changed</span><span class="sev must">Must</span></div>
+  <p>DCR <b>0005</b> records <code>SOP 404 · Supplier Qualification · V3 · 05/20/2025</code>. The auditor
+  read <code>SOP 404 · Supplier <b>and Laboratory</b> Qualification · V4 · 8/4/26</code>.</p>
+  <p>So a revision was issued <b>and the scope widened to cover laboratories</b>, and no change request
+  records either. The scope change is the part that matters — adding laboratory qualification is a
+  substantive change to what the plant has committed to do, and it happened without a DCR row.</p>
+  <p>Same class as FDP-04 in the plan red-line: a document’s identity recorded in two places that disagree.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-03</span><span class="nt">SOP 604’s effective date is eight months after its last change request</span><span class="sev should">Should</span></div>
+  <p>DCR <b>0050</b> records <code>V2 · 10/17/2025</code>. The auditor read <code>V2 · 6/29/26</code>.
+  Same revision, two dates eight months apart.</p>
+  <p>Softer than the two above — a change-request date and an effective date are legitimately different,
+  and a document can be re-dated at review without a revision. But if V2 became effective in June 2026 and
+  its change request was raised in October 2025, the document should say why.</p>
+  <span class="vs">[verify in source — the SOP’s own footer settles this]</span>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-04</span><span class="nt">Nothing reconciles the change log against the document registry</span><span class="sev should">Should</span></div>
+  <p>The DCR log imports into the <b>QMS register</b> as change-request records. The document registry is
+  the document registry, a <b>different table</b>, populated by upload. Nothing compares them, in
+  either direction.</p>
+  <p>That is why W2-01 and W2-02 survived: a document can sit in the registry with no change history, or
+  have a change history and never reach the registry, and no screen reports either. <b>The recurring
+  problem this whole project keeps finding — the same fact kept in two places, with nobody owning either — this time at the level of the document
+  register itself.</b></p>
+  <p>Two rules in the mechanical sweep close it: <i>in the log, absent from the registry</i>, and its
+  inverse. Cheap, and it runs forever after.</p>
+</div>
+
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-20</span><span class="nt">None of the four documents is signed</span><span class="sev must">Must</span></div>
+  <p>Every one carries an approval block, and in every one the <b>Dept. Approval and Q.A. Approval fields are empty</b>. SOP 404 has no author filled in either, in <i>both</i> revisions its file contains.</p><p>These are effective documents; the auditor read all four and cited them by revision. <b>A controlled document that has never been signed has not, in the sense the standard means, been approved.</b> Four for four says it is not an oversight on one document — it is how they are being issued.</p>
+  <span class="vs">Verified — all four approval blocks read from the files supplied</span>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-21</span><span class="nt">Every one of the four disagrees with itself about its own revision date</span><span class="sev must">Must</span></div>
+  <p>Each states its revision date twice — in the page header and in its own revision-history table. <b>They disagree in all four.</b></p><div class="tw"><table><thead><tr><th>Document</th><th>Page header</th><th>Revision history</th><th>DCR log</th><th>Auditor read</th></tr></thead><tbody><tr><td class="n-col">SOP 404 <b>V3</b></td><td class="n-col">06/25/2026</td><td class="n-col">05/20/2025</td><td class="n-col">05/20/2025</td><td class="n-col">—</td></tr><tr><td class="n-col">SOP 404 <b>V4</b></td><td class="n-col">08/04/2026</td><td class="n-col">08/04/2026 ✓</td><td class="n-col"><i>absent</i></td><td class="n-col">8/4/26</td></tr><tr><td class="n-col">SOP 421 V2</td><td class="n-col">08/11/2026</td><td class="n-col">06/25/2026</td><td class="n-col"><i>absent</i></td><td class="n-col">8/11/26</td></tr><tr><td class="n-col">SOP 434 V2</td><td class="n-col">08/11/2026</td><td class="n-col">10/05/2025</td><td class="n-col"><i>absent</i></td><td class="n-col">6/25/26</td></tr><tr><td class="n-col">SOP 604 V2</td><td class="n-col">06/29/2026</td><td class="n-col">05/20/2026</td><td class="n-col">10/17/2025</td><td class="n-col">6/29/26</td></tr></tbody></table></div><p>Only SOP 404 V4 agrees with itself. <b>SOP 434 is out by ten months, SOP 404 V3 by thirteen.</b></p><p>Two patterns for Daniela. <b>SOP 421 and SOP 434 carry the identical header date, 08/11/2026</b> — edited together, header stamped on both. And <b>06/25/2026 appears three times in three different roles</b>: SOP 404 V3’s header, SOP 421’s revision history, and the date the auditor recorded for SOP 434 — which matches nothing in SOP 434’s file.</p>
+  <span class="vs">[verify — this needs the copy that was handed over during the audit]</span>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-22</span><span class="nt">The SOP 404 file contains two complete revisions of the document</span><span class="sev must">Must</span></div>
+  <p>The file supplied is named V3 and holds <b>V3 in full (8 pages) followed by V4 in full (8 pages)</b>, each with its own headers, contents page and revision-history table, separated by a single line reading <code>V4</code>.</p><p>Whoever opens it can read either revision, and nothing says which is in force. That is a superseded copy left on the shared drive — except it is inside the controlled file.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-23</span><span class="nt">Section numbering is wrong in three of the four</span><span class="sev should">Should</span></div>
+  <p><b>SOP 404</b> — the contents page numbers two different sections <b>VI</b>, gives Record Keeping no page number, and heads the revision history <b>XIII</b> in a six-section document. V4 adds a section and <b>does not appear in the contents at all</b>, nor does the page count change from 8. <b>SOP 434</b> — revision history headed <b>VI</b> in a five-section document. <b>SOP 421</b> — heads it <b>V</b>, and is the only one of the three that is right.</p><p>Individually trivial. Together they read as a document-control system nobody is checking — and they are exactly what a mechanical rule catches for free across the whole registry.</p>
+</div>
+
+<h2>Part 2 · SOP 404 — Supplier and Laboratory Qualification</h2>
+<div class="quote">“The Supplier Qualification Questionnaire required per SOP 404 was not available for:
+Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12), Bay State Milling (Cinnamon).”
+<span class="src">NSF/ANSI 455-2 § 4.3.1 · 21 CFR 117.405 &amp; 117.410</span></div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-05</span><span class="nt">There is no supplier record in ReadyDoc of any kind</span><span class="sev must">Must</span></div>
+  <p>Not a thin one — none. the Approved Chemicals list holds chemicals. the Certifications module (which holds people’s certificates)
+  holds <b>people</b> (<code>person_name NOT NULL</code>). <code>supply_orders</code> and
+  <code>supply_invoices</code> are office purchasing. <b>Nothing anywhere holds a supplier, an ingredient
+  it supplies, a risk evaluation, a qualification decision, an approver, or a certificate with an expiry
+  date.</b></p>
+  <p>So the finding is not “the questionnaire was misfiled”. There is no system it could have been filed
+  in. Three named the supplier register of three named ingredients, and the answer to <i>“show me their
+  qualification”</i> is a question about somebody’s folders.</p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-06</span><span class="nt">The laboratory half has no record at all — and the code already assumes otherwise</span><span class="sev must">Must</span></div>
+  <p><code>the COA requests log.lab_name</code> is a <b>free-text field</b>. There is no laboratory record, no
+  accreditation, no scope, no expiry; ISO/IEC 17025 — the standard that actually matters for a testing laboratory — is not mentioned anywhere in ReadyDoc.</p>
+  <p>Worse, ReadyDoc already leans on an accreditation it does not hold. the step that grades a lab result decides
+  how a lab result is graded on this reasoning:</p>
+  <div class="quote">“The lab’s own verdict wins. It is the accredited party and it applied the …”</div>
+  <p>A correct principle resting on a fact nothing records. An auditor asking <i>“how did you qualify CTLA,
+  and against what scope?”</i> gets a text field somebody typed. Given the title now explicitly covers
+  laboratories (W2-02), this is squarely in scope and squarely missing.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-07</span><span class="nt">The expiring-certificate pattern is bound to a person, and that decision is due now</span><span class="sev should">Should</span></div>
+  <p>the Certifications module (which holds people’s certificates) already does most of what supplier certificates need — issuer, number,
+  issued and expiry dates, the file, and an expiry that generates work. But a person’s name is
+  always required, so an organic, kosher, GFSI or allergen certificate <b>cannot be filed against a
+  company</b> without widening that table or creating a second one.</p>
+  <p>Decide before building, not during — it is the difference between supplier qualification being a new
+  module and an extension of one that works. <i>My reading: a new table, because a supplier carries a risk
+  evaluation and an approval decision that a person’s certificate does not — but the certificate half
+  should reuse the existing expiry machinery rather than grow a second copy of it.</i></p>
+</div>
+
+<div class="n consider">
+  <div class="nh"><span class="id">W2-08</span><span class="nt">FORM 404-1 and 404-2 exist and produce nothing; settle where they live before building</span><span class="sev consider">Consider</span></div>
+  <p>Both are numbered, revised (404-1 is at V2, DCR 0022) and real — two of the seven forms D-021 found
+  marked marked as living in Keychain while in fact being worked on paper. Building a supplier module
+  without deciding whether these are its screens, or whether Keychain keeps them and ReadyDoc holds the
+  qualification decision, produces a third place the same fact can live. <b>That is Daniela’s decision,
+  not a build decision.</b></p>
+</div>
+
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-24</span><span class="nt">V4 puts laboratories in the title and the procedure, and never in the Scope</span><span class="sev must">Must</span></div>
+  <p>V4’s only substantive change is a new section G, <i>Laboratory Qualification</i>, and a new title. <b>Section II, SCOPE, is untouched:</b></p><div class="quote">“The procedure described here applies to all the supplier register of raw materials and packaging that comes in contact with raw materials, in-process materials or final products.”</div><p>A laboratory supplies neither. <b>The document’s stated scope excludes the thing its title now promises</b>, and anyone applying it as written may leave laboratories out. One sentence to fix, and it has to happen before the finding below means anything.</p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-25</span><span class="nt">The entire laboratory qualification programme is two sentences</span><span class="sev must">Must</span></div>
+  <p>Verbatim, in full:</p><div class="quote">“Laboratories will be approved upon receipt of ISO certification.<br>An audit report will be requested and kept on file to ensure continued improvement.”</div><p>That is all of it. It names <b>no standard</b> — “ISO certification” is not a requirement, and <b>ISO 9001 is a management-system certificate, not evidence a laboratory can run the test</b>; the one that matters is <b>ISO/IEC 17025</b>, and it matters <i>per scope of accreditation</i> (a lab accredited for heavy metals is not thereby accredited for Salmonella). <b>No scope check. No expiry and no re-approval</b>, though accreditations lapse. <b>No owner, no form, no record</b> — “an audit report will be requested” by whom, by when, filed where.</p><p>This is the document half of W2-06, and the more serious half. the step that grades a lab result grades every lab result on the reasoning that <i>“it is the accredited party”</i> — <b>and this is the document that was supposed to establish that.</b></p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-26</span><span class="nt">The SOP cites a form that does not exist</span><span class="sev must">Must</span></div>
+  <p>Section VI lists three forms. <b>FORM 404-1</b> (V2) and <b>404-2</b> (V1) are in the Master Index. <b>“Vendor Audit Summary Form 404-3” is in neither the Master Index nor any of the 159 rows of the DCR log.</b></p><p>And section V.C.A.I requires vendor audits, and IV.B makes QA responsible “to schedule and perform audits of vendors”. The SOP requires an activity, names the form it is recorded on, and that form has never been issued. <b>Issue 404-3 or remove the requirement — not neither.</b></p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-27</span><span class="nt">V4’s own footer still carries the old title</span><span class="sev should">Should</span></div>
+  <p>Every V4 page header reads <i>SUPPLIER AND LABORATORY QUALIFICATION</i>. The footer on the same pages reads <i>SOP 404 SUPPLIER QUALIFICATION</i>. The title change is half-applied <b>inside the document</b> — the local version of W2-02.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-28</span><span class="nt">Two systems named and never defined, and a definition that contradicts its own use</span><span class="sev should">Should</span></div>
+  <p><b>“QVS”</b> — V.E.C: <i>“will enter vendor performance issues into the QVS.”</i> Used once, defined nowhere, expanded nowhere. <b>“Qualified Supplier Database”</b> — named in Record Keeping, never defined, and no such database exists. <b>“QVL”</b> is defined in III.B as <i>“Approved Supplier List”</i> and used throughout as <i>“Qualified Vendor List”</i>.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-29</span><span class="nt">An annual vendor review is required and nothing schedules it</span><span class="sev should">Should</span></div>
+  <p>IV.B makes QA responsible for <i>“performing annual vendor reviews and reports”</i>; V.F.A refers to <i>“annual vendor monitoring”</i>. A stated cadence with no quality schedule, no work order and no record — the same shape as the EMP obligations in W2-45.</p><p>Pair it with the supplier module: this is the ongoing-performance-review leg, and Quality Schedules already generates exactly this kind of dated work.</p>
+</div>
+
+<div class="n consider">
+  <div class="nh"><span class="id">W2-30</span><span class="nt">Spelling and grammar</span><span class="sev consider">Consider</span></div>
+  <p>Real, and few. <b>“Powder-may recommend”</b> (V.F.A — missing “Ops”); <b>“pre-assessed prior purchasing”</b> and <b>“prior ordering”</b> (missing “to”); <b>“The manufactures quality systems”</b> (should be <i>manufacturer’s</i>); <b>“Q.A. Approval: Date:”</b> in the signature block.</p>
+</div>
+
+<h2>Part 3 · SOP 421 — Design/Qualification of Facility and Equipment</h2>
+<div class="quote">“…as required per SOP 421 … were not provided for any of the facility equipment; for
+example, mixers and stick pack machines.”
+<span class="src">NSF/ANSI 455-2 § 4.5.8 · 21 CFR 111.30</span></div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-09</span><span class="nt">“IQ”, “OQ” and “PQ” appear nowhere in ReadyDoc</span><span class="sev must">Must</span></div>
+  <p>Searched across the server and the client: no installation qualification, no operational
+  qualification, no performance qualification, in any spelling.</p>
+  <p>the machine setup checklist derives <b>ten</b> steps for every machine — PM schedule,
+  assignee, maintenance tasks, LOTO, hygienic design verification, training course, training material,
+  work instruction, calibration, HACCP CCP. <b>Qualification is not one of them.</b> So <i>“which machines
+  are unqualified?”</i> is not a question the application can be asked, which is precisely why the answer
+  arrived at an audit instead of on a screen.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-10</span><span class="nt">No form number exists for a qualification protocol</span><span class="sev should">Should</span></div>
+  <p>The auditor asked for IQ/OQ/PQ “for any of the facility equipment”, so the SOP requires a deliverable
+  per machine. Whatever it is called, the Master Index has no number for it — a completed protocol has no
+  controlled identity to be filed under.</p>
+  <span class="vs">[verify in source — SOP 421 may name its own forms, in which case the finding is that they are missing from the index]</span>
+</div>
+
+<div class="n consider">
+  <div class="nh"><span class="id">W2-11</span><span class="nt">This is the cheapest of the four to close, and the pattern is already built</span><span class="sev consider">Consider</span></div>
+  <p>Three more worked out fresh steps in the machine setup checklist, each satisfied by an attached
+  protocol — the roll-up, the per-machine panel and the list badges all follow with no new machinery,
+  which is how the existing ten already work.</p>
+  <p>It does not perform the qualification; that is engineering work and outside ReadyDoc. It makes the gap
+  visible and countable, which is the difference between a finding you discover and one you are already
+  working.</p>
+</div>
+
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-31</span><span class="nt">The SOP’s own scope excludes the equipment the auditor asked about</span><span class="sev must">Must</span></div>
+  <div class="quote">“This SOP applies to all <b>new and significantly modified</b> facilities and equipment used in the production, packaging, and testing of dietary supplements.”<span class="src">SOP 421 § I, issued 04/09/2024</span></div><p>The auditor’s finding is that IQ/OQ/PQ <i>“were not provided for <b>any</b> of the facility equipment; for example, mixers and stick pack machines”</i> — equipment that in the main is neither new nor recently modified.</p><p><b>Read strictly, the SOP does not require what the auditor found missing.</b> That is not a defence to run — 21 CFR 111.30 does not care what the scope says — but it decides how the CAPA is written. <b>Either SOP 421 gains a retrospective-qualification clause saying how equipment already in service is qualified and by when, or the plant argues scope with a finding already on the record.</b> The first is a paragraph; the second is a conversation with NSF.</p><p><i>The single most consequential document finding in Wave 2, and the kind only reading the document surfaces — nothing in the tables could have shown it.</i></p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-32</span><span class="nt">Eight kinds of record, not one form number</span><span class="sev must">Must</span></div>
+  <p>Section IV lists what the SOP produces: User Requirement Specifications, Design Qualification documents, qualification master plans, <b>IQ, OQ and PQ protocols and reports</b>, deviation reports, training records, change control documentation, periodic review reports.</p><p><b>None of the eight carries a form number</b>, and no 421-series form exists in the Master Index or the DCR log. Not one missing form — a whole section of records with no controlled identity. A completed IQ protocol has nothing to be filed under.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-33</span><span class="nt">Section 6 requires a second change-control system and never cites the first</span><span class="sev should">Should</span></div>
+  <p><i>“Implement a change control system to manage modifications to qualified facilities or equipment.”</i> SOP 434 is the plant’s change-control SOP for equipment, and 421 never mentions it.</p><p>Two documents requiring change control over the same assets, neither referencing the other, is the ambiguity NC 4.3.9 is about — and it means <b>widening change control has to reconcile 421 and 434, not just widen 434.</b></p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-34</span><span class="nt">Two approvers who do not exist, and a schedule with no interval</span><span class="sev should">Should</span></div>
+  <p>Section 5 requires approvals from <i>“QA/QC, and Operations Manager”</i>. Responsibilities names a Quality Assurance and Control Manager, a Production Manager and a Maintenance Manager. <b>There is no Operations Manager in the document.</b></p><p>Section 8 requires <i>“a schedule for periodic review of qualification status”</i> and <b>states no interval</b>. A cadence naming no period cannot be scheduled, missed, or audited — the same defect the plan red-line raised as “retention for a specified period” never specified.</p>
+</div>
+
+<h2>Part 4 · SOP 434 — Chemical, Equipment and Services Approval</h2>
+<div class="quote">“While requirements for equipment changes were defined per SOP 434, change control
+procedures that include processes, software, utility, and physical plant changes were not established.”
+<span class="src">NSF/ANSI 455-2 § 4.3.9 · 21 CFR 111.130(e)</span></div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-12</span><span class="nt">The title names three things and ReadyDoc records one</span><span class="sev must">Must</span></div>
+  <p>the Approved Chemicals list is genuinely good: category, manufacturer, product code, SDS number,
+  food-grade flag, NSF rating, approved applications, maximum concentration, contact time, and
+  <b>who approved it, when it was approved and a the review-due date</b>. An approval
+  record with a name and a date on it.</p>
+  <p>There is <b>no equipment approval record and no services or contractor approval record at all.</b> The
+  auditor’s finding is about scope, and the same scope gap exists in the software — worth saying plainly,
+  because closing the document half alone leaves the finding half-answered the next time somebody asks for
+  the evidence.</p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-13</span><span class="nt">the change-control gate is a real change-control gate, over a very narrow slice</span><span class="sev must">Must</span></div>
+  <p>This is the good news and the exact size of it. the change-control gate parks a changed <b>QMS form
+  definition</b>, a changed <b>scale tolerance</b> and — since Wave 1 — the <b>ATP limit</b>, serving the
+  last approved version until Document Control approves the new one, and raising a DCR automatically.</p>
+  <p>A working change-control mechanism with an approval gate and an audit trail. It is also the <i>whole</i>
+  of it: it does not see a process change, a utility change, a physical-plant change, or a software
+  deployment. Widening it is the buildable half of this nonconformance.</p>
+  <p><b>Note the interlock:</b> software change control is named in <b>both</b> § 4.3.9 and § 4.4.39
+  (electronic records validation). Building it once answers both — and § 4.4.39 is the finding that names
+  ReadyDoc directly.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-14</span><span class="nt">111.130(e) requires QC approval on every change; the DCR flow does not enforce one</span><span class="sev should">Should</span></div>
+  <p>The current flow routes a parked change to <b>Document Control</b>. The regulation requires
+  quality-control approval — a different signature, by a different person, for a different reason. Today
+  one approval closes the gate.</p>
+  <span class="vs">[verify in source — SOP 434 may already require both, in which case the software is the gap]</span>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-15</span><span class="nt">SOP 434 and SOP 700 may both govern chemical approval</span><span class="sev should">Should</span></div>
+  <p>DCR 0027 records <code>SOP 700 · Food Grade and Non Food Grade Chemicals · V2</code>, and DCR 0056
+  records <code>FORM 700-01 · Approved Chemical List</code>. SOP 434 is titled <i>Chemical</i>, Equipment
+  and Services Approval.</p>
+  <p><b>Two SOPs may be governing the approval of the same chemicals</b> — a fact in two places, with the
+  usual consequence that they drift and nobody notices which is current. Ten minutes with both open.</p>
+  <span class="vs">[verify in source]</span>
+</div>
+
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-35</span><span class="nt">The scope gap the auditor found is exactly as stated, with nothing to interpret</span><span class="sev must">Must</span></div>
+  <p>Section I, in full: <i>“This SOP outlines the procedures for reviewing and approving new <b>chemicals, equipment, and services</b>…”</i> The procedure then has one approval path each for chemicals, equipment and services, and no other.</p><p><b>Processes, software, utilities and physical plant appear nowhere in the document.</b> The finding needs no argument — and closing it is a rewrite of the scope, not an addendum, because the approval paths are written per subject.</p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-36</span><span class="nt">The SOP is titled as if it were the form, and the form has no number</span><span class="sev must">Must</span></div>
+  <p>The document is headed and footed <b>“SOP 434 CHEMICALS, EQUIPMENT AND SERVICES APPROVAL FORM”</b>. Its first procedure step is <i>“Complete the Chemicals, Equipment and Services Approval Form.”</i></p><p><b>So the SOP and the form it requires share a name, and the form has no number</b> — no 434-series form exists in the Master Index or the DCR log. A completed approval cannot say on its face whether it is the procedure or the record. Issue the form with a number, and drop “FORM” from the SOP’s title.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-37</span><span class="nt">Three identifiers are required and none has anywhere to live</span><span class="sev should">Should</span></div>
+  <p>The procedure requires a <b>unique tracking number</b> on the request (§ 2), and an <b>approval number</b> and an <b>expiration date</b> on approval (§ 9).</p><p>the Approved Chemicals list carries who approved it, when it was approved and the review-due date — close, but <b>no approval number, no tracking number, and no expiry that generates work.</b> the review-due date is a date nothing watches, so an expired approval looks exactly like a current one.</p><p><i>This is the closest ReadyDoc comes to satisfying a Wave 2 SOP as written — three columns short.</i></p>
+</div>
+
+<div class="n consider">
+  <div class="nh"><span class="id">W2-38</span><span class="nt">Cost analysis is a required step inside a GMP procedure</span><span class="sev consider">Consider</span></div>
+  <p>Section 7 requires evaluating initial and ongoing costs, comparing them with benefits, and assessing the impact on production costs — and Section IV lists the approval file as a record. <b>As written, a cost analysis is a GMP record an auditor may ask to see</b>, and there is no reason to hand them one. Move the step out, or say explicitly that the cost review is not part of the quality decision.</p>
+</div>
+
+<h2>Part 5 · SOP 604 — Environmental Monitoring Program</h2>
+<div class="quote">“Surface testing results were not available … as testing had not been conducted as
+established per SOP 604 — Environmental Monitoring Program — V2 — 6/29/26.”
+<span class="src">NSF/ANSI 455-2 § 4.5.84</span></div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-16</span><span class="nt">Completing a quality schedule files no record</span><span class="sev must">Must</span></div>
+  <p><code>quality-schedules.js</code> writes exactly two tables: work orders and
+  Quality Schedules. There is no result record — no site, no test, no number, no pass or
+  fail, no lab report tied to a requirement.</p>
+  <p><b>So a swab that was never taken and a swab whose result went nowhere are indistinguishable.</b> That
+  is the auditor’s finding stated in software terms, and it is the same defect that put QA’s Light
+  Inspection and Brittle Plastic records months behind: the task completed, and the controlled record it
+  existed to produce was never filed.</p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-17</span><span class="nt">The form’s alert and action limits are transcribed, and nothing is graded against them</span><span class="sev must">Must</span></div>
+  <p>the transcribed FORM 604-01 carries the real numbers, faithfully: potable water TAB alert
+  <code>&gt;500 CFU/mL</code> / action <code>&gt;1000</code>; total coliforms <code>Present/100 mL</code>;
+  free chlorine <code>&gt;2.0 ppm</code>; Zone 1 surfaces TAB <code>&gt;300</code> / <code>&gt;1000
+  CFU/cm²</code>, yeast and mould <code>&gt;150</code> / <code>&gt;500</code>; Salmonella and Listeria
+  <code>Present in sample</code> across Zones 2, 3 and 4.</p>
+  <p><b>No code compares anything to any of them, because there is no result to compare.</b></p>
+  <p>This is the ATP 35 RLU state exactly as it was three days ago — a critical number living correctly in
+  one place and enforcing nothing. The difference is that the fix now has a working precedent, which is the
+  strongest argument for doing SOP 604 next.</p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-18</span><span class="nt">The form’s water section has no schedule — and the water work is happening anyway</span><span class="sev must">Must</span></div>
+  <p>Six schedules are seeded from FORM 604-01: compressed air, Zone 1 equipment surfaces, Zone 1 room
+  surfaces, Zones 2, 3 and 4. <b>The water section is not among them</b> — monthly potable water testing,
+  three named tests, each with limits, and a chlorine sample point <i>“close to where the water comes into
+  the building”</i>.</p>
+  <div class="rec">
+  <b>Confirmed by the plant, 27 Aug: the tap water testing IS being done, and the completions are in the
+  Quality Schedules module.</b> So this is not missed work — and that is the point of the finding. The
+  pre-existing monthly <b>“Tap Water Testing”</b> schedule is carrying it, and that schedule was seeded
+  before the form was transcribed: it <b>names none of the three tests, cites none of the limits, and never
+  references FORM 604-01.</b> Its steps say “record pass/fail” against a specification it does not state,
+  and the points it names are the restrooms and the kitchen — not the incoming-water point the form
+  specifies for chlorine.</div>
+  <p><b>So the work is real and the record is not.</b> A completed schedule is a work order; it can carry
+  notes and an attached lab report, and very likely does. What it cannot do is say <i>“Total Coliforms,
+  potable water, March, absent, within the Present/100 mL action limit”</i> in a form anything can read.
+  <b>SOP 604 § 5.6 requires this data to be tracked and trended and § 5.7 requires an annual review of the
+  trend</b> — neither is possible against PDFs attached to tasks. That is W2-16 and W2-17 restated as the
+  plant’s own requirement rather than an auditor’s.</p>
+  <span class="vs">[for Adam — which points are actually sampled?]</span>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-19</span><span class="nt">SOP 604 is a hub over three other SOPs, and the four have drifted apart</span><span class="sev should">Should</span></div>
+  <p>The change log shows the environmental programme spread across four documents that move
+  independently:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Doc</th><th>Title</th><th>In the log</th></tr></thead>
+    <tbody>
+      <tr><td class="n-col">SOP 604</td><td>Environmental Monitoring Program</td><td class="n-col">V2 · 10/17/2025</td></tr>
+      <tr><td class="n-col">SOP 600</td><td>Air Monitoring</td><td class="n-col">V1 · 10/17/2025</td></tr>
+      <tr><td class="n-col">SOP 601</td><td>Microbial Surface Testing</td><td class="n-col">V1 · 10/17/2025</td></tr>
+      <tr><td class="n-col">SOP 608</td><td>Surface ATP Swab Testing</td><td class="n-col"><b>V4</b> · 03/04/2026</td></tr>
+    </tbody>
+  </table></div>
+  <p>SOP 608 went V1 → V4 over ten months while the programme document that ought to govern it stayed at V2
+  and the other two stayed at V1. Nothing in the register says whether 604 was checked when 608 moved.</p>
+  <p><b>This is the hub-and-spoke case the document reference graph was designed for</b> — one governing
+  document, three governed, an obvious question on every revision. After the two plans it is the clearest
+  candidate in the registry.</p>
+  <span class="vs">[verify in source — 604 must cite the other three by number, which is what neither plan turned out to do]</span>
+</div>
+
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-39</span><span class="nt">Four broken cross-references, all inside the OOS escalation</span><span class="sev must">Must</span></div>
+  <p>Section 5.3 tells whoever finds a pathogen positive what to do. <b>Four of its internal references point one section too high, including one that points at itself.</b></p><div class="tw"><table><thead><tr><th>At</th><th>It says</th><th>It means</th></tr></thead><tbody><tr><td class="n-col">5.3.4.2.1</td><td>“retest results from section <b>5.3.5.1</b>”</td><td class="n-col">5.3.4.1</td></tr><tr><td class="n-col"><b>5.3.5.1</b></td><td>“according to section <b>5.3.5</b> of this SOP”</td><td class="n-col">5.3.4 — <b>it cites itself</b></td></tr><tr><td class="n-col">5.3.6.2</td><td>“according to section <b>5.3.5</b>”</td><td class="n-col">5.3.4</td></tr><tr><td class="n-col">5.3.6.2.5</td><td>“the steps listed in section <b>5.3.5.3</b>”</td><td class="n-col">5.3.4.3</td></tr></tbody></table></div><p>5.3.5 is <i>Surface Sites Zone 1</i> and 5.3.6 is <i>Water Sites</i>, and both are told to follow “5.3.5” — so <b>the Zone 1 procedure instructs the reader to follow the Zone 1 procedure</b>, and the water procedure is sent to Zone 1 rather than to the general escalation in 5.3.4.</p><p><b>The highest-severity finding in Wave 2.</b> A Zone 1 product-contact positive is the most serious result this programme can produce, and the procedure for it does not resolve. It is also a ten-minute fix.</p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-40</span><span class="nt">The SOP states a sampling cadence that contradicts the form it defers to</span><span class="sev must">Must</span></div>
+  <p>5.2.3.2 says frequency <i>“[is] listed in the MSL form 604-01”</i>. Four subsections later, 5.2.3.6.1 states one itself: <i>“Sites are sampled on a <b>monthly</b> basis during active production shifts”</i> — for zones 2, 3 and 4.</p><p><b>FORM 604-01 says otherwise for every one of them:</b> Zone 2 <i>“at least once per twice a year”</i>, Zone 3 <i>“at least once a year”</i>, Zone 4 <i>“at least once per quarter”</i>. And 5.2.3.6.6 introduces a third word — <i>“the <b>weekly</b> allotment of samples”</i>.</p><p>One fact, two documents, three places, no agreement. <b>This matters immediately in ReadyDoc:</b> the six seeded EMP schedules take their cadence from the form, so if the SOP’s monthly is the intended rule, <b>every zone schedule is running at a fraction of the required frequency.</b> Settle it before anything is built on either.</p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-41</span><span class="nt">Two required forms — one has no number, the other has no name</span><span class="sev must">Must</span></div>
+  <p>The <b>OOS investigation form</b> is referred to only as <i>“the form”</i> (5.3.4.1.2, <i>“fills out the QA portion of the form”</i>) — never named or numbered anywhere in the SOP. The <b>EMP Root Cause Analysis / Corrective Action Report</b> is named and even given a numbering scheme (<code>EMPRCA</code> + serial + year) but <b>has no controlled form number</b> and is not in the Master Index.</p><p>Both are the records that prove an OOS was handled. The SOP says to fill them in and gives no way to find them.</p>
+</div>
+
+<div class="n must">
+  <div class="nh"><span class="id">W2-42</span><span class="nt">“the Quality Manager and Quality Manager”</span><span class="sev must">Must</span></div>
+  <div class="quote">“…the Quality Manager and Quality Manager, with possible help from the MRB, decide what corrective actions will be taken.”<span class="src">SOP 604 § 5.5.1.2</span></div><p>The same role twice, so <b>the SOP does not say who decides a corrective action.</b> § 5.5.2.2 — the preventative-measure twin — reads <i>“The <b>Plant Manager</b> and Quality Manager”</i>, which is almost certainly what was meant. A small typo that lands on the decision authority for a pathogen corrective action.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-43</span><span class="nt">Roles are given work the Responsibilities section never establishes</span><span class="sev should">Should</span></div>
+  <p>Section 4 defines three roles: Quality Manager/Director/Designee, Manufacturing Manager/Designee, Sanitation Supervisor/Designee. The procedure then assigns actions to a <b>Plant Manager</b> (including deciding preventative measures, 5.5.2.2), a <b>Laboratory Supervisor</b> (5.2.2.3.2), and a <b>Quality Department</b> used as distinct from the Quality Manager throughout 5.3.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-44</span><span class="nt">The annual verification is a “should” in one paragraph and a fact in the next</span><span class="sev should">Should</span></div>
+  <p>5.7: <i>“The EMP <b>should</b> be periodically verified … Intensive sampling (baseline mapping) <b>should</b> be conducted annually.”</i> Then 5.8: <i>“The results from <b>the annual</b> EMP verification are reviewed by the MRB.”</i></p><p>The second assumes the first is a requirement. Make 5.7 <i>shall</i> — as written, the plant’s own verification of its monitoring programme is optional, and SQF asks for verification of the programme, not only of the samples.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-45</span><span class="nt">Two recurring obligations, neither with a generator</span><span class="sev should">Should</span></div>
+  <p>5.6.3 requires OOS and overall trending to be <b>reviewed twice a year by the MRB</b>. 5.7 requires the <b>annual baseline mapping</b> of 20–50 samples. Both have a cadence, an owner and an output, and <b>neither exists as a quality schedule</b> — so a year can pass without either and nothing says so. Two rows in the seeded Quality Schedules, once someone confirms the cadences.</p>
+</div>
+
+<div class="n should">
+  <div class="nh"><span class="id">W2-46</span><span class="nt">The hub cites two of its three spokes</span><span class="sev should">Should</span></div>
+  <p>W2-19 asked whether SOP 604 cites the documents its programme runs on. <b>It cites SOP 600 (5.2.1.2) and SOP 601 (5.2.3.3) by number, and never mentions SOP 608</b> — Surface ATP Swab Testing, the one of the three that has moved four revisions while 604 stayed at V2. It also relies on the Material Review Board throughout without citing SOP 412.</p><p><b>Good news, though:</b> two real outbound citations by number is more than Protocol 003 and Protocol 001 managed between them — which is what changes the sequencing question for the document reference graph.</p>
+</div>
+
+<h2>What each one needs from you</h2>
+<p class="lede"><b>Everything below is a decision about a document. None of it is blocked on software.</b></p>
+<div class="tw"><table>
+  <thead><tr><th>Finding</th><th>Decision needed</th><th>From</th></tr></thead>
+  <tbody>
+    <tr><td class="n-col">W2-20</td><td>Sign all four, or say why they are in force unsigned. This is the one an auditor finds first.</td><td class="who">Daniela + Adam</td></tr>
+    <tr><td class="n-col">W2-21</td><td>Fix each header against its own revision history — and settle which date SOP 434’s V2 actually carries, since the auditor recorded one that appears nowhere in the file.</td><td class="who">Daniela</td></tr>
+    <tr><td class="n-col">W2-22</td><td>Supersede SOP 404 V3 and reissue V4 as its own file.</td><td class="who">Daniela</td></tr>
+    <tr><td class="n-col">W2-01, W2-02</td><td>Raise the missing DCR rows for SOP 421, SOP 434 and SOP 404 V4.</td><td class="who">Daniela</td></tr>
+    <tr><td class="n-col"><b>W2-31</b></td><td><b>The big one.</b> Does SOP 421 gain a retrospective-qualification clause for equipment already in service, or does the plant argue scope with NSF? This decides how NC 4.5.8 is answered.</td><td class="who">Adam</td></tr>
+    <tr><td class="n-col"><b>W2-40</b></td><td><b>Monthly, or the form’s frequencies?</b> The SOP and FORM 604-01 disagree for every zone, and the six seeded EMP schedules follow the form. Whichever is right, the other must change.</td><td class="who">Adam + Daniela</td></tr>
+    <tr><td class="n-col">W2-39</td><td>Renumber the four OOS cross-references. Ten minutes, and it is the most serious finding here.</td><td class="who">Daniela</td></tr>
+    <tr><td class="n-col">W2-25</td><td>Which ISO standard, over what scope, checked how often? ISO/IEC 17025 with a scope check is the answer for a testing laboratory; ISO 9001 is not.</td><td class="who">Adam</td></tr>
+    <tr><td class="n-col">W2-26, W2-32,<br>W2-36, W2-41</td><td>Issue the missing form numbers: 404-3, the 421 qualification protocols, the 434 approval form, the EMP OOS form and the EMPRCA report.</td><td class="who">Daniela</td></tr>
+    <tr><td class="n-col">W2-18</td><td>Which points are actually sampled for tap water — restrooms and kitchen, or the incoming-water point the form specifies for chlorine?</td><td class="who">Adam</td></tr>
+    <tr><td class="n-col">W2-24, W2-35</td><td>Two scopes to widen: SOP 434 to processes, software, utilities and physical plant; SOP 404 to laboratories.</td><td class="who">Daniela</td></tr>
+  </tbody>
+</table></div>
+
+<h2>What I would build first</h2>
+<p class="lede"><b>SOP 604, unchanged — and now better evidenced.</b> The documents made the case stronger:
+the SOP itself requires the data to be <b>tracked and trended</b> (§ 5.6) and the trend <b>reviewed twice a
+year and verified annually</b> (§ 5.6.3, § 5.7). None of that is possible against lab reports attached to
+work orders. The plant is already doing the sampling, so an environmental result record does not buy the
+work — it buys the evidence, the grading against FORM 604-01’s limits, and the trend the SOP already
+demands. Wave 1’s ATP grading is the pattern, one level up.</p>
+<div class="box hot">
+  <p><b>One dependency that did not exist before this pass: W2-40.</b> If the SOP’s monthly cadence is the
+  intended rule rather than the form’s, the six seeded EMP schedules are all at the wrong frequency, and
+  building a result record on top of them would file correct records against a wrong cadence. <b>Settle
+  W2-40 first — it is a question, not a build.</b></p>
+</div>
+<p class="lede"><b>Then SOP 421</b>, still three worked out fresh steps on the machine setup checklist — but
+W2-31 now sits in front of it. There is no point deriving an IQ/OQ/PQ checklist across 183 machines until
+somebody has decided whether the SOP reaches equipment already in service.</p>
+<p class="lede"><b>SOP 404 is a module, not a field</b>, and W2-25 says the laboratory half needs writing
+before it can be built at all. <b>SOP 434’s software half is the § 4.4.39 software change-control build</b>
+— and W2-33 adds that widening change control has to reconcile SOP 421 and SOP 434, which both claim it.</p>
+
+<footer>
+  Draft for review — nothing in any controlled document has been changed. All forty-six findings are
+  registered in <code>docs/v2/obligations.stored list</code>, so none can be quietly dropped.
+  <br>One correction made in passing: the audit triage said eight quality schedules are seeded from
+  FORM 604-01. Six are — which is itself finding W2-18.
+</footer>
+</div>

@@ -1,0 +1,836 @@
+# Red-line review — Protocol 003 (Food Safety Plan V4) and Protocol 001 (Food Defense Plan V2)
+
+**Draft for review · 25–27 August 2026 · 92 findings · nothing changed in either document**
+
+| | Must fix | Should fix | Consider | Total |
+|---|---|---|---|---|
+| Protocol 003 — Food Safety Plan V4 | 12 | 20 | 2 | **34** |
+| Protocol 001 — Food Defense Plan V2 | 9 | 17 | 4 | **30** |
+| Both documents | 2 | 1 | 1 | **4** |
+| SQF Edition 9 pass (Part 5) | 14 | 10 | 0 | **24** |
+| | **37** | **48** | **7** | **92** |
+
+Every finding is numbered so it can be accepted, rejected or deferred one at a time. Nothing here has
+been applied. The intended path is: review this → decide each item → issue the DCR → Document Control
+publishes V5 / V3 → the team approves and adopts.
+
+---
+
+## How to read this
+
+**Severity**
+
+| | Meaning |
+|---|---|
+| **MUST** | Wrong as a matter of fact, structure, or describes a control the plant does not have. An auditor finds these by reading. |
+| **SHOULD** | Undermines a controlled document — spelling, grammar, an unfilled blank — or a gap against a standard normative reference. |
+| **CONSIDER** | An improvement or a judgement call. Reasonable people can decline these. |
+
+**What I checked against, and what I did not.** On file and used: the **NSF/ANSI 455 Certification
+Policies** (2 Sept 2025), the **NSF 306 Certified for Sport guideline** (9 Jan 2026), and the **NSF GMP
+for Sport Audit Guide**. The Policies document names 455-2's normative references, and that list is the
+basis of several findings below:
+
+> **NSF/ANSI 455-2** → 21 CFR Part 111, 21 CFR Part 117, 21 CFR Part 11, 21 CFR Part 1.5 Subpart L,
+> 21 CFR Part 1.9 Subpart O.
+
+**Not on file and therefore not cited by clause: NSF/ANSI 455-2 itself, and the SQF Food Safety Code
+Edition 9.** Where a finding rests on SQF, it is argued from substance and marked as unverified.
+
+> **SQF pass completed 27 Aug 2026, and re-based on the correct code the same day.** Part 5 holds
+> **24 findings cited by clause**, additive — nothing in Parts 1–4 was withdrawn or reworded.
+>
+> **The scoping caveat was right, and it resolved well.** The first pass read the *Food Manufacturing*
+> code, whose cover refers dietary supplements elsewhere. The **SQF Food Safety Code: Dietary
+> Supplement Manufacturing, Edition 9** was then supplied — that is the code this facility is certified
+> against, and **every clause cited in Part 5 was re-checked against it**.
+>
+> **The System Elements numbering is identical between the two codes (2.1.1 … 2.9.2), so all 22
+> original findings hold at the same clause numbers.** Of 26 cited clauses, 24 are word-for-word or
+> differ only in punctuation. **Two differ substantively and both are in the supplements code's favour**
+> — they add obligations rather than removing them (SQF-23, and the note on SQF-12). Both are recorded
+> below.
+>
+> **NSF/ANSI 455-2 itself is still not on file** and findings resting on it remain argued from
+> substance.
+
+> **Audit outcome, 24–26 Aug 2026.** Two NSF audits, one visit: **zero critical, zero major, twelve
+> minor** — 3 on GMP for Sport, 9 on 455-2. Two findings below were promoted on the strength of them
+> (FSP-27, FSP-28) and several others are corroborated. The full triage of what technology closes and
+> what it cannot is `audit-nc-triage.md`. **Nothing in this red-line was withdrawn** — the audit added
+> weight, it did not contradict anything.
+
+**One caveat on the text.** Both plans were read from the PDF text layer, which splits table cells
+across columns. Anything that could be an extraction artefact rather than a real error is marked
+**[verify in source]**. Prose sections extracted cleanly; the hazard-analysis and preventive-control
+tables did not.
+
+---
+
+# Part 1 — Protocol 003, Food Safety Plan V4
+
+## 1A. Must fix
+
+### FSP-01 · The company's own name is misspelled in the opening line
+**Structure · Process Description, "Overview"**
+
+> ~~Power-Ops~~ **Powder-Ops** is a contract manufacturing company that specializes in a variety of
+> dietary supplement products.
+
+The first sentence of the plan's substantive content. Nothing else in either document spells it this
+way.
+
+### FSP-02 · The Rework row describes a control the plant does not have
+**Content · Hazard Analysis, "Rework"**
+
+> ~~Metal detection at the metal detection process step during tub filling.~~ X ray is inspected
+> finished good.
+
+V3's own revision note reads *"Removed any Magnetic Detection information"*, and the plant runs an
+X-ray, not a metal detector. This is residue of the V1 change that added magnets. An auditor reading
+the plan will ask to be shown the metal-detection step at tub filling, and there is not one.
+*Already DCR item 2.*
+
+### FSP-03 · Screens: the chart and the Process Description state different controls
+**Content · PC #3 vs Process Description, "Screens"**
+
+Chart: *"Freq: at the beginning of every machine start up."*
+Process Description: *"The mesh size (50 mesh or 70 mesh) is recorded as well as the condition of the
+screen at the beginning and at the end of each batch."*
+
+The second is stricter and names two facts the chart does not — **mesh size used** and **screen
+condition**. A screen intact at start-up and torn at the end is precisely what this control exists to
+catch, and only the second reading catches it. *Already DCR item 1.*
+
+**Recommendation:** adopt the Process Description's wording into the chart.
+
+### FSP-04 · PC #1's critical limit is stated in a unit only its verification step produces
+**Content · PC #1**
+
+Critical limit *"No more than 35 RLU"*; monitoring is *"Application of cleaning. Visual inspection
+prior to set up"*; verification is *"ATP swabs and visual inspection."*
+
+RLU is what an ATP swab reads — nothing else in the process produces one. So the plan sets a numeric
+limit and then monitors the control by eye, with the instrument that reads the number on the
+verification leg. Whichever leg carries the number is the leg software can enforce; as written, the
+stated critical limit is not attached to its monitoring step. *Already DCR item 3.*
+
+**Recommendation:** move the ATP swab to monitoring, leave visual inspection as verification. This
+also matches the Process Description: *"Product contact surfaces are swabbed using ATP swabs prior [to]
+the start of a production run."*
+
+### FSP-05 · Three signature lines are blank on a document marked Approved / Effective
+**Structure · Cover page**
+
+> SQF Practitioner: ______ Date: ______
+> Preventive Controls Qualified Individual: ______ Date: ______
+> Plant Manager: ______ Date: ______
+
+The document's status in ReadyDoc is *Approved / Effective* with an effective date of 2026-06-25. An
+approved food safety plan with an unsigned approval block is one of the first things an auditor checks.
+Either sign it, or the cover page should not carry blanks.
+
+### FSP-06 · The QA/QC Manager is named differently in the two plans
+**Consistency · Preventive Control Food Safety Team**
+
+Protocol 003 lists **Carol Pierce, QA/QC Manager**. Protocol 001 lists **Carol Rojas, Quality, Plan
+Coordinator**, and the AIB Food Defense Coordinator certificate on file is in the name **Carol Rojas**.
+One person under two names, or two people. Both plans must agree.
+
+### FSP-07 · The revision history uses two numbering schemes
+**Structure · Revision History**
+
+Row one is `0`; every row after is `V1`, `V2`, `V3`, `V4`. Make the first row **`V0`**, or restate it
+as "Original issue".
+
+### FSP-08 · The plan names records it does not say where to find
+**Content · Preventive Control Chart, "Record Keeping"**
+
+All four controls point at the batch production record or a document attached to it. **Those records
+are on paper today, logged in MRPEasy** — not in Keychain, not in ReadyDoc. The plan should say where
+its records are kept and for how long, because "Cleaning log Checklist in batch production record"
+answers *what* but not *where*, and an auditor asks for a named record on a date they choose.
+
+**Recommendation:** add a short **Records** section naming, per control, the record, the form number,
+where it is held, and the retention period. See FSP-29.
+
+## 1B. Spelling and grammar
+
+### FSP-09 · "verifies" → "verify"; "allergen" → "allergens" *(two occurrences)*
+**Hazard Analysis — Receiving/Incoming raw material, and Sampling/Raw material**
+
+> Allergen swabs are used to ~~verifies~~ **verify** that the surfaces are free of
+> ~~allergen~~ **allergens**.
+
+### FSP-10 · "intended used" → "intended use" *(three occurrences)*
+**Hazard Analysis — Receiving Packaging materials ×2, Sampling Packaging material**
+
+> …a letter of guarantee from the manufacturer that states that all products are approved for their
+> intended ~~used~~ **use**.
+
+### FSP-11 · "Peices" → "Pieces"
+**Hazard Analysis — Formulation/Blending**
+
+> P – ~~Peices~~ **Pieces** of plastic from liner
+
+### FSP-12 · "prior accepting" → "prior to accepting"
+**Hazard Analysis — Receiving/Incoming raw material**
+
+> All raw materials are checked against their COA **prior to** accepting them in the facility.
+
+### FSP-13 · "prior the start" → "prior to the start"
+**Process Description — Microbial Verification**
+
+> …swabbed using ATP swabs **prior to** the start of a production run…
+
+### FSP-14 · "as outline" → "as outlined"
+**PC #1 — Monitoring**
+
+> How: Procedure as ~~outline~~ **outlined** in cleaning SOP.
+
+### FSP-15 · "prior going" → "prior to going"
+**PC #3 — Monitoring**
+
+> How: Raw ingredients are sifted **prior to** going into the super sack.
+
+### FSP-16 · Subject/verb disagreement
+**Process Description — Receive Packaging Material**
+
+> All received packaging ~~material are~~ **materials are** inspected and compared to the vendor
+> specification before release to manufacturing.
+
+### FSP-17 · "personal hygiene" and "personnel hygiene" both used
+**Hazard Analysis — Formulation/Weigh Up vs Rework**
+
+Pick one. **"personnel hygiene"** matches the surrounding text ("environment and personnel hygiene
+practices").
+
+### FSP-18 · "X ray is inspected finished good"
+**Hazard Analysis — Rework**
+
+> ~~X ray is inspected finished good.~~ **The X-ray inspects finished goods.**
+
+Also standardise on one spelling of **X-ray** throughout; the document currently uses *X-Ray*, *X-ray*
+and *X ray*.
+
+### FSP-19 · "before entering to weigh up and production areas"
+**Process Description — GMP Controls**
+
+> …and wash their hands before entering ~~to~~ **the** weigh-up and production areas.
+
+Also **"mouth covering"** → **"mouth coverings"** in the same sentence.
+
+### FSP-20 · "Add magnets" → "Added magnets"
+**Revision History, V1**
+
+Every other remark in the column is past tense.
+
+### FSP-21 · "in quarantine area floor"
+**Process Description — Receive Ingredients**
+
+> …the ingredient is placed on hold **in the quarantine area** until the COA is received.
+
+### FSP-22 · "start up" → "start-up"
+**PC #3 — Monitoring.** Hyphenated when used as a noun.
+
+## 1C. Content and standards
+
+### FSP-23 · The plan cites no regulation anywhere · **SHOULD**
+Neither plan contains the string "21 CFR". The hazard analysis is laid out in the standard 21 CFR 117
+preventive-controls format and the plant holds PCQI certificates, so name the basis in a Scope section:
+21 CFR Part 117 for the preventive controls, 21 CFR Part 111 for the dietary-supplement CGMP that
+NSF/ANSI 455-2 is built on.
+
+### FSP-24 · No reanalysis trigger other than the annual review · **SHOULD**
+The plan should say when it is reanalysed **other than on a schedule**: a change in process, equipment,
+supplier or product; a newly identified hazard; and after any failure of a preventive control. As
+written, a new piece of equipment could arrive without anything requiring the plan to be revisited.
+
+### FSP-25 · Foreign Supplier Verification is not addressed · **SHOULD**
+**21 CFR Part 1 Subpart L is a normative reference for NSF/ANSI 455-2** (Policies, "Certification
+Normative References"). Neither plan mentions FSVP or imported ingredients. If **any** ingredient is
+imported, this is a named gap. If none is, one sentence saying so closes it.
+
+### FSP-26 · Sanitary Transportation is not addressed · **SHOULD**
+**21 CFR Part 1 Subpart O is also a normative reference for 455-2.** The Food Defense Plan discusses
+transport as a *security* vulnerability; neither plan addresses transport as a *sanitation* control —
+carrier requirements, temperature, cleanliness of the conveyance, records.
+
+### FSP-27 · Electronic records are not mentioned · **MUST** *(promoted 27 Aug 2026 — nonconformance 4.4.39)*
+**21 CFR Part 11 is a normative reference for 455-2**, and ReadyDoc is where a growing share of these
+records live, with e-signatures, an append-only audit trail and revocation. The plan should say that
+records may be maintained electronically and name the system.
+
+> **Confirmed by audit, and the wording is generous.** NSF/ANSI 455-2 finding **4.4.39**: *"While
+> software applications ReadyDoc and MRP Easy utilize functional compliance features such as unique
+> user logins and audit trails, formal documentation demonstrating validation of the systems was not
+> available."* The features are there; the documentation is not. Naming electronic records in the plan
+> is the document half; the validation package is the technology half — `audit-nc-triage.md` item 1.
+
+### FSP-28 · Banned and prohibited substances are not referenced · **MUST** *(promoted 27 Aug 2026 — three nonconformances)*
+
+> **Confirmed by audit.** The GMP for Sport audit of 24–26 Aug 2026 raised **three minor
+> nonconformances**, and they are exactly these three sections: **§6.2.2** (procedures prohibiting
+> banned substances not established), **§6.2.3.1** (annual review of the lists not established) and
+> **§6.2.3.2** (procedures ensuring purchased materials are not on the lists not established). See
+> `audit-nc-triage.md`.
+NSF GMP for Sport **§6.2.2** requires that references to the NSF 306 Annex C, NFL/NFLPA, MLB and WADA
+lists be *"incorporated as part of their applicable operating procedures"*, and **§6.2.3.1** requires a
+documented **annual review** of those lists. A draft *Banned and Prohibited Substance Control Program*
+already exists in the registry (`SOP-DRAFT-BSC`) — the plan should reference it once Document Control
+assigns it a number.
+
+### FSP-29 · Record retention is not stated · **SHOULD**
+21 CFR 111.605 sets retention at one year past shelf life or two years past distribution, whichever is
+longer. The plan names records and never says how long they are kept.
+
+### FSP-30 · The allergen preventive control has no program behind it · **MUST** *(promoted 27 Aug 2026 — SQF 2.8.1 is Mandatory)*
+PC #2 and several hazard rows turn on allergen control, and the Process Description describes real
+practice — scooping allergens at the end of the batch, gown changes, a full room clean verified by
+swab, a dedicated allergen storage location. **None of that is a referenced document.** An allergen
+control program (matrix, segregation, scheduling, changeover validation, label declaration) is what an
+auditor asks for after reading PC #2.
+
+### FSP-31 · Supply-chain controls are described but not categorised · **CONSIDER**
+Several hazard rows justify a "No" on the strength of supplier qualification and letters of guarantee —
+which is the reasoning behind a **supply-chain preventive control**, a category 117 names explicitly.
+The chart has none. Either add one, or state in the justification why the control is not required.
+
+### FSP-32 · "the amount of the missing ingredient" is ambiguous · **CONSIDER**
+**Process Description — Rework.** *"Rework during blending operations is allowed if the amount of the
+missing ingredient is known."* Read plainly this is about a spill, where what is lost must be
+quantified. **"Spilled"** or **"lost"** would say it.
+
+### FSP-33 · The process flow diagram is referenced but absent · **MUST** *[verify in source]*
+The table of contents lists **Process Flow Diagram, page 4**, and the heading appears — with no diagram
+beneath it. Either the diagram did not survive the PDF, or it is genuinely missing. A hazard analysis
+without a process flow is a finding on its own.
+
+### FSP-34 · "CCP" and "preventive control" are used interchangeably · **SHOULD**
+The chart's columns say *Operational PC Step* and *Preventive Control*; V2's revision note says
+*"Added X-ray as a **CCP**"*; Policy 002 calls the approach *"a validated HACCP-based approach"*. All
+three are defensible and they should be deliberate. **This is the first item of the vocabulary pass.**
+
+---
+
+# Part 2 — Protocol 001, Food Defense Plan V2
+
+## 2A. Must fix
+
+### FDP-01 · Two sections are lettered "D"
+**Structure · §3 Potential Vulnerabilities**
+
+The sequence runs **A** Ingredient, **B** Facility, **C** Supply Chain, **D** Process, **E** Personnel,
+**D** External. The second **D** should be **F**.
+
+### FDP-02 · Numbering jumps inside §3E
+**Structure · §3E Personnel Vulnerabilities**
+
+Items run 1, 2, 3, then **6. Employee Practices**, **7. Sanitation**. Either items 4 and 5 were removed
+without renumbering, or the last two belong in another section — *Sanitation* in particular reads as a
+process vulnerability rather than a personnel one.
+
+### FDP-03 · "Page 10 of 9"
+**Structure · Footer.** The last page numbers itself beyond the total.
+
+### FDP-04 · The revision number in ReadyDoc disagrees with the document
+**Consistency · Document metadata**
+
+ReadyDoc records the document as **Revision 1.0**. The document's own footer and revision history say
+**V2**. A record filed against the wrong revision is exactly what the registry exists to prevent.
+
+### FDP-05 · "work legibility" → "work eligibility"
+**Content · §6C1 Background Checks**
+
+> All employees are screened for work ~~legibility~~ **eligibility** before hiring.
+
+The wrong word, in the sentence describing the control.
+
+### FDP-06 · "a specified period" is never specified — four times
+**Content · §10 Record Keeping**
+
+Surveillance footage, access logs, inspection reports and training records are each to be kept *"for a
+specified period"*, and no period is given anywhere in the plan. An auditor will ask, and the plan
+cannot answer itself.
+
+### FDP-07 · Name disagreement with Protocol 003
+See **FSP-06**.
+
+### FDP-08 · "05/202025" is not a date
+**Structure · Revision History, V1.** Presumably 05/2025 or 05/20/2025.
+
+## 2B. Spelling and grammar
+
+### FDP-09 · Four e-mail addresses are missing their domain suffix
+**§1 Food Defense Team**
+
+`Jake@powder-ops`, `Maria@powder-ops`, `daniela@powder-ops`, `Lowry@powder-ops` → **`…@powder-ops.com`**,
+matching Carol's and Adam's entries. A contact list that cannot be used is the one thing a food defense
+plan must get right.
+
+### FDP-10 · "Email: Powder-ops.com" is a website, not an e-mail address
+**Facility header.** Either a real address, or relabel the line **Website**.
+
+### FDP-11 · "contract manufacturer company"
+**Facility Description** → **"contract manufacturing company"**, matching Protocol 003.
+
+### FDP-12 · A stray comma splits one ingredient into two
+**§2 Product/Process Description**
+
+> …guar gum, ~~digestive, enzymes~~ **digestive enzymes**, stevia extract…
+
+### FDP-13 · "non fat milk" → "nonfat milk"
+**§2.** Also appears as "Non-fat Milk Powder" in §3A — standardise.
+
+### FDP-14 · "Adults over 18-year olds"
+**§2 Intended Consumers** → **"Adults aged 18 and over"**.
+
+### FDP-15 · "a escort" → "an escort"
+**§6C2 Visitor Management**
+
+### FDP-16 · "access the manufacturing through keypad-controlled doors"
+**§6A2 Access Control** → "access the manufacturing **area** through…"
+
+### FDP-17 · The intended-use cell is garbled
+**§2** *[verify in source]*
+
+> Single serving dietary supplements/ food portable, mess free portion.
+
+Reads as two phrases run together. Suggested: **"Single-serving dietary supplement and food products
+in a portable, mess-free portion."**
+
+### FDP-18 · Confirm the spelling of a team member's surname
+**§1** — listed as **Lowry Akens**. Confirm against the roster.
+
+### FDP-19 · Stray characters in a section heading
+**§2** *[verify in source]* — extracts as `2. :C¿ Product/Process Description`.
+
+### FDP-20 · The risk threshold symbol did not render
+**§5** *[verify in source]* — extracts as `Risk Level "e 12`, presumably **≥ 12**.
+
+## 2C. Content and standards
+
+### FDP-21 · The plan does not cite the regulation it answers · **SHOULD**
+The FDA Intentional Adulteration rule, **21 CFR Part 121**, is the basis of a food defense plan for a
+registered facility. Naming it, and the facility's FDA registration number (which the plan already
+carries), makes the plan self-evidently responsive.
+
+### FDP-22 · "Actionable process step" is not used · **CONSIDER**
+Part 121 turns on identifying **actionable process steps** and assigning **mitigation strategies** to
+each, with monitoring, corrective actions and verification. The plan's §3–§7 do this in substance under
+different names. Adopting the regulation's vocabulary makes the mapping obvious rather than
+inferential.
+
+### FDP-23 · No Food Defense Qualified Individual is named · **SHOULD**
+Part 121 requires the vulnerability assessment and mitigation strategies be prepared by, or overseen
+by, a qualified individual. **Carol Rojas holds an AIB Food Defense Coordinator certificate**, which is
+on file — the plan lists her as *Plan Coordinator* without naming the qualification. State it.
+
+### FDP-24 · The reassessment interval should be stated explicitly · **CONSIDER**
+Part 121 expects reanalysis at least every three years, and on change. §11 commits to an **annual**
+review, which is stricter and good — say so, so a reader can see the plan exceeds the requirement
+rather than wondering whether it was considered.
+
+### FDP-25 · The mock incident has no form and no record · **SHOULD**
+§9.2 requires a mock incident **at least once every two years**. Nothing in the Forms Master Index
+answers to it and no record exists. The plan's own verification of itself is the part with no evidence
+behind it.
+
+### FDP-26 · The internal audit named as verification cannot verify this plan · **MUST**
+§9.1 makes internal audits a verification activity for the food defense plan. **Form 403-01 has 19
+sections and none of them is food defense.** Either add a food defense section to 403-01, or name a
+different verification activity here.
+
+### FDP-27 · Banned and prohibited substances · **CONSIDER**
+See **FSP-28**. NSF GMP for Sport §6.2.2 wants the prohibition embedded in operating procedures, and
+preventing a banned substance from entering the facility is squarely a food defense control. A
+cross-reference from §6B1 (Receiving Procedures) would do it.
+
+### FDP-28 · Confirm the employee counts · **CONSIDER**
+§ Facility header: 37 full-time, 1 part-time. Confirm these are current at re-issue; they are the kind
+of number an auditor spot-checks against the roster.
+
+### FDP-29 · The highest-scored mitigation has no record · **SHOULD**
+§5.4 mitigates *intentional adulteration by an employee* — joint-highest risk at 15 — with *"Require
+employees to never work alone and adequate monitoring of footage."* Nothing records whether anyone
+worked alone, and nothing records that footage was reviewed. A mitigation strategy with no monitoring
+record is the gap Part 121 is most pointed about.
+
+### FDP-30 · The risk matrix has no scoring key · **SHOULD**
+Likelihood and impact are scored 1–5 with no definition of what each value means. Two people scoring
+the same vulnerability will disagree, and the reassessment in §11 cannot be compared to this one.
+
+---
+
+# Part 3 — Both documents
+
+### X-01 · Neither plan says where its records are kept · **MUST**
+See FSP-08 and FDP-06. This is the single most consequential omission across both documents, and it
+became more pressing this week: the preventive-control records are on paper in MRPEasy, mid-migration,
+and neither plan says so.
+
+### X-02 · One vocabulary, chosen deliberately · **SHOULD**
+*Preventive control* / *CCP* / *HACCP* across Protocol 003, Policy 002 and the revision history. See
+FSP-34. Decide once, apply to all three documents in the same revision.
+
+### X-03 · Approver and owner are the same person on Protocol 003 · **CONSIDER**
+Protocol 003 records **Owner: Daniela Servin** and **Approved By: Daniela Servin**. Protocol 001 is
+better — approved by Carol Rojas, reviewed by Adam Bliss. Independent approval is the norm an auditor
+expects, and the plant already demonstrates it on the other plan.
+
+### X-04 · Add a Scope and Normative References section to both · **MUST** *(promoted 26 Aug 2026)*
+Half a page naming what each plan covers, which regulations and schemes it answers (21 CFR 117 / 111 /
+121, NSF/ANSI 455-2, SQF), and **which documents it depends on, by document number**.
+
+**Promoted from *consider* to *must* by the coverage check.** The reference extraction was run over the
+full text of both plans — 27,059 and 15,607 characters. **Neither cites a single other controlled
+document by number.** The only reference of any kind is the phrase *"cleaning SOP"* in PC #1's
+monitoring column, in words. Protocol 001 names no other document at all.
+
+Two consequences:
+
+1. **An auditor cannot follow the plan to its procedures.** *"Procedure as outline in cleaning SOP"*
+   does not say which SOP, and the plant has ~100 documents.
+2. **The hub-and-spoke automation has nothing to work with.** The document reference graph
+   (`document-reference-graph.md`) reads exactly this section. Until the plans name their dependencies,
+   re-issuing Protocol 003 can propagate to nothing, because nothing declares that it depends on it.
+
+The list of documents each plan already *describes* and does not *name* is in
+`document-reference-graph.md` under the coverage check — eleven rows, and it is the starting point for
+this section rather than a research task.
+
+---
+
+# Part 4 — What I could not check
+
+- **NSF/ANSI 455-2 itself** and the **SQF Food Safety Code** are not on file. Findings resting on them
+  are argued from substance, not cited by clause.
+- **The process flow diagram** (FSP-33) — whether it is missing from the document or only from the
+  text extraction.
+- **Anything held only in the tables' visual layout.** Merged cells, strike-throughs and any handwritten
+  annotation do not survive text extraction.
+- **Whether the practices described are what the plant actually does.** This is a review of two
+  documents against each other, against the standards on file, and against what ReadyDoc holds. It is
+  not a review of the floor.
+
+---
+
+# Part 5 — The SQF Edition 9 pass
+
+**Added 27 August 2026 · 22 new findings, cited by clause · nothing in Parts 1–4 withdrawn**
+
+**Source: SQF Food Safety Code: Dietary Supplement Manufacturing, Edition 9** (FMI, 2020, 102 pp.) —
+the code this facility is certified against. Clauses were first read in the *Food Manufacturing* code
+and every one has been re-verified against the supplements code; the System Elements numbering is
+identical, so the citations below are correct for both.
+
+Everything below is genuinely new — a requirement the Code states that neither plan meets, and that
+was not already raised from the NSF documents. Where SQF merely corroborates an existing finding it is
+noted at the end rather than counted twice.
+
+**One scoping caveat, raised rather than assumed.** This is the *Food Manufacturing* Code, and its own
+cover refers dietary supplements to a related manufacturing code. Every clause cited below is a
+general System Elements clause that applies across the family, but **which code Powder Ops is certified
+against is worth confirming with the certification body** before the plan cites clause numbers.
+
+## 5A. Protocol 003 — Food Safety Plan
+
+### SQF-01 · No documented scope for the plan · **MUST** · clause 2.4.3.3
+> *"The scope of each food safety plan shall be developed and documented including the start and
+> endpoints of the processes under consideration and all relevant inputs and outputs."*
+
+Protocol 003 has a Process Description and no scope statement. Where the plan begins and ends — and
+what crosses that boundary — is not stated anywhere. **This is also the section X-04 asks for**, so the
+two findings are satisfied by one addition.
+
+### SQF-02 · No product description · **MUST** · clause 2.4.3.4
+> *"Product descriptions shall be developed and documented for all products included in the scope …
+> shall reference the finished product specifications … plus any additional information relevant to
+> product safety, such as pH, water activity, composition, and/or storage conditions."*
+
+**Water activity is the one that matters for a powder plant** and appears nowhere in Protocol 003.
+Note the contrast: **the Food Defense Plan has a product/process description table and the Food Safety
+Plan does not.** The Food Defense Plan's table is the starting point.
+
+### SQF-03 · Intended use is not documented, and vulnerable groups are not addressed · **MUST** · clause 2.4.3.5
+> *"…This shall include target consumer groups, the potential for consumption by vulnerable groups of
+> the population, requirements for further processing if applicable, and potential alternative uses."*
+
+Protocol 003 states none of these. Protocol 001 covers target consumers ("Adults over 18-year olds",
+"the general consuming public") and **neither plan addresses vulnerable groups** — which for a
+supplement sold to the general public is the substantive half of the clause.
+
+### SQF-04 · The flow diagram has mandatory content that must be checked when it is restored · **MUST** · clause 2.4.3.6
+> *"…shall include every step in the process, all raw materials, packaging, service inputs (e.g.,
+> water, steam, gasses as applicable), scheduled process delays, and all process outputs including
+> waste and rework. Each flow diagram shall be confirmed by the food safety team to cover all stages
+> and hours of operation."*
+
+**FSP-33 found the diagram missing. This says what it must contain when it comes back.** Four things
+are easy to omit and all four are named: **service inputs** (the plant uses compressed air, which its
+own EMP samples), **scheduled process delays**, **waste**, and **rework** — which Protocol 003 treats
+as a process step in the hazard analysis, so it must appear as an output on the diagram too. The
+food safety team's confirmation that it covers **all hours of operation** is a record, not a formality.
+
+### SQF-05 · The methodology for determining hazard significance is not documented · **MUST** · clause 2.4.3.8
+> *"The methodology for determining hazard significance shall be documented and used consistently to
+> assess all potential hazards."*
+
+Protocol 003's hazard analysis answers YES/NO per hazard with a justification, and **never states how
+significance was decided** — no severity, no likelihood, no matrix, no decision tree.
+
+**The sharpest illustration is internal: the Food Defense Plan has a documented risk matrix (likelihood
+× impact, 1–5) and the Food Safety Plan has nothing equivalent.** One of the plant's two plans already
+does what this clause asks; the other does not.
+
+### SQF-06 · The critical limits are not validated, and there is no annual re-validation · **MUST** · clauses 2.4.3.11, 2.5.1.1(ii)
+> 2.4.3.11 *"The food safety team shall validate all of the critical limits to ensure the level of
+> control of the identified food safety hazard(s)…"*
+> 2.5.1.1(ii) *"Critical food safety limits are reviewed annually and re-validated or justified by
+> regulatory standards when changes occur."*
+
+**35 RLU. 50 or 70 mesh. NFe 2 mm, Fe 2 mm, stainless steel 4 mm, ceramic 2 mm, glass 2 mm.** Every one
+of these is a number the plan asserts and does not justify. Validation is a distinct activity from the
+verification the chart already lists — it answers *"why is 35 the right number?"*, not *"was it met?"*
+
+*"Records of all validation activities shall be maintained."*
+
+### SQF-07 · PC #1 and PC #2 corrective actions are incomplete · **MUST** · clause 2.4.3.13
+> *"…deviation procedures that identify the disposition of affected product when monitoring indicates
+> a loss of control at a CCP. The procedures shall also prescribe actions to correct the process step
+> to prevent recurrence of the safety failure."*
+
+**PC #1 and PC #2 say only "Re-clean line."** Two of the three required elements are missing: what
+happens to product already made, and what is done so it does not recur.
+
+Note that **PC #3 and PC #4 do this properly** — segregate and hold, investigate disposition, identify
+the source, fix damaged equipment; 100 % inspection back to the last good check. The plant already
+knows how to write this. Two of its four controls simply do not.
+
+2.5.3.1 adds the third element: **root cause identification** is part of corrective action, and
+"re-clean" identifies nothing.
+
+### SQF-10 · Allergen management is a Mandatory clause with a six-part content list · **MUST** · clause 2.8.1
+Promotes **FSP-30** from *consider*. SQF 2.8.1.1 requires a documented allergen management program
+including:
+
+- **a risk analysis of raw materials, ingredients and processing aids — explicitly including food-grade
+  lubricants** (the plant already records `lubricant_is_food_grade` on work orders, which is the data);
+- **an assessment of workplace-related allergens from locker rooms, vending machines, lunchrooms and
+  visitors** — the item nobody thinks of, and it is mandatory;
+- **a list of allergens for the country of manufacture and of destination, accessible to staff**;
+- allergen hazards incorporated into the food safety plan — *Protocol 003 does do this*;
+- management plans for each identified allergen.
+
+And **2.8.1.5**: *"procedures for validation and verification of the effectiveness of the cleaning and
+sanitation of areas and equipment in which allergens are used shall be documented."* **That is PC #2,
+and it is unvalidated** — see SQF-06.
+
+**2.8.1.10** adds one Protocol 003 misses entirely: *"Re-worked product containing allergens shall be
+clearly identified and traceable."* The plan gives rework its own process step and says nothing about
+allergen identification of the rework.
+
+### SQF-11 · The EMP schedule is missing three mandatory elements, and results are not trended · **MUST** · clauses 2.4.8.2, 2.4.8.3
+FORM 604-01 gives locations, tests, frequency and alert/action limits. The Code requires the schedule
+to *also* detail:
+
+- **the rotation of locations as needed** — absent;
+- **the methods to handle elevated or undesirable results** — the form gives alert and action *limits*
+  but not the *method*;
+- and 2.4.8.3: results **"monitored, tracked, and trended, and preventative actions implemented where
+  unsatisfactory results or trends are observed."**
+
+**Trending is absent entirely**, which is the same gap the preventive-control walk found from the
+software side and NSF finding **4.5.84** found from the auditor's. Three independent routes to one
+conclusion.
+
+### SQF-08 · No verification schedule · **SHOULD** · clause 2.5.2.2
+> *"A verification schedule outlining the verification activities, their frequency of completion, and
+> the person responsible for each activity shall be prepared and implemented."*
+
+The PC chart names a verification activity per control. It does not give a **schedule** — frequency and
+a responsible person per activity — and 2.5.2.1 adds that whoever verifies must **authorize each
+verified record**.
+
+### SQF-09 · Monitoring must name the test method · **SHOULD** · clause 2.4.3.12
+> *"Monitoring procedures shall identify the personnel assigned to conduct monitoring, the sampling and
+> test methods, and the test frequency."*
+
+The chart gives personnel and frequency for all four controls. **The sampling and test method is thin**:
+PC #1's monitoring is "visual inspection", with the ATP swab that produces its RLU reading listed under
+verification (see FSP-04), so the method that generates the number the limit is stated in is not on the
+monitoring line at all.
+
+### SQF-12 · SQF supplies the retention rule the plans are missing · **SHOULD** · clause 2.2.3.3
+> *"Retention periods shall be in accordance with customer, legal, and regulatory requirements, at
+> minimum the product shelf-life or established by the site if no shelf-life exists."*
+
+This does not add a finding — it **answers** FSP-29 and FDP-06. "A specified period" becomes a rule the
+plans can state: at minimum the product shelf life. Note the interaction with NSF finding **4.6.21** —
+the shelf life itself is not yet supported by data, so the retention period currently rests on a number
+that is under a nonconformance.
+
+### SQF-13 · The vocabulary question is answered by the Code, not by preference · **SHOULD** · clause 2.4.3.17
+> *"Where food safety regulations in the country of production and destination prescribe a food safety
+> control methodology other than the Codex Alimentarius Commission HACCP guidelines, the food safety
+> team shall implement food safety plans that meet **both** Codex and food regulatory requirements."*
+
+**This resolves FSP-34 and it resolves it in an unexpected direction.** SQF requires a plan built on
+Codex HACCP (2.4.3.1, twelve steps). FDA prescribes 21 CFR 117 preventive controls. Under 2.4.3.17 the
+plant must satisfy **both** — so Protocol 003 carrying preventive-control structure *and* CCP language
+is not sloppiness to be tidied away. It may be exactly right.
+
+**What FSP-34 still asks for stands: be deliberate, and say so in the plan.** The fix is a sentence
+under Scope explaining that the plan is built to satisfy Codex HACCP and 21 CFR 117 together — not a
+purge of one vocabulary.
+
+### SQF-14 · SQF states the reanalysis trigger FSP-24 asks for · **SHOULD** · clause 2.4.3.14
+> *"…a full review of the documented and implemented plans shall be conducted at least annually, **or
+> when changes to the process, equipment, inputs, or other changes affecting product safety occur**."*
+
+Confirms FSP-24 with a clause to cite, and 2.4.3.14 also requires that implementation be **monitored by
+the food safety team** — an activity, not just a document review.
+
+## 5B. Protocol 001 — Food Defense Plan
+
+SQF 2.7.1.2 sets a **mandatory minimum content list of seven items**. Protocol 001 satisfies (i) and
+(iii) well. The rest follow.
+
+### SQF-15 · The senior site management person responsible for food defense is not named · **MUST** · clause 2.7.1.2(ii)
+> *"The name of the senior site management person responsible for food defense."*
+
+Protocol 001 names a seven-person team with **two people both titled "Plan Coordinator"** (Carol Rojas
+and Adam Bliss) and lists the CEO as an ordinary "Team member". The Code asks for one named senior
+manager who is responsible. Explicitly required, entirely absent, and trivially fixed.
+
+### SQF-16 · Sensitive processing points are not identified · **MUST** · clause 2.7.1.2(iv)
+> *"The methods implemented to protect sensitive processing points from intentional adulteration."*
+
+§3D lists process vulnerabilities generally (receiving, dosing, production line, packaging, shipping)
+and §6B mitigates them with cameras and inspections. **No step is identified as a sensitive processing
+point**, which is the food defense analogue of an actionable process step — and the concept Part 121
+uses too (see FDP-22). One assessment satisfies both.
+
+### SQF-20 · The plan tests itself less often than SQF requires · **MUST** · clause 2.7.1.4
+> *"The food defense threat assessment and prevention plan shall be reviewed **and tested at least
+> annually** or when the threat level … changes. Records of reviews and tests shall be maintained."*
+
+**Protocol 001 §9.2 commits to a mock incident "at least once every two years."** That is half the
+required frequency. **This corrects FDP-24**, which recorded the plan's annual review as *stricter than
+required* — true against 21 CFR Part 121's three-year reanalysis, and **not true against SQF**, which
+requires annual review *and* annual testing.
+
+It also raises the stakes on **FDP-25**: the test has no form and no record, and 2.7.1.4 requires
+records of both the review and the test.
+
+### SQF-21 · Food fraud is a separate Mandatory clause and Protocol 001 does not satisfy it · **MUST** · clause 2.7.2
+This is the largest single gap the SQF pass found.
+
+**§3A of Protocol 001 is food fraud content** — eleven ingredients assessed for dilution, substitution
+and adulteration with cheaper materials — sitting inside a food defense plan. SQF treats them as two
+mandatory clauses with separate obligations:
+
+| 2.7.2 requires | Protocol 001 |
+|---|---|
+| Documented **methods, responsibility and criteria** for identifying vulnerability to food fraud | Not stated |
+| A **food fraud mitigation plan** specifying how each vulnerability is controlled | Mitigations are one line per ingredient inside the vulnerability list |
+| **Instruction to all relevant staff** on the mitigation plan (2.7.2.3) | Food defense training only |
+| **Annual review and verification, with gaps and corrective actions documented**, records maintained | §11 reviews the vulnerability assessment; no gaps-and-corrective-actions record |
+
+**Recommendation:** split the food fraud content into its own plan, or into a clearly delineated
+section with its own responsibility, its own review record and its own training. The substance largely
+exists; the structure the Code requires does not.
+
+### SQF-17 · Secure receipt and storage of hazardous chemicals is not addressed · **SHOULD** · clause 2.7.1.2(v)
+The clause names *"raw materials, ingredients, packaging, equipment, and **hazardous chemicals**."*
+Protocol 001 §3B3 covers storage areas generally and never mentions chemicals. The plant has an
+Approved Chemical List (FORM 700-01) and a controlled sign-out (FORM 703-01) — **the control exists and
+the plan does not claim it**, which is the easiest kind of finding to close.
+
+### SQF-18 · Labels and work-in-progress are outside the secure-storage claim · **SHOULD** · clause 2.7.1.2(vi)
+The clause names *"raw materials, ingredients, packaging **(including labels)**, **work-in-progress**,
+process inputs, and finished products"* under secure storage **and transportation**. Protocol 001 covers
+raw materials and finished goods. Labels are the food defense concern the clause calls out specifically,
+and the plant already controls them through artwork and NFP approval.
+
+### SQF-19 · Contractor access is not recorded · **SHOULD** · clause 2.7.1.2(vii)
+> *"The methods implemented to record and control access to the premises by site personnel,
+> **contractors**, and visitors."*
+
+Protocol 001 §6C2 covers visitors and §6A2 covers employees by keypad. **Contractors are named by the
+Code and absent from the plan** — and they are the group most likely to be on site unescorted with
+tools.
+
+### SQF-22 · Training is required on both plans and only one is covered · **SHOULD** · clauses 2.7.1.3, 2.7.2.3
+Both the food defense plan and the food fraud mitigation plan require documented instruction to all
+relevant staff. Course **FD-101** covers food defense; nothing covers food fraud. One course addition,
+and `training_courses.sop_id` links it to the plan so a revision raises retraining automatically.
+
+## 5C. Where SQF corroborates findings already raised
+
+Not counted again, listed so the clause is available when the DCR is written.
+
+| Existing finding | SQF clause |
+|---|---|
+| FSP-08 / X-01 · where records are kept | 2.4.3.16 — CCP monitoring, corrective action and verification records maintained and used |
+| FSP-24 · reanalysis triggers | 2.4.3.14 |
+| FSP-29 / FDP-06 · retention periods | 2.2.3.3 |
+| FSP-05 · unsigned approval block | 2.2.2.1, 2.2.3.2 — records confirmed by those undertaking the activity |
+| FDP-26 · internal audit cannot verify the food defense plan | 2.5.4, and 2.7.1.4's separate review-and-test requirement |
+| FDP-30 · risk matrix has no scoring key | 2.4.3.8 — methodology documented and used consistently |
+| X-04 · Scope and Normative References | 2.4.3.3 — and SQF-01 makes it Mandatory rather than good practice |
+
+## 5D. What the Dietary Supplement code changes
+
+Added 27 Aug 2026 after re-basing Part 5 onto the correct code. **Of the 26 clauses cited above, 24
+are word-for-word identical or differ only in punctuation.** Two differ substantively, and both add
+obligations rather than removing them.
+
+### SQF-23 · Software and electronic records are not backed up off-site — or it is not documented · **MUST** · clause 2.2.3.3 (supplements only)
+The Food Manufacturing code ends 2.2.3.3 at retention periods. **The supplements code adds a sentence
+the other does not have:**
+
+> *"Software programs and electronic data and records shall be backed-up on hard drives or cloud remote
+> from the site's system."*
+
+**This is a new obligation and it lands squarely on ReadyDoc.** The platform runs on a hosted volume
+and `scripts/backup-db.js` exists, so the control plausibly *is* in place — but nothing states it, and
+NSF finding **4.4.39** has already recorded that formal documentation of the system was not available.
+
+**It belongs in the Part 11 validation package** (`audit-nc-triage.md` item 1) rather than as a separate
+project: intended use, gap assessment, IQ/OQ/PQ, test scripts — and now, explicitly, the backup
+arrangement and evidence that it is remote from the site's system. MRPEasy is in scope for the same
+clause and is the vendor's answer, not ours.
+
+### SQF-24 · The retention rule has no fallback in the supplements code · **SHOULD** · clause 2.2.3.3
+**Refines SQF-12.** The two codes state retention differently:
+
+| | Retention |
+|---|---|
+| Food Manufacturing | *"at minimum the product shelf-life **or established by the site if no shelf-life exists**"* |
+| **Dietary Supplement** | *"at minimum the product shelf life."* — **no fallback** |
+
+So under the code that applies, **retention is anchored to shelf life with no alternative basis.**
+That sharpens the interaction already noted in SQF-12: NSF finding **4.6.21** records that *"product
+bears an expiration date however, evidence that shelf life is supported by data was not available"* —
+so the record retention period currently rests on a number that is itself under a nonconformance, and
+the code offers nothing else to rest it on.
+
+### Two refinements, not new findings
+
+**SQF-13 is strengthened.** The supplements code's 2.4.3.17 reads *"Where food safety **and/or dietary
+supplement** regulations … prescribe a food safety control methodology other than … Codex"*. **That
+brings 21 CFR 111 explicitly inside the both-Codex-and-regulatory rule**, which is the regulation
+NSF/ANSI 455-2 is built on. The conclusion is unchanged and now rests on wording written for this
+industry rather than read across from another.
+
+**SQF-16 gains a sentence.** Item (iv) of the food defense minimum list adds: *"Sites requiring
+licensing under regulations shall meet regulatory requirements for security."* Worth checking whether
+any licensing applies to this facility; if none does, one sentence in the plan says so.
+
+### One difference that does not change anything, recorded so nobody re-derives it
+
+**2.5.1.1** opens *"The methods applied shall **validate** that…"* in Food Manufacturing and *"shall
+**ensure** that…"* in the supplements code. **SQF-06 does not depend on it** — the validation
+requirement it rests on is **2.4.3.11**, *"The food safety team shall validate all of the critical
+limits"*, which is identical in both codes. The annual re-validation in 2.5.1.1(ii) is also identical.
