@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { cleanFilename, stripRevisionSuffix } from '../filename-meta.js';
+import { orderWorklist, worklistProgress } from '../doc-worklist.js';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import PDFDocument from 'pdfkit';
@@ -10,6 +11,8 @@ import { createReadStream } from 'fs';
 import { getDb, logAudit } from '../db.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+
+const clean = (v, max = 300) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
 
 const router = Router();
 
@@ -463,11 +466,11 @@ router.post('/propose-revisions', receiveImportFiles, async (req, res) => {
 // POST /:id/apply-revision — apply the fields Document Control ticked.
 // A version snapshot is written first, so the previous revision is recoverable
 // and the trail shows what the upload replaced.
-router.post('/:id/apply-revision', (req, res) => {
-  const db = getDb();
-  const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
-  if (!doc) return res.status(404).json({ error: 'Not found' });
-  const fields = req.body?.fields || {};
+// ONE WRITER, TWO DOORS. The modal and the worklist both land here, so a
+// revision applied from a queue is byte for byte one applied from the upload
+// screen — including the version snapshot and the audit entry. A second copy is
+// how one of them quietly stops writing history.
+export function applyRevision(db, doc, fields, { actor, filename }) {
   const allowed = ['revision', 'effective_date', 'title', 'description'];
   const sets = [];
   const vals = [];
@@ -476,20 +479,159 @@ router.post('/:id/apply-revision', (req, res) => {
     sets.push(`${k} = ?`);
     vals.push(fields[k]);
   }
-  if (!sets.length) return res.status(400).json({ error: 'Nothing selected to apply.' });
+  if (!sets.length) return { error: 'Nothing selected to apply.' };
 
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(uuid(), doc.id, doc.revision, req.user.name,
-      `Superseded by an uploaded revision (${req.body?.filename || 'file'})`, JSON.stringify(doc));
+    .run(uuid(), doc.id, doc.revision, actor?.name || 'system',
+      `Superseded by an uploaded revision (${filename || 'file'})`, JSON.stringify(doc));
 
   db.prepare(`UPDATE sop_documents SET ${sets.join(', ')}, source_file = ?, updated_at = datetime('now') WHERE id = ?`)
-    .run(...vals, req.body?.filename || doc.source_file, doc.id);
+    .run(...vals, filename || doc.source_file, doc.id);
 
-  logAudit(req.user, 'update', 'document', doc.id,
-    { applied: Object.keys(fields), from_revision: doc.revision, to_revision: fields.revision || doc.revision, source: req.body?.filename },
-    doc, db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id), doc.doc_number || doc.title);
+  const after = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id);
+  logAudit(actor, 'update', 'document', doc.id,
+    { applied: Object.keys(fields), from_revision: doc.revision, to_revision: fields.revision || doc.revision, source: filename },
+    doc, after, doc.doc_number || doc.title);
+  return { document: after, applied: Object.keys(fields) };
+}
 
-  res.json(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id));
+router.post('/:id/apply-revision', (req, res) => {
+  const db = getDb();
+  const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  const r = applyRevision(db, doc, req.body?.fields || {},
+    { actor: req.user, filename: req.body?.filename });
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json(r.document);
+});
+
+// ── The worklist: the same proposals, kept ──────────────────────────────────
+//
+// /propose-revisions above is a modal — drop files, apply, gone. Across roughly
+// a hundred documents that is a job nobody can put down: do twenty today and
+// tomorrow you are working from memory about which twenty. Filing the proposals
+// makes it survivable, and NOTHING ELSE CHANGES — the proposal is the same
+// proposal, applying it goes through the same writer, and nothing is applied
+// until it is ticked.
+
+// POST /revisions/batch — propose against many files and KEEP the proposals.
+// Writes to the worklist; writes NOTHING to any document.
+router.post('/revisions/batch', receiveImportFiles, async (req, res) => {
+  if (!req.files?.length) return res.status(400).json({ error: 'No files uploaded' });
+  const db = getDb();
+  const batchId = uuid();
+  const insBatch = db.prepare(`INSERT INTO document_revision_batches (id, note, file_count, created_by)
+    VALUES (?, ?, ?, ?)`);
+  const insItem = db.prepare(`INSERT INTO document_revision_items
+    (id, batch_id, filename, document_id, matched_on, changes, extracted, warnings)
+    VALUES (?,?,?,?,?,?,?,?)`);
+
+  const rows = [];
+  const failed = [];
+  for (const f of req.files) {
+    try {
+      const { text, pages, isMarkdown } = await extractDocText(f);
+      const meta = guessMeta(f.originalname, text);
+      const rev = guessRevision(text);
+      const content = isMarkdown ? text : textToMarkdown(text);
+      const extracted = { ...meta, ...rev, content };
+      const { doc, matched_on } = matchDocument(db, meta);
+      rows.push({
+        id: uuid(), filename: f.originalname,
+        document_id: doc ? doc.id : null, matched_on: matched_on || null,
+        changes: doc ? proposeChanges(doc, extracted) : [],
+        extracted, warnings: extractWarnings(f, content, pages, isMarkdown),
+      });
+    } catch (err) {
+      // A file that cannot be read is REPORTED, not filed as an empty proposal —
+      // a row proposing nothing reads later as "we looked and there was no change".
+      failed.push({ filename: f.originalname, error: err.message });
+    }
+  }
+
+  db.transaction(() => {
+    insBatch.run(batchId, clean(req.body?.note, 300), rows.length, req.user.name);
+    for (const r of rows) {
+      insItem.run(r.id, batchId, r.filename, r.document_id, r.matched_on,
+        JSON.stringify(r.changes), JSON.stringify(r.extracted), JSON.stringify(r.warnings || []));
+    }
+  })();
+
+  logAudit(req.user, 'create', 'document_revision_batch', batchId,
+    { files: rows.length, unreadable: failed.length }, null, null, `${rows.length} documents`);
+  res.json({ batch_id: batchId, filed: rows.length, unreadable: failed });
+});
+
+// GET /revisions/worklist — what is outstanding, in the order to work it.
+router.get('/revisions/worklist', (req, res) => {
+  const db = getDb();
+  const all = db.prepare(`SELECT i.*, d.doc_number, d.title AS doc_title, d.revision AS doc_revision,
+      d.review_due, d.status AS doc_status
+    FROM document_revision_items i LEFT JOIN sop_documents d ON d.id = i.document_id
+    ORDER BY i.created_at DESC LIMIT 1000`).all()
+    .map(r => ({
+      ...r,
+      changes: JSON.parse(r.changes || '[]'),
+      warnings: JSON.parse(r.warnings || '[]'),
+      // The extracted body is megabytes of document text, searched and never
+      // shipped — the equipment-manual rule. The proposal already carries the
+      // sizes, which is what a person decides from.
+      extracted: undefined,
+    }));
+  const pending = all.filter(r => r.state === 'pending');
+  res.json({
+    progress: worklistProgress(all),
+    items: orderWorklist(pending, { today: new Date().toISOString().slice(0, 10) }),
+    recent_done: all.filter(r => r.state !== 'pending').slice(0, 40),
+  });
+});
+
+// POST /revisions/items/:id/apply — apply the ticked fields for one item.
+router.post('/revisions/items/:id/apply', (req, res) => {
+  const db = getDb();
+  const item = db.prepare('SELECT * FROM document_revision_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  if (item.state !== 'pending') return res.status(409).json({ error: 'Already decided' });
+  if (!item.document_id) {
+    return res.status(400).json({ error: 'This file matched no document. Say which one it is, or skip it.' });
+  }
+  const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(item.document_id);
+  if (!doc) return res.status(404).json({ error: 'That document is no longer in the registry' });
+
+  // The fields the person ticked, taken from the STORED proposal rather than
+  // from the request body — so what applies is what was reviewed, and a stale
+  // browser cannot write a value nobody saw.
+  const proposal = JSON.parse(item.changes || '[]');
+  const ticked = new Set(req.body?.fields || proposal.map(c => c.field));
+  const extracted = JSON.parse(item.extracted || '{}');
+  const fields = {};
+  for (const c of proposal) {
+    if (!ticked.has(c.field)) continue;
+    fields[c.field] = c.field === 'description' ? extracted.content : c.to;
+  }
+
+  const r = applyRevision(db, doc, fields, { actor: req.user, filename: item.filename });
+  if (r.error) return res.status(400).json({ error: r.error });
+  db.prepare(`UPDATE document_revision_items SET state = 'applied', applied_fields = ?,
+    decided_by = ?, decided_at = datetime('now') WHERE id = ?`)
+    .run(JSON.stringify(Object.keys(fields)), req.user.name, item.id);
+  res.json({ ok: true, document: r.document, applied: r.applied });
+});
+
+// POST /revisions/items/:id/skip — a decision, with a reason, not a delete.
+// The row survives: "we looked at this file and did not apply it" is an answer
+// an auditor can be given, and a removed row cannot give it.
+router.post('/revisions/items/:id/skip', (req, res) => {
+  const db = getDb();
+  const item = db.prepare('SELECT * FROM document_revision_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  if (item.state !== 'pending') return res.status(409).json({ error: 'Already decided' });
+  const reason = clean(req.body?.reason, 400);
+  if (!reason || reason.length < 3) return res.status(400).json({ error: 'A reason is required' });
+  db.prepare(`UPDATE document_revision_items SET state = 'skipped', skip_reason = ?,
+    decided_by = ?, decided_at = datetime('now') WHERE id = ?`).run(reason, req.user.name, item.id);
+  logAudit(req.user, 'update', 'document_revision_item', item.id, { skipped: reason }, null, null, item.filename);
+  res.json({ ok: true });
 });
 
 // POST /bulk — create many documents at once (from the reviewed import)

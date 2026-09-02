@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost } from '../../hooks/useApi';
+import DocRevisionWorklist from './DocRevisionWorklist.jsx';
 import {
   FileCheck2, AlertTriangle, CheckCircle2, ExternalLink, Loader2, Info,
 } from 'lucide-react';
@@ -143,7 +144,9 @@ export default function DocReviewPanel() {
   if (error) return <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>;
 
   return (
-    <div className="space-y-4">
+    <>
+      <div className="mb-4"><DocRevisionWorklist /></div>
+      <div className="space-y-4">
       <div>
         <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
           <FileCheck2 size={20} className="text-powder-600" /> Document Control Review
@@ -233,6 +236,7 @@ export default function DocReviewPanel() {
           )}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

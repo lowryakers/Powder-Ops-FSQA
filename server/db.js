@@ -1272,6 +1272,43 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_import_batches_created ON import_batches(created_at DESC);
 
+    -- Document Control's worklist. The revision upload proposes changes and
+    -- applies nothing until they are ticked; this is what makes that job
+    -- survivable across a hundred documents and several days. A batch is the
+    -- provenance record (who uploaded what, when); an item is one file and the
+    -- change it proposes against one registry row.
+    --
+    -- THE PROPOSAL IS STORED, THE DOCUMENT IS NOT TOUCHED. Filing a batch
+    -- writes nothing to sop_documents; applying an item goes through the same
+    -- writer the modal has always used, so a worklist revision is byte for
+    -- byte a modal revision.
+    CREATE TABLE IF NOT EXISTS document_revision_batches (
+      id TEXT PRIMARY KEY,
+      note TEXT,
+      file_count INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS document_revision_items (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      document_id TEXT,               -- NULL = matched no registry row, needs a person
+      matched_on TEXT,
+      changes TEXT NOT NULL DEFAULT '[]',   -- the proposal, verbatim, as reviewed
+      extracted TEXT,                 -- the body and metadata read out of the file
+      warnings TEXT,
+      state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','applied','skipped')),
+      applied_fields TEXT,
+      skip_reason TEXT,
+      decided_by TEXT,
+      decided_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (batch_id) REFERENCES document_revision_batches(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_doc_rev_items_state ON document_revision_items(state);
+    CREATE INDEX IF NOT EXISTS idx_doc_rev_items_batch ON document_revision_items(batch_id);
+
     -- ── ReadyDoc feedback (RETIRED) ──────────────────────────────────────
     -- The Request button / Settings triage pane were removed 2026-08 — the
     -- plant runs app feedback through a comms channel instead. The table
