@@ -25,6 +25,7 @@ const ROLES = [
 // forms are shown: each sits under the log it files into, because they are
 // separate grants and the difference is easy to miss when they are apart.
 import { OPT_IN_MODULES, OPT_IN_SET } from '../../../shared/opt-in-modules.js';
+import { isFullAccess, fullAccessMap, noAccessMap, expandedMap, optInEntries as optInOnly } from '../../../shared/module-access.js';
 
 const MODULE_GROUPS = [
   {
@@ -161,6 +162,9 @@ const MODULE_GROUPS = [
 const ALL_MODULE_IDS = MODULE_GROUPS.flatMap(g => g.modules.map(m => m.id));
 
 // Normalize any stored form (null / legacy array / object) into a level map
+// The role-aware reading of a module map. See shared/module-access.js — an
+// empty map is full access for an admin and NO access for anybody else, and
+// this screen used to render both as "Full access".
 function normalizeAccess(value) {
   if (value == null) return null;
   if (Array.isArray(value)) return Object.fromEntries(value.map(id => [id, 'edit']));
@@ -170,7 +174,10 @@ function normalizeAccess(value) {
 // `additive` mode (bulk merge): the map holds ONLY the modules to change —
 // everything else on each user stays as it is. A fourth "Keep" level marks
 // "leave this module alone" (absent from the map).
-function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
+// `role` decides what an empty map means. It defaults to a NON-admin reading,
+// which is the safe one: bulk permissions never targets admins (the endpoint
+// excludes them) and a caller that forgets the prop gets the strict answer.
+function ModuleAccessEditor({ value, onChange, disabled, additive = false, role = 'operator' }) {
   const map = additive ? (value || {}) : normalizeAccess(value);
   // 54 modules, one per row, in a 288px scroller was about five screens of
   // scrolling to reach the bottom group. A filter is the fastest way to one
@@ -180,14 +187,17 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
   // opt-in grants is still full access — otherwise granting an admin Danny's
   // List would silently strip their whole nav — and the collapse-to-null
   // below must never swallow an opt-in grant as "all edit anyway".
-  const ORDINARY_IDS = ALL_MODULE_IDS.filter(id => !OPT_IN_SET.has(id));
-  const optInEntries = (m) => Object.fromEntries(Object.entries(m || {}).filter(([k]) => OPT_IN_SET.has(k)));
-  const allAccess = !additive && (map == null || Object.keys(map).every(k => OPT_IN_SET.has(k)));
+  const optInEntries = optInOnly;
+  const allAccess = !additive && isFullAccess(role, map, ALL_MODULE_IDS);
+  // Unticking "Full access" must always reveal the list. For an admin the map
+  // it writes still reads as unrestricted (that is what an admin's map means),
+  // so the checkbox alone could never open the grid for them.
+  const [showList, setShowList] = useState(false);
 
   const levelOf = (id) => {
     if (additive) return map[id] || 'keep';
     if (allAccess) return 'edit';
-    return map[id] || 'none';
+    return (map || {})[id] || 'none';
   };
 
   const setLevel = (id, level) => {
@@ -199,19 +209,22 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
       onChange(base);
       return;
     }
-    const base = allAccess ? { ...Object.fromEntries(ORDINARY_IDS.map(m => [m, 'edit'])), ...optInEntries(map) } : { ...map };
+    const base = expandedMap(role, map, ALL_MODULE_IDS);
     if (level === 'none') delete base[id];
     else base[id] = level;
-    // Collapse back to "all access" if every ORDINARY module is Edit — the
-    // opt-in grants ride along untouched.
-    const isAllEdit = ORDINARY_IDS.every(m => base[m] === 'edit');
-    onChange(isAllEdit ? (Object.keys(optInEntries(base)).length ? optInEntries(base) : null) : base);
+    onChange(collapse(base));
   };
+
+  // Every ordinary module at Edit, or none of them. For a non-admin "full
+  // access" is WRITTEN OUT — storing an empty map would hand them nothing.
+  const collapse = (base) => (isFullAccess(role, base, ALL_MODULE_IDS)
+    ? fullAccessMap(role, base, ALL_MODULE_IDS)
+    : (Object.keys(base).length ? base : noAccessMap(base)));
 
   const toggleAll = () => {
     if (disabled) return;
-    const grants = optInEntries(map);
-    onChange(allAccess ? { ...grants } : (Object.keys(grants).length ? grants : null));
+    setShowList(allAccess);
+    onChange(allAccess ? noAccessMap(map) : fullAccessMap(role, map, ALL_MODULE_IDS));
   };
 
   const toggleOptIn = (id) => {
@@ -232,10 +245,9 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
       onChange(base);
       return;
     }
-    const base = allAccess ? { ...Object.fromEntries(ORDINARY_IDS.map(m => [m, 'edit'])), ...optInEntries(map) } : { ...map };
+    const base = expandedMap(role, map, ALL_MODULE_IDS);
     ids.forEach(id => { if (level === 'none') delete base[id]; else base[id] = level; });
-    const isAllEdit = ORDINARY_IDS.every(m => base[m] === 'edit');
-    onChange(isAllEdit ? (Object.keys(optInEntries(base)).length ? optInEntries(base) : null) : base);
+    onChange(collapse(base));
   };
 
   // Filtering hides a group entirely once nothing in it matches, so the
@@ -293,7 +305,7 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false }) {
           ))}
         </div>
       )}
-      {!allAccess && (
+      {(!allAccess || showList) && (
         <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
             <p className="text-[11px] text-gray-500 max-w-lg">
@@ -693,6 +705,7 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
       </div>
 
       <ModuleAccessEditor
+        role={form.role}
         value={form.module_access}
         onChange={(val) => setForm({ ...form, module_access: val })}
       />

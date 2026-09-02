@@ -808,7 +808,16 @@ router.put('/:id', (req, res) => {
     return res.status(400).json({ error: 'area, type, performed_by and result are required' });
   }
 
+  // MOVING A RECORD'S DATE IS BACK-DATING, and it has to be marked the same way
+  // filing a back-dated one is. POST refuses anything more than a day back
+  // without a reason and stamps entered_late; this path used to accept any past
+  // date silently, so the honest correction — a check entered today under
+  // yesterday's date — produced a record that read as though it had been filed
+  // on the day. Back-dating is only safe when it is visible. One rule, both
+  // doors: an untouched date leaves the existing marking exactly as it is.
   let when = before.performed_at;
+  let late = before.entered_late;
+  let lateReason = before.late_entry_reason;
   if (b.performed_at !== undefined && b.performed_at !== null && String(b.performed_at).trim()) {
     const raw = /^\d{4}-\d{2}-\d{2}$/.test(b.performed_at) ? `${b.performed_at} 12:00:00` : String(b.performed_at);
     const parsed = new Date(raw.replace(' ', 'T'));
@@ -816,7 +825,26 @@ router.put('/:id', (req, res) => {
     if (parsed.getTime() > Date.now() + 60000) {
       return res.status(400).json({ error: 'A clean cannot be recorded for a future date.' });
     }
+    if (raw !== String(before.performed_at || '')) {
+      const daysBack = (Date.now() - parsed.getTime()) / 86400000;
+      const reason = String(b.late_entry_reason ?? before.late_entry_reason ?? '').trim();
+      if (daysBack > 1) {
+        if (!reason) {
+          return res.status(400).json({ error: 'Moving this record to a previous day needs a reason — say why it is being entered now.' });
+        }
+        late = 1;
+        lateReason = reason;
+      } else {
+        // Moved back onto today or yesterday: no longer a late entry, and a
+        // reason left over from the old date would describe a date that moved.
+        late = 0;
+        lateReason = b.late_entry_reason === undefined ? null : (reason || null);
+      }
+    }
     when = raw;
+  } else if (b.late_entry_reason !== undefined && before.entered_late) {
+    // Correcting the wording of an existing late-entry reason, date untouched.
+    lateReason = String(b.late_entry_reason || '').trim() || before.late_entry_reason;
   }
 
   // A correction is graded the same way a filing is, or the limit could be
@@ -829,7 +857,8 @@ router.put('/:id', (req, res) => {
 
   db.prepare(`UPDATE sanitation_records SET area = ?, type = ?, equipment_id = ?, performed_by = ?,
       chemicals_used = ?, concentration = ?, contact_time_minutes = ?, rinse_verified = ?, result = ?,
-      atp_reading = ?, atp_limit = ?, notes = ?, chemical_id = ?, record_group = ?, performed_at = ?
+      atp_reading = ?, atp_limit = ?, notes = ?, chemical_id = ?, record_group = ?, performed_at = ?,
+      entered_late = ?, late_entry_reason = ?
     WHERE id = ?`)
     .run(area, pick('type', before.type), pick('equipment_id', before.equipment_id) || null,
       pick('performed_by', before.performed_by),
@@ -843,7 +872,7 @@ router.put('/:id', (req, res) => {
       pick('chemical_id', before.chemical_id) || null,
       // The group follows the area — moving a record between the Sanitation
       // and QA Inspections lists is a consequence of what it IS, not a field.
-      recordGroupFor(area), when, before.id);
+      recordGroupFor(area), when, late ? 1 : 0, lateReason || null, before.id);
 
   const after = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(before.id);
   logAudit(req.user, 'update', 'sanitation_record', before.id, null, before, after, area);
