@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
-import { useApiGet, apiPut } from '../../hooks/useApi';
+import { useApiGet, apiPut, apiPost } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Search, Pause, Play, Save, X, CalendarClock, AlertTriangle } from 'lucide-react';
+import { Search, Pause, Play, Save, X, CalendarClock, AlertTriangle, CalendarPlus } from 'lucide-react';
 
 // The recurring schedules that generate work.
 //
@@ -114,6 +114,7 @@ export default function PMSchedulesPanel() {
   const { user } = useAuth() || {};
   const canEdit = user?.role === 'admin' || user?.role === 'supervisor';
   const [showPaused, setShowPaused] = useState(true);
+  const [raised, setRaised] = useState('');
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState(null);
   const [busyId, setBusyId] = useState(null);
@@ -152,6 +153,29 @@ export default function PMSchedulesPanel() {
     finally { setBusyId(null); }
   };
 
+  // A schedule can end up owing a day no task: a completion back-dated to an
+  // earlier day used to advance the schedule past the day it did not cover, and
+  // POST /pm/generate skips any schedule that already has a live task — so one
+  // whose next task sits in the future looks healthy while the floor has
+  // nothing to complete. This is the only way to fill that gap, and it belongs
+  // here because this is the screen where somebody notices it.
+  const raiseToday = async (s) => {
+    const today = new Date().toLocaleDateString('en-CA');
+    const when = window.prompt(
+      `Raise a task for “${s.title}”.\n\nWhich day is it for? (YYYY-MM-DD)`, today);
+    if (!when) return;
+    setBusyId(s.id);
+    try {
+      const r = await apiPost(`/pm/schedules/${s.id}/raise`, { due_date: when.trim() });
+      setRaised(r?.existing
+        ? `${s.title}: a task for ${when.trim()} was already open — nothing new was raised.`
+        : `${s.title}: task raised for ${when.trim()}.`);
+      refresh();
+    } catch (err) {
+      setRaised(err?.message || 'That task could not be raised.');
+    } finally { setBusyId(null); }
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -161,6 +185,13 @@ export default function PMSchedulesPanel() {
           already open alone.
         </p>
       </div>
+
+      {raised && (
+        <div className="bg-powder-50 border border-powder-200 rounded-xl p-3 flex items-start justify-between gap-3">
+          <p className="text-sm text-powder-900">{raised}</p>
+          <button type="button" onClick={() => setRaised('')} className="text-powder-700 shrink-0"><X size={14} /></button>
+        </div>
+      )}
 
       {orphaned > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
@@ -234,6 +265,13 @@ export default function PMSchedulesPanel() {
                       <>
                         <button type="button" onClick={() => setEditing(s.id)}
                           className="px-2 py-1 text-xs font-medium text-powder-700 hover:underline">Edit</button>
+                        {s.is_active && (
+                          <button type="button" onClick={() => raiseToday(s)} disabled={busyId === s.id}
+                            title="Raise the task for a day this schedule owes"
+                            className="px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 inline-flex items-center gap-1">
+                            <CalendarPlus size={12} /> Raise task
+                          </button>
+                        )}
                         <button type="button" onClick={() => togglePause(s)} disabled={busyId === s.id}
                           className="px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 inline-flex items-center gap-1">
                           {s.is_active ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Resume</>}

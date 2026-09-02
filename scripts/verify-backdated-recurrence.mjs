@@ -117,5 +117,28 @@ console.log('\nNever two live tasks for one schedule on one day');
     `${liveFor('bd-dup', TODAY).length} tasks`);
 }
 
+console.log('\nRaising the task a schedule owes for a day');
+{
+  const today = new Date().toLocaleDateString('en-CA');
+  // bd-plain completed normally above, so its only live task is tomorrow's —
+  // exactly the shape that leaves a day with nothing and looks healthy.
+  t('no task for today on that schedule', liveFor('bd-plain', today).length === 0);
+  const r = await post('/pm/schedules/bd-plain/raise', { due_date: today });
+  const b = await J(r);
+  t('the task is raised', r.status === 201 && b?.existing === false, `got ${r.status}`);
+  t('and the floor now has one for today', liveFor('bd-plain', today).length === 1);
+
+  const again = await J(await post('/pm/schedules/bd-plain/raise', { due_date: today }));
+  t('pressing it twice raises nothing new', again?.existing === true);
+  t('still exactly one task', liveFor('bd-plain', today).length === 1);
+
+  const bad = await post('/pm/schedules/bd-plain/raise', { due_date: 'tuesday' });
+  t('an unreadable date is refused', bad.status === 400, `got ${bad.status}`);
+  const far = await post('/pm/schedules/bd-plain/raise', { due_date: day(60) });
+  t('a date months out is refused — that is the schedule\'s job', far.status === 400, `got ${far.status}`);
+  const missing = await post('/pm/schedules/nope/raise', { due_date: today });
+  t('an unknown schedule 404s', missing.status === 404, `got ${missing.status}`);
+}
+
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

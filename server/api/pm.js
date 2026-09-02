@@ -585,6 +585,62 @@ router.post('/schedules', (req, res) => {
   res.status(201).json(created);
 });
 
+// RAISE THE TASK A SCHEDULE OWES FOR A GIVEN DAY.
+//
+// Nothing else in the app can do this, which is how a day ended up with no
+// task at all. A back-dated completion advanced the schedule past the day it
+// did not cover (fixed in createNextWorkOrder, but only for completions made
+// AFTER that shipped), and `POST /pm/generate` skips any schedule that already
+// has a live task — so a schedule whose next task sits in the future looks
+// perfectly healthy while yesterday has nothing to complete.
+//
+// Deliberately a DELIBERATE ACT, not a generator: raising work on a compliance
+// schedule is a decision, it is audited, and it is offered on the Recurring
+// Schedules screen, which is where somebody notices the gap. A repair that
+// lives somewhere other than where the problem is seen is a repair nobody runs.
+router.post('/schedules/:id/raise', (req, res) => {
+  // Same ladder as snoozing a task — supervisor, QA or admin. Written inline
+  // rather than with requireRole because that is what every other decision
+  // route in this file does, and a second idiom here is one more thing to read.
+  const canRaise = req.user?.role === 'admin' || req.user?.role === 'supervisor' || req.user?.department === 'qa';
+  if (!canRaise) return res.status(403).json({ error: 'Raising a scheduled task is a supervisor/QA/admin action.' });
+
+  const db = getDb();
+  const sched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
+  if (!sched) return res.status(404).json({ error: 'Schedule not found' });
+  if (!sched.is_active) return res.status(400).json({ error: 'That schedule is paused. Resume it first.' });
+
+  const raw = String(req.body?.due_date || '').trim() || new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return res.status(400).json({ error: 'A due date of the form YYYY-MM-DD is required.' });
+  const parsed = new Date(`${raw}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return res.status(400).json({ error: 'That date could not be read.' });
+  // Far-future work is what the schedule itself is for; this exists to fill a
+  // gap that has already happened.
+  if (parsed.getTime() > Date.now() + 31 * 86400000) {
+    return res.status(400).json({ error: 'That date is more than a month out — let the schedule raise it.' });
+  }
+
+  // One live task per schedule per day, the same rule createNextWorkOrder
+  // applies. Pressing the button twice must not put two cards on the floor.
+  const dup = db.prepare(`SELECT id, title, due_date, status FROM work_orders
+     WHERE pm_schedule_id = ? AND due_date = ? AND status IN ('open','in_progress','missed','overdue')
+     LIMIT 1`).get(sched.id, raw);
+  if (dup) return res.json({ work_order: dup, existing: true });
+
+  const woId = uuid();
+  db.prepare(`INSERT INTO work_orders
+      (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status, assigned_to)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)`)
+    .run(woId, sched.id, sched.equipment_id, sched.title, raw, sched.procedure_steps,
+      sched.task_group || 'warehouse', sched.assigned_to || null);
+  logAudit(req.user, 'raise_task', 'work_order', woId,
+    { pm_schedule_id: sched.id, due_date: raw, reason: String(req.body?.reason || '').trim() || null },
+    null, null, sched.title);
+
+  const created = db.prepare('SELECT id, title, due_date, status FROM work_orders WHERE id = ?').get(woId);
+  res.status(201).json({ work_order: created, existing: false });
+});
+
 router.put('/schedules/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
