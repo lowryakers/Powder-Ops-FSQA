@@ -15,6 +15,7 @@ import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
 import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
 import { pmCompletion } from '../pm-completion.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
+import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
@@ -112,7 +113,19 @@ export function resolveBackdate(performedOn, reason) {
   return { when: raw, late: daysBack > 1 ? 1 : 0, reason: daysBack > 1 ? String(reason).trim() : null };
 }
 
-function fileQaInspectionRecord(db, { area, wo, readings, stepResults, result, notes, by, workOrderId, backdate }) {
+function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, result, notes, by, workOrderId, backdate }) {
+  // ONE DEFINITION OF WHAT AN AREA IS, and this path used to skip it. Filing a
+  // record by hand goes through canonicalArea(); completing a TASK wrote
+  // recordAreaForTask()'s output straight into the column — so a completed
+  // restroom clean filed under "Restroom" while the picker offered
+  // "Restrooms", and one area sat in the log under two spellings. That is
+  // exactly the defect sanitation-areas.js was written to end, surviving in
+  // the one path that never called it.
+  //
+  // `|| rawArea` is the important half: canonicalArea returns NULL for anything
+  // it does not recognise, and an unrecognised area is left exactly as filed
+  // rather than guessed at — the same line the manual path uses.
+  const area = canonicalArea(rawArea) || rawArea;
   const r = readings || {};
   const ticks = Array.isArray(stepResults) ? stepResults.filter(s => s && (s.done ?? s.checked ?? s === true)).length : 0;
   const detail = [

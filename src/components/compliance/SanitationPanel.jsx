@@ -270,13 +270,30 @@ function SanitationDetail({ record, onClose, onEdit, onRevoke }) {
                 <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${RESULT_COLORS[record.result]}`}>{record.result.toUpperCase()}</span>
               </p>
             </div>
+            {/* TWO DIFFERENT FACTS, and this label used to name the wrong one.
+                `rinse_verified` is a step in the cleaning procedure — was the
+                surface rinsed — and it was rendered as "QA Verified", so a
+                record Maria had counter-signed read "QA Verified: No" directly
+                beside "Verified By: Maria Servin". QA verification has exactly
+                one owner, `verified_by`, and the line below is derived from it
+                so the two can never disagree again. */}
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">QA Verified</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Rinse Verified</p>
               <p className="text-sm font-semibold text-gray-900 flex items-center gap-1">
                 {record.rinse_verified ? (
                   <><Check size={14} className="text-green-600" /> Yes</>
                 ) : (
-                  <><XCircle size={14} className="text-red-500" /> No</>
+                  <span className="text-gray-500">—</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">QA Verified</p>
+              <p className="text-sm font-semibold flex items-center gap-1">
+                {record.verified_by ? (
+                  <span className="text-green-700 flex items-center gap-1"><CheckCircle size={14} /> Yes</span>
+                ) : (
+                  <span className="text-gray-500 flex items-center gap-1"><XCircle size={14} className="text-gray-400" /> Not yet</span>
                 )}
               </p>
             </div>
@@ -517,7 +534,11 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
       </div>
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={form.rinse_verified} onChange={e => setForm({ ...form, rinse_verified: e.target.checked })} />
-        <span className="text-sm text-gray-700">QA Verified</span>
+        {/* The FILER is answering a step of their own clean, not counter-signing
+            it. Labelled "QA Verified" this invited the person doing the work to
+            tick what reads as QA's sign-off; QA's signature is applied later,
+            by QA, through Verify. */}
+        <span className="text-sm text-gray-700">Rinse verified</span>
       </label>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>

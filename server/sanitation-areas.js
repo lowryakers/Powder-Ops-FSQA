@@ -38,9 +38,29 @@ const ZONES = [
   { value: 'QA Room', applicable: false },
 ];
 
+// AREAS THE APP FILES UNDER ITSELF, which the picker did not offer.
+//
+// Completing a chemical dilution check files `Chemical Verification`
+// (DILUTION_AREA in api/pm.js, and what all 464 imported dilution records
+// carry); completing a Production Line Pre-Op or a changeover clean files
+// `Production`. Both are written by the app and neither was in this list, so
+// the manual form could not file a record the task path files every day — and
+// a dilution mixed for the plant rather than for a room had nowhere to go at
+// all. The same trap as the retired rooms: a value the system stores must be
+// offered, or the picker and the log disagree about what an area is.
+//
+// `applicable: false` on both. Neither is a production ROOM, so the 72-hour
+// re-clean rule must not chase them — it joins areas to `production_entries.room`,
+// and a phantom "Chemical Verification" room would read as permanently overdue.
+const SYSTEM_AREAS = [
+  { value: 'Chemical Verification', applicable: false },
+  { value: 'Production', applicable: false },
+];
+
 export const SANITATION_AREAS = [
   ...ROOMS.map(value => ({ value, label: areaLabel(value), applicable: true })),
   ...ZONES.map(z => ({ ...z, label: areaLabel(z.value) })),
+  ...SYSTEM_AREAS.map(z => ({ ...z, label: areaLabel(z.value) })),
 ];
 
 // Areas that default OFF for the 72-hour rule, as canonical values. Read by
