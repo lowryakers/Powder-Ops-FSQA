@@ -1,0 +1,219 @@
+<title>Pre-Spine Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#F4F6F8; --surface:#FFFFFF; --surface-2:#FAFBFC;
+  --ink:#141C24; --ink-2:#53616F; --ink-3:#7E8C99;
+  --rule:#D6DDE4; --rule-2:#E7ECF1;
+  --accent:#17546E; --accent-soft:#E4EDF2; --accent-line:#9EC0CF;
+  --flag:#963A22; --flag-soft:#F8EAE5; --flag-line:#DCA791;
+  --warn:#8A5A12; --warn-soft:#FBF1DF;
+  --done:#1C6B4C; --done-soft:#E4F0EA;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#11171D; --surface:#19212A; --surface-2:#1E2731; --ink:#E6ECF1; --ink-2:#9BAAB8; --ink-3:#71808E;
+  --rule:#2B3641; --rule-2:#232D37; --accent:#69AEC9; --accent-soft:#1B2C36; --accent-line:#33566A;
+  --flag:#E39B82; --flag-soft:#2E1F1A; --flag-line:#6B4234; --warn:#D9A65A; --warn-soft:#2C2416; --done:#63C295; --done-soft:#17281F;}}
+:root[data-theme="dark"]{
+  --paper:#11171D; --surface:#19212A; --surface-2:#1E2731; --ink:#E6ECF1; --ink-2:#9BAAB8; --ink-3:#71808E;
+  --rule:#2B3641; --rule-2:#232D37; --accent:#69AEC9; --accent-soft:#1B2C36; --accent-line:#33566A;
+  --flag:#E39B82; --flag-soft:#2E1F1A; --flag-line:#6B4234; --warn:#D9A65A; --warn-soft:#2C2416; --done:#63C295; --done-soft:#17281F;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:54rem;margin:0 auto;padding:0 1.25rem 5rem}
+header.mast{padding:3rem 0 1.75rem;border-bottom:2px solid var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:.72rem;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 .8rem}
+h1{font-size:clamp(2rem,6vw,2.7rem);line-height:1.08;font-weight:700;letter-spacing:-.022em;margin:0 0 .85rem;text-wrap:balance}
+.standfirst{font-size:1.05rem;color:var(--ink-2);margin:0;max-width:40rem}
+.meta{margin-top:1.4rem;display:flex;flex-wrap:wrap;gap:.4rem 1.6rem;font-family:var(--mono);font-size:.76rem;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:500}
+h2{font-size:1.28rem;font-weight:600;letter-spacing:-.012em;margin:0 0 .35rem;text-wrap:balance}
+h3{font-size:1rem;font-weight:600;margin:0 0 .3rem}
+p{margin:0 0 .8rem}
+section{margin-top:3rem}
+.sec-head{display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;padding-bottom:.6rem;border-bottom:1px solid var(--rule);margin-bottom:1.1rem}
+.tag{font-family:var(--mono);font-size:.7rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--surface);background:var(--accent);padding:.2rem .5rem;border-radius:3px}
+.sec-note{font-size:.92rem;color:var(--ink-2);margin:0}
+code,.mono{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);color:var(--ink);padding:.08em .35em;border-radius:3px;word-break:break-word}
+
+/* class grid */
+.classes{display:grid;grid-template-columns:repeat(auto-fill,minmax(11.5rem,1fr));gap:.7rem}
+.cls{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:.75rem .85rem;display:grid;grid-template-columns:auto 1fr;gap:.15rem .7rem;align-items:baseline}
+.cls .id{font-family:var(--mono);font-size:.78rem;font-weight:600;color:var(--accent);grid-row:1/3}
+.cls .n{font-family:var(--mono);font-size:1.35rem;font-weight:600;color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}
+.cls .lbl{font-size:.8rem;color:var(--ink-2);line-height:1.3}
+
+/* findings */
+.find{display:grid;grid-template-columns:auto 1fr;gap:0 .9rem;padding:1.1rem 0;border-bottom:1px solid var(--rule-2)}
+.find:last-child{border-bottom:none}
+.num{font-family:var(--mono);font-size:.78rem;font-weight:600;color:var(--ink-3);padding-top:.2rem;font-variant-numeric:tabular-nums;min-width:1.6rem}
+.find h3{display:flex;align-items:baseline;gap:.55rem;flex-wrap:wrap}
+.sev{font-family:var(--mono);font-size:.66rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:.15rem .45rem;border-radius:3px}
+.sev.crit{background:var(--flag-soft);color:var(--flag);border:1px solid var(--flag-line)}
+.sev.high{background:var(--warn-soft);color:var(--warn)}
+.find p{font-size:.94rem;color:var(--ink-2);margin:0 0 .35rem}
+.find .where{font-family:var(--mono);font-size:.76rem;color:var(--ink-3)}
+
+/* decisions */
+.dec{border-left:3px solid var(--accent-line);padding:.2rem 0 .2rem 1rem;margin:0 0 1.25rem}
+.dec h3{color:var(--ink)}
+.dec p{font-size:.94rem;color:var(--ink-2)}
+.dec .yes{color:var(--done);font-weight:600}
+.trap{border-left:3px solid var(--flag-line);background:var(--flag-soft);padding:.7rem .9rem;border-radius:0 4px 4px 0;font-size:.92rem;color:var(--ink-2);margin:1rem 0 0}
+.trap b{color:var(--flag)}
+
+/* order */
+ol.order{padding-left:1.25rem;margin:0;font-size:.95rem;color:var(--ink-2)}
+ol.order li{margin-bottom:.5rem}
+ol.order b{color:var(--ink);font-weight:600}
+.docs{margin-top:1.4rem;display:grid;gap:.5rem;font-size:.9rem;color:var(--ink-2)}
+footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-family:var(--mono);font-size:.74rem;color:var(--ink-3)}
+.scroller{overflow-x:auto}
+</style>
+
+<div class="wrap">
+<header class="mast">
+  <p class="eyebrow">Powder Ops · ReadyDoc · before the single-spine push</p>
+  <h1>Pre-Spine Review</h1>
+  <p class="standfirst">Every bug found this week was one of eight shapes. Each shape was swept across the whole codebase to find its siblings. 64 verified findings, every one with a file and line — nothing here is a hunch, and nothing here is fixed yet.</p>
+  <div class="meta">
+    <span><b>Verified against</b> main @ 320af18</span>
+    <span><b>Date</b> 2 September 2026</span>
+    <span><b>Full register</b> docs/v2/queued/pre-spine-review.md</span>
+  </div>
+</header>
+
+<section>
+  <div class="sec-head"><span class="tag">The eight shapes</span><h2>Reviewed by class, not by module</h2></div>
+  <p class="sec-note">A module review finds what the reviewer happens to notice. A class review finds what the last bug predicts.</p>
+  <div class="classes" style="margin-top:1rem">
+    <div class="cls"><span class="id">A</span><span class="n">3</span><span class="lbl">One label, wrong column</span></div>
+    <div class="cls"><span class="id">B</span><span class="n">7</span><span class="lbl">Picker can't offer a stored value</span></div>
+    <div class="cls"><span class="id">C</span><span class="n">9</span><span class="lbl">One nullable column, two readings</span></div>
+    <div class="cls"><span class="id">D</span><span class="n">9</span><span class="lbl">Write path skips the one definition</span></div>
+    <div class="cls"><span class="id">E</span><span class="n">5</span><span class="lbl">Date computed from <em>now</em></span></div>
+    <div class="cls"><span class="id">F</span><span class="n">10</span><span class="lbl">Vacuous truth on an empty set</span></div>
+    <div class="cls"><span class="id">G</span><span class="n">16</span><span class="lbl">Mirror written directly</span></div>
+    <div class="cls"><span class="id">H</span><span class="n">15</span><span class="lbl">Wide table, no phone cards</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="tag">Fix first</span><h2>The ones that change what a record or a signature <em>is</em></h2></div>
+
+  <div class="find"><span class="num">01</span><div>
+    <h3><span class="sev crit">record</span>The ATP reading taken on a task is never graded</h3>
+    <p>The Operator View captures an RLU reading on Production Line Pre-Op and changeover cleans with the live limit hint beside it. The function that files the record from the completed task never imports the grading module — the number goes into the work order's JSON, never into the sanitation record, no limit is stored. A 200 RLU swab files as whatever the visual answer was. <b>OBL-01 read "landed"; it is landed for the manual form door only. Split into OBL-32.</b></p>
+    <span class="where">server/api/pm.js (zero references to atp) · OperatorView.jsx:774</span>
+  </div></div>
+
+  <div class="find"><span class="num">02</span><div>
+    <h3><span class="sev crit">signature</span>The Deviations screen's Approve button skips the signature password</h3>
+    <p>QA Review asks for the password before signing a deviation. The module's own Approve button on the identical record does not — it writes the approval inline, and it will silently overwrite an existing signature with a different name. One definition, four doors; this is a fifth door with no lock.</p>
+    <span class="where">server/api/qms.js POST /:type/:id/approve</span>
+  </div></div>
+
+  <div class="find"><span class="num">03</span><div>
+    <h3><span class="sev crit">access</span>An account with no modules assigned can write QMS records</h3>
+    <p>The Settings bug from earlier this week, still live on the server: a NULL module map passes the QMS write check. Every other module reads NULL as <em>nothing</em>. And <code>/api/qms</code> is mounted outside the shared guard, so this line is the only gate.</p>
+    <span class="where">server/api/qms.js:101 · server.js:1855</span>
+  </div></div>
+
+  <div class="find"><span class="num">04</span><div>
+    <h3><span class="sev crit">record</span>A third way to complete a task files no record</h3>
+    <p>Setting a work order's status to completed through the plain edit route closes it without filing the QA or cleaning record, without the back-date rule, and without the food-contact step gate. The code comment names this exact defect for the batch path — and a third path was left uncovered.</p>
+    <span class="where">server/api/pm.js:767 PUT /work-orders/:id</span>
+  </div></div>
+
+  <div class="find"><span class="num">05</span><div>
+    <h3><span class="sev crit">record</span>An empty scale form grades as PASS with zero readings</h3>
+    <p>Both completeness and result use <code>.every()</code>, which is true on an empty array. Reachable: a controlled-change snapshot with an empty points list is applied without complaint.</p>
+    <span class="where">server/scale-forms.js:211 · controlled.js:88</span>
+  </div></div>
+
+  <div class="find"><span class="num">06</span><div>
+    <h3><span class="sev high">floor</span>Returning your own knife leaves it "issued" forever</h3>
+    <p>The documented lockout — "an operator at the scanner could not sign out a knife physically on the rack" — re-introduced through the Checked Out panel's self-return, which never moves the master row. Bulk delete and CSV import skip the sync too.</p>
+    <span class="where">server/api/qms.js:303</span>
+  </div></div>
+
+  <div class="find"><span class="num">07</span><div>
+    <h3><span class="sev high">record</span>A production amendment can contradict its own MO lines</h3>
+    <p>Product, MO, lot, room and times are directly patchable on amend, and the patch outranks line 0 — so a QA-signed shift record can permanently disagree with itself. Room and shift window are never re-derived when the lines change.</p>
+    <span class="where">server/api/production.js:876, :951</span>
+  </div></div>
+
+  <div class="find"><span class="num">08</span><div>
+    <h3><span class="sev high">registry</span>Editing a withdrawn SOP silently returns it to Draft</h3>
+    <p>The status dropdown filters out "No longer in use". Open a retired document to fix a typo, save, and the browser has picked the first option — Draft — putting it back in the active registry.</p>
+    <span class="where">DocumentRegistry.jsx:273</span>
+  </div></div>
+
+  <div class="find"><span class="num">09</span><div>
+    <h3><span class="sev high">dates</span>The schedule-from-now bug, three more times</h3>
+    <p>Checklists lose the days between a late completion and today (the helper already takes a from-date; nobody passes it). Document review stamps today with the back-date sitting eight lines away, and recomputes the anniversary from now so reviewing on the day the task appears drags it 30 days earlier every cycle. Supplier annual review has the same ratchet.</p>
+    <span class="where">checklists.js:170,192 · documents.js:56 · suppliers.js:404</span>
+  </div></div>
+
+  <div class="find"><span class="num">10</span><div>
+    <h3><span class="sev high">auditor</span>The Auditor View's training table shows no names</h3>
+    <p>It reads two columns that don't exist on training records. Every person renders as "—" on screen and the exported CSV ships a blank Person column — on the screen built to hand records to an auditor.</p>
+    <span class="where">AuditorView.jsx:247, :267</span>
+  </div></div>
+
+  <div class="find"><span class="num">11</span><div>
+    <h3><span class="sev high">tests</span>Ten test assertions pass with the feature broken</h3>
+    <p>Two are literally <code>t('nothing was written', true)</code>. One is the exact <code>Object.keys({}).every()</code> bug, in a test. This class is why the others went unnoticed — it goes early in the order so every later fix gets a real control.</p>
+    <span class="where">scripts/ — F4 to F10 in the register</span>
+  </div></div>
+
+  <div class="find"><span class="num">12</span><div>
+    <h3><span class="sev high">phone</span>Five screens clip columns off the edge of the phone</h3>
+    <p>The page body hides horizontal overflow, so a wide table without a scroller doesn't pan — it <em>clips</em>. The COA lot-check's Status column is one of the unreachable ones. 29 logs already have cards; ten floor-facing ones don't.</p>
+    <span class="where">COAPanel.jsx:167,321,997 · TrainingPanel.jsx:1511 · RetentionSamplesPanel.jsx:454</span>
+  </div></div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="tag">Form 602-01</span><h2>Three decisions, one trap</h2></div>
+
+  <div class="dec">
+    <h3>1 · P/F against a written spec — <span class="yes">not</span> a 1–5</h3>
+    <p>The V2 form has no scale. Keep it that way: a scale with no spec is an opinion, a scale with one is redundant, graders can't be calibrated without reference samples, and P/F is what an auditor can check and what releases product. The simple form: each attribute shows the spec in plain words, two buttons — <b>Matches</b> / <b>Doesn't match</b> — a note required only on a fail. Five taps for a pass.</p>
+  </div>
+  <div class="dec">
+    <h3>2 · The spec is per product, and <span class="yes">the first test writes it</span></h3>
+    <p>No finished-goods spec exists today. Rather than an authoring project across 118 SKUs: a product tested with nothing on file has its draft spec written by that test, approved once by a QA lead, then locked and read-only. Top SKUs get specs first because they get tested first. No cutover — it's per product. The record stores the spec it was graded against, the same way an ATP record carries its limit. This shape already exists for raw materials in <code>form-607-specs.json</code>.</p>
+  </div>
+  <div class="dec">
+    <h3>3 · The Flavor Approval adopts the same five attributes and P/F</h3>
+    <p>So the organoleptic record it files stays a copy, not a mapping. A new flavour's approval drafts its spec. The texted approval page shows five P/F results plus the batch adjustment; the approver decides. <b>"Overall" goes</b> — it was always the approver's job. This is a second controlled document, so it's raised for Document Control, not decided here.</p>
+  </div>
+  <div class="trap"><b>The trap that fires on deploy.</b> The controlled-change gate snapshots the field list only. The deploy that introduces V2 parks both forms at V1 while the pass/fail math, the shared shape, both syncs and the client switch immediately — half the app grading V2 under a V1 form. Eight second copies of the five-key shape exist outside the shared definition; the most dangerous fails to five nulls on the public approval page. Full map in <code>docs/v2/queued/organoleptic-v2.md</code>.</div>
+</section>
+
+<section>
+  <div class="sec-head"><span class="tag">Order</span><h2>What I'd do, in sequence</h2></div>
+  <ol class="order">
+    <li><b>01–05.</b> The five that change what a compliance record or a signature is. Each is small. 01 also splits OBL-01.</li>
+    <li><b>06–10.</b> Wrong on a filed record or on the auditor's screen.</li>
+    <li><b>11, the test assertions.</b> Before building anything else, so every later fix gets a real control.</li>
+    <li><b>The managed-list dropdowns.</b> One guard on the shared select component fixes seven screens.</li>
+    <li><b>12, the five clipped screens</b>, then the ten floor-facing wide tables through the existing card pattern.</li>
+    <li><b>The remaining C, D and G items</b> in register order.</li>
+    <li><b>602-01 V2</b> as its own project, in the order the design doc gives — spec table, then a shape check written against V1, then the migration as one gated unit.</li>
+  </ol>
+  <p style="font-size:.92rem;color:var(--ink-2);margin-top:1rem">Every fix carries a check that fails on the old code. The control is the deliverable, not the patch.</p>
+  <div class="docs">
+    <span><b>Register, all 64:</b> <code>docs/v2/queued/pre-spine-review.md</code></span>
+    <span><b>602-01 design + dependency map:</b> <code>docs/v2/queued/organoleptic-v2.md</code></span>
+    <span><b>Decision record:</b> D-049 in <code>docs/v2/decisions.md</code></span>
+  </div>
+</section>
+
+<footer>Powder Ops FSQA · pre-spine review · verified against main @ 320af18 · 2 September 2026</footer>
+</div>

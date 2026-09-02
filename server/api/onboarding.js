@@ -18,6 +18,7 @@ import { randomUUID as uuid, randomBytes, createHash } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { hasExplicitGrant } from '../module-access.js';
 import { parseJson } from '../custom-fields.js';
+import { uniqueUsername } from '../usernames.js';
 import { readyDocOrigin } from '../links.js';
 import { cryptoEnabled, encryptField, decryptField, last4 } from '../onboarding-crypto.js';
 import { adpEnabled, submitApplicantOnboard } from '../adp.js';
@@ -185,8 +186,15 @@ router.post('/:id/complete', (req, res) => {
     if (existing) userId = existing.id;
     else {
       userId = uuid();
-      db.prepare(`INSERT INTO users (id, name, role, department, is_active) VALUES (?, ?, 'operator', ?, 1)`)
-        .run(userId, name, rec.department || 'production');
+      // THE SIGN-IN NAME IS SET HERE, not left for the boot-time backfill.
+      // Every other account-creation path (users.js POST and bulk, the Slack
+      // importer, auditor passes) derives a username at creation;
+      // this one did not, so a new starter onboarded through their own welcome
+      // link had `username NULL` and could not sign in until the next process
+      // restart happened to run backfillUsernames(). Found by the mirror sweep
+      // the week this module was folded onto main.
+      db.prepare(`INSERT INTO users (id, name, username, role, department, is_active) VALUES (?, ?, ?, 'operator', ?, 1)`)
+        .run(userId, name, uniqueUsername(db, name, null), rec.department || 'production');
       logAudit(req.user, 'create', 'user', userId, { from_onboarding: rec.id }, null, null, name);
     }
   }

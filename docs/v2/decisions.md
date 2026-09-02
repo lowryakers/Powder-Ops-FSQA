@@ -1527,3 +1527,34 @@ portal answering with no session, a bad token 404ing, and ADP degrading.
 is no self-serve API key on the RUN plan. Someone has to register a developer account at
 developers.adp.com and an application as a data connector. `docs/adp-run-onboarding.md` is the
 step-by-step. Until then the module works end to end and the ADP submission 503s.
+
+## D-049 — Review by class of defect before the spine push; 602-01 goes P/F against a per-product spec
+
+**2 September 2026.** Every bug this week was one of six shapes — one label on the wrong column, a picker
+that cannot offer a stored value, a nullable column read two ways, a write path that skips the one
+definition, a date computed from *now*, and vacuous truth on an empty collection — plus the recurring
+mirror defect and the mobile card pattern. Each shape had siblings nobody had looked for. So the review
+is **by class, not by module**: a class predicts its other instances, a module review finds what the
+reviewer happens to notice. The register is `docs/v2/queued/pre-spine-review.md`: 64 verified findings,
+every one with a `file:line`, ordered so the five that change what a compliance record *is* go first.
+
+**OBL-01 is split** (OBL-32). ATP grading landed on the Sanitation form door and never on the task door —
+`server/api/pm.js` has no reference to `atp` while the Operator View captures the reading. The rule from
+OBL-01/OBL-27 applies to itself: an obligation half-discharged and marked done is worse than one open.
+
+**Three decisions on FORM 602-01 V2** (`docs/v2/queued/organoleptic-v2.md`):
+1. **P/F against a written spec, not a 1–5.** The plant offered to change the form to a scale instead;
+   declined, because a scale with no spec is an opinion, a scale with one is redundant, graders cannot be
+   calibrated without reference samples, and P/F is what an auditor can check and what releases product.
+2. **The spec is per product and the first test writes it.** No finished-goods organoleptic spec exists;
+   rather than an authoring project across 118 SKUs, a product tested with nothing on file has its draft
+   spec written by that test, approved once by a QA lead, then locked. `form-607-specs.json` already holds
+   exactly this shape for raw materials.
+3. **The Flavor Approval adopts the same five attributes and P/F** so `syncFlavorOrganoleptic` remains a
+   copy and not a mapping; a new flavour's approval drafts its spec. "Overall" goes — it was the approver's
+   job. Raised for Document Control; not decided here.
+
+**The trap recorded so it is not walked into:** `controlled.js` snapshots `{fields, logColumns, formCode}`
+only. The deploy that introduces V2 parks both forms at V1 while `passFail`, `shared/sensory.js`, the syncs
+and the client switch immediately. Eight second copies of the five-key shape exist outside
+`shared/sensory.js`; the most dangerous fails to five nulls on the public approval page.

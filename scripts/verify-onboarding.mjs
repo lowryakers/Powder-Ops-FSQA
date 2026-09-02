@@ -104,6 +104,27 @@ console.log('\nAn operator with no grant gets nothing');
   t('the module guard refuses them', r.status === 403 || r.status === 401, `got ${r.status}`);
 }
 
+console.log('\nCompleting with create_account produces an account that can SIGN IN');
+{
+  // The onboarding is only completable once the hire has finished; drive it
+  // through the portal the way a new starter would.
+  const tok = String(link).split('/').pop();
+  await fetch(`${B}/onboarding-portal/${tok}/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const r = await post(`/onboarding/${rec.id}/complete`, { create_account: true });
+  const b = await J(r);
+  t('complete with create_account is accepted', r.ok, `got ${r.status} ${JSON.stringify(b || {}).slice(0, 80)}`);
+  const d = new Database(process.env.DBPATH, { readonly: true });
+  const u = d.prepare("SELECT id, name, username FROM users WHERE name = 'Test Hire'").get();
+  d.close();
+  t('an account was created', !!u, 'no users row named Test Hire');
+  // THE FINDING: this was NULL until the next restart ran backfillUsernames(),
+  // so the new starter could not sign in on their first day.
+  t('and it has a username at creation, not after a restart', !!u?.username, `username=${u?.username}`);
+  const look = await J(await fetch(`${B}/users/lookup?q=${encodeURIComponent('Test Hi')}`));
+  const names = (Array.isArray(look) ? look : []).map(x => x.username || x.name);
+  t('the login type-ahead can find them', names.some(n => /test hire/i.test(String(n))), names.join('|'));
+}
+
 console.log('\nADP itself degrades gracefully, like storage and AI');
 {
   const r = await post(`/onboarding/${rec.id}/submit-adp`, {});

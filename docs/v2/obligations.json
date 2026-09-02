@@ -43,7 +43,7 @@
         "src/components/common/AtpLimitHint.jsx",
         "docs/v2/landed/atp-35-rlu.md"
       ],
-      "note": "LANDED on main 27 Aug 2026. server/atp-limits.js owns the 35 RLU, registered with controlled.js so the number cannot be edited in the app; grading is asymmetric (an over-limit reading forces fail, an in-limit one never upgrades what the filer chose); the limit is stored on the record it graded (sanitation_records.atp_limit). Two consecutive failed swabs raise the re-clean work order — the plant's rule, because one high reading can be the swab rather than the line. Closing that task also had to be fixed: closeRecleanTasksFor matched the 72-hour task by exact title, so a passing clean left the ATP task open. AtpLimitHint gives the operator live EN/ES feedback and enforces nothing. Verified on a fresh DB: 24 unit assertions and seven end-to-end scenarios. SQF-06 (validating the number itself) moved to OBL-27; SQF-09 (naming the test method) moved to OBL-15, where the plan is reissued — neither is something software can discharge."
+      "note": "LANDED on main 27 Aug 2026. server/atp-limits.js owns the 35 RLU, registered with controlled.js so the number cannot be edited in the app; grading is asymmetric (an over-limit reading forces fail, an in-limit one never upgrades what the filer chose); the limit is stored on the record it graded (sanitation_records.atp_limit). Two consecutive failed swabs raise the re-clean work order — the plant's rule, because one high reading can be the swab rather than the line. Closing that task also had to be fixed: closeRecleanTasksFor matched the 72-hour task by exact title, so a passing clean left the ATP task open. AtpLimitHint gives the operator live EN/ES feedback and enforces nothing. Verified on a fresh DB: 24 unit assertions and seven end-to-end scenarios. SQF-06 (validating the number itself) moved to OBL-27; SQF-09 (naming the test method) moved to OBL-15, where the plan is reissued — neither is something software can discharge. LANDED FOR THE SANITATION FORM DOOR ONLY: POST /sanitation and PUT /sanitation/:id grade. The TASK door does not — see OBL-32."
     },
     {
       "id": "OBL-02",
@@ -556,6 +556,18 @@
         "scripts/check-supplier-review.mjs"
       ],
       "note": "Split out of OBL-29 and LANDED on main 27 Aug 2026 as 8d16b97. SOP 404 § IV.B requires an annual review of each vendor; next_review_due had recorded when one was due since the register landed and nothing watched it. Raised from runPmHousekeeping beside generateRecleanTasks, 30 days ahead, high priority once overdue, carrying the SOP's own steps. Idempotence is (qualification, due date) via a supplier_qualification_id column on work_orders — the shape quality_schedule_id already uses — and the due date being part of the key is what makes next year's task a new one. Only the latest period per supplier can come due. 19 assertions."
+    },
+    {
+      "id": "OBL-32",
+      "title": "Grade the ATP reading taken on a TASK — the Operator View captures it and fileQaInspectionRecord never grades or stores it",
+      "bucket": "A",
+      "status": "open",
+      "owner": "platform",
+      "sources": [],
+      "artifacts": [
+        "docs/v2/queued/pre-spine-review.md"
+      ],
+      "note": "Split out of OBL-01 on 2026-09-02. server/api/pm.js has zero references to atp; OperatorView.jsx:774 captures readings.atp_reading with AtpLimitHint beside it, and the record filed from the completed task carries no atp_reading and no atp_limit. A 200 RLU swab on a Production Line Pre-Op files as whatever the visual answer was. An obligation half-discharged and marked done is worse than one still open."
     }
   ]
 }
