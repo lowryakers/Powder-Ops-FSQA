@@ -1,0 +1,548 @@
+<title>Document Set Changeover</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#F4F6F8; --surface:#FFFFFF; --surface-2:#FAFBFC;
+  --ink:#141C24; --ink-2:#53616F; --ink-3:#7E8C99;
+  --rule:#D6DDE4; --rule-2:#E7ECF1;
+  --accent:#17546E; --accent-soft:#E4EDF2; --accent-line:#9EC0CF;
+  --flag:#963A22; --flag-soft:#F8EAE5; --flag-line:#DCA791;
+  --done:#1C6B4C; --done-soft:#E4F0EA;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#11171D; --surface:#19212A; --surface-2:#1E2731;
+    --ink:#E6ECF1; --ink-2:#9BAAB8; --ink-3:#71808E;
+    --rule:#2B3641; --rule-2:#232D37;
+    --accent:#69AEC9; --accent-soft:#1B2C36; --accent-line:#33566A;
+    --flag:#E39B82; --flag-soft:#2E1F1A; --flag-line:#6B4234;
+    --done:#63C295; --done-soft:#17281F;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#11171D; --surface:#19212A; --surface-2:#1E2731;
+  --ink:#E6ECF1; --ink-2:#9BAAB8; --ink-3:#71808E;
+  --rule:#2B3641; --rule-2:#232D37;
+  --accent:#69AEC9; --accent-soft:#1B2C36; --accent-line:#33566A;
+  --flag:#E39B82; --flag-soft:#2E1F1A; --flag-line:#6B4234;
+  --done:#63C295; --done-soft:#17281F;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:50rem;margin:0 auto;padding:0 1.25rem 5rem}
+
+/* ---- sticky progress bar ---- */
+.bar{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--rule)}
+.bar-in{max-width:50rem;margin:0 auto;padding:.65rem 1.25rem;display:flex;align-items:center;gap:.9rem}
+.bar-label{font-family:var(--mono);font-size:.78rem;font-weight:500;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.bar-label b{color:var(--accent);font-weight:600}
+.track{flex:1;height:5px;background:var(--rule-2);border-radius:3px;overflow:hidden;min-width:60px}
+.fill{height:100%;width:0;background:var(--accent);border-radius:3px;transition:width .25s ease}
+.bar button{font:inherit;font-size:.78rem;color:var(--ink-3);background:none;border:none;padding:.2rem .35rem;cursor:pointer;border-radius:4px}
+.bar button:hover{color:var(--ink);background:var(--rule-2)}
+.bar button:focus-visible,.copy:focus-visible,.step input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---- masthead ---- */
+header.mast{padding:3rem 0 2rem;border-bottom:2px solid var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:.72rem;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 .8rem}
+h1{font-size:clamp(2rem,6vw,2.85rem);line-height:1.08;font-weight:700;letter-spacing:-.022em;margin:0 0 .85rem;text-wrap:balance}
+.standfirst{font-size:1.075rem;color:var(--ink-2);margin:0;max-width:38rem}
+.meta{margin-top:1.6rem;display:flex;flex-wrap:wrap;gap:.4rem 1.6rem;font-family:var(--mono);font-size:.76rem;color:var(--ink-3)}
+.meta span b{color:var(--ink-2);font-weight:500}
+
+h2{font-size:1.28rem;font-weight:600;letter-spacing:-.012em;margin:0 0 .3rem;text-wrap:balance}
+h3{font-size:1.02rem;font-weight:600;margin:0 0 .35rem}
+p{margin:0 0 .8rem}
+a{color:var(--accent)}
+code,.mono{font-family:var(--mono);font-size:.87em;background:var(--accent-soft);color:var(--ink);padding:.1em .35em;border-radius:3px;word-break:break-word}
+
+/* ---- rules block ---- */
+.rules{margin:2.5rem 0 0;display:grid;gap:1.25rem;grid-template-columns:1fr}
+@media(min-width:38rem){.rules{grid-template-columns:1fr 1fr}}
+.rulebox{border-left:3px solid var(--accent-line);padding:.15rem 0 .15rem 1rem}
+.rulebox.no{border-left-color:var(--flag-line)}
+.rulebox h3{font-family:var(--mono);font-size:.74rem;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);margin-bottom:.6rem}
+.rulebox.no h3{color:var(--flag)}
+.rulebox ul{margin:0;padding-left:1.05rem;font-size:.92rem;color:var(--ink-2)}
+.rulebox li{margin-bottom:.5rem}
+.rulebox li b{color:var(--ink);font-weight:600}
+
+/* ---- parts ---- */
+section.part{margin-top:3.25rem}
+.part-head{display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;padding-bottom:.65rem;border-bottom:1px solid var(--rule)}
+.part-tag{font-family:var(--mono);font-size:.72rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--surface);background:var(--accent);padding:.2rem .5rem;border-radius:3px}
+.part-time{font-family:var(--mono);font-size:.76rem;color:var(--ink-3);margin-left:auto}
+.part-note{font-size:.92rem;color:var(--ink-2);margin:.75rem 0 0}
+
+/* ---- steps ---- */
+.step{display:grid;grid-template-columns:auto 1fr;gap:0 .9rem;padding:1.35rem 0;border-bottom:1px solid var(--rule-2);align-items:start}
+.step:last-child{border-bottom:none}
+.step input{appearance:none;-webkit-appearance:none;width:1.35rem;height:1.35rem;margin:.15rem 0 0;border:1.5px solid var(--rule);border-radius:4px;background:var(--surface);cursor:pointer;display:grid;place-content:center;flex-shrink:0}
+.step input:checked{background:var(--done);border-color:var(--done)}
+.step input:checked::after{content:"";width:.42rem;height:.75rem;border:solid #fff;border-width:0 2.2px 2.2px 0;transform:rotate(42deg) translate(-1px,-1px)}
+.step-body{min-width:0}
+.step-title{display:flex;gap:.55rem;align-items:baseline;font-weight:600;font-size:1.02rem;margin:0 0 .3rem;text-wrap:balance}
+.num{font-family:var(--mono);font-size:.78rem;font-weight:600;color:var(--accent);flex-shrink:0;font-variant-numeric:tabular-nums;padding-top:.08rem}
+.step p{font-size:.95rem;color:var(--ink-2);margin:0 0 .55rem}
+.step p:last-child{margin-bottom:0}
+.step ul{margin:0 0 .55rem;padding-left:1.1rem;font-size:.95rem;color:var(--ink-2)}
+.step li{margin-bottom:.3rem}
+.step.done .step-body{opacity:.5}
+.step.done .step-title{text-decoration:line-through;text-decoration-color:var(--ink-3);text-decoration-thickness:1.5px}
+.why{border-left:2px solid var(--rule);padding-left:.8rem;font-size:.9rem;color:var(--ink-3);margin:.6rem 0 0}
+.why b{color:var(--ink-2);font-weight:600}
+.dont{border-left:3px solid var(--flag-line);background:var(--flag-soft);padding:.55rem .8rem;font-size:.9rem;color:var(--ink-2);margin:.7rem 0 0;border-radius:0 4px 4px 0}
+.dont b{color:var(--flag);font-weight:600}
+
+/* ---- draft panels ---- */
+.draft{background:var(--surface);border:1px solid var(--rule);border-radius:6px;margin:.9rem 0 0;overflow:hidden}
+.draft-head{display:flex;align-items:center;gap:.75rem;padding:.6rem .9rem;background:var(--surface-2);border-bottom:1px solid var(--rule)}
+.draft-head h4{margin:0;font-family:var(--mono);font-size:.76rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.copy{margin-left:auto;font:inherit;font-family:var(--mono);font-size:.74rem;font-weight:500;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:4px;padding:.22rem .6rem;cursor:pointer;white-space:nowrap}
+.copy:hover{background:var(--accent);color:var(--surface)}
+.scroller{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.86rem;min-width:30rem}
+th{text-align:left;font-family:var(--mono);font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);padding:.55rem .9rem;border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:.5rem .9rem;border-bottom:1px solid var(--rule-2);color:var(--ink-2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.n{font-family:var(--mono);font-weight:500;color:var(--ink);white-space:nowrap}
+.verdict{font-family:var(--mono);font-size:.8rem;font-weight:600;color:var(--done);white-space:nowrap}
+.verdict.ask{color:var(--accent)}
+
+/* ---- closing ---- */
+.close{margin-top:3.5rem;border:1.5px solid var(--ink);border-radius:6px;padding:1.6rem 1.5rem;background:var(--surface)}
+.close h2{margin-bottom:.5rem}
+.close p{font-size:.95rem;color:var(--ink-2)}
+.close ol{font-size:.95rem;color:var(--ink-2);padding-left:1.2rem;margin:0 0 1rem}
+.close li{margin-bottom:.35rem}
+.status-out{font-family:var(--mono);font-size:.8rem;color:var(--ink-2);background:var(--surface-2);border:1px solid var(--rule);border-radius:4px;padding:.7rem .9rem;white-space:pre-wrap;margin:.8rem 0 0;max-height:14rem;overflow:auto}
+footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-family:var(--mono);font-size:.74rem;color:var(--ink-3)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="bar">
+  <div class="bar-in">
+    <span class="bar-label"><b id="pdone">0</b> of <span id="ptot">16</span> done</span>
+    <span class="track"><span class="fill" id="pfill"></span></span>
+    <button id="reset" type="button">Clear ticks</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Powder Ops · Document Control</p>
+  <h1>Document Set Changeover</h1>
+  <p class="standfirst">Sixteen steps, in order, to bring the SOP set to final in Drive and get it into ReadyDoc. Work through it over the next few days and tick as you go — the ticks save in this browser.</p>
+  <div class="meta">
+    <span><b>For</b> Daniela Servin</span>
+    <span><b>Prepared</b> 2 September 2026</span>
+    <span><b>Covers</b> 66 SOPs · 50 forms · 28 WIs · 24 JDs</span>
+  </div>
+</header>
+
+<div class="rules">
+  <div class="rulebox">
+    <h3>Do</h3>
+    <ul>
+      <li><b>Upload over the top of what's already in ReadyDoc.</b> It keeps each document's revision history and shows you what changed.</li>
+      <li><b>Upload in waves</b> as documents get signed. Don't hold the first one back waiting for the last.</li>
+      <li><b>Attach the signed PDF</b> to each document as you go — that's the evidence behind the revision.</li>
+      <li><b>Skip with a reason</b> where a proposed change is wrong. The reason is recorded and the item stays on the list.</li>
+    </ul>
+  </div>
+  <div class="rulebox no">
+    <h3>Do not</h3>
+    <ul>
+      <li><b>Don't renumber SOPs to close the gaps.</b> The form numbers hang off them and they're printed on filed records. Step 4 explains the gaps instead.</li>
+      <li><b>Don't delete anything from ReadyDoc.</b> Withdraw it with a reason — a deleted document looks like one that never existed.</li>
+      <li><b>Don't empty the register and re-upload.</b> Every document would look like it was created this week.</li>
+      <li><b>Don't upload from <span class="mono">FSQA&nbsp;-&nbsp;Upload</span>.</b> It's a revision behind on 33 SOPs.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ PART A ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part A</span>
+    <h2>Fix the master set on Drive</h2>
+    <span class="part-time">~1 hour</span>
+  </div>
+  <p class="part-note">Do this before anything is uploaded. Four documents are missing from the master folders and one filename will not parse.</p>
+
+  <div class="step" data-id="a1">
+    <input type="checkbox" aria-label="Step 1 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">01</span> Copy four missing SOPs back into their master folders</p>
+      <p>These four folders in <span class="mono">1. SOP_S / Series 400</span> are empty, but the documents exist in <span class="mono">FSQA - Upload / SOP_s</span>. Copy each one across:</p>
+      <ul>
+        <li><span class="mono">SOP 411 V2</span> — Product/Documentation Disposal</li>
+        <li><span class="mono">SOP 423 V2</span> — Visitor Policy</li>
+        <li><span class="mono">SOP 425 V2</span> — Material Handling and Staging</li>
+        <li><span class="mono">SOP 439 V1</span> — Food Defense Plan</li>
+      </ul>
+      <p class="why"><b>Why.</b> The master folder is meant to be the one place the current document lives. Right now four numbers are issued with nothing behind them, and the only copy is in a folder we're about to retire.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="a2">
+    <input type="checkbox" aria-label="Step 2 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">02</span> Fix the SOP 205 filename</p>
+      <p>Rename <span class="mono">SOP V2 205 SHIPPING.docx</span> to <span class="mono">SOP 205 V2 SHIPPING.docx</span>. The number and the revision are the wrong way round.</p>
+      <p class="why"><b>Why.</b> Every other file in the set reads <i>number, revision, title</i>. ReadyDoc reads the document number off the filename, so this one won't match its registry row and will come in as a new document instead of a revision.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="a3">
+    <input type="checkbox" aria-label="Step 3 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">03</span> Check each master folder holds one current file</p>
+      <p>Several folders hold two or three copies of the same document — a <span class="mono">.docx</span> and a <span class="mono">.pdf</span>, or an old revision beside the new one. That's fine, but make sure it's obvious which one is current. Where an old revision is kept, move it to an <span class="mono">Archive</span> subfolder.</p>
+      <p class="why"><b>Watch for:</b> <span class="mono">SOP 100</span> has three files, <span class="mono">SOP 111</span> has V3 and V5 side by side, <span class="mono">SOP 426</span> has V2 and V3, <span class="mono">SOP 431</span> has V2 and V3.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PART B ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part B</span>
+    <h2>Explain the thirteen number gaps</h2>
+    <span class="part-time">~20 minutes</span>
+  </div>
+  <p class="part-note">The SOP series has thirteen numbers that were never issued here — left over from copying a document set from another facility. We are <b>not</b> closing them up. We're writing a line against each one, which is what an auditor actually wants.</p>
+
+  <div class="step" data-id="b1">
+    <input type="checkbox" aria-label="Step 4 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">04</span> Add thirteen lines to the Master SOP Log</p>
+      <p>The draft is below — one line per unissued number. Paste it in and adjust the wording where you know more than the draft does.</p>
+
+      <div class="draft">
+        <div class="draft-head">
+          <h4>Draft A · Master SOP Log entries</h4>
+          <button class="copy" type="button" data-copy="gaps">Copy all 13</button>
+        </div>
+        <div class="scroller">
+          <table id="gaps">
+            <thead><tr><th>Number</th><th>Sits between</th><th>Entry</th></tr></thead>
+            <tbody>
+              <tr><td class="n">SOP 200</td><td>— series begins at 202</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 201</td><td>— series begins at 202</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 102</td><td>101 Blending Operation → 103 Barrel/Pallet Labels</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 105</td><td>104 GMP Clean Room Gowning → 106 Chemical Solutions</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 107</td><td>106 Chemical Solutions → 108 Master Sanitation</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 203</td><td>202 Cleaning of Warehouse &amp; Grounds → 204 Receiving</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 407</td><td>406 Documentation &amp; Record Keeping → 408 Non-Conformance</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 416</td><td>415 Mock Recall → 417 Equipment Calibration</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 429</td><td>428 Line Clearance → 430 Allergen Control</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 432</td><td>431 Glass &amp; Brittle Plastic → 433 Hazard Analysis</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 435</td><td>434 Chemicals, Equipment &amp; Services Approval → 436 Personnel Hygiene</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 603</td><td>602 Organoleptic Testing → 604 Environmental Monitoring</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+              <tr><td class="n">SOP 605</td><td>604 Environmental Monitoring → 606 Raw Material &amp; Component Specifications</td><td>Not issued. Number carried over from the inherited index; no document was adopted at this facility.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="why" style="margin-top:1rem"><b>Where you can make one stronger.</b> If you remember what the original procedure was and what covers that ground here, say so — <i>“SOP 407 — Not issued. Content covered by SOP 406 Documentation and Record Keeping.”</i> That answers the follow-up question too. Only write it where it's actually true; the uniform line above stands on its own.</p>
+
+      <div class="dont"><b>Checked, so you can say it with confidence:</b> none of these thirteen numbers appears anywhere in the 1,016 files on Drive, or in any of the 159 change requests. Nothing was issued under them and then lost.</div>
+    </div>
+  </div>
+
+  <div class="step" data-id="b2">
+    <input type="checkbox" aria-label="Step 5 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">05</span> Write the rule into SOP 400</p>
+      <p>Add one sentence to SOP 400 <i>Publishing, Updating and Control of SOPs</i>: a new procedure takes the next number after the highest in its series, and a number recorded as never issued is never reused.</p>
+      <p class="why"><b>Why.</b> Without it, someone tidy-minded fills SOP 407 next year and contradicts the line you just wrote in the log.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PART C ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part C</span>
+    <h2>Raise the form-number change request</h2>
+    <span class="part-time">~half a day, including the rulings</span>
+  </div>
+  <p class="part-note">Six places where one form is identified two different ways, or has no current document. Each needs a decision from you — the recommendation is whatever the change-request register already says.</p>
+
+  <div class="step" data-id="c1">
+    <input type="checkbox" aria-label="Step 6 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">06</span> Raise FORM 406-1 with these six items</p>
+
+      <div class="draft">
+        <div class="draft-head">
+          <h4>Draft B · Form numbering DCR</h4>
+          <button class="copy" type="button" data-copy="dcr">Copy all 6</button>
+        </div>
+        <div class="scroller">
+          <table id="dcr">
+            <thead><tr><th>#</th><th>The conflict</th><th>Evidence</th><th>Recommended</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="n">1</td>
+                <td><b>Non-Conformance</b><br>FORM 408-1 or 408-01?</td>
+                <td>DCR 0016 and 0017 both issued it as <b>408-01</b>. The document file says 408-1. ReadyDoc says both, in two places.</td>
+                <td class="verdict">FORM 408-01</td>
+              </tr>
+              <tr>
+                <td class="n">2</td>
+                <td><b>Temperature &amp; Humidity</b><br>FORM 110-03 or 110-04?</td>
+                <td>DCR 0116 and the document itself both say <b>110-04</b>. ReadyDoc's index is the only thing saying 110-03.</td>
+                <td class="verdict">FORM 110-04</td>
+              </tr>
+              <tr>
+                <td class="n">3</td>
+                <td><b>Knife accountability</b><br>One record type, two numbers</td>
+                <td>ReadyDoc labels it “Form 440-01 / 440-02”. They're different documents — 440-01 is the master list of blades, 440-02 is the sign-out log.</td>
+                <td class="verdict">Split them</td>
+              </tr>
+              <tr>
+                <td class="n">4</td>
+                <td><b>Series 108</b><br>Two styles in one series</td>
+                <td>108-1 and 108-2 are bare, 108-03 is padded. Separately, DCR 0032 records it as “108-<b>031</b>” — a typo in the register.</td>
+                <td class="verdict ask">Rule one style</td>
+              </tr>
+              <tr>
+                <td class="n">5</td>
+                <td><b>Series 405 and 409</b><br>Two styles in each</td>
+                <td>405-1 (DCR 0020) beside 405-02 (DCR 0155); 409-1 (DCR 0018) beside 409-02 (DCR 0108). The style changed partway and the older numbers weren't brought along.</td>
+                <td class="verdict ask">Rule one style each</td>
+              </tr>
+              <tr>
+                <td class="n">6</td>
+                <td><b>FORM 500-03</b><br>Three revisions, no document</td>
+                <td>DCRs 0062, 0063 and 0064 issued V1, V2 and V3. There is no file for it anywhere in the master set.</td>
+                <td class="verdict ask">Find it or withdraw it</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="dont"><b>Deliberately not in this request.</b> <span class="mono">FORM 404-1</span>, <span class="mono">404-2</span>, <span class="mono">406-1</span>, <span class="mono">411-1</span>, <span class="mono">413-1</span>, <span class="mono">415-1</span> and <span class="mono">443-1</span> are all unpadded and all consistent with themselves. Leave them alone — renaming a number that isn't in conflict costs a change request and orphans every record filed under it.</div>
+    </div>
+  </div>
+
+  <div class="step" data-id="c2">
+    <input type="checkbox" aria-label="Step 7 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">07</span> Rule on each of the six</p>
+      <p>Items 1, 2 and 3 also need a change in ReadyDoc. Those are already written and <b>parked</b> — they take effect the moment you approve them in Document Control → Controlled Changes, and not before.</p>
+      <p class="why"><b>Do not rewrite DCR 0032</b> to fix the “108-031” typo. A change request records a decision made on a date. Note the transcription error in the Master Index instead.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="c3">
+    <input type="checkbox" aria-label="Step 8 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">08</span> Settle FORM 500-03</p>
+      <p>Either file V3 in the master set, or record it in the Master Index as withdrawn with a date and a reason. Either answer is fine. Silence isn't — right now three change requests point at a document nobody can produce.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PART D ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part D</span>
+    <h2>Finalise, sign, upload — in waves</h2>
+    <span class="part-time">the long one · repeat per wave</span>
+  </div>
+  <p class="part-note">Steps 9–14 are a loop. Do a batch of documents, upload them, then start the next batch. Tick these once the last wave is in.</p>
+
+  <div class="step" data-id="d1">
+    <input type="checkbox" aria-label="Step 9 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">09</span> Take a batch of documents to final in Drive</p>
+      <p>Work in whatever order suits you. Ten or fifteen at a time is a good wave — enough to be worth an upload, small enough to finish.</p>
+      <div class="dont"><b>Don't wait for all 66.</b> Until a document is uploaded, ReadyDoc is quoting its old revision. Six weeks of waiting is six weeks of that.</div>
+    </div>
+  </div>
+
+  <div class="step" data-id="d2">
+    <input type="checkbox" aria-label="Step 10 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">10</span> Get each one signed and authorised</p>
+      <p>Keep the signed PDF — you'll attach it in step 13, and it's the evidence that the revision was approved rather than just typed.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="d3">
+    <input type="checkbox" aria-label="Step 11 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">11</span> Upload the wave into ReadyDoc</p>
+      <p>Go to <b>Document Control → Review Center</b>. Use <b>Update from file</b> and drop the whole wave in at once — it takes multiple files.</p>
+      <p>ReadyDoc reads each file, works out which registry document it is, and builds a list of proposed changes. <b>Nothing is applied yet.</b></p>
+      <p class="why"><b>The list survives.</b> It's saved, not a pop-up — you can close the tab, come back tomorrow, and it's still there with your progress on it. Half-finished is a fine place to stop.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="d4">
+    <input type="checkbox" aria-label="Step 12 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">12</span> Work the list from the top down</p>
+      <p>It's ordered so the ones that matter are first:</p>
+      <ul>
+        <li><b>Revision moved</b> — the registry is quoting a superseded revision. These are the real ones.</li>
+        <li><b>Couldn't match the file</b> — it doesn't correspond to a registry document. Usually a filename problem.</li>
+        <li><b>Dates only / title only / body only</b> — smaller corrections.</li>
+        <li><b>No change</b> — the registry already agrees. Nothing to do.</li>
+      </ul>
+      <p>Each change is already ticked. Untick anything you don't want applied, then apply.</p>
+      <p class="why"><b>Expect a lot of “revision moved” on the first wave.</b> Comparing the current master set against what was uploaded before, <b>33 SOPs are one revision ahead</b> of the older copy — 111 is V5 against V4, 401 is V4 against V3, 500 is V4 against V3, and thirty more. That's the point of doing this.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="d5">
+    <input type="checkbox" aria-label="Step 13 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">13</span> Attach the signed PDF to each document</p>
+      <p>Open the document and use the attachments block. It's on both the read view and the edit view, so whichever way you got in, it's there.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="d6">
+    <input type="checkbox" aria-label="Step 14 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">14</span> Skip anything that's wrong — with a reason</p>
+      <p>If a proposed change is wrong, <b>skip it</b> rather than unticking and moving on. A skip asks for a reason and records who skipped it, so the item is accounted for instead of just absent.</p>
+      <div class="dont"><b>Don't delete a document to get rid of it.</b> If something in ReadyDoc genuinely no longer applies, withdraw it — it asks for a reason, keeps the history, and prints “NO LONGER IN USE” across the top so a printout can't pass as current. A deleted document looks exactly like one that never existed, which is the first thing an auditor asks about.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PART E ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part E</span>
+    <h2>Close out</h2>
+    <span class="part-time">~10 minutes</span>
+  </div>
+
+  <div class="step" data-id="e1">
+    <input type="checkbox" aria-label="Step 15 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">15</span> Retire the <span class="mono" style="font-size:.9em">FSQA - Upload</span> folder</p>
+      <p>Once the master set is in ReadyDoc, rename that folder to <span class="mono">ARCHIVE — pre-Sept 2026 upload snapshot</span> and move it out of the working area.</p>
+      <p class="why"><b>Why.</b> It's a second copy of the truth and it's already a revision behind on 33 documents. As long as it's sitting there looking like the upload folder, somebody will upload from it.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="e2">
+    <input type="checkbox" aria-label="Step 16 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">16</span> Note anything ReadyDoc has that Drive doesn't</p>
+      <p>As you work the list, you'll see registry documents that no file ever matched — the old-facility carryovers. Write them down rather than acting on them. <b>Don't withdraw anything on a hunch</b>; bring the list back and we'll go through it together.</p>
+      <p class="why">One known candidate: <span class="mono">FORM 402 V2 Raw Material Product Inspection</span>, which is already in the <span class="mono">ARCHIVE</span> folder on Drive but may still be live in ReadyDoc.</p>
+    </div>
+  </div>
+</section>
+
+<div class="close">
+  <h2>When you're done</h2>
+  <p>Send Lowry a note with:</p>
+  <ol>
+    <li>Which steps are ticked (use the button below)</li>
+    <li>Your rulings on the six form-number items</li>
+    <li>The list from step 16 — registry documents with no file behind them</li>
+    <li>Anything you skipped and why</li>
+  </ol>
+  <button class="copy" type="button" id="statusbtn" style="margin-left:0">Copy status</button>
+  <div class="status-out" id="statusout" hidden></div>
+</div>
+
+<footer>Powder Ops FSQA · Document Set Changeover · prepared 2 September 2026 · working document, not a controlled record</footer>
+
+</div>
+
+<script>
+(function(){
+  var KEY='pops_doc_changeover_v1';
+  var steps=[].slice.call(document.querySelectorAll('.step'));
+  var pdone=document.getElementById('pdone'), ptot=document.getElementById('ptot'), pfill=document.getElementById('pfill');
+  ptot.textContent=steps.length;
+
+  function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(e){ return {}; } }
+  function save(s){ try{ localStorage.setItem(KEY,JSON.stringify(s)); }catch(e){} }
+
+  function paint(){
+    var n=0;
+    steps.forEach(function(s){
+      var on=s.querySelector('input').checked;
+      s.classList.toggle('done',on);
+      if(on) n++;
+    });
+    pdone.textContent=n;
+    pfill.style.width=(steps.length? Math.round(n/steps.length*100):0)+'%';
+  }
+
+  var state=load();
+  steps.forEach(function(s){
+    var box=s.querySelector('input');
+    box.checked=!!state[s.dataset.id];
+    box.addEventListener('change',function(){
+      var st=load(); st[s.dataset.id]=box.checked; save(st); paint();
+    });
+  });
+  paint();
+
+  document.getElementById('reset').addEventListener('click',function(){
+    save({});
+    steps.forEach(function(s){ s.querySelector('input').checked=false; });
+    paint();
+  });
+
+  function copyText(text,btn,ok){
+    var done=function(){ var o=btn.textContent; btn.textContent=ok; setTimeout(function(){btn.textContent=o;},1600); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done,function(){fallback(text,done);});
+    } else { fallback(text,done); }
+  }
+  function fallback(text,done){
+    var ta=document.createElement('textarea');
+    ta.value=text; ta.setAttribute('readonly','');
+    ta.style.position='fixed'; ta.style.top='-1000px';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){}
+    document.body.removeChild(ta);
+  }
+
+  [].slice.call(document.querySelectorAll('.copy[data-copy]')).forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var t=document.getElementById(btn.dataset.copy);
+      var lines=[].slice.call(t.querySelectorAll('tbody tr')).map(function(tr){
+        return [].slice.call(tr.children).map(function(td){
+          return td.textContent.replace(/\s+/g,' ').trim();
+        }).join('\t');
+      });
+      copyText(lines.join('\n'),btn,'Copied');
+    });
+  });
+
+  document.getElementById('statusbtn').addEventListener('click',function(){
+    var out=document.getElementById('statusout');
+    var lines=['Document Set Changeover — status'];
+    steps.forEach(function(s){
+      var t=s.querySelector('.step-title').textContent.replace(/\s+/g,' ').trim();
+      lines.push((s.querySelector('input').checked?'[x] ':'[ ] ')+t);
+    });
+    var n=steps.filter(function(s){return s.querySelector('input').checked;}).length;
+    lines.push('','('+n+' of '+steps.length+' done)');
+    var text=lines.join('\n');
+    out.textContent=text; out.hidden=false;
+    copyText(text,this,'Copied');
+  });
+})();
+</script>
