@@ -2123,6 +2123,42 @@ report that competes with a queue gets skimmed. So it is three sections and no t
 `tr()` back. Uses the cached `/ai/translate-content` endpoint, so it silently stays English when AI is off.
 Wired into Supply Orders, Time Tracking and both finance ledgers; reusable anywhere.
 
+## A QA signature proves it is you, at the moment you sign (`server/signature.js`)
+A QA signature is the plant's statement that a named person reviewed a record and accepted it — and the
+only thing standing behind that name was a session opened at some point earlier in the day, on a shared
+floor tablet that can be hours ago and two people back. 21 CFR 11.200 asks for a component the signer alone
+supplies, at the time of signing. `signature_password` is that component, checked against the caller's own
+`password_hash` before anything is written.
+- **ONE DEFINITION, FOUR DOORS**: production QA sign-off, sanitation/QA record verification, scale
+  verification and the QA Review batch. A second copy is how one of them quietly stops asking.
+- **403, NEVER 401, and this is load-bearing.** `apiFetch` clears the token and logs out on any 401, so
+  asking for a password that way would sign QA out every time they pressed Sign. The session is fine; the
+  act needs a second factor, which is what 403 + `signature_required` says. **Caught before shipping** —
+  the first cut used 401.
+- **A BATCH IS ONE ACT.** QA Review signs many records at once and the password authenticates the ACT;
+  asking per record would make a queue of forty unusable, which is how a control gets switched off. Checked
+  **before the loop** — a refusal halfway would leave some records signed and nothing saying which. The
+  test asserts a refused batch signed **nothing**.
+- **The password is never stored, logged or echoed.** What is recorded is `signature_verified` in the audit
+  entry, and the test greps the whole audit log for the password to prove it.
+- **Rate-limited** — five wrong passwords in five minutes and the endpoint stops answering, for the right
+  password too, or the limit is decorative. In memory: the window is five minutes and a write per failed
+  attempt is a write on a path that must stay fast. Every failure is audited as `signature_failed`.
+- **An account with no password cannot sign** and is told so rather than waved through. Unreachable in
+  practice (a session implies a password) and correct if reached.
+- **Cancelling is a choice, not a failure** — every call site returns silently on `err.cancelled`, because
+  an error under the button reads as something having gone wrong. The three that had `try/finally` with no
+  `catch` gained one; without it a cancel became an unhandled rejection.
+- **The Sanitation "are you sure?" confirm is gone.** The password prompt names the record and asks for
+  something only that person has, which is a stronger confirmation than a second OK button — and one
+  dialog instead of two.
+- `withSignature()` + a single `<SignaturePrompt />` mounted in App: a call site sends, gets refused, is
+  asked, and sends again. **The first request never carries a password**, nothing is cached between
+  signatures, and the prompt re-asks on a wrong password rather than closing and losing the batch.
+- Verified: **25 assertions against a live server on a fresh database** (`scripts/verify-signatures.mjs`).
+  **The control is decisive** — removing the gate makes 14 of them fail, including a production entry
+  signing itself with no password at all.
+
 ## Passwords expire once a year (`server/password-policy.js`)
 `users.password_changed_at` + a 365-day limit, with a 14-day warning banner before it bites.
 - **Enforced in the auth middleware, not the login screen.** A rule the client alone applies is a

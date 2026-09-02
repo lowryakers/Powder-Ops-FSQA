@@ -10,6 +10,7 @@ import { canonicalArea, previewAreaNormalization, NON_PRODUCTION_AREAS } from '.
 import { canVerifySanitation } from '../qa-signing.js';
 import { recordEditPolicy, mayRevokeSignature } from '../record-permissions.js';
 import { planQaRecordBackfill, runQaRecordBackfill } from '../qa-record-backfill.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 const router = Router();
 
@@ -681,8 +682,10 @@ export function verifySanitationRecord(db, user, id) {
 }
 
 router.put('/:id/verify', (req, res) => {
+  if (!gateSignature(req, res, { action: 'sanitation_verify' })) return;
   const { error, status, record } = verifySanitationRecord(getDb(), req.user, req.params.id);
   if (error) return res.status(status || 400).json({ error });
+  logAudit(req.user, 'sign', 'sanitation_record', req.params.id, signatureEvidence(), null, record);
   res.json(record);
 });
 

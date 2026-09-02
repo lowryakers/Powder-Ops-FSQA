@@ -8,6 +8,7 @@ import { pushToUser } from '../push.js';
 import { readyDocOrigin } from '../links.js';
 import { roomLabel } from '../../shared/rooms.js';
 import { CLEAN_LEVEL_VALUES } from '../../shared/clean-levels.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 // Production teams whose schedule gets published to a matching comms channel.
 // Team name (as stored on assignments) → the channel it maps to.
@@ -803,11 +804,16 @@ export async function qaActionNudges(db) {
 
 // PUT /entries/:id/qa-signoff — QA signs off on a production entry
 router.put('/entries/:id/qa-signoff', (req, res) => {
+  // Before anything is written: a signature refused after the fact is a record
+  // that says QA accepted a shift they did not.
+  if (!gateSignature(req, res, { action: 'production_qa_signoff' })) return;
   const { qa_signoff_by, qa_notes, qa_action_required } = req.body || {};
   const { error, status, entry } = signOffProductionEntry(getDb(), req.params.id, {
     by: qa_signoff_by, notes: qa_notes, actionRequired: qa_action_required,
   });
   if (error) return res.status(status).json({ error });
+  logAudit(req.user, 'sign', 'production_entry', req.params.id,
+    { ...signatureEvidence(), signed_as: qa_signoff_by || req.user?.name }, null, entry);
   res.json(computeMetrics(entry));
 });
 

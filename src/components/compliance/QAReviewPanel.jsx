@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle2, XCircle, ExternalLink, RefreshCw, ClipboardCheck, AlertTriangle } from 'lucide-react';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
+import { withSignature } from '../../lib/signature';
 
 // QA Review Center — everything waiting on a QA signature, in one place.
 //
@@ -96,13 +97,18 @@ export default function QAReviewPanel() {
     setBusy(true);
     setProblems([]);
     try {
-      const res = await apiPost('/qa-review/sign', { source: current.key, ids });
+      // One prompt for the batch — the password authenticates the ACT of
+      // signing, and asking per record would make a queue of forty unusable.
+      const res = await withSignature((extra) => apiPost('/qa-review/sign', { source: current.key, ids, ...extra }),
+        { title: `Sign ${ids.length} record${ids.length === 1 ? '' : 's'}`, detail: current.label });
       // Partial success is the normal case when someone else signed a record
       // while this list was open — report it rather than silently dropping it.
       setProblems(res?.failed || []);
       setSelected(new Set());
       refresh();
     } catch (e) {
+      // Cancelling the password prompt is a choice, not a failure.
+      if (e?.cancelled) { setBusy(false); return; }
       setProblems([{ id: null, error: e?.message || 'Could not sign those records.' }]);
     } finally {
       setBusy(false);

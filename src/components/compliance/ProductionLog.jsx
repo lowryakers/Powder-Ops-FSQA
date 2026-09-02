@@ -13,6 +13,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductionDayLog from './ProductionDayLog.jsx';
 import { formatDateTime, formatTime as fmtClock } from '../../lib/datetime.js';
+import { withSignature } from '../../lib/signature';
 
 // The same rooms the schedule offers, so a shift can be reported in the room it
 // was scheduled in. This list used to be built by hand here and had drifted:
@@ -768,14 +769,20 @@ function QASignoffModal({ entry, user, onClose, onSaved }) {
     setSaving(true);
     setError(null);
     try {
-      await apiPut(`/production/entries/${entry.id}/qa-signoff`, {
+      // The password is asked for HERE, at the moment of signing — not carried
+      // from a session opened hours ago on a shared tablet.
+      await withSignature((extra) => apiPut(`/production/entries/${entry.id}/qa-signoff`, {
         qa_signoff_by: user.name,
         qa_notes: notes,
         qa_action_required: needsCorrection,
-      });
+        ...extra,
+      }), { title: 'Sign off this shift', detail: `${entry.team} · ${entry.date}` });
       onSaved();
       onClose();
     } catch (err) {
+      // Cancelling is a choice, not a failure — an error under the button
+      // reads as something having gone wrong.
+      if (err?.cancelled) return;
       setError(err.message || 'Signoff failed.');
     } finally {
       setSaving(false);

@@ -16,6 +16,7 @@ import { recleanReasonLine, RECLEAN_REASONS } from '../../../shared/reclean-reas
 // authority on what is open; this is only for grouping what has been handled.
 const RECLEAN_STATUSES = new Set(Object.keys(RECLEAN_REASONS));
 import FormChip from '../common/FormChip';
+import { withSignature } from '../../lib/signature';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
 const RECLEAN_ACTION_META = {
@@ -688,11 +689,17 @@ export default function SanitationPanel() {
   // ignores the body, so asking here would only be theatre.
   const handleVerify = async (id) => {
     if (!user?.name) return;
-    if (!window.confirm(`Verify this cleaning record as ${user.name}?`)) return;
+    // The old "are you sure?" is gone: the password prompt names the record and
+    // asks for something only this person has, which is a stronger confirmation
+    // than a second OK button and is one dialog instead of two.
     try {
-      await apiPut(`/sanitation/${id}/verify`, {});
+      await withSignature((extra) => apiPut(`/sanitation/${id}/verify`, extra),
+        { title: 'Verify this cleaning record', detail: `Signing as ${user.name}` });
       refresh();
-    } catch (e) { window.alert(e.message); }
+    } catch (e) {
+      if (e?.cancelled) return;   // a choice, not a failure
+      window.alert(e.message);
+    }
   };
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading sanitation records...</div>;

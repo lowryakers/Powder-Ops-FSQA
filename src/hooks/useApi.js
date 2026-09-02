@@ -78,7 +78,13 @@ async function apiFetch(path, options = {}) {
       window.dispatchEvent(new CustomEvent('app-logout'));
     }
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `API error ${res.status}`);
+    const thrown = new Error(err.error || `API error ${res.status}`);
+    // A QA signature asks for the password at the moment of signing, and the
+    // server says so with this flag. It has to survive being turned into an
+    // Error or the caller cannot tell "wrong password" from any other refusal.
+    if (err.signature_required) thrown.signatureRequired = true;
+    thrown.status = res.status;
+    throw thrown;
   }
   if (movesBadge(path, method)) notifyDataChanged();
   const data = await res.json();
@@ -100,7 +106,9 @@ async function sendQueued(row) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `API error ${res.status}`);
+    const thrown = new Error(err.error || `API error ${res.status}`);
+    thrown.status = res.status;
+    throw thrown;
   }
   return res.json().catch(() => null);
 }

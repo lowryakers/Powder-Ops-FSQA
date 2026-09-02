@@ -10,6 +10,7 @@ import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { hasExplicitEdit } from '../module-access.js';
 import { SCALE_FORMS, SCALE_PROCEDURE, procedureFor, getScaleForm, gradeReadings } from '../scale-forms.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 const router = Router();
 const MODULE = 'calibration';
@@ -146,8 +147,10 @@ export function verifyScaleCheck(db, user, id) {
 
 // PUT /:id/verify — QA's counter-signature (the "Verified By (QA)" line).
 router.put('/:id/verify', (req, res) => {
+  if (!gateSignature(req, res, { action: 'scale_verify' })) return;
   const { error, status, record } = verifyScaleCheck(getDb(), req.user, req.params.id);
   if (error) return res.status(status).json({ error });
+  logAudit(req.user, 'sign', 'scale_verification', req.params.id, signatureEvidence(), null, record);
   res.json(record);
 });
 

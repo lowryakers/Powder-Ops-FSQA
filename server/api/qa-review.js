@@ -5,8 +5,9 @@
 // ever needs to, that logic belongs in the module instead.
 
 import { Router } from 'express';
-import { getDb } from '../db.js';
+import { getDb, logAudit } from '../db.js';
 import { SOURCES, getSource, safeCount, safePending, isQaReviewer } from '../qa-review.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 const router = Router();
 
@@ -67,6 +68,13 @@ router.post('/sign', (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(Boolean) : [];
   if (!ids.length) return res.status(400).json({ error: 'Nothing selected.' });
 
+  // ONE ACT, ONE PASSWORD. Asking per record would make a queue of forty
+  // unusable, which is how a control gets switched off; the password
+  // authenticates the act of signing and the batch still writes a signature per
+  // record. Checked BEFORE the loop, or a refusal halfway leaves some records
+  // signed and nothing saying which.
+  if (!gateSignature(req, res, { action: 'qa_review_batch' })) return;
+
   const signed = [];
   const failed = [];
   for (const id of ids) {
@@ -77,6 +85,13 @@ router.post('/sign', (req, res) => {
     else signed.push(id);
   }
 
+  // One entry for the ACT, beside the per-record signatures each source
+  // already writes. It is what answers "was this batch actually authenticated"
+  // — the records themselves carry only who and when.
+  if (signed.length) {
+    logAudit(req.user, 'sign', 'qa_review_batch', source.id,
+      { ...signatureEvidence(), source: source.id, signed: signed.length, failed: failed.length });
+  }
   res.json({ signed, failed, remaining: safeCount(source, db) });
 });
 

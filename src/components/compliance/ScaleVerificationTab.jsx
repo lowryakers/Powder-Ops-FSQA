@@ -27,6 +27,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import KioskQrModal from '../kiosk/KioskQrModal.jsx';
 import { daysAgoStr, localDateStr } from '../../utils/dates';
 import { formatDateTime } from '../../lib/datetime.js';
+import { withSignature } from '../../lib/signature';
 
 // Scale Verification — the daily three-point checks (Forms 417-01 … 417-05)
 // filed from the floor kiosk. It sits inside Calibration because that's where
@@ -87,8 +88,11 @@ export default function ScaleVerificationTab() {
   const verify = async (r) => {
     setVerifying(r.id);
     try {
-      await apiPut(`/scale-verification/${r.id}/verify`, {});
+      await withSignature((extra) => apiPut(`/scale-verification/${r.id}/verify`, extra),
+        { title: 'Counter-sign this scale check', detail: r.form_code });
       refresh(); refreshStatus();
+    } catch (e) {
+      if (!e?.cancelled) window.alert(e.message || 'Could not counter-sign this check.');
     } finally { setVerifying(null); }
   };
 

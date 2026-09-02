@@ -76,6 +76,7 @@ import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import { applyKioskManifest, setKioskAppTitle } from './lib/kioskManifest.js';
 import PageInfo from './components/PageInfo.jsx';
+import SignaturePrompt from './components/common/SignaturePrompt.jsx';
 const SupplyOrdersPanel = lazy(() => import('./components/office/SupplyOrdersPanel.jsx'));
 const TimeTrackingPanel = lazy(() => import('./components/office/TimeTrackingPanel.jsx'));
 const CheckedOutPanel = lazy(() => import('./components/compliance/CheckedOutPanel.jsx'));
@@ -1678,6 +1679,7 @@ function App() {
             place the Wi-Fi drops — and was the one layout without the
             offline / queued-writes bar. */}
         <OfflineBar />
+        <SignaturePrompt />
         <main className="max-w-3xl mx-auto px-4 py-6">
           <OperatorView />
         </main>
@@ -1843,6 +1845,7 @@ function App() {
             place the Wi-Fi drops — and was the one layout without the
             offline / queued-writes bar. */}
         <OfflineBar />
+        <SignaturePrompt />
         <main className="max-w-3xl mx-auto px-4 py-6">
           <OperatorView />
         </main>
@@ -1988,6 +1991,7 @@ function App() {
         {/* Where your work is: no connection, and/or entries still to send.
             Directly under the header so it's the first thing on every screen. */}
         <OfflineBar />
+        <SignaturePrompt />
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
           {resolvedTab === null && (

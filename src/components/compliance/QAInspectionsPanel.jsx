@@ -13,6 +13,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { formatDateTime } from '../../lib/datetime.js';
 import FormChip from '../common/FormChip';
 import { formLabel } from '../../../shared/form-registry.js';
+import { withSignature } from '../../lib/signature';
 
 // Columns as data, so the header and the sort cannot disagree. The first entry
 // has no key — it is the expand chevron, which is not a value to order by.
@@ -164,8 +165,13 @@ export default function QAInspectionsPanel() {
     try {
       // The server takes the signer from the session; sending a name here
       // would imply the body decides who signed.
-      await apiPut(`/sanitation/${r.id}/verify`, {});
+      await withSignature((extra) => apiPut(`/sanitation/${r.id}/verify`, extra),
+        { title: 'Verify this inspection', detail: r.area });
       refresh();
+    } catch (e) {
+      // Cancelling the password prompt is a choice; anything else is real and
+      // must not vanish as an unhandled rejection.
+      if (!e?.cancelled) window.alert(e.message || 'Could not verify this record.');
     } finally { setVerifying(null); }
   };
 
