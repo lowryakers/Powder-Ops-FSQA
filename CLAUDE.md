@@ -745,10 +745,22 @@ the layer. Three defects, all now covered by `npm run check:composer` (44 assert
 - **A reaction names its reactors** on hover (desktop) and long-press (mobile). The server always returned
   the reactor ids on every reaction — this names what was already in the payload. **A name that cannot be
   resolved is COUNTED, never guessed**: the roster is the channel's members, so somebody who has since left
-  reads as "and 1 other" rather than a UUID or a silently short list. Drawn through `MenuPortal` for the
-  reason the message menu is — the card has `overflow-hidden` for its corners and the list is its own
-  scroller. The long-press sets the same `suppressClick` guard the message long-press uses, or reading who
-  reacted would also toggle your own reaction.
+  reads as "and 1 other" rather than a UUID or a silently short list. The long-press sets the same
+  `suppressClick` guard the message long-press uses, or reading who reacted would also toggle your own
+  reaction.
+- **A TOOLTIP MUST NEVER TAKE THE POINTER**, and the first cut did. It was drawn through `MenuPortal`,
+  which is right for a menu and wrong here: MenuPortal lays a full-screen click-catcher behind its panel so
+  a click outside dismisses it. The instant the tooltip opened that backdrop covered the chip — the pointer
+  was over the backdrop, `mouseleave` fired, the tooltip closed, the backdrop went with it, `mouseenter`
+  fired again. A flicker loop, reported as "really glitchy". It is its own portal now:
+  `pointer-events-none`, no backdrop, nothing to hover off onto; dismissal is leaving the chip, or the next
+  touch or scroll anywhere — a listener rather than an element. A 140ms hover delay stops a row of chips
+  flashing three tooltips as the pointer crosses them.
+- **`data-reaction` is on the chip**, because the quick-reaction hover pill and the emoji picker hold the
+  same characters — matching on the emoji text alone finds an offer to add a reaction, not a filed one.
+- Verified: `npm run check:reactions` samples the tooltip twelve times with the pointer held still and
+  asserts it never disappears. **With the backdrop restored it cannot even be captured**, which is the
+  reported symptom exactly.
 - **`[label](url)` is the link grammar**, added to `shared/rich-markup.js` so the chat renderer, the
   composer's live overlay and the server's PDF renderer all read one definition. It is listed **FIRST** in
   the alternation: a URL is full of characters this grammar uses (`_` above all), and letting italics chew

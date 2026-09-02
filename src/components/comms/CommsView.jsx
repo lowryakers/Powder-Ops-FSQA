@@ -1002,12 +1002,10 @@ function MenuPortal({ style, onClose, children }) {
  * tooltip says "and 1 other" rather than printing a UUID or silently dropping
  * a person out of the total.
  *
- * Drawn through MenuPortal for the reason the message menu is: the card has
- * `overflow-hidden` for its corners and the list is its own scroller, so an
- * absolutely-positioned tooltip is clipped by one or the other.
+ * Portalled onto <body>, because the card has `overflow-hidden` for its corners
+ * and the list is its own scroller — an absolutely-positioned tooltip is
+ * clipped by one or the other.
  */
-const TOOLTIP_WIDTH = 208;
-
 function reactorNames(r, users, me) {
   const byId = new Map((users || []).map((u) => [u.id, u]));
   const named = [];
@@ -1020,62 +1018,118 @@ function reactorNames(r, users, me) {
   return { named, unknown };
 }
 
+/**
+ * A TOOLTIP MUST NEVER TAKE THE POINTER.
+ *
+ * The first cut drew this through `MenuPortal`, which is right for a menu and
+ * wrong here: MenuPortal lays a full-screen click-catcher behind its panel so a
+ * click outside dismisses it. The instant the tooltip opened, that backdrop
+ * covered the chip — the pointer was now over the backdrop, `mouseleave` fired,
+ * the tooltip closed, the backdrop went with it, `mouseenter` fired again. A
+ * flicker loop, and it read as the whole feature being broken.
+ *
+ * So this is its own portal: `pointer-events-none`, no backdrop, nothing to
+ * hover off onto. Dismissal is by leaving the chip (mouse) or by the next touch
+ * or scroll anywhere (finger) — a listener rather than an element.
+ */
+function ReactionTooltip({ pos, children }) {
+  return createPortal(
+    <div style={pos}
+      className="fixed z-[70] pointer-events-none max-w-[13rem] bg-gray-900 text-white rounded-lg shadow-lg px-2.5 py-1.5">
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+const TOOLTIP_WIDTH = 208;
+// Long enough that brushing past a row of chips does not flash three tooltips,
+// short enough to feel like hovering rather than waiting.
+const HOVER_DELAY = 140;
+
 function ReactionChip({ r, m, me, users, onReact, onUnreact }) {
-  const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
   const pressRef = useRef(null);
+  const hoverRef = useRef(null);
   const movedRef = useRef(false);
 
   const reacted = (r.users || []).includes(me?.id);
   const { named, unknown } = reactorNames(r, users, me);
 
-  const show = () => {
+  const place = () => {
     const el = btnRef.current;
     if (!el) return;
     const b = el.getBoundingClientRect();
     const gap = 6, margin = 8;
     const above = b.top - gap;
+    // Above by default: a reaction sits at the bottom of a message, and the
+    // space below it is the next message.
     setPos({
       left: Math.max(margin, Math.min(b.left, window.innerWidth - TOOLTIP_WIDTH - margin)),
-      // Above the chip by default — a reaction sits at the bottom of a message
-      // and the space below it is the next message.
-      ...(above > 90 ? { bottom: window.innerHeight - b.top + gap } : { top: b.bottom + gap }),
-      maxHeight: Math.max(90, (above > 90 ? above : window.innerHeight - b.bottom - gap) - margin),
+      ...(above > 80 ? { bottom: window.innerHeight - b.top + gap } : { top: b.bottom + gap }),
     });
-    setOpen(true);
   };
-  const hide = () => { setOpen(false); setPos(null); };
+  const hide = () => {
+    clearTimeout(hoverRef.current);
+    clearTimeout(pressRef.current);
+    setPos(null);
+  };
 
-  // A long press on a phone, and it must not also fire the tap that toggles the
-  // reaction — the same rule the message long-press follows.
+  // A fixed tooltip cannot follow its chip, so any scroll takes it away rather
+  // than leaving it floating; and on a phone the next touch anywhere closes it,
+  // which is what a backdrop would have done without stealing the pointer.
+  useEffect(() => {
+    if (!pos) return undefined;
+    const off = () => setPos(null);
+    window.addEventListener('scroll', off, true);
+    window.addEventListener('resize', off);
+    window.addEventListener('touchstart', off, true);
+    return () => {
+      window.removeEventListener('scroll', off, true);
+      window.removeEventListener('resize', off);
+      window.removeEventListener('touchstart', off, true);
+    };
+  }, [pos]);
+
+  useEffect(() => () => { clearTimeout(hoverRef.current); clearTimeout(pressRef.current); }, []);
+
   const onTouchStart = () => {
     movedRef.current = false;
-    pressRef.current = setTimeout(() => { movedRef.current = true; show(); }, 450);
+    pressRef.current = setTimeout(() => { movedRef.current = true; place(); }, 450);
   };
-  const endPress = () => { clearTimeout(pressRef.current); };
-  const onTouchMove = () => { clearTimeout(pressRef.current); movedRef.current = true; };
 
   return (
     <>
       <button ref={btnRef} type="button"
-        onClick={() => { if (movedRef.current) { movedRef.current = false; return; } (reacted ? onUnreact : onReact)(m, r.emoji); }}
-        onMouseEnter={show} onMouseLeave={hide}
-        onTouchStart={onTouchStart} onTouchEnd={endPress} onTouchCancel={endPress} onTouchMove={onTouchMove}
+        onClick={() => {
+          // A long press opened the tooltip; it must not also toggle the
+          // reaction, the same guard the message long-press uses.
+          if (movedRef.current) { movedRef.current = false; return; }
+          (reacted ? onUnreact : onReact)(m, r.emoji);
+        }}
+        onMouseEnter={() => { clearTimeout(hoverRef.current); hoverRef.current = setTimeout(place, HOVER_DELAY); }}
+        onMouseLeave={hide}
+        onTouchStart={onTouchStart}
+        onTouchEnd={() => clearTimeout(pressRef.current)}
+        onTouchCancel={hide}
+        onTouchMove={() => { clearTimeout(pressRef.current); movedRef.current = true; }}
         onContextMenu={(e) => e.preventDefault()}
+        // The quick-reaction hover pill and the emoji picker hold the same
+        // characters, so this is what tells a filed reaction apart from an
+        // offer to add one.
+        data-reaction={r.emoji}
         className={`px-2 py-1 text-sm md:px-1.5 md:py-0.5 md:text-xs rounded-full border ${reacted ? 'bg-powder-50 border-powder-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
         {r.emoji} {r.count}
       </button>
-      {open && pos && (
-        <MenuPortal style={pos} onClose={hide}>
-          <div className="px-2.5 py-1.5">
-            <div className="text-lg leading-none mb-1">{r.emoji}</div>
-            <ul className="text-xs text-gray-700 space-y-0.5">
-              {named.map((n, i) => <li key={i} className={n === 'You' ? 'font-medium text-powder-700' : ''}>{n}</li>)}
-              {unknown > 0 && <li className="text-gray-400">and {unknown} {unknown === 1 ? 'other' : 'others'}</li>}
-            </ul>
+      {pos && (
+        <ReactionTooltip pos={pos}>
+          <div className="text-[11px] leading-snug">
+            <span className="mr-1">{r.emoji}</span>
+            {named.join(', ')}
+            {unknown > 0 && <span className="text-gray-300">{named.length ? ', ' : ''}and {unknown} {unknown === 1 ? 'other' : 'others'}</span>}
           </div>
-        </MenuPortal>
+        </ReactionTooltip>
       )}
     </>
   );
