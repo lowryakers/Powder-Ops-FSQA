@@ -1456,3 +1456,41 @@ database**. The live half earned its keep immediately — it caught `priorCheck`
 `work_orders.performed_on` column that does not exist, which the pure test could never see. The
 control matters: disabling the guard fails 8 of the 14, including the two that reproduce the original
 bug exactly (*the task completes* and *1 record filed*).
+
+## D-047 — A completion advances the schedule from the day the work was DONE
+
+**2 September 2026.** Reported as "there's no Temp & Humidity task for today". Reproduced end to end
+before touching anything, and the cause is not the one the report suggests.
+
+Maria completed the daily Temp & Humidity task on the 2nd, correctly recording in the form's
+*"when was this done?"* field that the check was performed on the 1st. **The record was right** —
+`performed_at` said the 1st and `entered_late` was set, which is why re-dating it (the repair first
+suggested here) turned out to be unnecessary and wrong. What was broken is what happened next:
+`createNextWorkOrder` computed the next due date from `new Date()`, so the next task fell due on the
+**3rd**, and the **2nd never got a task at all**. Nobody could take that day's readings and nothing
+anywhere reported a gap.
+
+**One fact, one owner: the day a completion satisfies is the day it was PERFORMED.** The schedule now
+advances from `backdate.when` rather than from the moment Complete was pressed. On an ordinary
+completion those are the same date, so this is a **no-op for every non-back-dated completion** — which
+is the property that makes it safe to ship into a live plant.
+
+A resulting due date in the past is correct and deliberate. Those days genuinely had no check, and a
+task that arrives already missed says so; one quietly scheduled for tomorrow does not.
+
+**Also added: never two live tasks for one schedule on one day.** Back-dating can land the next task on
+a date that already holds one, and a duplicate is worse than late — two cards for one check, and
+whichever is completed leaves the other outstanding for ever. `createNextWorkOrder` returns the
+existing task instead, flagged `existing: true`.
+
+**The rework path was a workaround, not the fix**, and it is worth saying so: sending the task back for
+rework does restore a card for today (verified), but it does it by reopening a task that was legitimately
+completed, and it leaves the review history claiming work was rejected when it was not. With this
+change no rework is needed.
+
+**Verified:** 11 assertions against a live server on a fresh database (`npm run verify:backdate`),
+including that an ordinary completion is bit-for-bit unchanged and that a weekly check done yesterday
+falls due in six days rather than seven. **The control matters — reverting the one argument fails 6 of
+the 11.** One assertion in the first draft was vacuous (`t(..., true)`); it now reads the filed
+sanitation record, and the fixture carries a title `recordAreaForTask()` actually recognises so the
+record path really runs.

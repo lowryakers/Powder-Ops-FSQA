@@ -195,11 +195,41 @@ function nextWeekday(date) {
 const FREQ_DAYS = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
 
 // Create the next occurrence WO for a schedule, due one interval from today
-function createNextWorkOrder(db, sched, triggeredBy = null) {
+// THE NEXT CHECK IS DUE AN INTERVAL AFTER THE ONE THAT WAS ACTUALLY DONE, not
+// an interval after the moment somebody pressed Complete.
+//
+// Those are the same date on an ordinary completion and they are NOT the same
+// when the work is back-dated, which is how a day silently lost its task:
+// Maria completed the daily Temp & Humidity task on the 2nd, correctly
+// recording that the check was performed on the 1st. The record was right —
+// `performed_at` said the 1st, `entered_late` was set. But the next task was
+// scheduled from the 2nd, so it fell due on the 3rd and **the 2nd never got a
+// task at all**. Nobody could take that day's readings, and nothing anywhere
+// said a day was missing.
+//
+// One fact, one owner: the day a completion satisfies is the day it was
+// PERFORMED, and the schedule advances from there. `from` is null on every
+// ordinary completion, so this is a no-op for all of them.
+//
+// A resulting due date in the past is correct and deliberate — those days
+// genuinely had no check, and a task that arrives already missed says so,
+// where one quietly scheduled for tomorrow would not.
+function createNextWorkOrder(db, sched, triggeredBy = null, { from = null } = {}) {
   const interval = (FREQ_DAYS[sched.frequency_type] || 30) * (sched.frequency_value || 1);
-  const raw = new Date();
+  const parsed = from ? new Date(`${String(from).slice(0, 10)}T12:00:00`) : null;
+  const raw = parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
   raw.setDate(raw.getDate() + interval);
   const dueStr = nextWeekday(raw).toISOString().split('T')[0];
+
+  // Never two live tasks for one schedule on one day. Back-dating can land the
+  // next task on a date that already has one, and a duplicate is worse than
+  // late: two cards for one check, and whichever is completed leaves the other
+  // looking outstanding for ever.
+  const dup = db.prepare(`SELECT id, title, due_date FROM work_orders
+     WHERE pm_schedule_id = ? AND due_date = ? AND status IN ('open','in_progress','missed','overdue')
+     LIMIT 1`).get(sched.id, dueStr);
+  if (dup) return { id: dup.id, title: dup.title, due_date: dup.due_date, existing: true };
+
   const woId = uuid();
   db.prepare(`
     INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
@@ -983,7 +1013,9 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   if (existing.pm_schedule_id) {
     const sched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(existing.pm_schedule_id);
     if (sched && sched.is_active) {
-      nextWO = createNextWorkOrder(db, sched, req.params.id);
+      // The day the check was performed, so a back-dated completion still
+      // leaves a task for the days it did not cover.
+      nextWO = createNextWorkOrder(db, sched, req.params.id, { from: backdate.when });
     }
   }
 

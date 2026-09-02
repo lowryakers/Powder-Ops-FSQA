@@ -33,7 +33,8 @@
     "check:ncstatus": "node scripts/check-nc-status.mjs",
     "check:docworklist": "node scripts/check-doc-worklist.mjs",
     "check:modaccess": "node scripts/check-module-access.mjs",
-    "check:dupreadings": "node scripts/check-duplicate-readings.mjs"
+    "check:dupreadings": "node scripts/check-duplicate-readings.mjs",
+    "verify:backdate": "node scripts/verify-backdated-recurrence.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
