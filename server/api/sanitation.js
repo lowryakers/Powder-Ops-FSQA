@@ -11,6 +11,7 @@ import { canVerifySanitation } from '../qa-signing.js';
 import { recordEditPolicy, mayRevokeSignature } from '../record-permissions.js';
 import { planQaRecordBackfill, runQaRecordBackfill } from '../qa-record-backfill.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { SWAB_TYPES, SWABS_PER_BOX, swabState, reorderPoint, setReorderPoint } from '../swab-stock.js';
 
 const router = Router();
 
@@ -378,6 +379,83 @@ router.put('/reclean-rooms', (req, res) => {
     .run(room, applicable ? 1 : 0, req.user.name);
   logAudit(req.user, 'update', 'sanitation_reclean', room, { applicable: !!applicable }, null, null, room);
   res.json({ ok: true, rooms: recleanRooms(db) });
+});
+
+/* ── How many usable swabs are on the shelf ──────────────────────────────── */
+
+// Declared before `/:id`, or Express reads "swab-stock" as a record id.
+//
+// Reading is open to anyone who can see the log: the cleaner about to swab a
+// room is exactly who needs to know there are eleven left. Counting, receiving
+// and moving the reorder point are QA/supervisor/admin.
+router.get('/swab-stock', (req, res) => {
+  res.json({ swabs: swabState(getDb()), box_size: SWABS_PER_BOX });
+});
+
+// A COUNT IS A NEW EVENT, NEVER AN EDIT of the last one. The shelf and the
+// books differ for ordinary reasons — a swab used without logging it, a bag
+// opened and not recorded — and the record of them differing is worth having.
+// Recounting resets the baseline; it does not erase the discrepancy.
+router.post('/swab-stock/:type/count', (req, res) => {
+  if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can count swabs.' });
+  const type = String(req.params.type || '');
+  if (!SWAB_TYPES.some(t => t.key === type)) return res.status(400).json({ error: 'Unknown swab type.' });
+  const qty = Number(req.body?.qty);
+  if (!Number.isFinite(qty) || qty < 0) return res.status(400).json({ error: 'A count is a number of swabs on the shelf.' });
+
+  const db = getDb();
+  // What the books said just before the count, so the audit trail carries the
+  // discrepancy rather than only the new figure.
+  const before = swabState(db).find(s => s.key === type);
+  const id = uuid();
+  db.prepare(`INSERT INTO swab_stock_events (id, swab_type, kind, qty, reason, recorded_by, occurred_at)
+    VALUES (?, ?, 'count', ?, ?, ?, datetime('now'))`)
+    .run(id, type, qty, String(req.body?.reason || '').trim() || null, req.user?.name || 'system');
+  logAudit(req.user, 'create', 'swab_stock', id,
+    { swab_type: type, kind: 'count', qty, expected: before?.on_hand ?? null,
+      variance: before?.on_hand == null ? null : qty - before.on_hand },
+    null, { qty }, `${type} swab count`);
+  res.status(201).json({ ok: true, swabs: swabState(db) });
+});
+
+// A delivery. Boxes, because that is how they are bought — the swab figure is
+// derived from it rather than typed, so a box can never be filed as 90.
+router.post('/swab-stock/:type/received', (req, res) => {
+  if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can record a delivery.' });
+  const type = String(req.params.type || '');
+  if (!SWAB_TYPES.some(t => t.key === type)) return res.status(400).json({ error: 'Unknown swab type.' });
+  const boxes = Number(req.body?.boxes);
+  const swabs = req.body?.swabs != null ? Number(req.body.swabs) : null;
+  const qty = Number.isFinite(swabs) && swabs > 0 ? swabs
+    : (Number.isFinite(boxes) && boxes > 0 ? boxes * SWABS_PER_BOX : NaN);
+  if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Say how many boxes arrived.' });
+
+  const db = getDb();
+  const id = uuid();
+  db.prepare(`INSERT INTO swab_stock_events (id, swab_type, kind, qty, reason, recorded_by, occurred_at)
+    VALUES (?, ?, 'received', ?, ?, ?, datetime('now'))`)
+    .run(id, type, qty, String(req.body?.reason || '').trim() || null, req.user?.name || 'system');
+  logAudit(req.user, 'create', 'swab_stock', id, { swab_type: type, kind: 'received', qty, boxes: boxes || null },
+    null, { qty }, `${type} swabs received`);
+  res.status(201).json({ ok: true, swabs: swabState(db) });
+});
+
+// The reorder point is the PLANT'S decision, not an acceptance criterion — it
+// buys lead time, it does not decide whether a clean passed. So it is editable
+// here rather than gated by Document Control, unlike the ATP limit.
+router.put('/swab-stock/:type', (req, res) => {
+  if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can change the reorder point.' });
+  const type = String(req.params.type || '');
+  if (!SWAB_TYPES.some(t => t.key === type)) return res.status(400).json({ error: 'Unknown swab type.' });
+  const value = Number(req.body?.reorder_point);
+  if (!Number.isFinite(value) || value < 0) return res.status(400).json({ error: 'A reorder point is a number of swabs.' });
+
+  const db = getDb();
+  const from = reorderPoint(db, type);
+  const to = setReorderPoint(db, type, value);
+  logAudit(req.user, 'update', 'swab_stock', `reorder_${type}`, { swab_type: type, from, to },
+    { reorder_point: from }, { reorder_point: to }, `${type} reorder point`);
+  res.json({ ok: true, swabs: swabState(db) });
 });
 
 /* ── Filing the records for inspections that were done and never recorded ─── */

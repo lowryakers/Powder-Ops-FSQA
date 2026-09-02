@@ -3593,6 +3593,43 @@ function runMigrations() {
   addColumnIfMissing('users', 'home_workspace', 'TEXT');
   // Last time this user opened the Production Schedule — clears the New/Updated
   // badge that admins raise when they publish/update the week's schedule.
+  // ── Swab stock ───────────────────────────────────────────────────────────
+  //
+  // ATP and allergen swabs are a consumable with a hard compliance dependency:
+  // running out does not slow a clean down, it means the clean cannot be
+  // verified, which stops product release. Nobody was counting them.
+  //
+  // ON HAND IS DERIVED, NEVER STORED. It is the most recent physical count,
+  // plus what has been received since, minus the swabs LOGGED since — so the
+  // number can never disagree with the cleaning log, and re-deriving it is
+  // idempotent. A stored running total drifts the first time somebody uses one
+  // without logging it, and then quietly stays wrong.
+  //
+  // A RECOUNT IS A NEW EVENT, NOT AN EDIT. Shelf counts differ from the books
+  // for ordinary reasons; correcting the number by rewriting history would
+  // lose the fact that they differed.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS swab_stock_events (
+      id         TEXT PRIMARY KEY,
+      swab_type  TEXT NOT NULL CHECK (swab_type IN ('atp','allergen')),
+      kind       TEXT NOT NULL CHECK (kind IN ('count','received','adjustment')),
+      -- For 'count' this is the number on the shelf; for the others it is the
+      -- change. Kept as one column because both are "swabs", and splitting them
+      -- would let a row mean neither.
+      qty        REAL NOT NULL,
+      reason     TEXT,
+      recorded_by TEXT,
+      occurred_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_swab_stock_type
+      ON swab_stock_events(swab_type, occurred_at DESC);
+  `);
+  // The reorder point lives in app_settings (`swab_reorder_atp` /
+  // `swab_reorder_allergen`), not in a column here: it is a setting the plant
+  // owns, and today's value is an estimate from cleaning frequency that the log
+  // itself will replace once it has measured a few weeks.
+
   addColumnIfMissing('users', 'schedule_seen_at', 'TEXT');
 
   // Light Inspection (Form 110-01/02), Brittle Plastic & Glass (Form 431-02)

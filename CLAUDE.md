@@ -1496,6 +1496,55 @@ stopped the month the paper import ended.
 - Verified end to end on the production-scale DB: 21 assertions — all three types file, land on QA's list
   with the right area, keep their readings, and a maintenance PM files nothing.
 
+### How many swabs are left, and ordering before they run out (`server/swab-stock.js`)
+Nobody was counting the ATP and allergen swabs. Running out does not slow a clean down — it means the
+clean cannot be **verified**, which is what holds product. `swab_stock_events`, the shelf on the Sanitation
+screen (`SwabStock.jsx`), and a supply order that raises itself.
+- **ON HAND IS DERIVED ON EVERY READ**: the last physical count, **plus** what has arrived since,
+  **minus** every swab the logs say was used. So it can never disagree with the cleaning log it is computed
+  from. A stored running total drifts the first time somebody uses a swab without logging it and then
+  quietly stays wrong — this codebase's recurring defect, in a new place. The card shows the arithmetic
+  ("126 counted on 1 Sep · 14 used since"), because a figure with nothing behind it is one nobody acts on.
+- **THE COUNT IS THE ANCHOR, and a recount is a NEW EVENT, never an edit.** Shelf and books differ for
+  ordinary reasons; the record of them differing is the useful part. The form shows the variance
+  *before* the count is filed and the audit entry carries `expected` and `variance`, not just the new number.
+- **`date > countDay` on the production-entry side, and that `>` is load-bearing.** A production entry
+  carries only a DATE — its cleaning events have times, but as shift free text, not timestamps — so a shift
+  filed at 09:00 and a count done at 15:00 cannot be ordered, and `>=` **subtracted the morning's swabs from
+  a count taken after they had already left the shelf**. Whatever was used before a physical count is already
+  in it. The cost is the other direction (a shift filed later that day waits until tomorrow) and that is the
+  right side to err on: reading one high for an afternoon beats a figure that drifts down for good and
+  raises orders nobody needs. `sanitation_records.performed_at` is a real timestamp, so that half stays exact.
+- **Two logs, counted where each is written.** `sanitation_records.atp_reading` (a reading is a swab that was
+  taken) and `production_entries.cleaning_events[].atp_swab` / `.allergen_swab`. No attempt is made to guess
+  that one clean written in both places is one swab — reconciling would mean deciding which record is real,
+  which is not a call an inventory count gets to make.
+- **No count on record means NO on-hand figure**, and the card says so. A number derived from nothing is one
+  somebody will act on.
+- **Deliveries are counted in BOXES** (100 swabs, 4 bags of 25) and the swab figure is derived, so a full box
+  can never be filed as 90.
+- **The reorder point is the PLANT'S decision, not an acceptance criterion** — it buys lead time, it does not
+  decide whether a clean passed — so it is editable in the app, unlike the ATP limit, which is gated by
+  `controlled.js`. Seeded at **50 each** (the plant's call), ~4 weeks of cover at the measured ceiling of
+  12 room-days a week.
+- **The reorder raises a real `supply_orders` row, directly, not a suggestion** — unlike the "used up" strip,
+  which groups because three people finishing one sanitizer would file three near-identical requests. There
+  is exactly one trigger per type. **Idempotent on an OPEN order for that item, including one the office
+  filed by hand** — the office already ordering them is the same fact, and a duplicate in that queue is what
+  makes people stop reading it. Closing the order re-arms the trigger.
+- **A rate is measured or absent.** Under a week of history `per_week` is null and no weeks-of-cover figure
+  is derived from it — an invented rate produces an invented answer nobody can source.
+- **The opening counts (ATP 126, allergen 80) are seeded insert-only per type** and skipped entirely once
+  that type has any count, so a redeploy can never overwrite a count somebody did. Filed as an ordinary
+  count event, not a special row: a baseline that reads differently from a recount is one nobody can
+  correct by counting.
+- **It is on Sanitation, not in the office supply module** — the person who notices there are eleven left is
+  the one about to swab a room. Reading is open to the module; counting, receiving and moving the point are
+  QA/supervisor/admin (the re-clean ladder).
+- Verified: 29 assertions on a temporary database (`npm run check:swabs`, in `npm run check`), 44 against a
+  live server on a fresh one, and 13 in a real browser. **The control matters:** restoring `>=` makes 6 of
+  the 29 fail and 3 of the 44.
+
 ### Three conditions raise a re-clean, and only one of them is the 72-hour rule
 QA asked how often the 72-hour clean is *scheduled*, because tasks appeared on days that were not the
 designated day. **It is not scheduled at all** — there is no cadence and no PM schedule. It is a condition

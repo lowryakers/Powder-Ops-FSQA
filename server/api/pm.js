@@ -6,6 +6,7 @@ import { generateDocumentReviewTasks, recomputeDocumentReview } from './document
 import { generateQualityScheduleTasks } from './quality-schedules.js';
 import { generateRecleanTasks } from './sanitation.js';
 import { generateSupplierReviewTasks } from '../supplier-review.js';
+import { generateSwabReorders } from '../swab-stock.js';
 import { getChannelByName, postMessageAs, botDm } from './comms.js';
 import { periodically, resetHousekeeping } from '../housekeeping.js';
 import { pushToUser } from '../push.js';
@@ -206,6 +207,9 @@ export function runPmHousekeeping(db, { force = false } = {}) {
   // An annual vendor review arrives with no other prompt — nobody is looking
   // for it — so it has to land in somebody's list. SOP 404 § IV.B.
   periodically('supplier-reviews', generateSupplierReviewTasks, db);
+  // Running out of swabs does not slow a clean down, it means the clean cannot
+  // be VERIFIED. Nothing was counting them, so the reorder raises itself.
+  periodically('swab-reorders', generateSwabReorders, db);
 }
 
 /**

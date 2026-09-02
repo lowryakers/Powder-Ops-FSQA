@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react';
 import AtpLimitHint from '../common/AtpLimitHint.jsx';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import RecordBackfillStrip from '../common/RecordBackfillStrip.jsx';
+import SwabStock from './SwabStock.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList, Settings2, Search } from 'lucide-react';
 import { useCappedList } from '../../lib/useCappedList';
@@ -771,6 +772,12 @@ export default function SanitationPanel() {
       <RecordBackfillStrip group="sanitation" noun="clean" onDone={refresh} />
 
       <RecleanSection />
+
+      {/* The swabs the ATP and allergen checks are run with. HERE, not in the
+          office supply module: the person who notices there are eleven left is
+          the one about to swab a room, and a count that lives where the
+          purchasing happens is one nobody on the floor ever files. */}
+      <SwabStock />
 
       {showForm && <RecordForm equipment={equipment} chemicals={chemicals} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
       {editing && <RecordForm key={editing.id} initial={editing} equipment={equipment} chemicals={chemicals}
