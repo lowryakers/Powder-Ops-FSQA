@@ -1374,3 +1374,42 @@ replaced it, and raising work for both would put two tasks on one vendor for one
 collecting the 22 questionnaires and dispositioning the 21 whose evidence is already on file. ReadyDoc now
 raises the obligation, catches the result and chases every third day. **It cannot ask a supplier for a
 questionnaire**, and the register should not pretend otherwise.
+
+## D-045 — One branch. The two-track split had already collapsed, and it cost a wrong status doc
+
+**Supersedes D-005 and makes D-016 moot.** The reasoning in D-005 was right and is worth keeping: a
+long-lived V2 fork IS the big-bang cutover wearing engineering clothes. What it did not anticipate is
+that the discipline it prescribed — new construction on the branch, refactors on `main` — would resolve
+itself by everything simply landing on `main`. The ATP grading, the supplier register, the annual
+review, the document storage, the disposition queue: all shipped to `main`. Track B ended up holding
+only documents.
+
+**A branch that holds only the record of what we decided, while the work happens elsewhere, is the
+worst possible version of this.** It is the same fact in two places, which is the defect this entire
+project exists to remove, occurring inside the project's own governance.
+
+It cost something concrete on 2 September. The audit status document published from Track B reported
+four of the twelve NSF findings as "not started" when `main` already carried:
+
+- `banned-substance-sop-seed.js` — a full draft of the Banned & Prohibited Substance Control Program,
+  seeded as a draft awaiting Document Control. That is the document all three GMP for Sport findings
+  hang on.
+- `emp-site-list.js` — FORM 604-01 transcribed with its alert and action limits, and six EMP quality
+  schedules seeded. That is 4.5.84.
+- `audit-readiness.js` — an audit-readiness review computed from records.
+- `signature.js` — a signature service covering 21 CFR 11.200, used by four routers.
+
+The status was built from `docs/v2/obligations.json` rather than from the code. **A register that is
+not derived from what it describes goes stale exactly as the supplier tracker did**, and for the same
+reason.
+
+There were also **two triage documents for the same twelve findings** — `docs/audit-2026-08-findings.md`
+on `main` and `docs/v2/queued/audit-nc-triage.md` on Track B — with different classification schemes and
+two published artifact URLs. Whoever read one did not read the other.
+
+**So: one branch, one session, one document per subject.** `docs/v2/` stays as the home of the
+architecture and the decisions, on `main`, where the code it describes lives. The obligations register
+stays, but its claims about what is built are now checked against the repository rather than asserted.
+
+**What does not change:** D-001 (do not rebuild), the spine order in `architecture.md`, and the rule
+that a decision gets a superseding entry rather than an edit. This entry is that rule working.
