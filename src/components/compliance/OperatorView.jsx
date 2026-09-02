@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import AtpLimitHint from '../common/AtpLimitHint.jsx';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { completeWorkOrder } from '../../lib/completeWorkOrder';
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
@@ -1070,9 +1071,26 @@ export default function OperatorView() {
     return false;
   };
 
+  // The server refuses a completion whose readings repeat the previous check's
+  // and says which record it matched. Asked in the operator's own language —
+  // a question shown only in English is one half the shift cannot answer.
+  const askDuplicate = (dup) => {
+    const body = dup.prior_date
+      ? t('dup_body').replace('{date}', dup.prior_date)
+      : t('dup_body_nodate');
+    return window.confirm(`${t('dup_title')}\n\n${body}\n\n${t('dup_hint')}`);
+  };
+
   const handleComplete = async (woId, form) => {
     if (blockedByViewAs()) return;
-    await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
+    try {
+      await completeWorkOrder(woId, form, askDuplicate);
+    } catch (err) {
+      // Answering "no" is a choice, not a failure — the same rule the
+      // signature prompt follows for a cancelled password.
+      if (err?.cancelled) return;
+      throw err;
+    }
     showToast(t('toast_completed'));
     refresh();
   };

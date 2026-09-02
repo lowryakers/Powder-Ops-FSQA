@@ -17,7 +17,7 @@
     "check:routes": "node scripts/check-route-order.mjs",
     "check:boot": "node scripts/check-fresh-boot.mjs",
     "check:endpoints": "node scripts/check-endpoints.mjs",
-    "check": "npm run lint && npm run build && npm run check:routes && npm run check:migrations && npm run check:boot && npm run check:endpoints && npm run check:suppliers && npm run check:invoices && npm run check:reclean && npm run check:readiness && npm run check:eqready && npm run check:swabs && npm run check:obligations && npm run check:ncstatus && npm run check:docworklist && npm run check:modaccess",
+    "check": "npm run lint && npm run build && npm run check:routes && npm run check:migrations && npm run check:boot && npm run check:endpoints && npm run check:suppliers && npm run check:invoices && npm run check:reclean && npm run check:readiness && npm run check:eqready && npm run check:swabs && npm run check:obligations && npm run check:ncstatus && npm run check:docworklist && npm run check:modaccess && npm run check:dupreadings",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:invoices": "node scripts/check-invoice-figures.mjs",
     "check:reclean": "node scripts/check-reclean-titles.mjs",
@@ -32,7 +32,8 @@
     "check:suppliers": "node scripts/check-supplier-archive.mjs && node scripts/check-supplier-reconcile.mjs && node scripts/check-supplier-import.mjs && node scripts/check-supplier-review.mjs && node scripts/check-supplier-storage.mjs",
     "check:ncstatus": "node scripts/check-nc-status.mjs",
     "check:docworklist": "node scripts/check-doc-worklist.mjs",
-    "check:modaccess": "node scripts/check-module-access.mjs"
+    "check:modaccess": "node scripts/check-module-access.mjs",
+    "check:dupreadings": "node scripts/check-duplicate-readings.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

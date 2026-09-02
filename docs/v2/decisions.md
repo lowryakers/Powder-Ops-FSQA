@@ -1413,3 +1413,46 @@ stays, but its claims about what is built are now checked against the repository
 
 **What does not change:** D-001 (do not rebuild), the spine order in `architecture.md`, and the rule
 that a decision gets a superseding entry rather than an edit. This entry is that rule working.
+
+## D-046 — A reading that repeats the previous check's is questioned, never refused
+
+**2 September 2026.** Maria recorded yesterday's temperature and humidity against today's Temp &
+Humidity task. Nothing caught it, so today held a record carrying yesterday's numbers and yesterday
+held no record at all. The mechanism to prevent it already existed — the completion form asks *"when
+was this done?"* — and defaults to today, which is exactly the answer somebody transcribing
+yesterday's sheet does not stop to change.
+
+**The rule is a QUESTION, and that is the decision.** A stable room genuinely reads 68°F and 35% two
+mornings running, so a rule that refused identical readings would block correct work and be switched
+off inside a week. The server refuses the submission **once**, with a machine-readable flag naming the
+record it matched and who filed it, and accepts the identical body back with
+`confirm_duplicate_readings`. The operator answers a question only they can answer — *is this today's
+check, or yesterday's?* — instead of being told they are wrong.
+
+Three limits keep it from becoming wallpaper:
+- **Only the immediately preceding check on the same schedule.** A room that has read 68/35 all month
+  is not filing a duplicate every day; the failure being caught is specifically "the last check's
+  numbers went into this one".
+- **A blank reading never matches.** Most tasks record no readings at all, and two empty sets matching
+  would fire on every one of them. Same rule as the ATP limit: a missing reading is a gap, not a
+  finding.
+- **File path only, never the edit path.** Correcting a typo next week must not re-ask a question that
+  was answered when the record was filed — the asymmetry the ATP escalation and the lab-test alert
+  already draw.
+
+Asked in **EN and ES on the floor screen**, from the structured facts rather than the server's English
+prose: a question shown only in English is one half the shift cannot answer.
+
+`completeWorkOrder()` in `src/lib/` is the one client path, so the Operator View and the Task Center
+cannot ask two different questions about the same rule — a check only one screen applies is a check
+people work around by using the other screen.
+
+**Also decided here:** `apiFetch` now attaches the whole error body as `err.data` rather than lifting
+one flag at a time. `signatureRequired` was this same need solved once, narrowly; copying a new field
+up on every refusal that carries facts is how one of them gets forgotten.
+
+**Verified:** 15 assertions on the pure module and **14 executed against a live server on a fresh
+database**. The live half earned its keep immediately — it caught `priorCheck` selecting a
+`work_orders.performed_on` column that does not exist, which the pure test could never see. The
+control matters: disabling the guard fails 8 of the 14, including the two that reproduce the original
+bug exactly (*the task completes* and *1 record filed*).

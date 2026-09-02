@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireDepartment } from '../middleware/auth.js';
 import { generateDocumentReviewTasks, recomputeDocumentReview } from './documents.js';
+import { duplicateReadings } from '../duplicate-readings.js';
 import { generateQualityScheduleTasks } from './quality-schedules.js';
 import { generateRecleanTasks } from './sanitation.js';
 import { generateSupplierReviewTasks } from '../supplier-review.js';
@@ -151,6 +152,30 @@ function fileQaInspectionRecord(db, { area, wo, readings, stepResults, result, n
 // of which completion path handled it. Completing a document-review task
 // advances that document's review cycle. (Quality schedules advance on their
 // own calendar at generation time, so they need no completion hook.)
+// The check immediately before this one, on the SAME schedule — that is what
+// "the previous readings" means. A task raised ad-hoc has no schedule, so it
+// falls back to the same title on the same equipment, which is how the QA
+// inspections were raised before the schedules existed.
+function priorCheck(db, wo) {
+  if (!wo) return null;
+  // `completed_at` is the only date a work order carries — the back-dated day a
+  // check was actually PERFORMED lives on the sanitation record it filed, not
+  // here. So a prior check that was itself entered late reports the day it was
+  // recorded. That is honest and it is enough: the question this asks is "are
+  // these the previous check's numbers", and the operator knows which day they
+  // are holding. duplicateReadings() already prefers `performed_on` if this
+  // table ever gains one.
+  const sql = `SELECT id, readings, completed_at, completed_by FROM work_orders
+     WHERE id != ? AND status = 'completed' AND readings IS NOT NULL AND readings != '' AND readings != '{}'
+       AND %WHERE%
+     ORDER BY completed_at DESC, rowid DESC LIMIT 1`;
+  if (wo.pm_schedule_id) {
+    return db.prepare(sql.replace('%WHERE%', 'pm_schedule_id = ?')).get(wo.id, wo.pm_schedule_id) || null;
+  }
+  return db.prepare(sql.replace('%WHERE%', 'title = ? AND IFNULL(equipment_id, \'\') = IFNULL(?, \'\')'))
+    .get(wo.id, wo.title, wo.equipment_id) || null;
+}
+
 function onWorkOrderCompleted(db, wo) {
   if (wo && wo.document_id) recomputeDocumentReview(db, wo.document_id);
 }
@@ -842,6 +867,26 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
         error: `This is food-contact equipment, so QA has to sign it off before it runs again — tick each step you completed. ${outstanding.length} of ${total} still unticked.`,
         outstanding,
         requires_steps: true,
+      });
+    }
+  }
+
+  // A READING THAT REPEATS THE LAST CHECK'S IS PROBABLY THE LAST CHECK. Asked
+  // once, never enforced: a stable room really does read the same two mornings
+  // running, so this refuses the first submission with the record it matched
+  // and accepts the identical one back with `confirm_duplicate_readings`. The
+  // operator is the only person who can answer it.
+  //
+  // FILE PATH ONLY. The edit path never asks — correcting a typo next week must
+  // not re-challenge a record already filed, the same asymmetry the ATP
+  // escalation and the lab-test alert draw.
+  if (!req.body?.confirm_duplicate_readings) {
+    const dup = duplicateReadings(priorCheck(db, existing), readings);
+    if (dup) {
+      return res.status(409).json({
+        error: dup.message,
+        duplicate_readings: true,
+        ...dup,
       });
     }
   }

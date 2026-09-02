@@ -83,6 +83,12 @@ async function apiFetch(path, options = {}) {
     // server says so with this flag. It has to survive being turned into an
     // Error or the caller cannot tell "wrong password" from any other refusal.
     if (err.signature_required) thrown.signatureRequired = true;
+    // THE WHOLE BODY SURVIVES, not one flag at a time. `signatureRequired`
+    // above is this same need solved once, narrowly; a refusal that carries
+    // facts the caller has to act on — which record the readings matched, how
+    // many steps are unticked — needs them all, and copying a new field up
+    // here every time is how one of them gets forgotten.
+    thrown.data = err;
     thrown.status = res.status;
     throw thrown;
   }
@@ -107,6 +113,7 @@ async function sendQueued(row) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     const thrown = new Error(err.error || `API error ${res.status}`);
+    thrown.data = err;
     thrown.status = res.status;
     throw thrown;
   }

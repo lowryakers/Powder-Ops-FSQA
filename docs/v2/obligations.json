@@ -1,29 +1,29 @@
 {
   "_README": [
-    "THE OBLIGATIONS REGISTER \u2014 the single list of what must be true before V2 ships.",
+    "THE OBLIGATIONS REGISTER — the single list of what must be true before V2 ships.",
     "",
     "Findings live in several documents and the SAME obligation appears in more than one of them:",
     "the ATP limit is a walk punch-list item, a red-line finding, an SQF clause and a queued build.",
-    "That is the defect this whole architecture is about \u2014 a fact in more than one place \u2014 happening",
+    "That is the defect this whole architecture is about — a fact in more than one place — happening",
     "in our own documentation. This file gives each obligation exactly ONE owner, and lists every",
     "finding that points at it under `sources`.",
     "",
     "DERIVED FROM NOTHING. This register is hand-maintained on purpose: grouping findings into",
-    "obligations is judgement, not parsing. What IS mechanical is the check \u2014",
+    "obligations is judgement, not parsing. What IS mechanical is the check —",
     "`node scripts/check-obligations.mjs` fails if any finding ID in the source documents is not",
     "claimed by exactly one obligation here, or if this file claims an ID that does not exist.",
     "So a new finding cannot be added to a document and quietly forgotten.",
     "",
     "STATUS values:",
-    "  open     \u2014 nothing built, nothing written. Needs a decision or a person.",
-    "  drafted  \u2014 the document or design exists and is reviewable; not landed.",
-    "  built    \u2014 code exists on the Track B branch, wired to nothing.",
-    "  queued   \u2014 written out exactly in docs/v2/queued/, ready to land on main in one pass.",
-    "  landed   \u2014 on main and deployed. Its queued file moves to docs/v2/landed/.",
+    "  open     — nothing built, nothing written. Needs a decision or a person.",
+    "  drafted  — the document or design exists and is reviewable; not landed.",
+    "  built    — code exists on main, wired to nothing. Not reachable at runtime.",
+    "  queued   — written out exactly in docs/v2/queued/, ready to land in one pass.",
+    "  landed   — on main and deployed. Its queued file moves to docs/v2/landed/.",
     "",
     "BUCKET (from audit-nc-triage.md):",
-    "  A \u2014 ReadyDoc is the fix.  B \u2014 ReadyDoc makes it stick.  C \u2014 outside ReadyDoc.",
-    "  doc \u2014 a change to a controlled document; no software involved."
+    "  A — ReadyDoc is the fix.  B — ReadyDoc makes it stick.  C — outside ReadyDoc.",
+    "  doc — a change to a controlled document; no software involved."
   ],
   "generated": null,
   "obligations": [
@@ -43,7 +43,7 @@
         "src/components/common/AtpLimitHint.jsx",
         "docs/v2/landed/atp-35-rlu.md"
       ],
-      "note": "LANDED on main 27 Aug 2026. server/atp-limits.js owns the 35 RLU, registered with controlled.js so the number cannot be edited in the app; grading is asymmetric (an over-limit reading forces fail, an in-limit one never upgrades what the filer chose); the limit is stored on the record it graded (sanitation_records.atp_limit). Two consecutive failed swabs raise the re-clean work order \u2014 the plant's rule, because one high reading can be the swab rather than the line. Closing that task also had to be fixed: closeRecleanTasksFor matched the 72-hour task by exact title, so a passing clean left the ATP task open. AtpLimitHint gives the operator live EN/ES feedback and enforces nothing. Verified on a fresh DB: 24 unit assertions and seven end-to-end scenarios. SQF-06 (validating the number itself) moved to OBL-27; SQF-09 (naming the test method) moved to OBL-15, where the plan is reissued \u2014 neither is something software can discharge."
+      "note": "LANDED on main 27 Aug 2026. server/atp-limits.js owns the 35 RLU, registered with controlled.js so the number cannot be edited in the app; grading is asymmetric (an over-limit reading forces fail, an in-limit one never upgrades what the filer chose); the limit is stored on the record it graded (sanitation_records.atp_limit). Two consecutive failed swabs raise the re-clean work order — the plant's rule, because one high reading can be the swab rather than the line. Closing that task also had to be fixed: closeRecleanTasksFor matched the 72-hour task by exact title, so a passing clean left the ATP task open. AtpLimitHint gives the operator live EN/ES feedback and enforces nothing. Verified on a fresh DB: 24 unit assertions and seven end-to-end scenarios. SQF-06 (validating the number itself) moved to OBL-27; SQF-09 (naming the test method) moved to OBL-15, where the plan is reissued — neither is something software can discharge."
     },
     {
       "id": "OBL-02",
@@ -62,7 +62,7 @@
     },
     {
       "id": "OBL-03",
-      "title": "Banned and prohibited substance control \u2014 SOP, annual list review, purchasing check",
+      "title": "Banned and prohibited substance control — SOP, annual list review, purchasing check",
       "bucket": "A + B + C",
       "status": "open",
       "owner": "Document Control + QA + Purchasing",
@@ -72,7 +72,7 @@
         "NC-306-6.2.3.1",
         "NC-306-6.2.3.2"
       ],
-      "note": "THREE NONCONFORMANCES, ONE SOP. The draft exists as SOP-DRAFT-BSC. Needs: the SOP written and numbered (C); an annual quality schedule for the list review (B); one line on FORM 204-01 for the purchasing check, which requires a DCR (A). VERIFIED 2 Sep against main: banned-substance-sop-seed.js seeds a full DRAFT of the Banned & Prohibited Substance Control Program (SOP-DRAFT-BSC), citing NSF 306 Annex C, NFL/NFLPA, MLB and WADA by name, and skipped entirely if the plant already has a procedure. It stays a draft until Document Control approves it. APPROVING IT IS THE HIGHEST-VALUE HOUR AVAILABLE \u2014 all three GMP for Sport findings hang on that document existing. Still absent: anything that GENERATES the annual list review (6.2.3.1), and the banned-list line on FORM 204-01 (6.2.3.2 \u2014 receiving-checklist.js has no such question)."
+      "note": "THREE NONCONFORMANCES, ONE SOP. The draft exists as SOP-DRAFT-BSC. Needs: the SOP written and numbered (C); an annual quality schedule for the list review (B); one line on FORM 204-01 for the purchasing check, which requires a DCR (A). VERIFIED 2 Sep against main: banned-substance-sop-seed.js seeds a full DRAFT of the Banned & Prohibited Substance Control Program (SOP-DRAFT-BSC), citing NSF 306 Annex C, NFL/NFLPA, MLB and WADA by name, and skipped entirely if the plant already has a procedure. It stays a draft until Document Control approves it. APPROVING IT IS THE HIGHEST-VALUE HOUR AVAILABLE — all three GMP for Sport findings hang on that document existing. Still absent: anything that GENERATES the annual list review (6.2.3.1), and the banned-list line on FORM 204-01 (6.2.3.2 — receiving-checklist.js has no such question)."
     },
     {
       "id": "OBL-04",
@@ -85,7 +85,7 @@
         "NC-455-4.4.39",
         "SQF-23"
       ],
-      "note": "The only nonconformance that names ReadyDoc. Intended use and scope, a Part 11 gap assessment, IQ/OQ/PQ for the system, test scripts with recorded results approved by Quality, and software change control. SQF-23 adds one the supplements code requires and the Food Manufacturing code does not: software and electronic records backed up remote from the site's system, documented. Interlocks with OBL-05. VERIFIED 2 Sep against main: more exists than the finding implies. server/signature.js covers 21 CFR 11.200 \u2014 the signer's own password at the moment of signing, ONE definition used by four routers \u2014 and scripts/lib/verification-doc.mjs already produces dated executed-protocol evidence. What is absent is the PACKAGE: scope, a Part 11 gap assessment, and the protocols named as such. The auditor's own wording (features present, documentation absent) remains exactly right."
+      "note": "The only nonconformance that names ReadyDoc. Intended use and scope, a Part 11 gap assessment, IQ/OQ/PQ for the system, test scripts with recorded results approved by Quality, and software change control. SQF-23 adds one the supplements code requires and the Food Manufacturing code does not: software and electronic records backed up remote from the site's system, documented. Interlocks with OBL-05. VERIFIED 2 Sep against main: more exists than the finding implies. server/signature.js covers 21 CFR 11.200 — the signer's own password at the moment of signing, ONE definition used by four routers — and scripts/lib/verification-doc.mjs already produces dated executed-protocol evidence. What is absent is the PACKAGE: scope, a Part 11 gap assessment, and the protocols named as such. The auditor's own wording (features present, documentation absent) remains exactly right."
     },
     {
       "id": "OBL-05",
@@ -105,7 +105,7 @@
         "W2-37",
         "W2-38"
       ],
-      "note": "controlled.js is already a real gate for form definitions and acceptance criteria \u2014 widen it. Adds QC approval on every change, which the current DCR flow does not enforce. Software change control is required by this AND by OBL-04: build once. Wave 2 sized both halves. W2-12: SOP 434's title names chemicals, equipment AND services; ReadyDoc records only chemicals (approved_chemicals is a real approval record with approved_by/at and review_due) and has no equipment or services approval record at all \u2014 the software has the same scope gap the auditor found in the document. W2-13: controlled.js IS a working change-control gate with an approval and an audit trail, over exactly three things (QMS form definitions, scale tolerances, the ATP limit); it sees no process, utility, physical-plant or software change. W2-14: 111.130(e) wants QC approval and the DCR flow enforces Document Control only. W2-15: SOP 700 may also govern chemical approval. Interlock with OBL-04 \u2014 software change control is named in 4.4.39 too. The wording pass confirmed the auditor needs no argument: SOP 434's scope is chemicals, equipment and services, written as one approval path each, and processes/software/utilities/physical plant appear NOWHERE (W2-35) \u2014 so closing this is a rewrite of the scope, not an addendum. W2-33 adds a complication found only by reading SOP 421: IT ALSO REQUIRES A CHANGE-CONTROL SYSTEM for qualified equipment and never cites 434, so widening change control has to reconcile the two documents. W2-36: the SOP is titled '...APPROVAL FORM' and the form it requires has no number, so a record cannot say which it was filed against. W2-37 is the closest ReadyDoc comes to satisfying a Wave 2 SOP as written \u2014 approved_chemicals is three columns short of the tracking number, approval number and expiry the SOP requires. W2-14 RESOLVED by reading: the SOP does make the QA/QC Manager the final approver, so the document is fine and the DCR flow is the gap. VERIFIED 2 Sep against main: controlled.js gates form definitions and acceptance criteria only \u2014 a changed definition is parked until Document Control approves it and raises a change request. It does NOT cover process, software, utility or physical-plant changes, and does not require QC approval on every change. Foundation right, scope narrower than the finding.",
+      "note": "controlled.js is already a real gate for form definitions and acceptance criteria — widen it. Adds QC approval on every change, which the current DCR flow does not enforce. Software change control is required by this AND by OBL-04: build once. Wave 2 sized both halves. W2-12: SOP 434's title names chemicals, equipment AND services; ReadyDoc records only chemicals (approved_chemicals is a real approval record with approved_by/at and review_due) and has no equipment or services approval record at all — the software has the same scope gap the auditor found in the document. W2-13: controlled.js IS a working change-control gate with an approval and an audit trail, over exactly three things (QMS form definitions, scale tolerances, the ATP limit); it sees no process, utility, physical-plant or software change. W2-14: 111.130(e) wants QC approval and the DCR flow enforces Document Control only. W2-15: SOP 700 may also govern chemical approval. Interlock with OBL-04 — software change control is named in 4.4.39 too. The wording pass confirmed the auditor needs no argument: SOP 434's scope is chemicals, equipment and services, written as one approval path each, and processes/software/utilities/physical plant appear NOWHERE (W2-35) — so closing this is a rewrite of the scope, not an addendum. W2-33 adds a complication found only by reading SOP 421: IT ALSO REQUIRES A CHANGE-CONTROL SYSTEM for qualified equipment and never cites 434, so widening change control has to reconcile the two documents. W2-36: the SOP is titled '...APPROVAL FORM' and the form it requires has no number, so a record cannot say which it was filed against. W2-37 is the closest ReadyDoc comes to satisfying a Wave 2 SOP as written — approved_chemicals is three columns short of the tracking number, approval number and expiry the SOP requires. W2-14 RESOLVED by reading: the SOP does make the QA/QC Manager the final approver, so the document is fine and the DCR flow is the gap. VERIFIED 2 Sep against main: controlled.js gates form definitions and acceptance criteria only — a changed definition is parked until Document Control approves it and raises a change request. It does NOT cover process, software, utility or physical-plant changes, and does not require QC approval on every change. Foundation right, scope narrower than the finding.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md"
       ]
@@ -145,14 +145,14 @@
         "W2-44",
         "W2-45"
       ],
-      "note": "Three independent routes to one conclusion: the walk found no record path, the auditor found the testing was not done, SQF requires results tracked and trended. Schedule also needs location rotation and a documented method for elevated results (2.4.8.2). Wave 2 found the third gap and it is the decisive one. W2-16: completing a quality schedule writes work_orders and quality_schedules and NOTHING else, so a swab never taken and a swab whose result went nowhere are indistinguishable \u2014 the auditor's finding in software terms. W2-17: FORM 604-01's alert and action limits are transcribed faithfully in emp-site-list.js and graded against nothing, which is the ATP 35 RLU state exactly, and OBL-01 is now the working template for the fix. W2-18: the form's WATER section has no EMP schedule at all \u2014 monthly potable water (TAB, coliforms, free chlorine, each with limits) is served instead by a pre-existing 'Tap Water Testing' schedule that names no test, cites no limit and never references the form; the room-air row is the same story. Two mechanisms for one requirement is how one goes quiet. The wording pass found the most serious single finding in Wave 2 and it is not about software: FOUR BROKEN CROSS-REFERENCES INSIDE THE OOS ESCALATION (W2-39), including 5.3.5 citing itself \u2014 so the Zone 1 product-contact positive procedure instructs the reader to follow the Zone 1 procedure, and the water procedure is sent to Zone 1 rather than to the general escalation. Ten-minute fix. W2-40 is a hard dependency on any build here: the SOP states MONTHLY sampling for zones 2-4 while deferring frequency to FORM 604-01, which says semi-annual/annual/quarterly \u2014 and the six seeded EMP schedules follow the form, so if the SOP is right every zone schedule is at the wrong cadence. SETTLE THAT BEFORE BUILDING. W2-41: the OOS form is never named and the EMPRCA report has no controlled number. W2-42: 'the Quality Manager and Quality Manager' leaves the corrective-action decision authority unstated. W2-43/44/45: three roles used but never established, an annual verification written as 'should' and then relied on as fact, and two recurring obligations (semi-annual MRB trend review, annual baseline mapping) with no generator. NOTE the plant confirmed 27 Aug that the tap water sampling IS being done and logged in Quality Schedules \u2014 so this obligation buys the evidence, the grading and the trend the SOP itself demands (5.6, 5.7), not the work. VERIFIED 2 Sep against main: emp-site-list.js transcribes FORM 604-01 with its alert and action limits and seeds six quality schedules, and EMP_COVERAGE feeds audit-readiness.js. THE RESULT RECORD IS STILL MISSING \u2014 no environmental result table exists, so completing a schedule files no result and a swab that never happened still looks like one whose result went nowhere. That is the half that closes 4.5.84.",
+      "note": "Three independent routes to one conclusion: the walk found no record path, the auditor found the testing was not done, SQF requires results tracked and trended. Schedule also needs location rotation and a documented method for elevated results (2.4.8.2). Wave 2 found the third gap and it is the decisive one. W2-16: completing a quality schedule writes work_orders and quality_schedules and NOTHING else, so a swab never taken and a swab whose result went nowhere are indistinguishable — the auditor's finding in software terms. W2-17: FORM 604-01's alert and action limits are transcribed faithfully in emp-site-list.js and graded against nothing, which is the ATP 35 RLU state exactly, and OBL-01 is now the working template for the fix. W2-18: the form's WATER section has no EMP schedule at all — monthly potable water (TAB, coliforms, free chlorine, each with limits) is served instead by a pre-existing 'Tap Water Testing' schedule that names no test, cites no limit and never references the form; the room-air row is the same story. Two mechanisms for one requirement is how one goes quiet. The wording pass found the most serious single finding in Wave 2 and it is not about software: FOUR BROKEN CROSS-REFERENCES INSIDE THE OOS ESCALATION (W2-39), including 5.3.5 citing itself — so the Zone 1 product-contact positive procedure instructs the reader to follow the Zone 1 procedure, and the water procedure is sent to Zone 1 rather than to the general escalation. Ten-minute fix. W2-40 is a hard dependency on any build here: the SOP states MONTHLY sampling for zones 2-4 while deferring frequency to FORM 604-01, which says semi-annual/annual/quarterly — and the six seeded EMP schedules follow the form, so if the SOP is right every zone schedule is at the wrong cadence. SETTLE THAT BEFORE BUILDING. W2-41: the OOS form is never named and the EMPRCA report has no controlled number. W2-42: 'the Quality Manager and Quality Manager' leaves the corrective-action decision authority unstated. W2-43/44/45: three roles used but never established, an annual verification written as 'should' and then relied on as fact, and two recurring obligations (semi-annual MRB trend review, annual baseline mapping) with no generator. NOTE the plant confirmed 27 Aug that the tap water sampling IS being done and logged in Quality Schedules — so this obligation buys the evidence, the grading and the trend the SOP itself demands (5.6, 5.7), not the work. VERIFIED 2 Sep against main: emp-site-list.js transcribes FORM 604-01 with its alert and action limits and seeds six quality schedules, and EMP_COVERAGE feeds audit-readiness.js. THE RESULT RECORD IS STILL MISSING — no environmental result table exists, so completing a schedule files no result and a swab that never happened still looks like one whose result went nowhere. That is the half that closes 4.5.84.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md"
       ]
     },
     {
       "id": "OBL-08",
-      "title": "Supplier qualification records \u2014 the register",
+      "title": "Supplier qualification records — the register",
       "bucket": "A",
       "status": "landed",
       "owner": "platform + QA + Purchasing",
@@ -162,7 +162,7 @@
         "W2-05",
         "W2-07"
       ],
-      "note": "LANDED on main 27 Aug 2026 as ff384ca. suppliers + supplier_contacts + supplier_materials + supplier_qualifications + supplier_files, the archive parser, the pure reconciliation, the import pipeline and the screen. The unit of qualification is a MATERIAL FROM A MANUFACTURER, not a vendor (SOP 404 \u00a7 III.A, and AIFI's three materials from three makers is why). Nothing is imported as qualified \u2014 the tracker's 19 ticks are evidence for a \u00a7 V.C.III disposition, never the disposition. The import is a RECONCILIATION because the tracker and the archive disagree about 48 of 75 vendors. W2-07 resolved as designed: a new table, reusing the expiry machinery rather than widening certifications. Verified by 63 assertions in npm run check plus 30 executed against a live server on a fresh database with the real files over HTTP. WHAT LANDED IS THE RECORD, NOT THE WORK \u2014 collecting the missing questionnaires is OBL-29 and SOP 404's own document defects are OBL-30, both still open.",
+      "note": "LANDED on main 27 Aug 2026 as ff384ca. suppliers + supplier_contacts + supplier_materials + supplier_qualifications + supplier_files, the archive parser, the pure reconciliation, the import pipeline and the screen. The unit of qualification is a MATERIAL FROM A MANUFACTURER, not a vendor (SOP 404 § III.A, and AIFI's three materials from three makers is why). Nothing is imported as qualified — the tracker's 19 ticks are evidence for a § V.C.III disposition, never the disposition. The import is a RECONCILIATION because the tracker and the archive disagree about 48 of 75 vendors. W2-07 resolved as designed: a new table, reusing the expiry machinery rather than widening certifications. Verified by 63 assertions in npm run check plus 30 executed against a live server on a fresh database with the real files over HTTP. WHAT LANDED IS THE RECORD, NOT THE WORK — collecting the missing questionnaires is OBL-29 and SOP 404's own document defects are OBL-30, both still open.",
       "artifacts": [
         "server/supplier-archive.js",
         "server/supplier-reconcile.js",
@@ -182,7 +182,7 @@
       "sources": [
         "NC-455-4.3.6"
       ],
-      "note": "Forward half only \u2014 the historical gap cannot be fixed by software. Same defect class as the ungraded ATP reading: a test with no active specification quietly passes. Identity by organoleptic alone is not acceptable. VERIFIED 2 Sep against main: spec-seed.js seeds specifications for the most-tested items, and coa.js records a test with no active specification WITHOUT a pass/fail (no_spec_reason) rather than letting it quietly pass. The RELEASE GATE is absent: nothing refuses a lot whose item has no active spec covering identity, purity, strength and composition."
+      "note": "Forward half only — the historical gap cannot be fixed by software. Same defect class as the ungraded ATP reading: a test with no active specification quietly passes. Identity by organoleptic alone is not acceptable. VERIFIED 2 Sep against main: spec-seed.js seeds specifications for the most-tested items, and coa.js records a test with no active specification WITHOUT a pass/fail (no_spec_reason) rather than letting it quietly pass. The RELEASE GATE is absent: nothing refuses a lot whose item has no active spec covering identity, purity, strength and composition."
     },
     {
       "id": "OBL-10",
@@ -194,7 +194,7 @@
         "FSP-30",
         "SQF-10"
       ],
-      "note": "SQF 2.8.1 is Mandatory with a six-part content list, including workplace allergens from locker rooms, vending machines and lunchrooms, and food-grade lubricants. 2.8.1.5 requires validation AND verification of allergen cleaning \u2014 that is PC #2. 2.8.1.10 requires allergen rework to be identified and traceable."
+      "note": "SQF 2.8.1 is Mandatory with a six-part content list, including workplace allergens from locker rooms, vending machines and lunchrooms, and food-grade lubricants. 2.8.1.5 requires validation AND verification of allergen cleaning — that is PC #2. 2.8.1.10 requires allergen rework to be identified and traceable."
     },
     {
       "id": "OBL-11",
@@ -206,7 +206,7 @@
         "SQF-21",
         "SQF-22"
       ],
-      "note": "The largest single gap the SQF pass found. 2.7.2 is its own Mandatory clause: methods/responsibility/criteria, a mitigation plan, staff training, and an annual review with gaps and corrective actions documented. The substance is in Protocol 001 \u00a73A; the structure is not."
+      "note": "The largest single gap the SQF pass found. 2.7.2 is its own Mandatory clause: methods/responsibility/criteria, a mitigation plan, staff training, and an annual review with gaps and corrective actions documented. The substance is in Protocol 001 §3A; the structure is not."
     },
     {
       "id": "OBL-12",
@@ -235,7 +235,7 @@
         "W2-32",
         "W2-34"
       ],
-      "note": "Performing the qualification is engineering work. Holding it is three more derived steps on equipment-readiness.js, each satisfied by an attached protocol \u2014 which makes 'which machines are unqualified' answerable on a screen. Wave 2 confirmed the starting point: 'IQ', 'OQ' and 'PQ' appear NOWHERE in the codebase (W2-09), and equipment-readiness.js derives ten steps per machine of which none is qualification \u2014 so 'which machines are unqualified' is not a question the app can be asked. W2-10: no 421-series form number exists for a qualification protocol. W2-11: this is the cheapest of the four Wave 2 SOPs to close \u2014 three derived steps on a pattern that already carries its own roll-up and badges. The wording pass produced the finding that decides how NC 4.5.8 is answered: SOP 421's own scope is 'all NEW AND SIGNIFICANTLY MODIFIED facilities and equipment' (W2-31), so read strictly it does not require what the auditor found missing on equipment already in service. Either the SOP gains a retrospective-qualification clause or the plant argues scope against a finding already on the record \u2014 and no IQ/OQ/PQ checklist should be derived across 183 machines until that is decided. W2-32 sharpens W2-10: the SOP lists EIGHT record types and numbers none of them. W2-34: it requires approval from an 'Operations Manager' the document never establishes, and a periodic-review schedule with no interval stated.",
+      "note": "Performing the qualification is engineering work. Holding it is three more derived steps on equipment-readiness.js, each satisfied by an attached protocol — which makes 'which machines are unqualified' answerable on a screen. Wave 2 confirmed the starting point: 'IQ', 'OQ' and 'PQ' appear NOWHERE in the codebase (W2-09), and equipment-readiness.js derives ten steps per machine of which none is qualification — so 'which machines are unqualified' is not a question the app can be asked. W2-10: no 421-series form number exists for a qualification protocol. W2-11: this is the cheapest of the four Wave 2 SOPs to close — three derived steps on a pattern that already carries its own roll-up and badges. The wording pass produced the finding that decides how NC 4.5.8 is answered: SOP 421's own scope is 'all NEW AND SIGNIFICANTLY MODIFIED facilities and equipment' (W2-31), so read strictly it does not require what the auditor found missing on equipment already in service. Either the SOP gains a retrospective-qualification clause or the plant argues scope against a finding already on the record — and no IQ/OQ/PQ checklist should be derived across 183 machines until that is decided. W2-32 sharpens W2-10: the SOP lists EIGHT record types and numbers none of them. W2-34: it requires approval from an 'Operations Manager' the document never establishes, and a periodic-review schedule with no interval stated.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md"
       ]
@@ -251,11 +251,11 @@
         "SQF-12",
         "SQF-24"
       ],
-      "note": "Laboratory work over real time. SQF-24 sharpens it: the supplements code drops the Food Manufacturing code's 'or established by the site' fallback, so retention is anchored to shelf life with NO alternative basis \u2014 and that shelf life is itself under nonconformance 4.6.21."
+      "note": "Laboratory work over real time. SQF-24 sharpens it: the supplements code drops the Food Manufacturing code's 'or established by the site' fallback, so retention is anchored to shelf life with NO alternative basis — and that shelf life is itself under nonconformance 4.6.21."
     },
     {
       "id": "OBL-15",
-      "title": "Reissue Protocol 003 \u2014 Food Safety Plan V5",
+      "title": "Reissue Protocol 003 — Food Safety Plan V5",
       "bucket": "doc",
       "status": "drafted",
       "owner": "Document Control",
@@ -323,7 +323,7 @@
     },
     {
       "id": "OBL-17",
-      "title": "Reissue Protocol 001 \u2014 Food Defense Plan V3",
+      "title": "Reissue Protocol 001 — Food Defense Plan V3",
       "bucket": "doc",
       "status": "drafted",
       "owner": "Document Control + Carol Rojas",
@@ -378,11 +378,11 @@
         "docs/v2/queued/document-reference-graph.md",
         "docs/v2/queued/wave-2-sop-review.md"
       ],
-      "note": "BLOCKED ON OBL-15 AND OBL-17. Neither plan cites another document by number, so the graph would find nothing. The plan revision must land first \u2014 building the mechanism over an empty graph produces something indistinguishable from broken. W2-19 names the best candidate after the two plans: SOP 604 governs a programme carried out under SOP 600 (Air Monitoring V1), SOP 601 (Microbial Surface Testing V1) and SOP 608 (Surface ATP Swab Testing V4). 608 went V1 to V4 over ten months while 604 stayed at V2 and nothing in the register says whether 604 was re-checked. One governing document, three governed, an obvious question on every revision \u2014 but it still needs SOP 604's text to confirm it cites the other three by number, which is exactly what neither plan turned out to do (D-027). W2-46 answers the [verify in source] on W2-19 and changes the sequencing question. SOP 604 CITES SOP 600 and SOP 601 BY NUMBER, and SOP 404 cites SOP 607 \u2014 so unlike Protocol 003 and Protocol 001, which cite nothing at all (D-027), the registry's SOPs are a usable corpus for the reference graph. 604 does NOT cite SOP 608, the one of its three spokes that has moved four revisions while 604 stayed at V2, and relies on the Material Review Board throughout without citing SOP 412. The graph may not have to wait on the plan revision after all."
+      "note": "BLOCKED ON OBL-15 AND OBL-17. Neither plan cites another document by number, so the graph would find nothing. The plan revision must land first — building the mechanism over an empty graph produces something indistinguishable from broken. W2-19 names the best candidate after the two plans: SOP 604 governs a programme carried out under SOP 600 (Air Monitoring V1), SOP 601 (Microbial Surface Testing V1) and SOP 608 (Surface ATP Swab Testing V4). 608 went V1 to V4 over ten months while 604 stayed at V2 and nothing in the register says whether 604 was re-checked. One governing document, three governed, an obvious question on every revision — but it still needs SOP 604's text to confirm it cites the other three by number, which is exactly what neither plan turned out to do (D-027). W2-46 answers the [verify in source] on W2-19 and changes the sequencing question. SOP 604 CITES SOP 600 and SOP 601 BY NUMBER, and SOP 404 cites SOP 607 — so unlike Protocol 003 and Protocol 001, which cite nothing at all (D-027), the registry's SOPs are a usable corpus for the reference graph. 604 does NOT cite SOP 608, the one of its three spokes that has moved four revisions while 604 stayed at V2, and relies on the Material Review Board throughout without citing SOP 412. The graph may not have to wait on the plan revision after all."
     },
     {
       "id": "OBL-19",
-      "title": "Food defense mock incident \u2014 annually, with a form and a record",
+      "title": "Food defense mock incident — annually, with a form and a record",
       "bucket": "A",
       "status": "open",
       "owner": "QA + platform",
@@ -390,7 +390,7 @@
         "FDP-25",
         "WALK-05"
       ],
-      "note": "mock_recalls with a different checklist. SQF 2.7.1.4 sets the cadence at ANNUAL, not the two years the plan states \u2014 see OBL-17. Records of both the review and the test are required."
+      "note": "mock_recalls with a different checklist. SQF 2.7.1.4 sets the cadence at ANNUAL, not the two years the plan states — see OBL-17. Records of both the review and the test are required."
     },
     {
       "id": "OBL-20",
@@ -402,7 +402,7 @@
         "FDP-26",
         "WALK-06"
       ],
-      "note": "The internal audit is named as the food defense plan's verification and its nineteen sections contain none. Changing what an internal audit asks is a DCR \u2014 audit-checklist.js is not user-editable by design."
+      "note": "The internal audit is named as the food defense plan's verification and its nineteen sections contain none. Changing what an internal audit asks is a DCR — audit-checklist.js is not user-editable by design."
     },
     {
       "id": "OBL-21",
@@ -447,7 +447,7 @@
       "sources": [
         "WALK-11"
       ],
-      "note": "Calibration has a record and no form number. Mock recall has a record and a form and no generator \u2014 its cadence is reported, not raised."
+      "note": "Calibration has a record and no form number. Mock recall has a record and a form and no generator — its cadence is reported, not raised."
     },
     {
       "id": "OBL-25",
@@ -458,7 +458,7 @@
       "sources": [
         "WALK-01-exit"
       ],
-      "note": "ANSWERED IN PART, 27 Aug 2026: the SQF code question is settled \u2014 the Dietary Supplement Manufacturing code Edition 9 is the one that applies, it is now in the reference registry as REF-SQF-DSC-9, and every Part 5 clause was re-verified against it. What remains: none of the seven keychain-marked forms is producing records, and the absorb-or-API-connect exit is OBL-06."
+      "note": "ANSWERED IN PART, 27 Aug 2026: the SQF code question is settled — the Dietary Supplement Manufacturing code Edition 9 is the one that applies, it is now in the reference registry as REF-SQF-DSC-9, and every Part 5 clause was re-verified against it. What remains: none of the seven keychain-marked forms is producing records, and the absorb-or-API-connect exit is OBL-06."
     },
     {
       "id": "OBL-26",
@@ -480,7 +480,7 @@
         "docs/v2/queued/document-review-at-scale.md",
         "docs/v2/queued/wave-2-sop-review.md"
       ],
-      "note": "Extend doc-consistency.js with the rules generalised from the plan red-line \u2014 approved-but-unsigned, revision disagreement, unspecified retention, cites-nothing, section and page arithmetic, spelling. Output is a queue with dismissals, not a document. Wave 2 gave this obligation its first concrete rules and they are not spelling rules. W2-01: two controlled documents the auditor read (SOP 421, SOP 434) have NO row in the 159-row DCR log \u2014 no new-document row, no revision row. W2-02: SOP 404 is V4 with a widened title in practice and V3 under the old title in the log. W2-03: SOP 604's effective date is eight months after its last change request. W2-04 is the structural cause of all three \u2014 the DCR log imports into the QMS register while documents live in sop_documents, two lists nothing reconciles in either direction. Add both directions as sweep rules ('in the log, absent from the registry' and its inverse); they would have caught W2-01 and W2-02 without anybody reading anything. The wording pass added the rules the sweep should carry, and every one is now evidenced on four real documents rather than argued: NONE of the four is signed (W2-20 \u2014 both approval blocks empty in all four), EVERY one disagrees with its own revision history about its current revision date (W2-21 \u2014 SOP 434 by ten months, SOP 404 V3 by thirteen), the SOP 404 file holds TWO complete revisions in one document (W2-22), and section numbering is broken in three of four (W2-23). 'Approved but unsigned' and 'header vs revision-history disagreement' are now the two highest-yield sweep rules."
+      "note": "Extend doc-consistency.js with the rules generalised from the plan red-line — approved-but-unsigned, revision disagreement, unspecified retention, cites-nothing, section and page arithmetic, spelling. Output is a queue with dismissals, not a document. Wave 2 gave this obligation its first concrete rules and they are not spelling rules. W2-01: two controlled documents the auditor read (SOP 421, SOP 434) have NO row in the 159-row DCR log — no new-document row, no revision row. W2-02: SOP 404 is V4 with a widened title in practice and V3 under the old title in the log. W2-03: SOP 604's effective date is eight months after its last change request. W2-04 is the structural cause of all three — the DCR log imports into the QMS register while documents live in sop_documents, two lists nothing reconciles in either direction. Add both directions as sweep rules ('in the log, absent from the registry' and its inverse); they would have caught W2-01 and W2-02 without anybody reading anything. The wording pass added the rules the sweep should carry, and every one is now evidenced on four real documents rather than argued: NONE of the four is signed (W2-20 — both approval blocks empty in all four), EVERY one disagrees with its own revision history about its current revision date (W2-21 — SOP 434 by ten months, SOP 404 V3 by thirteen), the SOP 404 file holds TWO complete revisions in one document (W2-22), and section numbering is broken in three of four (W2-23). 'Approved but unsigned' and 'header vs revision-history disagreement' are now the two highest-yield sweep rules."
     },
     {
       "id": "OBL-27",
@@ -492,11 +492,11 @@
         "SQF-06"
       ],
       "artifacts": [],
-      "note": "Split out of OBL-01 when the grading landed. SQF 2.4.3.11 and 2.5.1.1(ii) require the critical limit to be VALIDATED \u2014 evidence that 35 RLU is the right number for these surfaces and this instrument \u2014 and re-validated at least annually. ReadyDoc now grades against the number; it cannot justify it, and an app enforcing an unvalidated limit is precisely the finding. Two separate pieces of work: the validation study (outside ReadyDoc, QA with the instrument manufacturer's guidance), and then the annual re-validation, which once the study exists is a Quality Schedule like any other cadence. Until the study exists, atp-limits.js should say the limit is transcribed from Protocol 003 and not yet validated \u2014 which is what it says."
+      "note": "Split out of OBL-01 when the grading landed. SQF 2.4.3.11 and 2.5.1.1(ii) require the critical limit to be VALIDATED — evidence that 35 RLU is the right number for these surfaces and this instrument — and re-validated at least annually. ReadyDoc now grades against the number; it cannot justify it, and an app enforcing an unvalidated limit is precisely the finding. Two separate pieces of work: the validation study (outside ReadyDoc, QA with the instrument manufacturer's guidance), and then the annual re-validation, which once the study exists is a Quality Schedule like any other cadence. Until the study exists, atp-limits.js should say the limit is transcribed from Protocol 003 and not yet validated — which is what it says."
     },
     {
       "id": "OBL-28",
-      "title": "Laboratory qualification \u2014 write the programme, then hold it",
+      "title": "Laboratory qualification — write the programme, then hold it",
       "bucket": "doc",
       "status": "open",
       "owner": "Document Control + QA",
@@ -508,11 +508,11 @@
       "artifacts": [
         "docs/v2/queued/supplier-qualification.md"
       ],
-      "note": "Split out of OBL-08 on 27 Aug because the two halves are blocked on different things. SOP 404 V4 added 'and Laboratory' to the title and a section G of TWO SENTENCES \u2014 'Laboratories will be approved upon receipt of ISO certification. An audit report will be requested and kept on file.' It names no standard (ISO 9001 is a management-system certificate, not evidence a lab can run the test; ISO/IEC 17025 per SCOPE OF ACCREDITATION is the one that matters), no expiry, no re-approval, no owner, no form and no record \u2014 and V4 never updated \u00a7II SCOPE, which still covers only suppliers of raw materials and packaging (W2-24). Meanwhile coa_requests.lab_name is free text, '17025' appears nowhere in the codebase, and coa-grade.js already grades every result on the reasoning that 'it is the accredited party' (W2-06). BUILDING A REGISTER AGAINST THE CURRENT WORDING WOULD ENCODE 'ISO certification' AS A REQUIREMENT, WHICH IS NOT ONE. The document comes first; the register is small once it exists."
+      "note": "Split out of OBL-08 on 27 Aug because the two halves are blocked on different things. SOP 404 V4 added 'and Laboratory' to the title and a section G of TWO SENTENCES — 'Laboratories will be approved upon receipt of ISO certification. An audit report will be requested and kept on file.' It names no standard (ISO 9001 is a management-system certificate, not evidence a lab can run the test; ISO/IEC 17025 per SCOPE OF ACCREDITATION is the one that matters), no expiry, no re-approval, no owner, no form and no record — and V4 never updated §II SCOPE, which still covers only suppliers of raw materials and packaging (W2-24). Meanwhile coa_requests.lab_name is free text, '17025' appears nowhere in the codebase, and coa-grade.js already grades every result on the reasoning that 'it is the accredited party' (W2-06). BUILDING A REGISTER AGAINST THE CURRENT WORDING WOULD ENCODE 'ISO certification' AS A REQUIREMENT, WHICH IS NOT ONE. The document comes first; the register is small once it exists."
     },
     {
       "id": "OBL-29",
-      "title": "Collect the missing supplier questionnaires \u2014 the annual review now generates work",
+      "title": "Collect the missing supplier questionnaires — the annual review now generates work",
       "bucket": "B",
       "status": "open",
       "owner": "QA + Purchasing",
@@ -522,7 +522,7 @@
       "artifacts": [
         "docs/v2/landed/supplier-qualification.md"
       ],
-      "note": "Split out of OBL-08 when the register landed, because the register makes the gap VISIBLE and COUNTABLE and does not close it. On the real data at import: 21 vendors awaiting a disposition with their evidence already on file (Quality's queue, a short job each) and 22 actively used with no questionnaire document on file at all (Purchasing's chase list). NSF/ANSI 455-2 \u00a7 4.3.1 does not close until those are collected and dispositioned \u2014 ReadyDoc can raise the obligation and catch the result; it cannot ask a supplier for a questionnaire. W2-29 is the other half: SOP 404 \u00a7 IV.B requires ANNUAL vendor reviews, supplier_qualifications.next_review_due now records when one is due, and NOTHING YET GENERATES WORK FROM IT. That is a quality schedule and a nudge, and it is the piece that stops this register going quiet the way the tracker did. UPDATE 27 Aug: W2-29 (the annual review with no generator) SPLIT OUT AND LANDED on main as 8d16b97 \u2014 server/supplier-review.js raises a work order 30 days ahead of next_review_due, idempotent on (qualification, due date) so recording a review produces next year's task rather than suppressing it. A supplier that has NEVER been qualified is nudged rather than tasked: 22 work orders on the first boot is a queue nobody asked for, and a first qualification is a chase, not a recurring review. WHAT REMAINS HERE IS THE WORK ITSELF \u2014 collecting the 22 questionnaires and dispositioning the 21 with evidence already on file. ReadyDoc now raises the obligation, catches the result and chases QA and purchasing every third day; it cannot ask a supplier for a questionnaire. UPDATE 1 Sep: the whole archive is now IN \u2014 938 documents stored against 75 suppliers, searchable, retrievable. That is the systemic half and it is done. IT DID NOT CLOSE 4.3.1. Checked against the finding's own words: NSF named Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12) and Bay State Milling (Cinnamon). The archive holds TWO documents for Mill Haven and both are specification sheets, not a questionnaire; M4 Dynamic and Bay State Milling have NO FOLDER AT ALL. So all three named gaps remain open, and the register's contribution is that they are now provable rather than unknown. Across the whole register: 43 actively used without an approved disposition, splitting 22 that can be dispositioned today (evidence on file) and 21 with no questionnaire to decide against. The 22 are a working session, now queued in-app (main 29f7aa8); the 21 \u2014 and the three NSF named \u2014 are a chase Purchasing has to run with the suppliers themselves."
+      "note": "Split out of OBL-08 when the register landed, because the register makes the gap VISIBLE and COUNTABLE and does not close it. On the real data at import: 21 vendors awaiting a disposition with their evidence already on file (Quality's queue, a short job each) and 22 actively used with no questionnaire document on file at all (Purchasing's chase list). NSF/ANSI 455-2 § 4.3.1 does not close until those are collected and dispositioned — ReadyDoc can raise the obligation and catch the result; it cannot ask a supplier for a questionnaire. W2-29 is the other half: SOP 404 § IV.B requires ANNUAL vendor reviews, supplier_qualifications.next_review_due now records when one is due, and NOTHING YET GENERATES WORK FROM IT. That is a quality schedule and a nudge, and it is the piece that stops this register going quiet the way the tracker did. UPDATE 27 Aug: W2-29 (the annual review with no generator) SPLIT OUT AND LANDED on main as 8d16b97 — server/supplier-review.js raises a work order 30 days ahead of next_review_due, idempotent on (qualification, due date) so recording a review produces next year's task rather than suppressing it. A supplier that has NEVER been qualified is nudged rather than tasked: 22 work orders on the first boot is a queue nobody asked for, and a first qualification is a chase, not a recurring review. WHAT REMAINS HERE IS THE WORK ITSELF — collecting the 22 questionnaires and dispositioning the 21 with evidence already on file. ReadyDoc now raises the obligation, catches the result and chases QA and purchasing every third day; it cannot ask a supplier for a questionnaire. UPDATE 1 Sep: the whole archive is now IN — 938 documents stored against 75 suppliers, searchable, retrievable. That is the systemic half and it is done. IT DID NOT CLOSE 4.3.1. Checked against the finding's own words: NSF named Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12) and Bay State Milling (Cinnamon). The archive holds TWO documents for Mill Haven and both are specification sheets, not a questionnaire; M4 Dynamic and Bay State Milling have NO FOLDER AT ALL. So all three named gaps remain open, and the register's contribution is that they are now provable rather than unknown. Across the whole register: 43 actively used without an approved disposition, splitting 22 that can be dispositioned today (evidence on file) and 21 with no questionnaire to decide against. The 22 are a working session, now queued in-app (main 29f7aa8); the 21 — and the three NSF named — are a chase Purchasing has to run with the suppliers themselves."
     },
     {
       "id": "OBL-30",
@@ -540,7 +540,7 @@
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md"
       ],
-      "note": "Split out of OBL-08 when the register landed: none of these is a software gap and none is closed by the module. W2-26 is the one that blocks work \u2014 FORM 404-3, Vendor Audit Summary, is cited by SOP 404 \u00a7 VI and required by \u00a7 V.C.B.II, and it appears in neither the Master Index nor any of the 159 rows of the DCR log. The register can HOLD a vendor audit; it cannot number the form. W2-08 is Daniela's call on whether FORM 404-1 and 404-2 become ReadyDoc screens or stay with Keychain. W2-27 (V4's footer still carries the old title), W2-28 (QVS and 'Qualified Supplier Database' named and never defined; QVL defined as one thing and used as another) and W2-30 (spelling) are corrections to the document itself."
+      "note": "Split out of OBL-08 when the register landed: none of these is a software gap and none is closed by the module. W2-26 is the one that blocks work — FORM 404-3, Vendor Audit Summary, is cited by SOP 404 § VI and required by § V.C.B.II, and it appears in neither the Master Index nor any of the 159 rows of the DCR log. The register can HOLD a vendor audit; it cannot number the form. W2-08 is Daniela's call on whether FORM 404-1 and 404-2 become ReadyDoc screens or stay with Keychain. W2-27 (V4's footer still carries the old title), W2-28 (QVS and 'Qualified Supplier Database' named and never defined; QVL defined as one thing and used as another) and W2-30 (spelling) are corrections to the document itself."
     },
     {
       "id": "OBL-31",
@@ -555,7 +555,7 @@
         "server/supplier-review.js",
         "scripts/check-supplier-review.mjs"
       ],
-      "note": "Split out of OBL-29 and LANDED on main 27 Aug 2026 as 8d16b97. SOP 404 \u00a7 IV.B requires an annual review of each vendor; next_review_due had recorded when one was due since the register landed and nothing watched it. Raised from runPmHousekeeping beside generateRecleanTasks, 30 days ahead, high priority once overdue, carrying the SOP's own steps. Idempotence is (qualification, due date) via a supplier_qualification_id column on work_orders \u2014 the shape quality_schedule_id already uses \u2014 and the due date being part of the key is what makes next year's task a new one. Only the latest period per supplier can come due. 19 assertions."
+      "note": "Split out of OBL-29 and LANDED on main 27 Aug 2026 as 8d16b97. SOP 404 § IV.B requires an annual review of each vendor; next_review_due had recorded when one was due since the register landed and nothing watched it. Raised from runPmHousekeeping beside generateRecleanTasks, 30 days ahead, high priority once overdue, carrying the SOP's own steps. Idempotence is (qualification, due date) via a supplier_qualification_id column on work_orders — the shape quality_schedule_id already uses — and the due date being part of the key is what makes next year's task a new one. Only the latest period per supplier can come due. 19 assertions."
     }
   ]
 }

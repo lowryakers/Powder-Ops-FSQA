@@ -7,14 +7,15 @@ agreed in conversation and not written into `decisions.md` is lost when the sess
 `D-nnn` entry; never rewrite one. A decision that turns out wrong gets a superseding entry that says so,
 because the reasoning behind the original is usually still worth having.
 
-**Two tracks, and one rule that keeps them apart:**
-- **Track A — maintenance.** Everything the rest of this file describes. Keeps the plant running; ships
-  to `main`; Railway deploys.
-- **Track B — V2 foundation.** Its own branch and session.
-- > **New construction happens in Track B. Refactors of existing shared code happen in Track A, on
-  > `main`, in one pass.** Most of the recommended moves are refactors of live code (one signature
-  > service touches 34 files). A long-lived V2 fork IS the big-bang cutover, wearing engineering
-  > clothes — see D-003 and D-005.
+**ONE TRACK. The two-track split is over (D-045).** It ran from D-003/D-005 until 2 September 2026,
+when both branches were folded into `main` and deleted. It collapsed on its own long before that — the
+V2 branch went ~26,000 lines behind `main` while every real change landed on `main` anyway — and the
+cost was a status document built from the branch's register that was **wrong about four of the twelve
+audit findings**. Everything ships to `main`; Railway deploys.
+
+The rule that outlived the split is D-005's half worth keeping: **a refactor of live shared code is one
+pass on `main`, never a long-lived fork.** A long-lived V2 fork IS the big-bang cutover wearing
+engineering clothes.
 
 **The one-line thesis:** logs are the wrong primitive. The recurring defect in this codebase is always
 *a fact that exists in more than one place* — the QA records that never filed, the knife status mirror,
@@ -26,39 +27,37 @@ invent a new pattern.
 **Order that matters:** (1) one signature service, (2) a record interface before a record table,
 (3) limits out of code and into documents. Everything else waits. **Do not rebuild** (D-001).
 
-**Track B rebases on `main` weekly** (D-016) — and immediately after any Track A change to `shared/`,
-`server/db.js` or the form registry. D-005 keeps the collisions small; small is not none, and a branch
-that only meets `main` at the end is the big-bang merge in disguise. Two hard rebases in a row means
-Track B is touching shared code, which is Track A's job — move the change to `main`, don't push through.
+D-016 said Track B rebases on `main` weekly. It did not, once, which is how it ended up 26,000 lines
+behind — the evidence for D-045. Keep the reasoning, drop the mechanism: **a change to `shared/`,
+`server/db.js` or the form registry lands on `main` in one pass**, because those are the files two
+workstreams collide over.
 
-> ### ⚠ THIS SECTION CURRENTLY OVER-CLAIMS. Verified against `main` on 2026-08-31.
+> ### ✔ VERIFIED AGAINST `main` ON 2026-09-02. Every file cited below exists.
 >
-> Much of what follows describes work that exists **only in a Track B session's working tree** — it is
-> on neither `main` nor `origin/claude/v2-foundation`. A fresh session that trusts these lines will look
-> for files that are not there and run a command that does not exist. What is actually on `main`:
+> This block used to say the opposite, and that warning is what got the gaps closed. Re-verified at
+> commit `e79eb12`: `server/preventive-controls.js` (with `ccpDrift()`), `docs/v2/preventive-control-walk.md`,
+> `docs/v2/obligations.json`, `npm run check:obligations`, `docs/v2/queued/` and `docs/v2/landed/` are all
+> on `main`, and `decisions.md` runs to **D-045** — including all nine entries the old block reported
+> missing (D-013 … D-036). `server/atp-limits.js`, `AtpLimitHint.jsx` (in `common/`, not `sanitation/`)
+> and `sanitation_records.atp_limit` were already shipped and still are.
 >
-> | Cited below | On `main`? |
-> |---|---|
-> | `server/atp-limits.js`, `AtpLimitHint.jsx`, `sanitation_records.atp_limit` | **yes — shipped** (`6f54afc`) |
-> | `docs/v2/architecture.md`, `docs/v2/decisions.md` | **yes**, but decisions.md stops at **D-012** |
-> | `server/preventive-controls.js`, `ccpDrift()` | **no — does not exist anywhere** |
-> | `docs/v2/preventive-control-walk.md` | **no** |
-> | `docs/v2/obligations.json`, `npm run check:obligations`, OBL-01 / OBL-27 | **no** |
-> | `docs/v2/queued/`, `docs/v2/landed/` | **no** |
+> **THERE IS ONE TRACK NOW (D-045).** Both branches were folded into `main` and deleted; nothing exists
+> only in a session's working tree. `docs/v2/obligations.json` still defines status `built` as "code
+> exists on the Track B branch" — read that as "code exists, wired to nothing", which is the state it
+> actually describes.
 >
-> **Nine decisions are cited here and absent from `decisions.md`: D-013, D-014, D-015, D-016, D-018,
-> D-020, D-021, D-022, D-036.** That is precisely the failure the rule at the top of this section exists
-> to prevent — the reasoning behind them lives in one session's context and dies with it. The summaries
-> below are all that survived, and a summary is not the reasoning. **Whoever owns Track B: land those
-> `D-nnn` entries in `decisions.md` before anything else.** They are not reconstructed here, because
-> inventing a decision record is worse than a missing one.
+> **The one thing still true from the old warning: `preventive-controls.js` is WIRED TO NOTHING.** Every
+> one of its eight exports has zero callers — `seedPreventiveControls` is never invoked, `ccpDrift` is
+> never run, and `haccp_ccps` is still empty. The transcription of the four controls has landed; the
+> seeder call and the `api/haccp.js` edit guard have not. That is exactly what OBL-02's `built` status
+> means, and `check:obligations` will not catch it — that check reconciles findings to obligations, not
+> claims to code. **Do not read "the four controls are transcribed" below as "the four controls are in
+> the database".**
 >
-> **`origin/claude/v2-foundation` is badly stale** — its last commit is `d3d25bf` and it is roughly
-> 26,000 lines behind `main`. D-016 says Track B rebases weekly; it has not. Rebase it or restart it from
-> `main` before building on it. `server/supplier-sop.js` also cites `preventive-controls.js` in a comment
-> as though it exists.
+> Obligations today: **22 open · 5 drafted · 3 landed · 1 built** of 31. Landed are OBL-01 (ATP grading),
+> OBL-08 (supplier register) and OBL-31 (annual vendor review raises work).
 
-**Walked (Track B session, NOT in the repo — see the warning above).** The first V2 project
+**Walked, and now in the repo** (`docs/v2/preventive-control-walk.md`). The first V2 project
 was a *document* project: Protocol 003 (Food Safety Plan V4) and Protocol 001 (Food Defense Plan V2)
 against "does every preventive control resolve to a program, a form and a record?" (D-002, D-006).
 **The headline: the plan names four preventive controls and none of them resolves to a record in
@@ -72,9 +71,9 @@ and three of the four controls fire per production run), D-015 the open question
 verification is a fourth leg. The plan format question in D-014 is answered: it is a **21 CFR 117
 preventive-controls plan**, though the plant's own documents also say HACCP/CCP.
 
-**The four controls are TRANSCRIBED, never typed** (`server/preventive-controls.js`, D-022 — **NOT IN THE
-REPOSITORY**, design only) — a critical limit editable in a text box is what `scale-forms.js` has always
-refused. Verbatim from Protocol 003 V4, insert-only on the CCP name, `ccpDrift()` reports a stored row that
+**The four controls are TRANSCRIBED, never typed** (`server/preventive-controls.js`, D-022 — the file is
+on `main` but **NOTHING CALLS IT**; `haccp_ccps` is still empty) — a critical limit editable in a text box
+is what `scale-forms.js` has always refused. Verbatim from Protocol 003 V4, insert-only on the CCP name, `ccpDrift()` reports a stored row that
 has wandered from the document.
 Wording is a faithful draft pending Document Control's check; corrections go in that file, never in the DB.
 **`server/atp-limits.js` grades the ATP reading against PC #1's 35 RLU — SHIPPED** (D-020, D-036; the
@@ -101,20 +100,21 @@ it leaves the record exactly as filed.
   35 because Protocol 003 V4 says so; it cannot say 35 is right for these surfaces and this instrument, and
   that study is QA's, outside ReadyDoc. An app enforcing an unvalidated limit is itself an audit finding.
 
-**The intended `queued/` → `landed/` convention (D-018, D-036 — the directories DO NOT EXIST on `main`).**
+**The `queued/` → `landed/` convention (D-018, D-036 — both directories are on `main`).**
 New construction sits on the Track B branch; anything touching live shared code is written out exactly,
 with its verification results, to land on `main` in one pass. A file moves from `docs/v2/queued/` to
 `docs/v2/landed/` when it ships — leaving a landed item in `queued/` would make that directory mean two
 things, which is the defect the whole project is about. **Landed:** the ATP wiring (this one is genuinely
 on `main`). **Still designed-only:** the preventive-control seeder + its `api/haccp.js` edit guard, and the
 DCR for Document Control.
-**`docs/v2/obligations.json` and `npm run check:obligations` are DESIGNED, NOT BUILT** — neither the file
-nor the script exists, and `npm run check` does not reference them, so **nothing is currently enforcing
-that a finding cannot be forgotten**. The intent: one list of what must be true before V2 ships, with the
-check failing if a finding is unclaimed, claimed twice, or cited but non-existent. **Split an obligation
+**`docs/v2/obligations.json` and `npm run check:obligations` are BUILT and in `npm run check`** — 31
+obligations, one list of what must be true before V2 ships, and the check fails if a finding is unclaimed,
+claimed twice, or cited but non-existent. **What it does NOT check is whether a claim matches the code** —
+that is `check-nc-status.mjs`'s job for the NC document, and nothing does it for the register, which is
+why OBL-02 can read `built` over a module with no callers. **Split an obligation
 rather than marking it done when only part of it landed** — OBL-01 was to cover the grading and OBL-27 the
 limit's validation, because an obligation half-discharged and marked done is worse than one still open.
-Until this is built, the ATP limit's missing validation study is tracked **only** by the paragraph above.
+The ATP limit's missing validation study is OBL-27, still open.
 
 **Where the preventive-control records actually are (D-021):** on **paper**, logged in MRPEasy — none of
 the seven `where: keychain` forms is producing anything yet. `where` in `form-registry.js` conflates

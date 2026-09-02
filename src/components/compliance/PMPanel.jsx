@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import { completeWorkOrder } from '../../lib/completeWorkOrder';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { Plus, CheckCircle, Wrench, ChevronDown, ChevronUp, Archive, Paperclip, Download, Search, Users, AlertTriangle, ShieldCheck, Flag, Eye, Droplets, Thermometer, X, ListChecks, QrCode, CalendarClock, Repeat } from 'lucide-react';
@@ -1127,7 +1128,16 @@ export default function PMPanel() {
   };
 
   const handleComplete = async (woId, form) => {
-    await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
+    try {
+      // The server composes the question and names the record it matched;
+      // repeating that wording here is how two screens start asking two
+      // slightly different questions about the same rule.
+      await completeWorkOrder(woId, form, (dup) => window.confirm(
+        `${dup.message}\n\nIf you are entering an earlier day's readings, choose Cancel and set "When was this done?" to that day.`));
+    } catch (err) {
+      if (err?.cancelled) return;
+      throw err;
+    }
     setCompleting(null);
     refreshTasks();
   };

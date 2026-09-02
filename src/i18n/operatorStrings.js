@@ -188,6 +188,23 @@ const strings = {
 
   // Toast messages
   toast_completed: { en: 'Task completed', es: 'Tarea completada' },
+  // Asked when the readings repeat the previous check's. A safety question
+  // shown only in English is a question half the shift cannot answer.
+  dup_title: { en: 'Same readings as last time', es: 'Mismas lecturas que la vez pasada' },
+  dup_body: {
+    en: 'These match the check on {date}. Is this today\u2019s check?',
+    es: 'Coinciden con la revisi\u00f3n del {date}. \u00bfEsta es la revisi\u00f3n de hoy?',
+  },
+  dup_body_nodate: {
+    en: 'These match the previous check. Is this a new check?',
+    es: 'Coinciden con la revisi\u00f3n anterior. \u00bfEsta es una revisi\u00f3n nueva?',
+  },
+  dup_hint: {
+    en: 'If you are entering an earlier day\u2019s readings, choose No and set \u201cWhen was this done?\u201d to that day.',
+    es: 'Si est\u00e1 ingresando lecturas de un d\u00eda anterior, elija No y ponga \u201c\u00bfCu\u00e1ndo se hizo?\u201d en ese d\u00eda.',
+  },
+  dup_yes: { en: 'Yes, this is today', es: 'S\u00ed, es de hoy' },
+  dup_no: { en: 'No, go back', es: 'No, regresar' },
   toast_issue: { en: 'Issue reported', es: 'Problema reportado' },
   toast_na: { en: 'Marked not applicable', es: 'Marcada como no aplica' },
   toast_batch: { en: 'tasks completed', es: 'tareas completadas' },
