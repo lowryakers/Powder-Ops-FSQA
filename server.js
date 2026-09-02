@@ -51,6 +51,7 @@ import supplierRoutes from './server/api/suppliers.js';
 import retentionRoutes from './server/api/retention.js';
 import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
+import onboardingRoutes, { portalRouter as onboardingPortalRoutes } from './server/api/onboarding.js';
 import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './server/api/auditor-pass.js';
 import visitorRoutes, { kioskRouter as visitorKioskRoutes, seedVisitorAgreements } from './server/api/visitors.js';
 import candidateRoutes from './server/api/candidates.js';
@@ -1874,6 +1875,12 @@ app.use('/api/mock-recalls', requireModuleWrite('recall'), mockRecallRoutes);
 app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator'), productionRoutes);
 app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
 app.use('/api/products', requireModuleWrite('products'), productRoutes);
+
+// New-hire onboarding. The admin router is behind the module grant; the portal
+// is PUBLIC and token-gated, because a new hire has no account yet — the same
+// arrangement partner-portal and artwork/ingest use.
+app.use('/api/onboarding', requireModuleWrite('onboarding'), onboardingRoutes);
+app.use('/api/onboarding-portal', onboardingPortalRoutes);
 // Mounted before the guarded router, and outside requireModuleWrite: the
 // proofing service authenticates with a token, not a session.
 app.use('/api/artwork/ingest', artworkIngestRoutes);

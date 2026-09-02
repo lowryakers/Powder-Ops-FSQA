@@ -34,7 +34,8 @@
     "check:docworklist": "node scripts/check-doc-worklist.mjs",
     "check:modaccess": "node scripts/check-module-access.mjs",
     "check:dupreadings": "node scripts/check-duplicate-readings.mjs",
-    "verify:backdate": "node scripts/verify-backdated-recurrence.mjs"
+    "verify:backdate": "node scripts/verify-backdated-recurrence.mjs",
+    "verify:onboarding": "node scripts/verify-onboarding.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

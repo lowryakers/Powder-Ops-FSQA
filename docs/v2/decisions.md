@@ -1494,3 +1494,36 @@ falls due in six days rather than seven. **The control matters — reverting the
 the 11.** One assertion in the first draft was vacuous (`t(..., true)`); it now reads the filed
 sanitation record, and the fixture carries a title `recordAreaForTask()` actually recognises so the
 record path really runs.
+
+## D-048 — New-hire onboarding folded onto main from a disconnected branch
+
+**2 September 2026.** `claude/adp-onboarding` carried a complete feature that existed nowhere on `main`
+— onboarding a new hire inside ReadyDoc (personal details, direct deposit, W-4 inputs, emergency
+contact) and handing the result to RUN Powered by ADP. Seven files, none of them referenced in
+CLAUDE.md, invisible from every screen. Found by comparing branch TREES rather than commit
+reachability: four branches share **no merge base** with `main`, so "N commits ahead" says nothing.
+
+Folded rather than rewritten (D-001). Seven files, one table (`onboarding_records`), two mounts, one
+public path and five client wires. All three module dependencies — `server/module-access.js`,
+`custom-fields.js`, `links.js` — were already on `main`.
+
+**The design decision worth keeping, which is the branch's and not mine:** without
+`ONBOARDING_ENC_KEY`, the SSN and bank fields are **not collected at all**. The portal hides the
+inputs and says the office will take those details directly. A plaintext SSN in a database backup is a
+worse outcome than a form with two fewer fields. `adp.js` degrades the same way — no credentials, a
+503, and the rest of the module works.
+
+**A vacuous assertion, caught by tightening it.** The first version of the check asserted only that the
+SSN was *not stored in clear* — which is trivially true of a record that stored nothing at all, and
+that is exactly what was happening, because the test ran with no encryption key. It now asserts the
+submission **landed** before asserting what it does not contain, and runs both ways: with a key
+(encrypted, last-4 readable) and without (nothing sensitive stored, the rest of the form still saves).
+
+**Verified:** 15 assertions with a key and 14 without, against a live server on a fresh database
+(`npm run verify:onboarding`), covering the mount, the module guard refusing an operator, the public
+portal answering with no session, a bad token 404ing, and ADP degrading.
+
+**Still blocked on a person, not on code:** RUN's APIs are reached through the ADP Marketplace — there
+is no self-serve API key on the RUN plan. Someone has to register a developer account at
+developers.adp.com and an application as a data connector. `docs/adp-run-onboarding.md` is the
+step-by-step. Until then the module works end to end and the ADP submission 503s.

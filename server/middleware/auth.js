@@ -94,6 +94,10 @@ const PUBLIC_ROUTES = [
   // URL and scoped to one partner account inside the handler — read, upload and
   // dispute only. See server/api/partner-portal.js for why that set is safe.
   { prefix: '/partner-portal/' },
+  // The new-hire onboarding portal. A new hire has no account yet, so the page
+  // is reached with a hashed token in the URL and is scoped to that one record
+  // inside the handler — read and save their own submission, nothing else.
+  { prefix: '/onboarding-portal/' },
   // The Artwork-Proofing service's master-list feed. Read-only, guarded by a
   // hashed token compared in the handler, and off entirely unless
   // PRODUCT_MASTER_TOKEN is set. It exposes only what a printer already holds.
