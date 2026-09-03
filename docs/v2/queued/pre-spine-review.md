@@ -72,40 +72,47 @@ ways to finish a task is two chances for the record to go unwritten" — and a t
 scanner could not sign out a knife that was physically on the rack" — and this is the door the floor
 actually uses (`CheckedOutPanel.jsx:38`). Bulk-delete (`qms.js:1006`) and CSV import (`qms.js:1292`) skip
 the sync too.
+**FIXED 2026-09-02** — the self-return, bulk-delete and CSV import all move the master row through `syncKnifeMaster` / `syncAllKnifeStatuses`; `knife_sign_out` gained the `csv.map` it never had. `npm run verify:knife`, 13 assertions, control fails 2.
 
 ### G2 · A production amendment can contradict its own `mo_lines`
 `server/api/production.js:876-880` `AMENDABLE` lets `product_name`, `mo_number`, `lot_number`, `room`,
 `start_time`, `end_time`, `quantity_completed` be patched directly, and the mirror block at `:951` yields
 to them. On a multi-MO entry the scalar and line 0 can disagree inside a QA-signed record. Separately,
 `room`, `start_time` and `end_time` are never re-derived when `mo_lines` is amended.
+**FIXED 2026-09-02** — on a multi-MO entry the seven mirrored scalars refuse a direct patch (400, naming them) unless the lines travel in the same request; room and the shift window are re-derived whenever the lines or cleans change. `npm run verify:prodmirror`, 16 assertions, control fails 5.
 
 ### B1 · Editing a withdrawn SOP silently returns it to Draft
 `src/components/compliance/DocumentRegistry.jsx:273` filters `archived` out of the status select. The edit
 form loads `status='archived'`, the value is not among the options, the browser picks the first — `draft`.
 Fixing a typo on a retired document puts it back in the active registry. The retired-rooms trap, on the
 controlled-document registry.
+**FIXED 2026-09-03** — the server refuses both crossings on PUT: a withdrawn document cannot be given another status (use Reinstate), a live one cannot be set to archived by an edit (use Withdraw, which takes the reason); the form disables the select and says why. `npm run verify:docwithdraw`, 13 assertions, control fails 4.
 
 ### E1 · A daily checklist completed late loses the days in between
 `server/api/checklists.js:170` and `:192` call `calcNextDueDate(template.frequency)` — the helper
 **already takes a `fromDate`** (`:7`) and neither caller passes `instance.due_date`, which is in scope.
 This is `createNextWorkOrder` before its fix, unrepaired, on both the complete and the skip path.
+**FIXED 2026-09-03** — both the complete and the skip path hand `calcNextDueDate` the instance's own due date; `per_shift` keeps the clock, since a bare date carries no hours. Covered by `npm run verify:cadence` (19 assertions, control fails 7 across E1–E3).
 
 ### E2 · Document review stamps today and ratchets the anniversary earlier every cycle
 `server/api/documents.js:56-62` `recomputeDocumentReview` sets `last_reviewed = date('now')` — while
 `backdate.when` is live eight lines away at the caller (`pm.js:1079`) — and `review_due = date('now', +N)`
 rather than from the existing `review_due`. Tasks are raised 30 days early, so reviewing on the day the
 task appears moves the anniversary a month earlier, permanently, every cycle.
+**FIXED 2026-09-03** — `server/review-cadence.js` is the one rule: done early, the next is measured from the DUE date; done late, from the day it was DONE. `recomputeDocumentReview` takes the performed day from the task's back-date and anchors on `review_due`. `npm run check:cadence` (17, pure) + `verify:cadence`.
 
 ### E3 · Supplier annual review has the same ratchet
 `server/api/suppliers.js:404` `next_review_due = date('now', '+1 year')`; the qualification row with its
 existing `next_review_due` is selected at `:394` and unused. Same 30-day-early task, same drift, on SOP 404's
 anniversary.
+**FIXED 2026-09-03** — the disposition anchors on the supplier's latest `next_review_due` through the same rule. Covered by `verify:cadence`.
 
 ### A1 · The Auditor View's training table shows no names
 `src/components/compliance/AuditorView.jsx:247` and `:267` render `r.person_name || r.user_name` — neither
 column exists on `training_records`; the column is `employee_name` (`db.js:591`). Every person reads `—`
 on screen and the exported CSV ships a blank Person column, on the one screen built to hand records to an
 auditor. Copied from the certifications section where `person_name` is real.
+**FIXED 2026-09-03** — one column list (`src/lib/auditorTraining.js`) renders the table and the CSV; `npm run check:auditor` walks each column with a recording proxy and asserts every property it reads exists on the table or the endpoint's joins. 24 assertions, control fails 6.
 
 ---
 

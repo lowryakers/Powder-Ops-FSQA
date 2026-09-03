@@ -80,7 +80,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 <header class="mast">
   <p class="eyebrow">Powder Ops · ReadyDoc · before the single-spine push</p>
   <h1>Pre-Spine Review</h1>
-  <p class="standfirst"><b>Update:</b> items 01–05 are fixed and pushed, each with a live check that fails on the old code. Every bug found this week was one of eight shapes. Each shape was swept across the whole codebase to find its siblings. 64 verified findings, every one with a file and line — nothing here is a hunch, and nothing here is fixed yet.</p>
+  <p class="standfirst"><b>Update:</b> items 01–10 are fixed and pushed, each with a check that fails on the old code — the twelve-item priority list has two left (11 tests, 12 phone). Every bug found this week was one of eight shapes. Each shape was swept across the whole codebase to find its siblings. 64 verified findings, every one with a file and line — nothing here is a hunch, and nothing here is fixed yet.</p>
   <div class="meta">
     <span><b>Verified against</b> main @ 320af18</span>
     <span><b>Date</b> 2 September 2026</span>
@@ -137,31 +137,31 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
   </div></div>
 
   <div class="find"><span class="num">06</span><div>
-    <h3><span class="sev high">floor</span>Returning your own knife leaves it "issued" forever</h3>
+    <h3><span class="sev high">floor</span><span class="sev fixed">fixed</span>Returning your own knife leaves it "issued" forever</h3>
     <p>The documented lockout — "an operator at the scanner could not sign out a knife physically on the rack" — re-introduced through the Checked Out panel's self-return, which never moves the master row. Bulk delete and CSV import skip the sync too.</p>
     <span class="where">server/api/qms.js:303</span>
   </div></div>
 
   <div class="find"><span class="num">07</span><div>
-    <h3><span class="sev high">record</span>A production amendment can contradict its own MO lines</h3>
+    <h3><span class="sev high">record</span><span class="sev fixed">fixed</span>A production amendment can contradict its own MO lines</h3>
     <p>Product, MO, lot, room and times are directly patchable on amend, and the patch outranks line 0 — so a QA-signed shift record can permanently disagree with itself. Room and shift window are never re-derived when the lines change.</p>
     <span class="where">server/api/production.js:876, :951</span>
   </div></div>
 
   <div class="find"><span class="num">08</span><div>
-    <h3><span class="sev high">registry</span>Editing a withdrawn SOP silently returns it to Draft</h3>
+    <h3><span class="sev high">registry</span><span class="sev fixed">fixed</span>Editing a withdrawn SOP silently returns it to Draft</h3>
     <p>The status dropdown filters out "No longer in use". Open a retired document to fix a typo, save, and the browser has picked the first option — Draft — putting it back in the active registry.</p>
     <span class="where">DocumentRegistry.jsx:273</span>
   </div></div>
 
   <div class="find"><span class="num">09</span><div>
-    <h3><span class="sev high">dates</span>The schedule-from-now bug, three more times</h3>
+    <h3><span class="sev high">dates</span><span class="sev fixed">fixed</span>The schedule-from-now bug, three more times</h3>
     <p>Checklists lose the days between a late completion and today (the helper already takes a from-date; nobody passes it). Document review stamps today with the back-date sitting eight lines away, and recomputes the anniversary from now so reviewing on the day the task appears drags it 30 days earlier every cycle. Supplier annual review has the same ratchet.</p>
     <span class="where">checklists.js:170,192 · documents.js:56 · suppliers.js:404</span>
   </div></div>
 
   <div class="find"><span class="num">10</span><div>
-    <h3><span class="sev high">auditor</span>The Auditor View's training table shows no names</h3>
+    <h3><span class="sev high">auditor</span><span class="sev fixed">fixed</span>The Auditor View's training table shows no names</h3>
     <p>It reads two columns that don't exist on training records. Every person renders as "—" on screen and the exported CSV ships a blank Person column — on the screen built to hand records to an auditor.</p>
     <span class="where">AuditorView.jsx:247, :267</span>
   </div></div>
