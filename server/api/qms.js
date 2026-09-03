@@ -317,6 +317,14 @@ router.post('/mine/checked-out/:id/return', (req, res) => {
   // is what says whether anything physically came back.
   db.prepare("UPDATE qms_records SET status = 'returned', data = ?, updated_at = datetime('now') WHERE id = ?")
     .run(JSON.stringify(data), row.id);
+  // THE MASTER ROW IS A MIRROR OF THIS LOG, and this door never moved it.
+  // knife-state.js:12 documents the failure that produces: "a return recorded
+  // in the app closed the log record and left the master row saying issued
+  // forever -- an operator standing at the scanner could not sign out a knife
+  // that was physically on the rack." POST, PUT, DELETE and bulk-update all
+  // sync; the one door the floor actually uses to hand a knife back did not.
+  try { syncKnifeMaster(db, getType(row.record_type), flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(row.id))); }
+  catch (e) { console.error('[knife→master]', e.message); }
   logAudit(req.user, 'update', row.record_type, row.id,
     { self_return: true, return_date: data.return_date, return_reason: reason, condition_returned: data.condition_returned },
     null, null, String(flat.item_description || flat.tool_id || row.record_number));
@@ -1021,6 +1029,13 @@ router.post('/:type/bulk-delete', (req, res) => {
     db.prepare(`DELETE FROM qms_records WHERE id IN (${fph})`).run(...found.map(r => r.id));
   }
   for (const r of found) logAudit(req.user, 'qms_deleted', cfg.key, r.id, { record_number: r.record_number }, r, null);
+  // The single DELETE syncs the master and says why ("deleting the open
+  // sign-out is what frees the knife"); the bulk one did not, so a knife whose
+  // open sign-out was bulk-deleted stayed issued to somebody with no record
+  // behind it. Admin-only and rare, so the whole-register sync is fine.
+  if (found.length && cfg.key === 'knife_sign_out') {
+    try { syncAllKnifeStatuses(db); } catch (e) { console.error('[knife→master]', e.message); }
+  }
   res.json({
     deleted: found.length,
     skipped_signed: signed.length,
@@ -1322,6 +1337,10 @@ router.post('/:type/import', (req, res) => {
   const { csv } = req.body;
   if (!csv) return res.status(400).json({ error: 'csv is required' });
   const result = importCsv(db, cfg, csv, req.user.name);
+  // Imported history can carry open sign-outs; the master list must follow.
+  if (cfg.key === 'knife_sign_out') {
+    try { syncAllKnifeStatuses(db); } catch (e) { console.error('[knife→master]', e.message); }
+  }
   logAudit(req.user, 'qms_imported', cfg.key, null, result);
   res.json(result);
 });

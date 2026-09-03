@@ -43,6 +43,8 @@
     "verify:qmssig": "node scripts/verify-qms-signature.mjs",
     "verify:qmsgate": "node scripts/verify-qms-module-gate.mjs",
     "verify:doors": "node scripts/verify-completion-doors.mjs",
+    "verify:knife": "node scripts/verify-knife-mirror.mjs",
+    "verify:prodmirror": "node scripts/verify-production-mirror.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {

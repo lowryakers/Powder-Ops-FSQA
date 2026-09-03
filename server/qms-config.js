@@ -366,6 +366,26 @@ export const QMS_TYPES = {
     approvals: [
       { key: 'quality', label: 'Reviewed by QA', required: true, departments: ['qa'] },
     ],
+    // The CSV importer maps columns ONLY through these aliases -- a header it
+    // does not recognise is dropped -- and this type had none, so importing
+    // knife history produced rows with empty data and the master list never
+    // moved. Keys accepted as well as labels, so an export can be re-imported.
+    csv: {
+      autoNumber: true,
+      map: {
+        'tool id': 'tool_id', 'tool_id': 'tool_id', 'knife': 'tool_id', 'blade': 'tool_id',
+        'employee name': 'employee_name', 'employee_name': 'employee_name', 'employee': 'employee_name',
+        'condition out': 'condition_out', 'condition_out': 'condition_out',
+        'time out': 'time_out', 'time_out': 'time_out',
+        'issued by': 'issued_by', 'issued_by': 'issued_by',
+        'return date': 'return_date', 'return_date': 'return_date',
+        'return time': 'return_time', 'return_time': 'return_time',
+        'condition returned': 'condition_returned', 'condition_returned': 'condition_returned',
+        'returned by': 'returned_by', 'returned_by': 'returned_by',
+        'retrieved by': 'retrieved_by', 'retrieved_by': 'retrieved_by',
+        'comments': 'comments',
+      },
+    },
   },
 
   organoleptic: {
