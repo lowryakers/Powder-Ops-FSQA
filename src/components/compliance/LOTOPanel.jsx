@@ -2,6 +2,7 @@ import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { Plus, Lock, Unlock, ShieldCheck, AlertTriangle, Zap, Search, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { useRowExpand } from '../../lib/useRowExpand';
+import { withSignature } from '../../lib/signature.js';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
@@ -379,10 +380,13 @@ export default function LOTOPanel() {
     refreshExecs();
   };
 
+  // The verifier is the signed-in person, proven with their password — not a
+  // name typed into a prompt by whoever holds the tablet.
   const handleVerify = async (id) => {
-    const name = prompt('Verifier name (must be different from person who locked out):');
-    if (!name) return;
-    await apiPut(`/loto/executions/${id}/verify`, { verified_by: name, verification_result: 'zero_energy_confirmed' });
+    try {
+      await withSignature((extra) => apiPut(`/loto/executions/${id}/verify`, { verification_result: 'zero_energy_confirmed', ...extra }),
+        { title: 'Verify zero energy', detail: 'You are signing that you checked this lockout yourself.' });
+    } catch (err) { if (!err?.cancelled) alert(err.message); return; }
     refreshExecs();
   };
 

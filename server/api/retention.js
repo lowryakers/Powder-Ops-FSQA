@@ -231,7 +231,12 @@ router.post('/', (req, res) => {
   // `{"data":{…},"errors":[]}` in the column and made every extra question
   // render blank on the record it was answered on.
   let custom;
-  try { custom = coerceCustomData(db, 'retention_sample', req.body?.custom_data).data; } catch { custom = null; }
+  {
+    // A required extra question left blank is refused, not silently accepted.
+    const { data, errors } = coerceCustomData(db, 'retention_sample', req.body?.custom_data);
+    if (errors?.length) return res.status(400).json({ error: errors.join(' ') });
+    custom = data;
+  }
 
   const id = uuid();
   db.prepare(`INSERT INTO retention_samples
@@ -275,7 +280,8 @@ router.put('/:id', (req, res) => {
     // scope STRING — and spreading a string yields {0:'r',1:'e',…}, so every
     // edit wrote indexed characters into the column. Measured, not guessed.
     try {
-      const { data } = coerceCustomData(db, 'retention_sample', req.body.custom_data);
+      const { data, errors } = coerceCustomData(db, 'retention_sample', req.body.custom_data);
+      if (errors?.length) return res.status(400).json({ error: errors.join(' ') });
       custom = JSON.stringify(mergeCustomData(before.custom_data, data) || {});
     } catch { /* keep what's there */ }
   }

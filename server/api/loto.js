@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 import { stampEquipmentReadiness } from '../equipment-readiness.js';
 
 const router = Router();
@@ -129,14 +130,22 @@ router.put('/executions/:id/verify', (req, res) => {
   const existing = db.prepare('SELECT * FROM loto_executions WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Execution not found' });
 
-  const { verified_by, verification_result } = req.body;
-  if (!verified_by) return res.status(400).json({ error: 'verified_by is required' });
+  // Zero-energy verification is a signature by a SECOND person. The name used
+  // to come from a prompt() in the browser, typed by whoever was holding the
+  // tablet; it is the caller now, proven with their password, and refused
+  // when the caller is the person who locked out.
+  const { verification_result } = req.body;
+  if (!gateSignature(req, res, { action: 'loto_verify' })) return;
+  const verified_by = req.user.name;
+  if (existing.locked_by && existing.locked_by.trim().toLowerCase() === verified_by.trim().toLowerCase()) {
+    return res.status(400).json({ error: 'The verifier must be a different person from the one who locked out.' });
+  }
 
   db.prepare("UPDATE loto_executions SET verified_by=?, verification_result=?, verified_at=datetime('now'), status='verified', updated_at=datetime('now') WHERE id=?")
     .run(verified_by, verification_result || 'zero_energy_confirmed', req.params.id);
 
   const updated = db.prepare('SELECT * FROM loto_executions WHERE id = ?').get(req.params.id);
-  logAudit(verified_by, 'verify_lockout', 'loto_execution', req.params.id, { verification_result }, existing, updated);
+  logAudit(req.user, 'verify_lockout', 'loto_execution', req.params.id, { verification_result, ...signatureEvidence() }, existing, updated);
   res.json(updated);
 });
 

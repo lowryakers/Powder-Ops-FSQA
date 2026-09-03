@@ -25,6 +25,7 @@
 import { v4 as uuid } from 'uuid';
 import { logAudit } from './db.js';
 import { recordAreaForTask, recordGroupFor } from './qa-records.js';
+import { canonicalArea } from './sanitation-areas.js';
 import { postMessageAs, botDm } from './api/comms.js';
 import { pushToUser } from './push.js';
 import { readyDocOrigin } from './links.js';
@@ -149,11 +150,15 @@ export function runQaRecordBackfill(db, { by = 'system', group = null } = {}) {
       // 'pre_op' and the three result values are CHECK-constrained, same as the
       // live filing path — an unlisted value throws and takes the whole
       // transaction with it.
-      insert.run(id, p.area, p.equipment_id, p.performed_by, p.performed_at,
-        REASON, p.result, recordGroupFor(p.area), p.notes);
+      // The live filing path canonicalises the area (`Restroom` → `Restrooms`);
+      // this bulk path inserted the title map's output raw and re-created the
+      // split months at a time. One definition, both doors.
+      const area = canonicalArea(p.area) || p.area;
+      insert.run(id, area, p.equipment_id, p.performed_by, p.performed_at,
+        REASON, p.result, recordGroupFor(area), p.notes);
       logAudit(by, 'create', 'sanitation_record', id,
         `Backfilled from completed task ${p.work_order_id} (${p.title}), performed ${p.performed_at}`,
-        null, null, p.area);
+        null, null, area);
       n += 1;
     }
     return n;

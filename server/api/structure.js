@@ -142,11 +142,10 @@ router.post('/lists/:key/reorder', (req, res) => {
 // listing the known ones keeps the picker honest and self-documenting.
 export const KNOWN_SCOPES = [
   { scope: 'receiving_log', label: 'Receiving Log' },
-  { scope: 'qms:deviation', label: 'Quality Events — Deviation' },
-  { scope: 'qms:non_conformance', label: 'Quality Events — Non-Conformance' },
-  { scope: 'qms:on_hold', label: 'Quality Events — On Hold' },
-  { scope: 'supply_order', label: 'Supply Orders' },
-  { scope: 'disposal', label: 'Disposals' },
+  // Quality events, supply orders and disposals are NOT offered: no route on
+  // those records reads custom_data, so a field defined for them was silently
+  // dropped on every save. Offer a scope only once its form mounts
+  // <CustomFields> and its create/update route calls coerceCustomData.
   { scope: 'meeting', label: 'Meetings' },
   { scope: 'internal_audit', label: 'Internal Audits' },
   { scope: 'retention_sample', label: 'Retention Samples' },
@@ -250,11 +249,8 @@ router.get('/fields/:scope/:id/usage', (req, res) => {
 const SCOPE_TABLES = {
   visitor: 'visitors',
   receiving_log: 'receiving_log',
-  qms: 'qms_records',
-  supply_order: 'supply_orders',
   meeting: 'meetings',
   internal_audit: 'internal_audits',
-  disposal: 'disposals',
   retention_sample: 'retention_samples',
   reimbursement: 'reimbursements',
   candidate: 'candidates',

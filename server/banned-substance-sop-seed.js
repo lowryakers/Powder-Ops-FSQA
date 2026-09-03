@@ -83,10 +83,15 @@ export function seedBannedSubstanceSopDraft(db) {
       WHERE COALESCE(doc_type, '') != 'reference'
         AND (title LIKE '%banned%' COLLATE NOCASE OR title LIKE '%prohibited substance%' COLLATE NOCASE)`).get();
     if (existing) { flagDone(); return 0; }
+    const id = uuid();
     db.prepare(`INSERT INTO sop_documents
       (id, doc_number, title, category, revision, status, owner, description)
       VALUES (?, 'SOP-DRAFT-BSC', ?, 'quality', 'Draft A', 'draft', 'QA', ?)`)
-      .run(uuid(), TITLE, BODY);
+      .run(id, TITLE, BODY);
+    // The baseline version, like every other writer of a document.
+    db.prepare(`INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot)
+      SELECT ?, id, revision, 'system', 'Seeded', json_object('id', id, 'doc_number', doc_number, 'title', title, 'revision', revision, 'status', status)
+      FROM sop_documents WHERE id = ?`).run(uuid(), id);
     flagDone();
     console.log('[seed] Filed the Banned & Prohibited Substance Control SOP draft for review');
     return 1;

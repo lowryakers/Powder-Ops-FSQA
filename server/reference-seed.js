@@ -114,12 +114,19 @@ export function seedReferenceLibrary(db) {
   const ins = db.prepare(`INSERT INTO sop_documents
     (id, doc_type, doc_number, title, category, revision, status, owner, description, source_file, effective_date)
     VALUES (?, 'reference', ?, ?, 'quality', ?, 'active', 'QA', ?, ?, date('now'))`);
+  // Every writer of a document writes its baseline version, so the history of
+  // a seeded document starts where the document does.
+  const baseline = db.prepare(`INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot)
+    SELECT ?, id, revision, 'system', 'Seeded', json_object('id', id, 'doc_number', doc_number, 'title', title, 'revision', revision, 'status', status)
+    FROM sop_documents WHERE id = ?`);
   let added = 0;
   for (const b of BOOKLETS) {
     if (exists.get(b.doc_number)) continue;
     let text;
     try { text = readFileSync(join(DIR, b.file), 'utf8'); } catch { continue; }
-    ins.run(uuid(), b.doc_number, b.title, b.revision, `${b.description_intro}\n\n---\n\n${text}`, b.file);
+    const id = uuid();
+    ins.run(id, b.doc_number, b.title, b.revision, `${b.description_intro}\n\n---\n\n${text}`, b.file);
+    baseline.run(uuid(), id);
     added++;
   }
   if (added) console.log(`[seed] Reference Library: added ${added} external standard(s)`);

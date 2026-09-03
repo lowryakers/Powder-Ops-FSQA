@@ -17,7 +17,7 @@
     "check:routes": "node scripts/check-route-order.mjs",
     "check:boot": "node scripts/check-fresh-boot.mjs",
     "check:endpoints": "node scripts/check-endpoints.mjs",
-    "check": "npm run lint && npm run build && npm run check:routes && npm run check:migrations && npm run check:boot && npm run check:endpoints && npm run check:suppliers && npm run check:invoices && npm run check:reclean && npm run check:readiness && npm run check:eqready && npm run check:swabs && npm run check:obligations && npm run check:ncstatus && npm run check:docworklist && npm run check:modaccess && npm run check:dupreadings && npm run check:scale && npm run check:cadence && npm run check:auditor && npm run check:managed",
+    "check": "npm run lint && npm run build && npm run check:routes && npm run check:migrations && npm run check:boot && npm run check:endpoints && npm run check:suppliers && npm run check:invoices && npm run check:reclean && npm run check:readiness && npm run check:eqready && npm run check:swabs && npm run check:obligations && npm run check:ncstatus && npm run check:docworklist && npm run check:modaccess && npm run check:dupreadings && npm run check:scale && npm run check:cadence && npm run check:auditor && npm run check:managed && npm run check:canonical",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:invoices": "node scripts/check-invoice-figures.mjs",
     "check:reclean": "node scripts/check-reclean-titles.mjs",
@@ -38,6 +38,7 @@
     "check:cadence": "node scripts/check-review-cadence.mjs",
     "check:auditor": "node scripts/check-auditor-training.mjs",
     "check:managed": "node scripts/check-managed-select.mjs",
+    "check:canonical": "node scripts/check-canonical-area.mjs",
     "verify:backdate": "node scripts/verify-backdated-recurrence.mjs",
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
     "verify:sanareas": "node scripts/verify-sanitation-areas.mjs",
@@ -51,6 +52,7 @@
     "verify:docwithdraw": "node scripts/verify-document-withdraw.mjs",
     "verify:cadence": "node scripts/verify-review-cadence.mjs",
     "verify:mobile": "node scripts/verify-mobile-cards.mjs",
+    "verify:writedoors": "node scripts/verify-write-doors.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {

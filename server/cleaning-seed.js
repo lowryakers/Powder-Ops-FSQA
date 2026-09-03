@@ -67,7 +67,7 @@ export function seedCleaningRecords(db) {
 
       // 2. Restroom Cleaning
       insert.run(
-        uuid(), 'Restroom', 'pre_op', performer,
+        uuid(), 'Restrooms', 'pre_op', performer,   // the canonical spelling (sanitation-areas.js)
         `${date}T${randomTime(8, 3)}:00`,
         null, null, null, null, 'pass',
         verifier, `${vDate}T${randomTime(14, 3)}:00`, null

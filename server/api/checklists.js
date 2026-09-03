@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 const router = Router();
+
+const canVerify = (u) => ['admin', 'supervisor'].includes(u?.role)
+  || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase());
 
 // A late completion advances from the day the instance was DUE, not the day
 // somebody got to it, so a daily checklist closed five days late leaves the
@@ -252,14 +256,19 @@ router.put('/submissions/:id/verify', (req, res) => {
   const existing = db.prepare('SELECT * FROM checklist_submissions WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Submission not found' });
 
-  const { verified_by } = req.body;
-  if (!verified_by) return res.status(400).json({ error: 'verified_by is required' });
+  // A verification is a QA counter-signature. It used to take `verified_by`
+  // from the request body with no role check and no signature password — the
+  // two defects verifySanitationRecord's docblock says were fixed on the
+  // sanitation route, unrepaired here. The signer is the caller, proven now.
+  if (!canVerify(req.user)) return res.status(403).json({ error: 'QA, a supervisor or an admin verifies a checklist.' });
+  if (!gateSignature(req, res, { action: 'checklist_verify' })) return;
+  const verified_by = req.user.name;
 
   db.prepare("UPDATE checklist_submissions SET verified_by = ?, verified_at = datetime('now') WHERE id = ?")
     .run(verified_by, req.params.id);
 
   const updated = db.prepare('SELECT * FROM checklist_submissions WHERE id = ?').get(req.params.id);
-  logAudit(verified_by, 'verify', 'checklist_submission', req.params.id, null, existing, updated);
+  logAudit(req.user, 'verify', 'checklist_submission', req.params.id, { ...signatureEvidence() }, existing, updated);
   res.json(updated);
 });
 

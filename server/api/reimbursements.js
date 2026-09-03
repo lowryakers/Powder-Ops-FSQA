@@ -168,6 +168,9 @@ router.post('/', uploadReceipts, async (req, res) => {
     }
 
     const id = uuid();
+    // A required extra question left blank is refused before anything is written.
+    const custom = coerceCustomData(db, 'reimbursement', req.body?.custom_data);
+    if (custom.errors?.length) return res.status(400).json({ error: custom.errors.join(' ') });
     db.prepare(`INSERT INTO reimbursements
       (id, user_id, person, spent_on, amount, category, merchant, description, payment_method,
        custom_data, created_by)
@@ -178,7 +181,7 @@ router.post('/', uploadReceipts, async (req, res) => {
         // (db, scope, raw) and then `.data`. Called as (scope, raw) the third
         // argument was undefined, so this returned {data:null} every time and
         // the extra answers were discarded before they reached the column.
-        JSON.stringify(coerceCustomData(db, 'reimbursement', req.body?.custom_data).data || {}), req.user?.name || null);
+        JSON.stringify(custom.data || {}), req.user?.name || null);
 
     await storeReceipts(db, id, files, req.user);
     logAudit(req.user, 'create', 'reimbursement', id,
@@ -280,6 +283,8 @@ router.put('/:id', (req, res) => {
   const amount = req.body?.amount !== undefined ? money(req.body.amount) : before.amount;
   if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'How much was it?' });
 
+  const customEdit = coerceCustomData(db, 'reimbursement', req.body?.custom_data);
+  if (customEdit.errors?.length) return res.status(400).json({ error: customEdit.errors.join(' ') });
   db.prepare(`UPDATE reimbursements SET spent_on = ?, amount = ?, category = ?, merchant = ?,
       description = ?, payment_method = ?, custom_data = ?, updated_at = datetime('now'), updated_by = ?
     WHERE id = ?`)
@@ -290,8 +295,7 @@ router.put('/:id', (req, res) => {
       // and `incoming` was the stored JSON — which got spread character by
       // character, so EVERY edit of a claim wrote {"0":"{","1":"\"",…} into
       // custom_data, whether or not anybody used a custom field.
-      JSON.stringify(mergeCustomData(before.custom_data,
-        coerceCustomData(db, 'reimbursement', req.body?.custom_data).data) || {}),
+      JSON.stringify(mergeCustomData(before.custom_data, customEdit.data) || {}),
       req.user?.name || null, before.id);
   const after = db.prepare('SELECT * FROM reimbursements WHERE id = ?').get(before.id);
   logAudit(req.user, 'update', 'reimbursement', before.id, null, before, after, after.person);

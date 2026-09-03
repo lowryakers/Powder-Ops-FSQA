@@ -50,10 +50,12 @@ export function gtinValid(gtin) {
 //
 // The checklist and its dependency rules live in `shared/product-readiness.js`
 // so the drawer renders exactly what the server counted. Adding a step is one
-// entry there. `nextBasis` is called from every write path that can satisfy a
-// step — this file's PUT, the barcode upload, the NFP approval in nfp.js and
-// the artwork release in artwork.js — because a step that is satisfied without
-// recording what it was satisfied against can never be found stale.
+// entry there. `stampReadiness` is called from every write path that can
+// satisfy or move a step — this file's POST, PUT, bottle-drafts, rename and
+// realign, the confirm endpoint, the NFP approval in nfp.js and the artwork
+// release in artwork.js — because a step that is satisfied without recording
+// what it was satisfied against can never be found stale, and a SKU that
+// changes under a done Shopify step must un-tick it.
 
 // ── Shaping ──────────────────────────────────────────────────────────────────
 
@@ -468,6 +470,7 @@ router.post('/bottle-drafts', (req, res) => {
     for (const p of plan) {
       ins.run({ ...p, created_by: by,
         notes: 'Draft for the bottling line. Needs a GS1 barcode, an MRP formula, an approved NFP and artwork.' });
+      stampReadiness(db, p.sku, null, ['spec_id'], by);
     }
   });
   tx();
@@ -569,7 +572,12 @@ router.post('/drafts/realign', (req, res) => {
     db.pragma('defer_foreign_keys = ON');
     const upd = db.prepare("UPDATE products SET sku = ?, updated_at = datetime('now') WHERE sku = ?");
     const col = db.prepare('UPDATE product_colors SET sku = ? WHERE sku = ?');
-    for (const r of plan) { upd.run(r.to, r.from); col.run(r.to, r.from); }
+    const before = db.prepare('SELECT * FROM products WHERE sku = ?');
+    for (const r of plan) {
+      const was = before.get(r.from);
+      upd.run(r.to, r.from); col.run(r.to, r.from);
+      stampReadiness(db, r.to, was, ['sku'], req.user?.name);
+    }
   })();
   for (const r of plan) {
     logAudit(req.user, 'product_renamed', 'product', r.to,
@@ -870,6 +878,10 @@ router.post('/', (req, res) => {
     return b[c] ?? null;
   });
   db.prepare(`INSERT INTO products (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...vals);
+  // A product created with a spec or an artwork status already satisfies steps;
+  // without a basis the NEXT unrelated write would stamp the post-write facts
+  // and a GTIN corrected after creation could never make the artwork step stale.
+  stampReadiness(db, sku, null, cols, req.user?.name);
   logAudit(req.user, 'product_created', 'product', sku, { gtin, flavor: b.flavor }, null, null, `${sku} — ${b.flavor}`);
   res.status(201).json(db.prepare(`${SELECT} WHERE p.sku = ?`).get(sku));
 });
@@ -943,6 +955,9 @@ router.post('/:sku/rename', (req, res) => {
     db.prepare('UPDATE products SET sku = ?, legacy_sku = COALESCE(legacy_sku, ?), updated_at = datetime(\'now\') WHERE sku = ?')
       .run(next, existing.sku, existing.sku);
     db.prepare('UPDATE product_colors SET sku = ? WHERE sku = ?').run(next, existing.sku);
+    // The SKU is keyed into Shopify and ShipHero; those steps depend on it and
+    // must read stale after a rename rather than go on describing the old code.
+    stampReadiness(db, next, existing, ['sku'], req.user?.name);
   })();
   logAudit(req.user, 'product_renamed', 'product', next, { from: existing.sku, to: next }, null, null, `${existing.sku} → ${next}`);
   res.json(db.prepare(`${SELECT} WHERE p.sku = ?`).get(next));

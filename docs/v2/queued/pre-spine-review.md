@@ -130,6 +130,13 @@ auditor. Copied from the certifications section where `person_name` is real.
 - **B6** `MeetingsPanel.jsx:45-49` writes `office`/`sanitation`/`production` into `work_orders.task_group`; `PMPanel.jsx:934-943` has no tab for any of them. A meeting action assigned to Office (the default) reaches no team's list.
 - **B7** `SanitationPanel.jsx:472` equipment select drops the link for retired equipment on save.
 
+**B2–B7 FIXED 2026-09-03** — `src/lib/managedList.js` `withCurrent()` appends the stored value when the list no
+longer offers it, labelled so nobody picks it for a new record; every managed-list select (sanitation area and
+equipment, receiving UOM and release status, custom fields, QMS record fields, EOD answers, meeting types) goes
+through it. `shared/task-groups.js` is the one team list: Task Center's tabs are derived from it, Meetings and
+Recurring Schedules import it, and Office is a tab. Products offers `rejected`; the training method has a blank.
+`npm run check:managed`, 29 assertions, control (helper never appends) fails 4.
+
 ### Class C — one nullable column, two readings
 - **C2** `compliance.js:380` and `:492` INNER JOIN `equipment` — the documented LEFT-JOIN fix covered four queries and not these two; document-review, meeting, chat and public-report tasks vanish from the dashboard's upcoming list and the lubricant extract.
 - **C3** `loto_required` is nullable (`db.js:3098`); `equipment-types.js:86` reads NULL as *needs LOTO*, `compliance.js:392,559` and `loto.js:165` read `= 1` so NULL is *excluded*. The checklist can demand a procedure the badge refuses to count.
@@ -147,6 +154,15 @@ auditor. Copied from the certifications section where `person_name` is real.
 - **D7** `checklists.js:243-252` and `loto.js:132-136` take `verified_by` **from the request body** with no role check and no `gateSignature` — the two defects `verifySanitationRecord`'s docblock says were fixed on the sanitation route.
 - **D8** `documents.js:862` `PUT /:id` snapshots the *new* state into `sop_versions`; `applyRevision:484` snapshots the *previous* one. The column means two things. And PUT owns `training_revision`, which `applyRevision` never touches — a revision applied through the upload worklist never triggers retraining. `reference-seed.js:114` and `banned-substance-sop-seed.js:86` write no baseline version.
 - **D9** `SCOPE_TABLES` declares `qms`, `supply_order`, `disposal` custom-field scopes; no route calls `coerceCustomData` for any of them — a custom field defined on those records is silently dropped on save. `retention.js:234` and `reimbursements.js:181,293` discard the `errors` array.
+
+**D2, D5–D9 FIXED 2026-09-03** — the backfill and the cleaning seed file the canonical area; checklist and LOTO
+verification are a signature by the caller behind `gateSignature` (the LOTO verifier must differ from the person
+who locked out, and the browser prompt is gone); `applyRevision` snapshots the document as it now stands and
+moves `training_revision`, the seeds write a baseline version (and the reference-library seed had been dying on
+its first row — six standards seed now); product POST, bottle-drafts, rename and realign all call
+`stampReadiness`; the `qms:*`, `supply_order` and `disposal` scopes are no longer offered until a route reads
+them, and retention / reimbursements answer a required-field error with a 400. `npm run check:canonical` (18,
+control fails 14) and `npm run verify:writedoors` (22 live, control fails 12).
 
 ### Class E — a date from *now*
 - **E4** `quality-schedules.js:61` stamps the generated work order `due_date = date('now')` while the schedule correctly advances from `s.next_due`; a check that came due on the 1st and was raised on the 4th reads as on time.

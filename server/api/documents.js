@@ -474,8 +474,14 @@ router.post('/propose-revisions', receiveImportFiles, async (req, res) => {
 });
 
 // POST /:id/apply-revision — apply the fields Document Control ticked.
-// A version snapshot is written first, so the previous revision is recoverable
-// and the trail shows what the upload replaced.
+// A `sop_versions` row is THE DOCUMENT AS IT STOOD AT THAT REVISION, after
+// the change — the meaning PUT /:id and the seeds' baselines give it. This
+// path used to snapshot the PREVIOUS state instead, so the column meant two
+// things depending on which door the revision came through. It now writes
+// the previous state only as a baseline when the document has no version row
+// at all (pre-history documents), then the new state, like every other writer.
+// It also moves `training_revision` when the revision moves: a revision
+// applied from the upload worklist never triggered retraining before.
 // ONE WRITER, TWO DOORS. The modal and the worklist both land here, so a
 // revision applied from a queue is byte for byte one applied from the upload
 // screen — including the version snapshot and the audit entry. A second copy is
@@ -491,12 +497,20 @@ export function applyRevision(db, doc, fields, { actor, filename }) {
   }
   if (!sets.length) return { error: 'Nothing selected to apply.' };
 
-  db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(uuid(), doc.id, doc.revision, actor?.name || 'system',
-      `Superseded by an uploaded revision (${filename || 'file'})`, JSON.stringify(doc));
+  const hasHistory = db.prepare('SELECT 1 FROM sop_versions WHERE sop_id = ? LIMIT 1').get(doc.id);
+  if (!hasHistory) {
+    db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(uuid(), doc.id, doc.revision, 'system', 'Baseline recorded before the first applied revision', JSON.stringify(doc));
+  }
+  const revisionMoved = fields.revision && String(fields.revision) !== String(doc.revision);
+  if (revisionMoved) { sets.push('training_revision = ?'); vals.push(fields.revision); }
 
   db.prepare(`UPDATE sop_documents SET ${sets.join(', ')}, source_file = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(...vals, filename || doc.source_file, doc.id);
+  const applied = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id);
+  db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(uuid(), doc.id, applied.revision, actor?.name || 'system',
+      `Applied from an uploaded revision (${filename || 'file'})`, JSON.stringify(applied));
 
   const after = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id);
   logAudit(actor, 'update', 'document', doc.id,
