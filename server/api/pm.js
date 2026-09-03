@@ -223,8 +223,10 @@ function priorCheck(db, wo) {
     .get(wo.id, wo.title, wo.equipment_id) || null;
 }
 
-function onWorkOrderCompleted(db, wo) {
-  if (wo && wo.document_id) recomputeDocumentReview(db, wo.document_id);
+// `reviewedOn` is the day the work was performed (`backdate.when`), so a
+// document review ticked off on Thursday for Monday's reading is Monday's.
+function onWorkOrderCompleted(db, wo, { reviewedOn } = {}) {
+  if (wo && wo.document_id) recomputeDocumentReview(db, wo.document_id, { reviewedOn });
 }
 
 const router = Router();
@@ -1139,7 +1141,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   if (needsClearance) {
     logAudit('system', 'clearance_required', 'work_order', req.params.id, 'Food-contact equipment — hygiene clearance pending');
   }
-  onWorkOrderCompleted(db, existing);
+  onWorkOrderCompleted(db, existing, { reviewedOn: backdate.when });
 
   let nextWO = null;
   if (existing.pm_schedule_id) {

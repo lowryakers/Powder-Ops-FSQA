@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { isoDay, nextReviewDue } from '../review-cadence.js';
 import { cleanFilename, stripRevisionSuffix } from '../filename-meta.js';
 import { orderWorklist, worklistProgress } from '../doc-worklist.js';
 import { v4 as uuid } from 'uuid';
@@ -51,14 +52,23 @@ const withEquipment = (row) => (row ? { ...row, equipment_ids: equipmentIdsOf(ro
 export const REVIEW_FREQ_MONTHS = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12, biennial: 24 };
 const REVIEW_LEAD_DAYS = 30;
 
-// Recompute a document's next review after it's reviewed: last_reviewed = today,
-// review_due = today + its frequency. Called when a review task is completed.
-export function recomputeDocumentReview(db, documentId) {
+// Recompute a document's next review after it's reviewed. `reviewedOn` is
+// the day the review was actually performed (a back-dated task completion
+// passes it; the Review Center's button means today). The next date is
+// measured from the existing due date when the review came early, and from
+// the review itself when it came late — `review-cadence.js` is the one rule,
+// shared with the supplier annual review. It used to be date('now') + N
+// months, so reviewing on the day the 30-day-lead task appeared pulled the
+// anniversary a month earlier every cycle.
+export function recomputeDocumentReview(db, documentId, { reviewedOn } = {}) {
   const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(documentId);
   if (!doc) return;
   const months = REVIEW_FREQ_MONTHS[doc.review_frequency] || 12;
-  db.prepare(`UPDATE sop_documents SET last_reviewed = date('now'), review_due = date('now', ?), updated_at = datetime('now') WHERE id = ?`)
-    .run(`+${months} months`, documentId);
+  const done = isoDay(reviewedOn) || isoDay(new Date());
+  const due = nextReviewDue({ due: doc.review_due, doneOn: done, months });
+  db.prepare(`UPDATE sop_documents SET last_reviewed = ?, review_due = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(done, due, documentId);
+  return { last_reviewed: done, review_due: due };
 }
 
 // Generate a Document-Control task for each active document whose review is due

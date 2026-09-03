@@ -4,8 +4,15 @@ import { getDb, logAudit } from '../db.js';
 
 const router = Router();
 
+// A late completion advances from the day the instance was DUE, not the day
+// somebody got to it, so a daily checklist closed five days late leaves the
+// four days in between as instances of their own rather than vanishing —
+// `createNextWorkOrder` before D-047, on both the complete and the skip path.
+// `per_shift` steps in hours, which a bare due DATE cannot carry, so it still
+// runs off the clock.
 function calcNextDueDate(frequency, fromDate) {
-  const d = fromDate ? new Date(fromDate) : new Date();
+  const from = fromDate && frequency !== 'per_shift' && !Number.isNaN(Date.parse(fromDate)) ? fromDate : null;
+  const d = from ? new Date(from) : new Date();
   switch (frequency) {
     case 'per_shift': d.setHours(d.getHours() + 8); break;
     case 'daily': d.setDate(d.getDate() + 1); break;
@@ -167,7 +174,7 @@ router.post('/instances/:id/complete', (req, res) => {
     UPDATE checklist_instances SET status = 'completed', submission_id = ?, completed_by = ?, completed_at = datetime('now') WHERE id = ?
   `).run(subId, submitted_by, req.params.id);
 
-  const nextDue = calcNextDueDate(template.frequency);
+  const nextDue = calcNextDueDate(template.frequency, instance.due_date);
   const nextId = uuid();
   db.prepare('INSERT INTO checklist_instances (id, checklist_id, due_date) VALUES (?, ?, ?)').run(nextId, instance.checklist_id, nextDue);
 
@@ -189,7 +196,7 @@ router.post('/instances/:id/skip', (req, res) => {
 
   const template = db.prepare('SELECT * FROM checklist_templates WHERE id = ?').get(instance.checklist_id);
   if (template) {
-    const nextDue = calcNextDueDate(template.frequency);
+    const nextDue = calcNextDueDate(template.frequency, instance.due_date);
     const nextId = uuid();
     db.prepare('INSERT INTO checklist_instances (id, checklist_id, due_date) VALUES (?, ?, ?)').run(nextId, instance.checklist_id, nextDue);
   }

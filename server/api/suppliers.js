@@ -30,6 +30,7 @@
 // the first time somebody files a questionnaire.
 
 import { Router } from 'express';
+import { nextReviewDue } from '../review-cadence.js';
 import { moduleLevel } from '../module-access.js';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
@@ -409,10 +410,18 @@ router.post('/:id/disposition', (req, res) => {
       db.prepare(`INSERT INTO supplier_qualifications (id, supplier_id, period_label, source) VALUES (?,?,?,'in_app')`)
         .run(qid, s.id, period_label);
     }
+    // SOP 404 § IV.B is an ANNUAL review, and the annual review task is raised
+    // 30 days ahead — so "+1 year from today" moved the anniversary a month
+    // earlier every time somebody reviewed on the day the task appeared. The
+    // next date is measured from the supplier's latest due date when this
+    // decision came early, and from today when it came late (review-cadence.js,
+    // the rule the document review shares).
+    const anchor = db.prepare('SELECT MAX(next_review_due) AS due FROM supplier_qualifications WHERE supplier_id = ?').get(s.id)?.due;
+    const nextDue = nextReviewDue({ due: anchor, doneOn: new Date(), months: 12 });
     db.prepare(`UPDATE supplier_qualifications SET disposition = ?, disposition_notes = ?,
       risk_criteria = ?, decided_by = ?, decided_at = datetime('now'),
-      next_review_due = date('now', '+1 year'), updated_at = datetime('now') WHERE id = ?`)
-      .run(disposition, clean(notes, 1000), JSON.stringify(risk_criteria), req.user.name, qid);
+      next_review_due = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(disposition, clean(notes, 1000), JSON.stringify(risk_criteria), req.user.name, nextDue, qid);
     // The supplier's status MIRRORS the decision and is written nowhere else —
     // the same doctrine as knife_accountability.status and products.nfp_version.
     db.prepare(`UPDATE suppliers SET status = ?, status_reason = ?, status_set_by = ?,
