@@ -45,6 +45,7 @@
     "verify:doors": "node scripts/verify-completion-doors.mjs",
     "verify:knife": "node scripts/verify-knife-mirror.mjs",
     "verify:prodmirror": "node scripts/verify-production-mirror.mjs",
+    "verify:docwithdraw": "node scripts/verify-document-withdraw.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {

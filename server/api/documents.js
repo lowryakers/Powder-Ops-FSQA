@@ -811,6 +811,20 @@ router.put('/:id', (req, res) => {
   const { doc_number, title, category, revision, effective_date, review_due, review_frequency, status, owner, content, source_file, _change_summary, _minor, content_es } = req.body;
 
   const newStatus = status || existing.status;
+  // WITHDRAWN IS A DOOR, NOT A DROPDOWN VALUE. Archiving records who, when and
+  // why (DELETE /:id with a reason) and reinstating returns the document to
+  // draft with its own audit entry (POST /:id/reinstate). Letting a plain edit
+  // move status across that line was how a withdrawn SOP came back into the
+  // active registry: the edit form's status select did not offer "No longer
+  // in use", so opening a retired document to fix a typo had the browser pick
+  // the first option -- draft -- and save it. Refused here so no client can
+  // do it by accident, whatever its dropdown offers.
+  if (existing.status === 'archived' && newStatus !== 'archived') {
+    return res.status(400).json({ error: 'This document has been withdrawn. Reinstate it first (it returns to draft), then edit its status.', use: 'reinstate' });
+  }
+  if (existing.status !== 'archived' && newStatus === 'archived') {
+    return res.status(400).json({ error: 'Withdrawing a document needs a reason -- use "No longer in use", which records who withdrew it and why.', use: 'withdraw' });
+  }
   // Resolve review frequency (validate against known values) and, if the caller
   // changed the frequency without supplying an explicit review date, re-derive
   // the next review date from the effective date (or today) + the new frequency.

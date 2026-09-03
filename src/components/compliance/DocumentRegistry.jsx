@@ -270,9 +270,21 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
-            <select value={form.status} onChange={e => set('status', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-              {STATUSES.filter(s => s.value !== 'archived').map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {/* THE RETIRED-ROOMS TRAP, on the controlled-document registry. This
+                select filtered out "No longer in use", so opening a withdrawn
+                document loaded a value the select could not show and the
+                browser picked the first option -- Draft. Fixing a typo on a
+                retired SOP put it back in the active registry. A withdrawn
+                document shows its real status, read-only; the way back is
+                Reinstate, which is its own audited act. */}
+            <select value={form.status} onChange={e => set('status', e.target.value)} disabled={form.status === 'archived'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-500">
+              {(form.status === 'archived' ? STATUSES : STATUSES.filter(s => s.value !== 'archived'))
+                .map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
+            {form.status === 'archived' && (
+              <p className="mt-1 text-[11px] text-gray-500">Withdrawn. Use Reinstate to bring it back to draft; the status cannot be edited here.</p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Owner</label>
