@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { exportToCsv } from '../../utils/exportCsv';
 import { formatDateTime, formatDate } from '../../lib/datetime.js';
+import { TRAINING_COLUMNS } from '../../lib/auditorTraining.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auditor portal, structured like an audit binder: a Table-of-Contents cover
@@ -238,18 +239,13 @@ function DocumentsSection({ docType, title, noun = 'controlled documents' }) {
 }
 
 // ── Training completions ─────────────────────────────────────────────────────
+const TABLE_COLUMNS = TRAINING_COLUMNS.filter(c => !c.csvOnly);
 function TrainingSection() {
   const { data } = useApiGet('/training?limit=500');
   const rows = Array.isArray(data) ? data : (data?.items || []);
   const doExport = () => {
     if (!rows.length) return;
-    exportToCsv('training-records-audit.csv', [
-      { label: 'Person', value: r => r.person_name || r.user_name || '' },
-      { label: 'Course', value: r => r.course_title || r.course_name || '' },
-      { label: 'Completed', value: r => r.completed_at || r.completion_date || '' },
-      { label: 'Score', value: r => r.score ?? '' },
-      { label: 'Trainer', value: r => r.trainer || r.verified_by || '' },
-    ], rows);
+    exportToCsv('training-records-audit.csv', TRAINING_COLUMNS.map(({ label, value }) => ({ label, value })), rows);
   };
   return (
     <div className="space-y-3">
@@ -260,14 +256,13 @@ function TrainingSection() {
       {rows.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="border-b border-gray-200"><Th>Person</Th><Th>Course</Th><Th>Completed</Th><Th>Score</Th></tr></thead>
+            <thead><tr className="border-b border-gray-200">{TABLE_COLUMNS.map(c => <Th key={c.key}>{c.label}</Th>)}</tr></thead>
             <tbody>
               {rows.slice(0, 100).map((r, i) => (
                 <tr key={r.id || i} className="border-b border-gray-100">
-                  <Td>{r.person_name || r.user_name || '—'}</Td>
-                  <Td wide dim>{r.course_title || r.course_name || '—'}</Td>
-                  <Td dim>{(r.completed_at || r.completion_date || '').slice(0, 10) || '—'}</Td>
-                  <Td dim>{r.score ?? '—'}</Td>
+                  {TABLE_COLUMNS.map(c => (
+                    <Td key={c.key} wide={c.key === 'course'} dim={c.key !== 'person'}>{String(c.value(r)) || '—'}</Td>
+                  ))}
                 </tr>
               ))}
             </tbody>
