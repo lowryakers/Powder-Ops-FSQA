@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { deptLabel } from '../../constants/departments';
@@ -991,10 +992,11 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
   const bulkSign = async () => {
     if (!window.confirm(`Sign "Reviewed by QA" on ${bulkPendingCount} routine returned record${bulkPendingCount === 1 ? '' : 's'} (Good condition only)? Bad-condition and still-out records are skipped.`)) return;
     try {
-      const res = await apiPost(`/qms/${recordType}/bulk-approve`, {});
+      const res = await withSignature((extra) => apiPost(`/qms/${recordType}/bulk-approve`, { ...extra }),
+        { title: 'Sign these records', detail: 'One password signs the whole batch.' });
       flash(`Signed ${res.signed} routine record${res.signed === 1 ? '' : 's'}.${res.skipped ? ` ${res.skipped} skipped (bad condition / still out) — review those individually.` : ''}`);
       refresh();
-    } catch (e) { flash(e.message); }
+    } catch (e) { if (e?.cancelled) return; flash(e.message); }
   };
 
   const filtered = useMemo(() => {
@@ -1075,7 +1077,15 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
   };
   const handleUpdate = async (form) => { const res = await apiPut(`/qms/${recordType}/${editing.id}`, form); setEditing(null); setViewing(res); refresh(); };
   const handleDelete = async (rec) => { if (!window.confirm(`Delete ${rec.record_number || 'this record'}?`)) return; await apiFetch(`/qms/${recordType}/${rec.id}`, { method: 'DELETE' }); setViewing(null); refresh(); };
-  const handleSign = async (id, role) => { const res = await apiPost(`/qms/${recordType}/${id}/approve`, { role }); setViewing(res); refresh(); };
+  // The server asks for the signer's password (403 + signature_required) and
+  // withSignature asks the person; cancelling is a choice, not an error.
+  const handleSign = async (id, role) => {
+    try {
+      const res = await withSignature((extra) => apiPost(`/qms/${recordType}/${id}/approve`, { role, ...extra }),
+        { title: 'Sign this record', detail: 'Enter your password to sign.' });
+      setViewing(res); refresh();
+    } catch (e) { if (e?.cancelled) return; throw e; }
+  };
   const handleSetStatus = async (id, status) => { const res = await apiPut(`/qms/${recordType}/${id}`, { status }); setViewing(res); refresh(); };
   const handleRevoke = async (id, role) => { const res = await apiFetch(`/qms/${recordType}/${id}/approve/${role}`, { method: 'DELETE' }); setViewing(res); refresh(); };
   const handleBulkPaper = async (paper) => { const res = await apiPost(`/qms/${recordType}/bulk-update`, { ids: [...selected], patch: { paper_record: paper } }); clearSelection(); flash(`Marked ${res.updated} as ${paper ? 'logged on paper' : 'requiring approval'}.`); refresh(); };

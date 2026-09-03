@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 import { smsEnabled, sendSms, approverPhone, smsStatus, OPT_OUT_LINE } from '../sms.js';
 import { readyDocOrigin } from '../links.js';
 import { requireRole } from '../middleware/auth.js';
@@ -1104,26 +1105,23 @@ router.post('/:type/bulk-update', (req, res) => {
 });
 
 // ── approvals ─────────────────────────────────────────────────────────────────
+// ONE DEFINITION, and this was a fifth door with no lock. QA Review signs a
+// deviation through signQmsApproval behind gateSignature -- the password, the
+// already-signed refusal, the attestation. The module's own Approve button on
+// the identical record wrote the approval inline: no password, and it would
+// silently overwrite an existing signature with a different person's name.
+// Signing from the queue asked for proof it was you; signing from the record
+// did not. It goes through the same function now, so a signature is
+// byte-for-byte the same record whichever door it came through.
 router.post('/:type/:id/approve', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
+  if (!gateSignature(req, res, { action: 'qms_approve' })) return;
   const db = getDb();
-  const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
-  if (!row) return res.status(404).json({ error: 'Not found' });
-  const appr = cfg.approvals.find(a => a.key === req.body.role);
-  if (!appr) return res.status(400).json({ error: 'Unknown approval role' });
-  if (!canSignApproval(req.user, appr)) return res.status(403).json({ error: 'You are not authorized to sign this approval.' });
-  const approvals = parseJson(row.approvals, {});
-  // Capture the meaning of the signature (SQF/GMP e-signature intent), not just
-  // who/when. Stored with the signature so it prints on the record and can't be
-  // separated from the act of signing.
-  const attestation = appr.attestation || `I certify that I have reviewed this ${(cfg.singular || 'record').toLowerCase()} and approve it in the capacity of ${appr.label}.`;
-  approvals[appr.key] = { name: req.user.name, user_id: req.user.id, role: req.user.role, signed_at: new Date().toISOString(), attestation };
-  db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), req.params.id);
-  logAudit(req.user, `qms_signed_${appr.key}`, cfg.key, req.params.id, { record_number: row.record_number, attestation });
-  {
-    const r = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
-    res.json(withPermissions(flatten(r), r, req.user));
-  }
+  const { error, status } = signQmsApproval(db, cfg, req.params.id, req.user, req.body?.role);
+  if (error) return res.status(status || 400).json({ error });
+  logAudit(req.user, 'sign', cfg.key, req.params.id, signatureEvidence());
+  const r = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
+  res.json(withPermissions(flatten(r), r, req.user));
 });
 
 // Bulk QA review — ROUTINE records only. Limited to the high-volume sign-out
@@ -1179,24 +1177,27 @@ router.post('/:type/bulk-approve', (req, res) => {
   if (!rule) return res.status(400).json({ error: 'Bulk sign-off is only available for routine sign-out logs.' });
   const appr = cfg.approvals.find(a => a.key === rule.role);
   if (!appr || !canSignApproval(req.user, appr)) return res.status(403).json({ error: 'You are not authorized to sign this approval.' });
+  // A BATCH IS ONE ACT: the password authenticates the act and is checked once,
+  // BEFORE the loop -- a refusal halfway would leave some records signed and
+  // nothing saying which. Same rule as the QA Review batch.
+  if (!gateSignature(req, res, { action: 'qms_bulk_approve' })) return;
   const db = getDb();
   const rows = db.prepare('SELECT * FROM qms_records WHERE record_type = ?').all(cfg.key);
   let signed = 0, skipped = 0;
-  const attestation = `I certify that I have reviewed this ${(cfg.singular || 'record').toLowerCase()} as part of a batch review of routine returned items in good condition, and approve it in the capacity of ${appr.label}.`;
-  const upd = db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?");
   const tx = db.transaction(() => {
     for (const row of rows) {
       if (row.paper_record) continue;
       const flat = flatten(row);
       if (flat.approvals[rule.role]) continue; // already signed
-      if (!rule.routine(flat)) { skipped++; continue; }
-      const approvals = { ...flat.approvals, [rule.role]: { name: req.user.name, user_id: req.user.id, role: req.user.role, signed_at: new Date().toISOString(), attestation, batch: true } };
-      upd.run(JSON.stringify(approvals), row.id);
-      logAudit(req.user, `qms_signed_${rule.role}`, cfg.key, row.id, { record_number: flat.record_number, batch: true });
+      // signQmsApproval applies `routine` itself under batch:true and refuses
+      // what is not routine; counted as skipped rather than surfaced per row.
+      const r = signQmsApproval(db, cfg, row.id, req.user, rule.role, { batch: true });
+      if (r.error) { skipped++; continue; }
       signed++;
     }
   });
   tx();
+  logAudit(req.user, 'sign', cfg.key, null, { ...signatureEvidence(), batch: true, signed, skipped });
   res.json({ signed, skipped });
 });
 

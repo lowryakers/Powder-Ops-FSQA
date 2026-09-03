@@ -39,6 +39,7 @@
     "verify:sanareas": "node scripts/verify-sanitation-areas.mjs",
     "verify:storage": "node scripts/verify-supplier-storage.mjs",
     "verify:atp": "node scripts/verify-atp-task-door.mjs",
+    "verify:qmssig": "node scripts/verify-qms-signature.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {
