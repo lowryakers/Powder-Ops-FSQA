@@ -24,6 +24,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { moduleLevel } from '../module-access.js';
 import { formFor, FORM_REGISTRY } from '../../shared/form-registry.js';
 import { SCALE_FORMS } from '../scale-forms.js';
 import { getType, QMS_TYPES } from '../qms-config.js';
@@ -44,8 +45,10 @@ function canEditForms(user) {
   const dept = String(user.department || '').toLowerCase();
   if (dept === 'document_control') return true;
   if (user.role === 'supervisor' && ['qa', 'document_control'].includes(dept)) return true;
-  const ma = user.module_access;
-  return !!(ma && !Array.isArray(ma) && ma['form-registry'] === 'edit');
+  // The Forms tab lives in the document-control hub, so that hub's edit grant is the
+  // grant. (The branch this replaces checked a 'form-registry' grant that is
+  // not a module and could never be given — a dead door.)
+  return moduleLevel(user, 'document-control') === 'edit';
 }
 
 const requireEdit = (req, res) => {
@@ -144,8 +147,8 @@ function coverage(db) {
   }
 
   const areas = db.prepare(`
-    SELECT area, record_group, COUNT(*) n FROM sanitation_records
-    GROUP BY area, record_group ORDER BY n DESC
+    SELECT area, COALESCE(record_group, 'sanitation') AS record_group, COUNT(*) n FROM sanitation_records
+    GROUP BY area, COALESCE(record_group, 'sanitation') ORDER BY n DESC
   `).all();
   for (const a of areas) {
     if (formFor({ sanitationArea: a.area })) { mapped.record_areas += 1; continue; }

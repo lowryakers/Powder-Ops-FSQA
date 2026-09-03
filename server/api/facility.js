@@ -32,7 +32,8 @@ router.get('/map-status', (req, res) => {
   try {
     const rows = db.prepare(`SELECT area, MAX(performed_at) AS last_clean,
         SUM(CASE WHEN entered_late = 1 THEN 1 ELSE 0 END) AS late_entries
-      FROM sanitation_records WHERE result = 'pass' GROUP BY area`).all();
+      FROM sanitation_records WHERE result = 'pass' AND COALESCE(record_group, 'sanitation') = 'sanitation'
+      GROUP BY area`).all();   // the same group recleanRooms() reads, or one tile carries two answers
     for (const r of rows) {
       out.rooms[r.area] = { ...(out.rooms[r.area] || {}), last_clean: r.last_clean, late_entries: r.late_entries || 0 };
     }

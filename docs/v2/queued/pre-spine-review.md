@@ -147,6 +147,13 @@ Recurring Schedules import it, and Office is a tab. Products offers `rejected`; 
 - **C8** `asset_kind` NULL: `COALESCE(...,'machine')` in one reader, `!= 'zone'` in three — unreachable today (NOT NULL), noted so the constraint is never relaxed.
 - **C9** `qa-review.js:108` `AND qa_waived_at IS NULL AND qa_waived_at IS NULL` — duplicated predicate, harmless.
 
+**C2–C7, C9 FIXED 2026-09-03** — the two dashboard joins are LEFT JOINs; `loto_required` NULL is closed off at boot
+and every SQL reader COALESCEs it the way `needsLoto()` reads it; the form register and the facility tile read
+`COALESCE(record_group, 'sanitation')`; the dead `form-registry` grant is the document-control hub's edit grant;
+the server honours an admin's restriction map exactly as the client does (Settings can never be taken away); the
+duplicated predicate is gone. `npm run check:onereading`, 30 assertions incl. server/client agreement on twenty
+cases, control fails 12. C8 stays a note — the constraint must not be relaxed.
+
 ### Class D — a write path that bypasses the one definition
 - **D2** `qa-record-backfill.js:139-152` inserts `recordAreaForTask()`'s output raw — the *bulk* path re-creates the `Restroom`/`Restrooms` split months at a time. One line: `canonicalArea(p.area) || p.area`.
 - **D5** `products.js:845` `POST /` and `:455` `bottle-drafts` insert `spec_id`/`artwork_status` without `stampReadiness`, so `readiness_basis` is NULL and the *next* unrelated write stamps the post-write facts as the baseline — a GTIN corrected after creation can never make the artwork step stale. `rename` and `realign` leave the `sku` step describing the old code. The docblock at `products.js:53-57` names "the barcode upload" as a caller and it is not one.

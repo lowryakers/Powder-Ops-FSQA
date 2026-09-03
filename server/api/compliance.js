@@ -377,7 +377,7 @@ router.get('/dashboard', (_req, res) => {
 
   const upcomingWOs = db.prepare(`
     SELECT wo.*, e.name as equipment_name FROM work_orders wo
-    JOIN equipment e ON wo.equipment_id = e.id
+    LEFT JOIN equipment e ON wo.equipment_id = e.id
     WHERE wo.due_date BETWEEN ? AND ? AND wo.status IN ('open','in_progress')
     ORDER BY wo.due_date ASC LIMIT 10
   `).all(to, sevenDaysOut.toISOString().split('T')[0]);
@@ -389,7 +389,7 @@ router.get('/dashboard', (_req, res) => {
   const calByStatus = db.prepare("SELECT status, COUNT(*) as c FROM calibration_instruments WHERE status != 'retired' GROUP BY status").all();
 
   const lotoTotal = db.prepare("SELECT COUNT(*) as c FROM loto_procedures").get().c;
-  const lotoEquipWithoutProc = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE status = 'active' AND loto_required = 1 AND asset_kind != 'zone' AND id NOT IN (SELECT equipment_id FROM loto_procedures)").get().c;
+  const lotoEquipWithoutProc = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE status = 'active' AND COALESCE(loto_required, 1) = 1 AND asset_kind != 'zone' AND id NOT IN (SELECT equipment_id FROM loto_procedures)").get().c;
 
   const flaggedIssues = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE issue_flagged = 1 AND status IN ('open','in_progress','overdue')").get().c;
 
@@ -489,7 +489,7 @@ router.get('/audit-ready', (_req, res) => {
 
   const lubricantRecords = db.prepare(`
     SELECT wo.completed_at, wo.title, e.name as equipment_name, wo.lubricant_used, wo.lubricant_is_food_grade, wo.completed_by
-    FROM work_orders wo JOIN equipment e ON wo.equipment_id = e.id
+    FROM work_orders wo LEFT JOIN equipment e ON wo.equipment_id = e.id
     WHERE wo.lubricant_used IS NOT NULL AND wo.completed_at >= ?
     ORDER BY wo.completed_at DESC
   `).all(from);
@@ -556,7 +556,7 @@ router.get('/notifications', (req, res) => {
   const clearancePending = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE clearance_required = 1 AND clearance_status = 'pending'").get().c;
   const calOverdue = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due < ? AND status NOT IN ('retired','out_of_service')").get(today).c;
   const calDueSoon = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due BETWEEN ? AND ? AND status NOT IN ('retired','out_of_service')").get(today, sevenOut).c;
-  const lotoUncovered = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE status = 'active' AND loto_required = 1 AND asset_kind != 'zone' AND id NOT IN (SELECT equipment_id FROM loto_procedures)").get().c;
+  const lotoUncovered = db.prepare("SELECT COUNT(*) as c FROM equipment WHERE status = 'active' AND COALESCE(loto_required, 1) = 1 AND asset_kind != 'zone' AND id NOT IN (SELECT equipment_id FROM loto_procedures)").get().c;
   const chemMissingSDS = db.prepare("SELECT COUNT(*) as c FROM approved_chemicals WHERE is_active = 1 AND sds_url IS NULL AND sds_number IS NULL").get().c;
   const flaggedIssues = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE issue_flagged = 1 AND status IN ('open','in_progress','overdue')").get().c;
   const sopReviewDue = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE status != 'archived' AND review_due <= ?").get(today).c;

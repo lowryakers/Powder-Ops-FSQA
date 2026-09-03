@@ -171,7 +171,7 @@ router.get('/uncovered-equipment', (_req, res) => {
     SELECT e.id, e.name, e.room, e.location, e.asset_id, e.type, e.asset_kind, e.loto_required
     FROM equipment e
     WHERE e.status = 'active'
-      AND e.loto_required = 1
+      AND COALESCE(e.loto_required, 1) = 1   -- NULL reads as needs-LOTO, as needsLoto() reads it
       AND e.asset_kind != 'zone'
       AND e.id NOT IN (SELECT equipment_id FROM loto_procedures)
     ORDER BY e.name

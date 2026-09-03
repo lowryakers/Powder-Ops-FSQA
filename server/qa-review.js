@@ -105,7 +105,7 @@ export const SOURCES = [
     module: 'production-log',
     noun: 'entry',
     plural: 'entries',
-    count: (db) => db.prepare('SELECT COUNT(*) c FROM production_entries WHERE qa_signoff_by IS NULL AND qa_waived_at IS NULL AND qa_waived_at IS NULL').get().c,
+    count: (db) => db.prepare('SELECT COUNT(*) c FROM production_entries WHERE qa_signoff_by IS NULL AND qa_waived_at IS NULL').get().c,
     pending: (db, limit = LIMIT) => db.prepare(
       `SELECT id, date, team, room, product_name, mo_number, lot_number, submitted_by
        FROM production_entries WHERE qa_signoff_by IS NULL AND qa_waived_at IS NULL

@@ -26,6 +26,8 @@
 // qms.js requireType). Public kiosk paths (/api/submit) never carry req.user
 // and are not behind this guard; their exposure is bounded by their handlers.
 
+import { OPT_IN_SET } from '../shared/opt-in-modules.js';
+
 // Must include every id used in Settings' MODULE_GROUPS (src side).
 export const ALL_MODULE_IDS = [
   'dashboard', 'critical-tracking', 'operator',
@@ -74,10 +76,29 @@ export const ALL_MODULE_IDS = [
   'artwork',
 ];
 
+// An admin's map is a RESTRICTION only when it narrows the ordinary modules —
+// a map holding nothing but opt-in grants is an admin with full access plus a
+// private module (src/utils/permissions.js, same words). ADMIN_ALWAYS keeps an
+// admin from locking themselves out of Settings. The client has honoured this
+// since the map existed; the server handed every admin 'edit' regardless, so
+// a module un-ticked for an admin was hidden in the nav and writable through
+// the API.
+const ADMIN_ALWAYS = new Set(['settings']);
+const isRestrictionMap = (ma) =>
+  !!ma && !Array.isArray(ma) && Object.keys(ma).some(k => !OPT_IN_SET.has(k));
+
 export function moduleLevel(user, moduleId) {
   if (!user) return null;
   const ma = user.module_access;
-  if (user.role === 'admin') return 'edit';
+  if (OPT_IN_SET.has(moduleId)) {
+    if (!ma) return null;
+    if (Array.isArray(ma)) return ma.includes(moduleId) ? 'edit' : null;
+    return ma[moduleId] ? 'edit' : null;
+  }
+  if (user.role === 'admin') {
+    if (isRestrictionMap(ma) && !ADMIN_ALWAYS.has(moduleId)) return ma[moduleId] ? 'edit' : null;
+    return 'edit';
+  }
   if (user.role === 'auditor') return 'view';
   if (ma == null) return null; // nothing assigned — see the note at the top
   if (Array.isArray(ma)) return ma.includes(moduleId) ? (user.role === 'supervisor' ? 'edit' : 'view') : null;

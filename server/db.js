@@ -3096,6 +3096,10 @@ function runMigrations() {
 
   // COA extended fields for facility COA export
   addColumnIfMissing('equipment', 'loto_required', 'INTEGER DEFAULT 1');
+  // The column is nullable and one reader treated NULL as "needs LOTO" while
+  // three treated it as excluded — the checklist could demand a procedure the
+  // badge refused to count. NULL is closed off here and every reader COALESCEs.
+  try { db.prepare('UPDATE equipment SET loto_required = 1 WHERE loto_required IS NULL').run(); } catch { /* fresh DB: table created with the default */ }
   // Default assignee (department/group) for this equipment's PM work —
   // 'maintenance' | 'warehouse' | 'qa' | 'cleaning'. Propagates to the
   // equipment's PM schedules and open work orders when set.
