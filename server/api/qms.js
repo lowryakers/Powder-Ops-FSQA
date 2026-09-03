@@ -18,7 +18,9 @@ import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } 
 import { extractInvoiceText } from '../invoice-text.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
-import { SENSORY_KEYS, SENSORY_SCORES, sensoryComplete } from '../../shared/sensory.js';
+import { SENSORY_KEYS, SENSORY_LABELS, SENSORY_RESULTS, LEGACY_SENSORY_KEYS, SENSORY_SCORES, RESULT_LABELS,
+  sensoryComplete, sensoryResult, sensoryShape, sensoryNoteKey, formIsV2 } from '../../shared/sensory.js';
+import { getSpec, listSpecs, draftSpec, updateDraft, approveSpec, snapshot as specSnapshot } from '../sensory-specs.js';
 
 const router = Router();
 
@@ -420,6 +422,86 @@ router.delete('/sms-contacts/:id', (req, res) => {
  */
 const canRecordSensory = (u) => u?.role === 'admin'
   || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase());
+// Approving a product's specification is a QA LEAD's act: a supervisor in QA,
+// or an admin. Drafting it is any QA evaluator's — the first test writes it.
+const canApproveSpec = (u) => u?.role === 'admin'
+  || (u?.role === 'supervisor' && ['qa', 'quality'].includes(String(u?.department || '').toLowerCase()));
+
+const ATTR_LABEL = Object.fromEntries(SENSORY_LABELS);
+const sensoryAsk = (cfg) => formIsV2(cfg?.fields)
+  ? 'check appearance, odor, taste, color and texture against the product specification'
+  : 'score appearance, texture, aroma, flavor and overall (1–5)';
+
+/**
+ * Validate and complete a sensory filing on a V2 form, in one place for both
+ * doors (the Organoleptic form and the Flavor Approval scoring step).
+ *
+ * - Each attribute is 'pass' | 'fail' | '' (blank = not yet answered). Anything
+ *   else is refused rather than stored.
+ * - A 'fail' needs its RESULT cell — what was seen — or the record says a
+ *   product failed without saying how.
+ * - THE SPEC TRAVELS WITH THE RECORD (`sensory_spec`): the words it was graded
+ *   against, and whether they were approved at the time. Written by the server,
+ *   never typed. A product with no spec on file takes `sensory_spec_draft`
+ *   from the body and files it as the product's DRAFT specification — the
+ *   first test writes the spec.
+ */
+function applySensoryFiling(db, { productName, data, body, user, recordId, existingData }) {
+  for (const k of SENSORY_KEYS) {
+    const v = String(data[k] ?? '').trim().toLowerCase();
+    if (v && !SENSORY_RESULTS.includes(v)) return { error: `${ATTR_LABEL[k]} must be a pass or a fail against the specification.` };
+    data[k] = v;
+    const note = String(data[sensoryNoteKey(k)] ?? existingData?.[sensoryNoteKey(k)] ?? '').trim();
+    data[sensoryNoteKey(k)] = note.slice(0, 500);
+    if (v === 'fail' && !note) return { error: `${ATTR_LABEL[k]} does not match — say what you saw in its result cell.` };
+  }
+  let spec = getSpec(db, productName);
+  if (!spec && body?.sensory_spec_draft && typeof body.sensory_spec_draft === 'object') {
+    const r = draftSpec(db, productName, body.sensory_spec_draft, { by: user?.name || null, sourceRecordId: recordId || null });
+    if (r.error) return { error: r.error };
+    spec = r.spec;
+  }
+  // A record keeps the snapshot it was first graded against; a correction of
+  // another field must not silently re-grade it against a newer spec.
+  if (existingData?.sensory_spec && !SENSORY_KEYS.some(k => data[k] && data[k] !== String(existingData[k] ?? '').toLowerCase())) {
+    data.sensory_spec = existingData.sensory_spec;
+  } else if (spec) {
+    data.sensory_spec = specSnapshot(spec);
+  } else if (existingData?.sensory_spec) {
+    data.sensory_spec = existingData.sensory_spec;
+  }
+  return { ok: true, spec };
+}
+
+// ── the product specifications (FORM 602-01 V2) ─────────────────────────────
+// Declared before /:type — Express matches in order and 'sensory-specs' is a
+// perfectly good :type.
+router.get('/sensory-specs', (req, res) => {
+  const db = getDb();
+  const status = ['draft', 'approved'].includes(req.query.status) ? req.query.status : null;
+  res.json({ specs: listSpecs(db, { status }), can_approve: canApproveSpec(req.user) });
+});
+router.get('/sensory-spec', (req, res) => {
+  const db = getDb();
+  const spec = getSpec(db, req.query.product);
+  res.json({ spec, can_approve: canApproveSpec(req.user), can_draft: canRecordSensory(req.user) });
+});
+router.put('/sensory-specs/:id', (req, res) => {
+  if (!canRecordSensory(req.user)) return res.status(403).json({ error: 'QA writes the sensory specification.' });
+  const db = getDb();
+  const r = updateDraft(db, req.params.id, req.body || {}, { by: req.user?.name });
+  if (r.error) return res.status(r.status || 400).json({ error: r.error });
+  logAudit(req.user, 'update', 'sensory_spec', req.params.id, { product: r.spec.product_name }, null, r.spec, r.spec.product_name);
+  res.json(r.spec);
+});
+router.post('/sensory-specs/:id/approve', (req, res) => {
+  if (!canApproveSpec(req.user)) return res.status(403).json({ error: 'A QA lead or an admin approves a product specification.' });
+  const db = getDb();
+  const r = approveSpec(db, req.params.id, { by: req.user?.name || 'admin' });
+  if (r.error) return res.status(r.status || 400).json({ error: r.error });
+  logAudit(req.user, 'approve', 'sensory_spec', req.params.id, { product: r.spec.product_name, approved_by: r.spec.approved_by }, null, r.spec, r.spec.product_name);
+  res.json(r.spec);
+});
 
 router.post('/flavor_approval/:id/sensory', (req, res) => {
   if (!canRecordSensory(req.user)) {
@@ -434,15 +516,32 @@ router.post('/flavor_approval/:id/sensory', (req, res) => {
   }
   const data = parseJson(row.data, {});
   const scores = {};
-  for (const k of SENSORY_KEYS) {
-    const v = String(req.body?.[k] ?? '').trim();
-    // The form's own 1–5 scale. Anything else is refused rather than stored —
-    // a sensory record grading on an invented scale is not comparable to the
-    // ones beside it in the log.
-    if (!SENSORY_SCORES.includes(v)) {
-      return res.status(400).json({ error: `Score all five: appearance, texture, aroma, flavor and overall (1–5). Missing or invalid: ${k}.` });
+  const faCfg = getType('flavor_approval');
+  if (formIsV2(faCfg?.fields)) {
+    // V2: pass / fail against the product's specification, all five answered.
+    for (const k of SENSORY_KEYS) {
+      scores[k] = String(req.body?.[k] ?? '').trim().toLowerCase();
+      scores[sensoryNoteKey(k)] = String(req.body?.[sensoryNoteKey(k)] ?? '').trim();
+      if (!SENSORY_RESULTS.includes(scores[k])) {
+        return res.status(400).json({ error: `Answer all five against the specification — appearance, odor, taste, color and texture. Missing or invalid: ${ATTR_LABEL[k]}.` });
+      }
     }
-    scores[k] = v;
+    const r = applySensoryFiling(db, { productName: data.product_name, data: scores, body: req.body, user: req.user, recordId: row.id, existingData: data });
+    if (r.error) return res.status(400).json({ error: r.error });
+    // The retired V1 keys are dropped from a record re-scored on V2, or a
+    // record would carry both shapes at once.
+    for (const k of LEGACY_SENSORY_KEYS) if (!SENSORY_KEYS.includes(k)) delete data[k];
+  } else {
+    for (const k of LEGACY_SENSORY_KEYS) {
+      const v = String(req.body?.[k] ?? '').trim();
+      // The form's own 1–5 scale. Anything else is refused rather than stored —
+      // a sensory record grading on an invented scale is not comparable to the
+      // ones beside it in the log.
+      if (!SENSORY_SCORES.includes(v)) {
+        return res.status(400).json({ error: `Score all five: appearance, texture, aroma, flavor and overall (1–5). Missing or invalid: ${k}.` });
+      }
+      scores[k] = v;
+    }
   }
   Object.assign(data, scores);
   if (req.body?.sensory_notes !== undefined) data.sensory_notes = String(req.body.sensory_notes || '').slice(0, 500);
@@ -475,7 +574,7 @@ router.post('/flavor_approval/:id/send', async (req, res) => {
   // server, because a rule the client alone applies is a suggestion.
   if (!sensoryComplete(data)) {
     return res.status(400).json({
-      error: 'This needs its sensory evaluation first — appearance, texture, aroma, flavor and overall. QA records it, then it can go out.',
+      error: `This needs its sensory evaluation first — QA must ${sensoryAsk(getType('flavor_approval'))}. Then it can go out.`,
       needs_sensory: true,
     });
   }
@@ -670,12 +769,9 @@ router.delete('/:type/:id/attachments/:fileId', async (req, res) => {
 // back-linked to it (source_type/source_id). Idempotent — one draft per source
 // test; never auto-deletes, so a QA reviewer stays in control.
 function syncOrganolepticDisposal(db, cfg, rec, user) {
-  if (cfg.key !== 'organoleptic' || !cfg.passFail) return null;
-  const failed = cfg.passFail.fields.some(k => {
-    const n = parseInt(rec[k], 10);
-    return !Number.isNaN(n) && n < cfg.passFail.threshold;
-  });
-  if (!failed) return null;
+  if (cfg.key !== 'organoleptic') return null;
+  // One rule for the result, shared with the log's badge and the PDF.
+  if (sensoryResult(rec) !== 'fail') return null;
   const exists = db.prepare("SELECT id FROM disposals WHERE source_type = 'organoleptic' AND source_id = ?").get(rec.id);
   if (exists) return null;
   const id = uuid();
@@ -770,7 +866,7 @@ export async function notifySensoryNeeded(db, rec, from) {
       await postMessageAs(db, dm, bot,
         `👅 *Sensory evaluation needed*\n*${what}*\n`
         + `${rec.record_number} was filed by ${from?.name || 'the batching team'}.\n`
-        + `Score appearance, texture, aroma, flavor and overall — the approval cannot be texted out until you do.\n`
+        + `Then ${sensoryAsk(getType('flavor_approval'))} — the approval cannot be texted out until you do.\n`
         + `Open it: ${link}`);
       pushToUser(p.id, {
         title: 'Sensory evaluation needed',
@@ -819,7 +915,9 @@ export function syncFlavorOrganoleptic(db, cfg, rec, user) {
     ].filter(Boolean).join(' · '),
     source_flavor_approval_id: rec.id,
   };
-  for (const k of SENSORY_KEYS) if (rec[k]) data[k] = String(rec[k]);
+  const keys = sensoryShape(rec) === 'v2' ? [...SENSORY_KEYS, ...SENSORY_KEYS.map(sensoryNoteKey)] : LEGACY_SENSORY_KEYS;
+  for (const k of keys) if (rec[k] !== undefined && rec[k] !== null && rec[k] !== '') data[k] = String(rec[k]);
+  if (rec.sensory_spec) data.sensory_spec = rec.sensory_spec;
 
   const existingId = rec.organoleptic_record_id;
   if (existingId) {
@@ -870,6 +968,10 @@ router.post('/:type', (req, res) => {
   const id = uuid();
   const number = (req.body.record_number && String(req.body.record_number).trim()) || nextNumber(db, cfg);
   const data = pickData(cfg, req.body);
+  if (cfg.key === 'organoleptic' && formIsV2(cfg.fields)) {
+    const r = applySensoryFiling(db, { productName: data.product, data, body: req.body, user: req.user, recordId: id });
+    if (r.error) return res.status(400).json({ error: r.error });
+  }
   db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, document_url, capa_id, notes, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, cfg.key, number, req.body.record_date || null, req.body.status || cfg.defaultStatus || null,
@@ -988,7 +1090,12 @@ router.put('/:type/:id', (req, res) => {
     });
   }
   // approvals are NOT settable here — they go through /approve
-  const data = { ...parseJson(existing.data, {}), ...pickData(cfg, req.body) };
+  const existingData = parseJson(existing.data, {});
+  const data = { ...existingData, ...pickData(cfg, req.body) };
+  if (cfg.key === 'organoleptic' && formIsV2(cfg.fields) && sensoryShape(data) !== 'v1') {
+    const r = applySensoryFiling(db, { productName: data.product, data, body: req.body, user: req.user, recordId: existing.id, existingData });
+    if (r.error) return res.status(400).json({ error: r.error });
+  }
   db.prepare(`UPDATE qms_records SET record_number=?, record_date=?, status=?, data=?, paper_record=?, document_url=?, capa_id=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
     req.body.record_number ?? existing.record_number,
     req.body.record_date !== undefined ? (req.body.record_date || null) : existing.record_date,
@@ -1367,6 +1474,8 @@ router.get('/:type/:id/pdf', (req, res) => {
 
   pdf.font('Helvetica').fontSize(9);
   for (const f of cfg.fields) {
+    // The sensory rows are printed as one block against their specification below.
+    if (f.type === 'sensory' || f.type === 'sensory_note') continue;
     let v = rec[f.key];
     if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) continue;
     if (f.type === 'checkbox') v = v ? 'Yes' : 'No';
@@ -1380,11 +1489,20 @@ router.get('/:type/:id/pdf', (req, res) => {
     const sd = cfg.statuses.find(s => s.value === rec.status);
     pdf.moveDown(0.4).font('Helvetica-Bold').text('Status: ', { continued: true }).font('Helvetica').text(sd?.label || rec.status || '—');
   }
-  if (cfg.passFail) {
-    const vals = cfg.passFail.fields.map(k => parseInt(rec[k], 10)).filter(n => !Number.isNaN(n));
-    if (vals.length) {
-      pdf.moveDown(0.4).font('Helvetica-Bold').text('Result: ', { continued: true }).font('Helvetica')
-        .text(vals.some(n => n < cfg.passFail.threshold) ? 'FAIL' : 'PASS');
+  if (cfg.sensory) {
+    const r = sensoryResult(rec);
+    if (r) pdf.moveDown(0.4).font('Helvetica-Bold').text('Result: ', { continued: true }).font('Helvetica').text(r === 'fail' ? 'FAIL' : 'PASS');
+    if (sensoryShape(rec) === 'v2') {
+      const spec = rec.sensory_spec?.attributes || {};
+      pdf.moveDown(0.4).font('Helvetica-Bold').text(`Checked against the product specification${rec.sensory_spec?.status === 'approved' ? ` (approved by ${rec.sensory_spec.approved_by})` : rec.sensory_spec ? ' (DRAFT — not yet approved)' : ''}`);
+      pdf.font('Helvetica');
+      for (const [k, label] of SENSORY_LABELS) {
+        const v = String(rec[k] || '').toLowerCase();
+        pdf.text(`${label}: ${RESULT_LABELS[v] || '—'}${spec[k] ? ` · spec: ${spec[k]}` : ''}${rec[sensoryNoteKey(k)] ? ` · seen: ${rec[sensoryNoteKey(k)]}` : ''}`);
+      }
+    } else if (sensoryShape(rec) === 'v1') {
+      pdf.moveDown(0.2).font('Helvetica-Oblique').text('Filed on FORM 602-01 V1 (scored 1–5, below 3 fails).').font('Helvetica');
+      for (const k of LEGACY_SENSORY_KEYS) if (rec[k]) pdf.text(`${k.charAt(0).toUpperCase() + k.slice(1)}: ${rec[k]} / 5`);
     }
   }
   if (cfg.approvals?.length) {

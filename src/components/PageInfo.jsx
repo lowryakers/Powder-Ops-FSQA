@@ -105,7 +105,7 @@ const MODULE_INFO = {
     sqf: 'Equipment hygienic-design evaluation (SQF 11.1.5).',
   },
   organoleptic: {
-    what: 'Sensory (taste/smell/appearance) evaluations by lot with pass/fail and shelf-life checks.',
+    what: 'FORM 602-01 V2: each lot checked against the product\'s written specification — appearance, odor, taste, color, texture — pass or fail, with shelf-life checks. The first test of a product writes its draft specification; a QA lead approves it.',
     links: 'A FAIL can pre-fill a Disposal record, back-linked for traceability.',
     sqf: 'Finished-product verification and shelf-life validation records (SQF 2.4.5).',
   },

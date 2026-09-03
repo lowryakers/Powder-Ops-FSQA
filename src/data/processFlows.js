@@ -40,9 +40,9 @@ export const FLOWS = [
     summary: 'One taste test, two controlled records. The decision releases the batch; the sensory scores are the evaluation behind it.',
     steps: [
       { actor: 'Batching', action: 'Batch is made and a sample pulled', form: 'Production Log' },
-      { actor: 'QA / Owner', action: 'Tastes the sample and records appearance, texture, aroma, flavour and overall on a 1–5 scale, plus any adjustment made to get it right', form: 'Flavor Approval Form' },
+      { actor: 'QA', action: 'Tastes the sample and checks appearance, odor, taste, color and texture against the product\'s written specification (pass / fail, with what was seen on a fail), plus any adjustment made to get it right. A product with no specification on file has its draft written by this first test, for a QA lead to approve', form: 'Flavor Approval Form' },
       { actor: 'System', action: 'On approve or deny, files the matching sensory record and links the two both ways', form: 'Organoleptic Sensory Test (602-01)' },
-      { actor: 'System', action: 'Any attribute below 3 raises a draft disposal for review', form: 'Disposal record', branch: true },
+      { actor: 'System', action: 'Any attribute that does not match the specification raises a draft disposal for review', form: 'Disposal record', branch: true },
       { actor: 'Anyone', action: 'The decision shows against the run in the Production Log, matched on MO #', form: 'Production Log' },
     ],
     close: 'Approved or denied batch, an organoleptic record, and a disposal draft if it failed.',

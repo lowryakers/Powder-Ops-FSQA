@@ -1,55 +1,77 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
-import { SENSORY_LABELS as SENSORY } from '../../shared/sensory.js';
+import { SENSORY_ATTRIBUTES, LEGACY_SENSORY_LABELS, sensoryNoteKey, RESULT_LABELS } from '../../shared/sensory.js';
 
 
 /**
- * QA's scores, as the approver sees them.
+ * QA's evaluation, as the approver sees it.
  *
  * READ-ONLY AND DELIBERATELY SO. The approver is deciding whether to ship a
- * batch, not running the test — the tasting was done in the plant by the PCQI
- * and this is the evidence it produced. A page that asked the person holding a
- * phone for five scores would get five numbers whether or not they had the
+ * batch, not running the test — the tasting was done in the plant by QA and
+ * this is the evidence it produced. A page that asked the person holding a
+ * phone for five answers would get five answers whether or not they had the
  * sample in front of them, and a fabricated sensory record is worse than none.
  *
- * Drawn as filled pips rather than "4/5" because the whole panel is read at a
- * glance on a phone: five rows of dots show the shape of the evaluation — where
- * it is strong, where it is soft — in one look, and the numeral is still there
- * for anyone who wants the exact value.
+ * FORM 602-01 V2: each attribute against the product's written specification,
+ * Matches or Doesn't match, with what QA saw on a fail. An evaluation recorded
+ * on the V1 form still shows its 1–5 scores as filed.
  */
 function SensoryPanel({ s }) {
-  if (!s || !s.overall) return null;
+  if (!s || !s.complete) return null;
   const when = s.at ? new Date(s.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null;
+  const spec = s.spec?.attributes || {};
   return (
-    <section className="rounded-xl border border-gray-200 bg-gray-50/70 overflow-hidden">
-      <header className="px-4 py-2.5 border-b border-gray-200 bg-white">
-        <h2 className="text-[13px] font-semibold text-gray-900">QA sensory evaluation</h2>
-        <p className="text-[11px] text-gray-500 mt-0.5">
-          {s.by ? <>Tasted and scored by <span className="font-medium text-gray-700">{s.by}</span></> : 'Recorded by QA'}
-          {when ? ` · ${when}` : ''}
-        </p>
+    <section className="rounded-xl border border-gray-200 bg-gray-50/70 overflow-hidden" data-sensory-panel={s.shape}>
+      <header className="px-4 py-2.5 border-b border-gray-200 bg-white flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-[13px] font-semibold text-gray-900">QA sensory evaluation</h2>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            {s.by ? <>Checked by <span className="font-medium text-gray-700">{s.by}</span></> : 'Recorded by QA'}
+            {when ? ` · ${when}` : ''}
+            {s.shape === 'v2' && (s.spec?.status === 'approved' ? ' · against the approved specification' : s.spec ? ' · against a DRAFT specification' : '')}
+          </p>
+        </div>
+        {s.result && (
+          <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${s.result === 'fail' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+            {s.result === 'fail' ? 'FAIL' : 'PASS'}
+          </span>
+        )}
       </header>
-      <dl className="divide-y divide-gray-200/70">
-        {SENSORY.map(([k, label]) => {
-          const n = Number(s[k]) || 0;
-          return (
-            <div key={k} className="flex items-center gap-3 px-4 py-2">
-              <dt className="text-[13px] text-gray-600 w-24 shrink-0">{label}</dt>
-              <dd className="flex items-center gap-2 ml-auto">
-                <span className="flex gap-1" aria-hidden="true">
-                  {[1, 2, 3, 4, 5].map(i => (
-                    <span key={i}
-                      className={`h-2 w-2 rounded-full ${i <= n ? 'bg-powder-600' : 'bg-gray-300'}`} />
-                  ))}
-                </span>
-                <span className="text-[13px] font-semibold text-gray-900 tabular-nums w-7 text-right">
-                  {n || '—'}<span className="text-gray-400 font-normal">/5</span>
-                </span>
-              </dd>
-            </div>
-          );
-        })}
-      </dl>
+      {s.shape === 'v2' ? (
+        <dl className="divide-y divide-gray-200/70">
+          {SENSORY_ATTRIBUTES.map(a => {
+            const v = String(s[a.key] || '').toLowerCase();
+            const seen = s[sensoryNoteKey(a.key)];
+            return (
+              <div key={a.key} className="px-4 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-[13px] font-medium text-gray-800">{a.label}</dt>
+                  <dd className={`text-[13px] font-semibold ${v === 'fail' ? 'text-red-700' : 'text-green-700'}`}>{v === 'fail' ? '✕ ' : '✓ '}{RESULT_LABELS[v] || '—'}</dd>
+                </div>
+                {spec[a.key] && <p className="text-[11px] text-gray-500 mt-0.5">{spec[a.key]}</p>}
+                {seen && <p className="text-[12px] text-gray-800 mt-0.5"><span className="text-gray-500">Seen: </span>{seen}</p>}
+              </div>
+            );
+          })}
+        </dl>
+      ) : (
+        <dl className="divide-y divide-gray-200/70">
+          {LEGACY_SENSORY_LABELS.map(([k, label]) => {
+            const n = Number(s[k]) || 0;
+            return (
+              <div key={k} className="flex items-center gap-3 px-4 py-2">
+                <dt className="text-[13px] text-gray-600 w-24 shrink-0">{label}</dt>
+                <dd className="flex items-center gap-2 ml-auto">
+                  <span className="flex gap-1" aria-hidden="true">
+                    {[1, 2, 3, 4, 5].map(i => <span key={i} className={`h-2 w-2 rounded-full ${i <= n ? 'bg-powder-600' : 'bg-gray-300'}`} />)}
+                  </span>
+                  <span className="text-[13px] font-semibold text-gray-900 tabular-nums w-7 text-right">{n || '—'}<span className="text-gray-400 font-normal">/5</span></span>
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+      )}
       {s.notes && (
         <p className="px-4 py-2.5 border-t border-gray-200 bg-white text-[12px] text-gray-700 whitespace-pre-line">
           <span className="font-medium text-gray-500">QA note: </span>{s.notes}

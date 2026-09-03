@@ -1,6 +1,14 @@
 # FORM 602-01 V2 — the organoleptic test becomes a check against a specification
 
-**2 September 2026 · design, decisions and the complete dependency map. Nothing built yet.**
+**2 September 2026 · design, decisions and the complete dependency map.**
+**BUILT 3 September 2026 (D-050).** `product_sensory_specs` + `server/sensory-specs.js`; `shared/sensory.js` is V2 with
+V1 kept as legacy for filed records; both forms carry `type: 'sensory'` fields from the one definition; the eight second
+copies are gone; `npm run check:sensory` (32, pure — written first, fails at import on V1) and `npm run verify:sensory`
+(33 live) + `verify-sensory-ui` (10 in a browser). **Still Document Control's:** the DCR for 602-01 V2 and the Flavor
+Approval form (`docs/v2/queued/dcr-form-602-01-v2.md`), and the register row's revision. On an EXISTING database
+`controlled.js` parks the V2 field lists as pending and keeps serving V1 until Document Control approves — every reader
+keys off the SERVED definition (`formIsV2`), so the app stays coherent on V1 until then. The FORM 607 raw-material
+vocabulary in COAPanel is a different controlled form and was left alone.
 
 ## What the form says
 

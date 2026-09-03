@@ -194,7 +194,7 @@ export const FORM_REGISTRY = [
   { code: 'FORM 502-01', revision: 'V1', title: 'First Aid Injury / Accident Form', where: 'readydoc', match: { module: 'safety' } },
 
   /* ── Series 600 — testing and environment ────────────────────────────── */
-  { code: 'FORM 602-01', revision: 'V1', title: 'Organoleptic Sensory Test', where: 'readydoc', match: { qmsType: 'organoleptic' } },
+  { code: 'FORM 602-01', revision: 'V2', title: 'Organoleptic Sensory Test', where: 'readydoc', match: { qmsType: 'organoleptic' } },
   { code: 'FORM 604-01', revision: 'V1', title: 'Master Site List (EMP)', where: 'readydoc', match: { module: 'quality-schedules' } },
 
   /* ── Series 700 — chemicals, equipment, tools ────────────────────────── */

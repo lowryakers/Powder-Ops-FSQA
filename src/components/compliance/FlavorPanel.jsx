@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { apiPost, apiDelete, useApiGet } from '../../hooks/useApi';
 import { Send, Copy, Check, MessageSquare, X, Trash2, Star, ClipboardList } from 'lucide-react';
 import QMSRecordsPanel from './QMSRecordsPanel.jsx';
-import { SENSORY_LABELS as SENSORY, SENSORY_SCORES, sensoryComplete } from '../../../shared/sensory.js';
+import { SENSORY_KEYS, sensoryNoteKey, sensoryComplete } from '../../../shared/sensory.js';
+import SensoryBlock from './SensoryBlock.jsx';
 
 // Flavor Approvals: the log (generic QMS panel) plus "text it for approval".
 //
@@ -174,27 +175,28 @@ function SendModal({ onClose, onSend, sending, record }) {
 
 
 /**
- * QA records the tasting. Five scores, all required.
- *
- * The scale is 1–5 and it is drawn as five buttons rather than a dropdown: this
- * is filled in at a bench with a sample in hand, and a five-way choice you can
- * hit in one tap beats a select you have to open, scroll and dismiss. The same
- * scale the Organoleptic form has always used, because the record this produces
- * IS an organoleptic record.
+ * QA records the tasting — FORM 602-01 V2: each attribute checked against the
+ * product's written specification, Matches / Doesn't match, with what was seen
+ * on a fail. The same block the Organoleptic form uses, because the record
+ * this produces IS an organoleptic record. A new flavour with no specification
+ * on file is described here and that description becomes its draft spec.
  */
 function SensoryModal({ record, onClose, onSaved }) {
-  const [scores, setScores] = useState(() =>
-    Object.fromEntries(SENSORY.map(([k]) => [k, String(record?.[k] ?? '')])));
+  const [values, setValues] = useState(() => {
+    const v = {};
+    for (const k of SENSORY_KEYS) { v[k] = String(record?.[k] ?? '').toLowerCase(); v[sensoryNoteKey(k)] = record?.[sensoryNoteKey(k)] || ''; }
+    return v;
+  });
   const [notes, setNotes] = useState(record?.sensory_notes || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const complete = SENSORY.every(([k]) => scores[k]);
+  const complete = sensoryComplete(values);
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      await apiPost(`/qms/flavor_approval/${record.id}/sensory`, { ...scores, sensory_notes: notes });
+      await apiPost(`/qms/flavor_approval/${record.id}/sensory`, { ...values, sensory_notes: notes });
       onSaved();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
@@ -202,7 +204,7 @@ function SensoryModal({ record, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <form onSubmit={submit} onClick={e => e.stopPropagation()}
-        className="bg-white rounded-xl w-full max-w-md max-h-[92vh] overflow-y-auto p-5 space-y-4">
+        className="bg-white rounded-xl w-full max-w-xl max-h-[92vh] overflow-y-auto p-5 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="font-semibold text-gray-900">Sensory evaluation</h3>
@@ -214,36 +216,18 @@ function SensoryModal({ record, onClose, onSaved }) {
           <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
 
-        <div className="space-y-2.5">
-          {SENSORY.map(([k, label]) => (
-            <div key={k} className="flex items-center gap-3">
-              <span className="text-sm text-gray-700 w-24 shrink-0">{label}</span>
-              <div className="flex gap-1.5 ml-auto">
-                {SENSORY_SCORES.map(v => (
-                  <button key={v} type="button" onClick={() => setScores(s => ({ ...s, [k]: v }))}
-                    aria-pressed={scores[k] === v}
-                    className={`h-9 w-9 rounded-lg border text-sm font-semibold transition-colors ${
-                      scores[k] === v
-                        ? 'border-powder-600 bg-powder-600 text-white'
-                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}>
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+        <SensoryBlock product={record?.product_name} values={values} onChange={setValues} />
 
         <label className="block">
           <span className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</span>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-            placeholder="Slightly thin on aroma, acceptable"
+            placeholder="Anything the approver should know about this batch"
             className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
         </label>
 
         <p className="text-[11px] text-gray-500">
-          Your name and the date are recorded with these scores. They go to the approver with the
-          batch, and they become the Organoleptic record when the decision is made.
+          Your name and the date are recorded with this evaluation. It goes to the approver with the
+          batch, and it becomes the Organoleptic record when the decision is made.
         </p>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -254,7 +238,7 @@ function SensoryModal({ record, onClose, onSaved }) {
           </button>
           <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm">Cancel</button>
         </div>
-        {!complete && <p className="text-[11px] text-gray-500">Score all five to save — a part-scored tasting is not an evaluation.</p>}
+        {!complete && <p className="text-[11px] text-gray-500">Answer all five to save — a part-checked tasting is not an evaluation.</p>}
       </form>
     </div>
   );

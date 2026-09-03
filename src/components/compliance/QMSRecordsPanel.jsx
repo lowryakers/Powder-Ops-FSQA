@@ -10,6 +10,8 @@ import KioskQrModal from '../kiosk/KioskQrModal';
 import SearchSelect from '../common/SearchSelect.jsx';
 import PortalDropdown from '../common/PortalDropdown.jsx';
 import RecordAttachments from './RecordAttachments';
+import SensoryBlock, { SensoryResults, SpecApprovalStrip } from './SensoryBlock.jsx';
+import { sensoryResult, formIsV2 } from '../../../shared/sensory.js';
 import RecordHistory from '../common/RecordHistory.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
 import TextCell from '../common/TextCell.jsx';
@@ -70,13 +72,12 @@ function StatusBadge({ cfg, rec }) {
   return <span className={`px-2 py-0.5 rounded-full text-xs inline-flex items-center gap-1 whitespace-nowrap ${STATUS_TONE[d.tone] || STATUS_TONE.gray}`}>{d.label}</span>;
 }
 
-// Pass/fail evaluation for rated types (e.g. Organoleptic): fail if any rated
-// attribute is below the threshold; null (unrated) if no ratings were entered.
+// The result of a sensory record — ONE rule, shared/sensory.js, the same the
+// server uses for the PDF and the disposal draft. V2: any attribute that does
+// not match fails; V1 records keep the below-3 rule they were filed under.
 function passFailResult(cfg, rec) {
-  if (!cfg.passFail) return null;
-  const vals = cfg.passFail.fields.map(k => parseInt(rec[k], 10)).filter(n => !Number.isNaN(n));
-  if (!vals.length) return null;
-  return vals.some(n => n < cfg.passFail.threshold) ? 'fail' : 'pass';
+  if (!cfg.sensory) return null;
+  return sensoryResult(rec);
 }
 function ResultBadge({ cfg, rec }) {
   const r = passFailResult(cfg, rec);
@@ -158,6 +159,7 @@ function SuggestInput({ src, value, onChange }) {
 
 function FieldInput({ f, value, onChange, cfgKey }) {
   const base = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
+  if (f.type === 'sensory' || f.type === 'sensory_note') return null;   // rendered by SensoryBlock
   if (f.type === 'textarea') return <textarea value={value || ''} onChange={e => onChange(e.target.value)} rows={3} className={base} />;
   if (f.type === 'date') return <input type="date" value={value || ''} onChange={e => onChange(e.target.value)} className={base} />;
   // step="any" — a bare type="number" defaults to step=1, so the browser
@@ -356,6 +358,14 @@ function RecordForm({ cfg, initial, onSave, onCancel }) {
             // In multi-item create mode, qty and use-spec live on each picked
             // item row instead of as standalone fields.
             if (multiItemKey && (f.key === 'qty' || f.key === 'use_spec')) return null;
+            // FORM 602-01 V2: the five attributes and their result cells are one
+            // block against the product's specification, drawn where the first
+            // of them sits in the form.
+            if (f.type === 'sensory_note') return null;
+            if (f.type === 'sensory') {
+              if (cfg.fields.find(x => x.type === 'sensory') !== f) return null;
+              return <SensoryBlock key="sensory" product={form[cfg.primaryField] || form.product || form.product_name} values={form} onChange={setForm} />;
+            }
             return (
               <div key={f.key} className={f.type === 'textarea' || f.type === 'multiselect' || f.key === multiItemKey ? 'sm:col-span-2' : ''}>
                 {f.type !== 'checkbox' && <label className="block text-xs font-medium text-gray-700 mb-1">{f.label}{f.key === multiItemKey ? ' (one or more)' : ''}</label>}
@@ -448,7 +458,7 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-gray-900">{cfg.singular} {rec.record_number || '—'}</span>
-              {cfg.passFail && passFailResult(cfg, rec) && <ResultBadge cfg={cfg} rec={rec} />}
+              {cfg.sensory && passFailResult(cfg, rec) && <ResultBadge cfg={cfg} rec={rec} />}
               {cfg.statuses?.length ? <StatusBadge cfg={cfg} rec={rec} /> : <ApprovalBadge cfg={cfg} rec={rec} />}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">{rec.record_date || ''}</p>
@@ -458,7 +468,9 @@ function RecordView({ cfg, rec, user, canEdit, onSign, onRevoke, onSetStatus, on
 
         <div className="px-5 py-4 max-h-[55vh] overflow-y-auto space-y-4">
           <div className="grid sm:grid-cols-2 gap-x-4 gap-y-2">
+            {cfg.sensory && <SensoryResults rec={rec} />}
             {cfg.fields.map(f => {
+              if (f.type === 'sensory' || f.type === 'sensory_note') return null;
               const v = displayValue(cfg, rec, f.key);
               if (v === '—') return null;
               const isCapaLink = f.link === 'capa' && /\d/.test(v) && !/^n\/?a$/i.test(v);
@@ -1026,7 +1038,7 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
           if (approvalFilter === 'paper' && !st.paper) return false;
         }
       }
-      if (resultFilter && cfg.passFail) {
+      if (resultFilter && cfg.sensory) {
         const res = passFailResult(cfg, rec);
         if (resultFilter === 'unrated' ? res !== null : res !== resultFilter) return false;
       }
@@ -1181,6 +1193,8 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
         <div className="bg-white rounded-xl border border-gray-200 p-3"><p className="text-2xl font-bold text-gray-900">{(records || []).filter(r => r.paper_record).length}</p><p className="text-xs text-gray-500">On paper (historical)</p></div>
       </div>
 
+      {cfg.key === 'organoleptic' && formIsV2(cfg.fields) && <SpecApprovalStrip />}
+
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[220px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -1199,7 +1213,7 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
             <option value="paper">On paper</option>
           </select>
         )}
-        {cfg.passFail && (
+        {cfg.sensory && (
           <select value={resultFilter} onChange={e => setResultFilter(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
             <option value="">Result: all</option>
             <option value="fail">Failed</option>

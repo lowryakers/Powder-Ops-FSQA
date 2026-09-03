@@ -1558,3 +1558,28 @@ OBL-01/OBL-27 applies to itself: an obligation half-discharged and marked done i
 only. The deploy that introduces V2 parks both forms at V1 while `passFail`, `shared/sensory.js`, the syncs
 and the client switch immediately. Eight second copies of the five-key shape exist outside
 `shared/sensory.js`; the most dangerous fails to five nulls on the public approval page.
+
+## D-050 — FORM 602-01 V2 is built: pass/fail against a per-product specification the first test writes
+
+**3 September 2026.** D-049 decided the shape; this records what landed and the one trap it had to
+respect. `product_sensory_specs` holds one specification per product (five attributes, in words), drafted
+by the first test of a product with none on file, approved once by a QA lead, then locked. Every test
+stores the spec text it was graded against (`sensory_spec`), so a record goes on saying what it was
+checked against after the spec moves — the `atp_limit` rule. A "does not match" anywhere fails the test
+and raises the draft disposal; the Flavor Approval's QA scoring step is the same block against the same
+spec, so the Organoleptic record it files is a copy, not a mapping.
+
+**The retired keys are never reused.** `aroma`, `flavor` and `overall` hold data on 123 filed records
+and stay readable as V1 (`sensoryShape()` decides from the VALUES, because `appearance` and `texture`
+are keys in both shapes). Relabelling history as answers to a question nobody asked is the one thing a
+form change must never do.
+
+**The controlled-change trap is respected rather than dodged.** `controlled.js` snapshots a QMS form's
+`fields`; on an existing database the deploy parks V2 as pending and keeps serving V1. Every reader —
+validation, the result rule, the FA scoring step, the texted approval page, the sync, the PDF — keys off
+the SERVED definition (`formIsV2(cfg.fields)`), so the app is coherent on V1 until Document Control
+approves and coherent on V2 the moment it does. The eight second copies of the shape the dependency map
+found are gone; `check:sensory` asserts that and was written to fail at import on V1 code.
+
+**Not the app's to decide:** the DCR for 602-01 V2, whether the Flavor Approval form (a second
+controlled document) adopts the same shape, and the register row's revision. `docs/v2/queued/dcr-form-602-01-v2.md`.

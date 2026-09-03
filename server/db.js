@@ -585,6 +585,25 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_qms_type ON qms_records(record_type);
     CREATE INDEX IF NOT EXISTS idx_qms_number ON qms_records(record_type, record_number);
 
+    -- FORM 602-01 V2: the organoleptic specification per PRODUCT — what a good
+    -- one looks, smells, tastes and feels like, in words. Written by the first
+    -- test of a product that has none (as a draft), approved once by a QA lead,
+    -- then locked. Every test stores the spec text it was graded against
+    -- (the sanitation_records.atp_limit rule), so a record goes on saying what
+    -- it was checked against after the spec moves.
+    CREATE TABLE IF NOT EXISTS product_sensory_specs (
+      id TEXT PRIMARY KEY,
+      product_key TEXT NOT NULL UNIQUE,
+      product_name TEXT NOT NULL,
+      appearance TEXT, odor TEXT, taste TEXT, color TEXT, texture TEXT,
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','approved')),
+      drafted_by TEXT, drafted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      approved_by TEXT, approved_at TEXT,
+      source_record_id TEXT,
+      notes TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Training Records
     CREATE TABLE IF NOT EXISTS training_records (
       id TEXT PRIMARY KEY,

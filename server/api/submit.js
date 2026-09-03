@@ -9,6 +9,7 @@ import { activeChemicalNames, syncFlavorOrganoleptic } from './qms.js';
 import { openSignOuts, syncKnifeStatus, toolIdOf } from '../knife-state.js';
 import { readyDocOrigin } from '../links.js';
 import { requireKioskToken } from '../kiosk-tokens.js';
+import { SENSORY_KEYS, LEGACY_SENSORY_KEYS, sensoryNoteKey, sensoryShape, sensoryComplete, sensoryResult } from '../../shared/sensory.js';
 
 const router = Router();
 
@@ -215,8 +216,14 @@ router.get('/flavor-approval/:token', (req, res) => {
     // The name and date travel with them: an unattributed score is an opinion,
     // an attributed one is a record.
     sensory: {
-      appearance: d.appearance || null, texture: d.texture || null, aroma: d.aroma || null,
-      flavor: d.flavor || null, overall: d.overall || null,
+      // Whichever form the evaluation was recorded on: V2 pass/fail against
+      // the product's specification (with what was seen), or V1's 1–5 scores.
+      shape: sensoryShape(d),
+      complete: sensoryComplete(d),
+      result: sensoryResult(d),
+      ...Object.fromEntries([...SENSORY_KEYS, ...SENSORY_KEYS.map(sensoryNoteKey), ...LEGACY_SENSORY_KEYS]
+        .filter(k => d[k] !== undefined && d[k] !== null && d[k] !== '').map(k => [k, d[k]])),
+      spec: d.sensory_spec || null,
       by: d.sensory_by || null, at: d.sensory_at || null, notes: d.sensory_notes || null,
     },
     batch_adjustments: d.batch_adjustments || null,

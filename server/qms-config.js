@@ -1,3 +1,4 @@
+import { SENSORY_ATTRIBUTES, sensoryNoteKey } from '../shared/sensory.js';
 // ─────────────────────────────────────────────────────────────────────────
 // QMS Records framework — one engine, many record types.
 //
@@ -104,6 +105,12 @@ export const CHEMICAL_USE_SPECS = ['Food Contact', 'Non-Food Contact', 'Food Gra
 // that feeds a restock suggestion — see office.js /supply/suggestions.
 export const USED_UP_REASON = 'Used up / ran out';
 export const RETURN_REASONS = ['Returned', USED_UP_REASON, 'Damaged', 'Lost'];
+
+// The five attribute fields and their RESULT cells, from the one definition.
+const SENSORY_FIELDS = SENSORY_ATTRIBUTES.flatMap(a => ([
+  { key: a.key, label: a.label, type: 'sensory' },
+  { key: sensoryNoteKey(a.key), label: `${a.label} — what you saw`, type: 'sensory_note' },
+]));
 
 export const QMS_TYPES = {
   document_change_request: {
@@ -394,7 +401,7 @@ export const QMS_TYPES = {
     singular: 'Organoleptic Sensory Test',
     short: 'ORG',
     moduleId: 'organoleptic',
-    formCode: 'Form 602-01',
+    formCode: 'Form 602-01 V2',
     numberPrefix: 'ORG-',
     numberPad: 3,
     primaryField: 'product',
@@ -406,19 +413,22 @@ export const QMS_TYPES = {
       { key: 'part_number', label: 'Part No (BD / IM / FG)', type: 'text' },
       { key: 'quantity', label: 'Quantity', type: 'text' },
       { key: 'evaluator', label: 'Evaluator', type: 'text' },
-      // 1 = worst, 5 = best
-      { key: 'appearance', label: 'Appearance (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
-      { key: 'texture', label: 'Texture (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
-      { key: 'aroma', label: 'Aroma (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
-      { key: 'flavor', label: 'Flavor (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
-      { key: 'overall', label: 'Overall Satisfaction (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      // FORM 602-01 V2: each attribute is checked against the PRODUCT'S written
+      // specification — P / F, with the RESULT column holding what was seen.
+      // No 1–5 anywhere; the form has none. The five keys and their labels are
+      // shared/sensory.js's; the `sensory` type renders as one block against
+      // the spec, and `sensory_note` is that attribute's RESULT cell. V1's
+      // aroma / flavor / overall are retired keys and stay readable on filed
+      // records, never reused.
+      ...SENSORY_FIELDS,
       { key: 'lab_testing', label: 'Lab Testing Performed', type: 'select', options: ['No', 'Yes'] },
       { key: 'extension_date', label: 'Shelf-life Extension Date (if applicable)', type: 'text' },
       { key: 'note', label: 'Note', type: 'textarea' },
     ],
-    // A test fails if any rated sensory attribute scores below `threshold`
-    // (1 = worst … 5 = best). Records with no ratings show no result.
-    passFail: { fields: ['appearance', 'texture', 'aroma', 'flavor', 'overall'], threshold: 3 },
+    // The result is derived by shared/sensory.js sensoryResult() — any
+    // attribute that does not match fails the test; V1 records keep the old
+    // below-3 rule. There is no second definition of pass/fail here.
+    sensory: true,
     // The form has no control number, so Attach Forms matches scanned files to
     // records by lot / part number / product found in the filename instead.
     attachMatch: ['lot', 'part_number', 'product'],
@@ -521,6 +531,7 @@ export const QMS_TYPES = {
     //
     // `mo_number` uses the same key as production_entries.mo_number, so
     // "what happened with MO 4471" is a straight match across the two logs.
+    sensory: true,
     fields: [
       { key: 'product_name', label: 'Product Name', type: 'text' },
       { key: 'mo_number', label: 'MO #', type: 'text' },
@@ -528,13 +539,11 @@ export const QMS_TYPES = {
       { key: 'work_order', label: 'Work Order', type: 'text' },
       { key: 'batched_on', label: 'Batched On', type: 'date' },
       { key: 'sample_quantity', label: 'Sample Quantity', type: 'text' },
-      // Sensory ratings — same scale and keys as the Organoleptic form
-      // (1 = worst … 5 = best) so the linked record is a copy, not a mapping.
-      { key: 'appearance', label: 'Appearance (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
-      { key: 'texture', label: 'Texture (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
-      { key: 'aroma', label: 'Aroma (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
-      { key: 'flavor', label: 'Flavor (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
-      { key: 'overall', label: 'Overall Satisfaction (1–5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      // QA's evaluation — the SAME five attributes checked against the SAME
+      // product specification as the Organoleptic form, so the linked record
+      // is a copy, not a mapping. "Overall" is gone: deciding is the
+      // approver's job, not QA's.
+      ...SENSORY_FIELDS,
       { key: 'decided_by', label: 'Approved / Denied By', type: 'text' },
       { key: 'decision_date', label: 'Decision Date', type: 'date' },
       // What was changed to get the batch approved. Recorded on the approval
