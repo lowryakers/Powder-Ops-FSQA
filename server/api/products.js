@@ -788,7 +788,7 @@ const WRITABLE = [
   'legacy_sku', 'gtin', 'category', 'protein_type', 'pack', 'pack_count', 'flavor',
   'base_flavor', 'flavor_code', 'status', 'spec_id', 'eyemark_color', 'dieline_required',
   'shopify_sku', 'shopify_variant_id', 'mrp_formula_id', 'formula_rev',
-  'artwork_version', 'artwork_status', 'drive_url', 'notes',
+  'artwork_version', 'artwork_status', 'drive_url', 'notes', 'fill_weight_g',
 ];
 
 /**
@@ -909,6 +909,12 @@ router.put('/:sku', (req, res) => {
 
   const patch = {};
   for (const c of WRITABLE) if (b[c] !== undefined) patch[c] = b[c] === '' ? null : b[c];
+  // A fill weight is a number in grams or nothing — never a guess or a unit.
+  if (patch.fill_weight_g !== undefined && patch.fill_weight_g !== null) {
+    const n = Number(String(patch.fill_weight_g).replace(/[^\d.]/g, ''));
+    if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: 'Fill weight is a number of grams, e.g. 30.' });
+    patch.fill_weight_g = n;
+  }
   if (patch.gtin !== undefined) patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;
   if (!Object.keys(patch).length) return res.json(existing);
 
@@ -987,6 +993,9 @@ const CSV_HEADERS = [
   'trim length', 'trim width', 'gusset dimension', 'front panel dimension',
   'wind direction', 'pms spot colors', 'hex spot colors', 'eye mark color',
   'die line required',
+  // An extra column is free — the proofer skips headers it does not know —
+  // and this one is what its Net Weight check reads (alias: Fill Weight (g)).
+  'fill weight (g)',
 ];
 
 const csvCell = (v) => {
@@ -994,7 +1003,7 @@ const csvCell = (v) => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-function masterCsv(req, res) {
+export function masterCsv(req, res) {
   if (!tokenOk(req.query.token)) return res.status(401).send('Unauthorized');
   const db = getDb();
   const rows = hydrate(db.prepare(`${SELECT} WHERE p.status != 'discontinued' ORDER BY p.sku`).all(), db);
@@ -1009,6 +1018,7 @@ function masterCsv(req, res) {
       p.trim_length_mm, p.trim_width_mm, p.gusset_mm, p.front_panel_mm,
       p.wind_direction, pms, hex, p.eyemark_color,
       p.dieline_required ? 'yes' : 'no',
+      p.fill_weight_g ?? '',
     ].map(csvCell).join(','));
   }
 

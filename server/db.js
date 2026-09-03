@@ -2717,6 +2717,21 @@ function runMigrations() {
     -- or are recorded by hand. A dismissal keeps the finding and records who
     -- waved it through, because "we looked and it was fine" is the answer an
     -- auditor wants and deleting the row cannot give it.
+    -- What a proofing run SAW on the label — ingredients, callouts, claims,
+    -- serving size, net weight — as sent, frozen like coa_submissions.body:
+    -- correcting a product next week must not rewrite what the run compared.
+    -- One per version; a re-proof of the same job replaces it.
+    CREATE TABLE IF NOT EXISTS artwork_snapshots (
+      id TEXT PRIMARY KEY,
+      version_id TEXT NOT NULL UNIQUE,
+      sku TEXT NOT NULL,
+      gtin TEXT,
+      proof_job_id TEXT,
+      snapshot TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_artwork_snapshots_sku ON artwork_snapshots(sku, created_at);
+
     CREATE TABLE IF NOT EXISTS artwork_checks (
       id TEXT PRIMARY KEY,
       version_id TEXT NOT NULL,
@@ -2756,6 +2771,11 @@ function runMigrations() {
   addColumnIfMissing('products', 'barcode_gtin', 'TEXT');
   addColumnIfMissing('products', 'barcode_uploaded_at', 'TEXT');
   addColumnIfMissing('products', 'barcode_uploaded_by', 'TEXT');
+  // The fill weight the Net Weight check on the proofing service compares
+  // against. Nullable and blank until somebody types it: a wrong fill weight
+  // fails a check that should have passed, which is how people learn to
+  // ignore a check. Until entered the proofer reports UNVERIFIED — honest.
+  addColumnIfMissing('products', 'fill_weight_g', 'REAL');
 
   // WORK DONE IN ANOTHER SYSTEM, CONFIRMED BY A PERSON HERE.
   //

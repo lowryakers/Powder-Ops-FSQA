@@ -66,6 +66,7 @@ function hydrate(db, versions) {
   const ids = versions.map((v) => v.id);
   const files = filesFor(db, ids);
   const checks = checksFor(db, ids);
+  const snaps = snapshotsFor(db, ids);
   return versions.map((v) => {
     const vc = checks.get(v.id) || [];
     return {
@@ -76,8 +77,17 @@ function hydrate(db, versions) {
       failures: vc.filter((c) => c.result === 'fail').length,
       warnings: vc.filter((c) => c.result === 'warn').length,
       has_preview: (files.get(v.id) || []).some((f) => f.kind === 'preview'),
+      has_snapshot: snaps.has(v.id),
     };
   });
+}
+
+function snapshotsFor(db, ids) {
+  if (!ids.length) return new Map();
+  try {
+    return new Map(db.prepare(`SELECT version_id FROM artwork_snapshots WHERE version_id IN (${ids.map(() => '?').join(',')})`)
+      .all(...ids).map((r) => [r.version_id, true]));
+  } catch { return new Map(); }
 }
 
 // ── Reading ──────────────────────────────────────────────────────────────────
@@ -114,6 +124,27 @@ router.get('/', (req, res) => {
 });
 
 /** Every version for one SKU, newest first. */
+// GET /artwork/snapshot?gtin=&sku= — what the last proofing run saw on this
+// product's label, so a re-proof can compare against it. Declared before
+// /sku/:sku and /:id or Express reads "snapshot" as one of those.
+router.get('/snapshot', (req, res) => {
+  const db = getDb();
+  const gtin = String(req.query.gtin || '').trim();
+  const sku = String(req.query.sku || '').trim();
+  const product = (gtin && db.prepare('SELECT sku, gtin FROM products WHERE gtin = ?').get(gtin))
+    || (sku && db.prepare('SELECT sku, gtin FROM products WHERE sku = ?').get(sku));
+  if (!product) return res.status(404).json({ error: 'No product matches that GTIN or SKU.', gtin: gtin || null, sku: sku || null });
+  const row = db.prepare(`SELECT s.*, v.version, v.component, v.status AS version_status, v.created_at AS proofed_at
+    FROM artwork_snapshots s JOIN artwork_versions v ON v.id = s.version_id
+    WHERE s.sku = ? ORDER BY s.created_at DESC, v.version DESC LIMIT 1`).get(product.sku);
+  if (!row) return res.status(404).json({ error: 'No proofing snapshot on file for this product.', sku: product.sku, gtin: product.gtin });
+  res.json({
+    sku: product.sku, gtin: product.gtin, version_id: row.version_id, version: row.version, component: row.component,
+    version_status: row.version_status, proof_job_id: row.proof_job_id, proofed_at: row.proofed_at,
+    snapshot: JSON.parse(row.snapshot),
+  });
+});
+
 router.get('/sku/:sku', (req, res) => {
   const db = getDb();
   const product = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
@@ -130,7 +161,10 @@ router.get('/versions/:id', (req, res) => {
     SELECT v.*, p.flavor, p.category, p.pack, p.gtin, p.nfp_version AS product_nfp_version
     FROM artwork_versions v JOIN products p ON p.sku = v.sku WHERE v.id = ?`).get(req.params.id);
   if (!v) return res.status(404).json({ error: 'Not found' });
-  res.json(hydrate(db, [v])[0]);
+  const out = hydrate(db, [v])[0];
+  const snap = db.prepare('SELECT snapshot FROM artwork_snapshots WHERE version_id = ?').get(v.id);
+  out.snapshot = snap ? JSON.parse(snap.snapshot) : null;
+  res.json(out);
 });
 
 /** Short-lived download URL. Issued only after the module check has passed. */
@@ -388,6 +422,9 @@ ingestRouter.post('/', (req, res) => {
   ).get(String(b.job_id), product.sku, component);
 
   const checks = Array.isArray(b.checks) ? b.checks : [];
+  // What the run saw on the label, as sent. Stored with the version and its
+  // checks in one transaction; it used to be accepted and dropped.
+  const snapshot = b.snapshot && typeof b.snapshot === 'object' && !Array.isArray(b.snapshot) ? b.snapshot : null;
   const id = existing?.id || uuid();
 
   db.transaction(() => {
@@ -411,12 +448,19 @@ ingestRouter.post('/', (req, res) => {
       ins.run(uuid(), id, String(c.name || 'check').slice(0, 120), result,
         c.detail || null, c.expected || null, c.found || null);
     }
+    if (snapshot) {
+      db.prepare(`INSERT INTO artwork_snapshots (id, version_id, sku, gtin, proof_job_id, snapshot)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(version_id) DO UPDATE SET snapshot = excluded.snapshot, gtin = excluded.gtin, created_at = datetime('now')`)
+        .run(uuid(), id, product.sku, product.gtin || null, String(b.job_id), JSON.stringify(snapshot).slice(0, 200000));
+    }
   })();
 
   const version = hydrate(db, [db.prepare('SELECT * FROM artwork_versions WHERE id = ?').get(id)])[0];
   res.status(existing ? 200 : 201).json({
     ok: true, version_id: id, sku: product.sku, version: version.version,
     failures: version.failures, warnings: version.warnings, replaced: !!existing,
+    snapshot_stored: !!snapshot,
   });
 });
 

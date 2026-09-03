@@ -5,7 +5,18 @@ branch `claude/nfp-net-weight-reconciliation`). Four new checks shipped there; t
 something on this side. **Verified against `main` at `6b070a8` — the status column is what the code
 actually says, not what was assumed.**
 
-Written down because a session is disposable and the repository is the thread. Nothing here is built.
+Written down because a session is disposable and the repository is the thread.
+
+**BUILT 3 September 2026.** `products.fill_weight_g` (typed in the product drawer, a seventeenth `fill weight (g)`
+column on `master.csv`, blank until known); `artwork_snapshots` stored on ingest in the same transaction as the
+version and its checks, frozen, a retry of the same job replacing rather than doubling; `GET /api/artwork/snapshot?gtin=&sku=`
+declared before `/sku/:sku`; the version detail carries its snapshot and the SKU history flags which versions have
+one. `npm run verify:artwork`, 20 live assertions, control fails 14.
+
+**Found by the check, not by reading:** `GET /api/products/master.csv` had been returning *Not authenticated* to the
+proofer since the NULL-map rule tightened — `requireModuleWrite` 401s a session-less request before the router's
+public handler runs. It is mounted ahead of the guard now, the way `/api/artwork/ingest` always was. The proofer
+caches and reports nothing on a failed fetch, so nothing said.
 
 ---
 

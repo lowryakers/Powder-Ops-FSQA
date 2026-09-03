@@ -268,6 +268,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
       // artwork print gate, and they are written by approving a panel — see the
       // Nutrition panel section below. The server refuses them on PUT.
       artwork_status: p.artwork_status || '', drive_url: p.drive_url || '', notes: p.notes || '',
+      fill_weight_g: p.fill_weight_g ?? '',
     });
     setEditing(true);
   };
@@ -320,6 +321,9 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                   // product's own SKU already carried, and the checklist above
                   // now ticks both with a name and a date against them.
                   ['eyemark_color', 'Eyemark colour'], ['drive_url', 'Drive link'],
+                  // What the pack holds, in grams — the proofer's Net Weight check
+                  // compares the printed weight against it. Blank until known.
+                  ['fill_weight_g', 'Fill weight (g)'],
                 ].map(([k, label]) => (
                   <label key={k} className="block">
                     <span className="text-xs font-medium text-gray-600">{label}</span>
@@ -368,6 +372,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     ['Zipper', p.zipper], ['Print', p.print_process],
                     ['Trim', p.trim_length_mm ? `${p.trim_length_mm} × ${p.trim_width_mm} mm` : null],
                     ['Eyemark', p.eyemark_color],
+                    ['Fill weight', p.fill_weight_g ? `${p.fill_weight_g} g` : null],
                     // Only worth showing when Shopify calls it something else —
                     // for most of the catalogue it is this product's own SKU,
                     // printed one line above.

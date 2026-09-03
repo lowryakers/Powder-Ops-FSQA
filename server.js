@@ -96,7 +96,7 @@ import filmInspectionRoutes from './server/api/film-inspection.js';
 import safetyRoutes from './server/api/safety.js';
 import importRoutes from './server/api/imports.js';
 import coaRoutes from './server/api/coa.js';
-import productRoutes from './server/api/products.js';
+import productRoutes, { masterCsv } from './server/api/products.js';
 import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api/artwork.js';
 import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
@@ -1874,6 +1874,13 @@ app.use('/api/comms', commsRoutes);
 app.use('/api/mock-recalls', requireModuleWrite('recall'), mockRecallRoutes);
 app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator'), productionRoutes);
 app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
+// The Artwork-Proofing feed is a service holding a token, not a person: it
+// carries no session, and requireModuleWrite 401s any request without one
+// before the router's public handler could run — which is how the feed
+// broke the day the NULL-map rule tightened, silently, since the proofer
+// caches and reports nothing. Mounted ahead of the guard, the same
+// arrangement /api/artwork/ingest and the partner portal use.
+app.get('/api/products/master.csv', masterCsv);
 app.use('/api/products', requireModuleWrite('products'), productRoutes);
 
 // New-hire onboarding. The admin router is behind the module grant; the portal

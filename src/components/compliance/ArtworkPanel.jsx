@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { Fragment, useState, useMemo, useEffect } from 'react';
 import { useApiGet, apiFetch, apiUpload } from '../../hooks/useApi';
 import ProductFileImport from './ProductFileImport.jsx';
 import { useAuth } from '../../hooks/useAuth';
@@ -57,6 +57,35 @@ function Thumb({ version }) {
       {url
         ? <img src={url} alt="" className="w-full h-full object-contain" loading="lazy" />
         : <div className="w-full h-full animate-pulse bg-gray-100" />}
+    </div>
+  );
+}
+
+function SnapshotDetails({ versionId }) {
+  const [snap, setSnap] = useState(null);
+  const [open, setOpen] = useState(false);
+  const load = async () => {
+    setOpen((o) => !o);
+    if (snap) return;
+    try { const v = await apiFetch(`/artwork/versions/${versionId}`); setSnap(v.snapshot || {}); } catch { setSnap({}); }
+  };
+  const rows = snap ? Object.entries(snap) : [];
+  return (
+    <div className="text-xs" data-artwork-snapshot>
+      <button type="button" onClick={load} className="text-powder-700 underline">
+        {open ? 'Hide' : 'Show'} label content as proofed
+      </button>
+      {open && snap && (
+        <dl className="mt-1.5 grid sm:grid-cols-[9rem_1fr] gap-x-3 gap-y-1 border border-gray-200 rounded-lg p-2 bg-gray-50">
+          {rows.length === 0 && <dd className="text-gray-500 sm:col-span-2">Nothing recorded on this snapshot.</dd>}
+          {rows.map(([k, val]) => (
+            <Fragment key={k}>
+              <dt className="text-gray-500 capitalize">{k.replace(/_/g, ' ')}</dt>
+              <dd className="text-gray-800 whitespace-pre-line break-words">{Array.isArray(val) ? val.join(', ') : typeof val === 'object' && val ? JSON.stringify(val) : String(val ?? '')}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
     </div>
   );
 }
@@ -244,6 +273,10 @@ function VersionDetail({ sku, onClose, onChanged }) {
                   <ExternalLink size={12} /> Open in Drive
                 </a>
               )}
+
+              {/* What the proofing run saw on the label, as sent — the record a
+                  later re-proof compares against. Frozen with the version. */}
+              {v.has_snapshot && <SnapshotDetails versionId={v.id} />}
 
               {canEdit && (
                 <div className="flex flex-wrap items-center gap-2 pt-1">

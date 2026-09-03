@@ -59,6 +59,7 @@
     "verify:viewer": "node scripts/verify-image-viewer.mjs",
     "verify:sensory": "node scripts/verify-sensory-v2.mjs",
     "verify:sensoryui": "node scripts/verify-sensory-ui.mjs",
+    "verify:artwork": "node scripts/verify-artwork-sync.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {
