@@ -2002,6 +2002,24 @@ last" is a promise; a hook is a mechanism.**
   initialiser is never read, because both branches assign. Write it as an IIFE returning the value
   (`const x = (() => { try { return …; } catch { return null; } })();`) and it is correct by construction.
 
+## Boot against a copy of production before deploying (`npm run verify:prodcopy <file>`)
+`check:fresh-boot` proves a NEW database comes up; it cannot prove the one on Railway's volume survives this
+release's migrations with nothing lost, and the first time the new code meets that database is the deploy.
+`scripts/verify-prod-copy.mjs` copies a production snapshot (never opens the original for writing, carries
+the `-wal`/`-shm` sidecars) and boots the current code on it twice — the second is the redeploy case.
+- **The copy has to be the SQLite file**, from `npm run backup` on the Railway service (lands in
+  `data/backups/` and, with R2 configured, `backups/` in the bucket). The Settings → Data & backup zip is
+  CSVs and cannot exercise a migration.
+- **Asserted:** no table lost a row; no compliance log gained one; the release's own schema changes landed
+  (`loto_required` backfill, `product_sensory_specs`, `artwork_snapshots`, `fill_weight_g`); the V2 QMS forms
+  are PARKED with the approved snapshot still V1; no password hash touched; the second boot inserts nothing.
+- **Growth is read, not failed, where the code is meant to write**: a parked controlled change raises one
+  DCR and one ReadyBot DM, and the check counts them against the boot log's parked total rather than
+  calling `qms_records +2` a seeder re-filing history — which is exactly what the first cut called it.
+- Proven against a database built by the pre-V2 commit with three `loto_required` NULLs planted; the control
+  (that commit's own code on the same copy) fails on every release-specific assertion.
+- Not in `verify:all` — it needs a file only production can produce.
+
 ## Migration ordering (fresh-DB gotcha)
 `addColumnIfMissing()` runs `ALTER TABLE … ADD COLUMN`, which **throws** if the table doesn't exist yet —
 `PRAGMA table_info` on a missing table returns empty, so the "missing" check passes and the ALTER blows up.

@@ -60,6 +60,7 @@
     "verify:sensory": "node scripts/verify-sensory-v2.mjs",
     "verify:sensoryui": "node scripts/verify-sensory-ui.mjs",
     "verify:artwork": "node scripts/verify-artwork-sync.mjs",
+    "verify:prodcopy": "node scripts/verify-prod-copy.mjs",
     "verify:all": "node scripts/verify-all.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
