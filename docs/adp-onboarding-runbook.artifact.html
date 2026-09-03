@@ -1,0 +1,472 @@
+<title>ADP Onboarding Runbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#F4F6F8; --surface:#FFFFFF; --surface-2:#FAFBFC;
+  --ink:#141C24; --ink-2:#53616F; --ink-3:#7E8C99;
+  --rule:#D6DDE4; --rule-2:#E7ECF1;
+  --accent:#17546E; --accent-soft:#E4EDF2; --accent-line:#9EC0CF;
+  --flag:#963A22; --flag-soft:#F8EAE5; --flag-line:#DCA791;
+  --done:#1C6B4C; --done-soft:#E4F0EA;
+  --term:#1B2430; --term-ink:#E8EEF4; --term-dim:#8A98A8; --term-ok:#7FD1A6;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#11171D; --surface:#19212A; --surface-2:#1E2731;
+    --ink:#E6ECF1; --ink-2:#9BAAB8; --ink-3:#71808E;
+    --rule:#2B3641; --rule-2:#232D37;
+    --accent:#69AEC9; --accent-soft:#1B2C36; --accent-line:#33566A;
+    --flag:#E39B82; --flag-soft:#2E1F1A; --flag-line:#6B4234;
+    --done:#63C295; --done-soft:#17281F;
+    --term:#0C1116; --term-ink:#DCE4EC; --term-dim:#7A8896; --term-ok:#6FC497;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#11171D; --surface:#19212A; --surface-2:#1E2731;
+  --ink:#E6ECF1; --ink-2:#9BAAB8; --ink-3:#71808E;
+  --rule:#2B3641; --rule-2:#232D37;
+  --accent:#69AEC9; --accent-soft:#1B2C36; --accent-line:#33566A;
+  --flag:#E39B82; --flag-soft:#2E1F1A; --flag-line:#6B4234;
+  --done:#63C295; --done-soft:#17281F;
+  --term:#0C1116; --term-ink:#DCE4EC; --term-dim:#7A8896; --term-ok:#6FC497;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:50rem;margin:0 auto;padding:0 1.25rem 5rem}
+
+.bar{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--rule)}
+.bar-in{max-width:50rem;margin:0 auto;padding:.65rem 1.25rem;display:flex;align-items:center;gap:.9rem}
+.bar-label{font-family:var(--mono);font-size:.78rem;font-weight:500;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.bar-label b{color:var(--accent);font-weight:600}
+.track{flex:1;height:5px;background:var(--rule-2);border-radius:3px;overflow:hidden;min-width:60px}
+.fill{height:100%;width:0;background:var(--accent);border-radius:3px;transition:width .25s ease}
+.bar button{font:inherit;font-size:.78rem;color:var(--ink-3);background:none;border:none;padding:.2rem .35rem;cursor:pointer;border-radius:4px}
+.bar button:hover{color:var(--ink);background:var(--rule-2)}
+.bar button:focus-visible,.copy:focus-visible,.step input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header.mast{padding:3rem 0 2rem;border-bottom:2px solid var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:.72rem;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 .8rem}
+h1{font-size:clamp(2rem,6vw,2.85rem);line-height:1.08;font-weight:700;letter-spacing:-.022em;margin:0 0 .85rem;text-wrap:balance}
+.standfirst{font-size:1.075rem;color:var(--ink-2);margin:0;max-width:38rem}
+.meta{margin-top:1.6rem;display:flex;flex-wrap:wrap;gap:.4rem 1.6rem;font-family:var(--mono);font-size:.76rem;color:var(--ink-3)}
+.meta span b{color:var(--ink-2);font-weight:500}
+
+h2{font-size:1.28rem;font-weight:600;letter-spacing:-.012em;margin:0 0 .3rem;text-wrap:balance}
+p{margin:0 0 .8rem}
+a{color:var(--accent)}
+code,.mono{font-family:var(--mono);font-size:.87em;background:var(--accent-soft);color:var(--ink);padding:.1em .35em;border-radius:3px;word-break:break-word}
+
+.orient{margin:2.25rem 0 0;border-left:3px solid var(--accent-line);padding:.15rem 0 .15rem 1rem}
+.orient h3{font-family:var(--mono);font-size:.74rem;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);margin:0 0 .6rem}
+.orient p{font-size:.95rem;color:var(--ink-2)}
+.orient p:last-child{margin-bottom:0}
+.orient b{color:var(--ink);font-weight:600}
+
+section.part{margin-top:3.25rem}
+.part-head{display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;padding-bottom:.65rem;border-bottom:1px solid var(--rule)}
+.part-tag{font-family:var(--mono);font-size:.72rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--surface);background:var(--accent);padding:.2rem .5rem;border-radius:3px}
+.part-time{font-family:var(--mono);font-size:.76rem;color:var(--ink-3);margin-left:auto}
+.part-note{font-size:.92rem;color:var(--ink-2);margin:.75rem 0 0}
+
+.step{display:grid;grid-template-columns:auto 1fr;gap:0 .9rem;padding:1.35rem 0;border-bottom:1px solid var(--rule-2);align-items:start}
+.step:last-child{border-bottom:none}
+.step input{appearance:none;-webkit-appearance:none;width:1.35rem;height:1.35rem;margin:.15rem 0 0;border:1.5px solid var(--rule);border-radius:4px;background:var(--surface);cursor:pointer;display:grid;place-content:center;flex-shrink:0}
+.step input:checked{background:var(--done);border-color:var(--done)}
+.step input:checked::after{content:"";width:.42rem;height:.75rem;border:solid #fff;border-width:0 2.2px 2.2px 0;transform:rotate(42deg) translate(-1px,-1px)}
+.step-body{min-width:0}
+.step-title{display:flex;gap:.55rem;align-items:baseline;font-weight:600;font-size:1.02rem;margin:0 0 .3rem;text-wrap:balance}
+.num{font-family:var(--mono);font-size:.78rem;font-weight:600;color:var(--accent);flex-shrink:0;font-variant-numeric:tabular-nums;padding-top:.08rem}
+.step p{font-size:.95rem;color:var(--ink-2);margin:0 0 .55rem}
+.step p:last-child{margin-bottom:0}
+.step ol,.step ul{margin:0 0 .55rem;padding-left:1.15rem;font-size:.95rem;color:var(--ink-2)}
+.step li{margin-bottom:.35rem}
+.step li b,.step p b{color:var(--ink);font-weight:600}
+.step.done .step-body{opacity:.5}
+.step.done .step-title{text-decoration:line-through;text-decoration-color:var(--ink-3);text-decoration-thickness:1.5px}
+.why{border-left:2px solid var(--rule);padding-left:.8rem;font-size:.9rem;color:var(--ink-3);margin:.6rem 0 0}
+.why b{color:var(--ink-2);font-weight:600}
+.dont{border-left:3px solid var(--flag-line);background:var(--flag-soft);padding:.55rem .8rem;font-size:.9rem;color:var(--ink-2);margin:.7rem 0 0;border-radius:0 4px 4px 0}
+.dont b{color:var(--flag);font-weight:600}
+
+/* terminal blocks */
+.term{background:var(--term);color:var(--term-ink);border-radius:6px;margin:.6rem 0 .8rem;overflow:hidden;border:1px solid var(--rule)}
+.term-head{display:flex;align-items:center;gap:.6rem;padding:.4rem .8rem;font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--term-dim);border-bottom:1px solid rgba(255,255,255,.07)}
+.term-head .copy{margin-left:auto;color:var(--term-ink);background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16)}
+.term-head .copy:hover{background:var(--term-ink);color:var(--term)}
+.term pre{margin:0;padding:.75rem .9rem;font-family:var(--mono);font-size:.84rem;line-height:1.55;overflow-x:auto;white-space:pre}
+.term pre .d{color:var(--term-dim)}
+.term pre .ok{color:var(--term-ok)}
+.expect{display:grid;grid-template-columns:auto 1fr;gap:.5rem;font-size:.9rem;color:var(--ink-2);margin:.2rem 0 .55rem}
+.expect .k{font-family:var(--mono);font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--done);padding-top:.25rem;white-space:nowrap}
+.expect .k.no{color:var(--flag)}
+.expect code{background:var(--done-soft)}
+.expect .k.no + div code{background:var(--flag-soft)}
+.copy{font:inherit;font-family:var(--mono);font-size:.74rem;font-weight:500;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:4px;padding:.22rem .6rem;cursor:pointer;white-space:nowrap}
+.copy:hover{background:var(--accent);color:var(--surface)}
+
+.close{margin-top:3.5rem;border:1.5px solid var(--ink);border-radius:6px;padding:1.6rem 1.5rem;background:var(--surface)}
+.close h2{margin-bottom:.5rem}
+.close p,.close li{font-size:.95rem;color:var(--ink-2)}
+.close ol{padding-left:1.2rem;margin:0 0 1rem}
+.close li{margin-bottom:.35rem}
+.status-out{font-family:var(--mono);font-size:.8rem;color:var(--ink-2);background:var(--surface-2);border:1px solid var(--rule);border-radius:4px;padding:.7rem .9rem;white-space:pre-wrap;margin:.8rem 0 0;max-height:14rem;overflow:auto}
+footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-family:var(--mono);font-size:.74rem;color:var(--ink-3)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<div class="bar">
+  <div class="bar-in">
+    <span class="bar-label"><b id="pdone">0</b> of <span id="ptot">0</span> done</span>
+    <span class="track"><span class="fill" id="pfill"></span></span>
+    <button id="reset" type="button">Clear ticks</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Powder Ops · ReadyDoc · Onboarding → RUN Powered by ADP</p>
+  <h1>ADP Onboarding Runbook</h1>
+  <p class="standfirst">Everything between "the module is built" and "a new hire lands in RUN without anyone re-typing the packet": one variable you can set today, the ADP Marketplace registration only you can do, and the first test hire. Tick as you go; the ticks save in this browser.</p>
+  <div class="meta">
+    <span><b>For</b> Lowry</span>
+    <span><b>Prepared</b> 3 September 2026</span>
+    <span><b>Time</b> 20 minutes today · then weeks of waiting on ADP · 30 minutes to finish</span>
+  </div>
+</header>
+
+<div class="orient">
+  <h3>Before you start</h3>
+  <p><b>Two switches, and they are independent.</b> Part A is the encryption key: without it the welcome wizard does not ask for the SSN or bank details at all. Set it today and onboarding is fully usable, with the office keying the packet into RUN by hand. Parts B–E are the ADP connection, which turns that last step into a button.</p>
+  <p><b>What ReadyDoc shows you along the way.</b> Settings → Integrations lists both switches — which variables are set, and whether each is on — without ever showing a value. Use it as your "did that take?" check after every Railway change.</p>
+  <p><b>About the ADP screens.</b> The portal wording below comes from ADP's own published guides; ADP rearranges its portal, so a button may be labelled slightly differently from what is written here. The meaning of each step does not change. Where a screen looks nothing like the description, stop and send me a screenshot rather than guessing.</p>
+</div>
+
+<!-- ============ PART A ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part A</span>
+    <h2>Today: the encryption key</h2>
+    <span class="part-time">~10 minutes · Terminal and Railway</span>
+  </div>
+  <p class="part-note">The SSN, routing and account numbers are stored encrypted under this key and only ever shown as the last four digits. No key, no fields. Generate it once and never change it: every value stored under it becomes unreadable the moment it moves.</p>
+
+  <div class="step" data-id="a1">
+    <input type="checkbox" aria-label="Step 1 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">01</span> Generate the key</p>
+      <p>Open Terminal (⌘Space, type <i>Terminal</i>, Return) and run:</p>
+      <div class="term"><div class="term-head">Terminal <button class="copy" type="button" data-cmd="openssl rand -hex 32">Copy</button></div><pre>$ openssl rand -hex 32
+<span class="ok">3f9a1c…64 hex characters…e7b2</span></pre></div>
+      <div class="expect"><span class="k">Expect</span><div>One line of exactly 64 letters and digits. Select it and ⌘C. Do not close the window until step 02 is done.</div></div>
+      <div class="dont"><b>This is a secret.</b> Paste it into Railway and into your password manager, nowhere else. Not a chat, not a note, not an email.</div>
+    </div>
+  </div>
+
+  <div class="step" data-id="a2">
+    <input type="checkbox" aria-label="Step 2 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">02</span> Set it on the ReadyDoc service in Railway</p>
+      <ol>
+        <li>Go to <a href="https://railway.com/dashboard" target="_blank" rel="noopener">railway.com/dashboard</a> → the Powder Ops project → the <b>ReadyDoc service</b> card.</li>
+        <li>Open the <b>Variables</b> tab → <b>New Variable</b>.</li>
+        <li>Name: <span class="mono">ONBOARDING_ENC_KEY</span>. Value: the 64 characters from step 01. Click <b>Add</b>.</li>
+        <li>Railway offers to deploy the change. Click <b>Deploy</b> (or wait; it redeploys on its own within a minute).</li>
+      </ol>
+      <div class="expect"><span class="k">Expect</span><div>A new deployment appears in the Deployments tab and goes <b>Active</b> in two to three minutes.</div></div>
+    </div>
+  </div>
+
+  <div class="step" data-id="a3">
+    <input type="checkbox" aria-label="Step 3 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">03</span> Confirm it took, then try the wizard</p>
+      <ol>
+        <li>In ReadyDoc: <b>Settings → Integrations</b>. The row <b>Onboarding — sensitive fields</b> should read <b>connected</b>.</li>
+        <li>Office group → <b>Onboarding</b> → <b>Start an onboarding</b>. First name <i>Test</i>, last name <i>Hire</i>, your own phone. Save.</li>
+        <li>Copy the welcome link it shows (it shows once). Open it on your phone.</li>
+      </ol>
+      <div class="expect"><span class="k">Expect</span><div>The wizard now has a Social Security number field and a direct-deposit page. Before the key, both said the office would collect them.</div></div>
+      <p>Use <b>Cancel</b> on that row afterwards. Onboarding is now fully usable: a real hire works the wizard, the office reads the finished packet and keys it into RUN. The rest of this runbook only removes that last keying step.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PART B ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part B</span>
+    <h2>Register the app on the ADP developer portal</h2>
+    <span class="part-time">~30 minutes · browser · then ADP's clock</span>
+  </div>
+  <p class="part-note">RUN has no self-serve API key. The credentials come from registering ReadyDoc as a <b>data connector</b> app on the ADP Marketplace developer portal, under the company's own ADP account. This is the part only you can do: it needs the RUN administrator login.</p>
+
+  <div class="step" data-id="b1">
+    <input type="checkbox" aria-label="Step 4 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">04</span> Create a developer account</p>
+      <ol>
+        <li>Go to <a href="https://developers.adp.com" target="_blank" rel="noopener">developers.adp.com</a> and choose <b>Sign in</b> / <b>Register</b>.</li>
+        <li>Register with <span class="mono">lowry@powder-ops.com</span> and the company's legal name <b>exactly as it appears on the RUN account</b>. Write that name down; the certificate in Part C must match it character for character.</li>
+        <li>Verify the email when it arrives.</li>
+      </ol>
+      <div class="expect"><span class="k">Expect</span><div>A signed-in portal with a <b>My Apps</b> (or <b>Apps</b>) area. If it instead asks you to apply for a partner programme, choose the option for building an integration for your own company — ADP calls this the Developer Self-Service path for existing clients.</div></div>
+    </div>
+  </div>
+
+  <div class="step" data-id="b2">
+    <input type="checkbox" aria-label="Step 5 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">05</span> Create the app</p>
+      <ol>
+        <li><b>My Apps → Create App</b> (or <b>Register an application</b>).</li>
+        <li><b>Product</b>: RUN Powered by ADP. <b>App type</b>: Data Connector (an integration that exchanges data with ADP; not SSO, not a Marketplace listing for sale).</li>
+        <li><b>APIs / scopes</b>: tick the HR onboarding API. On the RUN catalogue it is listed under HR as <b>Applicant Onboarding</b> (the event is <span class="mono">applicant-onboard.process</span>). If a Worker or Payroll scope is also offered, leave it off; ReadyDoc does not need it.</li>
+        <li>Name and description. Use the text below; it describes what the app actually does, which is what the review reads.</li>
+      </ol>
+      <div class="term"><div class="term-head">App description <button class="copy" type="button" data-cmd="ReadyDoc is Powder Ops' internal food-safety and operations system. This connector submits a completed new-hire onboarding packet (name, address, contact details, hire date, position, pay rate, and the tax and direct-deposit inputs the employee entered) from ReadyDoc into RUN Powered by ADP's Applicant Onboarding, so the office does not re-key it. One direction only: ReadyDoc writes an applicant into onboarding; it reads nothing back and touches no payroll data. Used by Powder Ops for its own employees only.">Copy</button></div><pre>ReadyDoc is Powder Ops' internal food-safety and operations system.
+This connector submits a completed new-hire onboarding packet (name,
+address, contact details, hire date, position, pay rate, and the tax
+and direct-deposit inputs the employee entered) from ReadyDoc into RUN
+Powered by ADP's Applicant Onboarding, so the office does not re-key it.
+One direction only: ReadyDoc writes an applicant into onboarding; it
+reads nothing back and touches no payroll data. Used by Powder Ops for
+its own employees only.</pre></div>
+      <div class="expect"><span class="k">Expect</span><div>An app page with a status (Draft / In review / Approved) and, once approved, a <b>Credentials</b> area. Approval can take weeks. Tick this step when the app is <b>submitted</b>, not approved.</div></div>
+      <p class="why"><b>Why the description matters.</b> Intuit rejected the QuickBooks app on relevance, not on the code, because the description did not say plainly what it did for whom. Say it plainly here.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PART C ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part C</span>
+    <h2>The certificate (mutual TLS)</h2>
+    <span class="part-time">~20 minutes · portal, and Terminal on one route</span>
+  </div>
+  <p class="part-note">Every call to ADP presents a client certificate that ADP itself signed. You end up with two files: a <b>private key</b> (yours, never shared, shown once) and a <b>public certificate</b> (.pem, signed by ADP). ReadyDoc needs both. Two routes; take Route 1 if the portal offers it.</p>
+
+  <div class="step" data-id="c1">
+    <input type="checkbox" aria-label="Step 6 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">06</span> Route 1: let the portal generate it</p>
+      <ol>
+        <li>In the developer portal, open the <b>Certificates</b> section (on the app page, or in the left navigation).</li>
+        <li>Click <b>Request Certificate</b>. Fill in the fields: <b>Organization Name</b> is the company name exactly as registered with ADP (step 04); <b>Common Name</b> is the company name followed by the word <b>MutualSSL</b>, for example <span class="mono">Powder Ops MutualSSL</span>. Leave Country, State, Locality and any password blank. Click <b>Next</b>.</li>
+        <li>The next screen shows your <b>private key</b>. Click <b>Copy</b>, paste it straight into a new entry in your password manager named <i>ADP mutual TLS private key</i>, then click <b>Ok, I copied my key</b>.</li>
+        <li>Click <b>Done</b>, then <b>Download</b> the public certificate. It arrives as a <span class="mono">.pem</span> file. Save that file's contents into the same password-manager entry.</li>
+      </ol>
+      <div class="dont"><b>The private key is shown exactly once.</b> If you close that screen without copying it, the certificate is useless and you request a new one. Nothing is lost except a few minutes; do not try to recover it.</div>
+      <div class="expect"><span class="k">Expect</span><div>Two blocks of text in your password manager: one starting <code>-----BEGIN PRIVATE KEY-----</code> (or <code>BEGIN RSA PRIVATE KEY</code>), one starting <code>-----BEGIN CERTIFICATE-----</code>. Skip step 07.</div></div>
+    </div>
+  </div>
+
+  <div class="step" data-id="c2">
+    <input type="checkbox" aria-label="Step 7 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">07</span> Route 2: generate the request yourself and upload it</p>
+      <p>Only if the portal asks you to <b>upload a CSR</b> instead of generating one. In Terminal, one command makes the key, the next makes the request:</p>
+      <div class="term"><div class="term-head">Terminal <button class="copy" type="button" data-cmd="cd ~/Desktop &amp;&amp; openssl genrsa -out powderops_auth.key 2048 &amp;&amp; openssl req -new -key powderops_auth.key -out powderops_auth.csr">Copy</button></div><pre>$ cd ~/Desktop
+$ openssl genrsa -out powderops_auth.key 2048
+$ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
+      <p>The second command asks questions one at a time. Answer exactly this way (Return leaves a field blank):</p>
+      <ul>
+        <li>Country Name, State, Locality: <b>press Return, leave blank</b></li>
+        <li>Organization Name: the company name <b>exactly as registered with ADP</b></li>
+        <li>Organizational Unit: Return</li>
+        <li>Common Name: the company name followed by <b>MutualSSL</b>, e.g. <span class="mono">Powder Ops MutualSSL</span></li>
+        <li>Email, challenge password, optional company name: Return, Return, Return</li>
+      </ul>
+      <ol>
+        <li>In the portal's Certificates section, <b>Upload CSR</b> → choose <span class="mono">powderops_auth.csr</span> from the Desktop.</li>
+        <li>ADP signs it and offers the certificate to <b>download</b> as a <span class="mono">.pem</span>. Save it beside the key.</li>
+        <li>Put the contents of both files into the password-manager entry, then <b>delete both files from the Desktop</b>.</li>
+      </ol>
+      <div class="expect"><span class="k">Expect</span><div>The same two blocks as Route 1: a private key and a certificate.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PART D ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part D</span>
+    <h2>Credentials and consent</h2>
+    <span class="part-time">~10 minutes · after ADP approves the app</span>
+  </div>
+
+  <div class="step" data-id="d1">
+    <input type="checkbox" aria-label="Step 8 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">08</span> Copy the client ID and client secret</p>
+      <ol>
+        <li><b>My Apps</b> → open the ReadyDoc app → the <b>Credentials</b> (or <b>App details</b>) area.</li>
+        <li>Copy the <b>Client ID</b> (a long id with dashes) and the <b>Client Secret</b> (a long random string; it may be shown once behind a Reveal button) into the same password-manager entry.</li>
+      </ol>
+      <div class="expect"><span class="k">Expect</span><div>Four secrets in the entry now: private key, certificate, client ID, client secret.</div></div>
+    </div>
+  </div>
+
+  <div class="step" data-id="d2">
+    <input type="checkbox" aria-label="Step 9 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">09</span> Give the app consent from the RUN side</p>
+      <p>ADP checks that the <i>company</i> has consented before it processes a single call from the app, however good the credentials are.</p>
+      <ol>
+        <li>On the app page, find the <b>Consent URL</b> (the Self-Service tool lists it as the Data Connector Consent URL). Copy it.</li>
+        <li>Open it in a browser where you are signed in to RUN as the <b>company administrator</b>. It lands in ADP's <b>Consent Manager</b>.</li>
+        <li>Read what the app is asking for, and click <b>Allow</b>.</li>
+      </ol>
+      <div class="expect"><span class="k">Expect</span><div>Consent Manager lists the ReadyDoc app as <b>Allowed</b> / <b>Active</b>. In RUN itself this may also appear under Settings → Apps or Data Connectors.</div></div>
+      <div class="expect"><span class="k no">If not</span><div>The consent page says you are not authorised: the account you are signed in with is not a RUN administrator. Consent must come from the admin account, not an employee login.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PART E ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part E</span>
+    <h2>Turn it on in Railway</h2>
+    <span class="part-time">~10 minutes</span>
+  </div>
+
+  <div class="step" data-id="e1">
+    <input type="checkbox" aria-label="Step 10 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">10</span> Add the four variables</p>
+      <p>Railway → the ReadyDoc service → <b>Variables</b> → <b>New Variable</b>, four times. For the two PEM values, paste the <b>whole block including the BEGIN and END lines</b>; Railway accepts multi-line values and ReadyDoc reads them either way.</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Name</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td class="n">ADP_CLIENT_ID</td><td>The client ID from step 08</td></tr>
+            <tr><td class="n">ADP_CLIENT_SECRET</td><td>The client secret from step 08</td></tr>
+            <tr><td class="n">ADP_CERT_PEM</td><td>The certificate block, <span class="mono">-----BEGIN CERTIFICATE-----</span> through <span class="mono">-----END CERTIFICATE-----</span></td></tr>
+            <tr><td class="n">ADP_KEY_PEM</td><td>The private-key block, BEGIN through END</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Let it redeploy.</p>
+      <div class="expect"><span class="k">Expect</span><div>Settings → Integrations: the row <b>ADP (RUN Powered by ADP) — onboarding hand-off</b> reads <b>connected</b> with all four names ticked.</div></div>
+      <div class="expect"><span class="k no">If not</span><div>A name still shows unticked: check the variable name for a typo, letter for letter. Integrations names the missing one.</div></div>
+      <p class="why"><b>Only if ADP gave you a separate test host.</b> Some approvals come with a sandbox API address for trial calls. If yours did, add <span class="mono">ADP_API_BASE</span> with that address for step 11, and remove it again before the first real hire. If it did not, leave it out; the default is ADP's production API.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PART F ============ -->
+<section class="part">
+  <div class="part-head">
+    <span class="part-tag">Part F</span>
+    <h2>The first submission</h2>
+    <span class="part-time">~15 minutes · phone and desktop</span>
+  </div>
+  <p class="part-note">ReadyDoc's ADP client has never been exercised against ADP, because until now there were no credentials. The first submission is a test, and the office should be ready to correct the applicant in RUN by hand if a field lands wrong.</p>
+
+  <div class="step" data-id="f1">
+    <input type="checkbox" aria-label="Step 11 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">11</span> Run one onboarding through to Submit to ADP</p>
+      <ol>
+        <li>If you set a sandbox <span class="mono">ADP_API_BASE</span>, use invented details throughout. If you did not, use a <b>real incoming hire</b> with the office watching: a production submission creates a real applicant in RUN.</li>
+        <li>Onboarding → <b>Start an onboarding</b> → fill the header → copy the welcome link → the new hire (or you, on your phone) works the wizard to the end.</li>
+        <li>Back in Onboarding, the row now reads <b>completed</b>, with the packet's sensitive fields masked to the last four. Click <b>Submit to ADP</b>.</li>
+      </ol>
+      <div class="expect"><span class="k">Expect</span><div>The row turns <b>Submitted to ADP</b> with a timestamp, and within a few minutes the person appears in RUN's onboarding queue with name, address, contact, hire date and pay rate filled. The employee's I-9 completes inside ADP's own flow, which is where it belongs.</div></div>
+      <div class="expect"><span class="k no">If not</span><div>The button shows an error in ADP's own words (it starts <code>ADP 4xx:</code>). Copy the whole message and send it to me. Which fields the approved app may send depends on the scopes ADP granted, and the mapping is finalised against exactly that message. Nothing is lost: the packet is still on screen to key in by hand.</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="close">
+  <h2>When you're done</h2>
+  <p>Send me:</p>
+  <ol>
+    <li>After Part A: a screenshot of Settings → Integrations.</li>
+    <li>After Part B: the app's status page once submitted, so I know which APIs were granted.</li>
+    <li>After Part F: either "it landed in RUN" or the full error text from Submit to ADP.</li>
+  </ol>
+  <p>Nothing in this runbook needs the four secrets to pass through me. Railway and your password manager are the only two places they live.</p>
+  <button class="copy" type="button" id="statusbtn" style="margin-left:0">Copy status</button>
+  <div class="status-out" id="statusout" hidden></div>
+</div>
+
+<footer>Powder Ops FSQA · ADP Onboarding Runbook · prepared 3 September 2026 · working document, not a controlled record</footer>
+
+</div>
+<script>
+(function(){
+  var KEY='pops_adp_runbook_v1';
+  var steps=[].slice.call(document.querySelectorAll('.step'));
+  var pdone=document.getElementById('pdone'), ptot=document.getElementById('ptot'), pfill=document.getElementById('pfill');
+  ptot.textContent=steps.length;
+
+  function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(e){ return {}; } }
+  function save(s){ try{ localStorage.setItem(KEY,JSON.stringify(s)); }catch(e){} }
+
+  function paint(){
+    var n=0;
+    steps.forEach(function(s){
+      var on=s.querySelector('input').checked;
+      s.classList.toggle('done',on);
+      if(on) n++;
+    });
+    pdone.textContent=n;
+    pfill.style.width=(steps.length? Math.round(n/steps.length*100):0)+'%';
+  }
+
+  var state=load();
+  steps.forEach(function(s){
+    var box=s.querySelector('input');
+    box.checked=!!state[s.dataset.id];
+    box.addEventListener('change',function(){
+      var st=load(); st[s.dataset.id]=box.checked; save(st); paint();
+    });
+  });
+  paint();
+
+  document.getElementById('reset').addEventListener('click',function(){
+    save({});
+    steps.forEach(function(s){ s.querySelector('input').checked=false; });
+    paint();
+  });
+
+  function copyText(text,btn,ok){
+    var done=function(){ var o=btn.textContent; btn.textContent=ok; setTimeout(function(){btn.textContent=o;},1600); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done,function(){fallback(text,done);});
+    } else { fallback(text,done); }
+  }
+  function fallback(text,done){
+    var ta=document.createElement('textarea');
+    ta.value=text; ta.setAttribute('readonly','');
+    ta.style.position='fixed'; ta.style.top='-1000px';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){}
+    document.body.removeChild(ta);
+  }
+
+  [].slice.call(document.querySelectorAll('.copy[data-cmd]')).forEach(function(btn){
+    btn.addEventListener('click',function(){ copyText(btn.dataset.cmd,btn,'Copied'); });
+  });
+
+  document.getElementById('statusbtn').addEventListener('click',function(){
+    var out=document.getElementById('statusout');
+    var lines=['ADP Onboarding Runbook — status'];
+    steps.forEach(function(s){
+      var t=s.querySelector('.step-title').textContent.replace(/\s+/g,' ').trim();
+      lines.push((s.querySelector('input').checked?'[x] ':'[ ] ')+t);
+    });
+    var n=steps.filter(function(s){return s.querySelector('input').checked;}).length;
+    lines.push('','('+n+' of '+steps.length+' done)');
+    var text=lines.join('\n');
+    out.textContent=text; out.hidden=false;
+    copyText(text,this,'Copied');
+  });
+})();
+</script>

@@ -1,5 +1,9 @@
 # Onboarding in ReadyDoc → ADP RUN
 
+> The click-by-click version of this, with what to expect at each step, is
+> `docs/adp-onboarding-runbook.artifact.html` (published 3 September 2026 as the
+> "ADP Onboarding Runbook" artifact).
+
 What it takes to have a new hire complete onboarding inside ReadyDoc (personal
 info, direct deposit, federal W-4 inputs, emergency contact, the intro to
 Messages and their modules) and have the result land in RUN Powered by ADP.
