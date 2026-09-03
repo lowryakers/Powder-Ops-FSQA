@@ -18,6 +18,7 @@ import { recleanReasonLine, RECLEAN_REASONS } from '../../../shared/reclean-reas
 const RECLEAN_STATUSES = new Set(Object.keys(RECLEAN_REASONS));
 import FormChip from '../common/FormChip';
 import { withSignature } from '../../lib/signature';
+import { withCurrent } from '../../lib/managedList.js';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
 const RECLEAN_ACTION_META = {
@@ -439,7 +440,7 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
           <select required value={form.area} onChange={e => setForm({ ...form, area: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
             <option value="">Select an area…</option>
-            {(areas?.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {withCurrent(areas?.options, form.area).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           {areas && !(areas.options || []).length && (
             <p className="text-[11px] text-amber-700 mt-1">
@@ -472,7 +473,8 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
           <select value={form.equipment_id} onChange={e => setForm({ ...form, equipment_id: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             <option value="">N/A</option>
-            {(equipment || []).map(eq => <option key={eq.id} value={eq.id}>{eq.name}</option>)}
+            {withCurrent((equipment || []).map(eq => ({ value: eq.id, label: eq.name })), form.equipment_id, initial?.equipment_name || 'Retired equipment')
+              .map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div>

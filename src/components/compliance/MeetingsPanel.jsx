@@ -9,6 +9,8 @@ import {
   Users, Plus, X, CalendarClock, MapPin, Download, CheckCircle2, RotateCcw,
   ArrowLeft, Trash2, CircleDot, ClipboardList, ChevronRight, Pencil,
 } from 'lucide-react';
+import { TASK_GROUPS } from '../../../shared/task-groups.js';
+import { withCurrent } from '../../lib/managedList.js';
 
 // Meetings — management review, food safety team, production, safety.
 //
@@ -41,12 +43,9 @@ const TASK_CHIP = {
   not_applicable: 'bg-gray-100 text-gray-500',
 };
 
-// Teams a meeting action can land in. Matches Task Center's groups.
-const TASK_GROUPS = [
-  ['office', 'Office'], ['qa', 'Quality'], ['maintenance', 'Maintenance'],
-  ['sanitation', 'Sanitation'], ['warehouse', 'Warehouse'],
-  ['production', 'Production'], ['document_control', 'Document Control'],
-];
+// Teams a meeting action can land in: the shared list Task Center's tabs are
+// built from. The private copy here offered sanitation and production, which
+// no tab showed — an action assigned to them reached nobody.
 
 function Field({ label, children, className = '' }) {
   return (
@@ -94,7 +93,7 @@ function NewMeetingModal({ types, onClose, onCreated }) {
         <div className="p-5 space-y-4">
           <Field label="Type *">
             <select value={form.meeting_type} onChange={e => set('meeting_type', e.target.value)} className={input}>
-              {types.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              {withCurrent(types, form.meeting_type).map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </Field>
           <Field label="Title">
@@ -244,7 +243,7 @@ function Actions({ meeting, actions, editable, users, onChanged }) {
               className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm" />
             <select value={form.task_group} onChange={e => set('task_group', e.target.value)}
               className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
-              {TASK_GROUPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {TASK_GROUPS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
             </select>
           </div>
           <datalist id="meeting-people">{(users || []).map(u => <option key={u.id} value={u.name} />)}</datalist>

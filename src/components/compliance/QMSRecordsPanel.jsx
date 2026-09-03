@@ -14,6 +14,7 @@ import RecordHistory from '../common/RecordHistory.jsx';
 import { formatDateTime } from '../../lib/datetime.js';
 import TextCell from '../common/TextCell.jsx';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
+import { withCurrent } from '../../lib/managedList.js';
 
 // Mirror of server canSignApproval — admin always; else role/department match.
 //
@@ -179,6 +180,10 @@ function FieldInput({ f, value, onChange, cfgKey }) {
     if (count > 8) {
       return <SearchSelect value={value || ''} onChange={onChange} options={f.options} placeholder="Type to search…" />;
     }
+    // The stored value must stay offerable after its option is retired, or
+    // correcting another field on the record re-assigns it (managedList.js).
+    const flat = grouped ? f.options.flatMap(g => g.items || []) : f.options;
+    const current = withCurrent(flat, value).find(o => o.retired);
     return (
       <select value={value || ''} onChange={e => onChange(e.target.value)} className={base}>
         <option value="">—</option>
@@ -189,6 +194,7 @@ function FieldInput({ f, value, onChange, cfgKey }) {
               </optgroup>
             ))
           : f.options.map(o => <option key={o} value={o}>{o}</option>)}
+        {current && <option value={current.value}>{current.label}</option>}
       </select>
     );
   }

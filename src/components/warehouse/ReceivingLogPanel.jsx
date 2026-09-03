@@ -16,6 +16,7 @@ import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { canFilmInspect } from '../../utils/permissions';
 import { getParam, consumeParam } from '../../lib/deepLink';
+import { withCurrent } from '../../lib/managedList.js';
 
 // Receiving Log — incoming raw material, labels and components (replaces the
 // Monday board). Both dropdowns are managed lists and the extra questions are
@@ -350,7 +351,7 @@ function ReceivingForm({ user, record, inspectionNo, onSaved, onCancel, onOpenCh
           <label className="block text-xs font-medium text-gray-700 mb-1">UOM</label>
           <select value={form.uom || ''} onChange={e => set('uom', e.target.value)} className={inputCls}>
             <option value="">Select…</option>
-            {(uomList?.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {withCurrent(uomList?.options, form.uom).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div>
@@ -361,7 +362,7 @@ function ReceivingForm({ user, record, inspectionNo, onSaved, onCancel, onOpenCh
           <label className="block text-xs font-medium text-gray-700 mb-1">Status of Release</label>
           <select value={form.status_of_release || ''} onChange={e => set('status_of_release', e.target.value)} className={inputCls}>
             <option value="">Select…</option>
-            {(statusList?.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {withCurrent(statusList?.options, form.status_of_release).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div>

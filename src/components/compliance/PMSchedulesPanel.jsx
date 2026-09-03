@@ -3,6 +3,8 @@ import { useApiGet, apiPut, apiPost } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Search, Pause, Play, Save, X, CalendarClock, AlertTriangle, CalendarPlus } from 'lucide-react';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import { TASK_GROUPS } from '../../../shared/task-groups.js';
+import { withCurrent } from '../../lib/managedList.js';
 
 // The recurring schedules that generate work.
 //
@@ -31,7 +33,6 @@ const FREQUENCIES = [
   { value: 'as_needed', label: 'As needed (generates nothing)' },
 ];
 
-const GROUPS = ['cleaning', 'maintenance', 'qa', 'warehouse', 'batching', 'kitting', 'filling'];
 
 const freqLabel = (v) => FREQUENCIES.find(f => f.value === v)?.label || v || '—';
 
@@ -77,7 +78,7 @@ function EditRow({ schedule, onSaved, onCancel }) {
             <span className="block text-[11px] font-medium text-gray-500 mb-0.5">Team</span>
             <select value={form.task_group} onChange={e => setForm(f => ({ ...f, task_group: e.target.value }))} className={cls}>
               <option value="">Nobody — reaches no team's list</option>
-              {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+              {withCurrent(TASK_GROUPS, form.task_group).map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
             </select>
           </label>
           <label className="block sm:col-span-2 lg:col-span-3">

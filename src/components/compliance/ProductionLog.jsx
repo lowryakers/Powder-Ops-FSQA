@@ -15,6 +15,7 @@ import ProductionDayLog from './ProductionDayLog.jsx';
 import { formatDateTime, formatTime as fmtClock } from '../../lib/datetime.js';
 import { withSignature } from '../../lib/signature';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import { withCurrent } from '../../lib/managedList.js';
 
 // The same rooms the schedule offers, so a shift can be reported in the room it
 // was scheduled in. This list used to be built by hand here and had drifted:
@@ -383,7 +384,7 @@ function EodField({ field, value, onChange }) {
       {field.type === 'select' ? (
         <select required={field.required} value={value ?? ''} onChange={e => onChange(e.target.value)} className={cls}>
           <option value="">Select…</option>
-          {(field.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+          {withCurrent(field.options, value).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : field.type === 'textarea' ? (
         <textarea required={field.required} value={value ?? ''} onChange={e => onChange(e.target.value)} rows={2} className={cls} />

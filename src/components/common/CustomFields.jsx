@@ -1,4 +1,5 @@
 import { useApiGet } from '../../hooks/useApi';
+import { withCurrent } from '../../lib/managedList.js';
 
 // Renders the user-added fields for a scope — the client half of the self-serve
 // structure engine. A module opts in with two lines: <CustomFields> in its form
@@ -25,7 +26,7 @@ export function CustomFieldInput({ field, value, onChange }) {
       {field.type === 'select' ? (
         <select required={field.required} value={value ?? ''} onChange={e => onChange(e.target.value)} className={inputCls}>
           <option value="">Select…</option>
-          {(field.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {withCurrent(field.options, value).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : field.type === 'textarea' ? (
         <textarea required={field.required} value={value ?? ''} onChange={e => onChange(e.target.value)} rows={2} className={inputCls} />

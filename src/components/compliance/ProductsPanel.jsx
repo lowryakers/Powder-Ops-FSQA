@@ -339,7 +339,8 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                   <select value={form.artwork_status} onChange={set('artwork_status')}
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                     <option value="">Not set</option>
-                    {['draft', 'in_review', 'approved', 'print_ready', 'superseded'].map((s) =>
+                    {/* `rejected` is written by artwork.js and must be offerable here, or editing anything else on a rejected product clears the rejection. */}
+                    {['draft', 'in_review', 'approved', 'print_ready', 'rejected', 'superseded'].map((s) =>
                       <option key={s} value={s}>{pretty(s)}</option>)}
                   </select>
                 </label>

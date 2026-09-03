@@ -568,6 +568,8 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
             <label className="block text-xs font-medium text-gray-700 mb-1">Method</label>
             <select value={form.method || ''} onChange={e => set('method', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              {/* Imported rows have no method; without a blank option the browser picks in_person and the edit fabricates one. */}
+              <option value="">Not recorded</option>
               {['in_person', 'read_and_sign', 'online_test', 'external'].map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
             </select>
           </div>

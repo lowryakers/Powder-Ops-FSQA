@@ -11,6 +11,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { exportToCsv } from '../../utils/exportCsv';
 import { formatDateTime } from '../../lib/datetime.js';
 import FormChip from '../common/FormChip';
+import { TASK_GROUPS } from '../../../shared/task-groups.js';
 
 const FREQ_TABS = [
   { value: 'all', label: 'All' },
@@ -931,16 +932,16 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
   );
 }
 
+// The tabs are DERIVED from the shared team list, so a team a select can
+// assign is always a tab somebody can open. Colours are the only local fact.
+const GROUP_COLORS = {
+  maintenance: 'bg-violet-600', warehouse: 'bg-indigo-600', qa: 'bg-teal-600',
+  document_control: 'bg-sky-600', office: 'bg-rose-600', batching: 'bg-yellow-600',
+  kitting: 'bg-blue-600', filling: 'bg-cyan-600', cleaning: 'bg-amber-600',
+};
 const GROUP_TABS = [
   { value: 'all', label: 'All Groups', color: 'bg-gray-800' },
-  { value: 'maintenance', label: 'Maintenance', color: 'bg-violet-600' },
-  { value: 'warehouse', label: 'Warehouse', color: 'bg-indigo-600' },
-  { value: 'qa', label: 'QA', color: 'bg-teal-600' },
-  { value: 'document_control', label: 'Document Control', color: 'bg-sky-600' },
-  { value: 'batching', label: 'Batching', color: 'bg-yellow-600' },
-  { value: 'kitting', label: 'Kitting', color: 'bg-blue-600' },
-  { value: 'filling', label: 'Filling', color: 'bg-cyan-600' },
-  { value: 'cleaning', label: 'Cleaning', color: 'bg-amber-600' },
+  ...TASK_GROUPS.map(g => ({ ...g, color: GROUP_COLORS[g.value] || 'bg-gray-600' })),
 ];
 
 const GROUP_BADGE = {
