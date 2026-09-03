@@ -52,7 +52,7 @@ t('each reports used + free = 100', p1.used + p1.free === 100, JSON.stringify(p1
 t('the count matches the catalogue',
   p1.used === new Set(bc.products.filter((p) => (p.gtin || '').startsWith(p1.prefix) && /^\d{12}$/.test(p.gtin || '')).map((p) => p.gtin.slice(9, 11))).size,
   `${p1.used}`);
-t('the fullest prefix sorts first', bc.prefixes.every((x, i, a) => i === 0 || a[i - 1].free <= x.free));
+t('the fullest prefix sorts first', bc.prefixes.length > 1 && bc.prefixes.every((x, i, a) => i === 0 || a[i - 1].free <= x.free));
 t('"running low" is derived, not stored', typeof p1.low === 'boolean');
 
 console.log('\n── the shelf ──');
@@ -101,8 +101,8 @@ t('and cleared to "until replaced"', sh.slots.find((s) => s.key === 'gs1_licence
 console.log('\n── history and permission ──');
 const docs = await J(await req('/products/shelf/shopify_export/documents'));
 t('the history lists both, newest first', docs.documents.length === 2);
-t('THE INDEXED TEXT IS NEVER SHIPPED', docs.documents.every((d) => d.extracted_text === undefined));
-t('a link entry says it has no file', docs.documents.every((d) => d.has_file === false));
+t('THE INDEXED TEXT IS NEVER SHIPPED', docs.documents.length > 0 && docs.documents.every((d) => d.extracted_text === undefined));
+t('a link entry says it has no file', docs.documents.length > 0 && docs.documents.every((d) => d.has_file === false));
 
 {
   const db = new Database(process.env.DBPATH);

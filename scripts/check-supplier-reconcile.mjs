@@ -59,7 +59,7 @@ t('a real suffix difference matches (Mill Haven vs Mill Haven Foods)',
 t('an exact name matches exactly', matchStrength('Sabinsa', 'Sabinsa') === 'exact');
 t('unrelated names never match', matchStrength('Prinova', 'Sabinsa') === null);
 t('every non-exact match is surfaced for confirmation, not applied silently',
-  fuzzy.every(v => v.matched === 'suffix' || v.matched === 'contains'));
+  fuzzy.length > 0 && fuzzy.every(v => v.matched === 'suffix' || v.matched === 'contains'));
 t('no folder is claimed twice', new Set(r.vendors.filter(v => v.has_folder).map(v => v.name)).size
   === r.vendors.filter(v => v.has_folder).length);
 

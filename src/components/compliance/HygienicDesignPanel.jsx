@@ -3,6 +3,7 @@ import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Clock, XCircle, AlertTriangle } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
+import { withSignature } from '../../lib/signature.js';
 
 const TRIGGER_REASONS = [
   { value: 'new_install', label: 'New Installation' },
@@ -188,8 +189,12 @@ export default function HygienicDesignPanel() {
     refresh();
   };
 
+  // The decision is the signed-in person's, proven with their password.
   const handleApprove = async (id, form) => {
-    await apiPut(`/hygienic-design/${id}/approve`, form);
+    try {
+      await withSignature((extra) => apiPut(`/hygienic-design/${id}/approve`, { ...form, ...extra }),
+        { title: 'Decide this design verification', detail: 'You are signing that you reviewed it yourself.' });
+    } catch (err) { if (!err?.cancelled) alert(err.message); return; }
     setApproving(null);
     refresh();
   };

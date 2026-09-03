@@ -71,6 +71,31 @@ t('the person who locked out cannot verify their own lockout', r.status === 400 
   t('and the record names THEM, not the body', body?.verified_by === 'Doors Operator', body?.verified_by);
   token = saved; }
 
+console.log('\nReleasing a lockout is the locker\'s own signed act');
+r = await put(`/loto/executions/${exId}/release`, { released_by: 'Somebody Typed' });
+t('no password → 403 signature_required', r.status === 403 && (await J(r))?.signature_required === true, String(r.status));
+{ const saved = token; token = opToken;
+  r = await put(`/loto/executions/${exId}/release`, { signature_password: PW.op });
+  t('SOMEONE ELSE CANNOT RELEASE IT, even with their password', r.status === 403 && /Only Doors Admin/.test((await J(r))?.error || ''), String(r.status));
+  token = saved; }
+r = await put(`/loto/executions/${exId}/release`, { released_by: 'Somebody Typed', signature_password: PW.admin });
+body = await J(r);
+t('the locker releases it, and the record names THEM', r.status === 200 && body?.released_by === 'Doors Admin' && body?.status === 'released', `${r.status} ${JSON.stringify(body).slice(0, 100)}`);
+
+console.log('\nDeciding a hygienic-design verification is QA\'s signed act');
+const dvId = uuid();
+{ const db = DB(); db.prepare("INSERT INTO design_verifications (id, equipment_id, trigger_reason, performed_by) VALUES (?, ?, 'new_install', 'Doors Admin')").run(dvId, eqId); db.close(); }
+r = await put(`/hygienic-design/${dvId}/approve`, { overall_result: 'approved', approved_by: 'Somebody Typed' });
+t('no password → 403 signature_required', r.status === 403 && (await J(r))?.signature_required === true, String(r.status));
+{ const saved = token; token = opToken;
+  r = await put(`/hygienic-design/${dvId}/approve`, { overall_result: 'approved', signature_password: PW.op });
+  t('a warehouse operator cannot decide it', r.status === 403 && !(await J(r))?.signature_required, String(r.status));
+  token = saved; }
+r = await put(`/hygienic-design/${dvId}/approve`, { overall_result: 'approved', approved_by: 'Somebody Typed', signature_password: PW.admin });
+t('QA decides it with their password', r.status === 200, String(r.status));
+{ const db = DB(); const d = db.prepare('SELECT approved_by FROM design_verifications WHERE id = ?').get(dvId); db.close();
+  t('and the record names the CALLER, not the body', d?.approved_by === 'Doors Admin', d?.approved_by); }
+
 console.log('\nA version row means one thing whichever door wrote it');
 const doc = await J(await post('/documents', { doc_number: 'SOP 777', title: 'Doors procedure', category: 'quality', revision: 'V1', status: 'active' }));
 const versions = () => { const db = DB(); const v = db.prepare('SELECT revision, snapshot, change_summary FROM sop_versions WHERE sop_id = ? ORDER BY rowid').all(doc.id); db.close(); return v.map(x => ({ ...x, snapshot: JSON.parse(x.snapshot) })); };

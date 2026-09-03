@@ -100,9 +100,8 @@ console.log('\nThe edit path is deliberately never challenged');
   const d2 = new Database(process.env.DBPATH);
   const rec = d2.prepare("SELECT id FROM sanitation_records WHERE notes LIKE '%dup-wo-today%' LIMIT 1").get();
   d2.close();
-  if (!rec) { t('a sanitation record was filed by the confirmed completion', false, 'none found'); }
-  else {
-    t('a sanitation record was filed by the confirmed completion', true);
+  t('a sanitation record was filed by the confirmed completion', !!rec, 'none found');
+  if (rec) {
     const r = await req(`/sanitation/${rec.id}`, { method: 'PUT', body: JSON.stringify({ notes: 'typo fixed' }) });
     t('editing it is not challenged', r.status !== 409, `got ${r.status}`);
   }

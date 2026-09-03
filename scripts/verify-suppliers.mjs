@@ -60,7 +60,7 @@ t('commit created the suppliers', committed?.result?.suppliers_created > 60, `${
 reg = await J(await req('/suppliers'));
 t('register now lists them', reg.suppliers.length === committed.result.suppliers_created);
 t('EVERY supplier is unqualified after import',
-  reg.suppliers.every(s => s.status === 'unqualified'));
+  reg.suppliers.length > 0 && reg.suppliers.every(s => s.status === 'unqualified'));
 t('the derived finding is present and non-zero',
   reg.summary.buying_without_qualification > 0, `${reg.summary.buying_without_qualification}`);
 t('the derived finding equals active-and-unqualified',

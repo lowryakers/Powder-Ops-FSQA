@@ -1583,3 +1583,29 @@ found are gone; `check:sensory` asserts that and was written to fail at import o
 
 **Not the app's to decide:** the DCR for 602-01 V2, whether the Flavor Approval form (a second
 controlled document) adopts the same shape, and the register row's revision. `docs/v2/queued/dcr-form-602-01-v2.md`.
+
+## D-051 — The fresh scan before the spine push: what it found, and the two halves of the foundation
+
+**3 September 2026.** With the register worked through, the codebase was swept again by the same eight
+classes, and every check was run: `npm run check` (lint, build, fresh boot, every list endpoint and
+eighteen pure checks) plus **`npm run verify:all`**, new — every live verify in one run, each on a fresh
+database against a real server with the stand-ins it needs. Those two commands are the foundation's
+definition from here: green on both is what "clean" means.
+
+**Found by the sweep, fixed:** releasing a lockout and deciding a hygienic-design verification both took
+the signer's name from the request body (the D7 shape, two doors the review missed); they are the
+caller's signed act now, and only the person who locked out can release. Five test assertions ran
+`.every()` over lists that could be empty. **Found by a check, not by reading:** the Artwork-Proofing
+feed (`master.csv`) had been answering *Not authenticated* since the NULL-map rule tightened — the
+module guard refuses a session-less request before the router's public handler runs — and the proofer
+caches and reports nothing, so nothing said. Mounted ahead of the guard now (D-050's sibling lesson: a
+public door needs its own mount, not a public path inside a guarded router).
+
+**A test premise went stale, not the code:** `verify-qms-signature` created its QA users with no module
+map, which review 03 made an empty account. The users carry their grants now. The lesson is the reason
+`verify:all` exists — a live verify that is not re-run after the rule it leans on changes is a claim.
+
+**Left as notes, deliberately:** the laptop-facing wide tables (they scroll; nothing is unreachable),
+the typed approver on document activation, the org chart and the NFP in-app decision (a regulatory
+name that legitimately differs from the operator keying it, all three documented as such), and the
+Operator View's tab strip (a deliberate scroller).

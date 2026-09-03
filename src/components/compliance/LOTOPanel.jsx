@@ -390,10 +390,12 @@ export default function LOTOPanel() {
     refreshExecs();
   };
 
+  // Only the person who locked out releases, and they prove it is them.
   const handleRelease = async (id) => {
-    const name = prompt('Released by (must be the person who locked out):');
-    if (!name) return;
-    await apiPut(`/loto/executions/${id}/release`, { released_by: name });
+    try {
+      await withSignature((extra) => apiPut(`/loto/executions/${id}/release`, extra),
+        { title: 'Release your lockout', detail: 'Only the person who applied the lock can release it.' });
+    } catch (err) { if (!err?.cancelled) alert(err.message); return; }
     refreshExecs();
   };
 

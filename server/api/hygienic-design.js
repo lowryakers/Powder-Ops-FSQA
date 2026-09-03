@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 import { stampEquipmentReadiness } from '../equipment-readiness.js';
 
 const router = Router();
@@ -77,10 +78,17 @@ router.put('/:id/approve', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM design_verifications WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { overall_result, conditions, approved_by, notes } = req.body;
-  if (!overall_result || !approved_by) {
-    return res.status(400).json({ error: 'overall_result and approved_by required' });
-  }
+  // Deciding a hygienic-design verification is QA's signature on whether a
+  // machine is cleanable. The name used to come from the request body with no
+  // role check and no password — the D7 shape. The approver is the caller,
+  // proven now.
+  const canDecide = req.user?.role === 'admin' || req.user?.role === 'supervisor'
+    || ['qa', 'quality'].includes(String(req.user?.department || '').toLowerCase());
+  if (!canDecide) return res.status(403).json({ error: 'QA, a supervisor or an admin decides a design verification.' });
+  const { overall_result, conditions, notes } = req.body;
+  if (!overall_result) return res.status(400).json({ error: 'overall_result is required' });
+  if (!gateSignature(req, res, { action: 'hygienic_design_approve' })) return;
+  const approved_by = req.user.name;
   db.prepare(`
     UPDATE design_verifications SET overall_result=?, conditions=?, approved_by=?, approved_at=datetime('now'), notes=?, updated_at=datetime('now')
     WHERE id=?
@@ -90,7 +98,7 @@ router.put('/:id/approve', (req, res) => {
   // afterwards and the checklist says the verification is against something
   // else, instead of a green tick over equipment nobody has looked at.
   if (existing.equipment_id) stampEquipmentReadiness(db, existing.equipment_id, ['hygienic_design'], req.user?.name);
-  logAudit(req.user, `design_verification_${overall_result}`, 'design_verification', req.params.id, `${overall_result}: ${conditions || 'No conditions'}`);
+  logAudit(req.user, `design_verification_${overall_result}`, 'design_verification', req.params.id, { summary: `${overall_result}: ${conditions || 'No conditions'}`, ...signatureEvidence() }, existing, null);
   res.json({ success: true });
 });
 

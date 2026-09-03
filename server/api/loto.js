@@ -154,14 +154,21 @@ router.put('/executions/:id/release', (req, res) => {
   const existing = db.prepare('SELECT * FROM loto_executions WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Execution not found' });
 
-  const { released_by, release_notes } = req.body;
-  if (!released_by) return res.status(400).json({ error: 'released_by is required' });
+  // A lock is released by the person who applied it — that is the whole of
+  // lockout. The name used to be typed into a prompt; it is the caller now,
+  // proven with their password, and refused for anyone else.
+  const { release_notes } = req.body;
+  if (!gateSignature(req, res, { action: 'loto_release' })) return;
+  const released_by = req.user.name;
+  if (String(existing.locked_by || '').trim().toLowerCase() !== released_by.trim().toLowerCase()) {
+    return res.status(403).json({ error: `Only ${existing.locked_by} can release this lockout — the person who applied it.` });
+  }
 
   db.prepare("UPDATE loto_executions SET released_by=?, released_at=datetime('now'), release_notes=?, status='released', updated_at=datetime('now') WHERE id=?")
     .run(released_by, release_notes || null, req.params.id);
 
   const updated = db.prepare('SELECT * FROM loto_executions WHERE id = ?').get(req.params.id);
-  logAudit(released_by, 'release_lockout', 'loto_execution', req.params.id, { release_notes }, existing, updated);
+  logAudit(req.user, 'release_lockout', 'loto_execution', req.params.id, { release_notes, ...signatureEvidence() }, existing, updated);
   res.json(updated);
 });
 

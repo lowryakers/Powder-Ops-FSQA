@@ -26,8 +26,10 @@ const { default: Database } = await import('better-sqlite3');
 }
 
 const db = new Database(process.env.DBPATH);
-const mkUser = (id, name, dept) => db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at)
-  VALUES (?,?,?,'supervisor',?,1,?,datetime('now','+7 day'))`).run(id, name, name, dept, 'SC-' + id);
+// NULL module_access is an EMPTY account (review 03), so the QA users here carry
+// an explicit edit grant on the modules the test signs in.
+const mkUser = (id, name, dept) => db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
+  VALUES (?,?,?,'supervisor',?,1,?,datetime('now','+7 day'), '{"deviations":"edit","component-signout":"edit","knife-accountability":"edit","maintenance-signout":"edit"}')`).run(id, name, name, dept, 'SC-' + id);
 mkUser('qa-1', 'Sig QA One', 'qa');
 mkUser('qa-2', 'Sig QA Two', 'qa');
 db.close();
