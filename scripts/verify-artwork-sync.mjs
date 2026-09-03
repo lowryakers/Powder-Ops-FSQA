@@ -74,7 +74,7 @@ t('and the last snapshot still answers', body?.version_id === v2);
 r = await post(`/artwork/ingest?token=${TOKEN}`, { job_id: 'job-2', sku: product.sku, gtin: product.gtin, component: 'primary', checks: [{ name: 'ingredients', result: 'pass' }], snapshot: { ...SNAP, ingredients: 'retry wording' } });
 t('a RETRY of the same job replaces its snapshot rather than adding a second', (await J(r))?.replaced === true
   && /retry wording/.test((await J(await fetch(`${B}/artwork/snapshot?gtin=${product.gtin}`, { headers: { Authorization: `Bearer ${token}` } })))?.snapshot?.ingredients || ''));
-{ const db = new Database(process.env.DBPATH, { readonly: true }); const n = db.prepare('SELECT COUNT(*) c FROM artwork_snapshots WHERE sku = ?').get(product.sku).c; db.close();
+{ const db = new Database(process.env.DBPATH, { readonly: true }); let n = -1; try { n = db.prepare('SELECT COUNT(*) c FROM artwork_snapshots WHERE sku = ?').get(product.sku).c; } catch { /* no table on old code — a failure, not a crash */ } db.close();
   t('two snapshots on file for three runs', n === 2, String(n)); }
 
 console.log('\nThe version carries its snapshot in the artwork history');

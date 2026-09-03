@@ -11,7 +11,7 @@ Written down because a session is disposable and the repository is the thread.
 column on `master.csv`, blank until known); `artwork_snapshots` stored on ingest in the same transaction as the
 version and its checks, frozen, a retry of the same job replacing rather than doubling; `GET /api/artwork/snapshot?gtin=&sku=`
 declared before `/sku/:sku`; the version detail carries its snapshot and the SKU history flags which versions have
-one. `npm run verify:artwork`, 20 live assertions, control fails 14.
+one. `npm run verify:artwork`, 20 live assertions; against the previous commit's server 18 fail.
 
 **Found by the check, not by reading:** `GET /api/products/master.csv` had been returning *Not authenticated* to the
 proofer since the NULL-map rule tightened — `requireModuleWrite` 401s a session-less request before the router's
