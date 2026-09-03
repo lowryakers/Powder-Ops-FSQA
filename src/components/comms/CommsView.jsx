@@ -3,15 +3,15 @@ import { useState, useEffect, useCallback, useRef, useMemo, Fragment, memo } fro
 import { createPortal } from 'react-dom';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
-import { useDragPager } from '../../lib/useDragPager';
 import { setAppBadge } from '../../lib/appBadge';
 import { notifyDataChanged } from '../../lib/dataChanged';
 import { canDeleteMessage, canEditMessage } from '../../../shared/comms-permissions.js';
-import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronLeft, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera, CornerUpLeft } from 'lucide-react';
+import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera, CornerUpLeft } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { shareFile as shareAttachment, canNativeShare } from '../../lib/shareFile.js';
 import NotificationStatus from './NotificationStatus.jsx';
-import ZoomableImage from './ZoomableImage.jsx';
+import AttachmentViewer from './AttachmentViewer.jsx';
+import { copyImage, canCopyImage } from '../../lib/copyImage.js';
 import { useSwipeBack } from '../../lib/useSwipeBack';
 import { useCompactLayout } from '../../lib/useCompactLayout.js';
 import { useSeenAfterDwell } from '../../lib/useSeenAfterDwell.js';
@@ -21,7 +21,6 @@ import { useFormatKeys } from '../../lib/useFormatKeys.js';
 import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 import { looksLikeTask, suggestTitle, mentionedUsers, teamForChannel } from '../../lib/taskIntent.js';
-import { pdfViewerUrl } from '../../lib/pdfUrl';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
 // The reverse trip: a live subscription reports its applicationServerKey as an
@@ -381,6 +380,25 @@ async function downloadAttachment(a) {
 
 const isAudio = (a) => (a.content_type || '').startsWith('audio/');
 
+// The thumbnail's Copy button says what happened for two seconds, in place.
+function CopyImageButton({ a }) {
+  const [state, setState] = useState(null);
+  const go = async (e) => {
+    e.stopPropagation();
+    const r = await copyImage(a, { share: canNativeShare ? shareAttachment : null });
+    if (r === 'shared') return;
+    setState(r === 'copied' ? 'ok' : 'no');
+    setTimeout(() => setState(null), 2000);
+  };
+  return (
+    <button type="button" onClick={go} data-tip={state === 'ok' ? 'Copied' : state === 'no' ? 'Cannot copy here — download instead' : 'Copy image'}
+      data-copy-image
+      className={`p-1.5 rounded-lg text-white ${state === 'ok' ? 'bg-green-600' : state === 'no' ? 'bg-amber-600' : 'bg-black/55 hover:bg-black/75'}`}>
+      {state === 'ok' ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  );
+}
+
 function Attachment({ a, onOpen }) {
   const [broken, setBroken] = useState(false);
   // Audio (voice notes) checked BEFORE video: audio/webm would otherwise
@@ -424,6 +442,12 @@ function Attachment({ a, onOpen }) {
             className="rounded-lg border border-gray-200 max-h-64 object-contain" />
         </button>
         <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity">
+          {/* Copy puts the IMAGE on the clipboard, so it pastes straight into a
+              text. Where the browser cannot (desktop Firefox) it falls back to
+              the share sheet, and where neither exists it is not offered. */}
+          {(canCopyImage || canNativeShare) && (
+            <CopyImageButton a={a} />
+          )}
           {/* Share opens the phone's own sheet with the image attached, so it
               can go straight into a text. Hidden where the API doesn't exist
               (desktop Firefox) rather than offered to fail. */}
@@ -464,92 +488,10 @@ function Attachment({ a, onOpen }) {
   );
 }
 
-// Full-screen viewer for a message's attachments: ← → (buttons, keys, or swipe)
-// move through every file without closing; Esc / backdrop / ✕ closes. Non-image
-// files show a download card so mixed sets still page smoothly.
-function Lightbox({ atts, index, onNav, onClose }) {
-  const a = atts[index];
-  // Follow-the-finger paging between attachments.
-  const { trackRef, containerProps } = useDragPager({ index, count: atts.length, onChange: (i) => onNav(i - index) });
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose();
-      else if (e.key === 'ArrowRight') onNav(1);
-      else if (e.key === 'ArrowLeft') onNav(-1);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onNav, onClose]);
-  if (!a) return null;
-  return (
-    <div className="fixed inset-0 bg-black/85 z-[70] flex items-center justify-center overflow-hidden" onClick={onClose}
-      {...containerProps}>
-      <button onClick={e => { e.stopPropagation(); onClose(); }} className="absolute top-3 right-3 p-2 text-white/70 hover:text-white z-10"><X size={24} /></button>
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 text-white/70 text-sm select-none">
-        {index + 1} / {atts.length} · <span className="text-white/90">{a.filename}</span>
-      </div>
-      {atts.length > 1 && (
-        <button onClick={e => { e.stopPropagation(); onNav(-1); }}
-          className="absolute left-2 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 text-white hover:bg-white/25 z-10"><ChevronLeft size={26} /></button>
-      )}
-      {atts.length > 1 && (
-        <button onClick={e => { e.stopPropagation(); onNav(1); }}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 text-white hover:bg-white/25 z-10"><ChevronRight size={26} /></button>
-      )}
-      {/* A DOCUMENT NEEDS MORE ROOM THAN A PHOTO, and it cannot be pinched.
-          Photos and video are capped so they sit inside the frame with the
-          controls; a PDF is handed the whole box, because the browser's own
-          viewer spends a third of its width on a thumbnail rail before it draws
-          a single page. In a docked chat panel or on a phone that left the page
-          itself a couple of centimetres across — legible only in the sense that
-          pixels were present. Same reason "Open full size" is offered on the
-          document itself rather than only in the footer: below about 700px no
-          amount of sizing makes an embedded letter-size page readable, and a
-          real tab is the honest answer. */}
-      <div ref={trackRef}
-        className={`will-change-transform ${isPdf(a) ? 'w-[98vw] h-[90vh] max-w-6xl' : 'max-w-[92vw] max-h-[84vh]'}`}
-        onClick={e => e.stopPropagation()}>
-        {browserRenderable(a) && a.url ? (
-          <ZoomableImage src={a.url} alt={a.filename}
-            onError={e => { e.target.outerHTML = '<div class="bg-white rounded-xl p-6 text-sm text-gray-700">This photo could not be displayed — use Download below to view it.</div>'; }} />
-        ) : videoPlayable(a) && a.url ? (
-          <video src={a.url} controls playsInline autoPlay className="max-w-[92vw] max-h-[84vh] bg-black rounded-lg" />
-        ) : isPdf(a) && a.url ? (
-          <div className="relative w-full h-full">
-            <iframe src={pdfViewerUrl(a.url)} title={a.filename} className="w-full h-full bg-white rounded-lg" />
-            <a href={a.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-              className="absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-900/85 text-white text-xs font-medium shadow-lg hover:bg-gray-900">
-              <ExternalLink size={13} /> Open full size
-            </a>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl p-6 flex flex-col items-center gap-3 min-w-[260px]">
-            <FileText size={40} className="text-powder-600" />
-            <div className="text-sm font-medium text-gray-900 text-center break-all max-w-[70vw]">{a.filename}</div>
-            <div className="text-xs text-gray-400">{fmtSize(a.size)}</div>
-            {a.is_image && !browserRenderable(a) && (
-              <div className="text-[11px] text-gray-500 text-center max-w-[280px]">This photo format (HEIC/TIFF) can't be previewed in the browser — download it to view.</div>
-            )}
-            {/* Goes through downloadAttachment, not a bare <a download> — the
-                presigned URL is cross-origin so the attribute is ignored. */}
-            <button type="button" onClick={e => { e.stopPropagation(); downloadAttachment(a); }}
-              className="mt-1 flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
-              <Download size={15} /> Download
-            </button>
-          </div>
-        )}
-      </div>
-      <div className="absolute bottom-4 right-4 flex items-center gap-3">
-        <button type="button" onClick={e => { e.stopPropagation(); downloadAttachment(a); }}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium">
-          <Download size={13} /> Download
-        </button>
-        <a href={a.url || undefined} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-          className="text-white/60 hover:text-white text-xs underline">Open in new tab</a>
-      </div>
-    </div>
-  );
-}
+// The full-screen viewer lives in AttachmentViewer.jsx, on document.body —
+// see the note there for why it cannot render inside the message row.
+const VIEWER_HELPERS = { browserRenderable, videoPlayable, isPdf };
+const VIEWER_ACTIONS = { download: downloadAttachment, share: shareAttachment, canShare: canNativeShare };
 
 // ReadyBot's offer: this message reads like an assignment — track it instead of
 // letting it scroll away. Everything is pre-filled from the message and the
@@ -2168,7 +2110,8 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
           </div>
         )}
         {lightbox !== null && m.attachments?.length > 0 && (
-          <Lightbox atts={m.attachments} index={lightbox}
+          <AttachmentViewer atts={m.attachments} index={lightbox}
+            helpers={VIEWER_HELPERS} actions={VIEWER_ACTIONS}
             onNav={(d) => setLightbox(i => (i + d + m.attachments.length) % m.attachments.length)}
             onClose={() => setLightbox(null)} />
         )}

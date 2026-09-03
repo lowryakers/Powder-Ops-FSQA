@@ -55,6 +55,7 @@
     "verify:cadence": "node scripts/verify-review-cadence.mjs",
     "verify:mobile": "node scripts/verify-mobile-cards.mjs",
     "verify:writedoors": "node scripts/verify-write-doors.mjs",
+    "verify:viewer": "node scripts/verify-image-viewer.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {
