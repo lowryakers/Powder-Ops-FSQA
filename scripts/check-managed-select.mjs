@@ -17,8 +17,8 @@ t('an active value is offered once, unchanged', JSON.stringify(withCurrent(opts,
 t('a blank value adds nothing', withCurrent(opts, '').length === 2 && withCurrent(opts, null).length === 2);
 const r = withCurrent(opts, 'Restroom');
 t('A RETIRED VALUE IS STILL OFFERABLE', r.length === 3 && r[2].value === 'Restroom' && r[2].retired === true);
-t('...and labelled so nobody picks it for a new record', /no longer offered/.test(r[2].label));
-t('a fallback label names what the value was', withCurrent(opts, 'eq-9', 'Old scale')[2].label === 'Old scale (no longer offered)');
+t('...and labelled so nobody picks it for a new record', /no longer offered/.test(r[2]?.label));
+t('a fallback label names what the value was', withCurrent(opts, 'eq-9', 'Old scale')[2]?.label === 'Old scale (no longer offered)');
 t('bare strings are normalised to objects', withCurrent(['kg', 'lb'], 'g').map(o => o.value).join(',') === 'kg,lb,g'
   && withCurrent(['kg'], 'kg')[0].label === 'kg');
 t('a numeric stored value matches a string option', withCurrent(['1', '2'], 1).length === 2);
