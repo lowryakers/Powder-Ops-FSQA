@@ -16,6 +16,7 @@ import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import { keepCurrent } from '../../lib/selectOptions';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 // Columns as data for both tables on this module. Entries with no key are the
 // expand chevron and the actions cell — neither is a value to order by.
@@ -299,6 +300,23 @@ export default function CalibrationPanel() {
     { id: 'scale-verification', label: 'Scale Verification', icon: Scale },
   ], []);
   const { tabs: calTabs, tab, setTab } = useModuleTabs({ id: 'calibration', tabs: CAL_TABS });
+  // The certificate control, once, for the table cell and the phone card.
+  const certControl = (r) => r.certificate_file ? (
+    <button onClick={() => downloadCert(r)} className="p-1 text-powder-600 hover:text-powder-800 inline-flex items-center gap-1 text-xs" data-tip="Download calibration certificate">
+      <FileText size={15} /><span className="md:hidden">Certificate</span>
+    </button>
+  ) : canEdit ? (
+    <label className="p-1 text-gray-300 hover:text-powder-600 cursor-pointer inline-flex items-center gap-1 text-xs" data-tip="Upload calibration certificate">
+      <Upload size={15} /><span className="md:hidden">Upload certificate</span>
+      <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
+        onChange={e => { uploadCert(r, e.target.files?.[0]); e.target.value = ''; }} />
+    </label>
+  ) : null;
+  const resultPill = (r) => (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.result === 'pass' ? 'bg-green-100 text-green-800' : r.result === 'fail' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+      {r.result}
+    </span>
+  );
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
 
@@ -566,7 +584,24 @@ export default function CalibrationPanel() {
       )}
 
       {tab === 'records' && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <RecordCards count={recSort.sorted.length} empty="No calibration records yet">
+          {recSort.sorted.map(r => (
+            <RecordCard key={r.id} title={r.instrument_name}
+              subtitle={`${formatDate(r.calibrated_at)} · ${r.calibrated_by}`}
+              badge={resultPill(r)}
+              fields={[
+                { label: 'Before', value: r.reading_before },
+                { label: 'After', value: r.reading_after },
+                { label: 'Standard', value: r.standard_used },
+                { label: 'Next due', value: r.next_due },
+                { label: 'Notes', value: r.notes, wide: true },
+              ]}
+              actions={certControl(r)} />
+          ))}
+        </RecordCards>
+      )}
+      {tab === 'records' && (
+        <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -583,28 +618,14 @@ export default function CalibrationPanel() {
                   <td className="px-2 py-3"><ExpandCell open={expandRec.isExpanded(r.id)} /></td>
                   <td className="px-4 py-3 font-medium w-full">{r.instrument_name}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(r.calibrated_at)}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.result === 'pass' ? 'bg-green-100 text-green-800' : r.result === 'fail' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                      {r.result}
-                    </span>
-                  </td>
+                  <td className="px-4 py-3">{resultPill(r)}</td>
                   <td className="px-4 py-3 text-gray-600">{r.reading_before || '—'}</td>
                   <td className="px-4 py-3 text-gray-600">{r.reading_after || '—'}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.calibrated_by}</td>
                   <td className="px-4 py-3 text-gray-600">{r.standard_used || '—'}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.next_due || '—'}</td>
                   <td className="px-4 py-3 whitespace-nowrap" onClick={stopRowClick}>
-                    {r.certificate_file ? (
-                      <button onClick={() => downloadCert(r)} className="p-1 text-powder-600 hover:text-powder-800" data-tip="Download calibration certificate">
-                        <FileText size={15} />
-                      </button>
-                    ) : canEdit ? (
-                      <label className="p-1 text-gray-300 hover:text-powder-600 cursor-pointer inline-flex" data-tip="Upload calibration certificate">
-                        <Upload size={15} />
-                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
-                          onChange={e => { uploadCert(r, e.target.files?.[0]); e.target.value = ''; }} />
-                      </label>
-                    ) : <span className="text-gray-300">—</span>}
+                    {certControl(r) || <span className="text-gray-300">—</span>}
                   </td>
                 </tr>
                 {expandRec.isExpanded(r.id) && (

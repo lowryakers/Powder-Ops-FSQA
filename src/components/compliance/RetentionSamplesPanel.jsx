@@ -12,6 +12,7 @@ import {
   Archive, Plus, Search, FlaskConical, Trash2, Pencil, X, AlertTriangle,
   Boxes, CalendarClock, Upload, Check,
 } from 'lucide-react';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 // The Retention Sample log — the plant's physical library of what it made.
 //
@@ -450,8 +451,8 @@ function BoxImportModal({ onClose, onDone }) {
                   )}
 
                   <div className="rounded-lg border border-gray-200 overflow-hidden">
-                    <div className="max-h-64 overflow-y-auto">
-                      <table className="w-full text-xs">
+                    <div className="max-h-64 overflow-y-auto overflow-x-auto">
+                      <table className="w-full text-xs min-w-[26rem]">
                         <thead className="bg-gray-50 sticky top-0">
                           <tr>
                             <th className="text-left px-2 py-1.5 font-medium text-gray-600">Item</th>
@@ -567,7 +568,22 @@ function LotTrace() {
         </p>
       )}
       {rows?.length > 0 && (
-        <div className="overflow-x-auto">
+        <RecordCards>
+          {rows.map(r => (
+            <RecordCard key={r.id} title={r.item_name || r.item_number || '—'} subtitle={r.stage}
+              badge={<span className={`text-xs font-medium ${r.box_status === 'destroyed' ? 'text-red-700' : 'text-green-700'}`}>
+                {r.box_status === 'destroyed' ? 'destroyed' : (r.box_status || 'held')}</span>}
+              fields={[
+                { label: 'Retains', value: r.retain_count },
+                { label: 'Lab', value: r.lab_count },
+                { label: 'Box', value: r.box_no },
+                { label: 'Box due', value: r.destruction_date },
+              ]} />
+          ))}
+        </RecordCards>
+      )}
+      {rows?.length > 0 && (
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>

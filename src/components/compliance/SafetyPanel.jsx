@@ -6,6 +6,7 @@ import {
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import { formatDate } from '../../lib/datetime.js';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 /**
  * Safety: the three controlled safety forms in one place.
@@ -287,7 +288,25 @@ function FirstAidLog({ form, user }) {
       {!rows ? <p className="text-sm text-gray-400">Loading…</p> : filtered.length === 0 ? (
         <p className="text-sm text-gray-500">{q ? 'Nothing matches.' : 'No injuries recorded.'}</p>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
+        <>
+        <RecordCards>
+          {filtered.map(r => {
+            const col = (k) => form?.columns?.find(c => c.key === k)?.label || k;
+            return (
+              <RecordCard key={r.id} title={r.employee_name} subtitle={formatDate(r.injury_date)}
+                fields={[
+                  { label: col('injury_description'), value: r.injury_description, wide: true },
+                  { label: col('explanation'), value: r.explanation, wide: true },
+                  { label: col('supervisor_name'), value: r.supervisor_name ? `${r.supervisor_name}${r.supervisor_date ? ` · ${formatDate(r.supervisor_date)}` : ''}` : null, wide: true },
+                ]}
+                actions={<>
+                  <button type="button" onClick={() => setEditing(r)} className="text-xs text-gray-500 hover:text-powder-700 inline-flex items-center gap-1"><Pencil size={13} /> Edit</button>
+                  {isAdmin && <button type="button" onClick={() => remove(r.id)} className="text-xs text-gray-500 hover:text-red-600 inline-flex items-center gap-1"><Trash2 size={13} /> Delete</button>}
+                </>} />
+            );
+          })}
+        </RecordCards>
+        <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="text-[11px] text-gray-500 uppercase tracking-wide border-b border-gray-200">
@@ -316,6 +335,7 @@ function FirstAidLog({ form, user }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

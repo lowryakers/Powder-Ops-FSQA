@@ -49,6 +49,7 @@
     "verify:prodmirror": "node scripts/verify-production-mirror.mjs",
     "verify:docwithdraw": "node scripts/verify-document-withdraw.mjs",
     "verify:cadence": "node scripts/verify-review-cadence.mjs",
+    "verify:mobile": "node scripts/verify-mobile-cards.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {

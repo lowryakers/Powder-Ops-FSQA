@@ -8,6 +8,7 @@ import ModuleTabs from '../common/ModuleTabs.jsx';
 import CopyButton from '../common/CopyButton.jsx';
 import { downloadFile } from '../../lib/downloadFile.js';
 import { SignaturePad } from '../common/SignatureCanvas.jsx';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 // Typed-confirmation dialog for permanent, irreversible bulk deletion.
 function ConfirmDeleteModal({ count, onConfirm, onClose }) {
@@ -163,7 +164,20 @@ function LotLookup() {
           </div>
 
           {result.matches?.length > 0 && (
-            <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden bg-white">
+            <RecordCards className="mt-3">
+              {result.matches.map(m => (
+                <RecordCard key={m.id} title={m.item_number} subtitle={m.item_description}
+                  badge={<StatusBadge status={m.status} />}
+                  fields={[
+                    { label: 'Lot', value: m.lot_number },
+                    { label: 'Date', value: m.date_sent || m.date_of_results },
+                    { label: 'Tests', value: m.tests_requested, wide: true },
+                  ]} />
+              ))}
+            </RecordCards>
+          )}
+          {result.matches?.length > 0 && (
+            <div className="hidden md:block mt-3 border border-gray-200 rounded-lg overflow-hidden bg-white">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>
@@ -317,8 +331,9 @@ function COAUploadModal({ onClose, onImported }) {
             {form.test_results?.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium text-gray-900 mb-2">Extracted Test Results ({form.test_results.length})</h4>
-                <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                  <table className="w-full text-sm">
+                {/* A grid of inputs, not a log: it pans rather than clips. */}
+                <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-x-auto">
+                  <table className="w-full text-sm min-w-[30rem]">
                     <thead className="bg-gray-100">
                       <tr>
                         <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Test</th>
@@ -993,8 +1008,8 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           </div>
 
           {detail.test_results?.length > 0 && (
-            <div className="border border-gray-200 rounded-lg overflow-hidden mb-2">
-              <table className="w-full text-sm">
+            <div className="border border-gray-200 rounded-lg overflow-x-auto mb-2">
+              <table className="w-full text-sm min-w-[28rem]">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Test</th>

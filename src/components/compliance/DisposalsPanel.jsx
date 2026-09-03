@@ -6,6 +6,7 @@ import FileUpload from '../FileUpload';
 import { Plus, Search, Edit2, Trash2, Download, Upload, X, Trash, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
 import TextCell from '../common/TextCell.jsx';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 const CATEGORIES = [
   { value: '', label: '—' },
@@ -269,7 +270,20 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
         </div>
 
         <div className="px-5 py-4 max-h-[55vh] overflow-y-auto space-y-4">
-          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <RecordCards>
+            {(d.items || []).map(it => (
+              <RecordCard key={it.id} title={it.item_name} subtitle={it.category ? (CAT_LABEL[it.category] || it.category) : null}
+                fields={[
+                  { label: 'Part No', value: it.item_number },
+                  { label: 'Lot', value: it.lot_number },
+                  { label: 'Qty', value: it.quantity },
+                  { label: 'Date', value: it.date_disposed },
+                  { label: 'Reason', value: it.reason_disposed, wide: true },
+                  { label: 'Write-off', value: it.write_off_number ? <span className="whitespace-pre-line">{it.write_off_number}</span> : null, wide: true },
+                ]} />
+            ))}
+          </RecordCards>
+          <div className="hidden md:block overflow-x-auto border border-gray-200 rounded-lg">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>

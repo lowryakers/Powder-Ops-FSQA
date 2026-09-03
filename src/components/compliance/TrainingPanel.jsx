@@ -10,6 +10,7 @@ import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 import FilePreview from '../FilePreview.jsx';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 // Columns as data for the Records tab. Evidence and the actions cell have no
 // key — a link is not a value to order by.
@@ -1378,6 +1379,18 @@ export default function TrainingPanel() {
   // deep-linking nor the remembered-last-tab every other module has, so a link
   // to the Records tab always landed on the matrix.
   const { tabs: trainingTabs, tab: view, setTab: setView } = useModuleTabs({ id: 'training', tabs: TABS });
+  // One definition each, rendered by the table row AND the phone card, so the
+  // two layouts cannot disagree about a record's state or where its paper is.
+  const duePill = (d) => d.overdue
+    ? <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full"><AlertTriangle size={12} /> Overdue</span>
+    : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full"><Clock size={12} /> Due soon</span>;
+  const evidenceLink = (r) => r.evidence_key
+    ? <button type="button" onClick={() => openEvidence(r)} className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><Paperclip size={12} /> View scan</button>
+    : r.document_url
+      ? <a href={r.document_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> View</a>
+      : r.gdrive_url
+        ? <a href={r.gdrive_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> Drive</a>
+        : null;
   const [importing, setImporting] = useState(false);
   const [importingLog, setImportingLog] = useState(false);
   const [importingScans, setImportingScans] = useState(false);
@@ -1508,7 +1521,16 @@ export default function TrainingPanel() {
           {(due || []).length === 0 ? (
             <div className="text-center py-10 text-gray-500 flex flex-col items-center gap-2"><CheckCircle size={28} className="text-green-500" /> No retraining due in the next 30 days.</div>
           ) : (
-            <table className="w-full text-sm">
+            <>
+            <RecordCards className="p-2">
+              {(due || []).map(d => (
+                <RecordCard key={d.id} title={d.employee_name}
+                  subtitle={`${d.course_code ? `${d.course_code} — ` : ''}${d.course_title}`}
+                  badge={duePill(d)}
+                  fields={[{ label: 'Due', value: d.next_due_date }]} />
+              ))}
+            </RecordCards>
+            <table className="hidden md:table w-full text-sm">
               <thead className="bg-gray-50 border-b"><tr>
                 <th className="text-left px-4 py-2 font-medium text-gray-600">Employee</th>
                 <th className="text-left px-4 py-2 font-medium text-gray-600">Course</th>
@@ -1521,15 +1543,12 @@ export default function TrainingPanel() {
                     <td className="px-4 py-2 font-medium text-gray-800">{d.employee_name}</td>
                     <td className="px-4 py-2 text-gray-600">{d.course_code ? `${d.course_code} — ` : ''}{d.course_title}</td>
                     <td className="px-4 py-2 text-gray-600">{d.next_due_date}</td>
-                    <td className="px-4 py-2">
-                      {d.overdue
-                        ? <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full"><AlertTriangle size={12} /> Overdue</span>
-                        : <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full"><Clock size={12} /> Due soon</span>}
-                    </td>
+                    <td className="px-4 py-2">{duePill(d)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </>
           )}
         </div>
       )}
@@ -1572,7 +1591,20 @@ export default function TrainingPanel() {
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search employee or course…"
               className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <RecordCards count={recSort.sorted.length} empty="No training records yet.">
+            {recSort.sorted.map(r => (
+              <RecordCard key={r.id} title={r.employee_name} subtitle={r.course_title || r.training_topic || '—'}
+                fields={[
+                  { label: 'Completed', value: r.completion_date },
+                  { label: 'Score', value: r.score != null ? `${r.score}%` : null },
+                ]}
+                actions={(evidenceLink(r) || canEdit) ? <>
+                  {evidenceLink(r)}
+                  {canEdit && <button onClick={() => setCompletion(r)} className="text-xs text-gray-500 hover:text-powder-600 inline-flex items-center gap-1"><Edit2 size={12} /> Edit</button>}
+                </> : null} />
+            ))}
+          </RecordCards>
+          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b"><tr>
                 {TRAINING_RECORD_COLUMNS.map((c, i) => (
@@ -1592,13 +1624,7 @@ export default function TrainingPanel() {
                           different field from the hand-attached document_url,
                           and the reason this column used to read "—" on rows
                           whose paper was stored all along. */}
-                      {r.evidence_key
-                        ? <button type="button" onClick={() => openEvidence(r)} className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><Paperclip size={12} /> View scan</button>
-                        : r.document_url
-                          ? <a href={r.document_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> View</a>
-                          : r.gdrive_url
-                            ? <a href={r.gdrive_url} target="_blank" rel="noreferrer" className="text-powder-600 hover:underline inline-flex items-center gap-1 text-xs"><ExternalLink size={12} /> Drive</a>
-                            : <span className="text-gray-300 text-xs">—</span>}
+                      {evidenceLink(r) || <span className="text-gray-300 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-2 text-right">
                       {canEdit && <button onClick={() => setCompletion(r)} className="p-1.5 text-gray-400 hover:text-powder-600 rounded-lg"><Edit2 size={14} /></button>}

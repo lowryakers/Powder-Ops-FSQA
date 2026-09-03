@@ -11,6 +11,7 @@ import { SignaturePad } from '../common/SignatureCanvas.jsx';
 import { formatDate } from '../../lib/datetime.js';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
 import SearchSelect from '../common/SearchSelect.jsx';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 /**
  * Wet signatures on a controlled document — the drawn image beside name,
@@ -1156,7 +1157,32 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
           <p className="text-sm">No {typeLabel.toLowerCase()}s yet.{canEdit ? ` Click "New ${typeLabel}" to add one.` : ''}</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <>
+        <RecordCards>
+          {filtered.map(d => (
+            <RecordCard key={d.id} onClick={() => setViewing(d)}
+              title={<><span className="font-mono text-xs text-gray-600 mr-2">{d.doc_number || '—'}</span>{d.title}</>}
+              badge={<StatusBadge status={d.status} />}
+              stripe={selected.has(d.id) ? 'border-l-powder-500' : ''}
+              fields={[
+                { label: 'Category', value: cap(d.category) },
+                { label: 'Rev', value: d.revision },
+                { label: 'Owner', value: d.owner },
+                { label: 'Review due', value: d.review_due },
+              ]}
+              actions={<>
+                {canEdit && (
+                  <button onClick={() => toggleOne(d.id)} className="text-xs text-gray-500 hover:text-powder-600 inline-flex items-center gap-1">
+                    {selected.has(d.id) ? <CheckSquare size={14} className="text-powder-600" /> : <Square size={14} />} {selected.has(d.id) ? 'Selected' : 'Select'}
+                  </button>
+                )}
+                <button onClick={() => downloadDocPdf(d.id, `${(d.doc_number || typeLabel)}_${d.title}`.replace(/[^a-zA-Z0-9_-]/g, '_') + '.pdf')}
+                  className="text-xs text-gray-500 hover:text-gray-700 inline-flex items-center gap-1"><Download size={14} /> PDF</button>
+                {canEdit && <button onClick={() => setEditing(d)} className="text-xs text-gray-500 hover:text-powder-600 inline-flex items-center gap-1"><Edit2 size={14} /> Edit</button>}
+              </>} />
+          ))}
+        </RecordCards>
+        <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
@@ -1208,6 +1234,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
             </table>
           </div>
         </div>
+        </>
       )}
 
       {creating && (

@@ -3,6 +3,7 @@ import { useApiGet, apiPost } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Search, LogOut, X, FileText, Users, QrCode } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 // Who has been in the building, and what they signed.
 //
@@ -150,7 +151,26 @@ export default function VisitorLogPanel() {
         </p>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <RecordCards count={rows.length} empty="No visits.">
+        {rows.map(v => (
+          <RecordCard key={v.id} onClick={() => setOpen(v)} stripe={v.on_site ? 'border-l-green-500' : ''}
+            title={<>{v.name}{v.on_site && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">ON SITE</span>}</>}
+            subtitle={`${v.email || ''}${v.company ? ` · ${v.company}` : ''}`}
+            fields={[
+              { label: 'Signed in', value: shortTime(v.signed_in_at) },
+              { label: 'Signed out', value: v.signed_out_at
+                  ? <>{shortTime(v.signed_out_at)}{v.signed_out_method === 'auto' && <span className="block text-[11px] text-amber-700">closed automatically</span>}{v.signed_out_method === 'staff' && <span className="block text-[11px] text-gray-500">by {v.signed_out_by}</span>}</>
+                  : <span className="text-green-700">still on site</span> },
+              { label: 'Where', value: v.location },
+              { label: 'Signed', value: v.signature_count ? `${v.signature_count} agreement${v.signature_count === 1 ? '' : 's'}` : null },
+            ]}
+            actions={v.on_site && canManage ? (
+              <button type="button" onClick={() => signOut(v)}
+                className="text-xs font-medium text-gray-600 hover:text-gray-900 inline-flex items-center gap-1"><LogOut size={12} /> Sign out</button>
+            ) : null} />
+        ))}
+      </RecordCards>
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm min-w-[44rem]">
           <thead>
             <tr className="border-b border-gray-200 text-left text-xs text-gray-500">

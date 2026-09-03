@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApiGet, apiPut, apiPost } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { Search, Pause, Play, Save, X, CalendarClock, AlertTriangle, CalendarPlus } from 'lucide-react';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 // The recurring schedules that generate work.
 //
@@ -220,7 +221,38 @@ export default function PMSchedulesPanel() {
         <p className="w-full text-[11px] text-gray-500">{rows.length} schedule{rows.length === 1 ? '' : 's'}</p>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <RecordCards count={rows.length} empty="No schedules match.">
+        {rows.map(s => editing === s.id ? (
+          // The edit form is one cell spanning the row, so it lays out as a
+          // form here too — no second copy of the form.
+          <div key={s.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm"><tbody>
+              <EditRow schedule={s} onSaved={() => { setEditing(null); refresh(); }} onCancel={() => setEditing(null)} />
+            </tbody></table>
+          </div>
+        ) : (
+          <RecordCard key={s.id} title={s.title} muted={!s.is_active}
+            subtitle={`${s.equipment_name || '—'}${s.room ? ` · ${s.room}` : ''}`}
+            badge={!s.is_active ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-700">PAUSED</span> : null}
+            fields={[
+              { label: 'How often', value: freqLabel(s.frequency_type) },
+              { label: 'Team', value: s.task_group || <span className="text-amber-700 font-medium">nobody</span> },
+              { label: 'Open now', value: String(openBySchedule[s.id] || 0) },
+            ]}
+            actions={canEdit ? <>
+              <button type="button" onClick={() => setEditing(s.id)} className="text-xs font-medium text-powder-700 hover:underline">Edit</button>
+              {s.is_active && (
+                <button type="button" onClick={() => raiseToday(s)} disabled={busyId === s.id}
+                  className="text-xs font-medium text-gray-600 hover:text-gray-900 inline-flex items-center gap-1"><CalendarPlus size={12} /> Raise task</button>
+              )}
+              <button type="button" onClick={() => togglePause(s)} disabled={busyId === s.id}
+                className="text-xs font-medium text-gray-600 hover:text-gray-900 inline-flex items-center gap-1">
+                {s.is_active ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Resume</>}
+              </button>
+            </> : null} />
+        ))}
+      </RecordCards>
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm min-w-[46rem]">
           <thead>
             <tr className="border-b border-gray-200 text-left text-xs text-gray-500">

@@ -14,6 +14,7 @@ import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductionDayLog from './ProductionDayLog.jsx';
 import { formatDateTime, formatTime as fmtClock } from '../../lib/datetime.js';
 import { withSignature } from '../../lib/signature';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 // The same rooms the schedule offers, so a shift can be reported in the room it
 // was scheduled in. This list used to be built by hand here and had drifted:
@@ -1239,6 +1240,17 @@ function MissedReports({ from, to, user }) {
   };
   const colSpan = canManage ? 6 : 5;
 
+  // The dismiss box, once, for the table row and the phone card.
+  const dismissBox = (m) => (
+    <div className="flex items-center gap-2">
+      <input value={reason} onChange={e => setReason(e.target.value)} autoFocus
+        placeholder="Reason / note (e.g. operator notified, run cancelled)…"
+        onKeyDown={e => { if (e.key === 'Enter') doDismiss(m); if (e.key === 'Escape') { setDismissing(null); setReason(''); } }}
+        className="flex-1 min-w-0 px-2 py-1 border border-amber-300 rounded text-sm" />
+      <button onClick={() => doDismiss(m)} className="px-2.5 py-1 bg-amber-600 text-white rounded text-xs font-medium inline-flex items-center gap-1 hover:bg-amber-700"><Check size={13} /> Dismiss</button>
+      <button onClick={() => { setDismissing(null); setReason(''); }} className="px-2 py-1 text-gray-500 text-xs hover:text-gray-700">Cancel</button>
+    </div>
+  );
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-4 py-3 text-left">
@@ -1259,7 +1271,24 @@ function MissedReports({ from, to, user }) {
               </label>
             </div>
           )}
-          <div className="overflow-x-auto">
+          <RecordCards className="p-2" count={displayRows.length} empty={`No outstanding reports — ${dismissedRows.length} cleared.`}>
+            {displayRows.map((m) => (
+              <RecordCard key={m.dismiss_key} muted={m.dismissed}
+                title={<>{formatDate(m.date)}{m.days_ago > 0 ? <span className="text-amber-600 text-xs font-normal"> · {m.days_ago}d ago</span> : ''}</>}
+                subtitle={`${m.room} · ${m.team || '—'}`}
+                fields={[
+                  { label: 'MO #', value: m.mo_number },
+                  { label: 'Product', value: m.product_name },
+                  { label: 'Dismissed', value: m.dismissed ? `${m.dismissed_by || ''}${m.dismiss_reason ? ` — ${m.dismiss_reason}` : ''}` || 'yes' : null, wide: true },
+                ]}
+                actions={canManage ? (m.dismissed
+                  ? <button onClick={() => doRestore(m)} className="text-xs text-amber-700 hover:underline inline-flex items-center gap-1"><Undo2 size={13} /> Restore</button>
+                  : dismissing === m.dismiss_key
+                    ? <div className="w-full">{dismissBox(m)}</div>
+                    : <button onClick={() => { setDismissing(m.dismiss_key); setReason(''); }} className="text-xs text-gray-500 hover:text-red-600 inline-flex items-center gap-1"><X size={13} /> Dismiss</button>) : null} />
+            ))}
+          </RecordCards>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-amber-100/50 text-amber-900">
                 <tr>
@@ -1298,16 +1327,7 @@ function MissedReports({ from, to, user }) {
                     </tr>
                     {canManage && dismissing === m.dismiss_key && (
                       <tr className="border-t border-amber-100 bg-amber-100/40">
-                        <td colSpan={colSpan} className="px-4 py-2">
-                          <div className="flex items-center gap-2">
-                            <input value={reason} onChange={e => setReason(e.target.value)} autoFocus
-                              placeholder="Reason / note (e.g. operator notified, run cancelled)…"
-                              onKeyDown={e => { if (e.key === 'Enter') doDismiss(m); if (e.key === 'Escape') { setDismissing(null); setReason(''); } }}
-                              className="flex-1 px-2 py-1 border border-amber-300 rounded text-sm" />
-                            <button onClick={() => doDismiss(m)} className="px-2.5 py-1 bg-amber-600 text-white rounded text-xs font-medium inline-flex items-center gap-1 hover:bg-amber-700"><Check size={13} /> Dismiss</button>
-                            <button onClick={() => { setDismissing(null); setReason(''); }} className="px-2 py-1 text-gray-500 text-xs hover:text-gray-700">Cancel</button>
-                          </div>
-                        </td>
+                        <td colSpan={colSpan} className="px-4 py-2">{dismissBox(m)}</td>
                       </tr>
                     )}
                   </Fragment>

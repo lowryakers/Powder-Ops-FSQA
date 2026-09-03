@@ -8,6 +8,7 @@ import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import HoursTab from './HoursTab.jsx';
 import ModuleTabs from '../common/ModuleTabs.jsx';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 
 const TYPES = [
   { value: 'absent', label: 'Absent', icon: UserX, tone: 'bg-red-100 text-red-700' },
@@ -471,7 +472,19 @@ function AdjustmentsLog({ tr = (x) => x }) {
 function StatsTab() {
   const { data: stats } = useApiGet('/office/time/stats');
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <>
+    <RecordCards count={(stats || []).length} empty="No activity in the last 90 days">
+      {(stats || []).map(s => (
+        <RecordCard key={s.employee_name} title={s.employee_name} subtitle={s.last_event ? `Most recent ${s.last_event}` : null}
+          badge={<span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.last_30 >= 3 ? 'bg-red-100 text-red-700' : s.last_30 > 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{s.last_30} in 30d</span>}
+          fields={[
+            { label: 'Last 90 days', value: String(s.last_90) },
+            { label: 'Absences (90d)', value: String(s.absences_90) },
+            { label: 'Tardies (90d)', value: String(s.tardies_90) },
+          ]} />
+      ))}
+    </RecordCards>
+    <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
@@ -497,6 +510,7 @@ function StatsTab() {
         </table>
       </div>
     </div>
+    </>
   );
 }
 
