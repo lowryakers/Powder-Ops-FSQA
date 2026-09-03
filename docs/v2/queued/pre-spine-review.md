@@ -162,6 +162,8 @@ auditor. Copied from the certifications section where `person_name` is real.
 - **F8** `verify-suppliers.mjs:121-125` three `.every()`s over filters that may be empty; the counts are printed and never asserted.
 - **F9** `check-reclean-titles.mjs:77` a negated regex over `?.description || ''` passes when the task was never raised.
 - **F10** `verify-supplier-storage.mjs:223,298` the commit response is assigned and never asserted; both follow-ups are no-change assertions.
+
+**F3–F10 FIXED 2026-09-03** — each asserts the positive fact first: the pure module imports nothing that can write, the seeded Admin is a row to inspect, both supplier gaps are non-empty and equal their summary counts, the no-clean task exists before its description is read, and the import commit's own count is what the register gained. Every touched suite re-run green.
 - **Residual** every `LIKE` guard is `if (q)` not `if (q.trim())`; a whitespace query yields `LIKE '% %'`. `coa.js:474` prepares `IN ()` one line before its guard.
 
 ### Class G — mirrors
@@ -197,6 +199,16 @@ Instruments. `DataGrid` has a card mode. These do not:
 `PMSchedulesPanel.jsx:224` (Recurring Schedules, `min-w-[46rem]`) · `VisitorLogPanel.jsx:154` (the Signed-out
 action is the far-right column) · `RetentionSamplesPanel.jsx:571` · `ProductionLog.jsx:1263` (anomaly review) ·
 `SafetyPanel.jsx:291` · `TimeTrackingPanel.jsx:476` (Stats — Entries has cards) · `DisposalsPanel.jsx:273`.
+
+**FIXED 2026-09-03 (the clipped five and the floor-facing ten)** — `src/components/common/RecordCards.jsx` is the
+card pattern once; each log renders `<RecordCards>` from the same row array and the same handlers as its
+table (`hidden md:block`), so the two layouts cannot offer different buttons on one record. The three grids
+of inputs / previews (COA extracted-results edit, COA request results, Retention import preview) pan in a
+scroller instead — a form is not a log. **The Training Matrix keeps its scroller on purpose**: a matrix is
+wide by definition and its sticky first column is the right idiom. `npm run verify:mobile` seeds one record
+into each log, opens every screen at 360×740 in a real browser and asserts nothing sticks past the viewport
+and the cards are on screen with the table hidden — 37 assertions; with the components reverted 19 fail,
+including the Training Due table measured at 370px in a 360px viewport.
 
 Laptop-facing, same shape, lower priority: `SuppliersPanel.jsx:198`, `ProductsPanel.jsx:590`,
 `ProductBarcodes.jsx:125`, `TeamActivityPanel.jsx:81`, `ProductionDashboard.jsx:176`, `COAPanel.jsx:2346`,

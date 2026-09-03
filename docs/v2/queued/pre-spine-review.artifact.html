@@ -80,7 +80,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 <header class="mast">
   <p class="eyebrow">Powder Ops · ReadyDoc · before the single-spine push</p>
   <h1>Pre-Spine Review</h1>
-  <p class="standfirst"><b>Update:</b> items 01–10 are fixed and pushed, each with a check that fails on the old code — the twelve-item priority list has two left (11 tests, 12 phone). Every bug found this week was one of eight shapes. Each shape was swept across the whole codebase to find its siblings. 64 verified findings, every one with a file and line — nothing here is a hunch, and nothing here is fixed yet.</p>
+  <p class="standfirst"><b>Update:</b> all twelve priority items are fixed and pushed, each with a check that fails on the old code. What remains is the longer tail below: the managed-list select, the rest of classes D, C and G, and the laptop-facing tables. Every bug found this week was one of eight shapes. Each shape was swept across the whole codebase to find its siblings. 64 verified findings, every one with a file and line — nothing here is a hunch, and nothing here is fixed yet.</p>
   <div class="meta">
     <span><b>Verified against</b> main @ 320af18</span>
     <span><b>Date</b> 2 September 2026</span>
@@ -167,13 +167,13 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
   </div></div>
 
   <div class="find"><span class="num">11</span><div>
-    <h3><span class="sev high">tests</span>Ten test assertions pass with the feature broken</h3>
+    <h3><span class="sev high">tests</span><span class="sev fixed">fixed</span>Ten test assertions pass with the feature broken</h3>
     <p>Two are literally <code>t('nothing was written', true)</code>. One is the exact <code>Object.keys({}).every()</code> bug, in a test. This class is why the others went unnoticed — it goes early in the order so every later fix gets a real control.</p>
     <span class="where">scripts/ — F4 to F10 in the register</span>
   </div></div>
 
   <div class="find"><span class="num">12</span><div>
-    <h3><span class="sev high">phone</span>Five screens clip columns off the edge of the phone</h3>
+    <h3><span class="sev high">phone</span><span class="sev fixed">fixed</span>Five screens clip columns off the edge of the phone</h3>
     <p>The page body hides horizontal overflow, so a wide table without a scroller doesn't pan — it <em>clips</em>. The COA lot-check's Status column is one of the unreachable ones. 29 logs already have cards; ten floor-facing ones don't.</p>
     <span class="where">COAPanel.jsx:167,321,997 · TrainingPanel.jsx:1511 · RetentionSamplesPanel.jsx:454</span>
   </div></div>
