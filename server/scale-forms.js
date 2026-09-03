@@ -208,6 +208,12 @@ export function gradeReadings(form, values) {
       pass: valid ? Math.abs(value - p.nominal) <= p.tolerance + 1e-9 : false,
     };
   });
-  const complete = readings.every(r => r.value !== null);
-  return { readings, complete, result: complete && readings.every(r => r.pass) ? 'pass' : 'fail' };
+  // VACUOUS TRUTH: `[].every()` is true, so a form with no points graded as
+  // COMPLETE and PASS with zero readings -- the exact inversion of what this
+  // function exists to refuse. Not hypothetical: controlled.js applies an
+  // approved snapshot's `points` whenever it is an array, and [] is an array.
+  // No points means nothing was weighed, and nothing weighed is not a pass.
+  const empty = readings.length === 0;
+  const complete = !empty && readings.every(r => r.value !== null);
+  return { readings, complete, empty, result: complete && readings.every(r => r.pass) ? 'pass' : 'fail' };
 }

@@ -1,6 +1,6 @@
 # Pre-spine review — every open defect, by class
 
-**2 September 2026 · verified against `main` at `320af18`.** Six sweeps, each one a class of bug this
+**2 September 2026 · verified against `main` at `320af18` · items 01–05 fixed the same day (marked inline).** Six sweeps, each one a class of bug this
 session actually found and fixed, run over the whole codebase to find the other instances. Every entry
 carries a `file:line` that was checked; nothing here is a hunch. Nothing in this document has been fixed —
 it is the list to work from before the single-spine push, so the push does not carry these into V2.
@@ -28,6 +28,7 @@ These are the ones where a filed record is wrong, a signature is weaker than it 
 the NC triage says exists does not exist on one of its doors.
 
 ### D1 · The ATP reading taken on a TASK is never graded — and OBL-01 says grading "landed"
+**FIXED 2026-09-02** — `fileQaInspectionRecord` grades with the form door's three lines, stores reading + limit, raises the re-clean on the second failure. OBL-32 landed. `npm run verify:atp`, 20 assertions, control fails 6.
 `server/api/pm.js` has **zero** references to `atp`. `src/components/compliance/OperatorView.jsx:774-777`
 captures `readings.atp_reading` with the live `AtpLimitHint` beside it on Production Line Pre-Op and
 changeover cleans; `complete-and-recur` files the record through `fileQaInspectionRecord` (`pm.js:116`),
@@ -37,6 +38,7 @@ the exports, the swab-stock count and the consecutive-failure chain. `POST /sani
 are the only graded doors. **OBL-01 is `landed` for one door of two.** Split it (the OBL-01/OBL-27 rule).
 
 ### D3 · The QMS module's own Approve button skips the signature password and overwrites signatures
+**FIXED 2026-09-02** — both approve doors go through `signQmsApproval` behind `gateSignature`; bulk checks the password once before the loop. `npm run verify:qmssig`, 18 assertions, control fails 7.
 `server/api/qms.js` `POST /:type/:id/approve` writes `approvals[key] = {name…}` inline with **no
 `gateSignature`**, **no already-signed refusal**, and no `paper_record` skip — all three of which
 `signQmsApproval` (`qms.js:1155`) provides and QA Review uses. Signing a deviation from QA Review asks for
@@ -44,18 +46,21 @@ the password; signing the identical deviation from the Deviations screen does no
 exactly four callers and this is not one of them. Bulk-approve has the same shape.
 
 ### C1 · A nothing-assigned account can write QMS records
+**FIXED 2026-09-02** — `requireType` reads the map through `moduleLevel()`: NULL is nothing, View may file, Edit may change. `npm run verify:qmsgate`, 11 assertions, control fails 5.
 `server/api/qms.js:101`: `if (ma != null && !Array.isArray(ma) && ma[cfg.moduleId] !== 'edit')` — a
 **NULL map passes**, and so does a legacy array. Every other module reads NULL as *nothing* and refuses
 even GETs. `/api/qms` is mounted at `server.js:1855` **outside `requireModuleWrite`**, so this line is the
 only gate on QMS writes. The `module_access` bug from Settings, on the server, still live.
 
 ### D4 · A third completion door files no record
+**FIXED 2026-09-02** — `PUT /work-orders/:id` refuses `completed` and `not_applicable` and names their doors; the dead completion side-effects are gone from it. `npm run verify:doors`, 12 assertions, control fails 4.
 `PUT /pm/work-orders/:id` with `status: 'completed'` (`pm.js:767-803`) writes `completed_at`/`completed_by`
 and never calls `fileQaInspectionRecord` / `fileDilutionRecord`, skips `resolveBackdate`, and skips the
 food-contact step gate. The comment at `pm.js:1113` names this exact defect for `batch-complete` — "two
 ways to finish a task is two chances for the record to go unwritten" — and a third way was left uncovered.
 
 ### F1 · An empty scale form grades as PASS with zero readings
+**FIXED 2026-09-02** — `gradeReadings` returns `empty`, never complete, never pass; `controlled.js` never applies `points: []`; the caller names the real problem. `npm run check:scale`, 7 assertions, control fails 1.
 `server/scale-forms.js:211-212`: `complete = readings.every(r => r.value !== null)` and
 `result: complete && readings.every(r => r.pass) ? 'pass' : 'fail'` — both `true` on `[]`. Reachable:
 `server/controlled.js:88` applies `form.points = snap.points` whenever `Array.isArray(snap.points)`, and

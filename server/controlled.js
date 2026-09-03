@@ -85,7 +85,11 @@ function scaleEntries() {
     // it deployed while a tolerance change waited for Document Control.
     current: () => ({ points: form.points, unit: form.unit }),
     apply: (snap) => {
-      if (Array.isArray(snap.points)) form.points = snap.points;
+      // An EMPTY points list is never applied. `Array.isArray([])` is true, so
+      // a snapshot carrying `points: []` blanked the form -- and gradeReadings
+      // then graded every verification a pass with zero readings. A form with
+      // no weights is not an acceptance criterion; it is the absence of one.
+      if (Array.isArray(snap.points) && snap.points.length) form.points = snap.points;
       if (snap.unit) form.unit = snap.unit;
     },
     // Approved snapshots written before the unit was under control carry only

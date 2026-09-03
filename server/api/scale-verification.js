@@ -39,7 +39,8 @@ export function recordScaleVerification(db, body, { actor, source }) {
   const performedBy = String(body.performed_by || actor?.name || '').trim();
   if (!performedBy) return { error: 'Your name is required.' };
 
-  const { readings, complete, result } = gradeReadings(form, body.readings);
+  const { readings, complete, empty, result } = gradeReadings(form, body.readings);
+  if (empty) return { error: `${form.code} has no weight points defined, so nothing can be verified against it. Document Control has to restore its points.` };
   if (!complete) return { error: `All ${form.points.length} weight readings are required.` };
 
   // Link to the instrument when the room matches one on the scale list, so the

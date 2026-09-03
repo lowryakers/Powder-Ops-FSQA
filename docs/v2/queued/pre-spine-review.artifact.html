@@ -55,6 +55,7 @@ code,.mono{font-family:var(--mono);font-size:.86em;background:var(--accent-soft)
 .sev{font-family:var(--mono);font-size:.66rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:.15rem .45rem;border-radius:3px}
 .sev.crit{background:var(--flag-soft);color:var(--flag);border:1px solid var(--flag-line)}
 .sev.high{background:var(--warn-soft);color:var(--warn)}
+.sev.fixed{background:var(--done-soft);color:var(--done)}
 .find p{font-size:.94rem;color:var(--ink-2);margin:0 0 .35rem}
 .find .where{font-family:var(--mono);font-size:.76rem;color:var(--ink-3)}
 
@@ -79,7 +80,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 <header class="mast">
   <p class="eyebrow">Powder Ops · ReadyDoc · before the single-spine push</p>
   <h1>Pre-Spine Review</h1>
-  <p class="standfirst">Every bug found this week was one of eight shapes. Each shape was swept across the whole codebase to find its siblings. 64 verified findings, every one with a file and line — nothing here is a hunch, and nothing here is fixed yet.</p>
+  <p class="standfirst"><b>Update:</b> items 01–05 are fixed and pushed, each with a live check that fails on the old code. Every bug found this week was one of eight shapes. Each shape was swept across the whole codebase to find its siblings. 64 verified findings, every one with a file and line — nothing here is a hunch, and nothing here is fixed yet.</p>
   <div class="meta">
     <span><b>Verified against</b> main @ 320af18</span>
     <span><b>Date</b> 2 September 2026</span>
@@ -106,31 +107,31 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
   <div class="sec-head"><span class="tag">Fix first</span><h2>The ones that change what a record or a signature <em>is</em></h2></div>
 
   <div class="find"><span class="num">01</span><div>
-    <h3><span class="sev crit">record</span>The ATP reading taken on a task is never graded</h3>
+    <h3><span class="sev crit">record</span><span class="sev fixed">fixed</span>The ATP reading taken on a task is never graded</h3>
     <p>The Operator View captures an RLU reading on Production Line Pre-Op and changeover cleans with the live limit hint beside it. The function that files the record from the completed task never imports the grading module — the number goes into the work order's JSON, never into the sanitation record, no limit is stored. A 200 RLU swab files as whatever the visual answer was. <b>OBL-01 read "landed"; it is landed for the manual form door only. Split into OBL-32.</b></p>
     <span class="where">server/api/pm.js (zero references to atp) · OperatorView.jsx:774</span>
   </div></div>
 
   <div class="find"><span class="num">02</span><div>
-    <h3><span class="sev crit">signature</span>The Deviations screen's Approve button skips the signature password</h3>
+    <h3><span class="sev crit">signature</span><span class="sev fixed">fixed</span>The Deviations screen's Approve button skips the signature password</h3>
     <p>QA Review asks for the password before signing a deviation. The module's own Approve button on the identical record does not — it writes the approval inline, and it will silently overwrite an existing signature with a different name. One definition, four doors; this is a fifth door with no lock.</p>
     <span class="where">server/api/qms.js POST /:type/:id/approve</span>
   </div></div>
 
   <div class="find"><span class="num">03</span><div>
-    <h3><span class="sev crit">access</span>An account with no modules assigned can write QMS records</h3>
+    <h3><span class="sev crit">access</span><span class="sev fixed">fixed</span>An account with no modules assigned can write QMS records</h3>
     <p>The Settings bug from earlier this week, still live on the server: a NULL module map passes the QMS write check. Every other module reads NULL as <em>nothing</em>. And <code>/api/qms</code> is mounted outside the shared guard, so this line is the only gate.</p>
     <span class="where">server/api/qms.js:101 · server.js:1855</span>
   </div></div>
 
   <div class="find"><span class="num">04</span><div>
-    <h3><span class="sev crit">record</span>A third way to complete a task files no record</h3>
+    <h3><span class="sev crit">record</span><span class="sev fixed">fixed</span>A third way to complete a task files no record</h3>
     <p>Setting a work order's status to completed through the plain edit route closes it without filing the QA or cleaning record, without the back-date rule, and without the food-contact step gate. The code comment names this exact defect for the batch path — and a third path was left uncovered.</p>
     <span class="where">server/api/pm.js:767 PUT /work-orders/:id</span>
   </div></div>
 
   <div class="find"><span class="num">05</span><div>
-    <h3><span class="sev crit">record</span>An empty scale form grades as PASS with zero readings</h3>
+    <h3><span class="sev crit">record</span><span class="sev fixed">fixed</span>An empty scale form grades as PASS with zero readings</h3>
     <p>Both completeness and result use <code>.every()</code>, which is true on an empty array. Reachable: a controlled-change snapshot with an empty points list is applied without complaint.</p>
     <span class="where">server/scale-forms.js:211 · controlled.js:88</span>
   </div></div>
