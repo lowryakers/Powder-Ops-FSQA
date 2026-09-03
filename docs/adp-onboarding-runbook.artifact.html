@@ -189,8 +189,9 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
         <li>Office group → <b>Onboarding</b> → <b>Start an onboarding</b>. First name <i>Test</i>, last name <i>Hire</i>, your own phone. Save.</li>
         <li>Copy the welcome link it shows (it shows once). Open it on your phone.</li>
       </ol>
-      <div class="expect"><span class="k">Expect</span><div>The wizard now has a Social Security number field and a direct-deposit page. Before the key, both said the office would collect them.</div></div>
-      <p>Use <b>Cancel</b> on that row afterwards. Onboarding is now fully usable: a real hire works the wizard, the office reads the finished packet and keys it into RUN. The rest of this runbook only removes that last keying step.</p>
+      <div class="expect"><span class="k">Expect</span><div>The wizard now has a Social Security number field marked required and a direct-deposit page asking for the routing and account numbers. Before the key, both said the office would collect them. Walk it to the end: the W-4 and the I-9 each end in a typed signature, the I-9 takes photos of the ID documents, and <b>Finish</b> refuses until every required line and both signatures are in.</div></div>
+      <p>Back in Onboarding, the row reads <b>Ready for review</b>: the signed W-4 and I-9, the photos, and an <b>I-9 Section 2</b> block for you to record the documents you examined and sign with your password. <b>Packet PDF</b> prints it all with the SSN as last-four. Use <b>Cancel</b> on the test row afterwards. Onboarding is now fully usable: a real hire works the wizard, the office reads the finished packet and keys it into RUN. The rest of this runbook only removes that last keying step.</p>
+      <div class="dont"><b>The packet is not yet the retained Form I-9.</b> Electronic I-9 systems have federal rules nobody has reviewed ReadyDoc against. Until HR or counsel does, complete the official I-9 from the packet — in ADP's onboarding, which has its own I-9 flow, or on paper — and examine the original documents in person within three business days. The photos are for reference.</div>
     </div>
   </div>
 </section>

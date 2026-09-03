@@ -1652,3 +1652,26 @@ plant's teams from `shared/task-groups.js` plus `Temp / 1099`, kept apart from t
 `candidate_files` (a résumé on the person, deleted with the person, same office/HR-only door). No
 decision of doctrine there; recorded so the session is not the thread. `verify:people` (26, live).
 
+## D-053 — The W-4 and I-9 are completed and signed in the onboarding wizard; the finish gate is one derived list
+
+**Date:** 3 September 2026. **Asked for by:** Lowry, after testing the wizard: "there's no requirement for
+them to enter the SSN before moving forward" and "can we have them complete W4's, I9 docs through this as
+well — attach pictures of documents, attach voided check?"
+
+**Decided.** Yes to all of it, with two rules. (1) **Nothing finishes half done**: `missingToFinish()` is
+the one list of what the forms still need, derived on every read and read by the wizard, the office row and
+the finish endpoint alike. (2) **A signature is a legal name typed under the form's own perjury statement,
+with the time, address and device recorded**; the employee's two signatures are refused under any other
+name or without the attestation, and the employer's I-9 Section 2 goes through the password gate like every
+other signature in ReadyDoc. Pictures (ID documents, voided check) ride the shared media path.
+
+**Deliberately not claimed.** That the packet PDF is the retained Form I-9. Electronic I-9 systems have
+their own federal rules (8 CFR 274a.2) that nobody has reviewed this against, and a compliance claim the
+app cannot back is the fabricated-record refusal in a new place. The guide and the panel both say the
+office completes the official I-9 from the packet — in ADP, which has its own I-9 flow, or on paper —
+until HR decides otherwise. The employer must still examine the originals in person.
+
+**The bug the no-key run caught.** The wizard re-sends the secret keys as empty strings after every save;
+the server refused the whole page in no-key mode. A blank is "nothing to store". Both runs of
+`verify:onboarding` stay for this reason.
+

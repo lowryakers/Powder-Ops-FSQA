@@ -2592,6 +2592,50 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_onboarding_status ON onboarding_records(status, created_at DESC);
   `);
 
+  // The forms a new hire actually completes — full W-4, I-9 Section 1 — and
+  // the pictures behind them (ID documents, a voided check). Added after the
+  // CREATE so an existing database picks them up; each signature is one JSON
+  // column ({name, at, ip, ua}) because a typed name with no timestamp and no
+  // origin is not a signature, it is a text box.
+  for (const [col, def] of [
+    ['pay_method', 'TEXT'],                 // direct_deposit | check
+    ['w4_exempt', 'INTEGER DEFAULT 0'],
+    ['w4_qualifying_children', 'TEXT'],     // count under 17 — the form multiplies by $2,000
+    ['w4_other_dependents', 'TEXT'],        // count — the form multiplies by $500
+    ['w4_signature', 'TEXT'],               // JSON — employee, Step 5
+    ['i9_other_last_names', 'TEXT'],
+    ['i9_citizenship', 'TEXT'],             // citizen | noncitizen_national | permanent_resident | authorized_alien
+    ['i9_uscis_number', 'TEXT'],
+    ['i9_i94_number', 'TEXT'],
+    ['i9_passport_number', 'TEXT'],
+    ['i9_passport_country', 'TEXT'],
+    ['i9_work_until', 'TEXT'],              // authorized_alien: expiration date, or 'N/A'
+    ['i9_preparer', 'TEXT'],                // none | used
+    ['i9_preparer_name', 'TEXT'],
+    ['i9_signature', 'TEXT'],               // JSON — employee, Section 1
+    ['i9_section2', 'TEXT'],                // JSON — employer: documents examined, first day, who signed (password-verified)
+  ]) addColumnIfMissing('onboarding_records', col, def);
+
+  db.exec(`
+    -- ID documents, the voided check, anything else the office asked for.
+    -- R2 via the shared media path, uploaded from the public portal by the new
+    -- hire or from the office screen; kept with the record (this is an HR
+    -- file, not a candidate note — nothing here is deleted with a person).
+    CREATE TABLE IF NOT EXISTS onboarding_files (
+      id TEXT PRIMARY KEY,
+      onboarding_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'other',   -- id_document | voided_check | other
+      storage_key TEXT,
+      filename TEXT,
+      content_type TEXT,
+      size INTEGER,
+      uploaded_by TEXT,                     -- 'new hire' from the portal, a name from the office
+      uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (onboarding_id) REFERENCES onboarding_records(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_onboarding_files ON onboarding_files(onboarding_id);
+  `);
+
   // ── Product management ────────────────────────────────────────────────────
   // The finished-goods catalogue: what we sell, its codes, and the film it
   // prints on. Distinct from coa_specifications, which covers raw materials

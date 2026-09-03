@@ -58,6 +58,39 @@ employee record in RUN. Two honest caveats:
   keyed into RUN from ReadyDoc's completed packet is decided by the scopes
   ADP grants. Either way the data is captured once, correctly.
 
+## The forms the new hire completes (3 September 2026)
+
+The wizard is seven steps: welcome · about you · emergency contact · how you're
+paid · **Form W-4** · **Form I-9 Section 1** · done.
+
+- **Nothing finishes half done.** The server keeps one list of what the forms
+  still need (`missing`, derived on every read) and refuses Finish while any of
+  it is blank — SSN (when the key is set), date of birth, pay method, the
+  direct-deposit numbers or a voided-check photo, a W-4 filing status, the
+  I-9 status and whatever that status demands, and both signatures.
+- **Signatures.** The employee types their full legal name under the form's own
+  perjury statement and ticks that they read it; the server records name, time,
+  network address and device, and refuses a name that is not the one on the
+  record. The W-4 and I-9 attestation texts are stored with each signature.
+- **Pictures.** ID documents (List A, or B + C) and a voided check are
+  photographed from the wizard straight into R2 (`onboarding_files`); the
+  office can add its own and open any of them from the packet.
+- **I-9 Section 2 is the employer's**, on the packet in the office: the
+  documents examined (one List A, or one B and one C — the form's rule,
+  enforced), the first day, and a signature under ReadyDoc's password gate.
+- **The packet PDF** (`Packet PDF` on the row) prints everything entered and
+  signed, with SSN and account numbers as last-4 only.
+
+**What this is not, yet.** An electronic I-9 that REPLACES the paper form has
+to meet 8 CFR 274a.2's rules for electronic systems (signature attribution,
+audit trail, integrity, retention, printability). ReadyDoc records the
+attestations, the audit trail and the PDF, but nobody has reviewed it against
+those rules. Until HR or counsel does, treat the packet as the source the
+office completes the official I-9 from — in ADP's onboarding, which carries its
+own I-9 flow, or on paper — and keep the originals policy: the employer must
+examine the original documents in person within three business days; the
+photos are for reference, not the examination.
+
 ## What works with ZERO ADP setup (the degrade path)
 
 The module ships dark and useful without any of the above:
@@ -65,8 +98,9 @@ The module ships dark and useful without any of the above:
 - The office starts an onboarding → ReadyDoc issues a **magic link**
   (`/welcome/<token>`, same pattern as flavor approvals) — no account needed.
 - The new hire works a phone-first wizard: welcome + what ReadyDoc is, their
-  personal info, emergency contact, direct deposit, W-4 inputs. Answers save
-  as they go.
+  personal info, emergency contact, how they're paid, the full W-4 and I-9
+  Section 1, each signed, with photos of their documents. Answers save as
+  they go.
 - When they finish, the office sees a **completed packet** (sensitive fields
   masked to last-4 on screen) and keys it into RUN — once, from one screen,
   instead of chasing paper. The **Submit to ADP** button exists and simply

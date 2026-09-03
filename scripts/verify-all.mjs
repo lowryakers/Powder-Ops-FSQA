@@ -31,7 +31,8 @@ const RUNS = [
   ['verify-shipping.mjs', 4969, {}, true],
   ['verify-warehouse-ui.mjs', 4970, {}, true],
   // With the key, so the encrypted path is the one exercised in the full run.
-  ['verify-onboarding.mjs', 4971, { ONBOARDING_ENC_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }],
+  ['verify-onboarding.mjs', 4971, { ONBOARDING_ENC_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }, true],
+  ['verify-onboarding-ui.mjs', 4972, { ONBOARDING_ENC_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }, true],
   ['verify-sensory-ui.mjs', 4966],
   // Two older scripts carry their own port.
   ['verify-suppliers.mjs', 4841],

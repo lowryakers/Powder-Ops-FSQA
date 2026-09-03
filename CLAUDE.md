@@ -930,6 +930,34 @@ that has to be fed to stay useful. Office nav group, module id `candidates`.
   including "Nutriient"/"Nutrisoft", **insert-only and skipped entirely once the table has any row** — a
   redeploy must never resurrect somebody Marnee removed.
 
+## Onboarding: the forms are completed and SIGNED on the link, and nothing finishes half done
+`server/api/onboarding.js` (both routers), `OnboardingWelcomePage.jsx` (the phone wizard), `OnboardingPanel.jsx`
+(the office packet), `onboarding_files` + sixteen columns on `onboarding_records`, `docs/adp-run-onboarding.md`.
+- **THE FINISH GATE IS ONE LIST, DERIVED ON EVERY READ** (`missingToFinish`): the wizard's "still needed"
+  panel, the office row's "N still missing" and the portal's `/finish` refusal all read it. The office used
+  to receive packets with no SSN because nothing asked for one. What it demands depends on the record: SSN
+  only when the key is set, the direct-deposit numbers only when direct deposit was chosen (a voided-check
+  photo instead when there is no key), the I-9's conditional numbers only for the status that needs them.
+- **A SIGNATURE IS A NAME UNDER THE FORM'S OWN STATEMENT, WITH WHERE AND WHEN.** `w4_signature` /
+  `i9_signature` are JSON `{name, at, ip, ua, attestation}`; the name must be the legal name on the record
+  and the attestation box must be ticked, or the server refuses. The perjury texts are verbatim from the
+  forms and stored with each signature. I-9 Section 2 (`i9_section2`) is the EMPLOYER's and goes through
+  `gateSignature` — 403 + `signature_required`, never 401 — with the List A / B+C rule enforced.
+- **A blank secret is "nothing to store", never a refusal.** The wizard clears `ssn`/`dd_*` from local
+  state after every save and re-sends them empty; the first cut refused the whole page in no-key mode for
+  exactly that. Caught by the no-key run of `verify:onboarding`, which is why both runs stay.
+- **Routing numbers are checked against the ABA checksum** on the way in. A mistyped routing number is a
+  paycheck that bounces, and the check costs nothing.
+- **The portal never returns Section 2 or the office notes**; the packet PDF prints SSN and account as
+  last-4 only. The new hire may delete only files they uploaded (`uploaded_by = 'new hire'`).
+- **`w4_signature` and `i9_signature` are NOT in `PORTAL_FIELDS`** — they are written only by `signForm`,
+  so a client cannot post a signature object and skip the checks.
+- **Not claimed: that the PDF is the retained Form I-9.** 8 CFR 274a.2's electronic-system rules have not
+  been reviewed against this; the guide says so and the panel footer says so. The office completes the
+  official I-9 in ADP or on paper from the packet until HR decides otherwise.
+- Verified: `verify:onboarding` 55 with the key and storage, 44 without either (both in `verify:all` —
+  the keyed run), `verify:onboardingui` 21 in a real browser at 390px through to Section 2 opening.
+
 ## People: a tag is a category you can call from; a file is a résumé that dies with the person
 `candidates.tags` (JSON array) + `candidate_files` (R2 via the shared media path), both in
 `server/api/candidates.js` behind the same office/HR-only mount gate — a résumé is more personal than a
