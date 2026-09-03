@@ -296,6 +296,14 @@ free; the sixteen are not. `sku` deliberately carries the CURRENT code, because 
 today's artwork.
 Public path, token compared as a hash, off entirely unless `PRODUCT_MASTER_TOKEN` is set. **Registered
 before `/:sku`** — Express matches in declaration order and `/master.csv` is a perfectly good `:sku`.
+**And mounted AHEAD of `requireModuleWrite` in server.js** (`app.get('/api/products/master.csv', masterCsv)`):
+the guard 401s any session-less request before the router's public handler runs, which is how the feed had been
+silently answering *Not authenticated* to the proofer since the NULL-map rule tightened — the proofer caches and
+reports nothing. Found by `npm run verify:artwork`. A seventeenth column, `fill weight (g)`
+(`products.fill_weight_g`, typed in the drawer, blank until known), feeds its Net Weight check; extra columns are
+free. **Ingest stores `snapshot`** — what the run saw on the label — in `artwork_snapshots`, frozen with the
+version (a retry of the same job replaces it), and `GET /api/artwork/snapshot?gtin=&sku=` (declared before
+`/sku/:sku`) hands the latest back for a re-proof to compare against.
 
 ### The proofing loop
 `master.csv` out, `POST /api/artwork/ingest` back. Two env vars on the proofing service
@@ -985,6 +993,33 @@ appeared in your Threads list at all. In the inbox, **read threads dim (opacity-
 one-line summary** (parent preview + "N replies · last from X", Expand to reopen) while unread stay open with
 the ring + "N new"; a thread you've replied to shows a muted "Replied" chip — so the list is scannable for
 what still needs you.
+
+## FORM 602-01 V2: the organoleptic test is a check against the product's specification (D-050)
+The plant's own form has **no 1–5 anywhere**: APPEARANCE · ODOR · TASTE · COLOR · TEXTURE, each with a
+SPECIFICATION, a RESULT (what was seen) and P / F. The app follows the form. `shared/sensory.js` is the one
+definition; `server/sensory-specs.js` + `product_sensory_specs` hold one spec per PRODUCT, in words.
+- **THE FIRST TEST WRITES THE DRAFT SPEC.** A product with none on file asks the evaluator to describe what a
+  good one looks like per attribute (`sensory_spec_draft` in the body); a **QA lead** (supervisor in QA, or an
+  admin) approves it once — a name and a date — and it is locked. A correction is a new decision, never an edit.
+  No spreadsheet has to exist first; top SKUs get specs first because they get tested first.
+- **The spec travels with the record** (`sensory_spec`: the words and whether they were approved at the time) —
+  the `atp_limit` rule. A record graded against a draft says so on the record, the PDF and the approval page.
+- **`sensoryResult()` is the ONE result rule** — a does-not-match anywhere fails and raises the draft disposal;
+  the log badge, the Result filter, the PDF and `syncOrganolepticDisposal` all read it. There is no
+  `passFail` table in qms-config any more and no threshold arithmetic anywhere.
+- **V1 records stay readable as filed.** `aroma`, `flavor` and `overall` are RETIRED keys, never reused —
+  `sensoryShape()` decides from the VALUES because `appearance` and `texture` are keys in both shapes. V1 keeps
+  its below-3 rule; nothing is re-graded.
+- **Every reader keys off the SERVED form (`formIsV2(cfg.fields)`).** On an existing database `controlled.js`
+  parks the V2 field lists as pending and keeps serving V1 until Document Control approves — validation, the FA
+  scoring step, the texted page, the sync and the PDF all stay coherent on V1 until then, and flip together.
+  The DCR draft for Document Control is `docs/v2/queued/dcr-form-602-01-v2.md`; the register row (V1) is theirs.
+- **The Flavor Approval's QA scoring step is the SAME block against the SAME spec**, so the Organoleptic record
+  `syncFlavorOrganoleptic` files is a copy, not a mapping. A new flavour drafts its own spec from that step.
+  "Overall" is gone — deciding is the approver's job. The approver is still never asked to score.
+- `SensoryBlock.jsx` renders the form block, the read-back (`SensoryResults`) and the QA lead's approval strip on
+  the Organoleptic log. Verified: `check:sensory` (32, pure — fails at import on V1 code), `verify:sensory` (33
+  live), `verify:sensoryui` (11 in a browser).
 
 ## One tasting, two people: QA scores it, the approver decides
 The plant does a single tasting that is simultaneously a flavor approval (a decision about a batch) and an
@@ -3812,6 +3847,22 @@ route, same reason the Download button does.
   team's open work through Sunday posts into the channel **named like its `task_group`** — the same
   convention `notifyTaskIssue` uses. A team with no channel is skipped silently; another team's PM list in
   #general is noise. Overdue leads, then day by day, capped at 5 lines per bucket.
+
+## A photo in a message zooms like a photo, and copies as one (`AttachmentViewer.jsx`)
+The lightbox used to render INSIDE the message row, so every touch inside it also reached the message's
+long-press timer, the open-thread tap and the swipe-back pane's transform (which pins `position: fixed` to
+the pane). The viewer is on `document.body` now and speaks the vocabulary every phone's photo app taught:
+pinch / wheel / buttons zoom about the point under the fingers, double-tap to 2.5× and back, drag to pan,
+swipe sideways at fit to page, swipe down at fit to close, tap to hide the controls; Esc, arrows, +, -, 0.
+- **A touch double-tap also fires a synthetic dblclick** — the mouse path stands down for 500ms after a
+  touch or the two zooms cancel each other. Found by the check, not by reading.
+- **A phone cannot pinch an embedded PDF** (the app disables viewport zoom and the frame ignores touch), so
+  on a compact screen a PDF is handed to the phone's own viewer with an Open button instead of a frame.
+- **Copy puts the IMAGE on the clipboard** (`src/lib/copyImage.js`): bytes through our own origin, re-encoded
+  as PNG (the one type every clipboard accepts), and **the clipboard call made synchronously inside the tap
+  with a PROMISE of the bytes** — iOS Safari drops the gesture on an `await`. Falls back to the share sheet;
+  not offered where neither exists. Copy is on the thumbnail too.
+- `npm run verify:viewer` uploads a real PNG and PDF through the S3 stand-in and drives both layouts.
 
 ## Comms: forward, voice notes, camera
 - **`POST /comms/messages/:id/forward`** `{channel_id, note?}` — access-checked on BOTH ends; refuses the
