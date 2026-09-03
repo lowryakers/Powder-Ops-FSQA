@@ -1609,3 +1609,46 @@ map, which review 03 made an empty account. The users carry their grants now. Th
 the typed approver on document activation, the org chart and the NFP in-app decision (a regulatory
 name that legitimately differs from the operator keying it, all three documented as such), and the
 Operator View's tab strip (a deliberate scroller).
+
+## D-052 — The Shipping Truck Inspection ships as a DRAFT form, stamped as one, until Document Control issues it
+
+**Date:** 3 September 2026. **Asked for by:** the warehouse (via Lowry): "a truck inspection list for
+warehouse to fill out when they are doing a shipment — mirror the receiving inspection list, two tabs
+(receiving + shipping), and the ability to add photos of product on the truck before the shipment goes out."
+
+**The conflict.** Every checklist in ReadyDoc is transcribed verbatim from a controlled form (D-013's
+doctrine, FORM 204-01, 403-01, 415-1). There is no controlled outbound truck inspection form: the Forms
+Master Index has none, SOP 205 (Shipping) describes the process and issues no form, and the plant has not
+been working one on paper. Building it meant either inventing a form and presenting it as the plant's, or
+refusing the warehouse a record it needs now.
+
+**Decided.** Build it, and make the record say what it is. `server/shipping-checklist.js` carries
+`form_code: null` and `CHECKLIST_REVISION = 'DRAFT-1'`; every filed inspection is stamped DRAFT-1 forever,
+the screen carries an amber note on every record, and the questions were drafted from three named sources
+(SOP 205, the pre-load half of FORM 204-01 turned around, and what an SQF outbound transport check asks)
+rather than from taste. When Document Control issues the number, the code takes that number and revision,
+`controlled.js` parks the change, and records filed afterwards carry the issued revision. Records filed
+under DRAFT-1 are never re-stamped. The DCR draft is `docs/v2/queued/dcr-shipping-truck-inspection.md`.
+
+**Why not wait.** A truck that leaves with no record is worse than a truck that leaves with a record
+honestly marked as predating its form. The alternative — the warehouse photographing loads into a chat
+channel — is the film-inspection failure D-013 already recorded once.
+
+**Mechanics that follow the receiving form exactly, on purpose** (one dock learns one form): get-or-create
+on the number, answers saved as tapped, escalations DERIVED from the answers and sent on the triggering
+answer, sign-off refused while anything is blank. The escalation targets are the receiving form's own QA
+people under a different subject line; the `Item`/`ItemNotes` renderers are imported from the receiving
+screen, not copied. Numbering is `S-100-####` from its own table alone, so it can never collide with the
+three-table `A-100` counter.
+
+**The one new rule: the photo claim is checked against the photos.** "Photos of the loaded product taken
+before the doors closed — Yes" with no photograph attached is a claim with nothing behind it, which is
+precisely what the form exists to prevent. Sign-off refuses it and names the fix. Photos are refused on a
+signed-off record (revoke, attach, sign again). Verified: `verify:shipping` (35, live), `verify:warehouseui`
+(20, real browser at 1280 and 360).
+
+**Also in this change, the People module** gained `tags` (a category somebody can be called from: the
+plant's teams from `shared/task-groups.js` plus `Temp / 1099`, kept apart from the free-text `areas`) and
+`candidate_files` (a résumé on the person, deleted with the person, same office/HR-only door). No
+decision of doctrine there; recorded so the session is not the thread. `verify:people` (26, live).
+

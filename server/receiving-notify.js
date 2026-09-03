@@ -21,8 +21,10 @@ import { NOTIFY_TARGETS } from './receiving-checklist.js';
  * Never returns the caller: telling somebody what they just typed is noise, and
  * on a small team the receiver is sometimes also in QA.
  */
-export function resolveTarget(db, targetKey, excludeUserId = null) {
-  const t = NOTIFY_TARGETS[targetKey];
+// `targets` defaults to FORM 204-01's map; the shipping inspection passes its
+// own, which reuses the same QA people under a different subject line.
+export function resolveTarget(db, targetKey, excludeUserId = null, targets = NOTIFY_TARGETS) {
+  const t = targets[targetKey];
   if (!t) return [];
   const found = new Map();
   for (const name of t.names) {
@@ -53,10 +55,10 @@ export function resolveTarget(db, targetKey, excludeUserId = null) {
  * Returns who it actually reached, which is what gets written onto the record —
  * "notified QA" with nobody behind it would be worse than no record at all.
  */
-export async function sendEscalation(db, { item, target, inspectionNo, detail, from, path, origin, icon = '📦' }) {
-  const people = resolveTarget(db, target, from?.id);
+export async function sendEscalation(db, { item, target, inspectionNo, detail, from, path, origin, icon = '📦', targets = NOTIFY_TARGETS, tagPrefix = 'receiving' }) {
+  const people = resolveTarget(db, target, from?.id, targets);
   if (!people.length) return { sent: [], reason: 'nobody to notify' };
-  const t = NOTIFY_TARGETS[target];
+  const t = targets[target];
   // WHERE THE ALERT CAME FROM IS PART OF IT. Most escalations here are a person
   // pressing a button on FORM 204-01, and saying so tells the reader somebody
   // is standing at the dock. The lab-sample alert is raised by the arrival
@@ -82,7 +84,7 @@ export async function sendEscalation(db, { item, target, inspectionNo, detail, f
       pushToUser(p.id, {
         title: t.subject,
         body: `${inspectionNo}: ${item}`.slice(0, 120),
-        tag: `receiving-${inspectionNo}-${target}`, renotify: true, url: appPath,
+        tag: `${tagPrefix}-${inspectionNo}-${target}`, renotify: true, url: appPath,
       }).catch(() => {});
       sent.push(p.name);
     } catch { /* one failure must not lose the others */ }

@@ -930,6 +930,61 @@ that has to be fed to stay useful. Office nav group, module id `candidates`.
   including "Nutriient"/"Nutrisoft", **insert-only and skipped entirely once the table has any row** — a
   redeploy must never resurrect somebody Marnee removed.
 
+## People: a tag is a category you can call from; a file is a résumé that dies with the person
+`candidates.tags` (JSON array) + `candidate_files` (R2 via the shared media path), both in
+`server/api/candidates.js` behind the same office/HR-only mount gate — a résumé is more personal than a
+phone number and gets no wider a door (asserted: a warehouse supervisor holding the module grant is still
+refused, for files too).
+- **TAGS AND AREAS ARE TWO FIELDS ON PURPOSE.** `areas` is free text about what somebody could do;
+  a tag is a category somebody can be **called from**: the plant's teams from `shared/task-groups.js`
+  (the ONE routing vocabulary) plus `Temp / 1099`, the pool the office draws on when a week needs hands.
+  Free tags are allowed and kept as typed; a spelling of a suggestion is canonicalised ("warehouse" files
+  as "Warehouse") so one team cannot become two chips.
+- **`?tag=` matches a whole JSON element (`json_each`), never a substring** — "QA" must not match
+  "Quality Assurance Lead" typed as a free tag. Case-insensitive.
+- **Every suggested tag is offered at zero** in `/candidates/meta` and on the filter row, so a team nobody
+  is tagged for yet is still visibly a category rather than an absence.
+- **An edit that does not mention `tags` leaves them alone; one that does replaces them** — the same
+  `body.x ?? existing.x` rule as every other column there.
+- **Deleting the person deletes the files and the objects.** Candidates are deleted, not retired (their
+  own rule), and a résumé outliving the row it belonged to is exactly the orphaned personal data the module
+  promises not to keep. Asserted against the S3 stand-in: the object is 404 afterwards.
+- Verified: `verify:people` (26 live) and the People half of `verify:warehouseui` (real browser).
+
+## The Shipping Truck Inspection: FORM 204-01 turned around, stamped DRAFT until Document Control issues it (D-052)
+`server/shipping-checklist.js` (the questions), `server/api/shipping.js` (mounted under the
+**`receiving-log`** grant — same dock, same people), `shipping_inspections` + `shipping_photos`,
+`ShippingChecklist.jsx` + `ShipmentsTab` as the **Shipping** tab of the Receiving module (the Inspections
+tab is now labelled **Receiving**). Deep link `?tab=receiving-log&view=shipping&shipment=S-100-0001`.
+- **THERE IS NO CONTROLLED FORM FOR THIS, AND THE RECORD SAYS SO.** Every other checklist is transcribed
+  verbatim; this one was DRAFTED (SOP 205, the pre-load half of 204-01 turned around, an SQF outbound
+  transport check) because the Master Index has nothing and the warehouse needs the record now.
+  `form_code: null`, `CHECKLIST_REVISION = 'DRAFT-1'` stamped on every record, an amber note on every
+  screen. When Document Control issues the number the code takes it, `controlled.js` parks it, and DRAFT-1
+  records are never re-stamped. The DCR draft is `docs/v2/queued/dcr-shipping-truck-inspection.md`.
+  **Do not "tidy" the draft wording without telling Document Control** — once issued it is theirs.
+- **Same skeleton as receiving, deliberately**: get-or-create on the number, answers saved as tapped,
+  escalations derived from the answers and sent on the triggering answer (`sendEscalation` now takes a
+  `targets` map and `tagPrefix`; the shipping targets are receiving's QA people under a different subject),
+  sign-off refused while anything is blank. `Item` / `ItemNotes` are **imported from
+  `ReceivingChecklist.jsx`**, not copied — one dock learns one form.
+- **`S-100-####` is issued from `shipping_inspections` alone.** `A-100` counts three tables
+  (`inspection-no.js`); a separate prefix is what keeps the two counters from ever needing to know about
+  each other. Asserted: starting a shipment leaves receiving's next number at A-100-0001.
+- **THE PHOTO CLAIM IS CHECKED AGAINST THE PHOTOS.** "Photos taken — Yes" with none attached is refused at
+  sign-off (`photoClaimUnsupported`, reported on the record as `photo_claim_unsupported` so the drawer can
+  warn before the button is pressed). Photos cannot be added to or removed from a signed-off inspection —
+  revoke, attach, sign again. The photo strip sits directly under the LOAD section that asks for it, and
+  the input carries `capture="environment"` so a phone opens the camera.
+- **Closing the drawer bumps `refreshKey`** so the card behind it stops reading "0 of 18 answered" after a
+  truck was released — the list must not disagree with the record. The receiving Inspections tab has the
+  same shape and the same gap; fix it there the same way when it is next touched.
+- **The module's tab strip now scrolls** (`overflow-x-auto`, `whitespace-nowrap shrink-0`): seven tabs
+  panned the whole page sideways at 360px, which the browser check's overflow probe caught.
+- Verified: `verify:shipping` (35 live: numbering, the auto-escalation DM naming the shipping form and
+  deep-linking to it, the three sign-off refusals, the signed-off lock, revoke) and `verify:warehouseui`
+  (20 in a real browser at 1280 and 360, incl. a real photo through the S3 stand-in).
+
 ## `coerceCustomData` returns `{ data, errors }`; `mergeCustomData` takes TWO arguments
 Both are easy to call wrongly and neither complains. Five call sites across three modules were wrong and
 the failures were silent, so **check the signature in `custom-fields.js` rather than copying a caller**:

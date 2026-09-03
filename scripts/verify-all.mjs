@@ -27,6 +27,9 @@ const RUNS = [
   ['verify-signatures.mjs', 4963],
   ['verify-mobile-cards.mjs', 4964],
   ['verify-image-viewer.mjs', 4965, {}, true],
+  ['verify-people-files.mjs', 4968, {}, true],
+  ['verify-shipping.mjs', 4969, {}, true],
+  ['verify-warehouse-ui.mjs', 4970, {}, true],
   ['verify-sensory-ui.mjs', 4966],
   // Two older scripts carry their own port.
   ['verify-suppliers.mjs', 4841],

@@ -31,7 +31,7 @@ const ANSWER_STYLE = {
 };
 const ANSWER_LABEL = { yes: 'Yes', no: 'No', na: 'N/A' };
 
-function AnswerButtons({ value, onPick, disabled }) {
+export function AnswerButtons({ value, onPick, disabled }) {
   return (
     <div className="flex gap-1 shrink-0">
       {['yes', 'no', 'na'].map(a => (
@@ -45,7 +45,7 @@ function AnswerButtons({ value, onPick, disabled }) {
   );
 }
 
-function Item({ item, value, sent, onAnswer, onNotify, notifying, locked }) {
+export function Item({ item, value, sent, onAnswer, onNotify, notifying, locked }) {
   // The escalation now SENDS ITSELF when the answer that fires it is tapped —
   // so the "*If YES, notify Adam…" instruction is no longer rendered (the app
   // performs it), and the amber prompt only appears when the automatic send
@@ -85,7 +85,7 @@ function Item({ item, value, sent, onAnswer, onNotify, notifying, locked }) {
 }
 
 /** The form's NOTES table: part #, description, and what was wrong with it. */
-function ItemNotes({ rows, onChange, locked }) {
+export function ItemNotes({ rows, onChange, locked }) {
   const set = (i, k, v) => onChange(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   return (
     <div className="space-y-1.5">

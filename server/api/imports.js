@@ -104,6 +104,7 @@ const TARGETS = {
       // them ("cleaning/Maintenance"). Split on the way in, or she is findable
       // under neither.
       { key: 'areas', label: 'Type / area', aliases: ['type', 'area', 'department', 'areas'] },
+      { key: 'tags', label: 'Tags', aliases: ['tags', 'tag', 'category', 'team'] },
       { key: 'phone', label: 'Phone', aliases: ['phone', 'mobile', 'cell', 'number'] },
       { key: 'email', label: 'Email', aliases: ['email', 'e-mail'] },
       // A DATE. The Monday export writes these as Excel serials (46087, 46091,
@@ -112,10 +113,11 @@ const TARGETS = {
       { key: 'interviewed_on', label: 'Interviewed', type: 'date', aliases: ['interviewed', 'interview', 'interview date'] },
       { key: 'notes', label: 'Notes', aliases: ['notes', 'note', 'comment', 'comments'] },
     ],
-    columns: ['name', 'title', 'company', 'areas', 'phone', 'email', 'interviewed_on', 'notes', 'source'],
+    columns: ['name', 'title', 'company', 'areas', 'tags', 'phone', 'email', 'interviewed_on', 'notes', 'source'],
     transform: (row) => ({
       ...row,
       areas: JSON.stringify(String(row.areas || '').split(/[/,;]/).map(s => s.trim()).filter(Boolean)),
+      tags: JSON.stringify(String(row.tags || '').split(/[,;]/).map(s => s.trim()).filter(Boolean)),
       source: 'monday',
     }),
     // A function, not an object — it is called per row.

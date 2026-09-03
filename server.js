@@ -92,6 +92,7 @@ import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-record
 import { syncAllKnifeStatuses } from './server/knife-state.js';
 import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
 import receivingRoutes from './server/api/receiving.js';
+import shippingRoutes from './server/api/shipping.js';
 import filmInspectionRoutes from './server/api/film-inspection.js';
 import safetyRoutes from './server/api/safety.js';
 import importRoutes from './server/api/imports.js';
@@ -1858,6 +1859,8 @@ app.use('/api/qms', qmsRoutes);
 app.use('/api/structure', structureRoutes);
 app.use('/api/log-builder', logBuilderRoutes);
 app.use('/api/receiving', requireModuleWrite('receiving-log'), receivingRoutes);
+// The outbound truck inspection lives in the Receiving Log module (same dock, same people, same grant).
+app.use('/api/shipping', requireModuleWrite('receiving-log'), shippingRoutes);
 // FORM 418-01 shows on the Receiving module's tab strip, but the inspection is
 // QA's work — gating it on the warehouse's module would have meant every QA
 // lead needed Receiving Log before they could look at a roll of film.

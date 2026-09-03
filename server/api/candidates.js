@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { readFileSync } from 'fs';
 import { coerceCustomData, mergeCustomData } from '../custom-fields.js';
+import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
+import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
+import { TASK_GROUPS } from '../../shared/task-groups.js';
 
 // People we would like to work with, when the timing is right.
 //
@@ -61,6 +65,45 @@ export function prettyPhone(phone) {
   return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : String(phone || '');
 }
 
+// A TAG IS A CATEGORY SOMEBODY CAN BE CALLED FROM; an area is free text about
+// what they could do. The two are kept apart because they answer different
+// questions — "who do we have for Kitting" is a filter, "cleaning/Maintenance,
+// speaks Spanish" is a note. The suggestions are the plant's own teams (the
+// ONE task-group vocabulary) plus Temp / 1099, the pool the office draws on
+// when a week needs extra hands. Anything else typed is kept as typed;
+// matching a suggestion is case-insensitive so "warehouse" files as
+// "Warehouse" rather than as a second tag.
+export const TEMP_TAG = 'Temp / 1099';
+export const SUGGESTED_TAGS = [...TASK_GROUPS.map(g => g.label), TEMP_TAG];
+const canonicalTag = (t) => SUGGESTED_TAGS.find(s => s.toLowerCase() === t.toLowerCase()) || t;
+const parseTags = (v) => {
+  const raw = Array.isArray(v) ? v : (() => {
+    if (typeof v !== 'string') return [];
+    try { const j = JSON.parse(v); if (Array.isArray(j)) return j; } catch { /* not JSON */ }
+    return v.split(/[,;]/);
+  })();
+  const out = [];
+  for (const x of raw.map(x => canonicalTag(String(x).trim().slice(0, 40))).filter(Boolean)) {
+    if (!out.some(o => o.toLowerCase() === x.toLowerCase())) out.push(x);
+  }
+  return out;
+};
+
+const fileUpload = mediaUpload({ files: 5 }).array('files', 5);
+const uploadFiles = (req, res, next) => fileUpload(req, res, (err) => {
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  next();
+});
+
+function filesFor(db, ids) {
+  if (!ids.length) return {};
+  const rows = db.prepare(`SELECT id, candidate_id, storage_key, filename, content_type, size, uploaded_by, uploaded_at
+    FROM candidate_files WHERE candidate_id IN (${ids.map(() => '?').join(',')}) ORDER BY uploaded_at`).all(...ids);
+  const by = {};
+  for (const { storage_key, ...r } of rows) (by[r.candidate_id] ||= []).push({ ...r, has_file: !!storage_key });
+  return by;
+}
+
 const parseAreas = (v) => {
   if (Array.isArray(v)) return v.map(x => String(x).trim()).filter(Boolean);
   if (typeof v === 'string') {
@@ -72,9 +115,11 @@ const parseAreas = (v) => {
   return [];
 };
 
-const shape = (r) => ({
+const shape = (r, files = []) => ({
   ...r,
   areas: (() => { try { return JSON.parse(r.areas || '[]'); } catch { return []; } })(),
+  tags: (() => { try { return JSON.parse(r.tags || '[]'); } catch { return []; } })(),
+  files,
   custom_data: (() => { try { return JSON.parse(r.custom_data || '{}'); } catch { return {}; } })(),
   phone_display: prettyPhone(r.phone),
   phone_digits: digitsOf(r.phone),
@@ -82,11 +127,14 @@ const shape = (r) => ({
 
 router.get('/', (req, res) => {
   const db = getDb();
-  const { q, status, area, limit } = req.query;
+  const { q, status, area, tag, limit } = req.query;
   let sql = 'SELECT * FROM candidates WHERE 1=1';
   const params = [];
   if (status) { sql += ' AND status = ?'; params.push(status); }
   if (area) { sql += ' AND areas LIKE ?'; params.push(`%${area}%`); }
+  // Matched as a JSON array element, not a substring — "QA" must not match
+  // "Quality Assurance Lead" typed as a free tag.
+  if (tag) { sql += " AND EXISTS (SELECT 1 FROM json_each(COALESCE(candidates.tags, '[]')) WHERE LOWER(value) = LOWER(?))"; params.push(tag); }
   if (q && String(q).trim()) {
     // Notes are searched too, and that is the point: "Reina's previous
     // coworker" is how somebody is actually remembered, not by their job title.
@@ -109,17 +157,30 @@ router.get('/', (req, res) => {
   // Bounded like every other list endpoint here.
   sql += ' ORDER BY name COLLATE NOCASE LIMIT ?';
   params.push(Math.min(Number(limit) || 500, 1000));
-  res.json(db.prepare(sql).all(...params).map(shape));
+  const rows = db.prepare(sql).all(...params);
+  const files = filesFor(db, rows.map(r => r.id));
+  res.json(rows.map(r => shape(r, files[r.id] || [])));
 });
 
 router.get('/meta', (_req, res) => {
   const db = getDb();
-  const rows = db.prepare('SELECT status, areas FROM candidates').all();
+  const rows = db.prepare('SELECT status, areas, tags FROM candidates').all();
   const areas = new Map();
+  const tags = new Map();
   for (const r of rows) {
     try { for (const a of JSON.parse(r.areas || '[]')) areas.set(a, (areas.get(a) || 0) + 1); } catch { /* skip */ }
+    try { for (const t of JSON.parse(r.tags || '[]')) tags.set(t, (tags.get(t) || 0) + 1); } catch { /* skip */ }
   }
   res.json({
+    // Every suggestion is offered with its count, zero included, so the filter
+    // row reads "Kitting · 0" rather than hiding a team nobody is tagged for
+    // yet. Tags typed outside the suggestions follow, most-used first.
+    tags: [
+      ...SUGGESTED_TAGS.map(name => ({ name, count: tags.get(name) || 0, suggested: true })),
+      ...[...tags.entries()].filter(([n]) => !SUGGESTED_TAGS.includes(n))
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, count]) => ({ name, count })),
+    ],
+    storage_enabled: storageEnabled(),
     statuses: STATUSES,
     counts: STATUS_VALUES.reduce((acc, s) => ({ ...acc, [s]: rows.filter(r => r.status === s).length }), {}),
     total: rows.length,
@@ -130,10 +191,56 @@ router.get('/meta', (_req, res) => {
   });
 });
 
+// ── Files: a résumé, a certificate, a reference ─────────────────────────────
+// Declared before `/:id` — "files" is a perfectly good id. Same mount gate as
+// the rest of the module: a résumé is more personal than a phone number, and
+// it gets no wider a door.
+router.get('/files/:fileId/url', async (req, res) => {
+  const f = getDb().prepare('SELECT * FROM candidate_files WHERE id = ?').get(req.params.fileId);
+  if (!f?.storage_key) return res.status(404).json({ error: 'No file' });
+  res.json({ url: await presignGet(f.storage_key, f.filename) });
+});
+
+router.delete('/files/:fileId', (req, res) => {
+  const db = getDb();
+  const f = db.prepare(`SELECT cf.*, c.name AS candidate_name FROM candidate_files cf
+    JOIN candidates c ON c.id = cf.candidate_id WHERE cf.id = ?`).get(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM candidate_files WHERE id = ?').run(f.id);
+  if (f.storage_key) deleteObject(f.storage_key);
+  logAudit(req.user, 'delete', 'candidate_file', f.id, { filename: f.filename }, null, null, f.candidate_name);
+  res.json({ ok: true });
+});
+
+router.post('/:id/files', uploadFiles, async (req, res) => {
+  const files = req.files || [];
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM candidates WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+    if (!files.length) return res.status(400).json({ error: 'No file received.' });
+    for (const f of files) {
+      const fid = uuid();
+      const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+      const key = `candidates/${row.id}/${fid}-${safe}`;
+      await putObject(key, readFileSync(f.path), f.mimetype);
+      db.prepare(`INSERT INTO candidate_files (id, candidate_id, storage_key, filename, content_type, size, uploaded_by)
+        VALUES (?,?,?,?,?,?,?)`).run(fid, row.id, key, (f.originalname || 'file').slice(0, 255),
+        f.mimetype || null, f.size || null, req.user.name);
+    }
+    logAudit(req.user, 'update', 'candidate', row.id, { files_added: files.map(f => f.originalname) }, null, null, row.name);
+    res.json(shape(row, filesFor(db, [row.id])[row.id] || []));
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
 router.get('/:id', (req, res) => {
-  const row = getDb().prepare('SELECT * FROM candidates WHERE id = ?').get(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM candidates WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json(shape(row));
+  res.json(shape(row, filesFor(db, [row.id])[row.id] || []));
 });
 
 function writable(body, db, existing) {
@@ -144,6 +251,7 @@ function writable(body, db, existing) {
     title: body.title ?? existing?.title ?? null,
     company: body.company ?? existing?.company ?? null,
     areas: JSON.stringify(parseAreas(body.areas ?? existing?.areas)),
+    tags: JSON.stringify(parseTags(body.tags ?? existing?.tags)),
     phone: body.phone ?? existing?.phone ?? null,
     email: body.email ?? existing?.email ?? null,
     referred_by: body.referred_by ?? existing?.referred_by ?? null,
@@ -172,9 +280,9 @@ router.post('/', (req, res) => {
   // it is a form somebody keeps a private list instead of.
   if (!f.name) return res.status(400).json({ error: 'A name is needed — everything else can come later.' });
   const id = uuid();
-  db.prepare(`INSERT INTO candidates (id, name, title, company, areas, phone, email, referred_by,
+  db.prepare(`INSERT INTO candidates (id, name, title, company, areas, tags, phone, email, referred_by,
       interviewed_on, last_contacted_on, status, notes, custom_data, source, external_id, created_by, updated_by)
-    VALUES (@id, @name, @title, @company, @areas, @phone, @email, @referred_by,
+    VALUES (@id, @name, @title, @company, @areas, @tags, @phone, @email, @referred_by,
       @interviewed_on, @last_contacted_on, @status, @notes, @custom_data, @source, @external_id, @by, @by)`)
     .run({ ...f, id, source: req.body.source || null, external_id: req.body.external_id || null, by: req.user.name });
   const row = db.prepare('SELECT * FROM candidates WHERE id = ?').get(id);
@@ -189,7 +297,7 @@ router.put('/:id', (req, res) => {
   let f;
   try { f = writable(req.body, db, existing); } catch (e) { return res.status(400).json({ error: e.message }); }
   if (!f.name) return res.status(400).json({ error: 'A name is needed.' });
-  db.prepare(`UPDATE candidates SET name=@name, title=@title, company=@company, areas=@areas,
+  db.prepare(`UPDATE candidates SET name=@name, title=@title, company=@company, areas=@areas, tags=@tags,
       phone=@phone, email=@email, referred_by=@referred_by, interviewed_on=@interviewed_on,
       last_contacted_on=@last_contacted_on, status=@status, notes=@notes, custom_data=@custom_data,
       updated_by=@by, updated_at=datetime('now') WHERE id=@id`)
@@ -209,7 +317,12 @@ router.delete('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM candidates WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  // The files go with the person — a résumé outliving the row it belonged to
+  // is exactly the orphaned personal data this module promises not to keep.
+  const keys = db.prepare('SELECT storage_key FROM candidate_files WHERE candidate_id = ?').all(req.params.id);
+  db.prepare('DELETE FROM candidate_files WHERE candidate_id = ?').run(req.params.id);
   db.prepare('DELETE FROM candidates WHERE id = ?').run(req.params.id);
+  for (const k of keys) if (k.storage_key) deleteObject(k.storage_key);
   logAudit(req.user, 'delete', 'candidate', req.params.id, { name: existing.name }, existing, null, existing.name);
   res.json({ ok: true });
 });

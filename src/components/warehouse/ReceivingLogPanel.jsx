@@ -3,12 +3,13 @@ import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 import {
   PackageCheck, Plus, ClipboardList, Search, Filter, Pencil,
   CheckCircle, Clock, AlertTriangle, ChevronUp, ChevronDown, ExternalLink, Upload, ClipboardCheck,
-  ScanLine, FlaskConical,
+  ScanLine, FlaskConical, Truck,
 } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import ImportPanel from '../common/ImportPanel';
 import ReceivingChecklist from './ReceivingChecklist.jsx';
+import ShippingChecklist, { ShipmentsTab } from './ShippingChecklist.jsx';
 import FilmPouchInspection, { FilmInspectionsTab } from './FilmPouchInspection.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
@@ -864,7 +865,7 @@ export default function ReceivingLogPanel({ user }) {
   // the effect below clears them so a later remount doesn't replay the link.
   const [tab, setTab] = useState(() => {
     const v = getParam('view');
-    if (v && ['inspections', 'film', 'log', 'form', 'import', 'lab-tests'].includes(v)) return v;
+    if (v && ['inspections', 'shipping', 'film', 'log', 'form', 'import', 'lab-tests'].includes(v)) return v;
     return canFile(user) ? 'inspections' : 'log';
   });
   const [refreshKey, setRefreshKey] = useState(0);
@@ -876,7 +877,9 @@ export default function ReceivingLogPanel({ user }) {
   const [prefillInspection, setPrefillInspection] = useState('');
   // FORM 418-01 for one flavour on one delivery.
   const [filmId, setFilmId] = useState(() => getParam('film') || null);
-  useEffect(() => { consumeParam('view'); consumeParam('checklist'); consumeParam('film'); }, []);
+  // The outbound truck inspection for one shipment (?view=shipping&shipment=<no>).
+  const [shipment, setShipment] = useState(() => getParam('shipment') || null);
+  useEffect(() => { consumeParam('view'); consumeParam('checklist'); consumeParam('film'); consumeParam('shipment'); }, []);
   const canLog = canFile(user);
   const canFilm = canFilmInspect(user);
   // Importing rewrites the log in bulk — thousands of compliance records in one
@@ -889,7 +892,10 @@ export default function ReceivingLogPanel({ user }) {
   // the lines, then read the log. Someone who cannot file skips straight to
   // the log, which is all they came for.
   const tabs = [
-    ...(canLog ? [{ id: 'inspections', label: 'Inspections', icon: ClipboardCheck }] : []),
+    ...(canLog ? [{ id: 'inspections', label: 'Receiving', icon: ClipboardCheck }] : []),
+    // The same dock, the other direction: the truck inspection worked when a
+    // shipment leaves, with the photographs of the load before the doors close.
+    ...(canLog ? [{ id: 'shipping', label: 'Shipping', icon: Truck }] : []),
     // Read-only for the warehouse, filed by QA: whether QA has cleared the
     // packaging is exactly what the warehouse needs before putting it away, so
     // the tab is not hidden from them.
@@ -904,10 +910,12 @@ export default function ReceivingLogPanel({ user }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+      {/* Seven tabs no longer fit a 360px phone. A tab strip scrolls, never
+          wraps — the ModuleTabs rule — or the page pans sideways. */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit max-w-full overflow-x-auto">
         {tabs.map(t => (
           <button key={t.id} type="button" onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
             <t.icon size={15} /> {t.label}
           </button>
         ))}
@@ -915,6 +923,13 @@ export default function ReceivingLogPanel({ user }) {
       {tab === 'inspections' && canLog && (
         <InspectionsTab canLog={canLog} onOpen={setChecklist} />
       )}
+      {tab === 'shipping' && canLog && (
+        <ShipmentsTab key={refreshKey} canLog={canLog} onOpen={setShipment} />
+      )}
+      {/* Closing the drawer re-reads the list behind it — answers and photos
+          were saved as they were tapped, and a card still reading "0 of 18"
+          after the truck was released is the list disagreeing with the record. */}
+      {shipment && <ShippingChecklist shipmentNo={shipment} onClose={() => { setShipment(null); setRefreshKey(k => k + 1); }} />}
       {tab === 'film' && <FilmInspectionsTab canInspect={canFilm} onOpen={setFilmId} />}
       {filmId && (
         <FilmPouchInspection id={filmId} canInspect={canFilm} onClose={() => setFilmId(null)} />

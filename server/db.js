@@ -1168,6 +1168,57 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_receiving_checklists_no ON receiving_checklists(inspection_no);
     CREATE INDEX IF NOT EXISTS idx_receiving_checklists_date ON receiving_checklists(inspection_date DESC);
 
+    -- The outbound twin of FORM 204-01: the truck inspection the warehouse
+    -- works when a shipment LEAVES. Same shape on purpose — one record per
+    -- truck, answers saved as tapped, escalations derived from the answers,
+    -- one sign-off — so the dock learns one form, not two. The questions are a
+    -- DRAFT (shipping-checklist.js): no controlled form exists for this yet,
+    -- and the app says so on every record until Document Control issues one.
+    -- Numbered S-100-#### from this table alone; A-100 stays receiving's.
+    CREATE TABLE IF NOT EXISTS shipping_inspections (
+      id TEXT PRIMARY KEY,
+      shipment_no TEXT NOT NULL UNIQUE,
+      checklist_revision TEXT NOT NULL,
+      ship_date TEXT,
+      inspector TEXT,
+      order_number TEXT,
+      bol_number TEXT,
+      customer TEXT,
+      carrier TEXT,
+      truck_number TEXT,
+      driver_name TEXT,
+      seal_number TEXT,
+      pallet_count REAL,
+      answers TEXT NOT NULL DEFAULT '{}',
+      item_notes TEXT,
+      notifications TEXT NOT NULL DEFAULT '[]',
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_shipping_inspections_no ON shipping_inspections(shipment_no);
+    CREATE INDEX IF NOT EXISTS idx_shipping_inspections_date ON shipping_inspections(ship_date DESC);
+
+    -- The photographs of the load before the doors close. THIS is the evidence
+    -- the shipping form exists to produce: a claim of "product loaded intact"
+    -- with a picture behind it. Stored in R2 through the shared media path;
+    -- refused once the inspection is signed off.
+    CREATE TABLE IF NOT EXISTS shipping_photos (
+      id TEXT PRIMARY KEY,
+      inspection_id TEXT NOT NULL,
+      storage_key TEXT,
+      filename TEXT,
+      content_type TEXT,
+      size INTEGER,
+      caption TEXT,
+      uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      uploaded_by TEXT,
+      FOREIGN KEY (inspection_id) REFERENCES shipping_inspections(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_shipping_photos ON shipping_photos(inspection_id);
+
     -- FORM 418-01 — the QA Film/Pouch Inspection Checklist.
     --
     -- FORM 204-01's very first question is "Is the product Packaging (Film or
@@ -1767,6 +1818,24 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_kiosk_tokens_slug ON kiosk_tokens(slug, revoked_at);
     CREATE INDEX IF NOT EXISTS idx_candidates_status ON candidates(status, name);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_external ON candidates(external_id) WHERE external_id IS NOT NULL;
+
+    -- A résumé, a certificate, a reference letter — attached to the person
+    -- rather than living in somebody's Downloads folder. R2 via the shared
+    -- media path; the row survives without a key so the list can say "no file
+    -- on this one" honestly. Deleted with the candidate (candidates are
+    -- deleted, not retired — see api/candidates.js).
+    CREATE TABLE IF NOT EXISTS candidate_files (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL,
+      storage_key TEXT,
+      filename TEXT,
+      content_type TEXT,
+      size INTEGER,
+      uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      uploaded_by TEXT,
+      FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_candidate_files ON candidate_files(candidate_id);
 
     CREATE INDEX IF NOT EXISTS idx_visitors_email ON visitors(email);
     CREATE INDEX IF NOT EXISTS idx_visitors_name ON visitors(last_name, first_name);
@@ -2776,6 +2845,11 @@ function runMigrations() {
   // fails a check that should have passed, which is how people learn to
   // ignore a check. Until entered the proofer reports UNVERIFIED — honest.
   addColumnIfMissing('products', 'fill_weight_g', 'REAL');
+  // People: a tag is a category somebody can be called from (a team, or
+  // Temp / 1099) — distinct from `areas`, which is free text about what they
+  // could do. The candidates CREATE runs long before this line, so the ALTER
+  // is safe here.
+  addColumnIfMissing('candidates', 'tags', 'TEXT');
 
   // WORK DONE IN ANOTHER SYSTEM, CONFIRMED BY A PERSON HERE.
   //
