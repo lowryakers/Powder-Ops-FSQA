@@ -711,7 +711,7 @@ router.get('/', (req, res) => {
   if (category) { sql += ' AND category = ?'; params.push(category); }
   if (status) { sql += ' AND status = ?'; params.push(status); }
   else { sql += " AND status != 'archived'"; }
-  if (q) { sql += ' AND (LOWER(title) LIKE ? OR LOWER(doc_number) LIKE ? OR LOWER(owner) LIKE ?)'; const like = `%${q.toLowerCase()}%`; params.push(like, like, like); }
+  if (q && String(q).trim()) { sql += ' AND (LOWER(title) LIKE ? OR LOWER(doc_number) LIKE ? OR LOWER(owner) LIKE ?)'; const like = `%${q.toLowerCase()}%`; params.push(like, like, like); }
 
   const col = SORTABLE[sort] || 'doc_number';
   const dir = order === 'desc' ? 'DESC' : 'ASC';

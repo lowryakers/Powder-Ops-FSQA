@@ -43,7 +43,7 @@ router.get('/', (req, res) => {
   const db = getDb();
   const q = (req.query.q || '').toString().trim();
   let rows;
-  if (q) {
+  if (q && String(q).trim()) {
     const like = `%${q}%`;
     rows = db.prepare(`SELECT ${PUBLIC_COLS}, extracted_text FROM certifications
       WHERE person_name LIKE ? OR cert_type LIKE ? OR issuer LIKE ? OR cert_number LIKE ?

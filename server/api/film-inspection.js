@@ -88,7 +88,7 @@ router.get('/', (req, res) => {
   const params = [];
   if (open === '1') sql += ' AND reviewed_at IS NULL';
   if (no) { sql += ' AND inspection_no = ?'; params.push(no); }
-  if (q) {
+  if (q && String(q).trim()) {
     sql += ' AND (inspection_no LIKE ? OR flavor LIKE ? OR vendor LIKE ? OR part_no LIKE ? OR vendor_lot LIKE ?)';
     const like = `%${q}%`;
     params.push(like, like, like, like, like);

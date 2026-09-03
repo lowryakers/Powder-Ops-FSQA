@@ -191,6 +191,8 @@ control fails 14) and `npm run verify:writedoors` (22 live, control fails 12).
 **F3–F10 FIXED 2026-09-03** — each asserts the positive fact first: the pure module imports nothing that can write, the seeded Admin is a row to inspect, both supplier gaps are non-empty and equal their summary counts, the no-clean task exists before its description is read, and the import commit's own count is what the register gained. Every touched suite re-run green.
 - **Residual** every `LIKE` guard is `if (q)` not `if (q.trim())`; a whitespace query yields `LIKE '% %'`. `coa.js:474` prepares `IN ()` one line before its guard.
 
+**Residual and F2 FIXED 2026-09-03** — every search guard trims; the IN list is prepared only with rows; the COA select-all is false for an empty group (asserted in `check:mirrors`).
+
 ### Class G — mirrors
 - **G3** `sanitation.js:700` `closeRecleanTasksFor` completes a work order without clearing `rework_required` — the card reads completed + Rework forever.
 - **G4** `equipment.js:88-89` `syncTaskGroupToPM` re-routes every open work order on an asset by `equipment_id`, overriding the `qa` tagging `tagQaInspectionTasks` applied — QA inspection tasks silently leave QA's list until the next restart.

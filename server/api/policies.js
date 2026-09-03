@@ -83,7 +83,7 @@ router.get('/', (req, res) => {
   else if (req.query.status && STATUSES.includes(req.query.status)) { sql += ' AND status = ?'; params.push(req.query.status); }
   if (req.query.category) { sql += ' AND category = ?'; params.push(req.query.category); }
 
-  if (q) {
+  if (q && String(q).trim()) {
     // The uploaded document's text is searched too — "everything in the doc is
     // searchable" is the point of extracting it.
     sql += ' AND (title LIKE ? OR code LIKE ? OR summary LIKE ? OR body LIKE ? OR extracted_text LIKE ?)';

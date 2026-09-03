@@ -104,7 +104,7 @@ router.get('/', (req, res) => {
   if (to) { sql += ' AND date_received <= ?'; params.push(to); }
   if (status) { sql += ' AND status_of_release = ?'; params.push(status); }
   if (uom) { sql += ' AND uom = ?'; params.push(uom); }
-  if (q) {
+  if (q && String(q).trim()) {
     // Quantity is searchable too — people look up "the 45.36 kg receipt".
     // CAST because the column is REAL and LIKE on a number won't match.
     sql += ` AND (po_number LIKE ? OR part_number LIKE ? OR part_description LIKE ?

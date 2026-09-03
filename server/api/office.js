@@ -172,7 +172,7 @@ router.get('/supply/orders', (req, res) => {
   let sql = 'SELECT * FROM supply_orders WHERE 1=1';
   const params = [];
   if (status) { sql += ' AND status = ?'; params.push(status); }
-  if (q) { sql += ' AND (item_name LIKE ? OR supplier LIKE ? OR label LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q && String(q).trim()) { sql += ' AND (item_name LIKE ? OR supplier LIKE ? OR label LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   sql += " ORDER BY CASE status WHEN 'new' THEN 0 WHEN 'ordered' THEN 1 WHEN 'received' THEN 2 ELSE 3 END, urgent DESC, submitted_at DESC LIMIT 1000";
   const rows = db.prepare(sql).all(...params);
   // One lookup for every linked invoice rather than a query per row.
@@ -353,7 +353,7 @@ router.get('/supply/invoices', async (req, res) => {
   let sql = 'SELECT * FROM supply_invoices WHERE 1=1';
   const params = [];
   // Search covers the indexed file contents too (what's written INSIDE the invoice).
-  if (q) { sql += ' AND (filename LIKE ? OR supplier LIKE ? OR notes LIKE ? OR extracted_text LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q && String(q).trim()) { sql += ' AND (filename LIKE ? OR supplier LIKE ? OR notes LIKE ? OR extracted_text LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   sql += ' ORDER BY COALESCE(invoice_date, created_at) DESC LIMIT 500';
   const rows = db.prepare(sql).all(...params);
   const out = await Promise.all(rows.map(async r => ({ ...invoiceShape(r), url: await presignGet(r.storage_key, r.filename).catch(() => null) })));

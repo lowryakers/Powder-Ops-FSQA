@@ -471,8 +471,10 @@ router.get('/requests', (req, res) => {
   params.push(limit);
   const requests = db.prepare(sql).all(...params);
 
-  const fileCountStmt = db.prepare('SELECT request_id, file_type, COUNT(*) as count FROM coa_files WHERE request_id IN (' + requests.map(() => '?').join(',') + ') GROUP BY request_id, file_type');
-  const fileCounts = requests.length > 0 ? fileCountStmt.all(...requests.map(r => r.id)) : [];
+  const fileCounts = requests.length > 0
+    ? db.prepare('SELECT request_id, file_type, COUNT(*) as count FROM coa_files WHERE request_id IN (' + requests.map(() => '?').join(',') + ') GROUP BY request_id, file_type')
+      .all(...requests.map(r => r.id))
+    : [];
   const fileMap = {};
   for (const fc of fileCounts) {
     if (!fileMap[fc.request_id]) fileMap[fc.request_id] = {};

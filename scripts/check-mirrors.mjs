@@ -30,5 +30,14 @@ t('G11 the equipment seed classifies what it inserts', /defaultAssetKind\(eq\.ty
 t('G13 the NFP paragraph says what the code does', /deliberately NOT in WRITABLE/.test(src('server/api/products.js')) && !/deliberately left WRITABLE/.test(src('server/api/products.js')));
 t('E4 a raised quality check is due when the schedule said', /s\.next_due \|\| new Date\(\)/.test(src('server/api/quality-schedules.js')) && !/'normal', date\('now'\), \?, 'qa'/.test(src('server/api/quality-schedules.js')));
 
+console.log('\n── residuals ──');
+{ const { readdirSync } = await import('fs');
+  const bare = readdirSync(join(ROOT, 'server/api')).filter(f => f.endsWith('.js'))
+    .filter(f => /\bif \(q\) (\{|sql)/.test(src(`server/api/${f}`)) || /if \(req\.query\.q\) \{/.test(src(`server/api/${f}`)));
+  t('no search guard accepts a whitespace-only query', bare.length === 0, bare.join(', ')); }
+t('the COA file-count IN list is only prepared when there is something to put in it',
+  /requests\.length > 0\n\s+\? db\.prepare\('SELECT request_id/.test(src('server/api/coa.js')));
+t('the COA panel select-all is false for an empty group', (src('src/components/compliance/COAPanel.jsx').match(/g\.tests\.length > 0 && g\.tests\.every/g) || []).length === 2);
+
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

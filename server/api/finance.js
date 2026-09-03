@@ -78,7 +78,7 @@ router.get('/:ledger', (req, res) => {
   if (party) { sql += ` AND ${cfg.party} = ?`; params.push(party); }
   if (from) { sql += ' AND invoice_date >= ?'; params.push(from); }
   if (to) { sql += ' AND invoice_date <= ?'; params.push(to); }
-  if (q) {
+  if (q && String(q).trim()) {
     // Matches the invoice itself or the text pulled out of its attached file.
     sql += ` AND (LOWER(${cfg.party}) LIKE LOWER(?) OR LOWER(COALESCE(invoice_number,'')) LIKE LOWER(?)
       OR LOWER(COALESCE(po_number,'')) LIKE LOWER(?) OR LOWER(COALESCE(notes,'')) LIKE LOWER(?)
@@ -235,7 +235,7 @@ router.get('/:ledger/files', (req, res) => {
   const params = [req.params.ledger];
   if (invoice_id) { sql += ' AND invoice_id = ?'; params.push(invoice_id); }
   if (unlinked === 'true') sql += ' AND invoice_id IS NULL';
-  if (q) {
+  if (q && String(q).trim()) {
     sql += " AND (LOWER(filename) LIKE LOWER(?) OR LOWER(COALESCE(extracted_text,'')) LIKE LOWER(?))";
     params.push(`%${q}%`, `%${q}%`);
   }

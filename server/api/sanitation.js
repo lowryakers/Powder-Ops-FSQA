@@ -34,7 +34,7 @@ router.get('/', (req, res) => {
   if (group) { sql += " AND COALESCE(sr.record_group, 'sanitation') = ?"; params.push(group); }
 
   if (area) { sql += ' AND sr.area = ?'; params.push(area); }
-  if (q) {
+  if (q && String(q).trim()) {
     // The columns somebody actually looks a cleaning record up by: where, who,
     // what was used, and what they wrote.
     sql += ` AND (LOWER(sr.area) LIKE ? OR LOWER(COALESCE(sr.performed_by,'')) LIKE ?

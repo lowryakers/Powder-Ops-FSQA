@@ -162,7 +162,7 @@ router.get('/', (req, res) => {
   if (lot) { sql += ' AND s.lot_number LIKE ?'; params.push(`%${lot}%`); }
   if (mo) { sql += ' AND s.mo_number LIKE ?'; params.push(`%${mo}%`); }
   if (item) { sql += ' AND (s.item_number LIKE ? OR s.item_name LIKE ?)'; params.push(`%${item}%`, `%${item}%`); }
-  if (q) {
+  if (q && String(q).trim()) {
     sql += ' AND (s.item_name LIKE ? OR s.item_number LIKE ? OR s.lot_number LIKE ? OR s.mo_number LIKE ? OR s.comments LIKE ?)';
     const like = `%${q}%`;
     params.push(like, like, like, like, like);

@@ -133,7 +133,7 @@ router.get('/', (req, res) => {
   if (view === 'outstanding') sql += ` AND status IN ${OUTSTANDING}`;
   else if (view === 'done') sql += ` AND status NOT IN ${OUTSTANDING}`;
   if (kind && KINDS.includes(kind)) { sql += ' AND kind = ?'; params.push(kind); }
-  if (q) { sql += ' AND (title LIKE ? OR details LIKE ? OR reference LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q && String(q).trim()) { sql += ' AND (title LIKE ? OR details LIKE ? OR reference LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   sql += ' ORDER BY CASE priority WHEN \'urgent\' THEN 0 WHEN \'high\' THEN 1 WHEN \'normal\' THEN 2 ELSE 3 END, COALESCE(due_date, \'9999\'), created_at DESC LIMIT 500';
   const rows = db.prepare(sql).all(...params).map(r => ({ ...r, events: parseEvents(r.events) }));
   const unfiled = db.prepare('SELECT COUNT(*) c FROM danny_replies WHERE filed = 0').get().c;

@@ -236,7 +236,7 @@ router.get('/pos', (req, res) => {
   const params = scenario ? [scenario] : [];
   if (status) { sql += ' AND status = ?'; params.push(status); }
   if (vendor) { sql += ' AND vendor = ?'; params.push(vendor); }
-  if (q) {
+  if (q && String(q).trim()) {
     sql += ` AND (LOWER(vendor) LIKE LOWER(?) OR LOWER(COALESCE(po_number,'')) LIKE LOWER(?)
       OR LOWER(COALESCE(part_no,'')) LIKE LOWER(?) OR LOWER(COALESCE(description,'')) LIKE LOWER(?)
       OR LOWER(COALESCE(notes,'')) LIKE LOWER(?))`;
@@ -408,7 +408,7 @@ function listRoute(pathName, table, searchCols, orderBy) {
     const { q } = req.query;
     let sql = `SELECT * FROM ${table} WHERE 1=1`;
     const params = [];
-    if (q) {
+    if (q && String(q).trim()) {
       sql += ` AND (${searchCols.map(c => `LOWER(COALESCE(${c},'')) LIKE LOWER(?)`).join(' OR ')})`;
       searchCols.forEach(() => params.push(`%${q}%`));
     }

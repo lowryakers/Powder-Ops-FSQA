@@ -283,7 +283,7 @@ router.get('/visits', (req, res) => {
   if (req.query.on_site === 'true') where.push('v.signed_out_at IS NULL');
   if (req.query.from) { where.push('v.signed_in_at >= ?'); params.push(req.query.from); }
   if (req.query.to) { where.push('v.signed_in_at <= ?'); params.push(`${req.query.to} 23:59:59`); }
-  if (req.query.q) {
+  if (String(req.query.q || '').trim()) {
     where.push('(LOWER(vi.first_name || \' \' || vi.last_name) LIKE ? OR LOWER(vi.email) LIKE ?)');
     const q = `%${norm(req.query.q)}%`;
     params.push(q, q);

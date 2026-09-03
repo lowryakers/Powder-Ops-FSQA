@@ -87,7 +87,7 @@ router.get('/', (req, res) => {
   const params = [];
   if (status) { sql += ' AND status = ?'; params.push(status); }
   if (area) { sql += ' AND areas LIKE ?'; params.push(`%${area}%`); }
-  if (q) {
+  if (q && String(q).trim()) {
     // Notes are searched too, and that is the point: "Reina's previous
     // coworker" is how somebody is actually remembered, not by their job title.
     const clauses = [`LOWER(name) LIKE LOWER(?)`, `LOWER(COALESCE(company,'')) LIKE LOWER(?)`,

@@ -17,7 +17,7 @@ router.get('/', (req, res) => {
   const { q } = req.query;
   const disposals = db.prepare('SELECT * FROM disposals ORDER BY (disposal_date IS NULL), disposal_date DESC, created_at DESC').all();
   let result = disposals.map(d => ({ ...d, approvals: parseApprovals(d.approvals), items: loadItems(db, d.id) }));
-  if (q) {
+  if (q && String(q).trim()) {
     const s = q.toLowerCase();
     result = result.filter(d =>
       (d.disposal_number || '').toLowerCase().includes(s) ||

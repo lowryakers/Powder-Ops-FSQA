@@ -119,7 +119,7 @@ router.get('/', (req, res) => {
   // default view, but a search box that only sifted that page answered "who
   // did GMP in 2023" with silence while the records sat in the table — a
   // bounded list plus a client-only search reads exactly like lost data.
-  if (req.query.q) {
+  if (String(req.query.q || '').trim()) {
     sql += ' AND (tr.employee_name LIKE ? OR tr.training_topic LIKE ? OR c.title LIKE ? OR c.code LIKE ?)';
     const like = `%${req.query.q}%`;
     params.push(like, like, like, like);

@@ -488,7 +488,7 @@ function TestsRequestedPicker({ value, onChange, specTests }) {
     emit(next, other);
   };
   const toggleGroup = (g) => {
-    const allOn = g.tests.every(t => picked.includes(t));
+    const allOn = g.tests.length > 0 && g.tests.every(t => picked.includes(t));
     const next = allOn ? picked.filter(t => !g.tests.includes(t)) : [...picked, ...g.tests.filter(t => !picked.includes(t))];
     emit(next, other);
   };
@@ -518,7 +518,7 @@ function TestsRequestedPicker({ value, onChange, specTests }) {
       </div>
       <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
         {TEST_GROUPS.map(g => {
-          const allOn = g.tests.every(t => picked.includes(t));
+          const allOn = g.tests.length > 0 && g.tests.every(t => picked.includes(t));
           const someOn = !allOn && g.tests.some(t => picked.includes(t));
           return (
             <div key={g.label} className="p-2.5">

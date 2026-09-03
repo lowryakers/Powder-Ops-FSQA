@@ -142,7 +142,7 @@ router.get('/first-aid', (req, res) => {
   const { q } = req.query;
   let sql = 'SELECT * FROM first_aid_injuries WHERE 1=1';
   const params = [];
-  if (q) {
+  if (q && String(q).trim()) {
     sql += ' AND (employee_name LIKE ? OR injury_description LIKE ? OR explanation LIKE ?)';
     const like = `%${q}%`;
     params.push(like, like, like);
