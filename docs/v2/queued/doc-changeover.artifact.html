@@ -85,6 +85,8 @@ section.part{margin-top:3.25rem}
 .step input:checked{background:var(--done);border-color:var(--done)}
 .step input:checked::after{content:"";width:.42rem;height:.75rem;border:solid #fff;border-width:0 2.2px 2.2px 0;transform:rotate(42deg) translate(-1px,-1px)}
 .step-body{min-width:0}
+.step-body ol{font-size:.95rem;color:var(--ink-2);padding-left:1.2rem;margin:.2rem 0 .7rem}
+.step-body ol li{margin:0 0 .4rem}
 .step-title{display:flex;gap:.55rem;align-items:baseline;font-weight:600;font-size:1.02rem;margin:0 0 .3rem;text-wrap:balance}
 .num{font-family:var(--mono);font-size:.78rem;font-weight:600;color:var(--accent);flex-shrink:0;font-variant-numeric:tabular-nums;padding-top:.08rem}
 .step p{font-size:.95rem;color:var(--ink-2);margin:0 0 .55rem}
@@ -126,7 +128,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 
 <div class="bar">
   <div class="bar-in">
-    <span class="bar-label"><b id="pdone">0</b> of <span id="ptot">16</span> done</span>
+    <span class="bar-label"><b id="pdone">0</b> of <span id="ptot">17</span> done</span>
     <span class="track"><span class="fill" id="pfill"></span></span>
     <button id="reset" type="button">Clear ticks</button>
   </div>
@@ -137,7 +139,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 <header class="mast">
   <p class="eyebrow">Powder Ops · Document Control</p>
   <h1>Document Set Changeover</h1>
-  <p class="standfirst">Sixteen steps, in order, to bring the SOP set to final in Drive and get it into ReadyDoc. Work through it over the next few days and tick as you go — the ticks save in this browser.</p>
+  <p class="standfirst">Seventeen steps, in order, to bring the SOP set to final in Drive and get it into ReadyDoc. Work through it over the next few days and tick as you go — the ticks save in this browser.</p>
   <div class="meta">
     <span><b>For</b> Daniela Servin</span>
     <span><b>Prepared</b> 2 September 2026</span>
@@ -274,7 +276,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
     <h2>Raise the form-number change request</h2>
     <span class="part-time">~half a day, including the rulings</span>
   </div>
-  <p class="part-note">Six places where one form is identified two different ways, or has no current document. Each needs a decision from you — the recommendation is whatever the change-request register already says.</p>
+  <p class="part-note">Six places where one form is identified two different ways, or has no current document, plus one form that has moved to a new revision in the app and is waiting on you. Each needs a decision from you — the recommendation is whatever the change-request register already says.</p>
 
   <div class="step" data-id="c1">
     <input type="checkbox" aria-label="Step 6 complete">
@@ -351,6 +353,20 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
       <p>Either file V3 in the master set, or record it in the Master Index as withdrawn with a date and a reason. Either answer is fine. Silence isn't — right now three change requests point at a document nobody can produce.</p>
     </div>
   </div>
+
+  <div class="step" data-id="c4">
+    <input type="checkbox" aria-label="Step 9 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">09</span> Approve FORM 602-01 V2 and give it a change request number</p>
+      <p>The Organoleptic Sensory Test moved to V2 on 3 September: APPEARANCE · ODOR · TASTE · COLOR · TEXTURE, each checked against the product's written specification and marked P / F. There is no 1–5 anywhere on the V2 form, so there is none in the app — but the app is still serving V1 until you say otherwise. Three things, in this order:</p>
+      <ol>
+        <li><b>Document Control → Controlled Changes</b> holds two parked changes. Approve <b>Organoleptic Sensory Test (Form 602-01 V2)</b>. Records filed on V1 stay readable exactly as filed; nothing is re-graded.</li>
+        <li>The second parked change is <b>Flavor Approvals</b> — QA's tasting step on that form adopts the same five attributes against the same specification, so the organoleptic record it files is a copy, not a translation. <b>That is a change to a second controlled document and it is your call.</b> Approve it with the first, or reject it to keep the Flavor Approval scoring at 1–5 (tell Lowry if you reject it — the link between the two forms then has to be switched off).</li>
+        <li>Raise a DCR for the V2 revision — DCR 0114 filed V1 on 20 March 2025, and V2 needs its own number — then open <b>Controlled Documents → Forms</b> and move the <span class="mono">FORM 602-01</span> row from V1 to V2 with the effective date. The register is yours; the app never writes that row.</li>
+      </ol>
+      <p class="why"><b>Why the app waits for you:</b> a form definition that ships in code is not the same as one in use. Until the change is approved, every screen — the form, the log, the texted approval page, the PDF — keeps serving V1 together, and flips to V2 together the moment you approve. The full draft, including what the product specification is and who approves it, is <span class="mono">docs/v2/queued/dcr-form-602-01-v2.md</span>.</p>
+    </div>
+  </div>
 </section>
 
 <!-- ============ PART D ============ -->
@@ -360,29 +376,29 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
     <h2>Finalise, sign, upload — in waves</h2>
     <span class="part-time">the long one · repeat per wave</span>
   </div>
-  <p class="part-note">Steps 9–14 are a loop. Do a batch of documents, upload them, then start the next batch. Tick these once the last wave is in.</p>
+  <p class="part-note">Steps 10–15 are a loop. Do a batch of documents, upload them, then start the next batch. Tick these once the last wave is in.</p>
 
   <div class="step" data-id="d1">
-    <input type="checkbox" aria-label="Step 9 complete">
+    <input type="checkbox" aria-label="Step 10 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">09</span> Take a batch of documents to final in Drive</p>
+      <p class="step-title"><span class="num">10</span> Take a batch of documents to final in Drive</p>
       <p>Work in whatever order suits you. Ten or fifteen at a time is a good wave — enough to be worth an upload, small enough to finish.</p>
       <div class="dont"><b>Don't wait for all 66.</b> Until a document is uploaded, ReadyDoc is quoting its old revision. Six weeks of waiting is six weeks of that.</div>
     </div>
   </div>
 
   <div class="step" data-id="d2">
-    <input type="checkbox" aria-label="Step 10 complete">
+    <input type="checkbox" aria-label="Step 11 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">10</span> Get each one signed and authorised</p>
-      <p>Keep the signed PDF — you'll attach it in step 13, and it's the evidence that the revision was approved rather than just typed.</p>
+      <p class="step-title"><span class="num">11</span> Get each one signed and authorised</p>
+      <p>Keep the signed PDF — you'll attach it in step 14, and it's the evidence that the revision was approved rather than just typed.</p>
     </div>
   </div>
 
   <div class="step" data-id="d3">
-    <input type="checkbox" aria-label="Step 11 complete">
+    <input type="checkbox" aria-label="Step 12 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">11</span> Upload the wave into ReadyDoc</p>
+      <p class="step-title"><span class="num">12</span> Upload the wave into ReadyDoc</p>
       <p>Go to <b>Document Control → Review Center</b>. Use <b>Update from file</b> and drop the whole wave in at once — it takes multiple files.</p>
       <p>ReadyDoc reads each file, works out which registry document it is, and builds a list of proposed changes. <b>Nothing is applied yet.</b></p>
       <p class="why"><b>The list survives.</b> It's saved, not a pop-up — you can close the tab, come back tomorrow, and it's still there with your progress on it. Half-finished is a fine place to stop.</p>
@@ -390,9 +406,9 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
   </div>
 
   <div class="step" data-id="d4">
-    <input type="checkbox" aria-label="Step 12 complete">
+    <input type="checkbox" aria-label="Step 13 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">12</span> Work the list from the top down</p>
+      <p class="step-title"><span class="num">13</span> Work the list from the top down</p>
       <p>It's ordered so the ones that matter are first:</p>
       <ul>
         <li><b>Revision moved</b> — the registry is quoting a superseded revision. These are the real ones.</li>
@@ -406,17 +422,17 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
   </div>
 
   <div class="step" data-id="d5">
-    <input type="checkbox" aria-label="Step 13 complete">
+    <input type="checkbox" aria-label="Step 14 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">13</span> Attach the signed PDF to each document</p>
+      <p class="step-title"><span class="num">14</span> Attach the signed PDF to each document</p>
       <p>Open the document and use the attachments block. It's on both the read view and the edit view, so whichever way you got in, it's there.</p>
     </div>
   </div>
 
   <div class="step" data-id="d6">
-    <input type="checkbox" aria-label="Step 14 complete">
+    <input type="checkbox" aria-label="Step 15 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">14</span> Skip anything that's wrong — with a reason</p>
+      <p class="step-title"><span class="num">15</span> Skip anything that's wrong — with a reason</p>
       <p>If a proposed change is wrong, <b>skip it</b> rather than unticking and moving on. A skip asks for a reason and records who skipped it, so the item is accounted for instead of just absent.</p>
       <div class="dont"><b>Don't delete a document to get rid of it.</b> If something in ReadyDoc genuinely no longer applies, withdraw it — it asks for a reason, keeps the history, and prints “NO LONGER IN USE” across the top so a printout can't pass as current. A deleted document looks exactly like one that never existed, which is the first thing an auditor asks about.</div>
     </div>
@@ -432,18 +448,18 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
   </div>
 
   <div class="step" data-id="e1">
-    <input type="checkbox" aria-label="Step 15 complete">
+    <input type="checkbox" aria-label="Step 16 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">15</span> Retire the <span class="mono" style="font-size:.9em">FSQA - Upload</span> folder</p>
+      <p class="step-title"><span class="num">16</span> Retire the <span class="mono" style="font-size:.9em">FSQA - Upload</span> folder</p>
       <p>Once the master set is in ReadyDoc, rename that folder to <span class="mono">ARCHIVE — pre-Sept 2026 upload snapshot</span> and move it out of the working area.</p>
       <p class="why"><b>Why.</b> It's a second copy of the truth and it's already a revision behind on 33 documents. As long as it's sitting there looking like the upload folder, somebody will upload from it.</p>
     </div>
   </div>
 
   <div class="step" data-id="e2">
-    <input type="checkbox" aria-label="Step 16 complete">
+    <input type="checkbox" aria-label="Step 17 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">16</span> Note anything ReadyDoc has that Drive doesn't</p>
+      <p class="step-title"><span class="num">17</span> Note anything ReadyDoc has that Drive doesn't</p>
       <p>As you work the list, you'll see registry documents that no file ever matched — the old-facility carryovers. Write them down rather than acting on them. <b>Don't withdraw anything on a hunch</b>; bring the list back and we'll go through it together.</p>
       <p class="why">One known candidate: <span class="mono">FORM 402 V2 Raw Material Product Inspection</span>, which is already in the <span class="mono">ARCHIVE</span> folder on Drive but may still be live in ReadyDoc.</p>
     </div>
@@ -455,15 +471,15 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
   <p>Send Lowry a note with:</p>
   <ol>
     <li>Which steps are ticked (use the button below)</li>
-    <li>Your rulings on the six form-number items</li>
-    <li>The list from step 16 — registry documents with no file behind them</li>
+    <li>Your rulings on the six form-number items, and whether the Flavor Approval form goes to V2 with 602-01</li>
+    <li>The list from step 17 — registry documents with no file behind them</li>
     <li>Anything you skipped and why</li>
   </ol>
   <button class="copy" type="button" id="statusbtn" style="margin-left:0">Copy status</button>
   <div class="status-out" id="statusout" hidden></div>
 </div>
 
-<footer>Powder Ops FSQA · Document Set Changeover · prepared 2 September 2026 · working document, not a controlled record</footer>
+<footer>Powder Ops FSQA · Document Set Changeover · prepared 2 September 2026, updated 3 September · working document, not a controlled record</footer>
 
 </div>
 
