@@ -880,6 +880,14 @@ const AMENDABLE = {
   quantity_completed: 'Quantity completed', people_count: 'People',
   notes: 'Notes', submitted_by: 'Submitted by',
 };
+// ON A MULTI-MO ENTRY THESE SEVEN ARE MIRRORS, NOT INPUTS. product/MO/lot are
+// line 0, quantity is the sum of the lines, room and the shift window are
+// derived from the lines and the cleans -- the create path says so at length.
+// AMENDABLE let a correction patch them directly, and the mirror block below
+// deferred to the direct patch, so a QA-signed shift record could carry a
+// product name its own mo_lines contradicted. On a single-MO entry (mo_lines
+// NULL) the scalars ARE the record and stay amendable.
+const MIRRORED_ON_MULTI = ['product_name', 'mo_number', 'lot_number', 'quantity_completed', 'room', 'start_time', 'end_time'];
 const NUMERIC_FIELDS = new Set(['quantity_completed', 'people_count']);
 const MIN_REASON = 10;
 
@@ -933,6 +941,21 @@ router.put('/entries/:id', (req, res) => {
     values.push(next);
   }
 
+  // A mirrored column on a multi-MO entry is corrected by correcting the LINE.
+  // Refused with the field named, rather than silently ignored -- a save that
+  // says it worked and quietly dropped the change is the shape that made the
+  // QMS edit pencil read as broken.
+  const hasLines = (() => { try { return Array.isArray(JSON.parse(existing.mo_lines || 'null')) && JSON.parse(existing.mo_lines).length > 0; } catch { return false; } })();
+  if (hasLines) {
+    const direct = MIRRORED_ON_MULTI.filter(f => req.body[f] !== undefined && req.body.mo_lines === undefined && req.body.cleaning_events === undefined);
+    if (direct.length) {
+      return res.status(400).json({
+        error: `${direct.map(f => AMENDABLE[f] || f).join(', ')} ${direct.length === 1 ? 'is' : 'are'} derived from the MO lines on this entry. Correct the line, and the shift follows.`,
+        mirrored: direct,
+      });
+    }
+  }
+
   // Multi-MO lines amend as a whole (they're a JSON array, not a scalar).
   // Mirror line 0 into the scalar product/MO/lot/quantity columns — but only
   // ones the caller didn't also send as their own amend, so a column is never
@@ -957,6 +980,36 @@ router.put('/entries/:id', (req, res) => {
         const qty = lineQuantity(nextLines);
         if (qty && req.body.quantity_completed === undefined && Number(existing.quantity_completed) !== qty) {
           updates.push('quantity_completed = ?'); values.push(qty);
+        }
+      }
+    }
+  }
+
+  // ROOM AND THE SHIFT WINDOW FOLLOW THE LINES ON AMEND, as they do on create.
+  // They were derived once at filing and never again, so moving line 0 from
+  // Batching 1 to Batching 2 left `room` -- the column every filter, KPI and
+  // the facility map read -- on the old room. Re-derived whenever the lines
+  // or the cleans change, unless the caller set the column in the same
+  // request (the "a column it OWNS was written in that same edit" rule).
+  if (req.body.mo_lines !== undefined || req.body.cleaning_events !== undefined) {
+    // The half NOT in this request comes off the row as a JSON string, and the
+    // normaliser takes an array -- handed the string it returned [], and the
+    // 07:00 clean silently left the shift window. Caught by the check.
+    const stored = (col) => { try { return JSON.parse(existing[col] || '[]'); } catch { return []; } };
+    const nextLines = req.body.mo_lines !== undefined ? normalizeMoLines(req.body.mo_lines) : normalizeMoLines(stored('mo_lines'));
+    const nextCleans = req.body.cleaning_events !== undefined ? normalizeCleaningEvents(req.body.cleaning_events) : normalizeCleaningEvents(stored('cleaning_events'));
+    if (nextLines.length || nextCleans.length) {
+      const all = [...nextLines, ...nextCleans];
+      const times = (k) => all.map(x => x[k]).filter(Boolean).sort();
+      const derived = {
+        room: nextLines.map(l => l.room).find(Boolean) || nextCleans.map(c => c.room).find(Boolean) || null,
+        start_time: times('start_time')[0] || null,
+        end_time: (() => { const e = times('end_time'); return e[e.length - 1] || null; })(),
+      };
+      for (const [f, v] of Object.entries(derived)) {
+        if (v && req.body[f] === undefined && !updates.includes(`${f} = ?`) && String(existing[f] ?? '') !== String(v)) {
+          changes.push({ field: f, label: AMENDABLE[f] || f, from: existing[f] ?? null, to: v, derived: true });
+          updates.push(`${f} = ?`); values.push(v);
         }
       }
     }
