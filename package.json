@@ -41,6 +41,7 @@
     "verify:atp": "node scripts/verify-atp-task-door.mjs",
     "verify:qmssig": "node scripts/verify-qms-signature.mjs",
     "verify:qmsgate": "node scripts/verify-qms-module-gate.mjs",
+    "verify:doors": "node scripts/verify-completion-doors.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {

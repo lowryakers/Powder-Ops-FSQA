@@ -805,9 +805,27 @@ router.put('/work-orders/:id', (req, res) => {
 
   const { status, assigned_to, notes, lubricant_used, lubricant_is_food_grade, step_completions, priority, due_date } = req.body;
 
+  // THIS ROUTE DOES NOT COMPLETE A TASK. It used to: setting status to
+  // completed here wrote completed_at/by and nothing else -- no controlled
+  // record (the QA inspection, the cleaning record, the dilution check), no
+  // back-date rule, no food-contact step gate, no ATP grade, no recurrence.
+  // The comment on batch-complete names this exact defect for the batch path
+  // ("two ways to finish a task is two chances for the record to go
+  // unwritten") and a third way was left uncovered. Nothing in the client
+  // ever sent it; the only PUT of status is Start -> in_progress. Refused
+  // rather than routed, because completing is one act with one door and the
+  // door names its inputs (readings, steps, performed_on).
   const newStatus = status || existing.status;
-  const completedAt = (newStatus === 'completed' && existing.status !== 'completed') ? new Date().toISOString() : existing.completed_at;
-  const completedBy = (newStatus === 'completed' && existing.status !== 'completed') ? req.user.name : existing.completed_by;
+  if (status && status !== existing.status) {
+    if (status === 'completed') {
+      return res.status(400).json({ error: 'A task is completed through POST /pm/work-orders/:id/complete-and-recur, which files its record. It cannot be completed by editing its status.', use: 'complete-and-recur' });
+    }
+    if (status === 'not_applicable') {
+      return res.status(400).json({ error: 'Use POST /pm/work-orders/:id/not-applicable, which records the reason and recurs the schedule.', use: 'not-applicable' });
+    }
+  }
+  const completedAt = existing.completed_at;
+  const completedBy = existing.completed_by;
   const startedAt = (newStatus === 'in_progress' && !existing.started_at) ? new Date().toISOString() : existing.started_at;
 
   db.prepare(`
@@ -822,15 +840,6 @@ router.put('/work-orders/:id', (req, res) => {
     step_completions ? JSON.stringify(step_completions) : existing.step_completions,
     due_date || existing.due_date, req.params.id
   );
-
-  if (newStatus === 'completed' && existing.status !== 'completed') {
-    onWorkOrderCompleted(db, existing);
-    // Redoing the work answers the rework request. The note and its history
-    // stay on the record; only the outstanding flag clears.
-    if (existing.rework_required) {
-      db.prepare('UPDATE work_orders SET rework_required=0 WHERE id=?').run(req.params.id);
-    }
-  }
 
   const updated = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'work_order', req.params.id, { status: newStatus }, existing, updated);
