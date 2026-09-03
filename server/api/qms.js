@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { moduleLevel } from '../module-access.js';
 import { smsEnabled, sendSms, approverPhone, smsStatus, OPT_OUT_LINE } from '../sms.js';
 import { readyDocOrigin } from '../links.js';
 import { requireRole } from '../middleware/auth.js';
@@ -95,12 +96,25 @@ function parseCsv(text) {
 function requireType(req, res) {
   const cfg = getType(req.params.type);
   if (!cfg) { res.status(404).json({ error: 'Unknown record type' }); return null; }
-  // Per-type module enforcement: writes need Edit on the type's module for
-  // users with a granular access map (mirrors requireModuleWrite in server.js).
+  // Per-type module enforcement. This used to read the map itself with
+  // `ma != null && ...`, which had two defects at once: an account with NO map
+  // passed every write (the Settings bug -- NULL means "nothing assigned"
+  // everywhere else, and /api/qms is mounted outside requireModuleWrite, so
+  // this was the only gate on QMS writes), and an account with a VIEW grant
+  // was refused from filing, although the rule written down for this module
+  // is that anyone who can see a deviation may report one.
+  //
+  // moduleLevel() is the one reading of a map. Filing a NEW record needs to
+  // see the module; changing, deleting or signing one needs Edit.
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.user && req.user.role !== 'admin') {
     if (req.user.role === 'auditor') { res.status(403).json({ error: 'Auditor accounts are read-only.' }); return null; }
-    const ma = req.user.module_access;
-    if (ma != null && !Array.isArray(ma) && ma[cfg.moduleId] !== 'edit') {
+    const level = moduleLevel(req.user, cfg.moduleId);
+    if (!level) {
+      res.status(403).json({ error: 'No modules have been assigned to your account yet. Ask an admin to set your module access in Settings.' });
+      return null;
+    }
+    const filing = req.method === 'POST' && req.route?.path === '/:type';
+    if (level !== 'edit' && !filing) {
       res.status(403).json({ error: 'You have view-only access to this module.' });
       return null;
     }
