@@ -62,14 +62,14 @@ let short = await J(r);
 check('VK-05', 'The sign-out lookup refuses a one-character probe',
   'Empty — a single letter would enumerate the building',
   `HTTP ${r.status}; ${Array.isArray(short) ? short.length : '?'} row(s)`,
-  Array.isArray(short) && short.length === 0);
+  r.ok && Array.isArray(short) && short.length === 0);
 
 r = await req('/visitor-kiosk/open?q=%25');           // a bare SQL wildcard
 const wild = await J(r);
 check('VK-06', 'A wildcard in the lookup does not return the whole book',
   'No rows — the parameter is bound, not interpolated',
   `HTTP ${r.status}; ${Array.isArray(wild) ? wild.length : '?'} row(s)`,
-  Array.isArray(wild) && wild.length === 0);
+  r.ok && Array.isArray(wild) && wild.length === 0);
 
 r = await req("/visitor-kiosk/open?q=' OR 1=1 --");
 const inj = await J(r);
@@ -164,15 +164,15 @@ check('VK-13', 'No plant module answers a request that carries no session',
 
 /* ── E. The other public doors, from the same browser ───────────────────── */
 
-r = await req('/users/lookup?q=ma');
+r = await req('/users/lookup?q=adm');   // the seeded Admin — there must be a row to inspect
 const look = await J(r);
 check('VK-14', 'The staff name look-up hands out no account identifiers',
   'Names only — no id, no email, no phone, no role',
   Array.isArray(look) && look.length
     ? `fields: ${Object.keys(look[0]).join(', ')}`
     : `HTTP ${r.status}, ${Array.isArray(look) ? 0 : '?'} rows`,
-  Array.isArray(look) && (!look.length
-    || Object.keys(look[0]).every(k => ['name', 'username', 'department'].includes(k))));
+  r.ok && Array.isArray(look) && look.length > 0
+    && look.every(u => Object.keys(u).every(k => ['name', 'username', 'department'].includes(k))));
 
 r = await req('/users/login', { method: 'POST', body: JSON.stringify({ name: 'Admin' }) });
 const li = await J(r);
@@ -276,7 +276,8 @@ const opts = await J(r);
 check('VK-33', 'Kiosk suggestion lists come from that log alone, not from the plant',
   'item_names / part_numbers / mo_numbers only',
   `keys: ${Object.keys(opts || {}).join(', ')}`,
-  opts && Object.keys(opts).every(k => ['item_names', 'part_numbers', 'mo_numbers'].includes(k)));
+  !!opts && ['item_names', 'part_numbers', 'mo_numbers'].every(k => Array.isArray(opts[k]))
+    && Object.keys(opts).every(k => ['item_names', 'part_numbers', 'mo_numbers'].includes(k)));
 
 /* ── I. Files on disk ───────────────────────────────────────────────────── */
 

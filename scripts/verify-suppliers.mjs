@@ -119,10 +119,16 @@ t('the two gaps are reported separately',
   typeof after2.summary.awaiting_disposition === 'number' && typeof after2.summary.no_questionnaire === 'number');
 t('the two gaps do not double-count a vendor',
   after2.suppliers.filter(s => s.awaiting_disposition && s.no_questionnaire).length === 0);
+const awaiting = after2.suppliers.filter(s => s.awaiting_disposition);
+const noQ = after2.suppliers.filter(s => s.no_questionnaire);
+t('both gaps are non-empty on the real tracker — the .every() below has rows to check',
+  awaiting.length > 0 && noQ.length > 0, `${awaiting.length} awaiting, ${noQ.length} no questionnaire`);
+t('the summary counts are the rows, not a second query',
+  after2.summary.awaiting_disposition === awaiting.length && after2.summary.no_questionnaire === noQ.length);
 t('every awaiting-disposition vendor really does have a questionnaire on file',
-  after2.suppliers.filter(s => s.awaiting_disposition).every(s => s.questionnaire_files > 0));
+  awaiting.length > 0 && awaiting.every(s => s.questionnaire_files > 0));
 t('every no-questionnaire vendor really has none',
-  after2.suppliers.filter(s => s.no_questionnaire).every(s => s.questionnaire_files === 0));
+  noQ.length > 0 && noQ.every(s => s.questionnaire_files === 0));
 console.log(`  two gaps: ${after2.summary.awaiting_disposition} awaiting a disposition (evidence on file), ` +
   `${after2.summary.no_questionnaire} with no questionnaire at all`);
 console.log(`\n${pass} passed, ${fail} failed  [final]`);

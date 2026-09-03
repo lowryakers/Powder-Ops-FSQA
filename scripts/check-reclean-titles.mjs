@@ -73,9 +73,11 @@ t('a maintenance PM that merely says Cleaning still maps to nothing',
 console.log('\n── the description agrees with the title ──');
 t('the dirty description names the real reason',
   /used in production after its last passed clean/.test(wos.find(w => w.title === dirty)?.description || ''));
-t('a room with no clean never reads "idle nullh"',
-  !/null/.test(wos.find(w => w.title === nocl)?.description || ''),
-  wos.find(w => w.title === nocl)?.description);
+{
+  const noclWo = wos.find(w => w.title === nocl);
+  t('the no-clean task was raised and carries a description', !!noclWo?.description, nocl);
+  t('a room with no clean never reads "idle nullh"', !!noclWo?.description && !/null/.test(noclWo.description), noclWo?.description);
+}
 t('the 72-hour description carries the real hour count',
   /idle \d+h since last clean/.test(wos.find(w => w.title === idle)?.description || ''));
 

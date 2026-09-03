@@ -37,7 +37,7 @@ console.log('\n── the first-sight rule ──');
 // existed has no recorded basis, and must read as done. Otherwise the deploy
 // that ships this lights up all 118 products amber at once.
 t('no basis at all means done, never stale', readinessOf(full()).stale.length === 0);
-t('...for every step', readinessOf(full()).steps.every((s) => s.state === 'done'));
+t('...for every step', (() => { const st = readinessOf(full()).steps; return st.length > 0 && st.every((s) => s.state === 'done'); })());
 
 console.log('\n── recording what a step was true against ──');
 const before = { ...full(), artwork_status: null, readiness_basis: null };

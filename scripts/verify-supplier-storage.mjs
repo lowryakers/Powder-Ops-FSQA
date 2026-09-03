@@ -222,6 +222,9 @@ console.log('\n── the zip in STEP ONE creates the vendors the tracker never 
   fdB.append('files', new Blob([z.toBuffer()]), 'archive.zip');
   const imp = await J(await up('/suppliers/import/commit', fdB));
   const after = (await J(await req('/suppliers')))?.suppliers;
+  t('the commit answered with a result, and what it says it created is what the register gained',
+    imp?.result?.suppliers_created >= 1 && after.length - before === imp.result.suppliers_created,
+    `${JSON.stringify(imp?.result)} vs ${before} → ${after.length}`);
   t('step one with the zip created the vendor', after.length > before,
     `${before} → ${after.length}`);
   const made = after.find(x => x.name === 'Brand New Vendor Co');
@@ -296,6 +299,8 @@ console.log('\n── a loose file at the top of the archive ──');
   const fd = new FormData();
   fd.append('files', new Blob([z.toBuffer()]), `${root}.zip`);
   const imp = await J(await up('/suppliers/import/commit', fd));
+  t('the commit answered with a result and created nothing',
+    !!imp?.result && imp.result.suppliers_created === 0, JSON.stringify(imp).slice(0, 160));
   const after = (await J(await req('/suppliers')))?.suppliers;
   t('STEP ONE DOES NOT INVENT A SUPPLIER NAMED AFTER THE DOWNLOAD',
     !after.some(x => x.name === root), after.filter(x => x.name === root).length + ' found');

@@ -78,7 +78,14 @@ t('a file under no vendor folder is still refused',
 t('an unknown filename is reported, never guessed',
   classifyDocument('zzzz.pdf').kind==='unknown');
 t('every file carries its source path', r.files.every(f=>f.source_path));
-t('nothing was written', true);
+// "Nothing was written" used to be `t(..., true)` — a hardcoded pass. The
+// module is PURE by doctrine, and pure is checkable: it must import nothing
+// that can reach a disk or a database.
+{
+  const src = (await import('fs')).readFileSync(new URL('../server/supplier-archive.js', import.meta.url), 'utf8');
+  const canWrite = /from\s+['"](fs|node:fs|fs\/promises|better-sqlite3)['"]|\bgetDb\b|\bwriteFileSync?\b|\.prepare\(/.test(src);
+  t('nothing was written — the module imports no fs, no database, and prepares no SQL', src.length > 0 && !canWrite);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
