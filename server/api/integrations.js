@@ -31,6 +31,8 @@ import { pushEnabled } from '../push.js';
 import { quickbooksEnabled } from '../quickbooks.js';
 import { bankFeedEnabled } from '../bank-feed.js';
 import { smsEnabled } from '../sms.js';
+import { adpEnabled } from '../adp.js';
+import { cryptoEnabled as onboardingCryptoEnabled } from '../onboarding-crypto.js';
 
 const router = Router();
 
@@ -132,6 +134,32 @@ const SERVICES = [
     required: ['PLAID_CLIENT_ID', 'PLAID_SECRET'],
     optional: ['PLAID_ENV'],
     off: 'Statement import still works, and always will — it is not a fallback.',
+  },
+  {
+    id: 'onboarding_crypto',
+    label: 'Onboarding — sensitive fields (SSN, bank details)',
+    what: 'Whether the new-hire welcome wizard asks for the SSN and direct-deposit details at all. '
+      + 'They are stored AES-256-GCM encrypted under this key and only ever shown as the last four.',
+    enabled: onboardingCryptoEnabled,
+    required: ['ONBOARDING_ENC_KEY'],
+    off: 'The wizard skips those fields and tells the new hire the office will collect them directly. '
+      + 'Everything else in onboarding works.',
+    note: 'Generate once with `openssl rand -hex 32`. Changing it afterwards makes every value already '
+      + 'stored unreadable, so it is set once and kept.',
+  },
+  {
+    id: 'adp',
+    label: 'ADP (RUN Powered by ADP) — onboarding hand-off',
+    what: 'The Submit to ADP button on a completed onboarding packet, which pushes the new hire into '
+      + "RUN's Applicant Onboarding so the office never re-keys the packet.",
+    enabled: adpEnabled,
+    // Mutual TLS: ADP issues a client certificate at app registration and every
+    // call presents it, so the cert and key are part of the gate, not extras.
+    required: ['ADP_CLIENT_ID', 'ADP_CLIENT_SECRET', 'ADP_CERT_PEM', 'ADP_KEY_PEM'],
+    optional: ['ADP_API_BASE', 'ADP_TOKEN_URL'],
+    off: 'The packet is still collected and shown; the office keys it into RUN by hand from the same screen.',
+    note: 'There is no self-serve API key on the RUN plan. The credentials come from registering an app on '
+      + 'the ADP Marketplace (developers.adp.com) — docs/adp-run-onboarding.md is the step-by-step.',
   },
   {
     id: 'product_master',

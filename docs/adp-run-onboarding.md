@@ -25,7 +25,19 @@ self-serve API key on the RUN plan. The path:
 
 Once through, four env vars turn the integration on:
 `ADP_CLIENT_ID`, `ADP_CLIENT_SECRET`, `ADP_CERT_PEM`, `ADP_KEY_PEM`
-(optional `ADP_API_BASE`, default `https://api.adp.com`).
+(optional `ADP_API_BASE`, default `https://api.adp.com`). Set them on the
+ReadyDoc service in Railway (service → Variables); the PEMs can be pasted as
+the literal certificate text with `\n` line breaks, or a path to a file on the
+volume. **Settings → Integrations** shows which of the four are set and whether
+the hand-off is on, without ever showing a value — the same screen shows the
+onboarding encryption key below.
+
+## What happens first, before ADP: the encryption key
+
+`ONBOARDING_ENC_KEY` is independent of ADP and is the one to set today:
+without it the wizard does not ask for the SSN or bank details at all.
+Generate it once (`openssl rand -hex 32`), set it in Railway, and never change
+it — every value already stored becomes unreadable if it moves.
 
 ## What the API actually does — and doesn't
 
