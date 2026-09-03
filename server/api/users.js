@@ -333,14 +333,21 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
   const { name, username, email, pin, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access } = req.body;
 
   // An admin-set username wins. Otherwise, if the full name changed and the
-  // current username is still the one we derived from the old name, follow the
-  // rename; a hand-picked username is left alone.
+  // current username is still the one we derived from the old name — including
+  // one uniqueUsername() disambiguated with a trailing number, or those
+  // sign-in names froze silently — follow the rename; a hand-picked username
+  // is left alone.
+  const stillDerived = (u) => {
+    const base = deriveUsername(u.name);
+    if (!base || !u.username) return false;
+    return u.username === base || u.username.replace(/ \d+$/, '') === base;
+  };
   let signIn = existing.username;
   if (username !== undefined && username !== null && username !== existing.username) {
     const check = validateUsername(db, username, req.params.id);
     if (check.error) return res.status(400).json({ error: check.error });
     signIn = check.username;
-  } else if (name && name !== existing.name && existing.username === deriveUsername(existing.name)) {
+  } else if (name && name !== existing.name && stillDerived(existing)) {
     signIn = uniqueUsername(db, name, req.params.id);
   }
   if (!signIn) signIn = uniqueUsername(db, name || existing.name, req.params.id);

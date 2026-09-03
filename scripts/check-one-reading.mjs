@@ -47,7 +47,7 @@ t('the form register groups NULL record_group with sanitation',
 t('the facility tile reads last_clean from the group the 72-hour rule reads',
   /result = 'pass' AND COALESCE\(record_group, 'sanitation'\) = 'sanitation'/.test(src('server/api/facility.js')));
 t('the dead form-registry grant branch is gone',
-  !/ma\['form-registry'\]/.test(src('server/api/forms.js')) && /moduleLevel\(user, '/.test(src('server/api/forms.js')));
+  !/ma\['form-registry'\]/.test(src('server/api/forms.js')) && /canEditAny\(user, \['sops', 'work-instructions', 'job-descriptions'\]\)/.test(src('server/api/forms.js')));
 t('the QA Review count carries no duplicated predicate',
   !/qa_waived_at IS NULL AND qa_waived_at IS NULL/.test(src('server/qa-review.js')));
 

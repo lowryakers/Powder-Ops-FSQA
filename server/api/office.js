@@ -276,8 +276,27 @@ router.put('/supply/orders/:id', (req, res) => {
   const patch = {};
   for (const f of fields) if (req.body[f] !== undefined) patch[f] = f === 'urgent' ? (req.body[f] ? 1 : 0) : req.body[f];
   if (!Object.keys(patch).length) return res.json(orderShape(existing));
+  // qty_received is the fact and receipts are its only writer. An edit that
+  // would contradict it is refused and names the door: a delivery miscounted
+  // is corrected with a negative receipt entry and a reason, never by editing
+  // the order until the numbers agree.
+  const received = Number(existing.qty_received) || 0;
+  if (patch.qty !== undefined && Number(patch.qty) > 0 && Number(patch.qty) < received) {
+    return res.status(400).json({ error: `${received} already arrived against this order — correct the receipt first, then the quantity.`, use: 'receive' });
+  }
+  if (patch.status !== undefined && patch.status !== 'received' && existing.status === 'received'
+    && received > 0 && Number(existing.qty) > 0 && received >= Number(existing.qty)) {
+    return res.status(400).json({ error: 'Everything ordered has arrived. To reopen it, record a negative receipt with the reason — the count decides the status.', use: 'receive' });
+  }
   const sets = Object.keys(patch).map(k => `${k} = ?`).join(', ');
   db.prepare(`UPDATE supply_orders SET ${sets}, updated_at = datetime('now') WHERE id = ?`).run(...Object.values(patch), req.params.id);
+  // A changed quantity moves the status with it: three of five arrived is
+  // 'ordered' however the row read before the edit.
+  if (patch.qty !== undefined && patch.status === undefined) {
+    const q = Number(patch.qty);
+    const st = q > 0 && received >= q ? 'received' : (existing.status === 'received' ? 'ordered' : existing.status);
+    if (st !== existing.status) db.prepare('UPDATE supply_orders SET status = ? WHERE id = ?').run(st, req.params.id);
+  }
 
   // Marking the whole order received from the status control has to move the
   // count with it, or the row reads "received" beside "1 of 3 arrived" and

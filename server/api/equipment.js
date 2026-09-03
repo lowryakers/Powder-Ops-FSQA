@@ -85,8 +85,11 @@ function syncMaintenanceTasksToPM(db, equipmentId) {
 // routes the tasks to the chosen department.
 function syncTaskGroupToPM(db, equipmentId, taskGroup) {
   const tg = taskGroup || null;
-  db.prepare("UPDATE pm_schedules SET task_group = ?, updated_at = datetime('now') WHERE equipment_id = ?").run(tg, equipmentId);
-  db.prepare("UPDATE work_orders SET task_group = ? WHERE equipment_id = ? AND status IN ('open','in_progress','overdue')").run(tg, equipmentId);
+  // QA's inspections on this machine (tagged 'qa' by tagQaInspectionTasks)
+  // are QA's whichever department maintains the machine — re-routing them
+  // silently moved them off QA's list until the next restart re-tagged them.
+  db.prepare("UPDATE pm_schedules SET task_group = ?, updated_at = datetime('now') WHERE equipment_id = ? AND COALESCE(task_group, '') != 'qa'").run(tg, equipmentId);
+  db.prepare("UPDATE work_orders SET task_group = ? WHERE equipment_id = ? AND status IN ('open','in_progress','overdue') AND COALESCE(task_group, '') != 'qa'").run(tg, equipmentId);
 }
 
 router.get('/', (req, res) => {

@@ -117,7 +117,10 @@ export function seedProducts() {
         formula_rev: p.formula_rev || null,
         artwork_version: p.artwork_version || null,
         artwork_status: p.artwork_status && p.artwork_status !== 'Unknown' ? p.artwork_status : null,
-        nfp_version: p.nfp_version || null,
+        // nfp_version MIRRORS nfp_versions and is written by applyApproval() only;
+        // seeding it with no panel row behind it would put an approval on the
+        // record that nothing can show. (The CSV column is empty anyway.)
+        nfp_version: null,
         notes: p.notes || null,
       });
     }

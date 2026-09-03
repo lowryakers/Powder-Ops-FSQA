@@ -509,14 +509,15 @@ router.post('/areas/normalize', (req, res) => {
     plan.changes.map(() => '?').join(',') + ')'
   ).all(...plan.changes.map(c => c.from));
   const to = new Map(plan.changes.map(c => [c.from, c.to]));
-  const upd = db.prepare('UPDATE sanitation_records SET area = ? WHERE id = ?');
+  // The group travels with the area, by design rather than by the SELECT's scope.
+  const upd = db.prepare('UPDATE sanitation_records SET area = ?, record_group = ? WHERE id = ?');
 
   let updated = 0;
   db.transaction(() => {
     for (const r of rows) {
       const next = to.get(r.area);
       if (!next || next === r.area) continue;
-      upd.run(next, r.id);
+      upd.run(next, recordGroupFor(next), r.id);
       logAudit(req.user, 'update', 'sanitation_record', r.id, { field: 'area', from: r.area, to: next, source: 'area_normalization' },
         { area: r.area }, { area: next }, areaLabel(next));
       updated++;
@@ -697,8 +698,10 @@ function closeRecleanTasksFor(db, area, who, record) {
       WHERE title = ? AND status IN ('open','in_progress','overdue','missed')`).all(title);
     const open = [...new Map([...linked, ...byTitle].map(r => [r.id, r])).values()];
     if (!open.length) return 0;
+    // rework_required is cleared like every other completion path clears it,
+    // or the card reads completed + Rework forever.
     const upd = db.prepare(`UPDATE work_orders SET status = 'completed', completed_at = datetime('now'), completed_by = ?,
-      notes = COALESCE(notes || char(10), '') || ?, updated_at = datetime('now') WHERE id = ?`);
+      rework_required = 0, notes = COALESCE(notes || char(10), '') || ?, updated_at = datetime('now') WHERE id = ?`);
     for (const w of open) {
       upd.run(who, `Closed by the cleaning record filed for ${String(record.performed_at || '').slice(0, 10)}.`, w.id);
       logAudit(who, 'update', 'work_order', w.id, { closed_by_sanitation_record: record.id, area }, null, null, `72h Re-clean — ${area}`);

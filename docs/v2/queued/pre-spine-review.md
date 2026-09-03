@@ -175,6 +175,8 @@ control fails 14) and `npm run verify:writedoors` (22 live, control fails 12).
 - **E4** `quality-schedules.js:61` stamps the generated work order `due_date = date('now')` while the schedule correctly advances from `s.next_due`; a check that came due on the 1st and was raised on the 4th reads as on time.
 - **E5** `sanitation.js:169` treats a production-log clean as 23:59 of its day — a data-model limit (the entry has no time), not an oversight; noted, not a fix.
 
+**E4 FIXED 2026-09-03** — see the class G note; `due_date` is `s.next_due`.
+
 ### Class F — vacuous truth
 - **F2** `COAPanel.jsx:476,506` `g.tests.every(...)` unguarded — latent, groups are hardcoded.
 - **F3** `check-product-readiness.mjs:40` asserts `.every(done)` with no length check.
@@ -201,6 +203,16 @@ control fails 14) and `npm run verify:writedoors` (22 live, control fails 12).
 - **G11** `seed.js:22` inserts equipment without `asset_kind`/`loto_required` — latent, no zone types in seed data.
 - **G12** `submit.js:148` writes the knife master directly before re-deriving — cosmetic, the sync corrects it.
 - **G13** `products.js:787` comment says `nfp_version` is "deliberately left WRITABLE" — the opposite of the code and the paragraph under it. Doc bug in the paragraph other modules cite.
+
+**G3–G11, G13 and E4 FIXED 2026-09-03** — the re-clean close clears `rework_required`; reassigning a machine leaves
+QA's inspections on QA's list; assignments, reviews and the nudge read the linked name and role through
+`withEmployeeFacts`; a supply order refuses a quantity below what arrived and refuses leaving `received` while the
+count is full (a negative receipt is the door), and a changed quantity moves the status with it; ReadyBot is
+created with a username; a disambiguated username still follows a rename; the area normalizer writes
+`record_group`; the products seed never writes the NFP mirror; the equipment seed classifies what it inserts;
+the NFP paragraph says what the code does; a raised quality check is due when the schedule said. **G12 stays as
+noted** (cosmetic; the sync corrects it). `npm run check:mirrors` (15, control fails 14) and the supply-order
+section of `verify:writedoors` (27 live).
 
 ### Class H — mobile
 `src/index.css:64` sets `body { overflow-x: hidden }`, so a wide table with no scroller does not pan — it

@@ -487,7 +487,7 @@ export function getBotUser(db) {
   let bot = db.prepare("SELECT * FROM users WHERE name = 'ReadyBot' LIMIT 1").get();
   if (!bot) {
     const id = uuid();
-    db.prepare("INSERT INTO users (id, name, role, department, is_active, module_access) VALUES (?, 'ReadyBot', 'operator', 'office', 1, '{}')").run(id);
+    db.prepare("INSERT INTO users (id, name, username, role, department, is_active, module_access) VALUES (?, 'ReadyBot', 'ReadyBot', 'operator', 'office', 1, '{}')").run(id);
     bot = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   }
   return bot;

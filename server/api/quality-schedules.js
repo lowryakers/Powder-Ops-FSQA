@@ -58,14 +58,16 @@ export function generateQualityScheduleTasks(db) {
   const hasOpen = db.prepare("SELECT 1 FROM work_orders WHERE quality_schedule_id = ? AND status IN ('open','in_progress','overdue','missed') LIMIT 1");
   const ins = db.prepare(`INSERT INTO work_orders
     (id, title, description, priority, due_date, procedure_steps, task_group, quality_schedule_id, status)
-    VALUES (?, ?, ?, 'normal', date('now'), ?, 'qa', ?, 'open')`);
+    VALUES (?, ?, ?, 'normal', ?, 'qa', ?, 'open')`);
   const advance = db.prepare('UPDATE quality_schedules SET next_due = ?, updated_at = datetime(\'now\') WHERE id = ?');
   let created = 0;
   const tx = db.transaction(() => {
     for (const s of due) {
       if (!hasOpen.get(s.id)) {
         const woId = uuid();
-        ins.run(woId, s.title, s.description || 'Scheduled quality check.', s.procedure_steps || '[]', s.id);
+        // Due when the schedule said, not the day housekeeping happened to run —
+        // a check due on the 1st and raised on the 4th must not read as on time.
+        ins.run(woId, s.title, s.description || 'Scheduled quality check.', s.next_due || new Date().toISOString().slice(0, 10), s.procedure_steps || '[]', s.id);
         logAudit('system', 'auto_generate', 'work_order', woId, { quality_schedule_id: s.id }, null, null);
         created++;
       }

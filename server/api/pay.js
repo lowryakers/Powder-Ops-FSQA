@@ -124,6 +124,14 @@ function withLinkedNames(db, rows) {
 const SUPERVISOR_ROLES = ['supervisor', 'admin'];
 
 /** The authority on "is this person a supervisor" — the account, then the row. */
+// Rows that carry an employee's facts under `employee_name` / `is_supervisor`
+// (assignments, reviews, the nudge): the LINKED account's current name and
+// role, never the stored column — the same rule the roster follows.
+function withEmployeeFacts(db, rows) {
+  const named = withLinkedNames(db, rows.map(r => ({ ...r, name: r.employee_name })));
+  return named.map(r => ({ ...r, employee_name: r.name, is_supervisor: isSupervisorRow(db, r) ? 1 : 0 }));
+}
+
 function isSupervisorRow(db, row) {
   if (row?.user_id) {
     const u = db.prepare('SELECT role FROM users WHERE id = ?').get(row.user_id);
@@ -267,7 +275,7 @@ router.get('/assignments', (req, res) => {
   const db = getDb();
   const mine = !isAdmin(req.user) || req.query.mine === 'true';
   const status = ['open', 'completed', 'all'].includes(req.query.status) ? req.query.status : 'open';
-  let sql = `SELECT a.*, e.name AS employee_name, e.team, e.is_supervisor, u.name AS reviewer_name
+  let sql = `SELECT a.*, e.name AS employee_name, e.user_id, e.team, e.is_supervisor, u.name AS reviewer_name
     FROM pay_review_assignments a
     JOIN pay_employees e ON e.id = a.employee_id
     LEFT JOIN users u ON u.id = a.reviewer_id WHERE 1=1`;
@@ -275,7 +283,7 @@ router.get('/assignments', (req, res) => {
   if (status !== 'all') { sql += ' AND a.status = ?'; params.push(status); }
   if (mine) { sql += ' AND a.reviewer_id = ?'; params.push(req.user.id); }
   sql += ' ORDER BY (a.due_date IS NULL), a.due_date, a.created_at DESC LIMIT 200';
-  const rows = db.prepare(sql).all(...params).map(r => ({ ...r, overdue: !!(r.status === 'open' && r.due_date && r.due_date < today()) }));
+  const rows = withEmployeeFacts(db, db.prepare(sql).all(...params)).map(r => ({ ...r, overdue: !!(r.status === 'open' && r.due_date && r.due_date < today()) }));
   res.json(rows);
 });
 
@@ -388,13 +396,13 @@ router.get('/reviews', (req, res) => {
   if (!requireEvaluator(req, res)) return;
   const db = getDb();
   const status = ['open', 'resolved', 'dismissed', 'all'].includes(req.query.status) ? req.query.status : 'open';
-  let sql = `SELECT r.*, e.name AS employee_name, e.team, e.is_supervisor
+  let sql = `SELECT r.*, e.name AS employee_name, e.user_id, e.team, e.is_supervisor
     FROM pay_reviews r JOIN pay_employees e ON e.id = r.employee_id WHERE 1=1`;
   const params = [];
   if (status !== 'all') { sql += ' AND r.status = ?'; params.push(status); }
   if (!isAdmin(req.user)) { sql += ' AND (r.reviewer_id = ? OR r.reviewer_name = ?)'; params.push(req.user.id, req.user.name); }
   sql += ' ORDER BY r.created_at DESC LIMIT 200';
-  res.json(db.prepare(sql).all(...params).map(r => ({ ...r, scores: JSON.parse(r.scores || '{}') })));
+  res.json(withEmployeeFacts(db, db.prepare(sql).all(...params)).map(r => ({ ...r, scores: JSON.parse(r.scores || '{}') })));
 });
 
 // Close reviews without an increase — "held flat, talked it through" is a real
@@ -704,10 +712,10 @@ export async function payReviewNudges(db) {
   // 1) Each reviewer's own outstanding asks.
   let open;
   try {
-    open = db.prepare(`SELECT a.id, a.due_date, a.reviewer_id, e.name AS employee_name
+    open = withEmployeeFacts(db, db.prepare(`SELECT a.id, a.due_date, a.reviewer_id, e.name AS employee_name, e.user_id, e.is_supervisor
       FROM pay_review_assignments a JOIN pay_employees e ON e.id = a.employee_id
       WHERE a.status = 'open' AND a.due_date IS NOT NULL AND a.due_date <= ?
-      ORDER BY a.due_date`).all(soon);
+      ORDER BY a.due_date`).all(soon));
   } catch { open = []; }
 
   const byReviewer = new Map();

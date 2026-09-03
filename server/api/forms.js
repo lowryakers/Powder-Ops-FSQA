@@ -24,7 +24,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
-import { moduleLevel } from '../module-access.js';
+import { canEditAny } from '../module-access.js';
 import { formFor, FORM_REGISTRY } from '../../shared/form-registry.js';
 import { SCALE_FORMS } from '../scale-forms.js';
 import { getType, QMS_TYPES } from '../qms-config.js';
@@ -45,10 +45,11 @@ function canEditForms(user) {
   const dept = String(user.department || '').toLowerCase();
   if (dept === 'document_control') return true;
   if (user.role === 'supervisor' && ['qa', 'document_control'].includes(dept)) return true;
-  // The Forms tab lives in the document-control hub, so that hub's edit grant is the
-  // grant. (The branch this replaces checked a 'form-registry' grant that is
-  // not a module and could never be given — a dead door.)
-  return moduleLevel(user, 'document-control') === 'edit';
+  // The Forms tab lives in the Controlled Documents hub, which the nav opens
+  // for anyone holding any of its three document modules — so edit on any of
+  // them is the grant. (The branch this replaces checked a 'form-registry'
+  // grant that is not a module and could never be given — a dead door.)
+  return canEditAny(user, ['sops', 'work-instructions', 'job-descriptions']);
 }
 
 const requireEdit = (req, res) => {

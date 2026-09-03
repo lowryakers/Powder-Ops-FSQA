@@ -792,7 +792,7 @@ const WRITABLE = [
 ];
 
 /**
- * `nfp_version` and `nfp_approved_at` deliberately left WRITABLE.
+ * `nfp_version` and `nfp_approved_at` are deliberately NOT in WRITABLE.
  *
  * Those two columns are the artwork print gate — nothing reaches print_ready
  * without an approved NFP, or against a panel that is not the product's current

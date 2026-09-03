@@ -106,5 +106,22 @@ const row = (list?.products || []).find(x => x.sku === 'TST-PLG-DOS');
 const shop = row?.readiness?.steps?.find(s => s.key === 'shopify');
 t('A RENAME UN-TICKS THE SHOPIFY STEP (stale) rather than leaving it describing the old code', shop?.state === 'stale', JSON.stringify(shop));
 
+console.log('\nA supply order cannot contradict its own receipt count');
+const order = await J(await post('/office/supply/orders', { item_name: 'Doors barstool', qty: 3, uom: 'ea', requested_by: 'Doors Admin' }));
+t('order filed', !!order?.id, JSON.stringify(order).slice(0, 120));
+r = await post(`/office/supply/orders/${order.id}/receive`, { qty: 3 });
+body = await J(r);
+t('received in full → status received', r.status === 200 && body?.status === 'received', `${r.status} ${body?.status}`);
+r = await put(`/office/supply/orders/${order.id}`, { status: 'ordered' });
+body = await J(r);
+t('MOVING THE STATUS AWAY FROM RECEIVED WHILE THE COUNT IS FULL IS REFUSED, naming the receipt door', r.status === 400 && body?.use === 'receive', `${r.status} ${body?.error}`);
+r = await put(`/office/supply/orders/${order.id}`, { qty: 2 });
+body = await J(r);
+t('a quantity below what already arrived is refused', r.status === 400 && body?.use === 'receive', `${r.status} ${body?.error}`);
+r = await put(`/office/supply/orders/${order.id}`, { qty: 5 });
+body = await J(r);
+t('raising the quantity moves the status back to ordered — 3 of 5 arrived', r.status === 200 && body?.status === 'ordered' && body?.qty_received === 3 && body?.outstanding === 2,
+  `${r.status} ${JSON.stringify({ status: body?.status, qty_received: body?.qty_received, outstanding: body?.outstanding })}`);
+
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);
